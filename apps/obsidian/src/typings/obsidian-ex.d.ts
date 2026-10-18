@@ -97,6 +97,14 @@ declare module "obsidian" {
      * Internal; verified against Obsidian 1.14.2.
      */
     suggestEl: HTMLElement;
+    /**
+     * The chooser over the popup's list, which highlights an item; `-1`
+     * highlights none. Internal; verified against Obsidian 1.14.4, and
+     * optional, as a build may lack it.
+     */
+    suggestions?: {
+      forceSetSelectedItem?(at: number, event: Event | null): void;
+    };
   }
   interface ItemView {
     /** Native content header title; refreshed separately from the tab (Obsidian 1.14). */
@@ -206,6 +214,19 @@ declare module "obsidian" {
      * 1.14.0. Optional so a build that drops it is a guarded branch.
      */
     getCachedFiles?(): string[];
+    /**
+     * Every text value, or text inside a list, the frontmatter property
+     * `key` holds across the vault, each once. Internal; verified against
+     * Obsidian 1.14.4. Read it only through
+     * `src/lib/obsidian-private/property-values.ts`.
+     */
+    getFrontmatterPropertyValuesForKey?(key: string): string[];
+    /**
+     * The vault's tags, `#`-prefixed, with the count of each. Internal;
+     * verified against Obsidian 1.14.4. Read it only through
+     * `src/lib/obsidian-private/property-values.ts`.
+     */
+    getTags?(): Record<string, number>;
   }
   interface App {
     /** Native view factories, verified against Obsidian 1.14.1. */
@@ -221,6 +242,20 @@ declare module "obsidian" {
      * `src/lib/obsidian-private/embed-registry.ts`.
      */
     embedRegistry?: Partial<EmbedRegistry>;
+    /**
+     * Keeps the type each property is assigned. Internal; verified against
+     * Obsidian 1.14.4. Optional, and each member optional: read it only
+     * through `src/lib/obsidian-private/metadata-type-manager.ts`.
+     */
+    metadataTypeManager?: Partial<MetadataTypeManager>;
+  }
+  /** Obsidian's property type manager (`app.metadataTypeManager`). Internal; Obsidian 1.14.4. */
+  interface MetadataTypeManager {
+    /** The widget id assigned to a property, case-insensitive; `null` where none is. */
+    getAssignedWidget(name: string): string | null;
+    /** Fires with the lowercased name of a property whose assigned type changed. */
+    on(event: "changed", callback: (name: string) => void): EventRef;
+    offref(ref: EventRef): void;
   }
   /** Obsidian's embed registry (`app.embedRegistry`). Internal; Obsidian 1.14.4. */
   interface EmbedRegistry {

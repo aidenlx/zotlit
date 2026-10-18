@@ -4,9 +4,7 @@ import {
   editView,
   LITERATURE_NOTE,
   NEW_QUERY_FILE_LIMIT,
-  allViewsDataset,
   displayName,
-  locateFilterFault,
   newQueryFileText,
   removeFormula,
   withDisplayName,
@@ -14,7 +12,6 @@ import {
   withFormula,
   parseQueryFile,
   serializeQueryFile,
-  viewFilter,
 } from "./query-file";
 
 const NEW_FILE_NAMES = {
@@ -345,73 +342,6 @@ describe("columnSize", () => {
     columnSize:
       title: 200
 `);
-  });
-});
-
-describe("viewFilter", () => {
-  it("joins the filters for all views and the view's own filters with and", () => {
-    const file = parseQueryFile(TWO_VIEWS);
-    expect(viewFilter(file, file.views[0]!)).toBe(
-      '(item.itemType == "journalArticle") && ((colorName == "yellow") && ((tags.contains("figure")) || (comment != null)))',
-    );
-    expect(viewFilter(file, file.views[1]!)).toBe(
-      'item.itemType == "journalArticle"',
-    );
-  });
-
-  it("applies the filters for all views only to views of the first view's dataset", () => {
-    const file = parseQueryFile(`filters: item.title.contains("Rules")
-views:
-  - type: annotations
-    name: Annotations
-    from: annotations
-  - type: table
-    name: Items
-    from: items
-    filters: title != null
-`);
-    expect(allViewsDataset(file)).toBe("annotations");
-    expect(viewFilter(file, file.views[0]!)).toBe(
-      'item.title.contains("Rules")',
-    );
-    expect(viewFilter(file, file.views[1]!)).toBe("title != null");
-  });
-
-  it("gives no filter when the file and the view have none", () => {
-    const file = parseQueryFile(newQueryFileText(NEW_FILE_NAMES));
-    expect(viewFilter(file, file.views[0]!)).toBeUndefined();
-  });
-});
-
-describe("locateFilterFault", () => {
-  const file = parseQueryFile(TWO_VIEWS);
-  const view = file.views[0]!;
-  const text = viewFilter(file, view)!;
-  const at = (needle: string) => {
-    const from = text.indexOf(needle);
-    return { from, to: from + needle.length };
-  };
-
-  it("finds the condition of the filters for all views that a fault marks", () => {
-    expect(locateFilterFault(file, view, at("journalArticle"))).toEqual({
-      section: "all",
-      path: [0],
-    });
-  });
-
-  it("finds a nested condition of the view's own filters", () => {
-    expect(locateFilterFault(file, view, at("comment"))).toEqual({
-      section: "view",
-      path: [1, 1],
-    });
-    expect(locateFilterFault(file, view, at("colorName"))).toEqual({
-      section: "view",
-      path: [0],
-    });
-  });
-
-  it("finds no condition for a fault between conditions", () => {
-    expect(locateFilterFault(file, view, at(") && ("))).toBeNull();
   });
 });
 

@@ -30,9 +30,17 @@ export type FilterValueType =
   | "collection"
   | "choice"
   | "number"
-  | "date";
+  | "date"
+  | "boolean";
+
+/**
+ * The kind of a field the host adds beside a dataset's own, such as a vault
+ * property of the Query View, named by the host.
+ */
+export type CustomFilterFieldKind = `custom:${string}`;
 
 export type FilterFieldKind =
+  | CustomFilterFieldKind
   | "color"
   | "tags"
   | "comment"
@@ -52,9 +60,14 @@ export type FilterFieldKind =
 
 export interface FilterField {
   readonly kind: FilterFieldKind;
-  /** The field's path in the view's dataset. */
+  /**
+   * The field's path in the view's dataset, as a condition writes it: a
+   * name the dot cannot reach takes bracket access, as `vault["a-b"]` does.
+   */
   readonly path: string;
   readonly type: FilterValueType;
+  /** The name the kind picker shows; a field the host adds gives one. */
+  readonly label?: string;
 }
 
 export type FilterOperator =
@@ -71,7 +84,9 @@ export type FilterOperator =
   | "before"
   | "after"
   | "on-or-before"
-  | "on-or-after";
+  | "on-or-after"
+  | "is-true"
+  | "is-false";
 
 /** One condition row of the Query View's Filter. */
 export interface FilterRow {
@@ -117,6 +132,7 @@ export const FILTER_OPERATORS: Record<
   choice: ["is", "is-not"],
   number: ["is", "is-not", "before", "after", "on-or-before", "on-or-after"],
   date: ["on-or-after", "after", "before", "on-or-before"],
+  boolean: ["is-true", "is-false"],
 };
 
 /** The conditions of a view's dataset, in the order the kind picker lists them. */
@@ -212,6 +228,8 @@ export function hasFilterValue(row: FilterRow): boolean {
   switch (row.operator) {
     case "is-empty":
     case "is-not-empty":
+    case "is-true":
+    case "is-false":
       return true;
     case "contains-any":
     case "contains-all":
@@ -248,6 +266,10 @@ export function formatFilterRow(
       return `${path}.isEmpty()`;
     case "is-not-empty":
       return `!${path}.isEmpty()`;
+    case "is-true":
+      return `${path} == true`;
+    case "is-false":
+      return `${path} == false`;
     default:
       return `${path} ${COMPARISON[row.operator]} ${literal(field, row.value)}`;
   }
@@ -262,6 +284,12 @@ function pathOf(node: ExpressionNode): string | null {
   if (node.type === "object-access") {
     const object = pathOf(node.object);
     return object === null ? null : `${object}.${node.property}`;
+  }
+  if (node.type === "array-access" && node.index.type === "string") {
+    const object = pathOf(node.object);
+    return object === null
+      ? null
+      : `${object}[${JSON.stringify(node.index.value)}]`;
   }
   return null;
 }
@@ -368,6 +396,17 @@ export function parseFilterRow(
   }
   if (node.type === "binary" && !negated) {
     const target = field(pathOf(node.left));
+    if (target?.type === "boolean") {
+      const value = unwrap(node.right);
+      return node.operator === "==" && value.type === "boolean"
+        ? {
+            kind: target.kind,
+            operator: value.value ? "is-true" : "is-false",
+            value: "",
+            values: [],
+          }
+        : null;
+    }
     const operator = (Object.keys(COMPARISON) as FilterOperator[]).find(
       (key) => COMPARISON[key] === node.operator,
     );

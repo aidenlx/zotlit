@@ -25,6 +25,16 @@
 export const PAGE = `const press=(el,what)=>{if(!el)throw new Error('Missing: '+what);el.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});const r=el.getBoundingClientRect();if(!el.checkVisibility()||r.width===0||r.height===0)throw new Error('Not visible: '+what+' ('+r.width+'x'+r.height+(el.checkVisibility()?'':', hidden')+')');const hit=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!hit||!(hit===el||el.contains(hit)))throw new Error('Covered: '+what+' (by '+(hit?hit.outerHTML.slice(0,80):'nothing')+')');el.click();return el;};const until=async(what,ok,timeout=2000)=>{const end=Date.now()+timeout;for(;;){const value=await ok();if(value)return value;if(Date.now()>end)throw new Error('Timed out: '+what);await new Promise(r=>setTimeout(r,20));}};const valueOf=el=>el?(el.tagName==='BUTTON'?el.dataset.value:el.value):undefined;const pick=async(el,value,what)=>{if(!el)throw new Error('Missing: '+what);if(el.tagName==='SELECT'){el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return el;}press(el,what);const popup=await until(what+' opens',()=>el.popoverTargetElement?.matches(':popover-open')&&el.popoverTargetElement);const row=await until(what+' offers '+value,()=>popup.querySelector('[role=option][data-value="'+CSS.escape(value)+'"]'));press(row,what+' row '+value);await until(what+' shuts',()=>!popup.matches(':popover-open'));return el;};`;
 
 /**
+ * An eval that settles once an Obsidian `Menu` just shown has bound its keys,
+ * answering `"ready"`. `Menu.showAtPosition` binds them a timer after it
+ * shows, and a timer queued now runs after that one. A menu closed before
+ * its keys bind leaves them behind, and they swallow the next Enter, so a
+ * case evaluates this between seeing a menu and pressing one of its items.
+ */
+export const MENU_READY =
+  "new Promise((resolve)=>activeWindow.setTimeout(()=>resolve('ready'),0))";
+
+/**
  * Picks the view `name` in the view menu of a Query View, as a reader does:
  * presses the menu, waits for the view's row, and presses it. `view` is an
  * expression of the eval for the view; put it after `PAGE` in an `async` body.

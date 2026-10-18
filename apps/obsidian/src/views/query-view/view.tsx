@@ -20,10 +20,7 @@ import { getLogger } from "@/lib/log";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { Diagnostic } from "@/services/item-query/contract";
-import type {
-  QueryViewOutcome,
-  QueryViewRequest,
-} from "@/services/item-query/query-view";
+import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
 import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -51,12 +48,11 @@ import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
-import { locateFilterFault, viewFilter } from "./query-file";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type {
   QueryFile,
   QueryFileDataset,
   QueryFileProblem,
-  QueryFileSort,
   QueryFileView,
 } from "./query-file";
 import { QueryFileDocument } from "./query-file-document";
@@ -72,19 +68,22 @@ import type {
   ResultSnapshot,
 } from "./results";
 import { ResultsMenu } from "./results-menu";
-import { layoutRows } from "./rows";
 import { SearchButton, SearchRow, useSearchBar } from "./search-control";
 import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
-import { TABLE_FIELDS, TableLayout } from "./table-layout";
-import type { LiteratureNotes } from "./table-notes";
+import { TableLayout } from "./table-layout";
+import type { LiteratureNotes, VaultHost } from "./table-notes";
 import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
+import { useVaultPropertyNames, vaultText } from "./vault-cell";
+import { vaultSortOptions } from "./vault-sort";
 import { ViewMenu } from "./view-menu";
+import { ViewPlanner } from "./view-plan/view-plan";
+import type { ViewPlan } from "./view-plan/view-plan";
 import {
-  unusedSettings,
+  usedGroupBy,
   useViewProperties,
   viewProperties,
 } from "./view-properties";
@@ -235,22 +234,16 @@ function layoutProblems(view: QueryFileView): string[] {
   return problems;
 }
 
-/** The view's grouping, where its dataset has the group path. */
-function usedGroupBy(view: QueryFileView): QueryFileSort | undefined {
-  return unusedSettings(view).groupBy === null ? view.groupBy : undefined;
-}
-
 /**
  * How long the view waits after an Attachment it shows gains or loses an
  * Annotation before it runs again, so a burst of changes runs it once.
  */
 export const RERUN_DELAY_MS = 300;
 
-/** One run of a view: its request key, and the file and view it ran for. */
+/** One run of a view: the view it ran for, and its plan. */
 interface ViewRun {
-  key: string;
-  file: QueryFile;
   view: QueryFileView;
+  plan: ViewPlan;
 }
 
 /** The faults of a filter that reads a Formula it cannot have. */
@@ -280,6 +273,7 @@ export class QueryView extends Component implements HistorySurface {
   readonly #deps: QueryViewDeps;
   readonly #host: QueryViewHost;
   readonly #layout: AnnotationsLayout;
+  readonly #planner: ViewPlanner;
   /** The file's text, the view on screen, the edits and their saves. */
   readonly #document: QueryFileDocument;
   #run: AbortController | null = null;
@@ -320,6 +314,11 @@ export class QueryView extends Component implements HistorySurface {
       sourcePath: host.sourcePath,
       onListChanged: () => this.#listChanged(),
     });
+    this.#planner = new ViewPlanner({
+      context: () => host.context(),
+      host: () => this.vaultHost(),
+      notes: deps.literatureNotes,
+    });
   }
 
   /**
@@ -359,6 +358,17 @@ export class QueryView extends Component implements HistorySurface {
     "query" | "literatureNotes" | "readers"
   > {
     return this.#deps;
+  }
+
+  /**
+   * The note that holds the view and the Item its `zotero-key` names, where a
+   * note holds it: a row of that Item reads that note's vault properties,
+   * whichever note the Note Index ranks first. `null` elsewhere.
+   */
+  vaultHost(): VaultHost | null {
+    if (this.#host.contextSource !== "note") return null;
+    const itemKey = this.#host.context()?.item;
+    return itemKey ? { path: this.#host.sourcePath(), itemKey } : null;
   }
 
   /** Settles once the cards show the last run the view started. Never rejects. */
@@ -416,6 +426,15 @@ export class QueryView extends Component implements HistorySurface {
     subscriptions.defer(reads.on("degraded", rerun));
     subscriptions.defer(reads.on("db-file-missing", rerun));
     subscriptions.defer(libraryScope.on("libraries-changed", rerun));
+    // A Literature Note's frontmatter changes which Items a vault condition
+    // keeps; the view runs again where that changes its request.
+    const replan = () => {
+      this.#planner.notesChanged();
+      this.contextChanged();
+    };
+    const notes = this.#deps.literatureNotes;
+    subscriptions.defer(notes.on("changed", replan));
+    subscriptions.defer(notes.on("frontmatter-changed", replan));
     subscriptions.defer(() => this.#cancelRerun());
   }
 
@@ -471,7 +490,7 @@ export class QueryView extends Component implements HistorySurface {
   contextChanged(): void {
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) return;
-    if (this.#runKey(file, view) !== this.#runRequest) this.refresh();
+    if (this.#planner.plan(file, view).key !== this.#runRequest) this.refresh();
   }
 
   /**
@@ -559,7 +578,7 @@ export class QueryView extends Component implements HistorySurface {
     if (
       view &&
       problems.length === 0 &&
-      this.#runKey(file, view) === this.#runRequest
+      this.#planner.plan(file, view).key === this.#runRequest
     ) {
       // Another Layout of the same query draws the rows on screen as they are.
       if (this.#shownRequest === this.#runRequest) this.#redraw(view);
@@ -583,59 +602,29 @@ export class QueryView extends Component implements HistorySurface {
 
   /**
    * The rows on screen as a table, one column for each visible property in
-   * the view's order: what "Copy to clipboard" and "Export CSV…" write. The
-   * Literature Note Property is no value of a row, so it writes no column.
+   * the view's order: what "Copy to clipboard" and "Export CSV…" write. A
+   * vault property writes the value its Literature Note holds, and no text
+   * where the Item has no note. The Literature Note Property is a link, not
+   * a value, so it writes no column.
    */
   table(): ResultTable {
     const { file, view } = this.state.getState();
+    const notes = this.#deps.literatureNotes;
+    const host = this.vaultHost();
     return resultTable(
       this.state.getState().results?.rows ?? [],
-      view ? viewProperties(file, view).queried : [],
+      view
+        ? viewProperties(file, view).visible.filter(
+            ({ path }) => path !== LITERATURE_NOTE,
+          )
+        : [],
+      (row, path) => {
+        const name = vaultName(path);
+        return name === null
+          ? undefined
+          : vaultText(notes.read(row.indexedKey, name, host));
+      },
     );
-  }
-
-  /** What tells one run from another: the request, and the grouping the rows are gathered by. */
-  #runKey(file: QueryFile, view: QueryFileView): string {
-    return JSON.stringify([
-      this.#request(file, view),
-      usedGroupBy(view) ?? null,
-      view.groupOrder ?? null,
-    ]);
-  }
-
-  /**
-   * What ZotLit Query runs for one view of the file. It sends every Formula
-   * of the file: ZotLit Query plans only those that the view reads.
-   */
-  #request(file: QueryFile, view: QueryFileView): QueryViewRequest {
-    const filter = viewFilter(file, view);
-    const context = this.#host.context();
-    const unused = new Set(unusedSettings(view).sort);
-    const sort = view.sort?.filter(({ property }) => !unused.has(property));
-    const grouped = view.groupBy && grouping(view.from, view.groupBy.property);
-    const fields = [
-      ...new Set([
-        ...(grouped?.fields ?? []),
-        ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
-        ...viewProperties(file, view).queried.map(({ path }) => path),
-      ]),
-    ];
-    const formulas = file.formulas ?? {};
-    return {
-      from: view.from ?? "annotations",
-      ...(filter === undefined ? {} : { filter }),
-      ...(sort &&
-        sort.length > 0 && {
-          sort: sort.map(({ property, direction }) => ({
-            field: property,
-            direction: direction === "DESC" ? "desc" : "asc",
-          })),
-        }),
-      fields,
-      ...(Object.keys(formulas).length > 0 && { formulas }),
-      limit: view.limit ?? null,
-      ...(context && { context }),
-    };
   }
 
   /** Run the view's query again, and show its rows. */
@@ -658,36 +647,42 @@ export class QueryView extends Component implements HistorySurface {
       });
       return;
     }
+    const plan = this.#planner.plan(file, view);
+    const { key } = plan;
+    this.#runRequest = key;
+    const run: ViewRun = { view, plan };
+    if (plan.fault) {
+      // A vault condition the vault cannot answer apart from ZotLit Query
+      // keeps the view from running.
+      this.#fail(run, plan.fault.diagnostic, nameDictionary());
+      return;
+    }
     const controller = new AbortController();
     this.#run = controller;
-    const key = this.#runKey(file, view);
-    this.#runRequest = key;
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
     // of the rows; the outcome gives the reason for each.
-    this.#settled = this.#deps.query
-      .run(this.#request(file, view), controller.signal)
-      .then(
-        (outcome) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          return this.#land({ key, file, view }, outcome, fromList);
-        },
-        (error: unknown) => {
-          if (this.#run !== controller) return;
-          this.#run = null;
-          logger.warn("A Query View could not run its query", { error });
-          this.#fail(
-            { key, file, view },
-            {
-              code: "query-failed",
-              message: error instanceof Error ? error.message : String(error),
-              hint: "",
-            },
-            nameDictionary(),
-          );
-        },
-      );
+    this.#settled = this.#deps.query.run(plan.request, controller.signal).then(
+      (outcome) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        return this.#land(run, outcome, fromList);
+      },
+      (error: unknown) => {
+        if (this.#run !== controller) return;
+        this.#run = null;
+        logger.warn("A Query View could not run its query", { error });
+        this.#fail(
+          run,
+          {
+            code: "query-failed",
+            message: error instanceof Error ? error.message : String(error),
+            hint: "",
+          },
+          nameDictionary(),
+        );
+      },
+    );
   }
 
   async #land(
@@ -695,7 +690,8 @@ export class QueryView extends Component implements HistorySurface {
     outcome: QueryViewOutcome,
     fromList = false,
   ): Promise<void> {
-    const { key, view } = run;
+    const { view, plan } = run;
+    const { key } = plan;
     switch (outcome.kind) {
       case "cancelled":
         return;
@@ -714,7 +710,7 @@ export class QueryView extends Component implements HistorySurface {
             ? "rerun"
             : "new-request";
         if (this.#layout.keepsBack(named, cause)) return;
-        const shown = layoutRows(result.rows ?? [], view);
+        const shown = plan.layout(result.rows ?? []);
         const byKey = new Map(
           (result.rows ?? []).map((row) => [row.indexedKey, row]),
         );
@@ -731,7 +727,7 @@ export class QueryView extends Component implements HistorySurface {
             })),
             matched: result.matchedCount,
             groups: shown.groups,
-            truncated: result.truncated,
+            truncated: result.truncated || shown.dropped,
             warnings: [
               ...new Map(
                 result.warnings.map(({ code, message }) => [
@@ -766,13 +762,13 @@ export class QueryView extends Component implements HistorySurface {
    * the run that gave them; `issues` mark the Formulas otherwise.
    */
   #fail(
-    { key, file, view }: ViewRun,
+    { view, plan }: ViewRun,
     diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
     issues: NameDictionary<string>,
   ): void {
     const kept =
       !FORMULA_READ_FAULTS.has(diagnostic.code) &&
-      (this.#shownRequest === key ||
+      (this.#shownRequest === plan.key ||
         (this.#shownRequest !== null &&
           this.#shownViewName === view.name &&
           this.#shownDataset === (view.from ?? "annotations")));
@@ -781,7 +777,7 @@ export class QueryView extends Component implements HistorySurface {
       "location" in diagnostic && diagnostic.location?.argument === "filter"
         ? diagnostic.location.span
         : undefined;
-    const at = span ? locateFilterFault(file, view, span) : null;
+    const at = plan.fault?.at ?? (span ? plan.locate(span) : null);
     this.state.setState((state) => ({
       phase: "failed",
       results: kept ? state.results : null,
@@ -1106,9 +1102,12 @@ function OpenFileButton({ view }: { view: QueryView }) {
 
 function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
-  const properties = useViewProperties(view);
+  const { literatureNotes } = view.tableDeps;
+  const names = useVaultPropertyNames(literatureNotes);
+  const properties = useViewProperties(view, names);
   if (!current || !properties) return null;
   const sort = current.sort ?? [];
+  const labelOf = (path: string) => properties.entry(path).label;
   return (
     <ToolbarPopover
       icon="arrow-up-down"
@@ -1119,10 +1118,13 @@ function SortButton({ view }: { view: QueryView }) {
     >
       <SortEditor
         value={sort}
-        options={sortOptions(
-          current.from,
-          (path) => properties.entry(path).label,
-        )}
+        options={[
+          ...sortOptions(current.from, labelOf),
+          ...vaultSortOptions(current.from, names, {
+            labelOf,
+            typeOf: (name) => literatureNotes.propertyType(name),
+          }),
+        ]}
         unused={properties.unused.sort}
         onChange={(next) =>
           view.document.editView({ sort: next.length > 0 ? next : undefined })

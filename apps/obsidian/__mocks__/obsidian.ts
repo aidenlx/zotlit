@@ -55,6 +55,34 @@ export function prepareSimpleSearch(
   };
 }
 
+/**
+ * Stand-in for Obsidian's fuzzy search: the query's characters must appear in
+ * the text in order, case-insensitively. A run of them in one piece scores
+ * above one spread out, and an earlier run above a later one.
+ */
+export function prepareFuzzySearch(
+  query: string,
+): (text: string) => SearchResult | null {
+  const needle = query.toLowerCase();
+  return (text) => {
+    const haystack = text.toLowerCase();
+    const at = haystack.indexOf(needle);
+    if (at !== -1)
+      return { score: -at / 100, matches: [[at, at + needle.length]] };
+    const matches: SearchMatchPart[] = [];
+    let from = 0;
+    for (const char of needle) {
+      const found = haystack.indexOf(char, from);
+      if (found === -1) return null;
+      const last = matches.at(-1);
+      if (last && last[1] === found) last[1] = found + 1;
+      else matches.push([found, found + 1]);
+      from = found + 1;
+    }
+    return { score: -matches.length, matches };
+  };
+}
+
 export function getIcon(name: IconName): SVGSVGElement | null {
   const svg = globalThis.document?.createElementNS(
     "http://www.w3.org/2000/svg",
@@ -674,9 +702,177 @@ export abstract class EditorSuggest<T> {
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
+let suggestChooserHidden = false;
+
+/**
+ * Leave `forceSetSelectedItem` off the private chooser of each input suggest
+ * made from now on, as an Obsidian build without it would; `false` restores it.
+ */
+export function hideSuggestChooser(hidden: boolean): void {
+  suggestChooserHidden = hidden;
+}
+
+/**
+ * Stand-in for Obsidian's input suggest, as Obsidian 1.14.4 drives it: the
+ * field's focus and input ask {@link getSuggestions} for the field's value
+ * while it holds focus; a list shows as `.suggestion-item`s in a
+ * `.suggestion-container` on the page, the first highlighted, and none
+ * shows for no suggestion; blur closes it. While it shows, its scope takes
+ * the keys first, at the window, before the field sees them: ArrowUp and
+ * ArrowDown move the highlight, Enter takes the highlighted item (and is
+ * taken with none), Escape closes it, and what a subclass registers runs
+ * after those. A press on an item takes it.
+ */
 export abstract class AbstractInputSuggest<T> {
-  constructor(_app: App, _input: HTMLInputElement | HTMLDivElement) {}
-  close(): void {}
+  limit = 100;
+  readonly app: App;
+  readonly scope = new Scope();
+  readonly suggestEl: HTMLDivElement;
+  /** Obsidian's private chooser over the list. */
+  readonly suggestions: {
+    values: T[];
+    selectedItem: number;
+    /** Absent while {@link hideSuggestChooser} hides it. */
+    forceSetSelectedItem?(at: number, event: unknown): void;
+    useSelectedItem(event: KeyboardEvent | MouseEvent): boolean;
+  };
+  /** Highlight the item at `at`, as the chooser does. */
+  readonly #highlight: (at: number) => void;
+  readonly #input: HTMLInputElement | HTMLDivElement;
+  #shown = false;
+
+  constructor(app: App, input: HTMLInputElement | HTMLDivElement) {
+    this.app = app;
+    this.#input = input;
+    this.suggestEl = document.createElement("div");
+    this.suggestEl.className = "suggestion-container";
+    const items = () => [
+      ...this.suggestEl.querySelectorAll<HTMLElement>(".suggestion-item"),
+    ];
+    const highlight = (at: number) => {
+      chooser.selectedItem = at;
+      items().forEach((el, i) => el.classList.toggle("is-selected", i === at));
+    };
+    this.#highlight = highlight;
+    const chooser: AbstractInputSuggest<T>["suggestions"] = {
+      values: [] as T[],
+      selectedItem: 0,
+      ...(!suggestChooserHidden && {
+        forceSetSelectedItem: (at: number, _event?: unknown) => highlight(at),
+      }),
+      useSelectedItem: (event: KeyboardEvent | MouseEvent) => {
+        const value = chooser.values[chooser.selectedItem];
+        if (value === undefined) return false;
+        this.selectSuggestion(value, event);
+        return true;
+      },
+    };
+    this.suggestions = chooser;
+    const move = (by: number) => () => {
+      const count = chooser.values.length;
+      if (count === 0) return false;
+      const at = chooser.selectedItem + by;
+      highlight(at < 0 ? count - 1 : at >= count ? 0 : at);
+      return false;
+    };
+    this.scope.register([], "ArrowUp", move(-1));
+    this.scope.register([], "ArrowDown", move(1));
+    this.scope.register([], "Enter", (event) => {
+      chooser.useSelectedItem(event);
+      return false;
+    });
+    this.scope.register([], "Escape", () => {
+      this.close();
+      return false;
+    });
+    this.suggestEl.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    this.suggestEl.addEventListener("click", (event) => {
+      const item = (event.target as HTMLElement).closest(".suggestion-item");
+      const at = items().indexOf(item as HTMLElement);
+      if (at === -1) return;
+      highlight(at);
+      chooser.useSelectedItem(event);
+    });
+    input.addEventListener("input", () => this.#change());
+    input.addEventListener("focus", () => this.#change());
+    input.addEventListener("blur", () => this.close());
+  }
+
+  readonly #onKey = (event: KeyboardEvent) => {
+    const modifiers: string[] = [];
+    if (event.ctrlKey) modifiers.push("Ctrl");
+    if (event.metaKey) modifiers.push("Meta");
+    if (event.altKey) modifiers.push("Alt");
+    if (event.shiftKey) modifiers.push("Shift");
+    for (const handler of this.scope.handlers) {
+      if (handler.key !== null && handler.key !== event.key) continue;
+      if (
+        handler.modifiers !== null &&
+        (handler.modifiers.length !== modifiers.length ||
+          handler.modifiers.some((modifier) => !modifiers.includes(modifier)))
+      )
+        continue;
+      if (handler.func(event) === false) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+  };
+
+  #change(): void {
+    if (this.#input.ownerDocument.activeElement !== this.#input) return;
+    const values = this.getSuggestions(this.getValue());
+    if (Array.isArray(values)) this.showSuggestions(values);
+    else void values.then((list) => this.showSuggestions(list));
+  }
+
+  showSuggestions(values: T[]): void {
+    if (values.length === 0) {
+      this.close();
+      return;
+    }
+    const shown = this.limit > 0 ? values.slice(0, this.limit) : values;
+    this.suggestions.values = shown;
+    this.suggestEl.replaceChildren(
+      ...shown.map((value) => {
+        const el = document.createElement("div");
+        el.className = "suggestion-item";
+        this.renderSuggestion(value, el);
+        return el;
+      }),
+    );
+    this.#highlight(0);
+    this.open();
+  }
+
+  getValue(): string {
+    const input = this.#input;
+    return "value" in input ? input.value : (input.textContent ?? "");
+  }
+
+  setValue(value: string): void {
+    const input = this.#input;
+    if ("value" in input) input.value = value;
+    else input.textContent = value;
+  }
+
+  open(): void {
+    if (this.#shown) return;
+    this.#shown = true;
+    this.#input.ownerDocument.body.appendChild(this.suggestEl);
+    window.addEventListener("keydown", this.#onKey, true);
+  }
+
+  close(): void {
+    if (!this.#shown) return;
+    this.#shown = false;
+    this.suggestEl.remove();
+    window.removeEventListener("keydown", this.#onKey, true);
+  }
+
   protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
   abstract selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void;
@@ -1007,6 +1203,20 @@ export class Menu {
   }
 
   setNoIcon(): this {
+    return this;
+  }
+
+  /** What `hide` runs, as Obsidian runs it once the menu closes. */
+  #onHide: (() => void) | null = null;
+
+  onHide(callback: () => void): this {
+    this.#onHide = callback;
+    return this;
+  }
+
+  /** Test helper: close the menu, running what `onHide` registered. */
+  hide(): this {
+    this.#onHide?.();
     return this;
   }
 

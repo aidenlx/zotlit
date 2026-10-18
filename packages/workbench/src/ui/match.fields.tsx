@@ -1,4 +1,5 @@
 import type {
+  CustomFilterFieldKind,
   FilterDataset,
   FilterField,
   FilterFieldKind,
@@ -46,7 +47,10 @@ export interface FilterValues {
 
 type Label = (m: WorkbenchMessages) => string;
 
-const KIND_LABELS: Record<FilterFieldKind, Label> = {
+const KIND_LABELS: Record<
+  Exclude<FilterFieldKind, CustomFilterFieldKind>,
+  Label
+> = {
   color: (m) => m.workbench_filter_field_color(),
   tags: (m) => m.workbench_filter_field_tag(),
   comment: (m) => m.workbench_filter_field_comment(),
@@ -80,6 +84,8 @@ const OPERATOR_LABELS: Record<FilterOperator, Label> = {
   after: (m) => m.workbench_filter_op_after(),
   "on-or-before": (m) => m.workbench_filter_op_on_or_before(),
   "on-or-after": (m) => m.workbench_filter_op_on_or_after(),
+  "is-true": (m) => m.workbench_filter_op_is_true(),
+  "is-false": (m) => m.workbench_filter_op_is_false(),
 };
 
 /** A Collection is a member, not a text: "is" reads better than "contains". */
@@ -182,7 +188,13 @@ function RowValue({
   const host = useWorkbenchHost();
   const part = useParts("match");
   const { operator } = condition;
-  if (operator === "is-empty" || operator === "is-not-empty") return null;
+  // These operators test no value the row holds.
+  if (
+    operator === "is-empty" ||
+    operator === "is-not-empty" ||
+    field.type === "boolean"
+  )
+    return null;
   const suggestions =
     field.kind === "tags"
       ? values.tags
@@ -256,6 +268,7 @@ const FIELD_ICONS: Record<FilterField["type"], WorkbenchIcon> = {
   choice: "property-text",
   number: "property-number",
   date: "property-date",
+  boolean: "property-checkbox",
 };
 
 /** The theme's icon of a field's value type. */
@@ -266,12 +279,19 @@ function FieldIcon({ field }: { field: FilterField }) {
   );
 }
 
+function kindLabel(kind: FilterFieldKind, m: WorkbenchMessages): string {
+  return kind.startsWith("custom:")
+    ? kind.slice("custom:".length)
+    : KIND_LABELS[kind as Exclude<FilterFieldKind, CustomFilterFieldKind>](m);
+}
+
 /**
- * The conditions of one dataset, as the Match editor offers them. A
- * condition shows `label(field)` where it gives one, else the name of its
- * kind, and `icon(field)` where it gives one, else the theme's icon of its
- * value type. Its field's path stands beside its name, as the Bases property
- * picker shows a property's id.
+ * The conditions of one dataset, as the Match editor offers them, then
+ * `extra`, the fields the host adds. A condition shows `label(field)` where
+ * it gives one, else the field's own label, else the name of its kind, and
+ * `icon(field)` where it gives one, else the theme's icon of its value type.
+ * Its field's path stands beside its name, as the Bases property picker
+ * shows a property's id.
  */
 export function filterVocabulary(
   dataset: FilterDataset,
@@ -281,6 +301,7 @@ export function filterVocabulary(
     issue,
     label,
     icon,
+    extra = [],
   }: {
     m: WorkbenchMessages;
     values: FilterValues;
@@ -290,13 +311,14 @@ export function filterVocabulary(
     ) => string | null;
     label?: (field: FilterField) => string | null | undefined;
     icon?: (field: FilterField) => ReactNode;
+    extra?: readonly FilterField[];
   },
 ): MatchVocabulary<FilterRow> {
-  const fields = filterFields(dataset);
+  const fields = [...filterFields(dataset), ...extra];
   const kinds = fields.map(
     (field): MatchConditionKind<FilterRow> => ({
       kind: field.kind,
-      label: label?.(field) ?? KIND_LABELS[field.kind](m),
+      label: label?.(field) ?? field.label ?? kindLabel(field.kind, m),
       icon: icon ? icon(field) : <FieldIcon field={field} />,
       detail: field.path,
       fresh: () => freshFilterRow(field),

@@ -14,6 +14,7 @@ import type {
   QueryViewRequest,
 } from "@/services/item-query/query-view";
 
+import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
 import type { QueryView, QueryViewDeps } from "./view";
@@ -85,6 +86,7 @@ function setup() {
       on: off,
       hold: () => ({ [Symbol.dispose]: () => {} }),
     },
+    literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
 
   /** Embed the Query File in `sourcePath` as Obsidian does, and load it. */

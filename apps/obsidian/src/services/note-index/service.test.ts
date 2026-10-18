@@ -282,6 +282,22 @@ describe("NoteIndex", () => {
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
+  it("tells its consumers when the Full Scan has indexed the notes", async () => {
+    const { metadataCache, workspace, service } = await makeHarness(
+      { "paper.md": cache({ itemKey: ITEM_A }) },
+      { enabledAtRuntime: false },
+    );
+    await service.ready;
+    const seen: string[][] = [];
+    service.on("indexed", () =>
+      seen.push(paths(service.getNotesByItemKey(ITEM_A))),
+    );
+
+    startup({ metadataCache, workspace });
+
+    expect(seen).toEqual([["paper.md"]]);
+  });
+
   it("keeps per-file mappings when the cache resolves again after the Full Scan", async () => {
     const { metadataCache, workspace, service } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),
@@ -327,6 +343,103 @@ describe("NoteIndex", () => {
     );
 
     expect(changed).toEqual([]);
+  });
+
+  it("emits frontmatter-changed for any frontmatter edit of a tracked note, beside changed for its Indexed Key", async () => {
+    const { service, vault, metadataCache } = await makeHarness(
+      {
+        "paper.md": cache({ itemKey: ITEM_A, properties: { status: "new" } }),
+        "Import.md": { frontmatter: { "zotero-note-key": ITEM_B } },
+      },
+      { enabledAtRuntime: true },
+    );
+    const changed: string[] = [];
+    const frontmatter: string[] = [];
+    service.on("changed", (file) => changed.push(file.path));
+    service.on("frontmatter-changed", (file) => frontmatter.push(file.path));
+
+    metadataCache.change(
+      vault.files.get("paper.md")!,
+      cache({ itemKey: ITEM_A, properties: { status: "read" } }),
+    );
+    metadataCache.change(vault.files.get("Import.md")!, {
+      frontmatter: { "zotero-note-key": ITEM_B, rating: 3 },
+    } as CachedMetadata);
+    expect(frontmatter).toEqual(["paper.md", "Import.md"]);
+    expect(changed).toEqual([]);
+
+    metadataCache.change(
+      vault.files.get("paper.md")!,
+      cache({ itemKey: ITEM_B, properties: { status: "read" } }),
+    );
+    expect(frontmatter).toEqual(["paper.md", "Import.md", "paper.md"]);
+    expect(changed).toEqual(["paper.md"]);
+  });
+
+  it("emits no frontmatter-changed for an edit that leaves the frontmatter as it was, or for an untracked note", async () => {
+    const { service, vault, metadataCache } = await makeHarness(
+      {
+        "paper.md": cache({ itemKey: ITEM_A, properties: { status: "new" } }),
+        "scratch.md": cache({ properties: { status: "new" } }),
+      },
+      { enabledAtRuntime: true },
+    );
+    const frontmatter: string[] = [];
+    service.on("frontmatter-changed", (file) => frontmatter.push(file.path));
+
+    // A body edit: the cache is new, its frontmatter the same.
+    metadataCache.change(
+      vault.files.get("paper.md")!,
+      cache({ itemKey: ITEM_A, properties: { status: "new" } }),
+    );
+    metadataCache.change(
+      vault.files.get("scratch.md")!,
+      cache({ properties: { status: "read" } }),
+    );
+
+    expect(frontmatter).toEqual([]);
+  });
+
+  it("lists the property names of the Literature Notes but the reserved and system keys, following edits", async () => {
+    const { service, vault, metadataCache } = await makeHarness(
+      {
+        "a.md": cache({
+          itemKey: ITEM_A,
+          properties: {
+            status: "read",
+            tags: ["x"],
+            aliases: ["y"],
+            cssclasses: ["z"],
+            "zotlit-profile": "default",
+            "zotero-lastmod": "2026-01-01",
+            "zotlit-csl": "apa",
+            rating: 3,
+          },
+        }),
+        "b.md": cache({ itemKey: ITEM_B, properties: { "Reading status": 1 } }),
+        "Import.md": {
+          frontmatter: { "zotero-note-key": "NOTE2345", imported: true },
+        } as CachedMetadata,
+        "scratch.md": cache({ properties: { draft: true } }),
+      },
+      { enabledAtRuntime: true },
+    );
+
+    expect(service.getPropertyNames()).toEqual([
+      "rating",
+      "Reading status",
+      "status",
+    ]);
+
+    metadataCache.change(
+      vault.files.get("b.md")!,
+      cache({ itemKey: ITEM_B, properties: { priority: "high" } }),
+    );
+    expect(service.getPropertyNames()).toEqual([
+      "priority",
+      "rating",
+      "status",
+    ]);
   });
 
   it("moves a file from the old item key to the new item key", async () => {

@@ -9,6 +9,7 @@ import * as toast from "@/lib/toast";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
+import { createdNoteNotice } from "./creation-view";
 import { createNoteInteractively } from "./index";
 import type {
   CreationProfileSelection,
@@ -365,4 +366,25 @@ it("imports from the contextual picker without creating a note", async () => {
   ).resolves.toBeNull();
   expect(importProfile).toHaveBeenCalledWith({ indexedKey: "ABCD2345" });
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+});
+
+it.each([
+  [
+    "the Profile picker's Default",
+    { label: undefined },
+    "Literature note created under Default: literatures/engelbart1962.md.",
+  ],
+  [
+    "a Profile chosen or made in the picker",
+    { label: "Reading" },
+    "Literature note created under Reading: literatures/engelbart1962.md.",
+  ],
+  [
+    "a unique Profile Match",
+    { label: "Books", reason: MATCH_REASON },
+    `${MATCH_REASON} and created literatures/engelbart1962.md.`,
+  ],
+])("names the new note created through %s", (_, created, notice) => {
+  const file = { path: "literatures/engelbart1962.md" } as TFile;
+  expect(createdNoteNotice(file, created)).toBe(notice);
 });
