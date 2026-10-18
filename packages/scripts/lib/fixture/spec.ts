@@ -163,6 +163,7 @@ export const VAULT_PROPERTY_TYPES: Readonly<Record<string, string>> = {
   finished: "date",
   started: "datetime",
   projects: "multitext",
+  collections: "multitext",
   tags: "tags",
   aliases: "aliases",
 };
@@ -825,6 +826,7 @@ export const ITEMS: readonly FixtureItem[] = [
       finished: "2026-09-02",
       started: "2026-08-30T09:15:00",
       projects: ["memex", "thesis", "hypertext history"],
+      collections: ["Reading/Hypertext", "Thesis"],
       tags: ["reading/done", "hci"],
       aliases: ["Memex essay"],
     },
@@ -915,7 +917,7 @@ export const ITEMS: readonly FixtureItem[] = [
     citationKey: "luhmannCommunicatingSlipBoxes1981",
     literatureNoteName: "luhmannCommunicatingSlipBoxes1981",
     vaultProperties: {
-      status: "read",
+      status: "unread",
       related: "[[Memex (device)]]",
       done: false,
       rating: 5,

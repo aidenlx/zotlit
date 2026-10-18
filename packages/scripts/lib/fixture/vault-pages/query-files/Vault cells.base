@@ -14,5 +14,6 @@ views:
       - note.finished
       - note.started
       - note.projects
+      - note.collections
       - note.tags
       - note.aliases

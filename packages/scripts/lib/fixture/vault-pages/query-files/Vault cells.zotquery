@@ -13,5 +13,6 @@ views:
       - vault.finished
       - vault.started
       - vault.projects
+      - vault.collections
       - vault.tags
       - vault.aliases
