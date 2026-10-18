@@ -64,6 +64,7 @@ import {
   cliCommand,
   obEval,
   obEvalUntil,
+  obJson,
   obReadUntil,
   readUntil,
   waitFor,
@@ -11254,6 +11255,38 @@ views:
       await obEval(vaultId, `${services}.settings.update(${previous});true`);
     }
   }, 180_000);
+
+  it("removes every ZotLit vault and metadata cache handler as ZotLit is disabled, while its database worker still closes", async () => {
+    // ZotLit's handlers are the entries its enable adds to the listener
+    // lists. The worker may take seconds to close; the handlers go at once.
+    const survivors = await obJson<string[]>(
+      vaultId,
+      `(async()=>{
+        const listed=()=>[app.vault,app.metadataCache].flatMap(e=>Object.entries(e._??{}).flatMap(([name,entries])=>entries.map(entry=>[name,entry])));
+        try{
+          await app.plugins.disablePlugin('zotlit');
+          const before=new Set(listed().map(([,entry])=>entry));
+          await app.plugins.enablePlugin('zotlit');
+          await app.plugins.plugins.zotlit.services.zoteroReads.ready;
+          const added=listed().filter(([,entry])=>!before.has(entry));
+          if(added.length===0)throw new Error('ZotLit added no handler');
+          await app.plugins.disablePlugin('zotlit');
+          const end=Date.now()+1000;
+          let left=added;
+          while(true){
+            const now=new Set(listed().map(([,entry])=>entry));
+            left=added.filter(([,entry])=>now.has(entry));
+            if(left.length===0||Date.now()>end)break;
+            await new Promise(r=>setTimeout(r,20));
+          }
+          return JSON.stringify(left.map(([name,entry])=>name+': '+String(entry.fn).slice(0,120)));
+        }finally{
+          if(!app.plugins.plugins.zotlit)await app.plugins.enablePlugin('zotlit');
+        }
+      })()`,
+    );
+    expect(survivors).toEqual([]);
+  }, 120_000);
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");

@@ -13,6 +13,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Option,
   Scope,
   Semaphore,
   Stream,
@@ -117,6 +118,15 @@ export const connectWorker = Effect.fnUntraced(function* (
   yield* Effect.addFinalizer(() =>
     Effect.promise(() => Promise.all(workers.values())).pipe(
       Effect.timeoutOption(WORKER_CLOSE_TIMEOUT),
+      Effect.tap((answered) =>
+        Effect.sync(() => {
+          if (Option.isNone(answered))
+            logger.warn(
+              "Database worker did not confirm its close in time; terminating it",
+              { timeout: Duration.format(WORKER_CLOSE_TIMEOUT) },
+            );
+        }),
+      ),
       Effect.andThen(
         Effect.sync(() => {
           for (const worker of workers.keys()) worker.terminate();
