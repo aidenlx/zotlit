@@ -164,6 +164,12 @@ export default defineConfig({
       },
     },
     {
+      // A reading view of a note: the app's own classes draw its Properties
+      // block, so the sheet reads as the note does in the editor.
+      files: ["src/views/note-preview/markdown.tsx"],
+      rules: { "zotlit-css/no-obsidian-class": "off" },
+    },
+    {
       // Code written before the rule; new code follows it, and a file moves
       // off this list when it is next reworked.
       files: [
