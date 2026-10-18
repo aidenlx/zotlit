@@ -189,6 +189,9 @@ export function AnnotView() {
       )}
       {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
+      ) : body.kind === "loading" ? (
+        // Loading gives way to the cards at the top, so it waits there.
+        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
       ) : (
         <PaneState>
           {body.kind === "problem" ? (
@@ -200,8 +203,6 @@ export function AnnotView() {
               <p className="zt:m-0">{body.message}</p>
               {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
             </div>
-          ) : body.kind === "loading" ? (
-            <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
           ) : body.kind === "no-attachments" ? (
             <div className="pane-empty zt:p-2">{body.message}</div>
           ) : (

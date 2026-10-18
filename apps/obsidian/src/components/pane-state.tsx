@@ -5,27 +5,16 @@
 
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 /**
  * Hold `children` centred in the space the column leaves. The frame is
  * layout alone, with no name: the state inside it says what it is. Content
  * taller than the space scrolls, from its top.
  */
-export function PaneState({
-  className,
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
+export function PaneState({ children }: { children: ReactNode }) {
   return (
     <div
       data-pane-state=""
-      className={cn(
-        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:items-center-safe zt:justify-center-safe zt:overflow-y-auto",
-        className,
-      )}
+      className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:items-center-safe zt:justify-center-safe zt:overflow-y-auto"
     >
       {children}
     </div>

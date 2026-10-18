@@ -335,15 +335,16 @@ export class LibraryView extends ItemView {
     // The list takes the rest of the column, so an empty or not-found state
     // centres in it; a long list still scrolls with the column.
     const list = main.createDiv({ cls: "zt:flex zt:grow zt:flex-col" });
-    const shown =
-      "zt:hidden zt:grow zt:flex-col zt:group-data-zotero-missing:flex";
+    const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(
       new ZoteroNotFound(
         this.#deps.welcome,
         {
           shell,
           tree: treeEl.createDiv({ cls: shown }),
-          list: list.createDiv({ cls: shown }),
+          list: list.createDiv({
+            cls: "zt:hidden zt:grow zt:flex-col zt:group-data-zotero-missing:flex",
+          }),
           note,
         },
         // The search the box holds runs again on the database found.
