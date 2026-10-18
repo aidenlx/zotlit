@@ -32,6 +32,7 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
 import {
@@ -403,7 +404,7 @@ class ValueSuggest extends AbstractInputSuggest<string> {
     // Obsidian's own look of a property value suggest: its smaller rows.
     this.suggestEl.classList.add("mod-property-value");
     this.scope.register(["Shift"], "Enter", (event) => {
-      if (event.isComposing) return;
+      if (composing(event)) return;
       this.selectSuggestion(this.getValue());
       return false;
     });
@@ -534,15 +535,6 @@ export interface VaultEditorProps {
   ) => void;
   /** The values the vault holds for the property, to suggest. */
   readonly suggestions: () => readonly string[];
-}
-
-/**
- * Whether `event` is a key of the input method as it composes text, which
- * the field leaves to it: Enter that takes a candidate, Escape that drops
- * one. Chromium reports some of them as key 229 alone.
- */
-function composing(event: KeyboardEvent): boolean {
-  return event.nativeEvent.isComposing || event.keyCode === 229;
 }
 
 /** Tab and Shift+Tab end the edit from any field, and move on. */

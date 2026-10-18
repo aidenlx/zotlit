@@ -24,6 +24,7 @@ import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
 import { registerKeymap } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
@@ -241,7 +242,7 @@ function PropertyList({
   useLayoutEffect(() => {
     const move = (step: number) => (event: KeyboardEvent) => {
       // A page's fields keep their own keys.
-      if (event.isComposing || keys.current.page !== null) return;
+      if (composing(event) || keys.current.page !== null) return;
       const path = activeValue();
       const { order: now, setOrder: save } = keys.current;
       const at = path === null ? -1 : now.indexOf(path);
