@@ -20,3 +20,4 @@ Proposed on 2026-10-17 with [#1550](https://github.com/aidenlx/zotlit/issues/155
 - Recent reads the Libraries of the Library Scope that the database holds; "Show all libraries" does not widen it.
 - Selecting Recent writes its sort (`RECENT_SORT`, `dateModified DESC` until #1532). A later sort change is saved and Recent stays selected; selecting Recent again writes its sort again.
 - "Save as query file" on Recent writes no `library ==` filter, so the file reads the Library Scope as Recent does.
+- The Sort button marks a sort as set only when it differs from the sort the selected node writes, so Recent's own sort leaves the button plain; the result count follows the same rule for the Library View's row limit (amended after the interface review).
