@@ -3807,7 +3807,15 @@ ${filters}
     async function typed(
       order: string[],
       frontmatter: Record<string, unknown>,
-      types: Record<string, VaultPropertyType> = {},
+      {
+        types = {},
+        values = {},
+      }: {
+        /** The type Obsidian assigns each property, by name. */
+        types?: Record<string, VaultPropertyType>;
+        /** The values the vault holds for each property, by name. */
+        values?: Record<string, string[]>;
+      } = {},
     ) {
       const mounted = await mount(
         [result([itemRow("ITEMAAAA", "Ten simple rules")])],
@@ -3816,6 +3824,7 @@ ${filters}
           notes: { ITEMAAAA: "A.md" },
           frontmatter: { "A.md": frontmatter },
           types,
+          values,
         },
       );
       await act(() =>
@@ -3920,7 +3929,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         ["vault.pages"],
         { pages: 12 },
         // A cleared value shows no type, so the number type is assigned.
-        { pages: "number" },
+        { types: { pages: "number" } },
       );
 
       await act(() => cell("pages").click());
@@ -3968,7 +3977,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       const { cell, input, type, press, literatureNotes, icon } = await typed(
         ["vault.met"],
         { met: "2024-05-01T10:30:00" },
-        { met: "datetime" },
+        { types: { met: "datetime" } },
       );
 
       expect(icon("met")).toBe("clock");
@@ -4077,7 +4086,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       const { cell } = await typed(
         ["vault.tags", "vault.aliases"],
         { tags: ["#reading/done", "hci"], aliases: ["Memex essay"] },
-        { tags: "tags", aliases: "aliases" },
+        { types: { tags: "tags", aliases: "aliases" } },
       );
       const shown = (name: string) =>
         [...cell(name).querySelectorAll("[data-query-vault-chip]")].map(
@@ -4278,11 +4287,178 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       );
     });
 
+    describe("with the vault's values suggested", () => {
+      /** The suggestions on the page, a highlighted one marked with `*`. */
+      const suggested = () => {
+        const popover = document.querySelector(".suggestion-container");
+        if (!popover) return null;
+        return [...popover.querySelectorAll(".suggestion-item")].map(
+          (item) =>
+            `${item.textContent}${item.classList.contains("is-selected") ? " *" : ""}`,
+        );
+      };
+      const PROJECTS = [
+        "thesis, ch. 3",
+        "memex",
+        "zettelkasten",
+        "a very long project name that should wrap or truncate",
+        "hypertext history",
+        "citations",
+        "Thesis 10",
+        "thesis",
+        "Thesis 9",
+        "hypertext",
+      ];
+      const projects = () =>
+        typed(
+          ["vault.projects"],
+          { projects: ["zettelkasten"] },
+          { types: { projects: "multitext" }, values: { projects: PROJECTS } },
+        );
+
+      it("opens on a list's every vault value as its edit starts, in order, less the list's own, none highlighted", async () => {
+        const { cell } = await projects();
+
+        await act(() => cell("projects").click());
+
+        expect(suggested()).toEqual([
+          "a very long project name that should wrap or truncate",
+          "citations",
+          "hypertext",
+          "hypertext history",
+          "memex",
+          "thesis",
+          "Thesis 9",
+          "Thesis 10",
+          "thesis, ch. 3",
+        ]);
+      });
+
+      it("narrows to the values that match what is typed, the first highlighted", async () => {
+        const { cell, type } = await projects();
+
+        await act(() => cell("projects").click());
+        await type("hyper");
+
+        expect(suggested()).toEqual(["hypertext *", "hypertext history"]);
+        await type("nothing like it");
+        expect(suggested()).toBeNull();
+      });
+
+      it("adds the highlighted value on Enter, the raw text on Shift+Enter, and opens again without them", async () => {
+        const { cell, type, press, literatureNotes } = await projects();
+        const chips = () =>
+          [...cell("projects").querySelectorAll("[data-query-vault-chip]")].map(
+            (chip) => chip.getAttribute("data-query-vault-chip"),
+          );
+
+        await act(() => cell("projects").click());
+        await press("ArrowDown");
+        await press("ArrowDown");
+        expect(suggested()?.slice(0, 2)).toEqual([
+          "a very long project name that should wrap or truncate",
+          "citations *",
+        ]);
+        await press("Enter");
+        expect(chips()).toEqual(["zettelkasten", "citations"]);
+        expect(suggested()).not.toContain("citations");
+        expect(suggested()?.[0]).toBe(
+          "a very long project name that should wrap or truncate",
+        );
+
+        await type("hyp");
+        await press("Enter", { shiftKey: true });
+        expect(chips()).toEqual(["zettelkasten", "citations", "hyp"]);
+
+        // The first Escape closes the suggestions, the second ends the edit.
+        await press("Escape");
+        expect(suggested()).toBeNull();
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+        await press("Escape");
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("projects", ["zettelkasten", "citations", "hyp"]),
+        );
+      });
+
+      it("adds a value clicked in the suggestions", async () => {
+        const { cell } = await projects();
+
+        await act(() => cell("projects").click());
+        await act(() =>
+          [...document.querySelectorAll<HTMLElement>(".suggestion-item")]
+            .find((item) => item.textContent === "memex")!
+            .click(),
+        );
+
+        expect(
+          cell("projects").querySelector('[data-query-vault-chip="memex"]'),
+        ).not.toBeNull();
+      });
+
+      it("opens a text edit on the values that match its text, and writes the one picked", async () => {
+        const { cell, press, literatureNotes } = await typed(
+          ["vault.status"],
+          { status: "read" },
+          { values: { status: ["unread", "read", "reading", "skimmed"] } },
+        );
+
+        await act(() => cell("status").click());
+        expect(suggested()).toEqual(["read *", "reading", "unread"]);
+        await press("ArrowDown");
+        await press("Enter");
+
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("status", "reading"),
+        );
+        expect(suggested()).toBeNull();
+      });
+
+      it("opens tags on the vault's tags, in order, less those the list holds; aliases suggest nothing, as in Bases", async () => {
+        const { cell, press } = await typed(
+          ["vault.tags", "vault.aliases"],
+          { tags: ["pkm"], aliases: ["Memex essay"] },
+          {
+            types: { tags: "tags", aliases: "aliases" },
+            values: {
+              tags: ["reading/done", "pkm", "hci", "bibliometrics", "reading"],
+              aliases: ["Memex essay", "As we may think"],
+            },
+          },
+        );
+
+        await act(() => cell("tags").click());
+        expect(suggested()).toEqual([
+          "bibliometrics",
+          "hci",
+          "reading",
+          "reading/done",
+        ]);
+        await press("Escape");
+        await press("Escape");
+
+        await act(() => cell("aliases").click());
+        expect(suggested()).toBeNull();
+      });
+
+      it("opens nothing where the vault offers no values", async () => {
+        const { cell, input } = await typed(
+          ["vault.projects"],
+          { projects: ["zettelkasten"] },
+          { types: { projects: "multitext" } },
+        );
+
+        await act(() => cell("projects").click());
+
+        expect(input()).not.toBeNull();
+        expect(suggested()).toBeNull();
+      });
+    });
+
     it("gives a property the editor and icon of its assigned type, whatever its value shows as", async () => {
       const { cell, input, type, press, literatureNotes, icon } = await typed(
         ["vault.pages", "vault.read"],
         { pages: "12", read: "yes" },
-        { pages: "number", read: "checkbox" },
+        { types: { pages: "number", read: "checkbox" } },
       );
 
       expect(icon("pages")).toBe("binary");
