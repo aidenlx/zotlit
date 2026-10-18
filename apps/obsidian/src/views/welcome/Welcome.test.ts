@@ -433,6 +433,70 @@ it("lists retained files and retries cleanup from the completed state", async ()
   expect(actions.retryTemplateCleanup).toHaveBeenCalledOnce();
 });
 
+describe("the update section", () => {
+  const DONE = {
+    connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
+    literatureFolderExists: true,
+  } as const;
+  const badge = (container: HTMLElement) =>
+    container.querySelector("[data-welcome-badge]")?.textContent;
+
+  it("says which version ZotLit updated to, and opens the Release Note on What's new", async () => {
+    const { actions, container } = await render("fresh", {
+      ...DONE,
+      updatePending: true,
+      version: "2.3.0",
+    });
+    expect(container.textContent).toContain("ZotLit updated to 2.3.0");
+    expect(container.textContent).toContain(m.welcome_update_body());
+    const whatsNew = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === m.welcome_update_action(),
+    );
+    await act(() => whatsNew?.click());
+    expect(actions.openReleaseNote).toHaveBeenCalledOnce();
+  });
+
+  it.each<{
+    name: string;
+    mode: "fresh" | "upgraded";
+    state: Partial<WelcomeState>;
+    text: string;
+  }>([
+    {
+      name: "a fresh install",
+      mode: "fresh",
+      state: {},
+      text: "Let's get started",
+    },
+    {
+      name: "an upgrade from v1",
+      mode: "upgraded",
+      state: {},
+      text: "Welcome back",
+    },
+    {
+      name: "an update alone",
+      mode: "fresh",
+      state: { ...DONE, updatePending: true },
+      text: "Updated",
+    },
+    {
+      name: "an update while setup is incomplete",
+      mode: "fresh",
+      state: { updatePending: true },
+      text: "Let's get started",
+    },
+    {
+      name: "an update with the Migration Prompt",
+      mode: "upgraded",
+      state: { updatePending: true },
+      text: "Welcome back",
+    },
+  ])("names $name in the badge", async ({ mode, state, text }) => {
+    expect(badge((await render(mode, state)).container)).toBe(text);
+  });
+});
+
 async function render(
   mode: "fresh" | "upgraded",
   state: Partial<WelcomeState> = {},
@@ -446,6 +510,7 @@ async function render(
     migrationPending: mode === "upgraded",
     connection: { status: "missing" },
     literatureFolder: "Literature",
+    version: "2.2.0",
     ...state,
   });
   const actions: WelcomeActions = {
@@ -454,6 +519,7 @@ async function render(
     retryTemplateCleanup: vi.fn(async () => {}),
     locateZotero: vi.fn(),
     openExternal: vi.fn(),
+    openReleaseNote: vi.fn(),
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
     searchLibrary: vi.fn(),

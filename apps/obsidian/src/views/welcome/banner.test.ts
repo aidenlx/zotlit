@@ -37,6 +37,8 @@ async function setup(data: Record<string, unknown> = {}) {
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
   const app = host.app as unknown as App;
+  // No Web Viewer: the Release Note opens in the browser.
+  Object.assign(app, { internalPlugins: { getEnabledPluginById: () => null } });
   const plugin = new PluginStub(app, { __VERSION__: 10, ...data });
   const identity = (raw: unknown) => raw;
   const settings = cleanup.use(
@@ -177,4 +179,72 @@ it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal ackno
   await act(() => dismissButton(el).click());
   expect(el.textContent).toBe("");
   expect(settings.current?.["release.migration-pending"]).toBe(false);
+});
+
+it("announces an update until What's new acknowledges it, beside the Help Links", async () => {
+  const { deps, host, settings } = await setup({
+    "welcome.dismissed": true,
+    // The release check of this launch found the update.
+    "release.previous-version": "2.2.0",
+    "release.update-pending": true,
+  });
+  host.vault.addFile("literatures/Paper.md", "");
+  const el = await open(deps);
+  expect(heading(el, m.welcome_update_title({ version: "2.2.0" }))).toBe(true);
+  expect(helpLink(el, "Getting started")).toBeDefined();
+  const opened = vi.spyOn(window, "open").mockReturnValue(null);
+  cleanup.defer(() => opened.mockRestore());
+  const whatsNew = [...el.querySelectorAll("button")].find(
+    (button) => button.textContent === m.welcome_update_action(),
+  );
+  expect(whatsNew).toBeDefined();
+  await act(() => whatsNew?.click());
+  expect(opened.mock.calls).toEqual([
+    ["https://zotlit.aidenlx.site/changelog/2.2.0"],
+  ]);
+  expect(settings.current?.["release.update-pending"]).toBe(false);
+  expect(el.textContent).toBe("");
+});
+
+it("acknowledges an update on dismissal, so it stays away when the view opens again", async () => {
+  const { deps, host, settings } = await setup({
+    // The release check of this launch found the update.
+    "release.previous-version": "2.2.0",
+    "release.update-pending": true,
+  });
+  host.vault.addFile("literatures/Paper.md", "");
+  const el = await open(deps);
+  expect(heading(el, m.welcome_update_title({ version: "2.2.0" }))).toBe(true);
+  await act(() => dismissButton(el).click());
+  expect(el.textContent).toBe("");
+  expect(settings.current?.["release.update-pending"]).toBe(false);
+  expect((await open(deps)).textContent).toBe("");
+});
+
+it("keeps the setup steps after What's new while setup is incomplete", async () => {
+  const { deps } = await setup({
+    "release.previous-version": "2.2.0",
+    "release.update-pending": true,
+  });
+  const el = await open(deps);
+  const opened = vi.spyOn(window, "open").mockReturnValue(null);
+  cleanup.defer(() => opened.mockRestore());
+  const whatsNew = [...el.querySelectorAll("button")].find(
+    (button) => button.textContent === m.welcome_update_action(),
+  );
+  expect(whatsNew).toBeDefined();
+  await act(() => whatsNew?.click());
+  expect(heading(el, m.welcome_update_title({ version: "2.2.0" }))).toBe(false);
+  expect(heading(el, m.welcome_step_folder_title())).toBe(true);
+});
+
+it("announces no update while release notices are off", async () => {
+  const { deps, host } = await setup({
+    // The release check of this launch found the update.
+    "release.previous-version": "2.2.0",
+    "release.update-pending": true,
+    "release.notices-enabled": false,
+  });
+  host.vault.addFile("literatures/Paper.md", "");
+  expect((await open(deps)).textContent).toBe("");
 });

@@ -1,4 +1,4 @@
-// Welcome onboarding banner: the header, the checklist of setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the store decides, and the Help Links whatever it shows.
+// Welcome onboarding banner: the header, the update of ZotLit, the checklist of setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the store decides, and the Help Links whatever it shows.
 import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
@@ -28,6 +28,7 @@ import {
 } from "./links";
 import { templateMigrationNotice } from "./migration-notice";
 import { bannerSections, useWelcomeStore } from "./store";
+import type { BannerSections } from "./store";
 
 /**
  * Where a setup step stands. Its icon and its words carry it: a check and
@@ -51,16 +52,41 @@ function markClass(state: StepState, open: boolean): string {
   }
 }
 
-function StepHeading({ children }: { children: ReactNode }) {
+function StepHeading({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div role="heading" aria-level={3} className="zt:text-sm zt:font-semibold">
+    <div
+      role="heading"
+      aria-level={3}
+      className={cn("zt:text-sm zt:font-semibold", className)}
+    >
       {children}
     </div>
   );
 }
 
+/**
+ * The banner's state, as its badge names it: an upgrade from v1 while its
+ * Migration Prompt is pending, an update when it is all the banner shows,
+ * else a fresh setup.
+ */
+function badgeText(sections: BannerSections | null, migrationPending: boolean) {
+  if (migrationPending) return m.welcome_badge_upgraded();
+  if (sections?.update && !sections.steps && sections.conversion === null)
+    return m.welcome_badge_updated();
+  return m.welcome_badge();
+}
+
 function Header({ titleId }: { titleId: string }) {
   const actions = useWelcomeActions();
+  const badge = useWelcomeStore((s) =>
+    badgeText(bannerSections(s), s.migrationPending),
+  );
   return (
     <header className="zt:flex zt:items-start zt:gap-3">
       {/* The tagline joins the title's line where the pane is wide enough. */}
@@ -75,8 +101,11 @@ function Header({ titleId }: { titleId: string }) {
         </span>
         {/* Text on the accent fill reads below 4.5:1 in either theme, so
             the accent keeps to the border. */}
-        <span className="zt:rounded-full zt:border zt:border-primary zt:bg-muted zt:px-2 zt:py-0.5 zt:text-xs zt:text-foreground">
-          {m.welcome_badge()}
+        <span
+          data-welcome-badge=""
+          className="zt:rounded-full zt:border zt:border-primary zt:bg-muted zt:px-2 zt:py-0.5 zt:text-xs zt:text-foreground"
+        >
+          {badge}
         </span>
         <p className="zt:m-0 zt:text-sm zt:text-muted-foreground">
           {m.welcome_tagline()}
@@ -131,13 +160,18 @@ function StepRow({ step, open }: { step: Step; open: boolean }) {
             }
           />
         </span>
-        <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-baseline zt:gap-x-2">
-          <StepHeading>{step.title}</StepHeading>
+        {/* One line however narrow the pane: the summary gives way first,
+            then the title; the open card and the step's action reach the
+            full value. */}
+        <div className="zt:flex zt:min-w-0 zt:flex-1 zt:items-baseline zt:gap-x-2 zt:overflow-hidden zt:whitespace-nowrap">
+          <StepHeading className="zt:min-w-0 zt:truncate">
+            {step.title}
+          </StepHeading>
           {step.state === "done" ? (
             <span className="zt:sr-only">{m.welcome_step_done()}</span>
           ) : null}
           {!open && step.summary ? (
-            <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:text-xs zt:text-muted-foreground">
+            <span className="zt:flex zt:min-w-0 zt:shrink-[1000] zt:items-baseline zt:gap-1.5 zt:overflow-hidden zt:text-xs zt:text-muted-foreground">
               {step.summary}
             </span>
           ) : null}
@@ -192,11 +226,11 @@ function Checklist({ connect }: { connect: boolean }) {
       summary:
         connection.status === "connected" ? (
           <>
-            <code className="zt:max-w-60 zt:truncate zt:font-mono">
+            <code className="zt:max-w-60 zt:min-w-0 zt:shrink-[1000] zt:truncate zt:font-mono">
               {connection.path}
             </code>
             <span aria-hidden="true">·</span>
-            <span className="zt:whitespace-nowrap">
+            <span className="zt:min-w-0 zt:truncate">
               {m.welcome_step_connect_connected({
                 count: connection.itemCount,
               })}
@@ -471,6 +505,25 @@ function Callout({
   );
 }
 
+/** The update of ZotLit: its version, and the Release Note that says what changed. */
+function UpdateCallout() {
+  const actions = useWelcomeActions();
+  const version = useWelcomeStore((s) => s.version);
+  return (
+    <Callout
+      tone="accent"
+      title={m.welcome_update_title({ version })}
+      action={
+        <Button icon="sparkles" onClick={actions.openReleaseNote}>
+          {m.welcome_update_action()}
+        </Button>
+      }
+    >
+      {m.welcome_update_body()}
+    </Callout>
+  );
+}
+
 function ConversionOffer() {
   const actions = useWelcomeActions();
   const templateFolder = useWelcomeStore((state) => state.templateFolder);
@@ -634,6 +687,7 @@ export function Welcome() {
   const companion = useWelcomeStore(
     (s) => bannerSections(s)?.companion ?? false,
   );
+  const update = useWelcomeStore((s) => bannerSections(s)?.update ?? false);
   const titleId = useUniqueId();
   if (!shown) return null;
   return (
@@ -649,6 +703,7 @@ export function Welcome() {
           and the callouts; a narrow one puts them underneath. */}
       <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@2xl:grid-cols-[minmax(0,1fr)_340px] zt:@2xl:gap-6">
         <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
+          {update && <UpdateCallout />}
           {conversion === "offer" && <ConversionOffer />}
           {conversion === "result" && <ConversionResult />}
           {migration && <MigrationGuide />}

@@ -96,6 +96,7 @@ async function runCheck(opts: {
   recordedVersion?: string | null;
   currentVersion?: string;
   noticesEnabled?: boolean;
+  updatePending?: boolean;
 }): Promise<{
   update: ReturnType<typeof vi.fn>;
   openFirstScreen: ReturnType<typeof vi.fn>;
@@ -108,6 +109,7 @@ async function runCheck(opts: {
       "release.previous-version": opts.recordedVersion ?? null,
       "release.migration-pending": opts.migrationPending ?? false,
       "release.notices-enabled": opts.noticesEnabled ?? true,
+      "release.update-pending": opts.updatePending ?? false,
       "template.folder": CONFIGURED_TEMPLATE_FOLDER,
     } as Partial<Settings>),
     hydrationOrigin: opts.origin,
@@ -164,6 +166,70 @@ describe("ReleaseService Companion update notice", () => {
     actions.get("Open installation guide")?.(new MouseEvent("click"));
     expect(open).toHaveBeenCalledWith(releaseNoteUrl("2.1.0"));
     expect(open).toHaveBeenCalledWith(DOCS_COMPANION);
+  });
+});
+
+describe("ReleaseService update", () => {
+  it("an upgrade marks the update pending and opens the first screen, where the banner announces it", async () => {
+    const { update, openFirstScreen } = await runCheck({
+      origin: "current",
+      templateFiles: [],
+      recordedVersion: "2.1.0",
+      currentVersion: "2.1.1",
+    });
+    expect(openFirstScreen).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith({
+      "release.previous-version": "2.1.1",
+      "release.update-pending": true,
+    });
+  });
+
+  it.each([
+    ["a downgrade", { recordedVersion: "2.1.1", currentVersion: "2.1.0" }],
+    [
+      "an upgrade with notices off",
+      {
+        recordedVersion: "2.1.0",
+        currentVersion: "2.1.1",
+        noticesEnabled: false,
+      },
+    ],
+  ])("%s opens nothing and marks no update", async (_, versions) => {
+    const { update, openFirstScreen } = await runCheck({
+      origin: "current",
+      templateFiles: [],
+      ...versions,
+    });
+    expect(openFirstScreen).not.toHaveBeenCalled();
+    for (const [patch] of update.mock.calls) {
+      expect(patch).not.toHaveProperty("release.update-pending", true);
+    }
+  });
+
+  it("a fresh install opens the first screen with no update to announce", async () => {
+    const { update, openFirstScreen } = await runCheck({
+      origin: "absent",
+      templateFiles: [],
+      currentVersion: "2.1.1",
+    });
+    expect(openFirstScreen).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith({
+      "release.previous-version": "2.1.1",
+    });
+  });
+
+  it("acknowledging the update clears it, once", async () => {
+    const update = vi.fn();
+    await using service = new ReleaseService({
+      app: fakeApp(),
+      version: "2.1.1",
+      settings: {
+        current: { "release.update-pending": true } as Partial<Settings>,
+        update,
+      } as unknown as SettingsService,
+    });
+    service.acknowledgeUpdate();
+    expect(update).toHaveBeenCalledWith({ "release.update-pending": false });
   });
 });
 

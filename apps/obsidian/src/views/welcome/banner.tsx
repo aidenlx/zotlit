@@ -44,7 +44,14 @@ export interface WelcomeBannerDeps {
     LiteratureNoteTemplateMigrationService,
     "convert" | "retryCleanup"
   >;
-  release: Pick<ReleaseService, "hasV1Templates" | "acknowledgeMigration">;
+  release: Pick<
+    ReleaseService,
+    | "hasV1Templates"
+    | "acknowledgeMigration"
+    | "acknowledgeUpdate"
+    | "openReleaseNote"
+    | "version"
+  >;
 }
 
 export class WelcomeBanner extends Component {
@@ -103,6 +110,8 @@ export class WelcomeBanner extends Component {
             templateFolder: s["template.folder"],
             templateConversionResult: s["note.template-conversion-result"],
             v1TemplatesPresent: release.hasV1Templates(s["template.folder"]),
+            updatePending: s["release.update-pending"],
+            noticesEnabled: s["release.notices-enabled"],
           });
         }
       }),
@@ -139,6 +148,11 @@ export class WelcomeBanner extends Component {
         this.#store.setState({ requested: false });
         settings.update({ "welcome.dismissed": true });
         release.acknowledgeMigration();
+        release.acknowledgeUpdate();
+      },
+      openReleaseNote: () => {
+        void release.openReleaseNote();
+        release.acknowledgeUpdate();
       },
       ...this.#deps.setupActions,
       ...this.#host,
@@ -148,6 +162,7 @@ export class WelcomeBanner extends Component {
     // renders connected/missing directly instead of flashing the spinner.
     this.#store.setState({
       connection: readConnectionSync(this.#deps) ?? { status: "checking" },
+      version: release.version,
     });
 
     this.#root = createRoot(this.el);

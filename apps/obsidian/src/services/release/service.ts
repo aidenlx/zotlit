@@ -1,4 +1,4 @@
-// Once-per-launch release check: onboarding branch, update notice, Release Note.
+// Once-per-launch release check: onboarding branch, the update the banner announces, Release Note.
 
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
@@ -33,7 +33,8 @@ export interface ReleaseServiceOptions {
   settings: SettingsService;
   /**
    * Open the first screen, the Library View, where the Welcome View shows as
-   * a banner; the Migration Prompt in it follows `release.migration-pending`.
+   * a banner; the Migration Prompt in it follows `release.migration-pending`,
+   * and the update section `release.update-pending`.
    */
   openFirstScreen?: () => void | Promise<void>;
 }
@@ -121,6 +122,22 @@ export class ReleaseService extends Service<void> {
     logger.info("Migration Prompt acknowledged");
   }
 
+  /**
+   * Mark the update of the running version as seen, so the banner announces
+   * the next one only: "What's new" and the banner's dismiss control wire
+   * this up. No-op when no update is pending.
+   */
+  acknowledgeUpdate(): void {
+    if (this.#settings.current?.["release.update-pending"] !== true) return;
+    this.#settings.update({ "release.update-pending": false });
+    logger.info("Update acknowledged", { version: this.#version });
+  }
+
+  /** The running version, which the banner names in its update section. */
+  get version(): string {
+    return this.#version;
+  }
+
   async #runCheck(): Promise<void> {
     const settings = await this.#settings.loaded;
     if (this.#stopped) return;
@@ -156,9 +173,9 @@ export class ReleaseService extends Service<void> {
       case "companion-notice":
         this.#showCompanionNotice();
         break;
-      case "update-notice":
-        this.#showUpdateNotice();
-        break;
+      // An update opens the first screen too: its banner announces the update
+      // while `release.update-pending` holds.
+      case "update":
       case "welcome-fresh":
       case "welcome-upgraded":
         await this.#openFirstScreen?.();
@@ -181,6 +198,12 @@ export class ReleaseService extends Service<void> {
       patch["release.migration-pending"] = decision.setMigrationPending;
     }
     if (
+      decision.setUpdatePending !== undefined &&
+      current["release.update-pending"] !== decision.setUpdatePending
+    ) {
+      patch["release.update-pending"] = decision.setUpdatePending;
+    }
+    if (
       decision.setTemplateFolder !== undefined &&
       current["template.folder"] !== decision.setTemplateFolder
     ) {
@@ -195,22 +218,6 @@ export class ReleaseService extends Service<void> {
     if (!folder) return false;
     return folder.children.some(
       (child) => child instanceof TFile && V1_EJECTED_TEMPLATE.test(child.name),
-    );
-  }
-
-  #showUpdateNotice(): void {
-    new BaseNotice(
-      BaseNotice.render((renderer) => {
-        renderer.setTitle(
-          m.notice_update_available({ version: this.#version }),
-        );
-        renderer.addAction((button) => {
-          button
-            .setButtonText(m.notice_update_see_whats_new())
-            .onClick(() => void this.openReleaseNote());
-        });
-      }),
-      0,
     );
   }
 

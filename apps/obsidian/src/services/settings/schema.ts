@@ -228,6 +228,11 @@ export const schema = v.object({
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
+  /**
+   * The running version is an update the Welcome View banner announces until
+   * the researcher opens "What's new" or dismisses the banner. ADR 0077.
+   */
+  "release.update-pending": v.boolean(),
 }) satisfies v.GenericSchema<unknown, Record<string, SettingsValue>>;
 
 export type Settings = v.InferOutput<typeof schema>;
@@ -286,4 +291,5 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "release.previous-version": null,
   "release.notices-enabled": true,
   "release.migration-pending": false,
+  "release.update-pending": false,
 } satisfies Settings);
