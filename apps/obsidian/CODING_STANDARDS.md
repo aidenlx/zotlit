@@ -38,6 +38,8 @@ View/modal state uses a zustand **vanilla store + React context, one per instanc
 
 Menus and popovers are Obsidian's own `Menu` and popover primitives, built imperatively and shown from the gesture that opens them — inside a Preact tree as much as in vanilla DOM. `src/views/annot-view` is the pattern: `presentation.ts` answers which entries exist, `menus.ts` fills a `Menu` from them, `actions.tsx` shows it, and the component calls the action; `pane-menu.ts` puts the same entries in the pane menu. A menu opened from a control is anchored under it with `showMenuAtButton` from `src/lib/menu.ts`, which keeps a keyboard-activated control and a popout host both correct; `showAtMouseEvent` is for a right-click. Obsidian owns placement, viewport clamping, theme, and chrome ([ADR 0044](docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md)). A menu opened from inside a Chooser — the "…" of a Chooser page — is `Chooser.PageMenu`, a popover nested in the popup, since a `Menu` paints under the popup's top layer.
 
+A control that opens a popup — a `Select`, a Chooser, a popover of its own — meets every item of [Keyboard and focus](docs/bases-toolbar-menu.md#keyboard-and-focus).
+
 ## Chooser page fields
 
 A field on a `Chooser.Page` keeps its typed text with `useChooserPageText` and saves through `useChooserPageSave`, plus its own blur and Enter handlers (both hooks live in `src/components/chooser.tsx`). A page unmounts with no blur event, and an input followed by a key in the same task reads stale state; the save reads the `typed` ref from `useChooserPageText`, not the rendered `text`.

@@ -206,6 +206,9 @@ export function MatchPane({
       {...part("pane")}
       onKeyDown={(event) => {
         if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+        // A popup the host draws in the pane, such as a select's search
+        // field, keeps its own text editing.
+        if ((event.target as Element).closest("[popover]")) return;
         if (
           event.key.toLowerCase() === "z" ||
           event.key.toLowerCase() === "y"
@@ -387,7 +390,8 @@ function Group<Row extends LabelledRow>({
     focusAdded.current = false;
     rows.current
       ?.querySelector<HTMLElement>(
-        ":scope > li:last-child [data-condition-row] select",
+        // The kind picker is a native select, or the host's own trigger.
+        ":scope > li:last-child [data-condition-row] :is(select, button[aria-label])",
       )
       ?.focus();
   }, [group.conditions.length]);
@@ -409,11 +413,12 @@ function Group<Row extends LabelledRow>({
               })),
             )
           }
-        >
-          <option value="all">{m.workbench_match_match_all()}</option>
-          <option value="any">{m.workbench_match_match_any()}</option>
-          <option value="none">{m.workbench_match_match_none()}</option>
-        </MatchSelect>
+          options={[
+            { value: "all", label: m.workbench_match_match_all() },
+            { value: "any", label: m.workbench_match_match_any() },
+            { value: "none", label: m.workbench_match_match_none() },
+          ]}
+        />
         {path.length > 0 && (
           <button
             {...part("icon-button")}
@@ -531,24 +536,20 @@ function Row<Row extends LabelledRow>({
         <div {...part("fields")}>
           {!isExpression(condition) && (
             <div {...part("predicate", kind?.icon ? "icon" : undefined)}>
-              {kind?.icon && (
-                <span aria-hidden {...part("kind-icon")}>
-                  {kind.icon}
-                </span>
-              )}
               <MatchSelect
+                searchable
                 aria-label={m.workbench_match_condition_kind()}
                 value={condition.kind}
+                options={vocabulary.kinds.map((entry) => ({
+                  value: entry.kind,
+                  label: entry.label,
+                  icon: entry.icon,
+                  detail: entry.detail,
+                }))}
                 onChange={(next) =>
                   onChange(freshRow(vocabulary, next as Row["kind"]))
                 }
-              >
-                {vocabulary.kinds.map((entry) => (
-                  <option key={entry.kind} value={entry.kind}>
-                    {entry.label}
-                  </option>
-                ))}
-              </MatchSelect>
+              />
               {kind?.renderOperator?.({ condition, onChange })}
             </div>
           )}

@@ -20,6 +20,7 @@ import type {
 import type { LayoutRow } from "@/views/annot-view/layout";
 
 import type { PropertyOption } from "./properties";
+import { propertyIcon } from "./property-icon";
 import { isVaultProperty, vaultName, vaultProperty } from "./query-file";
 import type {
   QueryFileDataset,
@@ -170,6 +171,7 @@ export function vaultSortOptions(
       path,
       label: labelOf(path),
       kind: type === "number" || type === "date" ? type : "text",
+      icon: propertyIcon("items", { path, kind: "vault" }, typeOf),
     };
   });
 }

@@ -224,10 +224,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     value: string;
   }): Promise<boolean> {
     // A kind change replaces the value control and its options on the next render.
-    const valueControl = `${kind === "collection" ? "input" : "select"}[aria-label=${JSON.stringify(m.workbench_filter_value())}]`;
+    const valueControl = `${kind === "collection" ? "input" : "button"}[aria-label=${JSON.stringify(m.workbench_filter_value())}]`;
     return obEvalUntil(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.workbench_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.value===${JSON.stringify(value)});})()`,
+      `(function(){${PAGE}var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(valueOf(row?.querySelector('button[aria-label=${JSON.stringify(m.workbench_match_condition_kind())}]'))===${JSON.stringify(kind)}&&valueOf(row.querySelector('select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]'))===${JSON.stringify(operator)}&&valueOf(row.querySelector('${valueControl}'))===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
@@ -239,18 +239,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     value: string,
   ): Promise<void> {
     const control = (label: string) =>
-      `Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]'))[${row}].querySelector('select[aria-label=${JSON.stringify(label)}]')`;
-    await obEval(
-      vaultId,
-      `(function(){var kind=${control(m.workbench_match_condition_kind())};kind.value=${JSON.stringify(kind)};kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    expect(await conditionReady({ row, kind, operator: "is", value: "" })).toBe(
-      true,
-    );
-    await obEval(
-      vaultId,
-      `(function(){var value=${control(m.workbench_filter_value())};value.value=${JSON.stringify(value)};value.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
+      `Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]'))[${row}].querySelector(':is(select,button)[aria-label=${JSON.stringify(label)}]')`;
+    // A row already of `kind` keeps its value: choosing the kind it holds
+    // changes nothing, as in a native select. A changed kind replaces the
+    // value control with an empty one.
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const kind=${control(m.workbench_match_condition_kind())};if(valueOf(kind)===${JSON.stringify(kind)})return true;await pick(kind,${JSON.stringify(kind)},'Condition type');await until('the ${kind} value control',()=>valueOf(${control(m.workbench_match_condition_kind())})===${JSON.stringify(kind)}&&valueOf(${control(m.workbench_filter_value())})==='');return true;})()`,
+      ),
+    ).toBe("true");
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}await pick(${control(m.workbench_filter_value())},${JSON.stringify(value)},'Value');return true;})()`,
+      ),
+    ).toBe("true");
     expect(await conditionReady({ row, kind, operator: "is", value })).toBe(
       true,
     );
@@ -825,7 +829,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * colors" for `null`), and closes the Chooser.
      */
     const pickColor = (color: string | null) =>
-      `(async()=>{${PAGE}const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';press(trigger,'colour Chooser');const list=await until('colour list opens',()=>{const list=document.querySelector('[role="listbox"][aria-label=${JSON.stringify(m.annot_view_filter_color_list())}]');return list?.checkVisibility()?list:null;});const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});if(row){press(row,'colour row');await until('colour filter applies',()=>${color === null ? `trigger.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}` : `row.getAttribute('aria-selected')==='true'`});}(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
+      `(async()=>{${PAGE}const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';press(trigger,'colour Chooser');const list=await until('colour list opens',()=>{const list=Array.from(document.querySelectorAll('[role="listbox"]')).find(list=>document.getElementById(list.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.annot_view_filter_color_list())});return list?.checkVisibility()?list:null;});const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});if(row){press(row,'colour row');await until('colour filter applies',()=>${color === null ? `trigger.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}` : `row.getAttribute('aria-selected')==='true'`});}(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
     let picked = false;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
@@ -1152,6 +1156,103 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(folderMenu).toContain(m.query_file_new());
   }, 180000);
 
+  // The pill patches Obsidian's internal empty view and copies its pills'
+  // markup, so an Obsidian upgrade that moves either shows up here.
+  it("shows New Zotero query table with its hotkey after Obsidian's New pills on a new tab, and creates a Query File there ready to rename", async () => {
+    const command = "zotlit:new-query-file";
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const hotkeys = await obEval(
+      vaultId,
+      `JSON.stringify(app.hotkeyManager.getHotkeys(${JSON.stringify(command)})??null)`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const id=${JSON.stringify(command)};const saved=${hotkeys};if(saved)app.hotkeyManager.setHotkeys(id,saved);else app.hotkeyManager.removeHotkeys(id);await app.hotkeyManager.save();return true;})()`,
+      );
+    });
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    });
+    const scratchFiles: string[] = [];
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{for(const path of ${JSON.stringify(scratchFiles)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+      );
+    });
+
+    const printed = await obEval(
+      vaultId,
+      `(()=>{const id=${JSON.stringify(command)};app.hotkeyManager.setHotkeys(id,[{modifiers:['Mod','Shift'],key:'Q'}]);return app.hotkeyManager.printHotkeyForCommand(id);})()`,
+    );
+    expect(printed).not.toBe("");
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('workspace:new-tab');true",
+    );
+    /** Each pill of the active empty tab: its icon, label, hotkey and classes. */
+    const readPills = `(()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='empty')return 'null';return JSON.stringify([...view.actionListEl.children].map(b=>({icon:[...b.querySelector('.text-button-icon svg')?.classList??[]].find(c=>c.startsWith('lucide-'))??null,label:b.querySelector('.text-button-label')?.textContent??null,hotkey:b.querySelector('.empty-state-hotkey')?.textContent??null,classes:[...b.classList].filter(c=>c!=='zt-empty-state-new-query').sort(),ours:b.classList.contains('zt-empty-state-new-query')})));})()`;
+    interface Pill {
+      icon: string | null;
+      label: string | null;
+      hotkey: string | null;
+      classes: string[];
+      ours: boolean;
+    }
+    let pills: Pill[] = [];
+    const shown = await waitFor(async () => {
+      pills = (JSON.parse(await obEval(vaultId, readPills)) ?? []) as Pill[];
+      return pills.some((pill) => pill.ours);
+    });
+    expect(shown, JSON.stringify(pills)).toBe(true);
+    // Right after New note, New base and New canvas, before Go to file.
+    expect(pills.map((pill) => pill.icon)).toEqual([
+      "lucide-square-pen",
+      "lucide-layout-list",
+      "lucide-layout-dashboard",
+      "lucide-list-filter",
+      "lucide-search",
+    ]);
+    const ours = pills.find((pill) => pill.ours)!;
+    const newNote = pills[0]!;
+    expect(ours).toMatchObject({
+      label: m.empty_state_new_query(),
+      // Printed the way Obsidian prints New note's own hotkey.
+      hotkey: ` ${printed}`,
+      classes: newNote.classes,
+    });
+    expect(newNote.hotkey).toMatch(/^ \S/);
+
+    // A click opens a new Query File in this tab, its title selected to rename.
+    const opened = await obEval(
+      vaultId,
+      `(async()=>{${PAGE}const leaf=app.workspace.getMostRecentLeaf();press(leaf.view.actionListEl.querySelector('.zt-empty-state-new-query'),'New Zotero query table');await until('Query File opens',()=>leaf.view.getViewType()==='zotlit-query-file'&&leaf.view.file,10000);const view=leaf.view;const title=view.titleEl;const selection=title.win.getSelection();return JSON.stringify({sameTab:app.workspace.getMostRecentLeaf()===leaf,file:view.file.path,title:title.textContent,focused:title.doc.activeElement===title,selected:title.contains(selection.anchorNode)?selection.toString():null});})()`,
+    );
+    const created = JSON.parse(opened) as {
+      sameTab: boolean;
+      file: string;
+      title: string;
+      focused: boolean;
+      selected: string | null;
+    };
+    scratchFiles.push(created.file);
+    expect(created.file).toMatch(/\.zotquery$/);
+    expect(created).toMatchObject({
+      sameTab: true,
+      title: created.file.replace(/^.*\//, "").replace(/\.zotquery$/, ""),
+      focused: true,
+      selected: created.title,
+    });
+  }, 120000);
+
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
     const layout = await obEval(
       vaultId,
@@ -1402,7 +1503,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // and saves as the file's top-level filters; both sections hold. The
     // empty section starts folded, so the reader unfolds it first.
     await inPopover(
-      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');set(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'yellow');return true;`,
+      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await pick(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'yellow','Value');return true;`,
     );
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',
@@ -1479,7 +1580,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return lines[lines.indexOf(figureLine) + 1] ?? "";
     };
     await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');set(await until('new row',()=>section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')),'red');return true;`,
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');await until('new row',()=>section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'));return true;`,
     );
     // The focus goes to the new row's condition type.
     expect(
@@ -1487,6 +1588,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `return popover.ownerDocument.activeElement?.closest('[data-condition-row]')===[...section('view').querySelectorAll('[data-condition-row]')].at(-1)&&popover.ownerDocument.activeElement.getAttribute('aria-label');`,
       ),
     ).toBe(m.workbench_match_condition_kind());
+    await inPopover(
+      `await pick(section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'red','Value');return true;`,
+    );
     const added = nextLine(
       (await tabWhen((tab) => nextLine(tab.text).startsWith("        - ")))
         .text,
@@ -1521,7 +1625,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // above the first row leaves its group.
     const nested = (line: string) => `    ${line}`;
     await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');set(await until('group row',()=>section('view').querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'red');return true;`,
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');await pick(await until('group row',()=>section('view').querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'red','Value');return true;`,
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -1564,7 +1668,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     );
     await inPopover(
-      `const group=()=>${nestedGroup};press([...group().querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');set(await until('second row',()=>group()?.querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'blue');return true;`,
+      `const group=()=>${nestedGroup};press([...group().querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');await pick(await until('second row',()=>group()?.querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'blue','Value');return true;`,
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -1693,7 +1797,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inBlock = (script: string) =>
       obEval(
         vaultId,
-        `(()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
       );
     await inBlock(
       "el.dataset.e2eMark='kept';press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
@@ -1716,7 +1820,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ).toBe(true);
       await inBlock(
-        `const select=el.querySelector('[data-query-popover="sort"] [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+        `await pick(el.querySelector('[data-query-popover="sort"] [${control}]'),${JSON.stringify(value)},'${control}')`,
       );
     }
     const written = original.replace(
@@ -2270,11 +2374,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
       return tab!;
     };
-    /** Choose an option of a select in the Group popover. */
+    /** Choose an option of a select in the Group popover, opening it first. */
     const choose = (selector: string, value: string) =>
       obEval(
         vaultId,
-        `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const select=el.querySelector('[data-query-popover="group"] ${selector}');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="group"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="group"]'),'Group');await pick(popover.querySelector('${selector}'),${JSON.stringify(value)},${JSON.stringify(selector)});return true;})()`,
       );
 
     await tabWhen((tab) => tab.count !== null);
@@ -2606,7 +2710,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const figure = 'tags.contains("figure")';
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await until('placeholder row',all);set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_filter_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
+      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await until('placeholder row',all);await pick(all().querySelector('button[aria-label="${m.workbench_match_condition_kind()}"]'),'tags','Condition type');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_filter_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
     );
     const figures = byItem(await queryRows(figure)).cards;
     const myFigures = await queryKeys(
@@ -6132,7 +6236,7 @@ views:
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var operator=editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(async()=>{${PAGE}var editor=${activeWorkbenchContent};await pick(editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]'),'contains','Operator');return true;})()`,
     );
     expect(
       await conditionReady({

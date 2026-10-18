@@ -16,8 +16,13 @@
  *
  * `until` polls `ok` (sync or async) every 20 ms and answers its first truthy
  * result; after `timeout` ms (2000 by default) it throws `what`.
+ *
+ * `pick` chooses `value` in a select: a native `<select>` takes the value and
+ * the events its change sends; a Select, the plugin's searchable popup, is
+ * pressed open and its row for `value` pressed, and `pick` waits for the popup
+ * to shut. `valueOf` reads the value either kind holds.
  */
-export const PAGE = `const press=(el,what)=>{if(!el)throw new Error('Missing: '+what);el.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});const r=el.getBoundingClientRect();if(!el.checkVisibility()||r.width===0||r.height===0)throw new Error('Not visible: '+what+' ('+r.width+'x'+r.height+(el.checkVisibility()?'':', hidden')+')');const hit=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!hit||!(hit===el||el.contains(hit)))throw new Error('Covered: '+what+' (by '+(hit?hit.outerHTML.slice(0,80):'nothing')+')');el.click();return el;};const until=async(what,ok,timeout=2000)=>{const end=Date.now()+timeout;for(;;){const value=await ok();if(value)return value;if(Date.now()>end)throw new Error('Timed out: '+what);await new Promise(r=>setTimeout(r,20));}};`;
+export const PAGE = `const press=(el,what)=>{if(!el)throw new Error('Missing: '+what);el.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});const r=el.getBoundingClientRect();if(!el.checkVisibility()||r.width===0||r.height===0)throw new Error('Not visible: '+what+' ('+r.width+'x'+r.height+(el.checkVisibility()?'':', hidden')+')');const hit=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!hit||!(hit===el||el.contains(hit)))throw new Error('Covered: '+what+' (by '+(hit?hit.outerHTML.slice(0,80):'nothing')+')');el.click();return el;};const until=async(what,ok,timeout=2000)=>{const end=Date.now()+timeout;for(;;){const value=await ok();if(value)return value;if(Date.now()>end)throw new Error('Timed out: '+what);await new Promise(r=>setTimeout(r,20));}};const valueOf=el=>el?(el.tagName==='BUTTON'?el.dataset.value:el.value):undefined;const pick=async(el,value,what)=>{if(!el)throw new Error('Missing: '+what);if(el.tagName==='SELECT'){el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return el;}press(el,what);const popup=await until(what+' opens',()=>el.popoverTargetElement?.matches(':popover-open')&&el.popoverTargetElement);const row=await until(what+' offers '+value,()=>popup.querySelector('[role=option][data-value="'+CSS.escape(value)+'"]'));press(row,what+' row '+value);await until(what+' shuts',()=>!popup.matches(':popover-open'));return el;};`;
 
 /**
  * An eval that settles once an Obsidian `Menu` just shown has bound its keys,

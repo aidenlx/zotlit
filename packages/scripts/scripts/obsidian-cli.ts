@@ -38,7 +38,9 @@ window of the current folder's vault answers, else the focused window.
 --no-throttle lifts Chromium's background throttling from the main window and
 its popouts for the length of the call, then puts each window's setting back.
 A covered or hidden window is throttled: requestAnimationFrame never fires,
-scroll events never dispatch, and captures lag a frame behind the DOM.
+scroll events never dispatch, and captures lag a frame behind the DOM. It
+also warns on stderr when the window does not hold focus: trusted input
+(webContents.sendInputEvent) and focus events do nothing there.
 
 --shot captures one element of the main window as a PNG at device
 resolution: the first match of --selector, else the whole page. It replies
@@ -53,8 +55,11 @@ ${obsidianCliSocketPath()} is missing or refuses the connection), or
 the window gave no answer within --timeout. The interactive TTY mode of the
 binary is not supported.`;
 
-/** Lifts throttling from the main window and its popouts; replies with each window's old setting. */
-const THROTTLE_OFF = `(()=>{const r=require("@electron/remote"),m=r.getCurrentWebContents(),was=[];for(const c of r.webContents.getAllWebContents())if(c===m||(c.opener?.top?.processId===m.mainFrame.processId&&c.opener?.top?.routingId===m.mainFrame.routingId)){was.push([c.id,c.getBackgroundThrottling()]);c.setBackgroundThrottling(false);}return JSON.stringify(was);})()`;
+/**
+ * Lifts throttling from the main window and its popouts; replies with each
+ * window's old setting and whether the main window holds focus.
+ */
+const THROTTLE_OFF = `(()=>{const r=require("@electron/remote"),m=r.getCurrentWebContents(),was=[];for(const c of r.webContents.getAllWebContents())if(c===m||(c.opener?.top?.processId===m.mainFrame.processId&&c.opener?.top?.routingId===m.mainFrame.routingId)){was.push([c.id,c.getBackgroundThrottling()]);c.setBackgroundThrottling(false);}return JSON.stringify({was,focused:document.hasFocus()});})()`;
 
 /** Puts back the settings `THROTTLE_OFF` replied with. */
 function throttleRestore(was: string): string {
@@ -154,9 +159,19 @@ await yargs(hideBin(process.argv))
       }
       if (args.length === 0) throw new Error("Give at least one argument.");
       const call = createObsidianCall({ timeoutMs: argv.timeout * 1_000 });
-      const was = argv.throttle
-        ? undefined
-        : evalValue(await call([...vault, "eval", `code=${THROTTLE_OFF}`]));
+      let was: string | undefined;
+      if (!argv.throttle) {
+        const off = JSON.parse(
+          evalValue(await call([...vault, "eval", `code=${THROTTLE_OFF}`])),
+        ) as { was: unknown; focused: boolean };
+        was = JSON.stringify(off.was);
+        // Trusted input lands, and focus events fire, only in a focused
+        // window; a probe of either reads quietly wrong without it.
+        if (!off.focused)
+          console.error(
+            "obsidian-cli: the window does not hold focus, so trusted input and focus events will not fire.",
+          );
+      }
       try {
         console.log(await call(args));
       } finally {

@@ -6,6 +6,7 @@ export type { FilterField } from "#/match/fields";
 export { ChipInput } from "./match.chips";
 export { MatchInput } from "./match.input";
 export { MatchSelect } from "./match.rows";
+export type { MatchSelectOption, MatchSelectProps } from "./theme";
 export type {
   ConditionControlProps,
   ConditionPath,

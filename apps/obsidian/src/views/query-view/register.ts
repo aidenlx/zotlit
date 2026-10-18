@@ -1,5 +1,6 @@
 // The Query File as an Obsidian file type: its tab, its embed in a note, and
-// "New query file" in the command palette and the file explorer's menus.
+// "New query file" in the command palette and the file explorer's menus, and
+// "New Zotero query table" on the empty tab.
 import { Keymap, normalizePath } from "obsidian";
 import type { App, Menu, Plugin, TFile, TFolder } from "obsidian";
 
@@ -9,6 +10,7 @@ import { registerEmbed } from "@/lib/obsidian-private/embed-registry";
 import type { FileMenuSegment, FolderMenuSegment } from "@/services/file-menu";
 
 import { createQueryFileEmbed } from "./embed";
+import { installEmptyViewAction } from "./empty-view-action";
 import { QueryFileView, QUERY_FILE_VIEW_TYPE } from "./file-view";
 import {
   newQueryFileText,
@@ -37,17 +39,29 @@ export function registerQueryFileView(
     createQueryFileEmbed(deps),
   );
   if (unregisterEmbed) plugin.register(unregisterEmbed);
-  plugin.addCommand({
+  const { app } = plugin;
+  const newQueryFile = (event?: MouseEvent | KeyboardEvent) =>
+    void createQueryFile(
+      app,
+      app.fileManager.getNewFileParent(
+        app.workspace.getActiveFile()?.path ?? "",
+      ),
+      event,
+    );
+  const command = plugin.addCommand({
     id: "new-query-file",
     name: m.command_new_query_file_name(),
-    callback: () => {
-      const { app } = plugin;
-      const active = app.workspace.getActiveFile();
-      void createQueryFile(
-        app,
-        app.fileManager.getNewFileParent(active?.path ?? ""),
-      );
-    },
+    callback: () => newQueryFile(),
+  });
+  // The empty tab is patched once the layout holds leaves to reach it from;
+  // a plugin unloaded before then installs nothing.
+  const emptyTab = new DisposableStack();
+  plugin.register(() => emptyTab.dispose());
+  app.workspace.onLayoutReady(() => {
+    if (emptyTab.disposed) return;
+    emptyTab.use(
+      installEmptyViewAction(app, { commandId: command.id, run: newQueryFile }),
+    );
   });
 }
 
@@ -67,8 +81,9 @@ function freePath(app: App, folder: TFolder): string {
 
 /**
  * Create a Query File in `folder` that opens on a Table of the library's
- * Items, with its Annotations as a second view, and open it. A Cmd/Ctrl press
- * opens it in a new tab.
+ * Items, with its Annotations as a second view, and open it with its title
+ * ready to rename, as Obsidian opens a new note. A Cmd/Ctrl press opens it in
+ * a new tab.
  */
 export async function createQueryFile(
   app: App,
@@ -83,7 +98,7 @@ export async function createQueryFile(
     }),
   );
   const leaf = app.workspace.getLeaf(event ? Keymap.isModEvent(event) : false);
-  await leaf.openFile(file, { active: true });
+  await leaf.openFile(file, { active: true, eState: { rename: "all" } });
   return file;
 }
 

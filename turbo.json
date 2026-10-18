@@ -40,6 +40,13 @@
     "@zotlit/obsidian#typecheck:test": {
       "dependsOn": ["^build", "transit", "generate:language-packs"]
     },
+    "@zotlit/e2e#typecheck": {
+      "dependsOn": [
+        "^build",
+        "transit",
+        "@zotlit/obsidian#generate:language-packs"
+      ]
+    },
     "fixture": {
       "dependsOn": [
         "^build",
