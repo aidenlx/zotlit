@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// The Welcome View banner as it draws from its store: its header, its timeline
-// of setup steps, its documentation and community links, and the template
-// conversion and migration sections.
+// The Welcome View banner as it draws from its store: its header, its checklist
+// of setup steps, its Help Links, and the template conversion and migration
+// sections.
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -94,29 +94,41 @@ it.each([false, true])(
   },
 );
 
-describe("Welcome setup steps", () => {
+describe("Welcome setup checklist", () => {
+  const CONNECTED = {
+    status: "connected",
+    path: "~/Zotero",
+    itemCount: 1204,
+  } as const;
   const headings = (container: HTMLElement) =>
     [...container.querySelectorAll('[role="heading"]')].map(
       (el) => el.textContent,
     );
-  /** The timeline node a step heading belongs to, which carries its state. */
-  function isDone(container: HTMLElement, title: string): boolean {
+  /** The checklist row of the step titled `title`. */
+  function step(container: HTMLElement, title: string): HTMLElement {
     const heading = [...container.querySelectorAll('[role="heading"]')].find(
       (el) => el.textContent === title,
     );
-    const node = heading?.parentElement?.previousElementSibling;
-    if (!node) throw new Error(`No step titled ${title}`);
-    return node.classList.contains("zt:border-green");
+    const row = heading?.closest<HTMLElement>("[data-welcome-step]");
+    if (!row) throw new Error(`No step titled ${title}`);
+    return row;
   }
+  const isOpen = (container: HTMLElement, title: string) =>
+    step(container, title).hasAttribute("data-open");
+  const isDone = (container: HTMLElement, title: string) =>
+    step(container, title).getAttribute("data-welcome-step") === "done";
+  const button = (container: HTMLElement, label: string) =>
+    [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === label,
+    );
 
-  it("shows the timeline of steps, Connect, the folder and the library, then the documentation links", async () => {
+  it("lists the steps Connect, the folder and the library, with no timeline node after them", async () => {
     const { container } = await render("fresh");
     expect(headings(container)).toEqual([
       "ZotLit",
       m.welcome_step_connect_title(),
       m.welcome_step_folder_title(),
       m.welcome_step_library_title(),
-      m.welcome_keep_going_title(),
     ]);
   });
 
@@ -127,29 +139,85 @@ describe("Welcome setup steps", () => {
     expect(header.textContent).toContain(m.welcome_tagline());
   });
 
-  it("marks the folder step done once the folder exists", async () => {
-    const { container } = await render("fresh", {
-      literatureFolderExists: true,
+  it("opens only the first step that isn't done, with its text and action", async () => {
+    const { actions, container } = await render("fresh", {
+      connection: CONNECTED,
     });
-    expect(isDone(container, m.welcome_step_folder_title())).toBe(true);
-    expect(isDone(container, m.welcome_step_library_title())).toBe(false);
-  });
-
-  it("marks the library step done once ZotLit reads the library", async () => {
-    const { container } = await render("fresh", {
-      connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
-    });
-    expect(isDone(container, m.welcome_step_library_title())).toBe(true);
-    expect(isDone(container, m.welcome_step_folder_title())).toBe(false);
-  });
-
-  it("searches the library from the library step", async () => {
-    const { actions, container } = await render("fresh");
-    const button = [...container.querySelectorAll("button")].find(
-      (candidate) => candidate.textContent === m.welcome_action_search(),
+    expect(
+      [
+        m.welcome_step_connect_title(),
+        m.welcome_step_folder_title(),
+        m.welcome_step_library_title(),
+      ].map((title) => isOpen(container, title)),
+    ).toEqual([false, true, false]);
+    const folder = step(container, m.welcome_step_folder_title());
+    expect(folder.textContent).toContain(
+      m.welcome_step_folder_body({ folder: "Literature" }),
     );
-    await act(() => button?.click());
+    await act(() => button(folder, m.welcome_action_pick_folder())?.click());
+    expect(actions.pickFolder).toHaveBeenCalledOnce();
+    // The library step is done, so its text stays folded away.
+    expect(container.textContent).not.toContain(m.welcome_step_library_body());
+  });
+
+  it("puts a done step on one line: its title and a short summary, Connect naming the folder and the item count", async () => {
+    const { container } = await render("fresh", { connection: CONNECTED });
+    const connect = step(container, m.welcome_step_connect_title());
+    expect(isDone(container, m.welcome_step_connect_title())).toBe(true);
+    expect(connect.textContent).toContain("~/Zotero");
+    expect(connect.textContent).toContain("1,204 items");
+    expect(connect.querySelector("p")).toBeNull();
+  });
+
+  it("summarises the done folder step with the folder", async () => {
+    const { container } = await render("fresh", {
+      connection: CONNECTED,
+      literatureFolderExists: true,
+      requested: true,
+    });
+    const folder = step(container, m.welcome_step_folder_title());
+    expect(isDone(container, m.welcome_step_folder_title())).toBe(true);
+    expect(folder.textContent).toContain("Literature");
+    expect(folder.textContent).not.toContain(
+      m.welcome_step_folder_body({ folder: "Literature" }),
+    );
+  });
+
+  it("keeps each done step's action within reach once setup is done", async () => {
+    const { actions, container } = await render("fresh", {
+      connection: CONNECTED,
+      literatureFolderExists: true,
+      requested: true,
+    });
+    expect(container.querySelector("[data-open]")).toBeNull();
+    await act(() =>
+      button(container, m.welcome_action_open_settings())?.click(),
+    );
+    await act(() => button(container, m.welcome_action_pick_folder())?.click());
+    await act(() => button(container, m.welcome_action_search())?.click());
+    expect(actions.openSettings).toHaveBeenCalledOnce();
+    expect(actions.pickFolder).toHaveBeenCalledOnce();
     expect(actions.searchLibrary).toHaveBeenCalledOnce();
+  });
+
+  it("opens Connect while Zotero is missing, saying so beside the Locate action", async () => {
+    const { actions, container } = await render("fresh");
+    expect(isOpen(container, m.welcome_step_connect_title())).toBe(true);
+    expect(isOpen(container, m.welcome_step_folder_title())).toBe(false);
+    const connect = step(container, m.welcome_step_connect_title());
+    expect(connect.textContent).toContain(m.welcome_step_connect_missing());
+    await act(() => button(connect, m.welcome_action_locate())?.click());
+    expect(actions.locateZotero).toHaveBeenCalledOnce();
+  });
+
+  it("says Connect is still checking in words", async () => {
+    const { container } = await render("fresh", {
+      connection: { status: "checking" },
+      requested: true,
+    });
+    expect(
+      step(container, m.welcome_step_connect_title()).textContent,
+    ).toContain(m.welcome_step_connect_checking());
   });
 
   it("offers no search while the Library View says Zotero is not found, since its search box is gone", async () => {
@@ -165,13 +233,19 @@ describe("Welcome setup steps", () => {
       "ZotLit",
       m.welcome_step_folder_title(),
       m.welcome_step_library_title(),
-      m.welcome_keep_going_title(),
     ]);
   });
 });
 
-describe("Welcome links", () => {
-  /** Each link on the banner: its label, the page it names, and the page a click opens. */
+describe("Help Links", () => {
+  /** The accessible name of a link: the element its `aria-labelledby` names, else its text. */
+  function name(a: Element): string | null {
+    const labelledBy = a.getAttribute("aria-labelledby");
+    return labelledBy
+      ? (a.ownerDocument.getElementById(labelledBy)?.textContent ?? null)
+      : a.textContent;
+  }
+  /** Each link on the banner: its name, the page it names, and the page a click opens. */
   function links({
     actions,
     container,
@@ -183,61 +257,92 @@ describe("Welcome links", () => {
       vi.mocked(actions.openExternal).mockClear();
       a.click();
       return [
-        a.textContent,
+        name(a),
         a.getAttribute("href"),
         vi.mocked(actions.openExternal).mock.calls,
       ];
     });
   }
+  // The docs site of the test build is https://zotlit.aidenlx.site.
+  const page = (label: string, url: string) => [label, url, [[url]]];
+  const HELP_LINKS = [
+    page("Getting started", "https://zotlit.aidenlx.site/docs"),
+    page("Chat & discuss", "https://zotlit.aidenlx.site/community"),
+    page("Star on GitHub", "https://github.com/aidenlx/zotlit"),
+    page("Templates", "https://zotlit.aidenlx.site/docs/reference/templates"),
+    page(
+      "Citations",
+      "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
+    ),
+    page("Blog", "https://zotlit.aidenlx.site/blog"),
+    page("Changelog", "https://zotlit.aidenlx.site/changelog"),
+    page("Sponsor", "https://github.com/sponsors/aidenlx"),
+  ];
+  const DONE = {
+    connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
+    literatureFolderExists: true,
+  } as const;
 
-  it("keeps the documentation, community and news links in view, each opening its own page", async () => {
-    const banner = await render("upgraded");
-    // The docs site of the test build is https://zotlit.aidenlx.site.
-    const page = (label: string, url: string) => [label, url, [[url]]];
-    expect(links(banner)).toEqual([
-      page(
-        m.welcome_docs_getting_started(),
-        "https://zotlit.aidenlx.site/docs",
-      ),
-      page(
-        m.welcome_docs_templates(),
-        "https://zotlit.aidenlx.site/docs/reference/templates",
-      ),
-      page(
-        m.welcome_docs_citations(),
-        "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
-      ),
-      page(m.welcome_link_github(), "https://github.com/aidenlx/zotlit"),
-      page(
-        m.welcome_link_discussions(),
-        "https://zotlit.aidenlx.site/community",
-      ),
-      page(m.welcome_link_sponsor(), "https://github.com/sponsors/aidenlx"),
-      page(m.welcome_link_blog(), "https://zotlit.aidenlx.site/blog"),
-      page(m.welcome_link_changelog(), "https://zotlit.aidenlx.site/changelog"),
+  const MIGRATION_LINK = page(
+    "Read the migration guide.",
+    "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
+  );
+
+  it("ends with the migration guide in the fresh state, each link opening its own page", async () => {
+    expect(links(await render("fresh"))).toEqual([
+      ...HELP_LINKS,
+      MIGRATION_LINK,
     ]);
   });
 
-  it("groups the community and news links under their names", async () => {
+  it("shows the Help Links beside the Migration Prompt, leaving out the migration link it says", async () => {
+    const banner = await render("upgraded", { v1TemplatesPresent: true });
+    expect(banner.container.textContent).toContain(m.welcome_migration_title());
+    expect(links(banner)).toEqual(HELP_LINKS);
+  });
+
+  it.each([
+    [
+      "the template conversion offer alone",
+      { templateConversionPending: true },
+    ],
+    [
+      "the conversion result alone",
+      {
+        templateConversionResult: {
+          document: null,
+          trashed: 1,
+          pendingCleanup: ["templates/zt-note.eta.md"],
+        },
+      },
+    ],
+  ] satisfies [string, Partial<WelcomeState>][])(
+    "shows the Help Links with %s",
+    async (_, state) => {
+      const banner = await render("fresh", { ...DONE, ...state });
+      expect(banner.container.querySelector("[data-welcome-step]")).toBeNull();
+      expect(links(banner)).toEqual([...HELP_LINKS, MIGRATION_LINK]);
+    },
+  );
+
+  it("shows the Help Links on a banner asked for after setup", async () => {
+    const banner = await render("fresh", { ...DONE, requested: true });
+    expect(links(banner)).toEqual([...HELP_LINKS, MIGRATION_LINK]);
+  });
+
+  it("asks for a star on GitHub, the tile's subtitle describing it rather than naming it", async () => {
     const { container } = await render("fresh");
-    expect(container.textContent).toContain(m.welcome_group_community());
-    expect(container.textContent).toContain(m.welcome_group_news());
-  });
-
-  it("ends with the migration guide in the fresh state", async () => {
-    const banner = await render("fresh");
-    expect(links(banner).at(-1)).toEqual([
-      m.welcome_footer_migration_link(),
-      "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
-      [["https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1"]],
-    ]);
-  });
-
-  it("leaves out the footer migration line in the upgraded state, whose Migration Prompt says it", async () => {
-    const { container } = await render("upgraded");
-    expect(container.textContent).not.toContain(
-      m.welcome_footer_migration_link(),
-    );
+    const github = [...container.querySelectorAll("a")].find(
+      (a) => a.getAttribute("href") === "https://github.com/aidenlx/zotlit",
+    )!;
+    expect(name(github)).toBe("Star on GitHub");
+    expect(
+      container.ownerDocument.getElementById(
+        github.getAttribute("aria-describedby")!,
+      )?.textContent,
+    ).toBe("Like ZotLit? Leave a star");
+    // Obsidian draws every aria-label as a tooltip.
+    expect(github.hasAttribute("aria-label")).toBe(false);
   });
 });
 

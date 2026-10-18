@@ -1085,16 +1085,20 @@
   "welcome_step_library_title": "打开您的文库",
   "welcome_step_library_body": "您的文献列在下方。打开 PDF 阅读，需要时再撰写文献笔记。",
   "welcome_action_search": "搜索文库",
-  "welcome_keep_going_title": "继续探索",
-  "welcome_keep_going_body": "通过指南和参考资料进一步了解 ZotLit。",
+  "welcome_step_done": "已完成",
+  "welcome_step_library_done": "已列在下方",
+  "welcome_help_links_name": "帮助与社区",
+  "welcome_help_getting_started_subtitle": "设置 ZotLit 并写下第一篇笔记",
+  "welcome_help_discussions_subtitle": "提问和分享想法",
+  "welcome_help_github_title": "在 GitHub 上加星",
+  "welcome_help_github_subtitle": "喜欢 ZotLit？点个星吧",
+  "welcome_help_templates_subtitle": "定制你的笔记",
+  "welcome_help_citations_subtitle": "边写边引用",
   "welcome_docs_getting_started": "入门",
   "welcome_docs_templates": "模板",
   "welcome_docs_citations": "引文",
-  "welcome_group_community": "社区",
-  "welcome_link_github": "GitHub",
   "welcome_link_discussions": "聊天和讨论",
   "welcome_link_sponsor": "赞助",
-  "welcome_group_news": "消息",
   "welcome_link_blog": "博客",
   "welcome_link_changelog": "变更日志",
   "welcome_footer_migration_lead": "从 v1 升级？",
@@ -1131,10 +1135,18 @@
     "prefs_pane_label": "ZotLit",
     "prefs_open_section": "在 Obsidian 中打开",
     "prefs_pane_type": "笔记打开位置",
-    "prefs_pane_type_active": { "label": "当前标签页" },
-    "prefs_pane_type_tab": { "label": "新标签页" },
-    "prefs_pane_type_split": { "label": "新标签页组" },
-    "prefs_pane_type_window": { "label": "新窗口" },
+    "prefs_pane_type_active": {
+      "label": "当前标签页"
+    },
+    "prefs_pane_type_tab": {
+      "label": "新标签页"
+    },
+    "prefs_pane_type_split": {
+      "label": "新标签页组"
+    },
+    "prefs_pane_type_window": {
+      "label": "新窗口"
+    },
     "prefs_pane_type_description": "文献笔记或模板数据浏览器在 Obsidian 中的打开位置。新窗口仅限桌面端。",
     "prefs_notify_section": "Obsidian 通知",
     "prefs_notify_enable": {
