@@ -19,6 +19,7 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
+import { itemTypeIcon } from "@/lib/item-type-icon";
 import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryViewValue } from "@/services/item-query/query-view";
@@ -587,10 +588,12 @@ function CardBody({ card }: { card: ReadingCard }) {
             className="zt:flex zt:items-center zt:gap-1 zt:text-xs zt:text-muted-foreground"
             data-library-card-part="type"
           >
-            {/* The icon of the Item type, from the map the Papers rows
-                use once it lands (feat/lv-item-icons); a document until
-                then. */}
-            <Icon name={itemTypeIcon(item.itemType)} size="var(--icon-xs)" />
+            {/* The icon of the Item type, from the map the Papers rows use. */}
+            <Icon
+              name={itemTypeIcon(item.itemType)}
+              size="var(--icon-xs)"
+              data-library-card-type-icon={itemTypeIcon(item.itemType)}
+            />
             {item.type}
           </div>
         )}
@@ -803,13 +806,4 @@ function CopyCitationKey({ onCopy }: { onCopy: () => void }) {
       onClick={onCopy}
     />
   );
-}
-
-/**
- * The icon of the Item type `type`. A slot for the item-type icon map
- * (feat/lv-item-icons), which the Papers rows and this label share; every
- * type shows a document until it lands.
- */
-function itemTypeIcon(_type: string): IconName {
-  return "file-text";
 }

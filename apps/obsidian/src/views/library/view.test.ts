@@ -2671,6 +2671,32 @@ describe("Reading Card", () => {
     ]);
   });
 
+  it("starts the Item type with its icon, a book for a book and an envelope for a letter", async () => {
+    const { deps, change } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      change(
+        FILLED.map((item) =>
+          item.key === C ? { ...item, itemType: "book" } : item,
+        ),
+      );
+      await view.query.settled;
+    });
+    const typeIcon = () =>
+      card(view)
+        .querySelector(
+          '[data-library-card-part="type"] [data-library-card-type-icon]',
+        )
+        ?.getAttribute("data-library-card-type-icon");
+    await select(view, C);
+    expect(
+      card(view).querySelector('[data-library-card-part="type"]')!.textContent,
+    ).toBe("Book");
+    expect(typeIcon()).toBe("book");
+    await select(view, D);
+    expect(typeIcon()).toBe("mail");
+  });
+
   it("shows a letter's key facts, and its other filled fields in a letter's order", async () => {
     const { deps, change } = pluginData();
     const view = await openTab(deps);
