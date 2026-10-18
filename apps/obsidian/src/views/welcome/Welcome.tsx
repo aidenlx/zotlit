@@ -160,18 +160,18 @@ function StepRow({ step, open }: { step: Step; open: boolean }) {
             }
           />
         </span>
-        {/* One line however narrow the pane: the summary gives way first,
-            then the title; the open card and the step's action reach the
-            full value. */}
+        {/* One line however narrow the pane: the title keeps its width and
+            the summary takes what is left, so it gives way first; the open
+            card and the step's action reach the full value. */}
         <div className="zt:flex zt:min-w-0 zt:flex-1 zt:items-baseline zt:gap-x-2 zt:overflow-hidden zt:whitespace-nowrap">
-          <StepHeading className="zt:min-w-0 zt:truncate">
+          <StepHeading className="zt:max-w-full zt:shrink-0 zt:truncate">
             {step.title}
           </StepHeading>
           {step.state === "done" ? (
             <span className="zt:sr-only">{m.welcome_step_done()}</span>
           ) : null}
           {!open && step.summary ? (
-            <span className="zt:flex zt:min-w-0 zt:shrink-[1000] zt:items-baseline zt:gap-1.5 zt:overflow-hidden zt:text-xs zt:text-muted-foreground">
+            <span className="zt:flex zt:min-w-0 zt:items-baseline zt:gap-1.5 zt:overflow-hidden zt:text-xs zt:text-muted-foreground">
               {step.summary}
             </span>
           ) : null}
@@ -279,7 +279,9 @@ function Checklist({ connect }: { connect: boolean }) {
     state: connected ? "done" : "todo",
     icon: connected ? "check" : "library",
     title: m.welcome_step_library_title(),
-    summary: connected ? m.welcome_step_library_done() : undefined,
+    summary: connected ? (
+      <span className="zt:truncate">{m.welcome_step_library_done()}</span>
+    ) : undefined,
     body: <p className="zt:m-0">{m.welcome_step_library_body()}</p>,
     // The search is the Library View's own search box, which the not-found
     // state takes away.
