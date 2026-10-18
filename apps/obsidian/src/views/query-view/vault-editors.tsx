@@ -15,7 +15,7 @@ import {
   prepareFuzzySearch,
   renderMatches,
 } from "obsidian";
-import type { App } from "obsidian";
+import type { App, SearchMatchPart, SearchResult } from "obsidian";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   HTMLAttributes,
@@ -34,7 +34,10 @@ import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
-import { clearSuggestHighlight } from "@/lib/obsidian-private/suggest-highlight";
+import {
+  canClearSuggestHighlight,
+  clearSuggestHighlight,
+} from "@/lib/obsidian-private/suggest-highlight";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { LIST_TYPES } from "./table-notes";
@@ -122,19 +125,39 @@ const byName = (a: string, b: string) => collator.compare(a, b);
 
 /**
  * The draft with the item it edits in place put back: the edited text in
- * the item's place, or no item for no text, or for text the list holds
- * already.
+ * the item's place, or no item for no text. An item left as it was stays,
+ * though the list repeats it; text that repeats another item puts the item
+ * back as it was.
  */
 function withChip(draft: VaultDraft): VaultDraft {
   const { chip, ...rest } = draft;
   if (!chip) return draft;
   const text = chip.text.trim();
-  const taken = draft.items.some((item, at) => at !== chip.at && item === text);
+  const repeats = draft.items.some(
+    (item, at) => at !== chip.at && item === text,
+  );
   return {
     ...rest,
-    items: draft.items.flatMap((item, at) =>
-      at !== chip.at ? [item] : text === "" || taken ? [] : [text],
-    ),
+    items: draft.items.flatMap((item, at) => {
+      if (at !== chip.at) return [item];
+      if (text === "") return [];
+      return text === item || repeats ? [item] : [text];
+    }),
+  };
+}
+
+/**
+ * The draft less the item at `at`. The item that edits in place keeps its
+ * edit, where it now stands; its edit is dropped with it, where it goes.
+ */
+function withoutItem(draft: VaultDraft, at: number): VaultDraft {
+  const { chip, ...rest } = draft;
+  const items = draft.items.filter((_, i) => i !== at);
+  if (!chip || chip.at === at) return { ...rest, items };
+  return {
+    ...rest,
+    items,
+    chip: { ...chip, at: chip.at > at ? chip.at - 1 : chip.at },
   };
 }
 
@@ -154,6 +177,49 @@ export interface ChipMenu {
   readonly remove?: () => void;
 }
 
+/** Copy `item`, as a list item's menu does. */
+function copyItem(item: string) {
+  navigator.clipboard.writeText(item).catch((error: unknown) => {
+    logger.warn("The Query View could not copy a list item", { error });
+  });
+}
+
+/** Add what a list item's menu does to `menu`: Edit, Copy, Remove from list. */
+function addChipItems(menu: Menu, { item, edit, remove }: ChipMenu) {
+  if (edit)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.query_view_vault_chip_edit())
+        .setIcon("pencil")
+        .onClick(edit),
+    );
+  menu.addItem((entry) =>
+    entry
+      .setTitle(m.query_view_vault_chip_copy())
+      .setIcon("copy")
+      .onClick(() => copyItem(item)),
+  );
+  if (remove)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.query_view_vault_chip_remove())
+        .setIcon("trash-2")
+        .setWarning(true)
+        .onClick(remove),
+    );
+}
+
+/** Show `menu` at the pointer, or under `anchor` where no pointer says where. */
+function showMenu(
+  menu: Menu,
+  anchor: HTMLElement,
+  pointer: globalThis.MouseEvent | null,
+) {
+  if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
+    showMenuAtButton(menu, anchor);
+  else menu.setParentElement(anchor).showAtMouseEvent(pointer);
+}
+
 /**
  * The menu of a list item, as a Bases list cell offers it: Edit, Copy and
  * Remove from list. A right click opens it at the pointer; the menu key or
@@ -168,67 +234,135 @@ export interface ChipMenu {
 export function openChipMenu(
   chip: HTMLElement,
   pointer: globalThis.MouseEvent | null,
-  { item, edit, remove }: ChipMenu,
+  item: ChipMenu,
 ): Menu | null {
   if (hasActiveMenu(chip)) return null;
   const menu = new Menu();
-  if (edit)
-    menu.addItem((entry) =>
-      entry
-        .setTitle(m.query_view_vault_chip_edit())
-        .setIcon("pencil")
-        .onClick(edit),
-    );
-  menu.addItem((entry) =>
-    entry
-      .setTitle(m.query_view_vault_chip_copy())
-      .setIcon("copy")
-      .onClick(() => {
-        navigator.clipboard.writeText(item).catch((error: unknown) => {
-          logger.warn("The Query View could not copy a list item", { error });
-        });
-      }),
-  );
-  if (remove)
-    menu.addItem((entry) =>
-      entry
-        .setTitle(m.query_view_vault_chip_remove())
-        .setIcon("trash-2")
-        .setWarning(true)
-        .onClick(remove),
-    );
-  if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
-    showMenuAtButton(menu, chip);
-  else menu.setParentElement(chip).showAtMouseEvent(pointer);
+  addChipItems(menu, item);
+  showMenu(menu, chip, pointer);
+  return menu;
+}
+
+/** A list item, as a list's menu names it, and its own menu. */
+export interface ListMenuEntry {
+  /** The item as its chip shows it. */
+  readonly label: string;
+  readonly menu: ChipMenu;
+}
+
+/**
+ * The menu of a whole list at rest, which the menu key or Shift+F10 opens
+ * on the focused cell, so the keys reach each item's menu with one stop
+ * for the list: the item's own menu, for a list of one; else an entry for
+ * each item, whose submenu is the item's menu, or, where the list is
+ * read-only, which copies the item.
+ */
+export function openListMenu(
+  cell: HTMLElement,
+  entries: readonly ListMenuEntry[],
+): Menu | null {
+  if (entries.length === 0 || hasActiveMenu(cell)) return null;
+  const [only] = entries;
+  if (entries.length === 1 && only) {
+    const chip = cell.querySelector<HTMLElement>("[data-query-vault-chip]");
+    return openChipMenu(chip ?? cell, null, only.menu);
+  }
+  const menu = new Menu();
+  for (const { label, menu: item } of entries)
+    menu.addItem((entry) => {
+      if (!item.edit && !item.remove) {
+        entry
+          .setTitle(m.query_view_vault_chip_copy_item({ item: label }))
+          .setIcon("copy")
+          .onClick(() => copyItem(item.item));
+        return;
+      }
+      entry.setTitle(label);
+      addChipItems(entry.setSubmenu(), item);
+    });
+  showMenu(menu, cell, null);
   return menu;
 }
 
 /** Whether `event` asks for the menu of what has focus: the menu key or Shift+F10. */
-function asksForMenu(event: KeyboardEvent): boolean {
+export function asksForMenu(event: KeyboardEvent): boolean {
   return event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
 }
 
 /**
+ * How a Bases cell matches a property value to the typed text, as Obsidian
+ * 1.14.4's property value suggest does (its `getSuggestions`, read from
+ * `app.js`): the text whole, case aside, wherever it stands in the value;
+ * the fewer places, the earlier the first, and the shorter the value, the
+ * better. Unlike `prepareSimpleSearch`, which matches each word apart, a
+ * space is part of the text.
+ */
+function valueMatch(query: string): (value: string) => SearchResult | null {
+  const needle = query.toLowerCase();
+  return (value) => {
+    const text = value.toLowerCase();
+    const matches: SearchMatchPart[] = [];
+    for (
+      let at = text.indexOf(needle);
+      at !== -1;
+      at = text.indexOf(needle, at + needle.length + 1)
+    )
+      matches.push([at, at + needle.length]);
+    const first = matches[0]?.[0];
+    const end = matches.at(-1)?.[1];
+    if (first === undefined || end === undefined) return null;
+    const score =
+      -(matches.length - 1) -
+      (end - first + 1 - needle.length) / 100 -
+      first / 1000 -
+      text.length / 10_000;
+    return { score, matches };
+  };
+}
+
+/**
+ * How a Bases cell matches a tag to the typed text, as Obsidian's tag
+ * suggest does: a fuzzy match, case aside.
+ */
+function tagMatch(query: string): (tag: string) => SearchResult | null {
+  const search = prepareFuzzySearch(query.toLowerCase());
+  return (tag) => search(tag.toLowerCase());
+}
+
+/** The match of the typed text to a value, or to a tag. */
+const matchFor = (query: string, tags: boolean) =>
+  tags ? tagMatch(query) : valueMatch(query);
+
+/**
  * The values to suggest for `query`, less those in `taken`, as a Bases cell
  * suggests them: every value, in order, before a key is typed; then those
- * that match it, the best match first. The typed text itself is no
- * suggestion: Shift+Enter keeps it.
+ * that match it, the best match first, a tag by a fuzzy match and any other
+ * value by the text whole. The typed text itself is no suggestion:
+ * Shift+Enter keeps it.
  */
 export function suggestionsFor(
   values: readonly string[],
   query: string,
-  taken: readonly string[] = [],
+  {
+    taken = [],
+    tags = false,
+  }: {
+    /** The values the list holds already, which are no addition. */
+    readonly taken?: readonly string[];
+    /** Whether the values are tags. */
+    readonly tags?: boolean;
+  } = {},
 ): string[] {
   const listed = [...new Set(values)]
     .filter((value) => !taken.includes(value))
     .sort(byName);
   const text = query.trim();
   if (text === "") return listed;
-  const search = prepareFuzzySearch(text);
+  const match = matchFor(text, tags);
   return listed
     .flatMap((value) => {
-      const match = search(value);
-      return match ? [{ value, score: match.score }] : [];
+      const found = match(value);
+      return found ? [{ value, score: found.score }] : [];
     })
     .sort((a, b) => b.score - a.score)
     .map(({ value }) => value);
@@ -236,6 +370,8 @@ export function suggestionsFor(
 
 /** Where a {@link ValueSuggest} reads its values and hands its pick. */
 interface ValueSuggestSource {
+  /** Whether the values are tags, which match as Obsidian's tags do. */
+  readonly tags: boolean;
   values(): readonly string[];
   /** The values the list holds already, which are no addition. */
   taken(): readonly string[];
@@ -248,7 +384,8 @@ interface ValueSuggestSource {
  * suggest would read as a contenteditable, so it is told the field's value.
  * As in a Bases cell, nothing is highlighted before a key is typed, so
  * Enter takes no value until one is chosen, and Shift+Enter takes the typed
- * text over the highlighted value.
+ * text over the highlighted value; a build that cannot take the highlight
+ * off shows no suggestions before a key is typed.
  */
 class ValueSuggest extends AbstractInputSuggest<string> {
   readonly #source: ValueSuggestSource;
@@ -287,7 +424,13 @@ class ValueSuggest extends AbstractInputSuggest<string> {
 
   protected override getSuggestions(query: string): string[] {
     this.#query = query.trim();
-    return suggestionsFor(this.#source.values(), query, this.#source.taken());
+    // Where the highlight cannot come off, Enter would take a value never
+    // chosen, so the suggestions wait for a key.
+    if (this.#query === "" && !canClearSuggestHighlight(this)) return [];
+    return suggestionsFor(this.#source.values(), query, {
+      taken: this.#source.taken(),
+      tags: this.#source.tags,
+    });
   }
 
   override renderSuggestion(value: string, el: HTMLElement): void {
@@ -298,7 +441,7 @@ class ValueSuggest extends AbstractInputSuggest<string> {
       value,
       this.#query === ""
         ? null
-        : (prepareFuzzySearch(this.#query)(value)?.matches ?? null),
+        : (matchFor(this.#query, this.#source.tags)(value)?.matches ?? null),
     );
   }
 
@@ -331,17 +474,19 @@ function useValueSuggest(
   const latest = useRef(source);
   latest.current = source;
   const suggests = source !== null;
+  const tags = source?.tags ?? false;
   useEffect(() => {
     const el = field.current;
     if (!el || !suggests) return;
     const suggest = new ValueSuggest(app, el, {
+      tags,
       values: () => latest.current?.values() ?? [],
       taken: () => latest.current?.taken() ?? [],
       pick: (value) => latest.current?.pick(value),
     });
     showAgain(el);
     return () => suggest.close();
-  }, [app, field, suggests]);
+  }, [app, field, suggests, tags]);
 }
 
 /**
@@ -391,6 +536,15 @@ export interface VaultEditorProps {
   readonly suggestions: () => readonly string[];
 }
 
+/**
+ * Whether `event` is a key of the input method as it composes text, which
+ * the field leaves to it: Enter that takes a candidate, Escape that drops
+ * one. Chromium reports some of them as key 229 alone.
+ */
+function composing(event: KeyboardEvent): boolean {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
+
 /** Tab and Shift+Tab end the edit from any field, and move on. */
 function tabEnd(
   event: KeyboardEvent,
@@ -431,6 +585,7 @@ function FieldEditor({
     field,
     text
       ? {
+          tags: false,
           values: suggestions,
           taken: () => [],
           pick: (value) => onEnd(true, { ...draft, text: value }, "stay"),
@@ -440,7 +595,7 @@ function FieldEditor({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     event.stopPropagation();
     // A key the suggestion popup took is its own.
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || composing(event)) return;
     if (tabEnd(event, (how) => onEnd(true, draft, how))) return;
     // Shift+Enter starts a new line of text.
     if (event.key === "Enter" && !(text && event.shiftKey)) {
@@ -529,7 +684,14 @@ function ListEditor({
     const at = focusAfter.current;
     if (at === null) return;
     focusAfter.current = null;
-    (at < 0 ? field.current : pills.current[at])?.focus();
+    if (at >= 0) {
+      pills.current[at]?.focus();
+      return;
+    }
+    field.current?.focus();
+    // The field that held focus already shows the suggestions of the list
+    // before it changed.
+    showAgain(field.current);
   });
   // The item that edits in place grows with its text from where it stands,
   // over its neighbours, up to the cell's edge.
@@ -564,6 +726,7 @@ function ListEditor({
     type === "aliases"
       ? null
       : {
+          tags: type === "tags",
           values: suggestions,
           taken: () => draft.items,
           // As in Bases, the rest show again once one is added.
@@ -586,10 +749,24 @@ function ListEditor({
    */
   const focusNow = (at: number) =>
     (at < 0 ? field.current : pills.current[at])?.focus();
-  const remove = (at: number) => {
-    const current = latest.current;
-    focusNow(at - 1);
-    onDraft({ ...current, items: current.items.filter((_, i) => i !== at) });
+  /**
+   * Remove the item at `at`, and focus the item before it, or the field
+   * where none is before it or `toField` asks. An item that edits in place
+   * ends its edit, which is kept, as focus leaving it keeps it.
+   */
+  const remove = (at: number, toField = false) => {
+    const rest = withoutItem(latest.current, at);
+    const next = withChip(rest);
+    let before = toField ? -1 : at - 1;
+    // An item emptied in its edit leaves the list too.
+    const emptied = next.items.length < rest.items.length;
+    if (emptied && rest.chip && rest.chip.at <= before) before -= 1;
+    chipEnded.current = true;
+    // A pill that holds focus takes it there before the list renders again;
+    // the field takes it after, so its suggestions read the list as it is.
+    if (before < 0) focusAfter.current = -1;
+    else focusNow(before);
+    onDraft(next);
   };
   const editChip = (at: number) => {
     const current = withChip(latest.current);
@@ -608,7 +785,7 @@ function ListEditor({
   const onChipKey = (event: KeyboardEvent<HTMLInputElement>) => {
     // The keys are the field's, not the pill's around it.
     event.stopPropagation();
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || composing(event)) return;
     if (tabEnd(event, end)) return;
     if (event.key === "Enter") {
       // A comma is text in the item; only Enter ends it.
@@ -642,7 +819,7 @@ function ListEditor({
   const end = (how: VaultEditEnd) => onEnd(true, draft, how);
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || composing(event)) return;
     if (tabEnd(event, end)) return;
     const el = event.currentTarget;
     const atStart = el.selectionStart === 0 && el.selectionEnd === 0;
@@ -743,13 +920,7 @@ function ListEditor({
             {...tooltipAttrs(m.query_view_vault_remove_item({ item }))}
             // A press keeps focus in the editor, so the edit goes on.
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              focusAfter.current = -1;
-              onDraft({
-                ...draft,
-                items: draft.items.filter((_, i) => i !== at),
-              });
-            }}
+            onClick={() => remove(at, true)}
           >
             <Icon name="x" size="1em" />
           </span>
@@ -835,14 +1006,25 @@ function useTruncated(el: RefObject<HTMLElement | null>, text: string) {
   const [truncated, setTruncated] = useState(false);
   useEffect(() => {
     const label = el.current;
-    // The observer of the window the cell stands in, which a popout changes.
-    const Observer = label?.ownerDocument.defaultView?.ResizeObserver;
-    if (!label || !Observer) return;
-    const observer = new Observer(() =>
-      setTruncated(label.scrollWidth > label.clientWidth),
-    );
-    observer.observe(label);
-    return () => observer.disconnect();
+    if (!label) return;
+    // The observer of the window the cell stands in, which changes as the
+    // view moves into or out of a popout, whose closing would stop it.
+    const observe = (win: Window) => {
+      const next = new (win as Window & typeof globalThis).ResizeObserver(() =>
+        setTruncated(label.scrollWidth > label.clientWidth),
+      );
+      next.observe(label);
+      return next;
+    };
+    let observer = observe(label.win);
+    const stopMigration = label.onWindowMigrated((win) => {
+      observer.disconnect();
+      observer = observe(win);
+    });
+    return () => {
+      stopMigration();
+      observer.disconnect();
+    };
   }, [el, text]);
   return truncated;
 }

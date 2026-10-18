@@ -2,7 +2,12 @@
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
-import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import {
+  Menu,
+  hideSuggestChooser,
+  resetMockPlatform,
+  setMockPlatform,
+} from "@mock/obsidian";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -3810,11 +3815,14 @@ ${filters}
       {
         types = {},
         values = {},
+        managed = [],
       }: {
         /** The type Obsidian assigns each property, by name. */
         types?: Record<string, VaultPropertyType>;
         /** The values the vault holds for each property, by name. */
         values?: Record<string, string[]>;
+        /** The properties the note's Profile replaces. */
+        managed?: string[];
       } = {},
     ) {
       const mounted = await mount(
@@ -3825,6 +3833,7 @@ ${filters}
           frontmatter: { "A.md": frontmatter },
           types,
           values,
+          managed: { "A.md": managed },
         },
       );
       await act(() =>
@@ -4082,6 +4091,53 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       expect(mounted.el.querySelector("[data-query-vault-input]")).toBeNull();
     });
 
+    it("tells a truncated chip by the window it stands in, after the view moves to another", async () => {
+      // Each element's listener for the view moving to another window.
+      const migrated = new Map<HTMLElement, (win: Window) => void>();
+      const original = HTMLElement.prototype.onWindowMigrated;
+      HTMLElement.prototype.onWindowMigrated = function (listener) {
+        migrated.set(this, listener);
+        return () => migrated.delete(this);
+      };
+      onTestFinished(() => {
+        HTMLElement.prototype.onWindowMigrated = original;
+      });
+      const disconnect = vi.spyOn(
+        window.ResizeObserver.prototype,
+        "disconnect",
+      );
+      const { cell } = await typed(["vault.authors"], {
+        authors: ["A long name of an author"],
+      });
+      const chip = cell("authors").querySelector<HTMLElement>(
+        "[data-query-vault-chip]",
+      )!;
+      const label = chip.firstElementChild as HTMLElement;
+      /** The observers of the other window, and what each observes. */
+      const observers: { listener: () => void; observed: Element[] }[] = [];
+      const other = {
+        ResizeObserver: class {
+          readonly observed: Element[] = [];
+          constructor(readonly listener: () => void) {
+            observers.push(this);
+          }
+          observe(el: Element) {
+            this.observed.push(el);
+          }
+          disconnect() {}
+        },
+      } as unknown as Window;
+
+      expect(migrated.has(label)).toBe(true);
+      await act(() => migrated.get(label)!(other));
+      expect(disconnect).toHaveBeenCalled();
+      expect(observers.map(({ observed }) => observed)).toEqual([[label]]);
+      Object.defineProperty(label, "scrollWidth", { value: 200 });
+      Object.defineProperty(label, "clientWidth", { value: 100 });
+      await act(() => observers[0]!.listener());
+      expect(chip.getAttribute("aria-label")).toBe("A long name of an author");
+    });
+
     it("shows tags without their #, and aliases as items", async () => {
       const { cell } = await typed(
         ["vault.tags", "vault.aliases"],
@@ -4249,6 +4305,69 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       expect(document.activeElement).toBe(cell("authors"));
     });
 
+    it("leaves Enter and Escape to the input method while it composes, in every field", async () => {
+      const { cell, input, type, press, literatureNotes } = await typed(
+        ["vault.status", "vault.authors"],
+        { status: "unread", authors: ["Doe, J"] },
+      );
+      // Enter that takes a candidate, and Escape that drops one; Chromium
+      // reports either as key 229 too.
+      const composing = [{ isComposing: true }, { keyCode: 229 }] as const;
+
+      await act(() => cell("status").click());
+      await type("読");
+      for (const init of composing) {
+        await press("Enter", init);
+        await press("Escape", init);
+      }
+      expect(input()).not.toBeNull();
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("status", "読"),
+      );
+
+      await act(() => cell("authors").click());
+      await type("Roe");
+      for (const init of composing) {
+        await press("Enter", init);
+        await press("Escape", init);
+      }
+      expect(
+        cell("authors").querySelector('[data-query-vault-chip="Roe"]'),
+      ).toBeNull();
+      expect(input()).not.toBeNull();
+
+      // An item that edits in place, from its menu.
+      await type("");
+      await press("Backspace");
+      Menu.instances.length = 0;
+      await act(() => {
+        cell("authors")
+          .querySelector<HTMLElement>('[data-query-vault-chip="Doe, J"]')!
+          .dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }),
+          );
+      });
+      await act(() =>
+        Menu.instances
+          .at(-1)!
+          .items.find((entry) => entry.title === "Edit")!
+          .click(),
+      );
+      const chipInput = () =>
+        cell("authors").querySelector<HTMLInputElement>(
+          "[data-query-vault-chip-input]",
+        );
+      for (const init of composing)
+        for (const key of ["Enter", "Escape"])
+          await act(() => {
+            chipInput()!.dispatchEvent(
+              new KeyboardEvent("keydown", { key, bubbles: true, ...init }),
+            );
+          });
+      expect(chipInput()).not.toBeNull();
+    });
+
     it("moves between pills with the arrows, and removes the last with Backspace from an empty field", async () => {
       const { cell, input, press, literatureNotes } = await typed(
         ["vault.authors"],
@@ -4382,6 +4501,86 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         expect(byKey.position).not.toBeNull();
       });
 
+      it("opens from the keyboard on a list at rest: an item's menu, or one entry an item", async () => {
+        const { cell, literatureNotes } = await chips(["Doe, J", "Roe"]);
+        const menuKey = (key: string, init: KeyboardEventInit = {}) => {
+          Menu.instances.length = 0;
+          void act(() => {
+            cell("authors").focus();
+            cell("authors").dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key,
+                bubbles: true,
+                cancelable: true,
+                ...init,
+              }),
+            );
+          });
+          // The first: a submenu is a menu of its own.
+          return Menu.instances[0];
+        };
+
+        const menu = menuKey("F10", { shiftKey: true })!;
+        expect(menu.items.map((entry) => entry.title)).toEqual([
+          "Doe, J",
+          "Roe",
+        ]);
+        expect(menu.mouseEvent).toBeNull();
+        expect(menu.position).not.toBeNull();
+        expect(
+          menu.items[1]!.submenu!.items.map((entry) => entry.title),
+        ).toEqual(["Edit", "Copy", "Remove from list"]);
+        await act(() =>
+          menu.items[1]!.submenu!.items.find(
+            (entry) => entry.title === "Remove from list",
+          )!.click(),
+        );
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["Doe, J"]),
+        );
+
+        // A list of one opens the item's own menu.
+        expect(
+          menuKey("ContextMenu")!.items.map((entry) => entry.title),
+        ).toEqual(["Edit", "Copy", "Remove from list"]);
+      });
+
+      it("copies each item from the keyboard on a list the Profile replaces, which stays read-only", async () => {
+        const { cell } = await typed(
+          ["vault.authors"],
+          { authors: ["Doe, J", "Roe"] },
+          { managed: ["authors"] },
+        );
+        using clipboard = vi
+          .spyOn(navigator.clipboard, "writeText")
+          .mockResolvedValue();
+        const el = cell("authors");
+
+        // A stop for the keys, which edits nothing.
+        expect(el.tabIndex).toBe(0);
+        expect(el.getAttribute("role")).toBeNull();
+        Menu.instances.length = 0;
+        await act(() => {
+          el.focus();
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }),
+          );
+        });
+        const menu = Menu.instances.at(-1)!;
+        expect(menu.items.map((entry) => [entry.title, entry.icon])).toEqual([
+          ["Copy “Doe, J”", "copy"],
+          ["Copy “Roe”", "copy"],
+        ]);
+        menu.items[1]!.click();
+        expect(clipboard).toHaveBeenLastCalledWith("Roe");
+        await act(() => {
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+          );
+        });
+        expect(el.querySelector("[data-query-vault-editor]")).toBeNull();
+      });
+
       it("removes the item at rest, writing the list at once", async () => {
         const { choose, literatureNotes } = await chips(["Doe, J", "Roe"]);
 
@@ -4448,6 +4647,69 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         expect(literatureNotes.write).toHaveBeenLastCalledWith(
           edit("authors", ["Roe, R", "Poe"]),
         );
+      });
+
+      it("keeps an item that edits in place when another item is removed, by its x or its menu", async () => {
+        const { cell, choose, typeChip, shown, press, literatureNotes } =
+          await chips(["A", "B", "C", "D"]);
+        const removeButton = (item: string) =>
+          cell("authors").querySelector<HTMLElement>(
+            `[data-query-vault-chip="${item}"] [data-query-vault-chip-remove]`,
+          )!;
+
+        await act(() => cell("authors").click());
+        await choose("B", "Edit");
+        await typeChip("BB");
+        await act(() => removeButton("A").click());
+        expect(shown()).toEqual(["BB", "C", "D"]);
+
+        await choose("D", "Edit");
+        await typeChip("DD");
+        await choose("BB", "Remove from list");
+        expect(shown()).toEqual(["C", "DD"]);
+
+        await press("Enter");
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["C", "DD"]),
+        );
+      });
+
+      it("keeps an item edited unchanged, a repeated one too, and puts back one edited to repeat another", async () => {
+        const { cell, choose, typeChip, pressChip, shown, chip } = await chips([
+          "A",
+          "A",
+          "B",
+        ]);
+
+        await act(() => cell("authors").click());
+        // The second A: its menu opens on the pill in its place.
+        Menu.instances.length = 0;
+        await act(() => {
+          cell("authors")
+            .querySelectorAll<HTMLElement>('[data-query-vault-chip="A"]')[1]!
+            .dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: 10,
+                clientY: 10,
+              }),
+            );
+        });
+        await act(() => {
+          Menu.instances
+            .at(-1)!
+            .items.find((entry) => entry.title === "Edit")!
+            .click();
+        });
+        await pressChip("Enter");
+        expect(shown()).toEqual(["A", "A", "B"]);
+
+        await choose("B", "Edit");
+        await typeChip("A");
+        await pressChip("Enter");
+        expect(shown()).toEqual(["A", "A", "B"]);
+        expect(chip("B")).not.toBeNull();
       });
 
       it("edits a chip at rest in place, and writes the edit when focus leaves", async () => {
@@ -4564,6 +4826,58 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         expect(literatureNotes.write).toHaveBeenLastCalledWith(
           edit("projects", ["zettelkasten", "citations", "hyp"]),
         );
+      });
+
+      it("suggests a removed item again, whichever item is removed and however", async () => {
+        const { cell, press } = await typed(
+          ["vault.projects"],
+          { projects: ["zettelkasten", "memex", "citations"] },
+          { types: { projects: "multitext" }, values: { projects: PROJECTS } },
+        );
+        const pill = (item: string) =>
+          cell("projects").querySelector<HTMLElement>(
+            `[data-query-vault-chip="${item}"]`,
+          )!;
+        const pressOn = (el: Element, key: string) =>
+          act(() => {
+            el.dispatchEvent(
+              new KeyboardEvent("keydown", { key, bubbles: true }),
+            );
+          });
+
+        await act(() => cell("projects").click());
+        expect(suggested()).not.toContain("zettelkasten");
+        // The first item, by its x.
+        await act(() =>
+          pill("zettelkasten")
+            .querySelector<HTMLElement>("[data-query-vault-chip-remove]")!
+            .click(),
+        );
+        expect(suggested()).toContain("zettelkasten");
+
+        // The first item again, from the keyboard: focus goes back to the
+        // field, whose suggestions hold it.
+        await press("Backspace");
+        await pressOn(pill("citations"), "ArrowUp");
+        expect(document.activeElement).toBe(pill("memex"));
+        await pressOn(pill("memex"), "Backspace");
+        expect(suggested()).toContain("memex");
+      });
+
+      it("opens no suggestions before a key is typed where Obsidian cannot clear their highlight", async () => {
+        hideSuggestChooser(true);
+        onTestFinished(() => hideSuggestChooser(false));
+        const { cell, type, press, literatureNotes } = await projects();
+
+        await act(() => cell("projects").click());
+        expect(suggested()).toBeNull();
+        // Enter on the empty field ends the edit, taking no value.
+        await press("Enter");
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+
+        await act(() => cell("projects").click());
+        await type("hyper");
+        expect(suggested()).toEqual(["hypertext *", "hypertext history"]);
       });
 
       it("adds a value clicked in the suggestions", async () => {

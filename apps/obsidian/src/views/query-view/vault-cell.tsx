@@ -48,13 +48,15 @@ import {
   ONE_LINE,
   VaultChip,
   VaultEditor,
+  asksForMenu,
   draftOf,
   listItems,
   openChipMenu,
+  openListMenu,
   valueOf,
 } from "./vault-editors";
-import type { VaultDraft, VaultEditEnd } from "./vault-editors";
-import { dateInputValue, linkOf } from "./vault-value";
+import type { ChipMenu, VaultDraft, VaultEditEnd } from "./vault-editors";
+import { dateInputValue, linkOf, tagText } from "./vault-value";
 import "./vault-cell.css";
 
 /** The vault property `name` of the Item `itemKey`, and where it is read. */
@@ -340,7 +342,10 @@ function VaultPreview({
   );
 }
 
-/** The vault cell after or before `cell` in its row that takes an edit. */
+/**
+ * The vault cell after or before `cell` in its row that takes an edit: a
+ * read-only list, which takes focus for its menu alone, is passed over.
+ */
 function neighbour(
   cell: HTMLElement,
   how: "next" | "previous",
@@ -350,7 +355,7 @@ function neighbour(
       .closest("tr")
       ?.querySelectorAll<HTMLElement>("[data-query-vault-cell][tabindex]") ??
       []),
-  ];
+  ].filter((el) => el === cell || el.getAttribute("role") === "button");
   return cells[cells.indexOf(cell) + (how === "next" ? 1 : -1)];
 }
 
@@ -416,25 +421,37 @@ export function VaultEditCell(props: VaultCellProps) {
         : { ...draft, chip: { at: chip!, text: item } },
     );
   };
-  // A list item at rest has the menu it has in the editor: a read-only
-  // list's offers Copy alone.
+  // The items of a list at rest, which have the menu they have in the
+  // editor: a read-only list's offers Copy alone.
+  const items = LIST_TYPES.has(type) && value.note ? listItems(current) : [];
+  const itemMenu = (item: string, at: number): ChipMenu => ({
+    item,
+    ...(editable && {
+      edit: () => begin(at),
+      remove: () => {
+        const rest = items.filter((_, i) => i !== at);
+        void write(rest.length === 0 ? null : rest);
+      },
+    }),
+  });
   const chipMenu = (event: MouseEvent<HTMLElement>, at: number) => {
     event.preventDefault();
     event.stopPropagation();
-    const items = listItems(current);
     const item = items[at];
     if (item === undefined) return;
-    openChipMenu(event.currentTarget, event.nativeEvent, {
-      item,
-      ...(editable && {
-        edit: () => begin(at),
-        remove: () => {
-          const rest = items.filter((_, i) => i !== at);
-          void write(rest.length === 0 ? null : rest);
-        },
-      }),
-    });
+    openChipMenu(event.currentTarget, event.nativeEvent, itemMenu(item, at));
   };
+  // The keys reach the items' menus through the cell, one stop for the
+  // list, a read-only one too.
+  const listMenu = !editing && items.length > 0;
+  const openItemsMenu = (cell: HTMLElement) =>
+    openListMenu(
+      cell,
+      items.map((item, at) => ({
+        label: type === "tags" ? tagText(item) : item,
+        menu: itemMenu(item, at),
+      })),
+    );
   const end = (commit: boolean, edited: VaultDraft, how: VaultEditEnd) => {
     if (ended.current) return;
     ended.current = true;
@@ -467,7 +484,9 @@ export function VaultEditCell(props: VaultCellProps) {
           `hidden` keeps it out of the cell's text and reading order; a
           reference still reads it. @see apps/obsidian/policies/tooltips.md */}
       <span id={labelId} hidden>
-        {m.query_view_vault_edit({ name })}
+        {managed
+          ? m.query_view_vault_read_only({ name })
+          : m.query_view_vault_edit({ name })}
       </span>
       <div
         ref={cell}
@@ -479,24 +498,34 @@ export function VaultEditCell(props: VaultCellProps) {
         // An editable cell shows the Bases cell ring on hover and focus.
         className={cn(
           "zt:group/vault zt:relative zt:h-[calc(var(--bases-table-row-height)-var(--border-width))] zt:w-full zt:min-w-0 zt:outline-none",
+          (target || listMenu) &&
+            "zt:rounded-(--bases-table-cell-radius-active) zt:focus-visible:z-1 zt:focus-visible:shadow-(--bases-table-cell-shadow-active)",
           editable &&
             !editing &&
-            "zt:rounded-(--bases-table-cell-radius-active) zt:hover:z-1 zt:hover:shadow-(--bases-table-cell-shadow-active) zt:focus-visible:z-1 zt:focus-visible:shadow-(--bases-table-cell-shadow-active)",
+            "zt:hover:z-1 zt:hover:shadow-(--bases-table-cell-shadow-active)",
           target && !checkbox && "zt:cursor-text",
           // The editor stands over the rows below, above a cell there that
           // the pointer raises, so a press on a chip it holds reaches it.
           editing && "zt:z-2",
         )}
         role={target ? "button" : undefined}
-        // Tab and Shift+Tab find an editable cell, its own too while it edits.
-        tabIndex={target ? 0 : editing ? -1 : undefined}
-        aria-labelledby={target ? labelId : undefined}
+        // Tab and Shift+Tab find an editable cell, its own too while it
+        // edits, and a list for its menu.
+        tabIndex={target || listMenu ? 0 : editing ? -1 : undefined}
+        aria-labelledby={target || listMenu ? labelId : undefined}
         onClick={(event) => {
           event.stopPropagation();
           activate();
         }}
         onKeyDown={(event) => {
-          if (!target || event.target !== event.currentTarget) return;
+          if (event.target !== event.currentTarget) return;
+          if (listMenu && asksForMenu(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            openItemsMenu(event.currentTarget);
+            return;
+          }
+          if (!target) return;
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           event.stopPropagation();

@@ -68,6 +68,14 @@ declare module "obsidian" {
      * Internal; verified against Obsidian 1.14.2.
      */
     suggestEl: HTMLElement;
+    /**
+     * The chooser over the popup's list, which highlights an item; `-1`
+     * highlights none. Internal; verified against Obsidian 1.14.4, and
+     * optional, as a build may lack it.
+     */
+    suggestions?: {
+      forceSetSelectedItem?(at: number, event: Event | null): void;
+    };
   }
   interface ItemView {
     /** Native content header title; refreshed separately from the tab (Obsidian 1.14). */
