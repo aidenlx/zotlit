@@ -60,9 +60,9 @@ export async function openLibraryView(
     workspace.setActiveLeaf(leaf, { focus: true });
   }
   await workspace.revealLeaf(leaf);
-  // Search is the front door: the cursor waits in the box. A tab that the
-  // workspace restores on startup leaves the cursor where it was.
-  if (leaf.view instanceof LibraryView) leaf.view.search.focus();
+  // A tab that the workspace restores on startup leaves the cursor where it
+  // was.
+  if (leaf.view instanceof LibraryView) leaf.view.arrive();
   return leaf.view instanceof LibraryView ? leaf.view : null;
 }
 

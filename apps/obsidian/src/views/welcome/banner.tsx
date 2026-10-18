@@ -25,7 +25,11 @@ import {
 } from "./connection";
 import { templateMigrationNotice } from "./migration-notice";
 import type { SetupActions } from "./setup-actions";
-import { createWelcomeStore, WelcomeStoreProvider } from "./store";
+import {
+  bannerSections,
+  createWelcomeStore,
+  WelcomeStoreProvider,
+} from "./store";
 import { Welcome } from "./Welcome";
 
 // Delay before the connection spinner appears; a readout that settles faster —
@@ -88,6 +92,11 @@ export class WelcomeBanner extends Component {
       requested: true,
       requests: s.requests + 1,
     }));
+  }
+
+  /** Whether the banner shows anything now. */
+  get shown(): boolean {
+    return bannerSections(this.#store.getState()) !== null;
   }
 
   /** Settles once the last connection readout started has landed. */

@@ -1913,10 +1913,8 @@ it("offers no sort while a search lists its hits in rank order, and offers it ag
   expect(sort()).not.toBeNull();
 });
 
-it("has the search box focused when the command brings the tab forward", async () => {
-  const { deps } = pluginData();
-  const view = await openTab(deps);
-  expect(document.activeElement).not.toBe(searchBox(view));
+/** Bring `view`'s tab forward, as the command that opens the Library View does. */
+async function bringForward(view: LibraryView) {
   const leaf = { view } as unknown as WorkspaceLeaf;
   await openLibraryView({
     workspace: {
@@ -1925,7 +1923,26 @@ it("has the search box focused when the command brings the tab forward", async (
       revealLeaf: () => Promise.resolve(),
     },
   } as unknown as App);
+}
+
+it("has the search box focused when the command brings the tab forward", async () => {
+  const { deps, host } = pluginData();
+  // Setup is complete, so no Welcome View banner shows.
+  host.vault.addFile("literatures/Paper.md", "");
+  const view = await openTab(deps);
+  await act(() => view.welcome.settled);
+  expect(document.activeElement).not.toBe(searchBox(view));
+  await bringForward(view);
   expect(document.activeElement).toBe(searchBox(view));
+});
+
+it("leaves the search box unfocused when the command brings the tab forward under the Welcome View banner", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await act(() => view.welcome.settled);
+  expect(view.contentEl.querySelector("[data-welcome-banner]")).not.toBeNull();
+  await bringForward(view);
+  expect(document.activeElement).not.toBe(searchBox(view));
 });
 
 it("puts the cursor in its own search box from the Welcome View banner's Search your library", async () => {

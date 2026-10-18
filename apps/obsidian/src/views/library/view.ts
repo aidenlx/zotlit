@@ -299,6 +299,16 @@ export class LibraryView extends ItemView {
     });
   }
 
+  /**
+   * The researcher brought the tab forward. Search is the front door: the
+   * cursor waits in the box, except under the Welcome View banner, whose
+   * focus ring would wrap the box right under it; the banner's "Search your
+   * library" puts the cursor there on purpose.
+   */
+  arrive(): void {
+    if (!this.welcome.shown) this.search.focus();
+  }
+
   /** Settles once the list shows the newest search. Never rejects. */
   get searched(): Promise<void> {
     return this.search.settled;
