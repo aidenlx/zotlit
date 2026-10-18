@@ -22,6 +22,7 @@ import type { QueryView } from "@/views/query-view/view";
 import type { LibraryNode, ReadingStateFacet } from "./document";
 import { FACET_LABELS, nodeIcon, nodeLabel } from "./library-tree";
 import type { LibraryTree } from "./library-tree";
+import { TextAction } from "./text-action";
 
 /** What a search on screen puts in the heading. */
 export interface HeaderSearch {
@@ -298,16 +299,13 @@ function FilterChips({
           remove={() => removeTag(tag)}
         />
       ))}
-      <span
-        role="button"
-        tabIndex={0}
+      <TextAction
         data-library-filter-clear=""
-        className="zt:cursor-(--cursor) zt:rounded-(--radius-s) zt:px-(--size-2-2) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:hover:text-(--text-normal) zt:hover:underline zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
-        onClick={clear}
-        onKeyDown={onActivate(clear)}
+        className="zt:px-(--size-2-2) zt:text-(length:--font-ui-smaller)"
+        onActivate={clear}
       >
         {m.library_view_heading_clear_filters()}
-      </span>
+      </TextAction>
     </div>
   );
 }

@@ -31,6 +31,7 @@ import { librariesOf } from "./document";
 import type { LibraryNode } from "./document";
 import type { HeaderSearch } from "./heading";
 import { searchTerms } from "./search";
+import { TextAction } from "./text-action";
 import { sameLibrary } from "./tree";
 
 /**
@@ -365,22 +366,24 @@ function EmptyList({
     );
   // Recent reads every Library of the Library Scope already.
   const widen = !everywhere && !search.onRecent;
+  // The heading says nothing matched; the list says how to recover. Muted,
+  // not the faint of an empty pane, so the hint reads at 4.5:1.
   return (
-    <>
-      <p className="zt:m-0" data-library-empty="">
-        {m.library_view_empty_search({ query: text })}
+    <div className="zt:flex zt:flex-col zt:items-center zt:gap-(--size-4-2) zt:text-muted-foreground">
+      <p className="zt:m-0 zt:text-balance" data-library-empty="">
+        {widen
+          ? m.library_view_empty_search_widen()
+          : m.library_view_empty_search_clear()}
       </p>
-      <button
-        type="button"
-        className="zt:mt-2"
+      <TextAction
         data-library-empty-action={widen ? "widen" : "clear"}
-        onClick={() => (widen ? search.widen() : search.clear())}
+        onActivate={() => (widen ? search.widen() : search.clear())}
       >
         {widen
           ? m.library_view_search_everywhere()
           : m.library_view_search_clear()}
-      </button>
-    </>
+      </TextAction>
+    </div>
   );
 }
 
@@ -401,21 +404,13 @@ function SearchAllButton({
   offered: () => boolean;
 }) {
   if (!useSyncExternalStore(subscribe, offered)) return null;
-  const widen = () => search.widen();
   return (
-    <span
-      role="button"
-      tabIndex={0}
+    <TextAction
       data-library-search-all=""
-      className="zt:shrink-0 zt:cursor-(--cursor) zt:rounded-(--radius-s) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:group-data-zotero-missing:hidden zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
-      onClick={widen}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        widen();
-      }}
+      className="zt:shrink-0 zt:group-data-zotero-missing:hidden"
+      onActivate={() => search.widen()}
     >
       {m.library_view_search_everywhere()}
-    </span>
+    </TextAction>
   );
 }

@@ -939,6 +939,8 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
   const all = () =>
     view.contentEl.querySelector<HTMLElement>("[data-library-all]")!;
   expect(all().textContent).toBe("Show all libraries");
+  // It ends the Libraries it widens, before the facets.
+  expect(all().previousElementSibling?.getAttribute("role")).toBe("tree");
   await press(view, all());
   expect(tree(view)).toEqual([
     "Recent",
@@ -2087,18 +2089,19 @@ it("clears the search on Escape, and lists the selected node again", async () =>
   expect(settings.current?.["library.document"]?.search).toBe("");
 });
 
-it("says a search that finds nothing found nothing, offers to search all libraries, then to clear it, with no filter hint", async () => {
+it("says how to recover from a search that finds nothing, offering to search all libraries, then to clear it, with no filter hint", async () => {
   const { deps } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const empty = () =>
     view.contentEl.querySelector<HTMLElement>("[data-query-empty]");
   await type(view, "Engelbart");
   expect(shown(view)).toEqual([]);
-  // One sentence and one button: no dataset sentence, no filter hint, and
+  // One sentence and one action: the heading says nothing matched, so the
+  // list says how to recover, with no dataset sentence, no filter hint, and
   // the header leaves its own offer to the empty list.
   expect(view.contentEl.querySelector("[data-query-empty-hint]")).toBeNull();
   expect(empty()?.textContent).toBe(
-    `${m.library_view_empty_search({ query: "Engelbart" })}${m.library_view_search_everywhere()}`,
+    `${m.library_view_empty_search_widen()}${m.library_view_search_everywhere()}`,
   );
   expect(searchAll(view)).toBeNull();
   // The empty list stands centred in the space under the header.
@@ -2112,6 +2115,9 @@ it("says a search that finds nothing found nothing, offers to search all librari
     await view.query.settled;
   });
   expect(shown(view)).toEqual([]);
+  expect(empty()?.textContent).toBe(
+    `${m.library_view_empty_search_clear()}${m.library_view_search_clear()}`,
+  );
   expect(action()?.textContent).toBe(m.library_view_search_clear());
   await act(async () => {
     action()!.click();

@@ -43,7 +43,7 @@ The tree on the left lists <UiLabel name={m.library_view_recent()} /> first, the
 
 Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, with the library and the collections above it, such as "My Library › Thesis ›" over "Chapter 2". Under the name it counts the papers listed and, when the selection holds any, the unread ones, for example "<UiLabel name={m.library_view_heading_papers({ count: 12 })} /> · <UiLabel name={m.library_view_heading_unread({ count: 3 })} />". While a filter or a tag narrows the list, it counts what is left of the whole, for example <UiLabel name={m.library_view_heading_papers_of({ count: 3, total: 12 })} />. A paper counts as unread when it has no annotations and no literature note. The unread count, like the paper count in the tree, ignores search, the reading-state filters, and selected tags.
 
-When your Zotero database holds libraries outside your library scope, <UiLabel name={m.library_view_all_libraries()} /> below the tree adds them for the current session. <UiLabel name={m.library_view_scope_libraries()} /> hides them again.
+When your Zotero database holds libraries outside your library scope, <UiLabel name={m.library_view_all_libraries()} /> under the last library adds them for the current session. <UiLabel name={m.library_view_scope_libraries()} /> hides them again.
 
 If you rename or delete the collection you had selected, the view selects its library instead.
 
@@ -68,11 +68,11 @@ Type in the <UiLabel name={m.library_view_search_label()} /> box at the top of t
 
 To narrow to a Zotero tag, add a `tag:` token: `tag:methods`, or `tag:"machine learning"` for a tag with spaces. Several tokens narrow to papers that carry every tag. A search made only of `tag:` tokens keeps the list's sort instead of ranking.
 
-To search beyond your selection, select <UiLabel name={m.library_view_search_everywhere()} /> under the match count, or under the message when nothing matches. It searches every library in your library scope until you select a node in the tree or clear the search. <UiLabel name={m.library_view_recent()} /> already covers your whole library scope, so it does not offer this.
+To search beyond your selection, select <UiLabel name={m.library_view_search_everywhere()} /> under the match count, or under the message when nothing matches. It searches every library in your library scope until you select a node in the tree or clear the search. Meanwhile the tree highlights no node, since the list is no longer the one it names. <UiLabel name={m.library_view_recent()} /> already covers your whole library scope, so it does not offer this.
 
 Press `Escape` in the box to clear the search. Press it again on the empty box to move to the list.
 
-When nothing matches, the list says so, for example: <UiLabel name={m.library_view_empty_search({ query: "glacier" })} /> Under it, <UiLabel name={m.library_view_search_everywhere()} /> repeats the search in every library of your library scope. When the search already covers them, on <UiLabel name={m.library_view_recent()} /> or after <UiLabel name={m.library_view_search_everywhere()} />, the button is <UiLabel name={m.library_view_search_clear()} /> instead.
+When nothing matches, the heading reads <UiLabel name={m.library_view_heading_search({ count: 0, query: "glacier" })} /> and the list says how to go on: <UiLabel name={m.library_view_empty_search_widen()} /> Under it, <UiLabel name={m.library_view_search_everywhere()} /> repeats the search in every library of your library scope. When the search already covers them, on <UiLabel name={m.library_view_recent()} /> or after <UiLabel name={m.library_view_search_everywhere()} />, the list says <UiLabel name={m.library_view_empty_search_clear()} /> and offers <UiLabel name={m.library_view_search_clear()} /> instead.
 
 A search shows at most 500 matches.
 

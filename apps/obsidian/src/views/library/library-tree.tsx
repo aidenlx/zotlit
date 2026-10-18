@@ -47,6 +47,7 @@ import {
   unreadCount,
 } from "./document";
 import { TagSelector } from "./tag-selector";
+import { TextAction } from "./text-action";
 import { collectionTree, findNode, sameLibrary } from "./tree";
 import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 
@@ -734,25 +735,22 @@ function TreePane({ tree }: { tree: LibraryTree }) {
           </Fragment>
         ))}
       </div>
-      <Facets tree={tree} />
+      {/* The toggle ends the Libraries it widens. The "Libraries" label is
+          inside the tree, hidden from assistive technology, which allows no
+          control there, so the toggle stands right under the last Library. */}
       {(all || tree.canWiden) && (
-        <div
-          role="button"
-          tabIndex={0}
+        <TextAction
           data-library-all={all ? "on" : "off"}
-          className="zt:cursor-(--cursor) zt:self-start zt:rounded-(--radius-s) zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller) zt:text-muted-foreground zt:outline-hidden zt:hover:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]"
-          onClick={() => tree.showAll(!all)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            tree.showAll(!all);
-          }}
+          className="zt:self-start zt:px-(--size-4-2) zt:text-(length:--font-ui-smaller)"
+          onActivate={() => tree.showAll(!all)}
         >
+          <Icon name={all ? "eye-off" : "eye"} size="xs" />
           {all
             ? m.library_view_scope_libraries()
             : m.library_view_all_libraries()}
-        </div>
+        </TextAction>
       )}
+      <Facets tree={tree} />
       <TagSelector tree={tree} />
     </nav>
   );
@@ -784,8 +782,8 @@ function Facets({ tree }: { tree: LibraryTree }) {
       </span>
       <div className="zt:flex zt:flex-wrap zt:gap-(--size-2-2) zt:px-(--size-4-2)">
         {READING_STATE_FACETS.map((facet) => (
-          // Drawn as the tags of the Tag Selector are, as the "Show all
-          // libraries" toggle below is: on an element of its own.
+          // Drawn as the tags of the Tag Selector are: on an element of its
+          // own.
           <div
             key={facet}
             role="button"
