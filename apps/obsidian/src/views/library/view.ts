@@ -87,6 +87,13 @@ const OWN_KEYS =
  * What Enter does on the selected row, by its modifiers, as in the quick
  * switcher: Mod opens in a new tab.
  */
+/**
+ * How long a click on a row waits before it opens the Reading Card over a
+ * narrow list, so the second click of a double click still lands on the row
+ * (ADR 0073): the usual double-click time of macOS and Windows.
+ */
+const DOUBLE_CLICK_MS = 500;
+
 const ENTER_ACTIONS: readonly (readonly [
   Modifier[],
   (items: ItemActions, key: string) => unknown,
@@ -126,6 +133,8 @@ export class LibraryView extends ItemView {
   );
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
+  /** The click that waits out a double click before it opens the card. */
+  #cardTimer: number | null = null;
   /** The write of the search text that the box last asked for. */
   #saving: Promise<void> = Promise.resolve();
   /** Keep the search text once typing pauses. */
@@ -168,14 +177,25 @@ export class LibraryView extends ItemView {
       );
     const rows: ItemRowGestures = {
       selection: this.selection,
-      select: (key) => this.selection.setState({ key, card: true }),
+      click: (key, event) => this.#click(key, event),
+      // The keyboard entering the list, or a link or button in the row,
+      // selects the row, as the arrow keys do; the Reading Card stays as
+      // it was.
+      select: (key) =>
+        this.selection.setState((now) => ({
+          key,
+          card: now.key === key && now.card,
+        })),
       first: () =>
         this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
-      open: (key, event) =>
-        void deps.items.openPdf(key, Keymap.isModEvent(event)),
+      open: (key, event) => {
+        this.#cancelCard();
+        void deps.items.openPdf(key, Keymap.isModEvent(event));
+      },
       // The menu acts on the row it opens over, which it selects; the
       // Reading Card stays as it was.
       menu: (key, event) => {
+        this.#cancelCard();
         this.selection.setState((now) => ({
           key,
           card: now.key === key && now.card,
@@ -186,9 +206,14 @@ export class LibraryView extends ItemView {
     };
     this.register(() => drag.cancel());
     this.#registerRowKeys();
-    // Otherwise Obsidian moves focus to the last navigable leaf, which in the
-    // main area switches the tab away from this view.
+    // Escape puts away a card that shows over the list, from the list as
+    // from the card. Otherwise Obsidian moves focus to the last navigable
+    // leaf, which in the main area switches the tab away from this view.
     const onEscape = () => {
+      if (this.#cardOverList()) {
+        this.#closeCard();
+        return false as const;
+      }
       const { leftSplit, rightSplit } = deps.app.workspace;
       const root = this.leaf.getRoot();
       if (root === leftSplit || root === rightSplit) return;
@@ -222,12 +247,7 @@ export class LibraryView extends ItemView {
       menu: (key, button) => showMenuAtButton(menuOf(key), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
       close: () => this.#closeCard(),
-      // Escape puts away a card that shows over the list.
-      onEscape: () => {
-        if (!this.#cardOverList()) return onEscape();
-        this.#closeCard();
-        return false;
-      },
+      onEscape,
     });
     this.tree = new LibraryTree(deps, {
       select: (node) => this.#select(node),
@@ -376,20 +396,52 @@ export class LibraryView extends ItemView {
 
   /** Whether the Reading Card shows over the list, as on a narrow pane. */
   #cardOverList(): boolean {
+    return !!this.#cardEl && !this.#cardEl.hidden && this.#cardIsOverlay();
+  }
+
+  /** Whether the Reading Card goes over the list once it shows. */
+  #cardIsOverlay(): boolean {
     const el = this.#cardEl;
-    return (
-      !!el && !el.hidden && el.win.getComputedStyle(el).position === "absolute"
-    );
+    return !!el && el.win.getComputedStyle(el).position === "absolute";
   }
 
   /**
-   * Put the Reading Card away: the row lets go of its selection, so the card
-   * shows again once a row is selected, and the row takes the focus back.
+   * A click on the row `key` selects it and asks for its Reading Card. Over
+   * a narrow list the card waits out a double click first, as it would
+   * cover the row the second click aims at; the second click of a double
+   * click asks for no card.
+   */
+  #click(key: string, event: MouseEvent): void {
+    this.#cancelCard();
+    if (event.detail <= 1 && !this.#cardIsOverlay()) {
+      this.selection.setState({ key, card: true });
+      return;
+    }
+    const now = this.selection.getState();
+    this.selection.setState({ key, card: now.key === key && now.card });
+    if (event.detail > 1) return;
+    this.#cardTimer = this.contentEl.win.setTimeout(() => {
+      this.#cardTimer = null;
+      if (this.selection.getState().key === key)
+        this.selection.setState({ card: true });
+    }, DOUBLE_CLICK_MS);
+  }
+
+  /** The click that waited out a double click opens no card. */
+  #cancelCard(): void {
+    if (this.#cardTimer !== null)
+      this.contentEl.win.clearTimeout(this.#cardTimer);
+    this.#cardTimer = null;
+  }
+
+  /**
+   * Put the Reading Card away; the row stays selected and takes the focus
+   * back.
    */
   #closeCard(): void {
-    const row = this.#selectedRow();
-    this.selection.setState({ key: null, card: false });
-    row?.focus();
+    this.#cancelCard();
+    this.selection.setState({ card: false });
+    this.#selectedRow()?.focus();
   }
 
   /**
@@ -442,6 +494,11 @@ export class LibraryView extends ItemView {
   /** The row of the selected Item, while one shows. */
   #selectedRow(): HTMLElement | undefined {
     const { key } = this.selection.getState();
+    return key === null ? undefined : this.#rowOf(key);
+  }
+
+  /** The row of the Item `key`, while one shows. */
+  #rowOf(key: string): HTMLElement | undefined {
     return this.#rows().find(
       (row) => row.getAttribute(ITEM_ROW_ATTRIBUTE) === key,
     );
@@ -456,6 +513,7 @@ export class LibraryView extends ItemView {
       at === -1
         ? rows[0]!
         : rows[Math.min(Math.max(at + step, 0), rows.length - 1)]!;
+    this.#cancelCard();
     this.selection.setState({
       key: next.getAttribute(ITEM_ROW_ATTRIBUTE),
       card: false,
@@ -483,13 +541,19 @@ export class LibraryView extends ItemView {
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
     if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
-    // Show in Library asks for the Reading Card, as a click does.
-    this.selection.setState({ key: indexedKey, card: true });
     await this.searched;
     await this.query.settled;
-    const row = this.#selectedRow();
-    if (!row) return "not-listed";
-    this.#focus(row);
+    const listed = this.query.state
+      .getState()
+      .results?.rows.some((row) => row.indexedKey === indexedKey);
+    if (!listed) {
+      this.selection.setState({ key: null, card: false });
+      return "not-listed";
+    }
+    // Show in Library asks for the Reading Card, as a click does.
+    this.selection.setState({ key: indexedKey, card: true });
+    const row = this.#rowOf(indexedKey);
+    if (row) this.#focus(row);
     return "listed";
   }
 
@@ -627,6 +691,7 @@ export class LibraryView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    this.#cancelCard();
     this.#keep.run();
     await this.#saving;
     this.search.unload();

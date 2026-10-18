@@ -3138,7 +3138,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
-  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
+  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -3287,6 +3287,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await activeWhen((state) => state.type === "pdf")).toMatchObject({
       path: annotationAttachment.path,
     });
+    // The PDF tab is active before its document loads; once it loads, the
+    // open makes the tab active again, which would hide the Library View
+    // under a later step.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.workspace.getLeavesOfType('pdf').some(leaf=>leaf.view.file?.path===${JSON.stringify(annotationAttachment.path)}&&!!leaf.view.viewer?.child?.pdfViewer?.pdfViewer?.pdfDocument))`,
+        { expected: "true", tries: 120 },
+      ),
+    ).toBe(true);
 
     // "Open in sidebar" pins the paper in the sidebar Annotation View, which
     // lists its cards.
@@ -3321,16 +3331,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       over: true,
       selected: paper.key,
     });
-    // Its close button puts it away, and the row takes the focus back.
+    // Its close button puts it away; the row stays selected and takes the
+    // focus back.
     expect(
       JSON.parse(
         await inLibrary(
           `press(card.querySelector('[data-library-card-close]'),'Close');await until('card hides',()=>!card.checkVisibility());return JSON.stringify({selected:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??null,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null});`,
         ),
       ),
-    ).toEqual({ selected: null, focused: paper.key });
+    ).toEqual({ selected: paper.key, focused: paper.key });
     // The arrow keys move the selection and leave the list uncovered; Space
-    // on the selected row opens its card over the list.
+    // on the selected row opens its card over the list, and Escape on the
+    // row puts it away.
     /** Press `key` where the focus is; report once the card shows or hides. */
     const keyThen = (key: string, shows: boolean) =>
       inLibrary(
@@ -3343,6 +3355,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           `const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));return JSON.stringify(keys[keys.indexOf(${JSON.stringify(key)})+1]??null);`,
         ),
       ) as string;
+    // Over the list, a click waits out a double click before it opens the
+    // card.
     await inLibrary(
       `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility());return true`,
     );
@@ -3358,6 +3372,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       selected: next,
       focused: next,
     });
+    expect(JSON.parse(await keyThen("Escape", false))).toEqual({
+      card: false,
+      selected: next,
+      focused: next,
+    });
+    // A double click on the paper's row, by the pointer, where the card
+    // goes over the list, opens its PDF: the first click leaves the row
+    // uncovered for the second.
+    expect(
+      await inLibrary(
+        `const target=row(${JSON.stringify(paper.key)});target.scrollIntoView({block:'center',behavior:'instant'});const box=target.getBoundingClientRect();const x=Math.round(box.right-60),y=Math.round(box.top+box.height/2);const hit=activeDocument.elementFromPoint(x,y);if(!target.contains(hit)||hit.closest('a, button'))throw new Error('No plain part of the row at '+x+','+y+': '+hit?.outerHTML.slice(0,80));const zoom=require('electron').webFrame.getZoomFactor();const contents=require('@electron/remote').getCurrentWebContents();const at={x:Math.round(x*zoom),y:Math.round(y*zoom),button:'left'};for(const clickCount of [1,2]){contents.sendInputEvent({type:'mouseDown',...at,clickCount});contents.sendInputEvent({type:'mouseUp',...at,clickCount});}return 'double-clicked';`,
+      ),
+    ).toBe("double-clicked");
+    expect(await activeWhen((state) => state.type === "pdf")).toMatchObject({
+      path: annotationAttachment.path,
+    });
+    // The keyboard that enters the list at its first row selects it, with
+    // no card, so Space opens its card. Selecting the node again lets go of
+    // the selection.
+    const entered = JSON.parse(
+      await inLibrary(
+        `press(el.querySelector('[data-library-tree-toggle]'),'tree toggle');press(await until('selected node',()=>el.querySelector('[data-library-node][aria-selected=true]')),'selected node');await leaf.view.searched;await leaf.view.query.settled;await until('no selection',()=>!el.querySelector('[data-query-item-row][data-selected]'));const first=el.querySelector('[data-query-item-row][tabindex="0"]');first.focus();await until('first row selected',()=>first.hasAttribute('data-selected'));return JSON.stringify({card:card.checkVisibility(),selected:el.querySelector('[data-query-item-row][data-selected]').getAttribute('data-query-item-row'),focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null,first:el.querySelector('[data-query-item-row]').getAttribute('data-query-item-row')});`,
+      ),
+    ) as {
+      card: boolean;
+      selected: string;
+      focused: string | null;
+      first: string;
+    };
+    expect(entered).toEqual({
+      card: false,
+      selected: entered.first,
+      focused: entered.first,
+      first: entered.first,
+    });
+    expect(JSON.parse(await keyThen(" ", true))).toEqual({
+      card: true,
+      selected: entered.first,
+      focused: entered.first,
+    });
+    expect(JSON.parse(await keyThen("Escape", false))).toMatchObject({
+      card: false,
+    });
+    // Back to the card of the row after the paper.
+    await inLibrary(
+      `press(row(${JSON.stringify(next)}),'row after the paper');await until('card',()=>card.checkVisibility());return true`,
+    );
     // ↑ goes back to the paper and puts its card away; a wide pane shows
     // the card of the selected row beside the list.
     expect(JSON.parse(await keyThen("ArrowUp", false))).toEqual({

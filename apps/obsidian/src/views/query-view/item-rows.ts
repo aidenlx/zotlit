@@ -1,11 +1,11 @@
 // The gestures a host gives the Item rows of an Items Layout: the Library
-// View selects a row with a click, and opens, lists the actions of, or drags
-// the Item of a row. A Layout spreads `useItemRow` on each Item row; a host
+// View selects a row with a click or as it takes the focus, and opens, lists
+// the actions of, or drags the Item of a row. A Layout spreads `useItemRow` on each Item row; a host
 // without gestures leaves the rows as they are.
 //
 // @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
 import { useSyncExternalStore } from "react";
-import type { DragEvent, HTMLAttributes, MouseEvent } from "react";
+import type { DragEvent, FocusEvent, HTMLAttributes, MouseEvent } from "react";
 import type { StoreApi } from "zustand/vanilla";
 
 /** What the host does on the gestures over one Item row. */
@@ -14,7 +14,12 @@ export interface ItemRowGestures {
   readonly selection: StoreApi<{ readonly key: string | null }>;
   /** The Indexed Key of the row the list shows first; `null` for none. */
   first(): string | null;
-  /** A click on the row: select it. */
+  /** A click on the row, away from its links and buttons. */
+  click(key: string, event: globalThis.MouseEvent): void;
+  /**
+   * Select the row, and nothing more: the row itself takes the focus, as
+   * from Tab, or a click lands on one of its links or buttons.
+   */
   select(key: string): void;
   /** A double click on the row, away from its links and buttons. */
   open(key: string, event: globalThis.MouseEvent): void;
@@ -58,7 +63,13 @@ export function useItemRow(
     "aria-current": selected === key ? "true" : undefined,
     tabIndex: stop ? 0 : -1,
     draggable: true,
-    onClick: () => gestures.select(key),
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      if (onControl(event)) gestures.select(key);
+      else gestures.click(key, event.nativeEvent);
+    },
+    onFocus: (event: FocusEvent<HTMLElement>) => {
+      if (event.target === event.currentTarget) gestures.select(key);
+    },
     onDoubleClick: (event: MouseEvent<HTMLElement>) => {
       if (onControl(event)) return;
       gestures.open(key, event.nativeEvent);

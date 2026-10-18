@@ -323,6 +323,12 @@ export interface QueryViewState {
   failure: QueryViewFailure | null;
   /** Whether the host could not save the last toolbar change. */
   saveFailed: boolean;
+  /**
+   * The sort and the row limit the host writes itself, as it said at the
+   * last {@link QueryView.contextChanged}; the toolbar marks only a sort or
+   * a limit that differs.
+   */
+  defaults: QueryViewDefaults;
 }
 
 const INITIAL_STATE: QueryViewState = {
@@ -333,6 +339,7 @@ const INITIAL_STATE: QueryViewState = {
   results: null,
   failure: null,
   saveFailed: false,
+  defaults: {},
 };
 
 /** The text of a warning: the researcher's words where ZotLit has them. */
@@ -654,12 +661,14 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * What the host derives may have changed: run again where the view's
-   * query reads another Query Context or other Libraries, and otherwise draw
-   * the rows again, since a hook such as {@link QueryViewHost.reason} may
-   * say something else of them.
+   * What the host derives may have changed: take its
+   * {@link QueryViewHost.defaults} again, run again where the view's query
+   * reads another Query Context or other Libraries, and otherwise draw the
+   * rows again, since a hook such as {@link QueryViewHost.reason} may say
+   * something else of them.
    */
   contextChanged(): void {
+    this.state.setState({ defaults: this.#host.defaults?.() ?? {} });
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) return;
     if (this.#runKey(file, view) !== this.#runRequest) this.refresh();
@@ -734,7 +743,7 @@ export class QueryView extends Component implements HistorySurface {
     sort: readonly QueryFileSort[];
     limit: number | undefined;
   } {
-    const defaults = this.#host.defaults?.() ?? {};
+    const { defaults } = this.state.getState();
     const sort = view.sort ?? [];
     return {
       sort: sameSort(sort, defaults.sort ?? []) ? [] : sort,
@@ -1469,9 +1478,10 @@ function SortButton({ view }: { view: QueryView }) {
   const properties = useViewProperties(view);
   // Rows in the host's rank do not follow the sort.
   const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
+  // A sort the host writes itself, as Recent does, shows as not set.
+  useQueryViewState(view, (s) => s.defaults);
   if (!current || !properties || ranked) return null;
   const sort = current.sort ?? [];
-  // A sort the host writes itself, as Recent does, shows as not set.
   const set = view.setByResearcher(current).sort;
   return (
     <ToolbarPopover

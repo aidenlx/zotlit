@@ -11,7 +11,6 @@ import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { itemActions } from "./item-actions";
 import type { ItemActionsDeps } from "./item-actions";
-import { LastNote } from "./last-note";
 
 const KEY = "ABCD2345";
 
@@ -22,10 +21,30 @@ interface Tab {
 }
 
 function workspaceFixture() {
-  const listeners = new Set<(leaf: WorkspaceLeaf | null) => void>();
   const open: WorkspaceLeaf[] = [];
   let active: WorkspaceLeaf | null = null;
+  /**
+   * As Obsidian keeps them, across plugin reloads: the file of the last
+   * active tab that showed one, and the files left before it, newest first.
+   */
+  let activeFile: string | null = null;
+  const lastOpen: string[] = [];
+  /** Obsidian's file-open: the file `leaf` shows, if any, is the active file. */
+  const fileOpen = (leaf: WorkspaceLeaf) => {
+    const path = (leaf.view as Partial<MarkdownView>).file?.path;
+    if (!path || path === activeFile) return;
+    if (activeFile)
+      lastOpen.splice(
+        0,
+        lastOpen.length,
+        activeFile,
+        ...lastOpen.filter((held) => held !== activeFile && held !== path),
+      );
+    activeFile = path;
+  };
   const workspace = {
+    getActiveFile: () => (activeFile === null ? null : { path: activeFile }),
+    getLastOpenFiles: () => [...lastOpen],
     get activeEditor() {
       return active?.view instanceof MarkdownView ? active.view : null;
     },
@@ -34,20 +53,16 @@ function workspaceFixture() {
     // value.
     iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => unknown) =>
       open.some((leaf) => callback(leaf)),
-    onLayoutReady: (callback: () => void) => callback(),
-    on: (
-      _event: "active-leaf-change",
-      cb: (leaf: WorkspaceLeaf | null) => void,
-    ) => {
-      listeners.add(cb);
-      return cb;
-    },
-    offref: (cb: (leaf: WorkspaceLeaf | null) => void) => listeners.delete(cb),
   };
   /** The researcher makes `tab` the active tab. */
   const activate = (tab: Tab) => {
     active = tab.leaf;
-    for (const cb of listeners) cb(tab.leaf);
+    fileOpen(tab.leaf);
+  };
+  /** `tab` shows `view`, as a tab does that opens a note. */
+  const show = (tab: Tab, view: WorkspaceLeaf["view"]) => {
+    Object.assign(tab.leaf, { view });
+    if (active === tab.leaf) fileOpen(tab.leaf);
   };
   /** A note at `path`, in Source mode or Reading view. */
   const note = (path: string, mode: "source" | "preview" = "source"): Tab => {
@@ -72,18 +87,22 @@ function workspaceFixture() {
   const close = (tab: Tab) => {
     open.splice(open.indexOf(tab.leaf), 1);
   };
-  return { workspace, activate, note, library, close, listeners };
+  return { workspace, activate, show, note, library, close };
 }
 
-function setup() {
+/**
+ * The row actions, made once `before` has set up the workspace, as a plugin
+ * that loads into tabs the researcher already had open.
+ */
+function setup(
+  before: (fixture: ReturnType<typeof workspaceFixture>) => void = () => {},
+) {
   const fixture = workspaceFixture();
+  before(fixture);
   const app = { workspace: fixture.workspace } as unknown as App;
-  using stack = new DisposableStack();
-  const lastNote = stack.use(new LastNote(app.workspace));
   const notify = vi.fn();
   const actions = itemActions({
     app,
-    lastNote,
     notify,
     reads: {
       acquireRead: () =>
@@ -108,17 +127,11 @@ function setup() {
         cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
     },
   } as unknown as ItemActionsDeps);
-  const tracking = stack.move();
-  return {
-    ...fixture,
-    actions,
-    notify,
-    [Symbol.dispose]: () => tracking.dispose(),
-  };
+  return { ...fixture, actions, notify };
 }
 
 it("inserts a row's citation into the note active last before the Library View, and into the one before once that closes", async () => {
-  using env = setup();
+  const env = setup();
   const first = env.note("First.md");
   const second = env.note("Second.md");
   env.activate(first);
@@ -134,16 +147,30 @@ it("inserts a row's citation into the note active last before the Library View, 
   expect(first.text()).toBe("[@vaswani2017]LEFT RIGHT");
 });
 
+it("inserts into the note that was active last before the plugin loaded", async () => {
+  let draft!: Tab;
+  const env = setup((fixture) => {
+    const other = fixture.note("Other.md");
+    draft = fixture.note("Draft.md");
+    fixture.activate(other);
+    fixture.activate(draft);
+    fixture.activate(fixture.library);
+  });
+
+  await env.actions.insertCitation(KEY);
+  expect(draft.text()).toBe("[@vaswani2017]LEFT RIGHT");
+});
+
 it("inserts into a new tab that became active before it opened its note", async () => {
-  using env = setup();
+  const env = setup();
   const earlier = env.note("Earlier.md");
   env.activate(earlier);
   // A new tab is active while it is empty, then opens the note.
   const fresh = env.note("Fresh.md");
   const view = fresh.leaf.view;
-  Object.assign(fresh.leaf, { view: { getViewType: () => "empty" } });
+  env.show(fresh, { getViewType: () => "empty" } as WorkspaceLeaf["view"]);
   env.activate(fresh);
-  Object.assign(fresh.leaf, { view });
+  env.show(fresh, view);
   env.activate(env.library);
 
   await env.actions.insertCitation(KEY);
@@ -152,7 +179,7 @@ it("inserts into a new tab that became active before it opened its note", async 
 });
 
 it("passes over a note in Reading view, which shows no editor, and says where it finds no note", async () => {
-  using env = setup();
+  const env = setup();
   const editing = env.note("Editing.md");
   const reading = env.note("Reading.md", "preview");
   env.activate(editing);
@@ -168,11 +195,4 @@ it("passes over a note in Reading view, which shows no editor, and says where it
   expect(env.notify).toHaveBeenCalledExactlyOnceWith(
     m.library_view_cite_no_note(),
   );
-});
-
-it("stops following the workspace once disposed", () => {
-  const env = setup();
-  expect(env.listeners.size).toBe(1);
-  env[Symbol.dispose]();
-  expect(env.listeners.size).toBe(0);
 });
