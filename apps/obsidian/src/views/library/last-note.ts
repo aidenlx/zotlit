@@ -5,23 +5,33 @@ import type { MarkdownFileInfo, Workspace } from "obsidian";
 
 /**
  * The note active last that is still open and shows an editor, in Source
- * mode or Live Preview; `null` where none does. The workspace says when each
- * leaf was active last, also for the tabs open before the plugin loaded, and
- * what each shows now: a new tab is active before it opens its note.
+ * mode or Live Preview; `null` where none does. The workspace keeps, also
+ * across a plugin reload, the file of the tab active last and the files
+ * left before it, newest first; what each open tab shows is read now, as a
+ * new tab is active before it opens its note.
  */
-export function lastEditor(workspace: Workspace): MarkdownFileInfo | null {
-  let last: MarkdownView | null = null;
-  let lastTime = -Infinity;
-  workspace.iterateAllLeaves((leaf) => {
-    const { view, activeTime } = leaf;
+export function lastEditor(
+  workspace: Pick<
+    Workspace,
+    "getActiveFile" | "getLastOpenFiles" | "iterateAllLeaves"
+  >,
+): MarkdownFileInfo | null {
+  const editors = new Map<string, MarkdownView>();
+  workspace.iterateAllLeaves(({ view }) => {
     if (
       view instanceof MarkdownView &&
       view.getMode() === "source" &&
-      activeTime > lastTime
-    ) {
-      last = view;
-      lastTime = activeTime;
-    }
+      view.file
+    )
+      editors.set(view.file.path, view);
   });
-  return last;
+  const active = workspace.getActiveFile()?.path;
+  for (const path of [
+    ...(active === undefined ? [] : [active]),
+    ...workspace.getLastOpenFiles(),
+  ]) {
+    const view = editors.get(path);
+    if (view) return view;
+  }
+  return null;
 }

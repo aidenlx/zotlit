@@ -62,12 +62,6 @@ declare module "obsidian" {
     group: string | null;
     pinned: boolean;
     /**
-     * When the leaf was active last, in ms since the epoch; `0` for a leaf
-     * not active since the app started. `getMostRecentLeaf` ranks by it.
-     * Internal; verified against Obsidian 1.14.4.
-     */
-    activeTime: number;
-    /**
      * The leaf's own empty view, shown while it holds no other. Every leaf
      * makes one, so any leaf leads to the class. Internal; verified against
      * Obsidian 1.14.4.

@@ -23,7 +23,28 @@ interface Tab {
 function workspaceFixture() {
   const open: WorkspaceLeaf[] = [];
   let active: WorkspaceLeaf | null = null;
+  /**
+   * As Obsidian keeps them, across plugin reloads: the file of the last
+   * active tab that showed one, and the files left before it, newest first.
+   */
+  let activeFile: string | null = null;
+  const lastOpen: string[] = [];
+  /** Obsidian's file-open: the file `leaf` shows, if any, is the active file. */
+  const fileOpen = (leaf: WorkspaceLeaf) => {
+    const path = (leaf.view as Partial<MarkdownView>).file?.path;
+    if (!path || path === activeFile) return;
+    if (activeFile)
+      lastOpen.splice(
+        0,
+        lastOpen.length,
+        activeFile,
+        ...lastOpen.filter((held) => held !== activeFile && held !== path),
+      );
+    activeFile = path;
+  };
   const workspace = {
+    getActiveFile: () => (activeFile === null ? null : { path: activeFile }),
+    getLastOpenFiles: () => [...lastOpen],
     get activeEditor() {
       return active?.view instanceof MarkdownView ? active.view : null;
     },
@@ -33,12 +54,15 @@ function workspaceFixture() {
     iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => unknown) =>
       open.some((leaf) => callback(leaf)),
   };
-  /** When a tab became active last, as Obsidian stamps a leaf. */
-  let clock = 1_000;
   /** The researcher makes `tab` the active tab. */
   const activate = (tab: Tab) => {
     active = tab.leaf;
-    tab.leaf.activeTime = ++clock;
+    fileOpen(tab.leaf);
+  };
+  /** `tab` shows `view`, as a tab does that opens a note. */
+  const show = (tab: Tab, view: WorkspaceLeaf["view"]) => {
+    Object.assign(tab.leaf, { view });
+    if (active === tab.leaf) fileOpen(tab.leaf);
   };
   /** A note at `path`, in Source mode or Reading view. */
   const note = (path: string, mode: "source" | "preview" = "source"): Tab => {
@@ -49,16 +73,13 @@ function workspaceFixture() {
       getMode: () => mode,
       getViewType: () => "markdown",
     }) as MarkdownView;
-    const leaf = { view, activeTime: 0 } as unknown as WorkspaceLeaf;
+    const leaf = { view } as unknown as WorkspaceLeaf;
     Object.assign(view, { leaf });
     open.push(leaf);
     return { leaf, text: () => cm.state.doc.toString() };
   };
   const library: Tab = {
-    leaf: {
-      view: { getViewType: () => "zotlit-library" },
-      activeTime: 0,
-    } as unknown as WorkspaceLeaf,
+    leaf: { view: { getViewType: () => "zotlit-library" } } as WorkspaceLeaf,
     text: () => "",
   };
   open.push(library.leaf);
@@ -66,7 +87,7 @@ function workspaceFixture() {
   const close = (tab: Tab) => {
     open.splice(open.indexOf(tab.leaf), 1);
   };
-  return { workspace, activate, note, library, close };
+  return { workspace, activate, show, note, library, close };
 }
 
 /**
@@ -147,9 +168,9 @@ it("inserts into a new tab that became active before it opened its note", async 
   // A new tab is active while it is empty, then opens the note.
   const fresh = env.note("Fresh.md");
   const view = fresh.leaf.view;
-  Object.assign(fresh.leaf, { view: { getViewType: () => "empty" } });
+  env.show(fresh, { getViewType: () => "empty" } as WorkspaceLeaf["view"]);
   env.activate(fresh);
-  Object.assign(fresh.leaf, { view });
+  env.show(fresh, view);
   env.activate(env.library);
 
   await env.actions.insertCitation(KEY);
