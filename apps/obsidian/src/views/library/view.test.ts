@@ -1269,6 +1269,43 @@ it("opens on the Papers Layout with a toolbar of the result count, Sort and Save
   ).toEqual(["data-query-results", "sort", "data-query-save-as"]);
 });
 
+it("scrolls the rows alone, under the search box, the header and the toolbar", async () => {
+  const { deps } = pluginData({
+    node: MY_LIBRARY,
+    facets: [],
+    search: "",
+    sort: [],
+  });
+  const view = await openTab(deps);
+  /** The elements from `el` up to the tab that scroll what they hold. */
+  const scrollers = (el: Element) => {
+    const found: Element[] = [];
+    for (
+      let at: Element | null = el;
+      at && at !== view.contentEl;
+      at = at.parentElement
+    )
+      if (/(^|\s)zt:overflow(-y)?-(auto|scroll)(\s|$)/.test(at.className))
+        found.push(at);
+    return found;
+  };
+  const firstRow = view.contentEl.querySelector("[data-query-papers-row]")!;
+  expect(firstRow).not.toBeNull();
+  // One scroll container holds the rows: the layout's own.
+  const scroll = scrollers(firstRow);
+  expect(scroll).toHaveLength(1);
+  expect(scroll[0]!.matches("[data-query-layout]")).toBe(true);
+  // What sits above the rows stays put: none of it is in a scroll container.
+  for (const pinned of [
+    searchBox(view),
+    view.contentEl.querySelector("[data-library-header]")!,
+    view.contentEl.querySelector('[role="toolbar"]')!,
+  ]) {
+    expect(pinned).not.toBeNull();
+    expect(scrollers(pinned)).toEqual([]);
+  }
+});
+
 /** The Items the list shows, by Indexed Key, in order. */
 function listed(view: LibraryView) {
   return [

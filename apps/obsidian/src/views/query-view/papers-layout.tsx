@@ -156,7 +156,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
   const { children: expanded, toggle } = useChildren(query);
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:in-[.zt-query-note]:pb-2"
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
       data-query-layout="papers"
     >
       {groups.map((group, groupIndex) => (
