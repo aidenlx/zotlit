@@ -341,7 +341,7 @@ function FoldedChecklist({ connect }: { connect: boolean }) {
             markClass("done", false),
           )}
         >
-          <Icon name="check" size="var(--icon-xs)" />
+          <Icon name="check" size="xs" />
         </span>
         <div className="zt:flex zt:min-w-0 zt:flex-1 zt:items-baseline zt:gap-x-2 zt:overflow-hidden zt:whitespace-nowrap">
           <span className="zt:shrink-0 zt:text-sm zt:font-semibold">
@@ -589,8 +589,7 @@ function HowItWorks({ children }: { children: ReactNode }) {
       <summary className="zt:inline-flex zt:cursor-(--cursor) zt:list-none zt:items-center zt:gap-1 zt:rounded-sm zt:text-xs zt:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none zt:[&::-webkit-details-marker]:hidden">
         <Icon
           name="right-triangle"
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
+          size="xs"
           className="zt:shrink-0 zt:[rotate:calc(var(--direction)*-90deg)] zt:text-(--nav-collapse-icon-color) zt:group-open/how:[rotate:none]"
         />
         {m.welcome_how_it_works()}
