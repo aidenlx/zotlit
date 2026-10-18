@@ -14,10 +14,13 @@ export interface ItemRowGestures {
   readonly selection: StoreApi<{ readonly key: string | null }>;
   /** The Indexed Key of the row the list shows first; `null` for none. */
   first(): string | null;
-  /** A click on the row: select it. */
-  select(key: string, event: globalThis.MouseEvent): void;
-  /** The row itself takes the focus, as from Tab: select it. */
-  focus(key: string): void;
+  /** A click on the row, away from its links and buttons. */
+  click(key: string, event: globalThis.MouseEvent): void;
+  /**
+   * Select the row, and nothing more: the row itself takes the focus, as
+   * from Tab, or a click lands on one of its links or buttons.
+   */
+  select(key: string): void;
   /** A double click on the row, away from its links and buttons. */
   open(key: string, event: globalThis.MouseEvent): void;
   /** The row's context menu, which acts on the row: the host selects it. */
@@ -60,10 +63,12 @@ export function useItemRow(
     "aria-current": selected === key ? "true" : undefined,
     tabIndex: stop ? 0 : -1,
     draggable: true,
-    onClick: (event: MouseEvent<HTMLElement>) =>
-      gestures.select(key, event.nativeEvent),
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      if (onControl(event)) gestures.select(key);
+      else gestures.click(key, event.nativeEvent);
+    },
     onFocus: (event: FocusEvent<HTMLElement>) => {
-      if (event.target === event.currentTarget) gestures.focus(key);
+      if (event.target === event.currentTarget) gestures.select(key);
     },
     onDoubleClick: (event: MouseEvent<HTMLElement>) => {
       if (onControl(event)) return;

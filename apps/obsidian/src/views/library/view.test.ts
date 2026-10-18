@@ -1451,6 +1451,16 @@ it("selects the row the keyboard enters the list at, with no Reading Card, so it
   expect(view.selection.getState()).toEqual({ key: A, card: true });
 });
 
+it("selects a row whose expand button is clicked, and asks for no Reading Card", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const expand = itemRow(view, A).querySelector<HTMLElement>(
+    "button[data-query-expand]",
+  )!;
+  await act(() => expand.click());
+  expect(view.selection.getState()).toEqual({ key: A, card: false });
+});
+
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
   const { deps, items } = pluginData();
   const view = await openTab(deps);

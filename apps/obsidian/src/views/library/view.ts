@@ -177,10 +177,11 @@ export class LibraryView extends ItemView {
       );
     const rows: ItemRowGestures = {
       selection: this.selection,
-      select: (key, event) => this.#click(key, event),
-      // The keyboard entering the list selects the row, as the arrow keys
-      // do; the Reading Card stays as it was.
-      focus: (key) =>
+      click: (key, event) => this.#click(key, event),
+      // The keyboard entering the list, or a link or button in the row,
+      // selects the row, as the arrow keys do; the Reading Card stays as
+      // it was.
+      select: (key) =>
         this.selection.setState((now) => ({
           key,
           card: now.key === key && now.card,
