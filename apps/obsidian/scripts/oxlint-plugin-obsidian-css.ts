@@ -26,9 +26,9 @@ const wordClasses = new Set(["dropdown", "slider"]);
 
 /**
  * Prefixes of the classes Bases and the Properties widgets draw with. A cell
- * that mirrors one is rebuilt in `zt:` utilities, as
- * `apps/obsidian/docs/bases-table-cells.md` lays out. The names also read as
- * plain strings, a logger category among them, so only a class list counts.
+ * of our own is drawn in `zt:` utilities, not with theirs. The names also
+ * read as plain strings, a logger category among them, so only a class list
+ * counts.
  */
 const widgetPrefixes = ["bases-", "metadata-", "multi-select-"];
 
