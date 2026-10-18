@@ -56,6 +56,7 @@ import {
   text,
 } from "./card-fields";
 import type { CardField, CardHeader } from "./card-fields";
+import { FILTER_CHIP_LINE_CLASS, TAG_CHIP_CLASS } from "./chip";
 import type { ReadingCardDisclosures } from "./document";
 import type { ItemActions } from "./item-actions";
 import type { MenuItem } from "./row-menu";
@@ -749,9 +750,6 @@ const ABSTRACT_LINES_LENGTH = 180;
 const CHIP =
   "zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--radius-l) zt:bg-(--background-modifier-hover) zt:px-(--size-4-2) zt:py-0.5 zt:text-xs zt:text-(--text-normal)";
 
-/** One line of chips: a chip's text line, and its `py-0.5` above and below. */
-const CHIP_LINE = "zt:h-[calc(1lh+--spacing(1))] zt:text-xs";
-
 /** The focus ring of a control drawn on an element of its own. */
 const FOCUS_RING =
   "zt:outline-hidden zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
@@ -782,7 +780,9 @@ function InfoLine({
       className="zt:flex zt:min-w-0 zt:items-start zt:gap-(--size-4-2)"
     >
       <FirstLine
-        className={chips ? CHIP_LINE : "zt:text-(length:--font-ui-small)"}
+        className={
+          chips ? FILTER_CHIP_LINE_CLASS : "zt:text-(length:--font-ui-small)"
+        }
       >
         <Icon
           name={icon}
@@ -1043,20 +1043,17 @@ function CardBody({ card }: { card: ReadingCard }) {
                 >
                   <ul className="zt:m-0 zt:flex zt:list-none zt:flex-wrap zt:gap-(--size-2-2) zt:p-0">
                     {/* A tag selects itself in the Tag Selector, which narrows
-                      the list to the papers that carry it. Obsidian's
-                      unlayered `button` rules outrank the chip's utilities,
-                      so the chip is a `role="button"` of its own. */}
+                      the list to the papers that carry it, and is drawn as
+                      the Tag Selector draws it. Obsidian's unlayered
+                      `button` rules outrank the chip's utilities, so the
+                      chip is a `role="button"` of its own. */}
                     {item.tags.map((tag) => (
                       <li key={tag} className="zt:flex zt:max-w-full">
                         <span
                           role="button"
                           tabIndex={0}
                           data-library-card-tag={tag}
-                          className={cn(
-                            CHIP,
-                            FOCUS_RING,
-                            "zt:cursor-(--cursor) zt:hover:bg-(--background-modifier-active-hover)",
-                          )}
+                          className={TAG_CHIP_CLASS}
                           {...tooltipAttrs(
                             m.library_view_card_tag_filter({ tag }),
                           )}
