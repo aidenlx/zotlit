@@ -459,6 +459,7 @@
   "library_view_card_show_less": "Show less",
   "library_view_card_where": "Saved in",
   "library_view_card_tags": "Tags",
+  "library_view_card_tag_filter": "Show papers tagged {tag}",
   "library_view_card_files": "Files",
   "library_view_card_notes": "Zotero notes",
   "instruction_show_in_library": "to show in library",

@@ -82,6 +82,8 @@ export interface ReadingCardHost {
   close: () => void;
   /** Keep a disclosure open or closed for the Library View. */
   keepDisclosure: (name: keyof ReadingCardDisclosures, open: boolean) => void;
+  /** Select the tag `name` in the Tag Selector, beside any selected already. */
+  selectTag: (name: string) => void;
   onEscape: NonNullable<QueryViewHost["layout"]>["onEscape"];
 }
 
@@ -713,9 +715,30 @@ function CardBody({ card }: { card: ReadingCard }) {
       {item && item.tags.length > 0 && (
         <Part name="tags" label={m.library_view_card_tags()}>
           <ul className="zt:m-0 zt:flex zt:list-none zt:flex-wrap zt:gap-(--size-2-2) zt:p-0">
+            {/* A tag selects itself in the Tag Selector, which narrows the
+                list to the papers that carry it. Obsidian's unlayered
+                `button` rules outrank the chip's utilities, so the chip is a
+                `role="button"` of its own. */}
             {item.tags.map((tag) => (
-              <li key={tag} className={CHIP}>
-                {tag}
+              <li key={tag} className="zt:flex zt:max-w-full">
+                <span
+                  role="button"
+                  tabIndex={0}
+                  data-library-card-tag={tag}
+                  className={cn(
+                    CHIP,
+                    "zt:cursor-(--cursor) zt:outline-hidden zt:hover:bg-(--background-modifier-active-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
+                  )}
+                  {...tooltipAttrs(m.library_view_card_tag_filter({ tag }))}
+                  onClick={() => host.selectTag(tag)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    host.selectTag(tag);
+                  }}
+                >
+                  {tag}
+                </span>
               </li>
             ))}
           </ul>

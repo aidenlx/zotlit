@@ -2957,6 +2957,34 @@ describe("Tag Selector", () => {
     expect(deselectAll(view)).toBeNull();
   });
 
+  it("selects a tag the Reading Card shows, beside those selected already", async () => {
+    const { deps, settings } = pluginData(ON_MY_LIBRARY);
+    const view = await openTab(deps);
+    await press(view, tag(view, "method"));
+    await act(async () => {
+      itemRow(view, "AAAAAAAA").click();
+      await view.card.settled;
+    });
+    const chip = (name: string) =>
+      view.contentEl.querySelector<HTMLElement>(
+        `[data-library-card] [data-library-card-tag="${name}"]`,
+      )!;
+    expect(chip("figure").getAttribute("role")).toBe("button");
+    await press(view, chip("figure"));
+    expect(pressed(view)).toEqual(["figure", "method"]);
+    expect(listed(view)).toEqual(["AAAAAAAA"]);
+    expect(header(view)).toBe(
+      "My Library · 2 unread · tagged figure and method",
+    );
+    expect(settings.current?.["library.document"]?.tags).toEqual([
+      "figure",
+      "method",
+    ]);
+    // A tag selected already stays selected.
+    await press(view, chip("method"));
+    expect(pressed(view)).toEqual(["figure", "method"]);
+  });
+
   it("filters the tag names it shows, never the papers, and keeps a selected tag in view", async () => {
     const { deps, run } = pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);

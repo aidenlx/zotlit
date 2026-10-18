@@ -264,6 +264,10 @@ export class LibraryView extends ItemView {
             });
           });
       },
+      selectTag: (name) => {
+        if (!this.tree.store.getState().tags.includes(name))
+          this.tree.toggleTag(name);
+      },
       onEscape,
     });
     this.tree = new LibraryTree(deps, {

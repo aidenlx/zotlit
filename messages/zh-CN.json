@@ -544,6 +544,7 @@
   "library_view_card_show_less": "收起",
   "library_view_card_where": "保存在",
   "library_view_card_tags": "标签",
+  "library_view_card_tag_filter": "显示带有标签“{tag}”的文献",
   "library_view_card_files": "文件",
   "library_view_card_notes": "Zotero 笔记",
   "instruction_show_in_library": "在文库中显示",
