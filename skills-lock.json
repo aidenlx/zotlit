@@ -200,6 +200,13 @@
       "skillPath": "skills/productivity/teach/SKILL.md",
       "computedHash": "b8a69574c7a019bed84e84313dc8bf02e1d1bf925ba43057d433217c63863206"
     },
+    "to-questionnaire": {
+      "source": "mattpocock/skills",
+      "ref": "v1.3.1",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/to-questionnaire/SKILL.md",
+      "computedHash": "befbec7005695163741a57bc94810dc5048fb766baaa485d5160b1d7f86335c1"
+    },
     "to-spec": {
       "source": "mattpocock/skills",
       "ref": "v1.3.1",
@@ -239,6 +246,13 @@
       "skillPath": "plugins/visual-pr/skills/visual-pr/SKILL.md",
       "computedHash": "197904ade976018d9ce28e706323f969a6a87947994f46e3ffad78c46e70a716"
     },
+    "wait-what": {
+      "source": "mattpocock/skills",
+      "ref": "v1.3.1",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/wait-what/SKILL.md",
+      "computedHash": "1921c02ea4046fd8f9c219140780233fe6e22e2fe4442961378da2ac31f3f403"
+    },
     "wayfinder": {
       "source": "mattpocock/skills",
       "ref": "v1.3.1",
@@ -246,11 +260,25 @@
       "skillPath": "skills/engineering/wayfinder/SKILL.md",
       "computedHash": "fa790eb4255b13d24d7e33ff4891ccd3d621558cc0ab87ae226777538ea16a8f"
     },
+    "wizard": {
+      "source": "mattpocock/skills",
+      "ref": "v1.3.1",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/wizard/SKILL.md",
+      "computedHash": "dee7f1a523994a1e063c69fe09c2f5b4da97a41ad68107722664e6e472cb2423"
+    },
     "worktrunk": {
       "source": "max-sixty/worktrunk",
       "sourceType": "github",
       "skillPath": "skills/worktrunk/SKILL.md",
       "computedHash": "75ba232eeac63e6be9a7a3a078e8c459c5f1354846c2a3516f7b5cde9b325545"
+    },
+    "writing-for-agents": {
+      "source": "mattpocock/skills",
+      "ref": "v1.3.1",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/writing-for-agents/SKILL.md",
+      "computedHash": "95da47fc97af998e85b7d7e6d57b3ac76727c1e290cfe9ea09005aacb826959f"
     }
   }
 }
