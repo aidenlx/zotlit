@@ -418,6 +418,15 @@ export interface VaultEditorProps {
   readonly suggestions: () => readonly string[];
 }
 
+/**
+ * Whether `event` is a key of the input method as it composes text, which
+ * the field leaves to it: Enter that takes a candidate, Escape that drops
+ * one. Chromium reports some of them as key 229 alone.
+ */
+function composing(event: KeyboardEvent): boolean {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
+
 /** Tab and Shift+Tab end the edit from any field, and move on. */
 function tabEnd(
   event: KeyboardEvent,
@@ -467,7 +476,7 @@ function FieldEditor({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     event.stopPropagation();
     // A key the suggestion popup took is its own.
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || composing(event)) return;
     if (tabEnd(event, (how) => onEnd(true, draft, how))) return;
     // Shift+Enter starts a new line of text.
     if (event.key === "Enter" && !(text && event.shiftKey)) {
@@ -656,7 +665,7 @@ function ListEditor({
   const onChipKey = (event: KeyboardEvent<HTMLInputElement>) => {
     // The keys are the field's, not the pill's around it.
     event.stopPropagation();
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || composing(event)) return;
     if (tabEnd(event, end)) return;
     if (event.key === "Enter") {
       // A comma is text in the item; only Enter ends it.
@@ -690,7 +699,7 @@ function ListEditor({
   const end = (how: VaultEditEnd) => onEnd(true, draft, how);
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || composing(event)) return;
     if (tabEnd(event, end)) return;
     const el = event.currentTarget;
     const atStart = el.selectionStart === 0 && el.selectionEnd === 0;

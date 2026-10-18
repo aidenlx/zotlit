@@ -4254,6 +4254,69 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       expect(document.activeElement).toBe(cell("authors"));
     });
 
+    it("leaves Enter and Escape to the input method while it composes, in every field", async () => {
+      const { cell, input, type, press, literatureNotes } = await typed(
+        ["vault.status", "vault.authors"],
+        { status: "unread", authors: ["Doe, J"] },
+      );
+      // Enter that takes a candidate, and Escape that drops one; Chromium
+      // reports either as key 229 too.
+      const composing = [{ isComposing: true }, { keyCode: 229 }] as const;
+
+      await act(() => cell("status").click());
+      await type("読");
+      for (const init of composing) {
+        await press("Enter", init);
+        await press("Escape", init);
+      }
+      expect(input()).not.toBeNull();
+      await press("Enter");
+      expect(literatureNotes.write).toHaveBeenLastCalledWith(
+        edit("status", "読"),
+      );
+
+      await act(() => cell("authors").click());
+      await type("Roe");
+      for (const init of composing) {
+        await press("Enter", init);
+        await press("Escape", init);
+      }
+      expect(
+        cell("authors").querySelector('[data-query-vault-chip="Roe"]'),
+      ).toBeNull();
+      expect(input()).not.toBeNull();
+
+      // An item that edits in place, from its menu.
+      await type("");
+      await press("Backspace");
+      Menu.instances.length = 0;
+      await act(() => {
+        cell("authors")
+          .querySelector<HTMLElement>('[data-query-vault-chip="Doe, J"]')!
+          .dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }),
+          );
+      });
+      await act(() =>
+        Menu.instances
+          .at(-1)!
+          .items.find((entry) => entry.title === "Edit")!
+          .click(),
+      );
+      const chipInput = () =>
+        cell("authors").querySelector<HTMLInputElement>(
+          "[data-query-vault-chip-input]",
+        );
+      for (const init of composing)
+        for (const key of ["Enter", "Escape"])
+          await act(() => {
+            chipInput()!.dispatchEvent(
+              new KeyboardEvent("keydown", { key, bubbles: true, ...init }),
+            );
+          });
+      expect(chipInput()).not.toBeNull();
+    });
+
     it("moves between pills with the arrows, and removes the last with Backspace from an empty field", async () => {
       const { cell, input, press, literatureNotes } = await typed(
         ["vault.authors"],
