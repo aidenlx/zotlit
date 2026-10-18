@@ -14,6 +14,7 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
+import { PaneState } from "@/components/pane-state";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { refreshFailed, unavailable } from "@/views/welcome/connection";
@@ -134,36 +135,39 @@ function RefreshFailedNote({ actions }: { actions: Actions }) {
 function ListNotFound({ actions }: { actions: Actions }) {
   const titleId = useUniqueId();
   return (
-    // Obsidian shows a tooltip for each `aria-label`, so the card takes its
-    // name from the title on screen.
-    <section
-      aria-labelledby={titleId}
-      data-library-not-found="list"
-      className="zt:mx-auto zt:max-w-120 zt:px-(--size-4-6) zt:py-(--size-4-12) zt:text-center"
-    >
-      <div
-        id={titleId}
-        role="heading"
-        aria-level={2}
-        className="zt:text-(length:--font-ui-medium) zt:font-(--font-semibold)"
+    // The card stands centred in the list, as an empty list does.
+    <PaneState>
+      {/* Obsidian shows a tooltip for each `aria-label`, so the card takes
+          its name from the title on screen. */}
+      <section
+        aria-labelledby={titleId}
+        data-library-not-found="list"
+        className="zt:w-full zt:max-w-120 zt:px-(--size-4-6) zt:py-(--size-4-12) zt:text-center"
       >
-        {m.library_view_not_found_title()}
-      </div>
-      <p className="zt:mt-(--size-4-2) zt:text-sm zt:text-pretty zt:text-muted-foreground">
-        {m.library_view_not_found_body()}
-      </p>
-      <div className="zt:mt-(--size-4-4) zt:flex zt:flex-wrap zt:justify-center zt:gap-(--size-4-2)">
-        <Button
-          variant="cta"
-          icon="folder-search"
-          onClick={actions.locateZotero}
+        <div
+          id={titleId}
+          role="heading"
+          aria-level={2}
+          className="zt:text-(length:--font-ui-medium) zt:font-(--font-semibold)"
         >
-          {m.library_view_locate()}
-        </Button>
-        <Button icon="settings" onClick={actions.openSettings}>
-          {m.welcome_action_open_settings()}
-        </Button>
-      </div>
-    </section>
+          {m.library_view_not_found_title()}
+        </div>
+        <p className="zt:mt-(--size-4-2) zt:text-sm zt:text-pretty zt:text-muted-foreground">
+          {m.library_view_not_found_body()}
+        </p>
+        <div className="zt:mt-(--size-4-4) zt:flex zt:flex-wrap zt:justify-center zt:gap-(--size-4-2)">
+          <Button
+            variant="cta"
+            icon="folder-search"
+            onClick={actions.locateZotero}
+          >
+            {m.library_view_locate()}
+          </Button>
+          <Button icon="settings" onClick={actions.openSettings}>
+            {m.welcome_action_open_settings()}
+          </Button>
+        </div>
+      </section>
+    </PaneState>
   );
 }

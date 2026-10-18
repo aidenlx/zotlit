@@ -954,6 +954,10 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   expect(notFound("tree").textContent).toBe("Zotero not found");
   expect(notFound("tree").querySelectorAll("button")).toHaveLength(0);
   expect(notFound("list").textContent).toContain("Zotero library not found");
+  // The list's card stands centred in the list, as an empty list does; the
+  // tree's line stays at the top of the tree.
+  expect(notFound("list").closest("[data-pane-state]")).not.toBeNull();
+  expect(notFound("tree").closest("[data-pane-state]")).toBeNull();
   // The facet chips under the tree hide with it.
   expect(
     view.contentEl
@@ -1866,6 +1870,8 @@ it("says a search that finds nothing found nothing, offers to search all librari
     `${m.library_view_empty_search({ query: "Engelbart" })}${m.library_view_search_everywhere()}`,
   );
   expect(searchAll(view)).toBeNull();
+  // The empty list stands centred in the space under the header.
+  expect(empty()?.closest("[data-pane-state]")).not.toBeNull();
   const action = () =>
     empty()?.querySelector<HTMLElement>("[data-library-empty-action]");
   expect(action()?.textContent).toBe(m.library_view_search_everywhere());

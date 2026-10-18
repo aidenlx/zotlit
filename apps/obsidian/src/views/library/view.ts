@@ -332,8 +332,11 @@ export class LibraryView extends ItemView {
     });
     const note = main.createDiv();
     const header = main.createDiv();
-    const list = main.createDiv();
-    const shown = "zt:hidden zt:group-data-zotero-missing:block";
+    // The list takes the rest of the column, so an empty or not-found state
+    // centres in it; a long list still scrolls with the column.
+    const list = main.createDiv({ cls: "zt:flex zt:grow zt:flex-col" });
+    const shown =
+      "zt:hidden zt:grow zt:flex-col zt:group-data-zotero-missing:flex";
     this.#parts.push(
       new ZoteroNotFound(
         this.#deps.welcome,
@@ -373,7 +376,9 @@ export class LibraryView extends ItemView {
       this.tree.setOpen(false);
     });
     this.query.load();
-    this.query.render(list.createDiv({ cls: hidden }));
+    this.query.render(
+      list.createDiv({ cls: `zt:flex zt:grow zt:flex-col ${hidden}` }),
+    );
     this.card.load();
     this.card.render(cardEl);
     this.card.register(

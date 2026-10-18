@@ -16,6 +16,7 @@ import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
+import { PaneState } from "@/components/pane-state";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -1364,16 +1365,27 @@ function Warnings({ view }: { view: QueryView }) {
   );
 }
 
+/**
+ * What the body shows under the toolbar: the rows' layout, or a state in the
+ * shared frame that takes the layout's place, an empty list or a run that
+ * failed, or could not start, with no rows to show. A failed run that keeps
+ * the last good rows shows them, under its note.
+ */
+function bodyShows(s: QueryViewState): "rows" | "empty" | "problem" {
+  const count = s.results?.count ?? 0;
+  if (s.phase === "ready") return count > 0 ? "rows" : "empty";
+  if (s.problems.length > 0 || (s.phase === "failed" && count === 0))
+    return "problem";
+  return "rows";
+}
+
 function NoResults({ view }: { view: QueryView }) {
-  const phase = useQueryViewState(view, (s) => s.phase);
-  const count = useQueryViewState(view, (s) => s.results?.count ?? 0);
   const dataset = useQueryViewState(view, (s) => s.view?.from);
   // A filter of this view or of all views can be what leaves it empty.
   const filtered = useQueryViewState(
     view,
     (s) => s.file?.filters !== undefined || s.view?.filters !== undefined,
   );
-  if (phase !== "ready" || count > 0) return null;
   const Empty = view.empty;
   const sentence = datasetSpec(dataset).empty();
   return (
@@ -1591,9 +1603,12 @@ function GroupButton({ view }: { view: QueryView }) {
 
 function QueryViewBody({ view }: { view: QueryView }) {
   const search = useSearchBar();
+  const shows = useQueryViewState(view, bodyShows);
   const toolbarName = useUniqueId();
   return (
-    <div className="zt:flex zt:h-full zt:flex-col zt:in-[.print]:h-auto">
+    // A host's column can give the body its height, `grow` where the host
+    // is a flex column, as the Library View's list is.
+    <div className="zt:flex zt:h-full zt:grow zt:flex-col zt:in-[.print]:h-auto">
       {/* The toolbar is a size container: on a narrow pane its buttons show
           icons only, and it stays one row. In a Query File tab it runs to
           the pane's edges, as the Bases header does (see file-view.css).
@@ -1620,10 +1635,26 @@ function QueryViewBody({ view }: { view: QueryView }) {
       {view.can.search && <SearchRow view={view} bar={search} />}
       <ReadOnlyNote view={view} />
       <UnusedNote view={view} />
-      <Problems view={view} />
+      {shows === "problem" ? (
+        <PaneState>
+          <div className="zt:w-full zt:max-w-120">
+            <Problems view={view} />
+          </div>
+        </PaneState>
+      ) : (
+        <Problems view={view} />
+      )}
       <Warnings view={view} />
-      <NoResults view={view} />
-      <LayoutBody view={view} />
+      {shows === "empty" && (
+        <PaneState>
+          <NoResults view={view} />
+        </PaneState>
+      )}
+      {/* Out of the flow while a state takes its place, so the frame has the
+          space; it stays mounted, and keeps its scroll and its widths. */}
+      <div className="zt:[&:not([hidden])]:contents" hidden={shows !== "rows"}>
+        <LayoutBody view={view} />
+      </div>
     </div>
   );
 }

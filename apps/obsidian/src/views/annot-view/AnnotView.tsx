@@ -15,6 +15,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
+import { PaneState } from "@/components/pane-state";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -188,21 +189,25 @@ export function AnnotView() {
       )}
       {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
-      ) : body.kind === "problem" ? (
-        <div
-          className="pane-empty zt:p-2"
-          role="alert"
-          data-annot-view-problem=""
-        >
-          <p className="zt:m-0">{body.message}</p>
-          {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
-        </div>
-      ) : body.kind === "loading" ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
-      ) : body.kind === "no-attachments" ? (
-        <div className="pane-empty zt:p-2">{body.message}</div>
       ) : (
-        <EmptyPane message={body.message} action={body.action} />
+        <PaneState>
+          {body.kind === "problem" ? (
+            <div
+              className="pane-empty zt:p-2"
+              role="alert"
+              data-annot-view-problem=""
+            >
+              <p className="zt:m-0">{body.message}</p>
+              {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
+            </div>
+          ) : body.kind === "loading" ? (
+            <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
+          ) : body.kind === "no-attachments" ? (
+            <div className="pane-empty zt:p-2">{body.message}</div>
+          ) : (
+            <EmptyPane message={body.message} action={body.action} />
+          )}
+        </PaneState>
       )}
     </div>
   );
@@ -460,10 +465,12 @@ export function AnnotList({
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
-      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
-        <div>{m.annot_view_filter_no_match()}</div>
-        <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
-      </div>
+      <PaneState>
+        <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
+          <div>{m.annot_view_filter_no_match()}</div>
+          <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
+        </div>
+      </PaneState>
     );
   }
 

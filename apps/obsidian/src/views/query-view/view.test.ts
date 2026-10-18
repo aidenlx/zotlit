@@ -609,6 +609,73 @@ it("says why when the query cannot read Zotero's data, rather than looking empty
   expect(el.querySelector("[data-query-empty]")).toBeNull();
 });
 
+/** The shared frame `node` sits in, which centres it in the space under the toolbar. */
+function frameOf(node: Element | null): Element | null {
+  return node?.closest("[data-pane-state]") ?? null;
+}
+
+/** Whether the rows' layout is out of the flow, so the frame takes the space. */
+function rowsHidden(el: HTMLElement): boolean {
+  return el.querySelector(".annots-container")?.closest("[hidden]") != null;
+}
+
+it("centres the empty list in the space under the toolbar, with the rows' layout out of the flow", async () => {
+  const { view, el, settle } = await mount([result([])]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  const empty = el.querySelector("[data-query-empty]");
+  expect(empty?.textContent).toContain(m.query_view_no_results_annotations());
+  expect(frameOf(empty)).not.toBeNull();
+  expect(rowsHidden(el)).toBe(true);
+});
+
+it("centres the diagnostic of a failed run that has no rows to show", async () => {
+  const { view, el, settle } = await mount([
+    {
+      kind: "failed",
+      diagnostic: {
+        code: "source-unavailable",
+        message: "The Zotero database cannot be read.",
+        hint: "Check the Zotero data directory.",
+        severity: "error",
+        report: ["The Zotero database cannot be read."],
+        found: "",
+        expected: [],
+        suggestions: [],
+      },
+    },
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  const box = el.querySelector('[data-query-diagnostic="source-unavailable"]');
+  expect(box?.getAttribute("role")).toBe("alert");
+  expect(frameOf(box)).not.toBeNull();
+  expect(rowsHidden(el)).toBe(true);
+});
+
+it("keeps the note of a failed run inline above the last good rows", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")]), filterFault(1, 11)],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => {
+    view.document.setFilters("view", {
+      and: ['colourName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  const note = el.querySelector("[data-query-filter-error]");
+  expect(note).not.toBeNull();
+  expect(el.querySelector("[data-pane-state]")).toBeNull();
+  expect(rowsHidden(el)).toBe(false);
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+});
+
 it("shows where this.item gets an Item above the diagnostic of a filter that reads it unbound", async () => {
   const at = "this.item";
   const { view, el, settle } = await mount(
