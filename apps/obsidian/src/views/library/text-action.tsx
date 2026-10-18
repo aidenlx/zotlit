@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * `role="button"`.
  */
 export const TEXT_ACTION_CLASS =
-  "zt:inline-flex zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:text-(--text-accent) zt:outline-hidden zt:hover:text-(--text-accent-hover) zt:hover:underline zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
+  "zt:inline-flex zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-2) zt:rounded-(--radius-s) zt:text-(--text-accent) zt:outline-hidden zt:hover:text-(--text-accent-hover) zt:hover:underline zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
 
 export function TextAction({
   onActivate,
