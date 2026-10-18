@@ -483,6 +483,9 @@ export function VaultEditCell(props: VaultCellProps) {
             !editing &&
             "zt:rounded-(--bases-table-cell-radius-active) zt:hover:z-1 zt:hover:shadow-(--bases-table-cell-shadow-active) zt:focus-visible:z-1 zt:focus-visible:shadow-(--bases-table-cell-shadow-active)",
           target && !checkbox && "zt:cursor-text",
+          // The editor stands over the rows below, above a cell there that
+          // the pointer raises, so a press on a chip it holds reaches it.
+          editing && "zt:z-2",
         )}
         role={target ? "button" : undefined}
         // Tab and Shift+Tab find an editable cell, its own too while it edits.

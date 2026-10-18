@@ -4499,12 +4499,12 @@ views:
     };
     const cell = (key: string, name: string) =>
       `${tab}.contentEl.querySelector('[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${name}"]')`;
-    /** A trusted click at the centre of the element `target` evaluates to. */
-    const click = async (target: string) =>
+    /** A trusted click, of the `button` given, at the centre of the element `target` evaluates to. */
+    const click = async (target: string, button: "left" | "right" = "left") =>
       expect(
         await obEval(
           vaultId,
-          `(function(){const target=${target};if(!target)return 'missing';target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});const rect=target.getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseMove',x,y});contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1});return 'clicked';})()`,
+          `(function(){const target=${target};if(!target)return 'missing';target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});const rect=target.getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseMove',x,y});contents.sendInputEvent({type:'mouseDown',x,y,button:${JSON.stringify(button)},clickCount:1});contents.sendInputEvent({type:'mouseUp',x,y,button:${JSON.stringify(button)},clickCount:1});return 'clicked';})()`,
         ),
       ).toBe("clicked");
     /** A trusted key press, with the modifiers held. */
@@ -4586,6 +4586,36 @@ views:
         { expected: "true" },
       ),
     ).toBe(true);
+    // A chip edits in place from its menu, as in a Bases list cell: a
+    // right click opens it, Edit makes the chip's text a field, and a comma
+    // stays inside the item.
+    await click(
+      `${cell(tieFirst, "zt-projects")}.querySelector('[data-query-vault-chip="c"]')`,
+      "right",
+    );
+    const editEntry = `[...activeDocument.querySelectorAll('body > .menu .menu-item')].find(entry=>entry.textContent===${JSON.stringify(m.query_view_vault_chip_edit())})`;
+    expect(
+      await obEvalUntil(vaultId, `String(!!${editEntry})`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    await click(editEntry);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.activeElement?.matches('[data-query-vault-chip-input]')??false)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await typeText(", d");
+    await key("Enter");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.activeElement?.matches('[data-query-vault-chip="c, d"]')??false)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     // A click on an empty spot of the view, outside the Table.
     expect(
       await obEval(
@@ -4594,7 +4624,7 @@ views:
       ),
     ).toBe("clicked");
     await frontmatterWhen(notePath(tieFirst), (properties) =>
-      ["a", "c"].every((item) =>
+      ["a", "c, d"].every((item) =>
         (properties["zt-projects"] as string[] | undefined)?.includes(item),
       ),
     );

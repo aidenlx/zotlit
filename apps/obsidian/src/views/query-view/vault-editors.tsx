@@ -32,7 +32,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
+import { showMenuAtButton } from "@/lib/menu";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { LIST_TYPES } from "./table-notes";
@@ -147,12 +147,14 @@ export interface ChipMenu {
  * The menu of a list item, as a Bases list cell offers it: Edit, Copy and
  * Remove from list. A right click opens it at the pointer; the menu key or
  * Shift+F10, which report no pointer, open it under the item.
+ *
+ * @returns the menu, which a caller watches to tell its keys from the item's.
  */
 export function openChipMenu(
   chip: HTMLElement,
   pointer: globalThis.MouseEvent | null,
   { item, edit, remove }: ChipMenu,
-): void {
+): Menu {
   const menu = new Menu();
   if (edit)
     menu.addItem((entry) =>
@@ -182,6 +184,7 @@ export function openChipMenu(
   if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
     showMenuAtButton(menu, chip);
   else menu.setParentElement(chip).showAtMouseEvent(pointer);
+  return menu;
 }
 
 /** Whether `event` asks for the menu of what has focus: the menu key or Shift+F10. */
@@ -461,6 +464,8 @@ function ListEditor({
   latest.current = draft;
   /** Set when a key ends the edit in place, so the blur after does not. */
   const chipEnded = useRef(false);
+  /** Whether an item's menu stands, which takes the keys. */
+  const menuStands = useRef(false);
   const editingAt = draft.chip?.at;
   // An edit that opens on an item from its menu starts in that item.
   useLayoutEffect(() => {
@@ -502,9 +507,17 @@ function ListEditor({
     if (at >= draft.items.length) field.current?.focus();
     else pills.current[at]?.focus();
   };
+  /**
+   * Focus the pill at `at`, or the field for -1, before the list renders
+   * again: a focused pill that leaves the page takes focus out of the
+   * editor, which ends the edit. Pills are keyed by place, so the pill
+   * before a removed one stays on the page.
+   */
+  const focusNow = (at: number) =>
+    (at < 0 ? field.current : pills.current[at])?.focus();
   const remove = (at: number) => {
     const current = latest.current;
-    focusAfter.current = at - 1;
+    focusNow(at - 1);
     onDraft({ ...current, items: current.items.filter((_, i) => i !== at) });
   };
   const editChip = (at: number) => {
@@ -518,8 +531,7 @@ function ListEditor({
     if (at === undefined) return;
     chipEnded.current = true;
     const next = keep ? withChip(latest.current) : withoutChip(latest.current);
-    focusAfter.current =
-      next.items.length === latest.current.items.length ? at : at - 1;
+    focusNow(next.items.length === latest.current.items.length ? at : at - 1);
     onDraft(next);
   };
   const onChipKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -540,12 +552,20 @@ function ListEditor({
     chip: HTMLElement,
     pointer: MouseEvent | null,
     at: number,
-  ) =>
+  ) => {
+    menuStands.current = true;
     openChipMenu(chip, pointer?.nativeEvent ?? null, {
       item: draft.items[at] ?? "",
       edit: () => editChip(at),
       remove: () => remove(at),
+    }).onHide(() => {
+      // The key that closes the menu reaches the pill after the menu has
+      // gone, so the pill hears it as the menu's until the key is done.
+      chip.ownerDocument.defaultView?.setTimeout(() => {
+        menuStands.current = false;
+      });
     });
+  };
   const end = (how: VaultEditEnd) => onEnd(true, draft, how);
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
@@ -577,7 +597,7 @@ function ListEditor({
   const onPillKey = (event: KeyboardEvent<HTMLElement>, at: number) => {
     event.stopPropagation();
     // While the pill's menu stands, the keys are the menu's.
-    if (hasActiveMenu(event.currentTarget)) return;
+    if (menuStands.current) return;
     if (asksForMenu(event)) {
       event.preventDefault();
       chipMenu(event.currentTarget, null, at);
@@ -623,8 +643,13 @@ function ListEditor({
           }}
           tabIndex={-1}
           data-query-vault-chip={item}
-          // The item that edits in place holds its width, under its field.
-          className={at === editingAt ? "zt:invisible zt:relative" : undefined}
+          // The item that edits in place holds its width and its focus under
+          // its field, which covers what it shows.
+          className={
+            at === editingAt
+              ? "zt:relative zt:[&>:not(:last-child)]:invisible"
+              : undefined
+          }
           onKeyDown={(event) => onPillKey(event, at)}
           onContextMenu={(event) => {
             // The field of an item in edit keeps the field's own menu.
@@ -661,7 +686,7 @@ function ListEditor({
               // over do not show through.
               <span
                 ref={chipBox}
-                className="zt:visible zt:absolute zt:inset-y-0 zt:start-0 zt:z-1 zt:flex zt:max-w-(--zt-chip-room) zt:min-w-full zt:rounded-(--radius-s) zt:bg-(--background-primary)"
+                className="zt:absolute zt:inset-y-0 zt:start-0 zt:z-1 zt:flex zt:max-w-(--zt-chip-room) zt:min-w-full zt:rounded-(--radius-s) zt:bg-(--background-primary)"
               >
                 <span
                   className={cn(

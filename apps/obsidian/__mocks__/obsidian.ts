@@ -1010,6 +1010,20 @@ export class Menu {
     return this;
   }
 
+  /** What `hide` runs, as Obsidian runs it once the menu closes. */
+  #onHide: (() => void) | null = null;
+
+  onHide(callback: () => void): this {
+    this.#onHide = callback;
+    return this;
+  }
+
+  /** Test helper: close the menu, running what `onHide` registered. */
+  hide(): this {
+    this.#onHide?.();
+    return this;
+  }
+
   showAtMouseEvent(evt: MouseEvent): this {
     this.mouseEvent = evt;
     return this;
