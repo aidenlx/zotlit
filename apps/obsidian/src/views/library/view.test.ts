@@ -1101,6 +1101,28 @@ it("marks the Sort button as set only for a sort other than the one the selected
   expect(sort()).toEqual({ set: true, text: "Sort1" });
 });
 
+it("marks the Sort button again on a switch between Recent and My Library that leaves the query text as it was", async () => {
+  const { deps, rescope } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    rescope([LIBRARIES[0]!]);
+    await view.query.settled;
+  });
+  const set = () =>
+    view.contentEl
+      .querySelector('[data-query-toolbar="sort"]')!
+      .hasAttribute("data-active");
+  const text = view.query.document.text;
+  expect(set()).toBe(false);
+  // My Library writes no sort, so Recent's sort is now the researcher's.
+  await press(view, row(view, { kind: "library", library: PERSONAL }));
+  expect(view.query.document.text).toBe(text);
+  expect(set()).toBe(true);
+  await press(view, row(view, RECENT));
+  expect(view.query.document.text).toBe(text);
+  expect(set()).toBe(false);
+});
+
 /** Two sorts from the toolbar, the second before the first is saved. */
 function sortTwice(view: LibraryView) {
   view.query.document.editView({

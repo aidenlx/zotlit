@@ -122,6 +122,8 @@ export function ResultsMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   const phase = useStore(view.state, (s) => s.phase);
   const matched = useStore(view.state, (s) => s.results?.matched ?? 0);
+  // A limit the host writes itself shows as not set.
+  useStore(view.state, (s) => s.defaults);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
   const popupId = useUniqueId();
