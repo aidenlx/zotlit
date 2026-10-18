@@ -185,7 +185,9 @@ function StepRow({
               name={MARK_ICON[step.state]}
               size="var(--icon-xs)"
               className={
-                step.state === "checking" ? "zt:animate-spin" : undefined
+                step.state === "checking"
+                  ? "zt:motion-safe:animate-spin"
+                  : undefined
               }
             />
           )}
@@ -260,7 +262,7 @@ function Checklist({ connect }: { connect: boolean }) {
         ) : undefined,
       body:
         connection.status === "checking" ? (
-          <p className="zt:m-0 zt:animate-pulse">
+          <p className="zt:m-0 zt:motion-safe:animate-pulse">
             {m.welcome_step_connect_checking()}
           </p>
         ) : (
