@@ -21,6 +21,16 @@ export interface WelcomeState {
    * conversion") in this session; a dismissal puts it away.
    */
   requested: boolean;
+  /**
+   * How many times the researcher asked for the banner in this session; each
+   * request moves focus to it.
+   */
+  requests: number;
+  /**
+   * The researcher converted the templates in this session: the banner keeps
+   * the result they asked for until a dismissal.
+   */
+  converted: boolean;
   connection: ConnectionReadout;
   /** Current `note.literature-folder` setting; seeded once by the view on open. */
   literatureFolder: string;
@@ -46,8 +56,11 @@ export interface WelcomeState {
 
 /** What the banner shows, section by section; each is absent while it does not apply. */
 export interface BannerSections {
-  /** The setup steps. */
-  readonly steps: boolean;
+  /**
+   * The setup steps: the checklist, `"folded"` into one "Setup done" line
+   * while every step is done and the banner shows a notice, or absent.
+   */
+  readonly steps: "open" | "folded" | false;
   /**
    * The Connect step, among the steps: left out while the Library View
    * shows its not-found card, which says the same.
@@ -66,14 +79,19 @@ export interface BannerSections {
 /**
  * The one decision of what the banner shows. The Migration Prompt of a v1
  * upgrade shows until a dismissal acknowledges it. Otherwise nothing shows
- * once the researcher dismissed the banner. The setup steps show while setup
- * is incomplete (once the connection is known, so a complete setup never
- * flashes), and whenever the researcher asked for the banner, the Connect
- * step only while the Library View does not say Zotero is not found; the template
- * conversion offer shows while it is pending, and its result while cleanup
- * remains or the steps show. An update shows until "What's new" or a
- * dismissal acknowledges it, beside whatever else shows, while release
- * notices are on; a dismissal from before it leaves it to show alone.
+ * once the researcher dismissed the banner, but an update that came after.
+ *
+ * The setup steps open while setup is incomplete (once the connection is
+ * known, so a complete setup never flashes), and whenever the researcher
+ * asked for the banner. When every step is done and the banner shows a
+ * notice besides the update (the template conversion, the Migration Prompt
+ * or the Companion guidance, which a v1 upgrade always shows), they fold into
+ * one "Setup done" line; an update alone shows no steps. The Connect step
+ * shows only while the Library View does not say Zotero is not found. The
+ * template conversion offer shows while it is pending, and its result while
+ * cleanup remains, after a conversion in this session, or while setup is
+ * under way (a v1 upgrade, a request, an incomplete setup). An update shows until "What's new" or a dismissal
+ * acknowledges it, beside whatever else shows, while release notices are on.
  *
  * @returns `null` where the banner shows nothing.
  * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
@@ -92,25 +110,44 @@ export function bannerSections(state: WelcomeState): BannerSections | null {
         }
       : null;
   }
-  const incomplete =
-    state.connection.status !== "checking" &&
-    !(state.connection.status === "connected" && state.literatureFolderExists);
-  const steps = state.requested || state.migrationPending || incomplete;
+  const known = state.connection.status !== "checking";
+  const done =
+    state.connection.status === "connected" && state.literatureFolderExists;
+  const open = state.requested || (known && !done);
+  const underway = open || state.migrationPending;
   const result = state.templateConversionResult;
   const conversion = state.templateConversionPending
     ? "offer"
-    : result && (steps || result.pendingCleanup.length > 0)
+    : result &&
+        (underway || state.converted || result.pendingCleanup.length > 0)
       ? "result"
       : null;
+  const migration = underway && conversion === null && state.v1TemplatesPresent;
+  const companion = state.migrationPending;
+  const notice = conversion !== null || migration || companion;
+  const steps = open ? "open" : notice && done ? "folded" : false;
   const sections: BannerSections = {
     steps,
-    connect: steps && !state.notFound,
+    connect: steps !== false && !state.notFound,
     conversion,
-    migration: steps && conversion === null && state.v1TemplatesPresent,
-    companion: state.migrationPending,
+    migration,
+    companion,
     update,
   };
-  return steps || conversion !== null || update ? sections : null;
+  return steps !== false || notice || update ? sections : null;
+}
+
+/**
+ * The badge names the strongest notice the banner shows: an upgrade from
+ * v1, else an update, also beside a template conversion, else a fresh
+ * setup.
+ */
+export function bannerBadge(
+  state: WelcomeState,
+): "upgraded" | "updated" | "get-started" {
+  if (state.migrationPending) return "upgraded";
+  if (bannerSections(state)?.update) return "updated";
+  return "get-started";
 }
 
 export type WelcomeStore = ReturnType<typeof createWelcomeStore>;
@@ -120,6 +157,8 @@ export function createWelcomeStore() {
     migrationPending: false,
     dismissed: false,
     requested: false,
+    requests: 0,
+    converted: false,
     connection: { status: "checking" },
     literatureFolder: "",
     literatureFolderExists: false,

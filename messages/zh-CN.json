@@ -462,6 +462,7 @@
   "annot_view_name": "Zotero 标注",
   "command_open_library_view_name": "打开 Zotero 文库",
   "library_view_name": "Zotero 文库",
+  "library_view_help_action": "欢迎与帮助",
   "library_view_papers_view_name": "文献",
   "library_view_tree_label": "文库",
   "library_view_recent": "最近",
@@ -1220,6 +1221,12 @@
   "welcome_template_cleanup_body": "以下旧文件未能移入回收站，仍留在仓库中：",
   "welcome_template_cleanup_retry": "重试清理",
   "welcome_action_open_migration_guide": "打开迁移指南",
+  "welcome_template_conversion_lead": "ZotLit 会将旧版模板文件整理为模板文档，确认渲染结果一致后，再将旧文件移至回收站。",
+  "welcome_how_it_works": "工作原理",
+  "welcome_setup_done": "设置完成",
+  "welcome_setup_done_folder": "笔记存放于 {folder}",
+  "welcome_show_steps": "显示步骤",
+  "welcome_hide_steps": "隐藏步骤",
   "creator_summary": [
     {
       "declarations": ["input count", "input first"],

@@ -48,7 +48,15 @@ it("offers the user-controlled template conversion in upgraded onboarding", asyn
   expect(container.textContent).toContain(
     m.welcome_template_conversion_title(),
   );
-  expect(container.textContent).toContain(
+  // One lead sentence beside the action; the full explanation is folded
+  // behind "How it works".
+  expect(container.textContent).toContain(m.welcome_template_conversion_lead());
+  const details = container.querySelector("details");
+  expect(details?.open).toBe(false);
+  expect(details?.querySelector("summary")?.textContent).toBe(
+    m.welcome_how_it_works(),
+  );
+  expect(details?.textContent).toContain(
     m.welcome_template_conversion_body({
       path: "Research templates/zotlit-profile.default.md",
     }),
@@ -198,6 +206,42 @@ describe("Welcome setup checklist", () => {
     expect(actions.openSettings).toHaveBeenCalledOnce();
     expect(actions.pickFolder).toHaveBeenCalledOnce();
     expect(actions.searchLibrary).toHaveBeenCalledOnce();
+  });
+
+  it("folds the done steps into one Setup done line beside a notice, which Show steps opens", async () => {
+    const { container } = await render("upgraded", {
+      connection: CONNECTED,
+      literatureFolderExists: true,
+    });
+    const folded = container.querySelector<HTMLElement>(
+      "[data-welcome-setup-done]",
+    );
+    expect(folded?.textContent).toContain(m.welcome_setup_done());
+    expect(folded?.textContent).toContain("~/Zotero");
+    expect(folded?.textContent).toContain(
+      m.welcome_setup_done_folder({ folder: "Literature" }),
+    );
+    expect(container.querySelector("[data-welcome-step]")).toBeNull();
+    const show = button(container, m.welcome_show_steps())!;
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    await act(() => show.click());
+    expect(show.getAttribute("aria-expanded")).toBe("true");
+    expect(show.textContent).toBe(m.welcome_hide_steps());
+    expect(
+      [...container.querySelectorAll("[data-welcome-step]")].map((el) =>
+        el.getAttribute("data-welcome-step"),
+      ),
+    ).toEqual(["done", "done", "done"]);
+  });
+
+  it("keeps the steps open when asked for, even beside a notice", async () => {
+    const { container } = await render("upgraded", {
+      connection: CONNECTED,
+      literatureFolderExists: true,
+      requested: true,
+    });
+    expect(container.querySelector("[data-welcome-setup-done]")).toBeNull();
+    expect(container.querySelectorAll("[data-welcome-step]")).toHaveLength(3);
   });
 
   it("opens Connect while Zotero is missing, saying so beside the Locate action", async () => {
@@ -484,7 +528,13 @@ describe("the update section", () => {
       name: "an update while setup is incomplete",
       mode: "fresh",
       state: { updatePending: true },
-      text: "Let's get started",
+      text: "Updated",
+    },
+    {
+      name: "an update beside the template conversion",
+      mode: "fresh",
+      state: { ...DONE, updatePending: true, templateConversionPending: true },
+      text: "Updated",
     },
     {
       name: "an update with the Migration Prompt",

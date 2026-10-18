@@ -79,10 +79,15 @@ export class WelcomeBanner extends Component {
 
   /**
    * Show the banner, its setup steps included, until the researcher
-   * dismisses it, as "Open welcome view" asks.
+   * dismisses it, and move focus to it, as "Open welcome view" and the
+   * Library View's "Welcome and help" ask.
    */
   request(): void {
-    this.#store.setState({ requested: true });
+    this.#deps.settings.update({ "welcome.dismissed": false });
+    this.#store.setState((s) => ({
+      requested: true,
+      requests: s.requests + 1,
+    }));
   }
 
   /** Settles once the last connection readout started has landed. */
@@ -138,14 +143,14 @@ export class WelcomeBanner extends Component {
       },
       convertLiteratureNoteTemplates: async () => {
         // The banner stays to show the result the researcher asked for.
-        this.#store.setState({ requested: true });
+        this.#store.setState({ converted: true });
         const result = await this.#deps.templateMigration.convert();
         new BaseNotice(templateMigrationNotice(result));
         return result;
       },
       openExternal: (url) => window.open(url),
       dismiss: () => {
-        this.#store.setState({ requested: false });
+        this.#store.setState({ requested: false, converted: false });
         settings.update({ "welcome.dismissed": true });
         release.acknowledgeMigration();
         release.acknowledgeUpdate();
