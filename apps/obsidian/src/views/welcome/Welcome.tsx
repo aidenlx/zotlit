@@ -285,7 +285,9 @@ const FOCUS_RING =
 
 /**
  * A Help Link tile: its icon in an accent square, its title, which names the
- * link, and a subtitle that describes it.
+ * link, and a subtitle that describes it. The large tile holds both lines
+ * beside its icon; a small one puts the subtitle under the icon and the title,
+ * so it keeps to one line in the narrow column.
  */
 function HelpTile({
   icon,
@@ -310,28 +312,33 @@ function HelpTile({
       aria-describedby={subtitleId}
       style={{ ...LINK_COLOR, textDecoration: "none" }}
       className={cn(
-        "zt:flex zt:min-w-0 zt:cursor-pointer zt:items-center zt:gap-2.5 zt:rounded-lg zt:border zt:bg-background zt:px-2.5 zt:py-2 zt:transition-colors zt:hover:border-(--background-modifier-border-hover) zt:hover:bg-(--background-modifier-hover)",
+        "zt:grid zt:min-w-0 zt:cursor-pointer zt:grid-cols-[auto_minmax(0,1fr)] zt:items-center zt:gap-x-2 zt:gap-y-0.5 zt:rounded-lg zt:border zt:bg-background zt:px-2.5 zt:py-1.5 zt:transition-colors zt:hover:border-(--background-modifier-border-hover) zt:hover:bg-(--background-modifier-hover)",
         FOCUS_RING,
         primary
-          ? "zt:col-span-2 zt:border-primary zt:hover:border-primary"
+          ? "zt:col-span-2 zt:gap-x-2.5 zt:border-primary zt:hover:border-primary"
           : "zt:border-border",
       )}
     >
       <span
         className={cn(
-          "zt:flex zt:shrink-0 zt:items-center zt:justify-center zt:rounded-md zt:bg-[hsla(var(--interactive-accent-hsl),0.14)] zt:text-link",
-          primary ? "zt:size-8" : "zt:size-7",
+          "zt:flex zt:items-center zt:justify-center zt:rounded-md zt:bg-[hsla(var(--interactive-accent-hsl),0.14)] zt:text-link",
+          primary ? "zt:row-span-2 zt:size-8" : "zt:size-6",
         )}
       >
-        <Icon name={icon} />
+        <Icon name={icon} size={primary ? undefined : "var(--icon-xs)"} />
       </span>
-      <span className="zt:flex zt:min-w-0 zt:flex-col">
-        <span id={titleId} className="zt:text-sm zt:font-semibold">
-          {title}
-        </span>
-        <span id={subtitleId} className="zt:text-xs zt:text-muted-foreground">
-          {subtitle}
-        </span>
+      <span id={titleId} className="zt:truncate zt:text-sm zt:font-semibold">
+        {title}
+      </span>
+      {/* A small tile gives its subtitle the full width under the icon. */}
+      <span
+        id={subtitleId}
+        className={cn(
+          "zt:text-xs zt:text-muted-foreground",
+          !primary && "zt:col-span-2",
+        )}
+      >
+        {subtitle}
       </span>
     </a>
   );
@@ -400,22 +407,22 @@ function HelpLinks() {
           subtitle={m.welcome_help_citations_subtitle()}
         />
       </div>
-      <div className="zt:mt-2.5 zt:flex zt:flex-wrap zt:gap-x-3 zt:gap-y-1 zt:text-xs">
+      <div className="zt:mt-2 zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:text-xs">
         <TextLink url={BLOG}>{m.welcome_link_blog()}</TextLink>
         <TextLink url={CHANGELOG}>{m.welcome_link_changelog()}</TextLink>
         <TextLink url={SPONSOR}>
           <Icon name="heart" className="zt:text-pink" />
           {m.welcome_link_sponsor()}
         </TextLink>
+        {migrationPending ? null : (
+          <span className="zt:text-muted-foreground">
+            {m.welcome_footer_migration_lead()}{" "}
+            <TextLink url={MIGRATION_GUIDE}>
+              {m.welcome_footer_migration_link()}
+            </TextLink>
+          </span>
+        )}
       </div>
-      {migrationPending ? null : (
-        <p className="zt:mt-1.5 zt:mb-0 zt:text-xs zt:text-muted-foreground">
-          {m.welcome_footer_migration_lead()}{" "}
-          <TextLink url={MIGRATION_GUIDE}>
-            {m.welcome_footer_migration_link()}
-          </TextLink>
-        </p>
-      )}
     </nav>
   );
 }
@@ -640,7 +647,7 @@ export function Welcome() {
       <Header titleId={titleId} />
       {/* A wide pane holds the Help Links in a column beside the checklist
           and the callouts; a narrow one puts them underneath. */}
-      <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@2xl:grid-cols-[minmax(0,1fr)_300px] zt:@2xl:gap-6">
+      <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@2xl:grid-cols-[minmax(0,1fr)_340px] zt:@2xl:gap-6">
         <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
           {conversion === "offer" && <ConversionOffer />}
           {conversion === "result" && <ConversionResult />}
