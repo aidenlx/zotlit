@@ -1440,6 +1440,17 @@ it("lets the keyboard enter the list at its first row while none is selected, an
   expect(accessibleName(itemRow(view, C))).toBe("Figures that work");
 });
 
+it("selects the row the keyboard enters the list at, with no Reading Card, so its keys act on it", async () => {
+  const { deps, items } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, A).focus());
+  expect(view.selection.getState()).toEqual({ key: A, card: false });
+  expect(await pressKey(view, itemRow(view, A), ["Enter"])).toBe(true);
+  expect(items.openNote).toHaveBeenLastCalledWith(A, false);
+  expect(await pressKey(view, itemRow(view, A), [" "])).toBe(true);
+  expect(view.selection.getState()).toEqual({ key: A, card: true });
+});
+
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
   const { deps, items } = pluginData();
   const view = await openTab(deps);
@@ -2179,8 +2190,7 @@ describe("Reading Card", () => {
     )!;
     expect(close.getAttribute("aria-label")).toBe(m.library_view_card_close());
     await act(() => close.click());
-    expect(shownCard(view)).toBeNull();
-    expect(view.selection.getState().key).toBeNull();
+    expect(view.selection.getState()).toEqual({ key: B, card: false });
     expect(document.activeElement).toBe(itemRow(view, B));
   });
 
