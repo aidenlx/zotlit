@@ -203,8 +203,7 @@ export function PopoverAction({
     >
       <Icon
         name={icon}
-        size="var(--icon-s)"
-        strokeWidth="var(--icon-s-stroke-width)"
+        size="s"
         className="zt:shrink-0 zt:text-muted-foreground"
       />
       <span className="zt:truncate">{children}</span>

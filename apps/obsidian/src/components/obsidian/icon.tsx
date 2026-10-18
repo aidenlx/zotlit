@@ -1,7 +1,7 @@
 import { getIcon } from "obsidian";
 import type { IconName } from "obsidian";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { CSSProperties, SVGAttributes } from "react";
+import type { CSSProperties, ReactNode, SVGAttributes } from "react";
 
 import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
@@ -14,10 +14,28 @@ export interface IconProps extends Omit<
 > {
   /** @see https://lucide.dev for the bundled icon catalog. */
   name: IconName;
-  /** CSS length, or a number treated as px. */
-  size?: number | string;
+  /**
+   * One of Obsidian's icon sizes, which brings the stroke width Obsidian
+   * pairs with it; or a CSS length, or a number treated as px, which keeps
+   * the stroke of the context.
+   */
+  size?: IconSize | number | string;
   strokeWidth?: number | string;
 }
+
+/**
+ * Obsidian's icon sizes, each `--icon-<size>` with its
+ * `--icon-<size>-stroke-width`, so an icon's stroke follows its size as
+ * Obsidian's own icons do.
+ */
+export type IconSize = "xs" | "s" | "m" | "l";
+
+const ICON_SIZES: ReadonlySet<string> = new Set<IconSize>([
+  "xs",
+  "s",
+  "m",
+  "l",
+]);
 
 /**
  * `getIcon` returns a cloned SVG node; we graft its children and
@@ -75,7 +93,10 @@ export function Icon({
   );
 
   const cssVars: CSSProperties & Record<`--${string}`, string | number> = {};
-  if (size !== undefined) {
+  if (typeof size === "string" && ICON_SIZES.has(size)) {
+    cssVars["--icon-size"] = `var(--icon-${size})`;
+    cssVars["--icon-stroke"] = `var(--icon-${size}-stroke-width)`;
+  } else if (size !== undefined) {
     cssVars["--icon-size"] = typeof size === "number" ? `${size}px` : size;
   }
   if (strokeWidth !== undefined) {
@@ -93,5 +114,30 @@ export function Icon({
       className={cn(iconClass, className)}
       style={{ ...cssVars, ...style }}
     />
+  );
+}
+
+/**
+ * A box one line of its text tall, which centres what it holds on that line:
+ * an icon, or an icon button, that leads a block of more than one line sits
+ * on the block's first line, wherever the line box puts the text. Give it the
+ * class that sets the first line's font size and line height.
+ */
+export function FirstLine({
+  className,
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "zt:flex zt:h-[1lh] zt:shrink-0 zt:items-center",
+        className,
+      )}
+    >
+      {children}
+    </span>
   );
 }

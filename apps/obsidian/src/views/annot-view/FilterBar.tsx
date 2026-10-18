@@ -157,7 +157,7 @@ function TriggerChevron() {
   return (
     <Icon
       name="chevron-down"
-      size="var(--icon-xs)"
+      size="xs"
       className="zt:duration-150 zt:group-data-open:rotate-180 zt:motion-safe:transition-transform"
     />
   );

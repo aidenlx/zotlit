@@ -5,6 +5,7 @@ import type { VariantProps } from "tailwind-variants";
 import { tv } from "@/lib/tw";
 
 import { Icon } from "./icon";
+import type { IconSize } from "./icon";
 
 const iconButton = tv({
   base: "clickable-icon",
@@ -22,6 +23,8 @@ export interface IconButtonProps
     Omit<HTMLAttributes<HTMLDivElement>, "role" | "tabIndex" | "children">,
     IconButtonVariants {
   icon: IconName;
+  /** The icon's size, for a button inside smaller text; the context's otherwise. */
+  size?: IconSize;
   disabled?: boolean;
   /**
    * A toggle's state, announced as `aria-pressed` and drawn as `is-active`;
@@ -41,6 +44,7 @@ export interface IconButtonProps
 /** @see {@link tooltipAttrs} for opting into Obsidian's hover tooltip. */
 export function IconButton({
   icon,
+  size,
   active,
   warning,
   disabled,
@@ -81,7 +85,7 @@ export function IconButton({
         }
       }}
     >
-      <Icon name={icon} />
+      <Icon name={icon} size={size} />
       {children}
     </div>
   );

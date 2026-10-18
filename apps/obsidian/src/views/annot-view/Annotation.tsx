@@ -371,7 +371,7 @@ function LockMark({ lock }: { lock: AnnotationLock }) {
         m.annot_view_lock_label({ reason: lockReasonText(lock.reason) }),
       )}
     >
-      <Icon name="lock" size="var(--icon-xs)" />
+      <Icon name="lock" size="xs" />
     </span>
   );
 }
@@ -1220,7 +1220,7 @@ function PageChip({
     <>
       <Icon
         name={typeIcon(type)}
-        size="var(--icon-xs)"
+        size="xs"
         className={cn("zt:shrink-0", color && "zt:text-(--zt-annot-color)")}
       />
       {page && display.page && (

@@ -271,11 +271,7 @@ function ViewList({ view }: { view: QueryView }) {
                   openPage(row.label);
                 }}
               >
-                <Icon
-                  name="chevron-right"
-                  size="var(--icon-s)"
-                  strokeWidth="var(--icon-s-stroke-width)"
-                />
+                <Icon name="chevron-right" size="s" />
               </button>
             }
             data-query-view-row={row.label}
