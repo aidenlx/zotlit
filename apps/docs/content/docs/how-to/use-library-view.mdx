@@ -89,13 +89,11 @@ Turn on several filters to show only the papers that match all of them. The filt
 
 ## Read the list [#layouts]
 
-The list draws each paper in the <UiLabel name={m.library_view_papers_view_name()} /> layout by default: the title, then the creators, year, and publication. A paper with annotations gets a third line: the colors of its annotations and their number. A note icon at the end of the row shows that the paper has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
+The list draws each paper in two lines, in the <UiLabel name={m.library_view_papers_view_name()} /> layout: the title, then the creators, year, and publication. An icon at the end of the row shows the kind of the paper's main attachment, and a note icon shows that the paper has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
 
-To see the papers as a table, open the view menu at the start of the toolbar, which is labeled with the current layout, and choose <UiLabel name={m.query_view_layout_table()} />. The table shows a column for the literature note, with a link to the note or a button that creates it. Choose <UiLabel name={m.library_view_papers_view_name()} /> to switch back.
+The toolbar holds the result count, the sort, and <UiLabel name={m.annot_view_save_as_query_file()} />. The view lists at most 1,000 papers at a time. When a selection holds more, the result count says how many it holds in all. For a table, other layouts, filters, grouping, or a choice of properties, [save the view as a query file](#save-as-query-file) and work in its tab.
 
-The toolbar also sorts the list and picks which properties the table shows. The view lists at most 1,000 papers at a time. When a selection holds more, the toolbar's result count says how many it holds in all.
-
-The Library View remembers your tree selection, filters, search text, sort, layout, and table columns. It keeps them in this vault's plugin data, so they come back in every Library View you open and they sync with your vault.
+The Library View remembers your tree selection, filters, search text, and sort. It keeps them in this vault's plugin data, so they come back in every Library View you open and they sync with your vault.
 
 ## Open, write, and cite from a row [#rows]
 
@@ -146,9 +144,9 @@ The list holds at most 1,000 papers. When the paper falls beyond them, nothing i
 
 ## Save the view as a query file [#save-as-query-file]
 
-To keep what the Library View shows as a vault file, open the view menu and choose <UiLabel name={m.annot_view_save_as_query_file()} />. The name starts as the library or collection you selected; change it if you like, and choose a folder. When the file leaves out part of the view, the dialog says which. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
+To keep what the Library View shows as a vault file, choose <UiLabel name={m.annot_view_save_as_query_file()} /> in the toolbar. The name starts as the library or collection you selected; change it if you like, and choose a folder. When the file leaves out part of the view, the dialog says which. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
 
-The file keeps the library or collection you selected, the sort, the layout, and the table columns, and it lists at most 1,000 papers, as the view does. Some parts of the view do not carry over:
+The file keeps the library or collection you selected and the sort, opens in the <UiLabel name={m.library_view_papers_view_name()} /> layout, and lists at most 1,000 papers, as the view does. In its tab you can switch to the table, filter, group, and choose properties. Some parts of the view do not carry over:
 
 - The search does not carry over. Query files have no way to express a ranked search yet.
 - <UiLabel name={m.library_view_facet_has_note()} /> does not carry over, and
