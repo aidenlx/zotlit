@@ -7,6 +7,7 @@
 // [property | direction] box and a delete button. A Manual group order adds
 // a section of group rows and a "Show all" / "Hide all" footer.
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
+import { Select } from "@/components/select";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ import {
   JoinedSelects,
   NotUsed,
   RemoveButton,
+  propertySelectOption,
   sortRowClass,
   sortRowsClass,
 } from "./sort-control";
@@ -68,11 +70,25 @@ export function GroupEditor({
           <div className={sortRowClass}>
             <JoinedSelects
               property={
-                <Dropdown
+                <Select
                   aria-label={m.query_view_group_by()}
                   data-group-property=""
                   className="zt:min-w-0 zt:flex-1"
                   value={groupBy?.property ?? NONE}
+                  options={[
+                    { value: NONE, label: m.query_view_group_by_none() },
+                    ...(!option && groupBy
+                      ? [
+                          propertySelectOption({
+                            path: groupBy.property,
+                            label: groupBy.property,
+                            kind: "text",
+                            icon: "file-question",
+                          }),
+                        ]
+                      : []),
+                    ...options.map(propertySelectOption),
+                  ]}
                   onChange={(property) =>
                     onChange(
                       property === NONE
@@ -85,21 +101,7 @@ export function GroupEditor({
                           },
                     )
                   }
-                >
-                  <DropdownItem value={NONE}>
-                    {m.query_view_group_by_none()}
-                  </DropdownItem>
-                  {!option && groupBy && (
-                    <DropdownItem value={groupBy.property}>
-                      {groupBy.property}
-                    </DropdownItem>
-                  )}
-                  {options.map((candidate) => (
-                    <DropdownItem key={candidate.path} value={candidate.path}>
-                      {candidate.label}
-                    </DropdownItem>
-                  ))}
-                </Dropdown>
+                />
               }
               direction={
                 <Dropdown

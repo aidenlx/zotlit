@@ -105,17 +105,18 @@ const filterTheme = {
         "zt:flex zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-(--metadata-property-radius) zt:bg-input zt:[corner-shape:var(--metadata-property-corner-shape)]",
         "zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border-hover)] zt:focus-within:shadow-(--metadata-property-box-shadow-focus) zt:data-[state=error]:shadow-[0_0_0_var(--border-width)_var(--background-modifier-error)] zt:[&:has([aria-invalid=true])]:shadow-[0_0_0_var(--border-width)_var(--background-modifier-error)]",
         "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--background-modifier-form-field)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
+        // The native selects, the operator and a short value list, fit their
+        // text.
         "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full",
         "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:px-(--size-2-1)",
       ),
       // The property select carries the icon of the property's type, as the
-      // Bases property picker does, and is capped as Bases caps it.
+      // Bases property picker does, and is capped as Bases caps it; the
+      // native operator after it stands behind a rule.
       predicate: cn(
-        "zt:flex zt:max-w-full zt:min-w-0 zt:[&>[data-part=wrapper]]:border-border zt:[&>[data-part=wrapper]+[data-part=wrapper]]:border-s-(length:--border-width)",
-        "zt:[&>[data-part=wrapper]:first-of-type]:max-w-[14em]",
-        // The icon takes the select's start padding, so the name follows it
-        // at the gap Bases leaves.
-        "zt:data-[state=icon]:[&>[data-part=wrapper]:first-of-type]:[--dropdown-padding:0_var(--dropdown-padding-end)_0_var(--size-4-2)] zt:[.mod-rtl_&]:data-[state=icon]:[&>[data-part=wrapper]:first-of-type]:[--dropdown-padding:0_var(--size-4-2)_0_var(--dropdown-padding-end)]",
+        "zt:flex zt:max-w-full zt:min-w-0 zt:[&>:is([role=combobox],[data-part=wrapper])]:border-border",
+        "zt:[&>[role=combobox]~[data-part=wrapper]]:border-s-(length:--border-width)",
+        "zt:[&>[role=combobox]:first-of-type]:max-w-[14em]",
       ),
       "kind-icon":
         "zt:flex zt:shrink-0 zt:items-center zt:self-stretch zt:ps-(--size-4-2) zt:text-(--icon-color)",

@@ -233,7 +233,7 @@ function PropertyList({
   return (
     <Chooser.List
       groups={groups}
-      aria-label={m.query_view_properties()}
+      label={m.query_view_properties()}
       emptyLabel={m.query_view_properties_empty()}
     >
       {(row) => {
