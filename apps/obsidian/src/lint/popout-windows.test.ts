@@ -23,25 +23,72 @@ tester.run("no-cross-window-instanceof", noCrossWindowInstanceof, {
   invalid: [
     {
       code: "node instanceof HTMLElement",
-      errors: [{ messageId: "crossWindow", data: { type: "HTMLElement" } }],
+      errors: [
+        {
+          messageId: "crossWindow",
+          data: {
+            type: "HTMLElement",
+            replacement: "node.instanceOf(HTMLElement)",
+          },
+        },
+      ],
     },
     {
       code: "event instanceof MouseEvent",
-      errors: [{ messageId: "crossWindow", data: { type: "MouseEvent" } }],
+      errors: [
+        {
+          messageId: "crossWindow",
+          data: {
+            type: "MouseEvent",
+            replacement: "event.instanceOf(MouseEvent)",
+          },
+        },
+      ],
     },
     {
       code: "target instanceof Node",
-      errors: [{ messageId: "crossWindow", data: { type: "Node" } }],
+      errors: [
+        {
+          messageId: "crossWindow",
+          data: { type: "Node", replacement: "target.instanceOf(Node)" },
+        },
+      ],
     },
     {
       code: "button instanceof HTMLButtonElement",
       errors: [
-        { messageId: "crossWindow", data: { type: "HTMLButtonElement" } },
+        {
+          messageId: "crossWindow",
+          data: {
+            type: "HTMLButtonElement",
+            replacement: "button.instanceOf(HTMLButtonElement)",
+          },
+        },
+      ],
+    },
+    {
+      code: "(event.target ?? node) instanceof HTMLSelectElement",
+      errors: [
+        {
+          messageId: "crossWindow",
+          data: {
+            type: "HTMLSelectElement",
+            replacement: "(event.target ?? node).instanceOf(HTMLSelectElement)",
+          },
+        },
       ],
     },
     {
       code: "event instanceof CustomEvent",
-      errors: [{ messageId: "crossWindow", data: { type: "CustomEvent" } }],
+      errors: [
+        {
+          messageId: "crossWindow",
+          data: {
+            type: "CustomEvent",
+            replacement: "event.instanceOf(CustomEvent)",
+          },
+        },
+      ],
     },
   ],
 });

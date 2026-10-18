@@ -93,6 +93,8 @@ interface ChooserState {
   listRef: RefObject<HTMLDivElement | null>;
   /** The page an open from outside the popup starts on, read once by the session. */
   firstPage: RefObject<string | null>;
+  /** The search an open from outside the popup starts with, read once by the session. */
+  firstQuery: RefObject<string>;
   /** The open session's `openPage`, while a session stands. */
   sessionPage: RefObject<((page: string) => void) | null>;
 }
@@ -204,6 +206,23 @@ export function useChooserOpenPage(): (page: string) => void {
   );
 }
 
+/**
+ * Opens the popup with `query` already in its search field, as a key typed on
+ * the trigger opens a Bases combobox searching for that key. A popup that
+ * stands already keeps its search.
+ */
+export function useChooserOpenSearch(): (query: string) => void {
+  const { popupRef, firstQuery, open } = useChooser();
+  return useCallback(
+    (query: string) => {
+      if (open) return;
+      firstQuery.current = query;
+      popupRef.current?.showPopover();
+    },
+    [popupRef, firstQuery, open],
+  );
+}
+
 /** What a row needs from the list it is drawn in. */
 interface ChooserListState {
   /** Where each visible row sits, so a row can name its own index. */
@@ -287,6 +306,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => popupRef.current?.hidePopover(), []);
   const firstPage = useRef<string | null>(null);
+  const firstQuery = useRef("");
   const sessionPage = useRef<((page: string) => void) | null>(null);
 
   const state = useMemo<ChooserState>(
@@ -302,6 +322,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       listId: `${popupId}-list`,
       listRef,
       firstPage,
+      firstQuery,
       sessionPage,
     }),
     [value, onValueChange, open, popupId, close],
@@ -326,9 +347,14 @@ function ChooserSession({ children }: { children: ReactNode }) {
     close,
     listRef,
     firstPage,
+    firstQuery,
     sessionPage,
   } = useChooser();
-  const [query, setQueryState] = useState("");
+  const [query, setQueryState] = useState(() => {
+    const first = firstQuery.current;
+    firstQuery.current = "";
+    return first;
+  });
   // The pages opened over the rows, the one on screen last. An open from
   // outside the popup can start on a page.
   const [pages, setPages] = useState<readonly string[]>(() => {
@@ -356,7 +382,8 @@ function ChooserSession({ children }: { children: ReactNode }) {
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
   // No row is highlighted until a key names one or a row is clicked: a popup
   // that opened with its first row darkened told a pointer user it was chosen.
-  const [highlight, setHighlight] = useState(-1);
+  // A search the popup opened with highlights its first match, as typing one does.
+  const [highlight, setHighlight] = useState(query.length > 0 ? 0 : -1);
 
   /**
    * A query hands the highlight to the first match, so Enter takes what the
@@ -386,13 +413,16 @@ function ChooserSession({ children }: { children: ReactNode }) {
    * A rebuilt row set re-homes the highlight rather than keeping its index: a
    * tick rebuilds the list around the same rows and the highlight stays where
    * it stood, while a narrowed query takes its row away and the highlight
-   * starts over.
+   * starts over. A popup that opened searching holds the highlight for the
+   * first row before any row stands, and keeps it there.
    */
   const publishRows = useCallback((next: readonly ChooserRow[]) => {
     const { rows: previous, highlight: at } = latest.current;
     const held = previous[clampedHighlight(at, previous.length)]?.value ?? null;
     setRows(next);
-    setHighlight(rehomedHighlight(held, next));
+    setHighlight(
+      previous.length === 0 && at >= 0 ? 0 : rehomedHighlight(held, next),
+    );
   }, []);
 
   const optionId = useCallback(
@@ -628,13 +658,16 @@ function Trigger({
   onClick,
   ...rest
 }: ChooserTriggerProps) {
-  const { anchorName, popupId, open } = useChooser();
+  const { anchorName, popupId, open, listId } = useChooser();
   return (
     <button
       ref={ref}
       type="button"
       popoverTarget={popupId}
       aria-expanded={open}
+      // A trigger that stands as a combobox names the list box it controls,
+      // which stands only while the popup is open.
+      aria-controls={rest.role === "combobox" && open ? listId : undefined}
       aria-disabled={blocked || undefined}
       data-open={open ? "" : undefined}
       {...rest}
@@ -734,6 +767,12 @@ function Popup({
    *
    * Both are listened to here rather than through JSX props, so they reach
    * the element under every DOM the component renders in.
+   *
+   * Preact renders the unmount inside the `beforetoggle` listener, so by the
+   * time a caller's own bubbling listener runs, the search field is gone and
+   * focus has dropped to the body. A caller that acts on the focus a closing
+   * popup holds, as the Select hands it back to its trigger, listens in the
+   * capture phase.
    */
   useLayoutEffect(() => {
     const popup = popupRef.current;
@@ -829,15 +868,17 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
 
 export interface ChooserListProps<Row extends ChooserRow> extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  "children" | "aria-label"
+  "children" | "aria-label" | "aria-labelledby"
 > {
   /**
    * What the list box is called. Required rather than optional: a list box
    * carries no name of its own, and an unnamed one is announced as a bare
    * "list box" — the caller is the only one that knows whether its rows are
-   * tags or colours.
+   * tags or colours. It reaches the list box through `aria-labelledby` and a
+   * hidden element, since Obsidian shows a container's `aria-label` as a
+   * hover tooltip over every row.
    */
-  "aria-label": string;
+  label: string;
   /**
    * Every row the caller offers, in the order it wants them read, split into
    * the groups it wants them drawn in. A group is a heading and a separator,
@@ -871,6 +912,7 @@ export interface ChooserListProps<Row extends ChooserRow> extends Omit<
 }
 
 function List<Row extends ChooserRow>({
+  label,
   groups,
   emptyLabel,
   children,
@@ -960,6 +1002,9 @@ function List<Row extends ChooserRow>({
           {empty ? emptyLabel : ""}
         </div>
       )}
+      <span id={`${listId}-label`} hidden>
+        {label}
+      </span>
       {/* The tab index is programmatic: the popup focuses this element when the
           caller rendered no search field, and a Chooser still holds exactly
           one tab stop either way. */}
@@ -967,6 +1012,7 @@ function List<Row extends ChooserRow>({
         ref={listRef}
         id={listId}
         role="listbox"
+        aria-labelledby={`${listId}-label`}
         tabIndex={-1}
         aria-multiselectable
         aria-activedescendant={activeOptionId ?? undefined}

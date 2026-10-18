@@ -96,6 +96,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
@@ -2042,19 +2043,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (redo ? this.#controller.redo() : this.#controller.undo()) return false;
   }
   provide(content: ReactNode): ReactNode {
+    // The Match tab's selects are Choosers, which hold Obsidian's keyboard.
     return (
-      <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
-        <WorkbenchHostProvider host={this.#host}>
-          <WorkbenchEditorProvider
-            key={this.#generation}
-            controller={this.#controller}
-            store={this.store}
-            scheduler={this.scheduler}
-          >
-            {content}
-          </WorkbenchEditorProvider>
-        </WorkbenchHostProvider>
-      </WorkbenchThemeProvider>
+      <AppContext value={this.app}>
+        <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
+          <WorkbenchHostProvider host={this.#host}>
+            <WorkbenchEditorProvider
+              key={this.#generation}
+              controller={this.#controller}
+              store={this.store}
+              scheduler={this.scheduler}
+            >
+              {content}
+            </WorkbenchEditorProvider>
+          </WorkbenchHostProvider>
+        </WorkbenchThemeProvider>
+      </AppContext>
     );
   }
   #mount(): void {
