@@ -38,6 +38,7 @@ import {
   withFacets,
   withNode,
   withSearch,
+  withTags,
 } from "./document";
 import type {
   LibraryNode,
@@ -256,6 +257,8 @@ export class LibraryView extends ItemView {
     this.tree = new LibraryTree(deps, {
       select: (node) => this.#select(node),
       filter: (facets) => this.#filter(facets),
+      tag: (tags) => this.#tag(tags),
+      scope: () => this.#scope(),
     });
     this.search = new LibrarySearch(deps, {
       node: () => this.tree.store.getState().node,
@@ -412,6 +415,7 @@ export class LibraryView extends ItemView {
     const doc = this.#storage.document();
     this.tree.show(doc.node);
     this.tree.showFacets(doc.facets);
+    this.tree.showTags(doc.tags);
     this.tree.refresh();
     await this.search.open(doc.search);
   }
@@ -552,8 +556,8 @@ export class LibraryView extends ItemView {
 
   /**
    * Show the Item `indexedKey` selected, in its first Collection, or in its
-   * Library where it is filed in none. A search or a Reading State facet
-   * that may leave the Item out is cleared.
+   * Library where it is filed in none. A search, a Reading State facet or a
+   * selected tag that may leave the Item out is cleared.
    * @returns `"not-listed"` where the list does not hold the Item, as past
    * its row limit: nothing is selected, and the caller says so.
    */
@@ -561,6 +565,7 @@ export class LibraryView extends ItemView {
     await this.#deps.settings.loaded;
     const node = await this.#itemNode(indexedKey);
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
+    if (this.tree.store.getState().tags.length > 0) this.#tag([]);
     if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
     await this.searched;
@@ -648,6 +653,19 @@ export class LibraryView extends ItemView {
       .change((doc) => withFacets(doc, facets))
       .catch((error: unknown) => {
         logger.warn("The Library View could not keep the facets", { error });
+      });
+    this.#show(this.#found);
+  }
+
+  /** The researcher selected or let go of a tag: list the Items with every one of `tags`, and keep them. */
+  #tag(tags: readonly string[]): void {
+    this.tree.showTags(tags);
+    this.#storage
+      .change((doc) => withTags(doc, tags))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the selected tags", {
+          error,
+        });
       });
     this.#show(this.#found);
   }

@@ -497,6 +497,12 @@
       }
     }
   ],
+  "library_view_tags_label": "标签",
+  "library_view_tags_filter": "筛选标签",
+  "library_view_tags_clear": "取消全选",
+  "library_view_tags_none": "无标签",
+  "library_view_tags_no_match": "没有匹配的标签",
+  "library_view_header_tags": "· 标签：{tags}",
   "library_view_all_libraries": "显示所有文库",
   "library_view_scope_libraries": "隐藏其他文库",
   "library_view_show_tree": "显示文库和分类",

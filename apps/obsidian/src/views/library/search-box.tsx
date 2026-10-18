@@ -276,11 +276,15 @@ export class LibrarySearch extends Component {
 
   /**
    * What an empty list says left it empty: the search, with the offer to
-   * search all libraries or to clear it, else the facets that are on, else
+   * search all libraries or to clear it, else the facets that are on or the
+   * tags selected, else
    * `fallback`, the Query View's own sentence.
    */
   empty(
-    tree: StoreApi<{ readonly facets: readonly unknown[] }>,
+    tree: StoreApi<{
+      readonly facets: readonly unknown[];
+      readonly tags: readonly unknown[];
+    }>,
     fallback: string,
   ): ReactNode {
     return <EmptyList search={this} tree={tree} fallback={fallback} />;
@@ -330,14 +334,17 @@ function EmptyList({
   fallback,
 }: {
   search: LibrarySearch;
-  tree: StoreApi<{ readonly facets: readonly unknown[] }>;
+  tree: StoreApi<{
+    readonly facets: readonly unknown[];
+    readonly tags: readonly unknown[];
+  }>;
   fallback: string;
 }) {
   const text = useStore(search.store, (s) => s.text.trim());
   const everywhere = useStore(search.store, (s) => s.everywhere);
-  const facets = useStore(tree, (s) => s.facets.length);
+  const filters = useStore(tree, (s) => s.facets.length + s.tags.length);
   if (text === "")
-    return facets === 0 ? (
+    return filters === 0 ? (
       fallback
     ) : (
       <p className="zt:m-0" data-library-empty="">

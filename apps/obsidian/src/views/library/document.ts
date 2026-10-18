@@ -4,10 +4,11 @@ import * as v from "valibot";
 // that plugin data keeps per vault, and the one module that reads, changes
 // and derives it. Its transitions take a tree selection, the facets, the
 // search and a toolbar change; its derivations give the list's query (the
-// tree node and the facets become the filters for all views, Recent adds none
+// tree node, the facets and the selected tags become the filters for all views, Recent adds none
 // and reads the whole Library Scope, a search becomes its ranked key set, and
 // the sort passes through to the one Items view, always in the Papers
-// Layout), the tree's paper and unread counts, the Libraries of a node,
+// Layout), the tree's paper and unread counts, the tags the Tag Selector
+// lists, the Libraries of a node,
 // and the text "Save as query file" writes. The Library Tree, the search box,
 // the Library View and its storage all call it, so the tree's counts and the
 // list are built one way.
@@ -16,9 +17,11 @@ import * as v from "valibot";
 // @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
 // @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
+// @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
 import type { FilterTree } from "@zotlit/filter-expression";
 
 import type {
+  QueryViewGroup,
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
@@ -76,6 +79,11 @@ export interface LibraryViewDocument {
   readonly node: LibraryNode;
   /** The active Reading State facets, in {@link READING_STATE_FACETS} order. */
   readonly facets: readonly ReadingStateFacet[];
+  /**
+   * The tags selected in the Tag Selector, each once, sorted by
+   * {@link sortTags}: the list holds the Items with every one of them.
+   */
+  readonly tags: readonly string[];
   /** The text in the search box; empty while the view browses. */
   readonly search: string;
   readonly sort: readonly QueryFileSort[];
@@ -102,6 +110,7 @@ const sortSchema = v.array(
 export type StoredLibraryViewDocument = {
   node: v.InferOutput<typeof nodeSchema>;
   facets: ReadingStateFacet[];
+  tags: string[];
   search: string;
   sort: v.InferOutput<typeof sortSchema>;
 };
@@ -122,6 +131,7 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
   {
     node: { kind: "recent" },
     facets: [],
+    tags: [],
     search: "",
     sort: RECENT_SORT,
   } satisfies LibraryViewDocument,
@@ -131,7 +141,8 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
  * Read the document that plugin data holds: the one check of its shape. A
  * value that is not an object takes the default document; a field this
  * build cannot read takes its default and the other fields stay; a facet it
- * does not know drops out. A field it no longer reads, such as the `layout`
+ * does not know drops out, and so does a tag that is not a name. A document
+ * of an earlier build has no tags, and selects none. A field it no longer reads, such as the `layout`
  * and `order` of an earlier build, is ignored.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
@@ -147,9 +158,15 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   };
   const defaults = DEFAULT_LIBRARY_VIEW_DOCUMENT;
   const facets = field(v.array(v.unknown()), "facets", []);
+  const tags = field(v.array(v.unknown()), "tags", []);
   return {
     node: field(nodeSchema, "node", defaults.node),
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
+    tags: sortTags(
+      tags.filter(
+        (tag): tag is string => typeof tag === "string" && tag !== "",
+      ),
+    ),
     search: field(v.string(), "search", defaults.search),
     sort: field(sortSchema, "sort", defaults.sort),
   };
@@ -199,6 +216,21 @@ export function withFacets(
   };
 }
 
+/** `doc` with `tags` as the tags selected in the Tag Selector. */
+export function withTags(
+  doc: LibraryViewDocument,
+  tags: readonly string[],
+): LibraryViewDocument {
+  return { ...doc, tags: sortTags(tags) };
+}
+
+/** `tags` each once, sorted by name as the Tag Selector shows them. */
+export function sortTags(tags: Iterable<string>): string[] {
+  return [...new Set(tags)].sort((a, b) => TAG_ORDER.compare(a, b));
+}
+
+const TAG_ORDER = new Intl.Collator(undefined, { numeric: true });
+
 /** `doc` with `search` as the text in the search box. */
 export function withSearch(
   doc: LibraryViewDocument,
@@ -223,6 +255,7 @@ export function serializeLibraryViewDocument(
               path: [...doc.node.path],
             },
     facets: [...doc.facets],
+    tags: [...doc.tags],
     search: doc.search,
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),
   };
@@ -305,6 +338,7 @@ export function libraryViewQuery(
     everywhere === undefined ? node : null,
     doc.facets,
   );
+  filters.push(...tagFilters(doc.tags));
   if (keys !== undefined)
     filters.push(
       `[${keys.map((key) => JSON.stringify(key)).join(", ")}].contains(indexedKey)`,
@@ -378,6 +412,52 @@ export function paperCountRequest(library: LibrarySelector): QueryViewRequest {
     limit: null,
     libraries: { mode: "selected", libraries: [library] },
   };
+}
+
+/**
+ * The request that lists the tags of the Tag Selector: the Items `node`
+ * lists with no facet and no search, as the paper count reads them, grouped
+ * by tag. While `tags` are selected, only the Items with every one of them,
+ * so selecting a listed tag never empties the list. A group's rows go
+ * unread, so each holds one.
+ *
+ * @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
+ */
+export function tagListRequest(
+  node: LibraryNode,
+  tags: readonly string[],
+  scope: LibraryScope,
+): QueryViewRequest {
+  const { filters } = selectionConditions(node, []);
+  filters.push(...tagFilters(tags));
+  return {
+    from: "items",
+    fields: [],
+    group: "tags[]",
+    ...(filters.length > 0 && { filter: filters.join(" && ") }),
+    limit: 1,
+    libraries: librariesOf(node, scope),
+  };
+}
+
+/**
+ * The tag names the Tag Selector lists from the answer to
+ * {@link tagListRequest}, sorted by name, with every one of `selected`, which
+ * always shows. `groups` is `null` while the answer is unknown.
+ */
+export function tagNames(
+  groups: readonly Pick<QueryViewGroup, "value">[] | null,
+  selected: readonly string[],
+): string[] {
+  const names = (groups ?? []).flatMap(({ value }) =>
+    typeof value === "string" ? [value] : [],
+  );
+  return sortTags([...names, ...selected]);
+}
+
+/** The filters of the selected tags: an Item has every one. */
+function tagFilters(tags: readonly string[]): string[] {
+  return tags.map((tag) => `tags.contains(${JSON.stringify(tag)})`);
 }
 
 /**

@@ -411,6 +411,12 @@
       }
     }
   ],
+  "library_view_tags_label": "Tags",
+  "library_view_tags_filter": "Filter tags",
+  "library_view_tags_clear": "Deselect all",
+  "library_view_tags_none": "No tags",
+  "library_view_tags_no_match": "No tags match",
+  "library_view_header_tags": "· tagged {tags}",
   "library_view_all_libraries": "Show all libraries",
   "library_view_scope_libraries": "Hide other libraries",
   "library_view_show_tree": "Show libraries and collections",
