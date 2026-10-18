@@ -2478,6 +2478,234 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 180000);
 
+  it("swaps the Reading Card from one paper to the next in one step, by the arrow keys and by a click, beside a wide list and over a narrow one, with its Annotations closed and open, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{delete window.zotlitE2EBeside;const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    await wideWindow(cleanup);
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0],10000);return true;})()`,
+    );
+
+    interface Frame {
+      /** The title's text; `null` with no title element. */
+      title: string | null;
+      /** The top of the Open PDF button, from the card's top; `null` with no button. */
+      top: number | null;
+      /** The keys of the Annotation Cards drawn. */
+      cards: string[];
+      /** Whether the card shows at all. */
+      shown: boolean;
+    }
+    interface Switch {
+      from: string;
+      to: string;
+      /** The card just before the switch, then as each animation frame draws it. */
+      frames: Frame[];
+      /** The title's text after each batch of mutations of the card. */
+      mutations: (string | null)[];
+    }
+    /**
+     * Select the row `from`, or none for `null`, wait for its card, then move
+     * the selection to the row `to` by `how`: the arrow key, a click, or the selection set
+     * as "Show in Library" sets it, with each ZotLit Query run held `delay` ms
+     * first, and read each frame the window draws until half a second after
+     * that.
+     */
+    const switchCard = async (
+      how: "key" | "click" | "show",
+      [from, to]: readonly [string | null, string],
+      delay: number,
+    ) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];const view=leaf.view;await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await view.query.settled;const el=view.contentEl;const card=el.querySelector('[data-library-card]');const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const frame=()=>new Promise(r=>requestAnimationFrame(r));const title=()=>card.querySelector('[data-library-card-title]');await until('rows',()=>row(${JSON.stringify(to)}),10000);${
+            from === null
+              ? "view.selection.setState({key:null,card:false});await until('no card',()=>!card.checkVisibility(),10000);await view.card.settled;await frame();await frame();"
+              : `view.selection.setState({key:${JSON.stringify(from)},card:true});await until('card',()=>card.checkVisibility()&&title()?.textContent,10000);await view.card.settled;await frame();await frame();row(${JSON.stringify(from)}).focus({preventScroll:true});`
+          }const sample=()=>{const button=card.querySelector('[data-library-card-action="pdf"]');const box=card.getBoundingClientRect();return{title:title()?title().textContent:null,top:button&&card.checkVisibility()?Math.round(button.getBoundingClientRect().top-box.top):null,cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')),shown:card.checkVisibility()};};const mutations=[];const observer=new MutationObserver(()=>mutations.push(title()?title().textContent:null));observer.observe(card,{childList:true,subtree:true,characterData:true});const frames=[sample()];const service=${services}.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};try{${
+            {
+              key: "activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));",
+              click: `press(row(${JSON.stringify(to)}),'row');`,
+              // As "Show in Library" does for a row the list shows.
+              show: `view.selection.setState({key:${JSON.stringify(to)},card:true});`,
+            }[how]
+          }const start=performance.now();while(performance.now()-start<${delay}+600){await frame();frames.push(sample());}await view.card.settled;await frame();frames.push(sample());}finally{service.run=run;observer.disconnect();}return JSON.stringify({from:frames[0].title,to:frames.at(-1).title,frames,mutations});})()`,
+        ),
+      ) as Switch;
+
+    /**
+     * The card goes from the first paper to the second in one step: its
+     * title is never gone or empty and reads the old title, then the new
+     * one; its buttons move once, and not at all between headers of one
+     * height; and the Annotation Cards of one paper never show under the
+     * other's title.
+     */
+    const oneStep = (what: string, step: Switch) => {
+      const titles = [step.from, step.to];
+      expect.soft(step.from, what).toBeTruthy();
+      expect.soft(step.to, what).toBeTruthy();
+      expect.soft(step.from, what).not.toBe(step.to);
+      // Over a narrow list a click puts the card away while it waits out a
+      // double click: the frames it is away count for nothing.
+      const frames = step.frames.filter(({ shown }) => shown);
+      expect
+        .soft(
+          frames.filter(({ title }) => !title),
+          what,
+        )
+        .toEqual([]);
+      expect
+        .soft(
+          step.mutations.filter((title) => !title),
+          what,
+        )
+        .toEqual([]);
+      const seen = <T>(list: T[]) =>
+        list.filter((value, at) => at === 0 || value !== list[at - 1]);
+      expect.soft(seen(frames.map(({ title }) => title)), what).toEqual(titles);
+      expect
+        .soft(seen(step.mutations), what)
+        .toEqual(seen(step.mutations)[0] === step.from ? titles : [step.to]);
+      const top = frames[0]!.top;
+      const settled = frames.at(-1)!.top;
+      expect
+        .soft(seen(frames.map(({ top }) => top)), what)
+        .toEqual(top === settled ? [top] : [top, settled]);
+      // The old paper's Annotation Cards stay until its title goes, and
+      // only the new paper's come under its title, once read.
+      const under = (title: string | null) =>
+        frames.filter((frame) => frame.title === title);
+      expect
+        .soft(
+          under(step.from).filter(
+            ({ cards }) => cards.join() !== frames[0]!.cards.join(),
+          ),
+          `${what}: Annotation Cards under ${step.from}`,
+        )
+        .toEqual([]);
+      const last = frames.at(-1)!.cards;
+      expect
+        .soft(
+          under(step.to).filter(
+            ({ cards }, at, list) =>
+              cards.some((key) => !last.includes(key)) ||
+              (at > 0 && cards.length < list[at - 1]!.cards.length),
+          ),
+          `${what}: Annotation Cards under ${step.to}`,
+        )
+        .toEqual([]);
+    };
+
+    /**
+     * The card opens on the paper whole: no frame shows it without its
+     * title, and its buttons stay where its header puts them.
+     */
+    const opens = (what: string, step: Switch) => {
+      const frames = step.frames.filter(({ shown }) => shown);
+      expect.soft(step.to, what).toBeTruthy();
+      expect.soft(step.frames[0]!.shown, what).toBe(false);
+      expect
+        .soft(
+          frames.filter(({ title }) => !title),
+          what,
+        )
+        .toEqual([]);
+      const seen = <T>(list: T[]) =>
+        list.filter((value, at) => at === 0 || value !== list[at - 1]);
+      expect
+        .soft(seen(frames.map(({ title }) => title)), what)
+        .toEqual([step.to]);
+      expect.soft(seen(frames.map(({ top }) => top)), what).toHaveLength(1);
+    };
+
+    /** The keys of the first rows of the list, and the row of the paper with Annotations. */
+    const { rows, listed } = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;await view.query.settled;const el=view.contentEl;await until('rows',()=>el.querySelectorAll('[data-query-item-row]').length>6,10000);const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));return JSON.stringify({rows:keys.slice(0,7),listed:keys.find(k=>k.endsWith(${JSON.stringify(annotationItem.key)}))??null});})()`,
+      ),
+    ) as { rows: string[]; listed: string | null };
+    expect(listed).not.toBeNull();
+
+    const switches = async (where: string, narrow: boolean) => {
+      for (const delay of [0, 400]) {
+        const pace = delay === 0 ? "fast read" : "slow read";
+        // From no selection, the card opens on the paper.
+        opens(
+          `${where}, opens on 3, ${pace}`,
+          await switchCard(narrow ? "show" : "click", [null, rows[3]!], delay),
+        );
+        // Down the first rows by the arrow keys, then by a click; over a
+        // narrow list those put the card away, so the selection moves as
+        // "Show in Library" moves it.
+        if (!narrow)
+          for (let at = 0; at + 1 < 5; at++)
+            oneStep(
+              `${where}, ↓ ${at}, ${pace}`,
+              await switchCard("key", [rows[at]!, rows[at + 1]!], delay),
+            );
+        for (const [a, b] of [
+          [4, 1],
+          [1, 2],
+          [2, 6],
+        ] as const)
+          oneStep(
+            `${where}, ${narrow ? "show" : "click"} ${a} → ${b}, ${pace}`,
+            await switchCard(
+              narrow ? "show" : "click",
+              [rows[a]!, rows[b]!],
+              delay,
+            ),
+          );
+      }
+    };
+
+    // Beside a wide list, with the Annotations closed.
+    await switches("wide", false);
+
+    // With the Annotations open, to and from the paper that has some.
+    const other = rows.find((key) => key !== listed)!;
+    const disclose = (open: boolean) =>
+      obEval(
+        vaultId,
+        `(()=>{app.workspace.getLeavesOfType('zotlit-library')[0]?.view.card.disclose('annotations',${open});return true;})()`,
+      );
+    await disclose(true);
+    cleanup.defer(async () => {
+      await disclose(false);
+    });
+    for (const delay of [0, 400]) {
+      const pace = delay === 0 ? "fast read" : "slow read";
+      const there = await switchCard("click", [other, listed!], delay);
+      oneStep(`Annotations open, to the paper, ${pace}`, there);
+      expect.soft(there.frames.at(-1)!.cards.length, pace).toBeGreaterThan(0);
+      oneStep(
+        `Annotations open, from the paper, ${pace}`,
+        await switchCard("click", [listed!, other], delay),
+      );
+    }
+    await disclose(false);
+
+    // Over a narrow list.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];const beside=window.zotlitE2EBeside??=app.workspace.createLeafBySplit(leaf,'vertical');leaf.parent.setDimension(30);beside.parent.setDimension(70);const card=leaf.view.contentEl.querySelector('[data-library-card]');leaf.view.selection.setState({key:${JSON.stringify(rows[0])},card:true});await until('card over the list',()=>card.checkVisibility()&&getComputedStyle(card).position==='absolute',5000);return true;})()`,
+    );
+    await switches("narrow", true);
+  }, 240000);
+
   it("opens a Library View Document an earlier build stored with the Table on Papers, and saves its Collection from the toolbar as a Query File whose tab lists the same papers with every control, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const savedPath = "query-files/Saved library.zotquery";

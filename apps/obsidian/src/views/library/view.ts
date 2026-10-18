@@ -268,6 +268,11 @@ export class LibraryView extends ItemView {
         if (!this.tree.store.getState().tags.includes(name))
           this.tree.toggleTag(name);
       },
+      // The card shows the header of an Item it is reading from its row.
+      row: (key) =>
+        this.query.state
+          .getState()
+          .results?.rows.find((row) => row.indexedKey === key)?.values ?? null,
       onEscape,
     });
     this.tree = new LibraryTree(deps, {
