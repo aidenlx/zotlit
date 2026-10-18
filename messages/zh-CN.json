@@ -2324,6 +2324,8 @@
   "query_view_vault_chip_edit": "编辑",
   "query_view_vault_chip_copy": "复制",
   "query_view_vault_chip_remove": "从列表中移除",
+  "query_view_vault_chip_copy_item": "复制“{item}”",
+  "query_view_vault_read_only": "{name}（由笔记的配置方案设置）",
   "query_view_vault_not_written": "未创建笔记，因此未保存“{name}”。",
   "query_view_vault_managed_not_written": "未保存“{name}”：笔记的配置方案会在每次更新时设置此值。",
   "query_view_table_expand": "展开",

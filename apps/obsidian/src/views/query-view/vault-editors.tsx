@@ -177,6 +177,49 @@ export interface ChipMenu {
   readonly remove?: () => void;
 }
 
+/** Copy `item`, as a list item's menu does. */
+function copyItem(item: string) {
+  navigator.clipboard.writeText(item).catch((error: unknown) => {
+    logger.warn("The Query View could not copy a list item", { error });
+  });
+}
+
+/** Add what a list item's menu does to `menu`: Edit, Copy, Remove from list. */
+function addChipItems(menu: Menu, { item, edit, remove }: ChipMenu) {
+  if (edit)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.query_view_vault_chip_edit())
+        .setIcon("pencil")
+        .onClick(edit),
+    );
+  menu.addItem((entry) =>
+    entry
+      .setTitle(m.query_view_vault_chip_copy())
+      .setIcon("copy")
+      .onClick(() => copyItem(item)),
+  );
+  if (remove)
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.query_view_vault_chip_remove())
+        .setIcon("trash-2")
+        .setWarning(true)
+        .onClick(remove),
+    );
+}
+
+/** Show `menu` at the pointer, or under `anchor` where no pointer says where. */
+function showMenu(
+  menu: Menu,
+  anchor: HTMLElement,
+  pointer: globalThis.MouseEvent | null,
+) {
+  if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
+    showMenuAtButton(menu, anchor);
+  else menu.setParentElement(anchor).showAtMouseEvent(pointer);
+}
+
 /**
  * The menu of a list item, as a Bases list cell offers it: Edit, Copy and
  * Remove from list. A right click opens it at the pointer; the menu key or
@@ -191,43 +234,58 @@ export interface ChipMenu {
 export function openChipMenu(
   chip: HTMLElement,
   pointer: globalThis.MouseEvent | null,
-  { item, edit, remove }: ChipMenu,
+  item: ChipMenu,
 ): Menu | null {
   if (hasActiveMenu(chip)) return null;
   const menu = new Menu();
-  if (edit)
-    menu.addItem((entry) =>
-      entry
-        .setTitle(m.query_view_vault_chip_edit())
-        .setIcon("pencil")
-        .onClick(edit),
-    );
-  menu.addItem((entry) =>
-    entry
-      .setTitle(m.query_view_vault_chip_copy())
-      .setIcon("copy")
-      .onClick(() => {
-        navigator.clipboard.writeText(item).catch((error: unknown) => {
-          logger.warn("The Query View could not copy a list item", { error });
-        });
-      }),
-  );
-  if (remove)
-    menu.addItem((entry) =>
-      entry
-        .setTitle(m.query_view_vault_chip_remove())
-        .setIcon("trash-2")
-        .setWarning(true)
-        .onClick(remove),
-    );
-  if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
-    showMenuAtButton(menu, chip);
-  else menu.setParentElement(chip).showAtMouseEvent(pointer);
+  addChipItems(menu, item);
+  showMenu(menu, chip, pointer);
+  return menu;
+}
+
+/** A list item, as a list's menu names it, and its own menu. */
+export interface ListMenuEntry {
+  /** The item as its chip shows it. */
+  readonly label: string;
+  readonly menu: ChipMenu;
+}
+
+/**
+ * The menu of a whole list at rest, which the menu key or Shift+F10 opens
+ * on the focused cell, so the keys reach each item's menu with one stop
+ * for the list: the item's own menu, for a list of one; else an entry for
+ * each item, whose submenu is the item's menu, or, where the list is
+ * read-only, which copies the item.
+ */
+export function openListMenu(
+  cell: HTMLElement,
+  entries: readonly ListMenuEntry[],
+): Menu | null {
+  if (entries.length === 0 || hasActiveMenu(cell)) return null;
+  const [only] = entries;
+  if (entries.length === 1 && only) {
+    const chip = cell.querySelector<HTMLElement>("[data-query-vault-chip]");
+    return openChipMenu(chip ?? cell, null, only.menu);
+  }
+  const menu = new Menu();
+  for (const { label, menu: item } of entries)
+    menu.addItem((entry) => {
+      if (!item.edit && !item.remove) {
+        entry
+          .setTitle(m.query_view_vault_chip_copy_item({ item: label }))
+          .setIcon("copy")
+          .onClick(() => copyItem(item.item));
+        return;
+      }
+      entry.setTitle(label);
+      addChipItems(entry.setSubmenu(), item);
+    });
+  showMenu(menu, cell, null);
   return menu;
 }
 
 /** Whether `event` asks for the menu of what has focus: the menu key or Shift+F10. */
-function asksForMenu(event: KeyboardEvent): boolean {
+export function asksForMenu(event: KeyboardEvent): boolean {
   return event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
 }
 

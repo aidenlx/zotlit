@@ -3815,11 +3815,14 @@ ${filters}
       {
         types = {},
         values = {},
+        managed = [],
       }: {
         /** The type Obsidian assigns each property, by name. */
         types?: Record<string, VaultPropertyType>;
         /** The values the vault holds for each property, by name. */
         values?: Record<string, string[]>;
+        /** The properties the note's Profile replaces. */
+        managed?: string[];
       } = {},
     ) {
       const mounted = await mount(
@@ -3830,6 +3833,7 @@ ${filters}
           frontmatter: { "A.md": frontmatter },
           types,
           values,
+          managed: { "A.md": managed },
         },
       );
       await act(() =>
@@ -4495,6 +4499,86 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         ]);
         expect(byKey.mouseEvent).toBeNull();
         expect(byKey.position).not.toBeNull();
+      });
+
+      it("opens from the keyboard on a list at rest: an item's menu, or one entry an item", async () => {
+        const { cell, literatureNotes } = await chips(["Doe, J", "Roe"]);
+        const menuKey = (key: string, init: KeyboardEventInit = {}) => {
+          Menu.instances.length = 0;
+          void act(() => {
+            cell("authors").focus();
+            cell("authors").dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key,
+                bubbles: true,
+                cancelable: true,
+                ...init,
+              }),
+            );
+          });
+          // The first: a submenu is a menu of its own.
+          return Menu.instances[0];
+        };
+
+        const menu = menuKey("F10", { shiftKey: true })!;
+        expect(menu.items.map((entry) => entry.title)).toEqual([
+          "Doe, J",
+          "Roe",
+        ]);
+        expect(menu.mouseEvent).toBeNull();
+        expect(menu.position).not.toBeNull();
+        expect(
+          menu.items[1]!.submenu!.items.map((entry) => entry.title),
+        ).toEqual(["Edit", "Copy", "Remove from list"]);
+        await act(() =>
+          menu.items[1]!.submenu!.items.find(
+            (entry) => entry.title === "Remove from list",
+          )!.click(),
+        );
+        expect(literatureNotes.write).toHaveBeenLastCalledWith(
+          edit("authors", ["Doe, J"]),
+        );
+
+        // A list of one opens the item's own menu.
+        expect(
+          menuKey("ContextMenu")!.items.map((entry) => entry.title),
+        ).toEqual(["Edit", "Copy", "Remove from list"]);
+      });
+
+      it("copies each item from the keyboard on a list the Profile replaces, which stays read-only", async () => {
+        const { cell } = await typed(
+          ["vault.authors"],
+          { authors: ["Doe, J", "Roe"] },
+          { managed: ["authors"] },
+        );
+        using clipboard = vi
+          .spyOn(navigator.clipboard, "writeText")
+          .mockResolvedValue();
+        const el = cell("authors");
+
+        // A stop for the keys, which edits nothing.
+        expect(el.tabIndex).toBe(0);
+        expect(el.getAttribute("role")).toBeNull();
+        Menu.instances.length = 0;
+        await act(() => {
+          el.focus();
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }),
+          );
+        });
+        const menu = Menu.instances.at(-1)!;
+        expect(menu.items.map((entry) => [entry.title, entry.icon])).toEqual([
+          ["Copy “Doe, J”", "copy"],
+          ["Copy “Roe”", "copy"],
+        ]);
+        menu.items[1]!.click();
+        expect(clipboard).toHaveBeenLastCalledWith("Roe");
+        await act(() => {
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+          );
+        });
+        expect(el.querySelector("[data-query-vault-editor]")).toBeNull();
       });
 
       it("removes the item at rest, writing the list at once", async () => {
