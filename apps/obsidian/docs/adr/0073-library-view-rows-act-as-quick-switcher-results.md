@@ -19,6 +19,6 @@ Proposed on 2026-10-17 with [#1549](https://github.com/aidenlx/zotlit/issues/154
 - The quick switcher's "Show in Library" is Alt+Enter (⌥↵). It opens the Item's first Collection, or its Library when the Item is in none, clears the search, and selects the row.
 - One module opens notes and PDFs for both the quick switcher and the rows, so the two keep the same keys and Profile selection.
 - The row menu raises `zotlit:item-menu` (`{source: "library-view", indexedKey}`, sections `open`, `insert`, `clipboard`, `zotero`) after its own entries, so other plugins can add theirs.
-- An Item drag outside a note carries the `zotero://select` link as text. Insert citation goes to the note that was active last, because Obsidian names no active editor while the Library View tab is active.
+- An Item drag outside a note carries the `zotero://select` link as text. Insert citation goes to the note that was active last, because Obsidian names no active editor while the Library View tab is active. "Active last" covers notes already open when the plugin loaded, read through public workspace API (amended after review pass 4).
 - The selection is session state, not part of the Library View Document. Arrow keys and the row keys do not act inside text fields, links, buttons, menus, list boxes or the tree.
 - "Show in Library" also turns the facets off, so a facet never hides the row it reveals.
