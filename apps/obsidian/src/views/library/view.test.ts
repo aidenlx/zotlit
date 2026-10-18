@@ -1487,15 +1487,17 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
     source: "library-view",
     indexedKey: C,
   });
-  // The menu acts on the row it opened over, which it selects.
+  // The menu acts on the row it opened over, which it selects without
+  // opening its Reading Card.
   expect(itemRows(view)[2]).toBe(`${C} *`);
+  expect(view.selection.getState()).toEqual({ key: C, card: false });
   menu.items[1]!.click();
   expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(C, "split");
   menu.items[5]!.click();
   expect(items.showInZotero).toHaveBeenCalledExactlyOnceWith(C);
 });
 
-it("shows an Item in its first Collection, selected", async () => {
+it("shows an Item in its first Collection, selected, with its Reading Card", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
   await act(async () => {
@@ -1508,6 +1510,8 @@ it("shows an Item in its first Collection, selected", async () => {
   });
   expect(header(view)).toBe("Thesis / Chapter 1");
   expect(itemRows(view)).toContain(`${A} *`);
+  // Show in Library asks for the Item's Reading Card, as a click does.
+  expect(view.selection.getState()).toEqual({ key: A, card: true });
 });
 
 it("turns the Reading State facets off to show an Item they leave out", async () => {

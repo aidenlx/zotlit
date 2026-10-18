@@ -173,7 +173,15 @@ export class LibraryView extends ItemView {
         this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
       open: (key, event) =>
         void deps.items.openPdf(key, Keymap.isModEvent(event)),
-      menu: (key, event) => menuOf(key).showAtMouseEvent(event),
+      // The menu acts on the row it opens over, which it selects; the
+      // Reading Card stays as it was.
+      menu: (key, event) => {
+        this.selection.setState((now) => ({
+          key,
+          card: now.key === key && now.card,
+        }));
+        menuOf(key).showAtMouseEvent(event);
+      },
       drag,
     };
     this.register(() => drag.cancel());
@@ -448,15 +456,16 @@ export class LibraryView extends ItemView {
       at === -1
         ? rows[0]!
         : rows[Math.min(Math.max(at + step, 0), rows.length - 1)]!;
+    this.selection.setState({
+      key: next.getAttribute(ITEM_ROW_ATTRIBUTE),
+      card: false,
+    });
     this.#focus(next);
     return true;
   }
 
+  /** Give `row` the focus, in view. */
   #focus(row: HTMLElement): void {
-    this.selection.setState({
-      key: row.getAttribute(ITEM_ROW_ATTRIBUTE),
-      card: false,
-    });
     row.focus();
     row.scrollIntoView({ block: "nearest" });
   }
@@ -474,7 +483,8 @@ export class LibraryView extends ItemView {
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
     if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
-    this.selection.setState({ key: indexedKey, card: false });
+    // Show in Library asks for the Reading Card, as a click does.
+    this.selection.setState({ key: indexedKey, card: true });
     await this.searched;
     await this.query.settled;
     const row = this.#selectedRow();

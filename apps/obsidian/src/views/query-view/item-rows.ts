@@ -18,7 +18,7 @@ export interface ItemRowGestures {
   select(key: string): void;
   /** A double click on the row, away from its links and buttons. */
   open(key: string, event: globalThis.MouseEvent): void;
-  /** The row's context menu. */
+  /** The row's context menu, which acts on the row: the host selects it. */
   menu(key: string, event: globalThis.MouseEvent): void;
   /** The researcher starts to drag the row. */
   drag(key: string, event: DragEvent<HTMLElement>): void;
@@ -66,7 +66,6 @@ export function useItemRow(
     onContextMenu: (event: MouseEvent<HTMLElement>) => {
       if (onControl(event)) return;
       event.preventDefault();
-      gestures.select(key);
       gestures.menu(key, event.nativeEvent);
     },
     onDragStart: (event: DragEvent<HTMLElement>) => gestures.drag(key, event),
