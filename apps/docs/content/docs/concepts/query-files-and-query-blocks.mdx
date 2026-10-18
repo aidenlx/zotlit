@@ -108,6 +108,21 @@ When ZotLit updates the note, it keeps the block text that the note holds, so a 
 
 A paper in the Zotero trash shows no annotations in this block. [Default templates](/docs/reference/templates/defaults#content-template) shows the template and how to list the annotations as text instead.
 
+## Properties from your Literature Notes [#vault]
+
+An items view can show the properties of each paper's Literature Note beside its Zotero fields, such as a `reading-status` property that you keep on the note. The view calls them vault properties and names them `vault.<name>`.
+
+Your notes store the values, not Zotero. Obsidian's Properties panel and Bases read the same values. For a paper in a shared Zotero group library, your values stay in your vault and do not reach the other members. A paper without a Literature Note has no place to hold a value yet, so the first edit in the Table creates its note.
+
+ZotLit Query reads the Zotero database and never reads your notes, so ZotLit answers vault properties itself. A view applies `limit` inside ZotLit Query, so ZotLit plans a sort or a filter on a vault property before the query runs:
+
+- A sort reads up to 5,000 matching papers, sorts them, and then keeps `limit` of them.
+- A filter becomes a list of papers, chosen by the values in your notes, which ZotLit Query reads with the rest of the filter.
+
+In both cases `limit` counts the rows that you see. This is also why a vault condition must stand as its own entry under the top-level `and` of the filters. [ADR 0070](https://github.com/aidenlx/zotlit/blob/next/apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md) records the design.
+
+[Track reading status in the Query View](/docs/how-to/track-reading-status) shows the steps. [Vault properties](/docs/reference/query-file-format#vault) lists the rules.
+
 ## Live updates and reading [#live]
 
 Views refresh when Zotero changes, and when you change the <UiLabel name={m.settings_library_scope_name()} /> setting. A view reads the Zotero database, so it keeps showing rows while Zotero is closed. Edits on annotation cards wait for Zotero.

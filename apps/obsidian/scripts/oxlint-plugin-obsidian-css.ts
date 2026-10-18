@@ -24,6 +24,14 @@ function isObsidianClass(name: string): boolean {
 /** Obsidian's control classes that are also plain words, such as a kind. */
 const wordClasses = new Set(["dropdown", "slider"]);
 
+/**
+ * Prefixes of the classes Bases and the Properties widgets draw with. A cell
+ * of our own is drawn in `zt:` utilities, not with theirs. The names also
+ * read as plain strings, a logger category among them, so only a class list
+ * counts.
+ */
+const widgetPrefixes = ["bases-", "metadata-", "multi-select-"];
+
 /** Functions whose string arguments end up in a class list. */
 const classListCalls = new Set(["cn", "tv", "clsx"]);
 
@@ -64,7 +72,9 @@ export const noObsidianClass: Rule = {
       for (const name of text.split(/\s+/))
         if (
           isObsidianClass(name) ||
-          (wordClasses.has(name) && inClassList(node))
+          ((wordClasses.has(name) ||
+            widgetPrefixes.some((prefix) => name.startsWith(prefix))) &&
+            inClassList(node))
         )
           context.report({ node, messageId: "obsidianClass", data: { name } });
     };

@@ -13,6 +13,7 @@ import {
 import type { App, TFolder } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import {
@@ -178,7 +179,7 @@ class SaveQueryFileModal extends Modal {
     });
     for (const input of [nameInput, folderInput])
       input.inputEl.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && !event.isComposing) submit();
+        if (event.key === "Enter" && !composing(event)) submit();
       });
     nameInput.setValue(name);
     folderInput.setValue(folder);

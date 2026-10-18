@@ -22,6 +22,8 @@ tester.run("no-obsidian-class", noObsidianClass, {
     'const kind = "slider"',
     '<Control kind="dropdown" />',
     "import { Toggle } from './setting-items'",
+    'getLogger(["obsidian-private", "metadata-type-manager"])',
+    'const view = "bases-table"',
     'tv({ base: "zt:flex", variants: { cta: { true: "zt:text-accent" } } })',
   ],
   invalid: [
@@ -52,6 +54,25 @@ tester.run("no-obsidian-class", noObsidianClass, {
       code: 'const chipIcon = "clickable-icon zt:p-1"',
       errors: [
         { messageId: "obsidianClass", data: { name: "clickable-icon" } },
+      ],
+    },
+    {
+      code: '<div className="bases-td zt:flex" />',
+      errors: [{ messageId: "obsidianClass", data: { name: "bases-td" } }],
+    },
+    {
+      code: 'cn("zt:p-2", "metadata-input-longtext")',
+      errors: [
+        {
+          messageId: "obsidianClass",
+          data: { name: "metadata-input-longtext" },
+        },
+      ],
+    },
+    {
+      code: 'tv({ slots: { chip: "multi-select-pill" } })',
+      errors: [
+        { messageId: "obsidianClass", data: { name: "multi-select-pill" } },
       ],
     },
     {

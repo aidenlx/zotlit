@@ -34,6 +34,7 @@ export default defineConfig({
     "./scripts/oxlint-plugin-popout-windows.ts",
     "./scripts/oxlint-plugin-menu-sections.ts",
     "./scripts/oxlint-plugin-obsidian-css.ts",
+    "./scripts/oxlint-plugin-private-api.ts",
   ],
   rules: {
     "no-console": "error",
@@ -85,6 +86,16 @@ export default defineConfig({
       // UI code runs in the window it stands in, a pop-out included.
       files: ["src/views/**", "src/components/**", "src/**/*.tsx"],
       rules: { "zotlit-obsidian/no-global-timer": "error" },
+    },
+    {
+      // Guarded private API reaches its surface through obsidian-ex.d.ts.
+      files: ["src/lib/obsidian-private/**"],
+      rules: { "zotlit-private/no-unknown-cast": "error" },
+    },
+    {
+      // A test's fake App stands in for the whole surface.
+      files: ["src/lib/obsidian-private/*.test.ts"],
+      rules: { "zotlit-private/no-unknown-cast": "off" },
     },
     {
       // React draws its controls from JSX; imperative DOM builds on Obsidian's.
@@ -162,6 +173,12 @@ export default defineConfig({
       rules: {
         "no-restricted-imports": "off",
       },
+    },
+    {
+      // A reading view of a note: the app's own classes draw its Properties
+      // block, so the sheet reads as the note does in the editor.
+      files: ["src/views/note-preview/markdown.tsx"],
+      rules: { "zotlit-css/no-obsidian-class": "off" },
     },
     {
       // Code written before the rule; new code follows it, and a file moves

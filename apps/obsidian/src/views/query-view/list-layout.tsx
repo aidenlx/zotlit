@@ -13,11 +13,7 @@ import { cn } from "@/lib/utils";
 
 import type { QueryLayout } from "./layouts";
 import type { QueryFileView } from "./query-file";
-import {
-  CellContent,
-  RecordGroupHeading,
-  useRecordGroups,
-} from "./record-rows";
+import { RecordCell, RecordGroupHeading, useRecordGroups } from "./record-rows";
 import type { QueryView } from "./view";
 
 export const LIST_LAYOUT: QueryLayout = {
@@ -153,15 +149,19 @@ export function ListLayout({ view }: { view: QueryView }) {
               )}
               data-query-markers={options.markers}
             >
-              {group.rows.map(({ row, cells }, index) => {
+              {group.rows.map((record, index) => {
+                const { row, cells, vault } = record;
+                // An empty property takes no place on the line; an Item with
+                // no note to read a vault property from shows that it has none.
                 const filled = cells.flatMap((text, at) =>
-                  text === ""
+                  text === "" && vault[at]?.note !== false
                     ? []
                     : [
-                        <CellContent
+                        <RecordCell
                           key={properties[at]!.path}
-                          value={row.values[properties[at]!.path]}
-                          text={text}
+                          record={record}
+                          properties={properties}
+                          at={at}
                         />,
                       ],
                 );

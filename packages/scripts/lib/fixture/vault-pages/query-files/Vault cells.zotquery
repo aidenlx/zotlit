@@ -1,0 +1,18 @@
+filters: '["BUSH45AA","GRFLD55A","NELSN65A","SMALL73A","LHMNN82A","BRNRS52A","AHRNS27A","MATSC29A"].contains(indexedKey)'
+views:
+  - type: table
+    name: Vault cells
+    from: items
+    order:
+      - title
+      - vault.status
+      - vault.note
+      - vault.related
+      - vault.done
+      - vault.rating
+      - vault.finished
+      - vault.started
+      - vault.projects
+      - vault.collections
+      - vault.tags
+      - vault.aliases

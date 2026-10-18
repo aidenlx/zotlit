@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 
+import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryFileView } from "./file-view";
 import type { QueryViewDeps } from "./view";
 
@@ -61,6 +62,7 @@ async function openTab() {
     query: { run: () => Promise.resolve(EMPTY) },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
   const tab = new QueryFileView(
     { app: deps.app } as unknown as WorkspaceLeaf,

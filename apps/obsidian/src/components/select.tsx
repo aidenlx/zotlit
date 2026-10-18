@@ -25,6 +25,7 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 
 import { Chooser, useChooserOpenSearch } from "./chooser";
@@ -248,7 +249,7 @@ function SelectBody({
             event.ctrlKey ||
             event.metaKey ||
             event.altKey ||
-            event.nativeEvent.isComposing
+            composing(event)
           )
             return;
           event.preventDefault();
