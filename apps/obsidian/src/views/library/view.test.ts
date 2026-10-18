@@ -1390,12 +1390,18 @@ it("scrolls the rows alone, under the search box and the heading with its tools"
     sort: [],
   });
   const view = await openTab(deps);
-  /** The elements from `el` up to the tab that scroll what they hold. */
+  /**
+   * The elements from `el` up to the tab's column that scroll what they
+   * hold. The column scrolls only where the Welcome View banner and the
+   * list's least height do not fit in the tab together.
+   */
+  const column = view.contentEl.querySelector("[data-library-column]")!;
+  expect(column).not.toBeNull();
   const scrollers = (el: Element) => {
     const found: Element[] = [];
     for (
       let at: Element | null = el;
-      at && at !== view.contentEl;
+      at && at !== column;
       at = at.parentElement
     )
       if (/(^|\s)zt:overflow(-y)?-(auto|scroll)(\s|$)/.test(at.className))
@@ -2214,6 +2220,28 @@ describe("Welcome View banner once setup is complete", () => {
     );
     expect(banner(view)).toContain(m.welcome_step_connect_title());
     expect(banner(view)).toContain(m.welcome_step_folder_title());
+  });
+
+  it("shows the banner again with its setup steps from the Welcome & help row at the foot of the Library Tree, after a dismissal, and moves focus to it", async () => {
+    const { view, settings } = await setUp();
+    await act(() => {
+      settings.update({ "welcome.dismissed": true });
+    });
+    // At the foot of the Library Tree, a row with its visible label and no
+    // tooltip; the tab header holds no action of its own.
+    const help = view.contentEl.querySelector<HTMLElement>(
+      "[data-library-tree] [data-welcome-help-row]",
+    );
+    expect(help?.textContent).toBe(m.library_view_help_action());
+    expect(help?.hasAttribute("aria-label")).toBe(false);
+    expect((view as unknown as { actions: HTMLElement[] }).actions).toEqual([]);
+    await act(() => help!.click());
+    expect(settings.current?.["welcome.dismissed"]).toBe(false);
+    expect(banner(view)).toContain(m.welcome_step_connect_title());
+    expect(banner(view)).toContain(m.welcome_step_folder_title());
+    expect(view.contentEl.ownerDocument.activeElement).toBe(
+      view.contentEl.querySelector("[data-welcome-banner]"),
+    );
   });
 
   it("offers the template conversion while it is pending", async () => {

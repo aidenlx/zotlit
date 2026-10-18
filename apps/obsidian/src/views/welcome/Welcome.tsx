@@ -2,7 +2,7 @@
 import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
 import { useUniqueId } from "@zotlit/ui";
@@ -27,8 +27,7 @@ import {
   SPONSOR,
 } from "./links";
 import { templateMigrationNotice } from "./migration-notice";
-import { bannerSections, useWelcomeStore } from "./store";
-import type { BannerSections } from "./store";
+import { bannerBadge, bannerSections, useWelcomeStore } from "./store";
 
 /**
  * Where a setup step stands. Its icon and its words carry it: a check and
@@ -70,23 +69,15 @@ function StepHeading({
   );
 }
 
-/**
- * The banner's state, as its badge names it: an upgrade from v1 while its
- * Migration Prompt is pending, an update when it is all the banner shows,
- * else a fresh setup.
- */
-function badgeText(sections: BannerSections | null, migrationPending: boolean) {
-  if (migrationPending) return m.welcome_badge_upgraded();
-  if (sections?.update && !sections.steps && sections.conversion === null)
-    return m.welcome_badge_updated();
-  return m.welcome_badge();
-}
+const BADGE_TEXT = {
+  upgraded: m.welcome_badge_upgraded,
+  updated: m.welcome_badge_updated,
+  "get-started": m.welcome_badge,
+} satisfies Record<ReturnType<typeof bannerBadge>, () => string>;
 
 function Header({ titleId }: { titleId: string }) {
   const actions = useWelcomeActions();
-  const badge = useWelcomeStore((s) =>
-    badgeText(bannerSections(s), s.migrationPending),
-  );
+  const badge = BADGE_TEXT[useWelcomeStore(bannerBadge)]();
   return (
     <header className="zt:flex zt:items-start zt:gap-3">
       {/* The tagline joins the title's line where the pane is wide enough. */}
@@ -329,6 +320,65 @@ function Checklist({ connect }: { connect: boolean }) {
 }
 
 /**
+ * The setup steps once every one is done, beside a notice: one "Setup done"
+ * line naming the Zotero data folder and the literature-notes folder, whose
+ * "Show steps" opens the checklist under it.
+ */
+function FoldedChecklist({ connect }: { connect: boolean }) {
+  const connection = useWelcomeStore((s) => s.connection);
+  const literatureFolder = useWelcomeStore((s) => s.literatureFolder);
+  const [open, setOpen] = useState(false);
+  const stepsId = useUniqueId();
+  return (
+    <div className="zt:flex zt:flex-col zt:gap-0.5">
+      <div
+        data-welcome-setup-done=""
+        className="zt:flex zt:min-h-7 zt:items-center zt:gap-2 zt:px-3 zt:py-1.5"
+      >
+        <span
+          className={cn(
+            "zt:flex zt:size-5 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-full zt:border-2",
+            markClass("done", false),
+          )}
+        >
+          <Icon name="check" size="xs" />
+        </span>
+        <div className="zt:flex zt:min-w-0 zt:flex-1 zt:items-baseline zt:gap-x-2 zt:overflow-hidden zt:whitespace-nowrap">
+          <span className="zt:shrink-0 zt:text-sm zt:font-semibold">
+            {m.welcome_setup_done()}
+          </span>
+          <span className="zt:flex zt:min-w-0 zt:items-baseline zt:gap-1.5 zt:overflow-hidden zt:text-xs zt:text-muted-foreground">
+            {connection.status === "connected" ? (
+              <>
+                <code className="zt:max-w-60 zt:min-w-0 zt:shrink-[1000] zt:truncate zt:font-mono">
+                  {connection.path}
+                </code>
+                <span aria-hidden="true">·</span>
+              </>
+            ) : null}
+            <span className="zt:truncate">
+              {m.welcome_setup_done_folder({ folder: literatureFolder })}
+            </span>
+          </span>
+        </div>
+        <Button
+          className="zt:shrink-0"
+          icon={open ? "chevrons-down-up" : "chevrons-up-down"}
+          aria-expanded={open}
+          aria-controls={stepsId}
+          onClick={() => setOpen((now) => !now)}
+        >
+          {open ? m.welcome_hide_steps() : m.welcome_show_steps()}
+        </Button>
+      </div>
+      <div id={stepsId} hidden={!open}>
+        {open ? <Checklist connect={connect} /> : null}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Obsidian's unlayered `a` rule colours and underlines every link above any
  * utility, so the colour stays inline; the rest is utilities.
  */
@@ -378,7 +428,8 @@ function HelpTile({
         FOCUS_RING,
         primary
           ? "zt:col-span-2 zt:gap-x-2.5 zt:border-primary zt:hover:border-primary"
-          : "zt:border-border",
+          : // A tile in a row with a taller one keeps its title at the top.
+            "zt:content-start zt:border-border",
       )}
     >
       <span
@@ -397,7 +448,8 @@ function HelpTile({
         id={subtitleId}
         className={cn(
           "zt:text-xs zt:text-muted-foreground",
-          !primary && "zt:col-span-2",
+          // Under 760px the small tiles keep their icon and title only.
+          !primary && "zt:col-span-2 zt:@max-[760px]:hidden",
         )}
       >
         {subtitle}
@@ -527,6 +579,26 @@ function Callout({
   );
 }
 
+/**
+ * The longer explanation of a notice, folded behind "How it works" so the
+ * notice reads as one sentence and its action.
+ */
+function HowItWorks({ children }: { children: ReactNode }) {
+  return (
+    <details className="zt:group/how zt:mt-1">
+      <summary className="zt:inline-flex zt:cursor-(--cursor) zt:list-none zt:items-center zt:gap-1 zt:rounded-sm zt:text-xs zt:text-(--text-normal) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none zt:[&::-webkit-details-marker]:hidden">
+        <Icon
+          name="right-triangle"
+          size="xs"
+          className="zt:shrink-0 zt:[rotate:calc(var(--direction)*-90deg)] zt:text-(--nav-collapse-icon-color) zt:group-open/how:[rotate:none]"
+        />
+        {m.welcome_how_it_works()}
+      </summary>
+      <p className="zt:mt-1 zt:mb-0">{children}</p>
+    </details>
+  );
+}
+
 /** The update of ZotLit: its version, and the Release Note that says what changed. */
 function UpdateCallout() {
   const actions = useWelcomeActions();
@@ -580,11 +652,12 @@ function ConversionOffer() {
         </Button>
       }
     >
-      <p className="zt:m-0">
+      <p className="zt:m-0">{m.welcome_template_conversion_lead()}</p>
+      <HowItWorks>
         {m.welcome_template_conversion_body({
           path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
         })}
-      </p>
+      </HowItWorks>
       {refusal ? (
         <p className="zt:mt-2 zt:mb-0 zt:text-destructive" role="alert">
           {refusal}
@@ -700,6 +773,7 @@ function CompanionGuidance() {
 export function Welcome() {
   const shown = useWelcomeStore((s) => bannerSections(s) !== null);
   const steps = useWelcomeStore((s) => bannerSections(s)?.steps ?? false);
+
   const connect = useWelcomeStore((s) => bannerSections(s)?.connect ?? false);
   const conversion = useWelcomeStore(
     (s) => bannerSections(s)?.conversion ?? null,
@@ -712,29 +786,45 @@ export function Welcome() {
   );
   const update = useWelcomeStore((s) => bannerSections(s)?.update ?? false);
   const titleId = useUniqueId();
+  // A request for the banner moves focus to it, once it shows.
+  const requests = useWelcomeStore((s) => s.requests);
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (requests > 0) sectionRef.current?.focus();
+  }, [requests]);
   if (!shown) return null;
   return (
     // Obsidian shows a tooltip for each `aria-label`, so the banner takes its
     // name from the title on screen.
     <section
+      ref={sectionRef}
       aria-labelledby={titleId}
       data-welcome-banner=""
-      className="zt:@container zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-6) zt:py-(--size-4-4)"
+      tabIndex={-1}
+      // The bar spans the tab; its content starts where the Library Tree's
+      // rows do, at the tree's own inset.
+      className="zt:@container zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-2) zt:py-(--size-4-4) zt:outline-none"
     >
-      <Header titleId={titleId} />
-      {/* A wide pane holds the Help Links in a column beside the checklist
-          and the callouts; a narrow one puts them underneath. The checklist
-          stops at a reading width, so a step's action stays near its title. */}
-      <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@2xl:grid-cols-[minmax(0,40rem)_340px] zt:@2xl:gap-6">
-        <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
-          {update && <UpdateCallout />}
-          {conversion === "offer" && <ConversionOffer />}
-          {conversion === "result" && <ConversionResult />}
-          {migration && <MigrationGuide />}
-          {companion && <CompanionGuidance />}
-          {steps && <Checklist connect={connect} />}
+      {/* One column, at most 64rem, holds the header, its dismiss button and
+          the body, so on a large pane the banner reads as one block and the
+          dismiss button ends the content it closes. */}
+      <div className="zt:max-w-[64rem]">
+        <Header titleId={titleId} />
+        {/* What to do comes first; the Help Links take a 22rem column beside
+            it, wide enough for each small tile's subtitle to keep to one
+            line, and go last under 760px. */}
+        <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@min-[760px]:grid-cols-[minmax(0,1fr)_22rem] zt:@min-[760px]:gap-6">
+          <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
+            {update && <UpdateCallout />}
+            {migration && <MigrationGuide />}
+            {conversion === "offer" && <ConversionOffer />}
+            {conversion === "result" && <ConversionResult />}
+            {companion && <CompanionGuidance />}
+            {steps === "open" && <Checklist connect={connect} />}
+            {steps === "folded" && <FoldedChecklist connect={connect} />}
+          </div>
+          <HelpLinks />
         </div>
-        <HelpLinks />
       </div>
     </section>
   );

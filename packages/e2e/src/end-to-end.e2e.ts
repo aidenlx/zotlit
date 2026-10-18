@@ -3985,6 +3985,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(vaultId, `String(!!${banner})`, { expected: "true" }),
     ).toBe(true);
+    // So does the Welcome & help row at the foot of the Library Tree, with
+    // the setup steps, and focus moves to the banner. A narrow pane shows the
+    // tree over the list once it is open, so the row is opened to first.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}press(${banner}.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
+    );
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;view.tree.setOpen(true);const row=await until('the tree foot',()=>{const n=view.contentEl.querySelector('[data-library-tree] [data-welcome-help-row]');return n?.checkVisibility()&&n;});press(row,${JSON.stringify(m.library_view_help_action())});const el=await until('banner back',()=>${banner});await until('banner focused',()=>el.ownerDocument.activeElement===el);return JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],steps:el.querySelectorAll('[data-welcome-step]').length,actions:view.containerEl.querySelectorAll('.view-actions [aria-label*="help" i]').length});})()`,
+      ),
+    ).toBe(JSON.stringify({ dismissed: false, steps: 3, actions: 0 }));
 
     // ZotLit reads a folder without Zotero's database: the tree and the
     // list say so and offer to locate it, in place of the papers. A narrow
@@ -4127,6 +4140,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{const opened=app.workspace.getLeavesOfType('zotlit-library').length;await app.commands.executeCommandById('zotlit:open-library-view');${PAGE}await until('library view',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl);await new Promise(r=>setTimeout(r,500));return JSON.stringify({opened,banner:!!${banner}});})()`,
       ),
     ).toBe(JSON.stringify({ opened: 0, banner: false }));
+
+    // An update beside the template conversion: the badge still says
+    // Updated, the done steps fold into one line, and the conversion's long
+    // explanation waits behind How it works. The vault holds converted
+    // templates, so the load clears a saved offer; the offer is armed after
+    // it, as the template service does.
+    await reloadAndCheck(
+      `await app.vault.adapter.write(${dataPath},${JSON.stringify(
+        JSON.stringify({ ...seeded, "welcome.dismissed": false }),
+      )});`,
+    );
+    await obEval(
+      vaultId,
+      `(${services}.settings.update({'note.template-conversion-pending':true}),true)`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(()=>{const el=${banner};return JSON.stringify(!!el&&{badge:el.querySelector('[data-welcome-badge]')?.textContent,headings:[...el.querySelectorAll('[role=heading][aria-level="3"]')].map(n=>n.textContent),folded:!!el.querySelector('[data-welcome-setup-done]'),how:[...el.querySelectorAll('details')].map(d=>d.open+':'+d.querySelector('summary').textContent)});})()`,
+        {
+          expected: JSON.stringify({
+            badge: m.welcome_badge_updated(),
+            headings: [
+              m.welcome_update_title({ version }),
+              m.welcome_template_conversion_title(),
+            ],
+            folded: true,
+            how: [`false:${m.welcome_how_it_works()}`],
+          }),
+        },
+      ),
+    ).toBe(true);
+
+    // The dismiss button puts every combination away, and it stays away
+    // after a reload, until a later update.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}press(${banner}.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
+    );
+    await reloadAndCheck();
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{await app.commands.executeCommandById('zotlit:open-library-view');${PAGE}await until('library view',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl);await new Promise(r=>setTimeout(r,500));return JSON.stringify({banner:!!${banner},dismissed:${services}.settings.current['welcome.dismissed'],update:${services}.settings.current['release.update-pending']});})()`,
+      ),
+    ).toBe(JSON.stringify({ banner: false, dismissed: true, update: false }));
   });
 
   it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {

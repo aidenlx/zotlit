@@ -27,6 +27,7 @@ import type { QueryViewDeps } from "@/views/query-view/view";
 import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 import { unavailable } from "@/views/welcome/connection";
+import { renderWelcomeHelpRow } from "@/views/welcome/help-row";
 
 import {
   LIBRARY_LAYOUTS,
@@ -157,14 +158,11 @@ export class LibraryView extends ItemView {
     this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root", "zt-library-view");
     this.contentEl.dataset.libraryView = "";
-    // The banner takes at most half the tab.
     this.welcome = new WelcomeBanner(
       deps.welcome,
       // The banner's Search your library is the search box under it.
       { searchLibrary: () => this.search.focus() },
-      this.contentEl.createDiv({
-        cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
-      }),
+      this.contentEl.createDiv({ cls: "zt:shrink-0" }),
     );
     this.#storage = new LibraryViewStorage(
       deps.settings,
@@ -317,19 +315,37 @@ export class LibraryView extends ItemView {
   protected override async onOpen(): Promise<void> {
     // An Item dragged from a row lands in a note, never back in the view.
     this.registerDomEvent(this.contentEl, "dragover", refuseItemDrop);
-    // The Welcome View banner sits above the tree and the list, and takes
-    // at most half the tab.
+    // The Welcome View banner sits above the tree and the list at its full
+    // height. Where the tab is too short for both, the list keeps 20rem and
+    // the tab scrolls as a whole, with its scrollbar, so no part of the
+    // banner is cut off.
     const column = this.contentEl.createDiv({
-      cls: "zt:flex zt:h-full zt:flex-col",
+      cls: "zt:flex zt:h-full zt:flex-col zt:overflow-y-auto",
+      attr: { "data-library-column": "" },
     });
     column.append(this.welcome.el);
     const shell = column.createDiv({
-      cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-0 zt:flex-1",
+      cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden",
     });
-    const treeEl = shell.createDiv({
-      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:overflow-y-auto zt:scroll-gutter zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:block zt:group-data-tree-open:block zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
+    const treePane = shell.createDiv({
+      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:flex-col zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:flex zt:group-data-tree-open:flex zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
       attr: { "data-library-tree": "" },
     });
+    // The tree scrolls above its foot, which stays in reach: the way back to
+    // the Welcome View banner (ADR 0077).
+    const treeEl = treePane.createDiv({
+      cls: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:scroll-gutter",
+    });
+    const treeFoot = treePane.createDiv({
+      cls: "zt:shrink-0 zt:border-t-(length:--border-width) zt:border-(--divider-color) zt:p-(--size-4-2)",
+    });
+    this.register(
+      renderWelcomeHelpRow(treeFoot, () => {
+        // Over a narrow pane the tree steps aside for the banner.
+        this.tree.setOpen(false);
+        this.welcome.request();
+      }),
+    );
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
     });
