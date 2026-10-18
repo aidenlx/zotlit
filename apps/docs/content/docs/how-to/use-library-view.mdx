@@ -1,6 +1,6 @@
 ---
 title: "Browse your library in the Library View"
-description: "Find a paper by collection, recent activity, search, or reading state, then open its PDF, write its note, or cite it."
+description: "Find a paper by collection, recent activity, search, reading state, or tag, then open its PDF, write its note, or cite it."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -87,13 +87,23 @@ The buttons below the tree narrow the list by what you have done with each paper
 
 Turn on several filters to show only the papers that match all of them. The filters work with any tree selection, including <UiLabel name={m.library_view_recent()} />, and they stay on while you search. When no paper passes them, the list shows <UiLabel name={m.library_view_empty_facets()} />
 
+## Filter by tag [#tags]
+
+Under the reading-state filters, <UiLabel name={m.library_view_tags_label()} /> lists the Zotero tags of the papers in your tree selection, by name. Select a tag to show only the papers that carry it. Select more tags to show only the papers that carry all of them, as in Zotero. While tags are selected, the list of tags keeps only the tags of the papers still shown, and the heading above the list names the selected tags, for example "Thesis <UiLabel name={m.library_view_header_tags({ tags: "figure and methods" })} />".
+
+Select a selected tag again to let go of it, or select <UiLabel name={m.library_view_tags_clear()} /> to let go of them all. The selected tags stay when you select another library or collection, and a selected tag stays in the list even where no paper there carries it.
+
+Type in the <UiLabel name={m.library_view_tags_filter()} /> box to find a tag in a long list. The box narrows only the tag names, not the papers.
+
+Selected tags work with the reading-state filters and the search. A `tag:` token in the search box narrows the same way.
+
 ## Read the list [#layouts]
 
 The list draws each paper in two lines, in the <UiLabel name={m.library_view_papers_view_name()} /> layout: the title, then the creators, year, and publication. An icon at the end of the row shows the kind of the paper's main attachment, and a note icon shows that the paper has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
 
 The toolbar holds the result count, the sort, and <UiLabel name={m.annot_view_save_as_query_file()} />. The view lists at most 1,000 papers at a time. When a selection holds more, the result count says how many it holds in all. For a table, other layouts, filters, grouping, or a choice of properties, [save the view as a query file](#save-as-query-file) and work in its tab.
 
-The Library View remembers your tree selection, filters, search text, and sort. It keeps them in this vault's plugin data, so they come back in every Library View you open and they sync with your vault.
+The Library View remembers your tree selection, filters, selected tags, search text, and sort. It keeps them in this vault's plugin data, so they come back in every Library View you open and they sync with your vault.
 
 ## Open, write, and cite from a row [#rows]
 
@@ -138,7 +148,7 @@ The card shows while a row is selected. On a narrow pane it opens over the list;
 
 ## Show a quick switcher result in the library [#show-in-library]
 
-In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on a result. ZotLit opens the Library View on the paper's first collection, or on its library when the paper is in no collection, and selects its row. The view clears its search and turns off its reading-state filters, so nothing hides the paper.
+In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on a result. ZotLit opens the Library View on the paper's first collection, or on its library when the paper is in no collection, and selects its row. The view clears its search, turns off its reading-state filters, and lets go of its selected tags, so nothing hides the paper.
 
 The list holds at most 1,000 papers. When the paper falls beyond them, nothing is selected and a notice says <UiLabel name={m.library_view_reveal_not_listed({ limit: 1000 })} />
 
@@ -146,7 +156,7 @@ The list holds at most 1,000 papers. When the paper falls beyond them, nothing i
 
 To keep what the Library View shows as a vault file, choose <UiLabel name={m.annot_view_save_as_query_file()} /> in the toolbar. The name starts as the library or collection you selected; change it if you like, and choose a folder. When the file leaves out part of the view, the dialog says which. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
 
-The file keeps the library or collection you selected and the sort, opens in the <UiLabel name={m.library_view_papers_view_name()} /> layout, and lists at most 1,000 papers, as the view does. In its tab you can switch to the table, filter, group, and choose properties. Some parts of the view do not carry over:
+The file keeps the library or collection you selected, the selected tags, and the sort, opens in the <UiLabel name={m.library_view_papers_view_name()} /> layout, and lists at most 1,000 papers, as the view does. In its tab you can switch to the table, filter, group, and choose properties. Some parts of the view do not carry over:
 
 - The search does not carry over. Query files have no way to express a ranked search yet.
 - <UiLabel name={m.library_view_facet_has_note()} /> does not carry over, and
