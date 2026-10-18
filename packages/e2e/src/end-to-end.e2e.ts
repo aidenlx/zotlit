@@ -3410,7 +3410,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
-  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
+  it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -3468,11 +3468,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("null");
 
-    // A click on the paper's row shows its card: the seeded fields and
-    // abstract, the row menu's actions, and its Annotations as cards.
+    // A click on the paper's row shows its card with its Annotations
+    // closed: one row that counts them, and no Annotation Card drawn.
+    expect(
+      JSON.parse(
+        await inLibrary(
+          `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility()&&card.querySelector('[data-library-card-toggle="annotations"]'),10000);await leaf.view.card.settled;const toggle=card.querySelector('[data-library-card-toggle="annotations"]');return JSON.stringify({toggle:toggle.textContent,expanded:toggle.getAttribute('aria-expanded'),cards:card.querySelectorAll('.zt-annot-card').length});`,
+        ),
+      ),
+    ).toEqual({
+      toggle: m.library_view_card_annotation_count({
+        count: seededCards.length,
+      }),
+      expanded: "false",
+      cards: 0,
+    });
+    // Opened, the card shows the seeded fields and abstract, the row menu's
+    // actions, and its Annotations as cards.
     const shown = JSON.parse(
       await inLibrary(
-        `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility()&&card.querySelectorAll('.zt-annot-card').length>=${seededCards.length},10000);await leaf.view.card.settled;${readCard}`,
+        `press(card.querySelector('[data-library-card-toggle="annotations"]'),'Annotations');await until('cards',()=>card.querySelectorAll('.zt-annot-card').length>=${seededCards.length},10000);await leaf.view.card.settled;${readCard}`,
       ),
     ) as {
       title: string;

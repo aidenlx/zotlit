@@ -527,6 +527,25 @@
   "library_view_card_open_in_sidebar": "在侧边栏中打开",
   "library_view_card_close": "关闭",
   "library_view_card_failed": "无法读取此文献的标注。",
+  "library_view_card_annotation_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=*": "{count} 条批注"
+      }
+    }
+  ],
+  "library_view_card_venue": "发表于",
+  "library_view_card_copy_citation_key": "复制文献引用标识",
+  "library_view_card_all_fields": "全部字段",
+  "library_view_card_abstract": "摘要",
+  "library_view_card_show_more": "展开",
+  "library_view_card_show_less": "收起",
+  "library_view_card_where": "保存在",
+  "library_view_card_tags": "标签",
+  "library_view_card_files": "文件",
+  "library_view_card_notes": "Zotero 笔记",
   "instruction_show_in_library": "在文库中显示",
   "library_view_search_label": "搜索文献",
   "library_view_search_placeholder": "搜索文献",

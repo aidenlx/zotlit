@@ -138,11 +138,34 @@ To open a PDF in Obsidian from other places, see [Open an item's PDF in Obsidian
 
 ## Read a paper's Reading Card [#reading-card]
 
-When you select a row, the Reading Card opens on the right of the view. It shows the paper's title, creators, year, publication, and abstract, and its buttons run the actions of the row menu: <UiLabel name={m.library_view_menu_open_pdf()} />, and <UiLabel name={m.library_view_menu_open_note()} /> or <UiLabel name={m.library_view_menu_write_note()} />. The <UiLabel name={m.library_view_card_more()} /> button opens the full row menu, with <UiLabel name={m.library_view_menu_insert_citation()} />.
+When you select a row, the Reading Card opens on the right of the view. It shows what Zotero shows for the paper, but only reads it: the card never changes the paper in Zotero.
 
-Under <UiLabel name={m.library_view_card_annotations()} />, the card lists every annotation of the paper, the same cards the annotation view shows. You can edit a comment or tags there as you would in the sidebar; see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what that needs. A paper with no annotations has no such section.
+At the top are the paper's title, its creators, year, and publication, and its item type, such as Journal Article or Letter. The buttons below run the actions of the row menu: <UiLabel name={m.library_view_menu_open_pdf()} />, and <UiLabel name={m.library_view_menu_open_note()} /> or <UiLabel name={m.library_view_menu_write_note()} />. The <UiLabel name={m.library_view_card_more()} /> button opens the full row menu, with <UiLabel name={m.library_view_menu_insert_citation()} />. The <UiLabel name={m.library_view_card_open_in_sidebar()} /> icon shows the paper's annotations in the <UiLabel name={m.annot_view_name()} /> view, which stays pinned to that paper until you unpin it; see [Use the annotation view](/docs/how-to/use-annotation-view).
 
-Select the <UiLabel name={m.library_view_card_open_in_sidebar()} /> icon beside the heading to show the paper's annotations in the <UiLabel name={m.annot_view_name()} /> view. The sidebar stays pinned to that paper until you unpin it; see [Use the annotation view](/docs/how-to/use-annotation-view).
+Below the buttons, the card lists the facts you cite or follow most often:
+
+- <UiLabel name={m.library_view_card_venue()} />: the journal or publisher, with
+  the volume, issue, and pages.
+- The date, the DOI, and the URL. The DOI and the URL open in your browser.
+- The citation key, with a button that copies it.
+- The date the paper was added to Zotero.
+
+Select <UiLabel name={m.library_view_card_all_fields()} /> to see every other field the paper has, with the labels Zotero uses and in Zotero's order.
+
+The rest of the card shows only what the paper has. A part with nothing in it is left out.
+
+- The abstract, cut to a few lines. Select <UiLabel name={m.library_view_card_show_more()} /> to read the rest.
+- <UiLabel name={m.library_view_card_where()} />: the library and the
+  collections that hold the paper.
+- <UiLabel name={m.library_view_card_tags()} />: the paper's tags.
+- <UiLabel name={m.library_view_card_files()} />: the paper's attachments.
+  Select one to open it: a PDF opens in Obsidian, and another file opens in
+  Zotero.
+- <UiLabel name={m.library_view_card_notes()} />: the notes the paper has in
+  Zotero. Select one to show it in Zotero.
+- The annotations, as one row that counts them, for example <UiLabel name={m.library_view_card_annotation_count({ count: 8 })} />. Select the row to list the annotations, the same cards the annotation view shows. You can edit a comment or tags there as you would in the sidebar; see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what that needs.
+
+The card remembers whether <UiLabel name={m.library_view_card_all_fields()} /> and the annotations are open, and keeps them that way for the next paper you select.
 
 The card shows while a row is selected. On a narrow pane it opens over the list; select <UiLabel name={m.library_view_card_close()} /> or press `Escape` to put it away. When a search, a filter, or another tree selection takes the selected paper out of the list, the selection goes and the card hides.
 

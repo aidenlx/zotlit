@@ -54,6 +54,7 @@ const CHAPTER: LibraryViewDocument = {
     { property: "title", direction: "ASC" },
     { property: "dateAdded", direction: "DESC" },
   ],
+  card: { allFields: true, annotations: true },
 };
 
 describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
@@ -111,6 +112,20 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       tags: [],
       search: "",
       sort: [{ property: "dateModified", direction: "DESC" }],
+      // The Reading Card opens with All fields and Annotations closed.
+      card: { allFields: false, annotations: false },
+    });
+  });
+
+  it("keeps a Reading Card disclosure it reads where the other does not read", () => {
+    expect(
+      parseLibraryViewDocument({
+        card: { allFields: true, annotations: "yes" },
+      }).card,
+    ).toEqual({ allFields: true, annotations: false });
+    expect(parseLibraryViewDocument({ card: "open" }).card).toEqual({
+      allFields: false,
+      annotations: false,
     });
   });
 
