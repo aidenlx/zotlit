@@ -75,6 +75,11 @@ interface TreeState {
   /** The Libraries the tree shows; `null` before the first read settles. */
   readonly libraries: readonly TreeLibrary[] | null;
   readonly node: LibraryNode;
+  /**
+   * Whether the list shows {@link node}; it does not while a search of all
+   * libraries reads past it, and the tree then marks no node selected.
+   */
+  readonly listed: boolean;
   /** Whether the tree shows every Library, not only those in the Library Scope. */
   readonly all: boolean;
   /** The nodes open to their children, by {@link nodeKey}. */
@@ -138,6 +143,7 @@ export class LibraryTree extends Component {
     this.store = createStore<TreeState>(() => ({
       libraries: null,
       node: { kind: "library", library: { type: "personal" } },
+      listed: true,
       all: false,
       expanded: new Set(),
       open: false,
@@ -209,6 +215,14 @@ export class LibraryTree extends Component {
       this.#countUnread();
       this.#listTags();
     }
+  }
+
+  /**
+   * Show whether the list shows the selected node: a search of all
+   * libraries reads past it.
+   */
+  showListed(listed: boolean): void {
+    this.store.setState({ listed });
   }
 
   /** Show `tags` as the selected ones, and list the tags they leave. */
@@ -598,6 +612,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
   const node = useStore(tree.store, (s) => s.node);
   const expanded = useStore(tree.store, (s) => s.expanded);
   const all = useStore(tree.store, (s) => s.all);
+  const listed = useStore(tree.store, (s) => s.listed);
   const recent: Row = {
     key: nodeKey(RECENT),
     node: RECENT,
@@ -652,7 +667,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
               role="treeitem"
               data-library-node={row.key}
               aria-level={row.level}
-              aria-selected={row.key === selected}
+              aria-selected={listed && row.key === selected}
               aria-expanded={row.expanded ?? undefined}
               tabIndex={
                 row.key === selected ||

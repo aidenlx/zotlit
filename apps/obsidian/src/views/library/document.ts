@@ -328,6 +328,11 @@ export interface LibraryViewQuery {
   readonly rank: readonly string[] | null;
   /** The conditions every row passes in the vault, after the query. */
   readonly vault: readonly VaultCondition[];
+  /**
+   * The tree node the list shows, which the tree marks as selected; `null`
+   * while a search of all libraries reads past it.
+   */
+  readonly node: LibraryNode | null;
 }
 
 /**
@@ -410,6 +415,8 @@ export function libraryViewQuery(
       : librariesOf(node, scope),
     rank: keys ?? null,
     vault,
+    // Recent reads every Library of the Library Scope already.
+    node: everywhere === undefined || node.kind === "recent" ? node : null,
   };
 }
 

@@ -2000,6 +2000,22 @@ it("searches all libraries in the Library Scope on request, past the selected Co
     libraries: [PERSONAL, LAB],
   });
   expect(header(view)).toBe("All libraries› | 4 matches for “figures”");
+  // The tree marks no node while the list reads every Library, and marks
+  // the node again once the search keeps to it.
+  const selected = () =>
+    [
+      ...view.contentEl.querySelectorAll<HTMLElement>(
+        '[role="treeitem"][aria-selected="true"]',
+      ),
+    ].map((el) => el.dataset.libraryNode);
+  expect(selected()).toEqual([]);
+  // The node keeps the tree's one stop for Tab.
+  expect(
+    view.contentEl.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')
+      ?.dataset.libraryNode,
+  ).toBe(nodeKey(THESIS));
+  await type(view, "");
+  expect(selected()).toEqual([nodeKey(THESIS)]);
 });
 
 it("narrows a tag: token to the Items with that tag, in the list's order", async () => {

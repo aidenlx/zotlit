@@ -760,6 +760,8 @@ export class LibraryView extends ItemView {
       ...(keys && { keys }),
       ...(everywhere && { everywhere }),
     });
+    // The tree marks the node the list shows, and none past it.
+    this.tree.showListed(this.#shown.node !== null);
     this.query.setText(this.#shown.text);
     this.query.contextChanged();
   }
