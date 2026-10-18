@@ -549,6 +549,10 @@ function CardBody({ card }: { card: ReadingCard }) {
   if (key === null) return null;
   const { items, host, readers } = card;
   const hasFacts = !!item && (item.facts.length > 0 || item.fields.length > 0);
+  // The card's 16 px inline padding keeps what ends a line, the chevrons of
+  // its disclosures and the close button, clear of an overlay scrollbar, so
+  // the card takes no `scroll-gutter`: on macOS that would cut its end
+  // padding to Obsidian's 12 px scrollbar width.
   return (
     <section
       className="zt:flex zt:h-full zt:min-h-0 zt:flex-col zt:gap-(--size-4-5) zt:overflow-y-auto zt:px-(--size-4-4) zt:pt-(--size-4-4) zt:pb-(--size-4-8)"
