@@ -21,7 +21,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -50,6 +50,7 @@ import {
   VaultEditor,
   draftOf,
   listItems,
+  openChipMenu,
   valueOf,
 } from "./vault-editors";
 import type { VaultDraft, VaultEditEnd } from "./vault-editors";
@@ -220,6 +221,7 @@ function VaultPreview({
   type,
   checkbox,
   editing,
+  chipMenu,
 }: {
   props: VaultCellProps;
   value: VaultValue;
@@ -228,6 +230,8 @@ function VaultPreview({
   editing: boolean;
   /** The checkbox of a note's checkbox property. */
   checkbox: ReactNode;
+  /** Open the menu of the list item at `at`, as a Bases list cell does. */
+  chipMenu: (event: MouseEvent<HTMLElement>, at: number) => void;
 }): ReactNode {
   const state = vaultState(value);
   if (!value.note)
@@ -255,6 +259,7 @@ function VaultPreview({
             item={item}
             tags={tags}
             data-query-vault-chip={editing ? undefined : item}
+            onContextMenu={(event) => chipMenu(event, at)}
           />
         ))}
       </span>
@@ -400,9 +405,35 @@ export function VaultEditCell(props: VaultCellProps) {
         });
         new BaseNotice(m.query_view_vault_write_failed({ name }));
       });
-  const begin = () => {
+  /** Enter edit; at the list item `chip`, in place, where one is given. */
+  const begin = (chip?: number) => {
     ended.current = false;
-    setDraft(draftOf(type, current));
+    const draft = draftOf(type, current);
+    const item = chip === undefined ? undefined : draft.items[chip];
+    setDraft(
+      item === undefined
+        ? draft
+        : { ...draft, chip: { at: chip!, text: item } },
+    );
+  };
+  // A list item at rest has the menu it has in the editor: a read-only
+  // list's offers Copy alone.
+  const chipMenu = (event: MouseEvent<HTMLElement>, at: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const items = listItems(current);
+    const item = items[at];
+    if (item === undefined) return;
+    openChipMenu(event.currentTarget, event.nativeEvent, {
+      item,
+      ...(editable && {
+        edit: () => begin(at),
+        remove: () => {
+          const rest = items.filter((_, i) => i !== at);
+          void write(rest.length === 0 ? null : rest);
+        },
+      }),
+    });
   };
   const end = (commit: boolean, edited: VaultDraft, how: VaultEditEnd) => {
     if (ended.current) return;
@@ -452,6 +483,9 @@ export function VaultEditCell(props: VaultCellProps) {
             !editing &&
             "zt:rounded-(--bases-table-cell-radius-active) zt:hover:z-1 zt:hover:shadow-(--bases-table-cell-shadow-active) zt:focus-visible:z-1 zt:focus-visible:shadow-(--bases-table-cell-shadow-active)",
           target && !checkbox && "zt:cursor-text",
+          // The editor stands over the rows below, above a cell there that
+          // the pointer raises, so a press on a chip it holds reaches it.
+          editing && "zt:z-2",
         )}
         role={target ? "button" : undefined}
         // Tab and Shift+Tab find an editable cell, its own too while it edits.
@@ -493,6 +527,7 @@ export function VaultEditCell(props: VaultCellProps) {
             value={value}
             type={type}
             editing={editing}
+            chipMenu={chipMenu}
             checkbox={
               <input
                 data-query-vault-checkbox=""
