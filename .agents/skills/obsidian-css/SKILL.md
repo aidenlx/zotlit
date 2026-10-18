@@ -132,6 +132,7 @@ Catalogs of Obsidian variables — read on demand, one topic at a time.
 - `references/window.md` — workspace chrome: ribbon, sidebar, status bar, dividers, scrollbars, scroll containers (overlay scrollbar, pane background, sticky edges), window frame, vault profile.
 - `references/plugins.md` — built-in plugin views: file explorer, search, graph, canvas, sync.
 - `../../../apps/obsidian/docs/bases-toolbar-menu.md` — a Bases-style menu, page, or form: the anatomy, keyboard, and save behaviour of Bases toolbar menus.
+- `../../../apps/obsidian/docs/bases-table-cells.md` — a table cell or inline editor that mirrors a Bases table: the cell box, per-type display and editing, value suggestions, the chip menu.
 
 When a catalog leaves a question open — exactly what Obsidian applies to an element, whether a rule is layered — read Obsidian's own stylesheet: `/obsidian-asar-extract` writes `app.css` next to `app.js` in `node_modules/.ob-rev-<version>/`, and `rg` over it answers against the exact version you build for.
 
