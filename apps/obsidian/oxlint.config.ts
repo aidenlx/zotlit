@@ -189,6 +189,23 @@ export default defineConfig({
       rules: { "zotlit-obsidian/no-global-timer": "off" },
     },
     {
+      // Tests written before the rule that assert zt: classes; a file moves off
+      // this list when its assertions move to behavior.
+      files: [
+        "src/services/citation-popover/content.test.ts",
+        "src/services/citekey-navigation/citation.test.ts",
+        "src/services/pandoc/inline-content.test.ts",
+        "src/setting-tab/create-profile-modal.test.ts",
+        "src/setting-tab/profile-destination-modal.test.ts",
+        "src/views/cited-by/CitedBy.test.ts",
+        "src/views/references/References.test.ts",
+        "src/views/references/view.test.ts",
+        "src/views/template-workbench/host.test.ts",
+        "src/views/welcome/Welcome.test.ts",
+      ],
+      rules: { "zotlit-tests/no-class-assertion": "off" },
+    },
+    {
       // Node runs these straight from source, where the `@/` alias the rule
       // points at does not resolve.
       files: ["scripts/**"],
