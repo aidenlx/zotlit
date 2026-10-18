@@ -1,5 +1,5 @@
-// What the Reading Card says of an Item's fields: the key facts a researcher
-// cites or follows, and "All fields", the other fields the Item has a value
+// What the Reading Card says of an Item's fields: its header, as a paper's
+// title page reads, and "All fields", the other fields the Item has a value
 // for, in the order Zotero shows its type's fields, under Zotero's labels.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
@@ -27,8 +27,9 @@ const OWN_PATHS = [
   "attachments[].title",
   "attachments[].fileType",
   "notes",
-  // The keys alone, for the count the closed Annotations row shows.
+  // The keys and colours alone, for the counts "Your annotations" shows.
   "annotations[].indexedKey",
+  "annotations[].color",
 ] as const;
 
 /**
@@ -112,15 +113,30 @@ function fieldText(name: string, value: QueryViewValue | undefined): string {
   return record(value) ? itemDateText(value) : text(value);
 }
 
+/** Whether Zotero's type `type` has the base field `name`, under its own name or an alias. */
+function typeHas(type: string, name: string): boolean {
+  return typeFields(type).some(
+    (field) => field === name || FIELD_ALIASES[field] === name,
+  );
+}
+
+/**
+ * The value of the base field `name` where the Item's type has it: a value
+ * left in a field of another type, after a change of type, is not the Item's.
+ */
+function ownText(values: Values, name: string): string {
+  return typeHas(text(values.itemType), name) ? text(values[name]) : "";
+}
+
 /** "30(1)": the volume and the issue. */
 function volumeText(values: Values): string {
-  const volume = text(values.volume);
-  const issue = text(values.issue);
+  const volume = ownText(values, "volume");
+  const issue = ownText(values, "issue");
   return `${volume}${issue === "" ? "" : `(${issue})`}`;
 }
 
-/** The Venue the facts name, and the base fields it was read from. */
-function venueOf(values: Values): { text: string; from: string[] } | null {
+/** The Venue the header names, and the base field it was read from. */
+function venueOf(values: Values): { text: string; from: string } | null {
   const venue = resolveVenue({
     publicationTitle: text(values.publicationTitle) || null,
     publisher: text(values.publisher) || null,
@@ -129,60 +145,125 @@ function venueOf(values: Values): { text: string; from: string[] } | null {
     pages: null,
   });
   if (venue === null) return null;
-  const from =
-    text(values.publicationTitle) === venue ? "publicationTitle" : "publisher";
   return {
-    text: [venue, volumeText(values), text(values.pages)]
-      .filter((part) => part !== "")
-      .join(", "),
-    from: [from, "volume", "issue", "pages"],
+    text: venue,
+    from:
+      text(values.publicationTitle) === venue
+        ? "publicationTitle"
+        : "publisher",
   };
+}
+
+function yearOf(values: Values): string {
+  const year = record(values.date)?.year;
+  return typeof year === "number" ? String(year) : "";
 }
 
 const WEB = /^https?:\/\//i;
 
-/** The base fields the header and the abstract show, which no list repeats. */
-const SHOWN_ELSEWHERE = ["title", "abstractNote"];
+/** The most creators the header names before "et al.". */
+export const CREATOR_CAP = 10;
+
+/** A creator's full name. */
+function creatorName(creator: Values): string {
+  return (
+    text(creator.fullName) ||
+    text(creator.literal) ||
+    [text(creator.given), text(creator.family)]
+      .filter((part) => part !== "")
+      .join(" ")
+  );
+}
+
+function creatorsOf(value: QueryViewValue | undefined): Values[] {
+  return list(value).flatMap((entry) => {
+    const creator = record(entry);
+    return creator ? [creator] : [];
+  });
+}
 
 /**
- * The key facts: the Venue with volume, issue and pages, the date, the DOI
- * and the URL, the citation key and the date added, each where the Item has
- * one; and the base fields they show.
+ * The header of the Item, as its title page reads: the title, the creators
+ * in full, and the Venue with volume, issue, pages and year; the DOI and the
+ * citation key. The list row reads the same paths, so the card shows the
+ * same header from the row while it reads the rest.
  */
-export function keyFacts(values: Values): {
-  facts: CardField[];
-  shown: Set<string>;
-} {
-  const facts: CardField[] = [];
+export interface CardHeader {
+  readonly title: string;
+  readonly itemType: string;
+  /** The label of the Item type; `null` for a type this build does not know. */
+  readonly type: string | null;
+  /**
+   * The creators of the first one's role, by full name, as the row names the
+   * authors and not the editors; "et al." past {@link CREATOR_CAP}.
+   */
+  readonly creators: string;
+  /** "Venue, 30(1), 5998–6008 · 2017"; empty for none. */
+  readonly venue: string;
+  readonly doi: { readonly text: string; readonly href: string } | null;
+  readonly citationKey: string | null;
+}
+
+/** The base fields the header and the abstract show, which All fields leaves out. */
+const SHOWN_ELSEWHERE = [
+  "title",
+  "abstractNote",
+  "volume",
+  "issue",
+  "pages",
+  "DOI",
+  "citationKey",
+  "dateAdded",
+];
+
+export function cardHeader(values: Values): CardHeader {
+  const creators = creatorsOf(values.creators);
+  const role = creators[0]?.role;
+  const names = creators
+    .filter((creator) => creator.role === role)
+    .map(creatorName)
+    .filter((name) => name !== "");
+  const shownNames = names.slice(0, CREATOR_CAP).join(", ");
+  const venue = venueOf(values);
+  const source = [venue?.text ?? "", volumeText(values), text(values.pages)]
+    .filter((part) => part !== "")
+    .join(", ");
+  const doi = text(values.DOI);
+  const citationKey = text(values.citationKey);
+  const itemType = text(values.itemType);
+  return {
+    title: text(values.title),
+    itemType,
+    type: itemTypeLabel(itemType),
+    creators:
+      names.length > CREATOR_CAP
+        ? m.query_view_papers_more_creators({ names: shownNames })
+        : shownNames,
+    venue: [source, yearOf(values)].filter((part) => part !== "").join(" · "),
+    doi:
+      doi === ""
+        ? null
+        : { text: doi, href: WEB.test(doi) ? doi : `https://doi.org/${doi}` },
+    citationKey: citationKey === "" ? null : citationKey,
+  };
+}
+
+/** The date the Item was added, in the researcher's time zone; `null` for none. */
+export function addedText(values: Values): string | null {
+  return timestampText(values.dateAdded) || null;
+}
+
+/**
+ * The base fields the header shows, which "All fields" leaves out: the
+ * Venue's, and the date where the header's year says all of it.
+ */
+function shownInHeader(values: Values): Set<string> {
   const shown = new Set(SHOWN_ELSEWHERE);
   const venue = venueOf(values);
-  if (venue) {
-    facts.push({
-      name: "venue",
-      label: m.library_view_card_venue(),
-      text: venue.text,
-    });
-    for (const name of venue.from) shown.add(name);
-  }
-  const add = (name: string, value: string, href?: string) => {
-    shown.add(name);
-    if (value === "") return;
-    facts.push({
-      name,
-      label: fieldLabel(name),
-      text: value,
-      ...(href !== undefined && { href }),
-    });
-  };
-  add("date", itemDateText(values.date));
-  const doi = text(values.DOI);
-  add("DOI", doi, WEB.test(doi) ? doi : `https://doi.org/${doi}`);
-  const url = text(values.url);
-  // Only a web address links: a `javascript:` URL in Zotero never runs.
-  add("url", url, WEB.test(url) ? url : undefined);
-  add("citationKey", text(values.citationKey));
-  add("dateAdded", timestampText(values.dateAdded));
-  return { facts, shown };
+  if (venue) shown.add(venue.from);
+  const date = record(values.date);
+  if (!date || typeof date.month !== "number") shown.add("date");
+  return shown;
 }
 
 /** The fields of the item type `type`, in Zotero's order. */
@@ -196,41 +277,41 @@ function typeFields(type: string): readonly string[] {
   );
 }
 
-/** Every creator, by full name. */
-function creatorsText(value: QueryViewValue | undefined): string {
-  return list(value)
-    .flatMap((entry) => {
-      const creator = record(entry);
-      if (!creator) return [];
-      const name =
-        text(creator.fullName) ||
-        text(creator.literal) ||
-        [text(creator.given), text(creator.family)]
-          .filter((part) => part !== "")
-          .join(" ");
-      return name === "" ? [] : [name];
-    })
-    .join("; ");
-}
-
 /**
- * "All fields": the creators, then each field of the Item's type with a
- * value that the header, the abstract and the facts do not show, in
- * Zotero's order, then the date modified.
+ * "All fields": the creators where the header does not name them all, then
+ * each field of the Item's type with a value that the header and the
+ * abstract do not show, in Zotero's order, then the date modified. A URL
+ * links where it is a web address: a `javascript:` URL in Zotero never runs.
  */
-export function otherFields(
-  values: Values,
-  shown: ReadonlySet<string>,
-): CardField[] {
+export function otherFields(values: Values): CardField[] {
+  const shown = shownInHeader(values);
   const fields: CardField[] = [];
-  const add = (name: string, value: string) => {
+  const add = (name: string, value: string, href?: string) => {
     if (value !== "")
-      fields.push({ name, label: fieldLabel(name), text: value });
+      fields.push({
+        name,
+        label: fieldLabel(name),
+        text: value,
+        ...(href !== undefined && { href }),
+      });
   };
-  add("creators", creatorsText(values.creators));
+  const creators = creatorsOf(values.creators);
+  const role = creators[0]?.role;
+  if (
+    creators.length > CREATOR_CAP ||
+    creators.some((creator) => creator.role !== role)
+  )
+    add(
+      "creators",
+      creators
+        .map(creatorName)
+        .filter((name) => name !== "")
+        .join("; "),
+    );
   for (const name of typeFields(text(values.itemType))) {
     if (shown.has(name) || shown.has(FIELD_ALIASES[name] ?? name)) continue;
-    add(name, fieldText(name, values[name]));
+    const value = fieldText(name, values[name]);
+    add(name, value, name === "url" && WEB.test(value) ? value : undefined);
   }
   add("dateModified", fieldText("dateModified", values.dateModified));
   return fields;

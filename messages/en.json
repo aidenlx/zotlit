@@ -402,21 +402,11 @@
       }
     }
   ],
-  "library_view_header_unread": [
-    {
-      "declarations": ["input count", "local formatted = count: number"],
-      "selectors": ["formatted"],
-      "match": {
-        "formatted=*": "· {formatted} unread"
-      }
-    }
-  ],
   "library_view_tags_label": "Tags",
   "library_view_tags_filter": "Filter tags",
   "library_view_tags_clear": "Deselect all",
   "library_view_tags_none": "No tags",
   "library_view_tags_no_match": "No tags match",
-  "library_view_header_tags": "· tagged {tags}",
   "library_view_all_libraries": "Show all libraries",
   "library_view_scope_libraries": "Hide other libraries",
   "library_view_show_tree": "Show libraries and collections",
@@ -441,17 +431,6 @@
   "library_view_card_open_in_sidebar": "Open in sidebar",
   "library_view_card_close": "Close",
   "library_view_card_failed": "Couldn't read this paper's annotations.",
-  "library_view_card_annotation_count": [
-    {
-      "declarations": ["input count", "local countPlural = count: plural"],
-      "selectors": ["countPlural"],
-      "match": {
-        "countPlural=one": "1 annotation",
-        "countPlural=*": "{count} annotations"
-      }
-    }
-  ],
-  "library_view_card_venue": "Published in",
   "library_view_card_copy_citation_key": "Copy citation key",
   "library_view_card_all_fields": "All fields",
   "library_view_card_abstract": "Abstract",
@@ -462,6 +441,95 @@
   "library_view_card_tag_filter": "Show papers tagged {tag}",
   "library_view_card_files": "Files",
   "library_view_card_notes": "Zotero notes",
+  "library_view_heading_papers": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 paper",
+        "category=*": "{formatted} papers"
+      }
+    }
+  ],
+  "library_view_heading_papers_of": [
+    {
+      "declarations": [
+        "input count",
+        "input total",
+        "local category = total: plural",
+        "local formatted = count: number",
+        "local all = total: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{formatted} of 1 paper",
+        "category=*": "{formatted} of {all} papers"
+      }
+    }
+  ],
+  "library_view_heading_unread": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted} unread"
+      }
+    }
+  ],
+  "library_view_heading_first_shown": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "first {formatted} shown"
+      }
+    }
+  ],
+  "library_view_heading_search": [
+    {
+      "declarations": [
+        "input count",
+        "input query",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match for “{query}”",
+        "category=*": "{formatted} matches for “{query}”"
+      }
+    }
+  ],
+  "library_view_heading_everywhere": "All libraries",
+  "library_view_heading_tools": "Sort and save",
+  "library_view_heading_filters": "Filters on",
+  "library_view_heading_remove_filter": "Remove filter: {name}",
+  "library_view_heading_clear_filters": "Clear all",
+  "library_view_card_your_annotations": "Your annotations",
+  "library_view_card_see_all": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "See 1 annotation",
+        "category=*": "See all {formatted} annotations"
+      }
+    }
+  ],
+  "library_view_card_hide_annotations": "Hide annotations",
+  "library_view_card_annotation_note": "note",
+  "library_view_card_annotation_image": "Image",
+  "library_view_card_annotation_ink": "Drawing",
+  "library_view_card_added": "Added {date}",
+  "library_view_card_colours": "Annotations by colour",
   "instruction_show_in_library": "to show in library",
   "library_view_search_label": "Search papers",
   "library_view_search_placeholder": "Search papers",

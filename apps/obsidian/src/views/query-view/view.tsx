@@ -239,6 +239,13 @@ export interface QueryViewHost {
    */
   saveAs?: () => void;
   /**
+   * Where the toolbar's controls go. `"host"`: the view draws no toolbar
+   * row, and the host places {@link SortButton} and {@link SaveAsButton} in
+   * a heading of its own, as the Library View's title block does (ADR
+   * 0072). Absent: the view draws its toolbar row.
+   */
+  toolbar?: "host";
+  /**
    * The Indexed Keys in the order the rows show in, in place of the sort: the
    * Library View's ranked search. `null` or absent: the order of the query.
    *
@@ -821,6 +828,11 @@ export class QueryView extends Component implements HistorySurface {
   /** The host's "Save as query file", for the toolbar. */
   get saveAs(): QueryViewHost["saveAs"] {
     return this.#host.saveAs;
+  }
+
+  /** Whether the host places the toolbar's controls itself. */
+  get hostsToolbar(): boolean {
+    return this.#host.toolbar === "host";
   }
 
   /** The host's link to the Query File, for the toolbar. */
@@ -1527,7 +1539,7 @@ function OpenFileButton({ view }: { view: QueryView }) {
  * "Save as query file", for a host that writes what it shows as a new Query
  * File: the way to the full Query View. Its name shows on a wide toolbar.
  */
-function SaveAsButton({ view }: { view: QueryView }) {
+export function SaveAsButton({ view }: { view: QueryView }) {
   const { saveAs } = view;
   if (!saveAs) return null;
   return (
@@ -1540,7 +1552,7 @@ function SaveAsButton({ view }: { view: QueryView }) {
   );
 }
 
-function SortButton({ view }: { view: QueryView }) {
+export function SortButton({ view }: { view: QueryView }) {
   const current = useQueryViewState(view, (s) => s.view);
   const { literatureNotes } = view.tableDeps;
   const names = useVaultPropertyNames(literatureNotes);
@@ -1625,25 +1637,27 @@ function QueryViewBody({ view }: { view: QueryView }) {
           icons only, and it stays one row. In a Query File tab it runs to
           the pane's edges, as the Bases header does (see file-view.css).
           Export to PDF prints the rows without it. */}
-      <div
-        className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
-        role="toolbar"
-        // Named by a hidden element: an `aria-label` would show a tooltip.
-        aria-labelledby={toolbarName}
-      >
-        <span id={toolbarName} className="zt:sr-only">
-          {m.query_view_toolbar_label()}
-        </span>
-        <ViewMenu view={view} />
-        <ResultsMenu view={view} />
-        <SortButton view={view} />
-        {view.can.group && <GroupButton view={view} />}
-        {view.can.filter && <FilterButton view={view} />}
-        {view.can.properties && <PropertiesMenu view={view} />}
-        {view.can.search && <SearchButton bar={search} />}
-        <OpenFileButton view={view} />
-        <SaveAsButton view={view} />
-      </div>
+      {!view.hostsToolbar && (
+        <div
+          className="zt:@container zt:flex zt:min-h-(--size-4-10) zt:shrink-0 zt:flex-nowrap zt:items-center zt:gap-(--size-2-2) zt:overflow-hidden zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:ps-[var(--zt-query-toolbar-inset-start,var(--size-2-1))] zt:pe-[var(--zt-query-toolbar-inset-end,var(--size-2-1))] zt:in-[.is-mobile]:min-h-(--touch-size-l) zt:in-[.print]:hidden"
+          role="toolbar"
+          // Named by a hidden element: an `aria-label` would show a tooltip.
+          aria-labelledby={toolbarName}
+        >
+          <span id={toolbarName} className="zt:sr-only">
+            {m.query_view_toolbar_label()}
+          </span>
+          <ViewMenu view={view} />
+          <ResultsMenu view={view} />
+          <SortButton view={view} />
+          {view.can.group && <GroupButton view={view} />}
+          {view.can.filter && <FilterButton view={view} />}
+          {view.can.properties && <PropertiesMenu view={view} />}
+          {view.can.search && <SearchButton bar={search} />}
+          <OpenFileButton view={view} />
+          <SaveAsButton view={view} />
+        </div>
+      )}
       {view.can.search && <SearchRow view={view} bar={search} />}
       <ReadOnlyNote view={view} />
       <UnusedNote view={view} />

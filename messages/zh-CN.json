@@ -488,21 +488,11 @@
       }
     }
   ],
-  "library_view_header_unread": [
-    {
-      "declarations": ["input count", "local formatted = count: number"],
-      "selectors": ["formatted"],
-      "match": {
-        "formatted=*": "· {formatted} 篇未读"
-      }
-    }
-  ],
   "library_view_tags_label": "标签",
   "library_view_tags_filter": "筛选标签",
   "library_view_tags_clear": "取消全选",
   "library_view_tags_none": "无标签",
   "library_view_tags_no_match": "没有匹配的标签",
-  "library_view_header_tags": "· 标签：{tags}",
   "library_view_all_libraries": "显示所有文库",
   "library_view_scope_libraries": "隐藏其他文库",
   "library_view_show_tree": "显示文库和分类",
@@ -527,16 +517,6 @@
   "library_view_card_open_in_sidebar": "在侧边栏中打开",
   "library_view_card_close": "关闭",
   "library_view_card_failed": "无法读取此文献的标注。",
-  "library_view_card_annotation_count": [
-    {
-      "declarations": ["input count", "local countPlural = count: plural"],
-      "selectors": ["countPlural"],
-      "match": {
-        "countPlural=*": "{count} 条批注"
-      }
-    }
-  ],
-  "library_view_card_venue": "发表于",
   "library_view_card_copy_citation_key": "复制文献引用标识",
   "library_view_card_all_fields": "全部字段",
   "library_view_card_abstract": "摘要",
@@ -547,6 +527,95 @@
   "library_view_card_tag_filter": "显示带有标签“{tag}”的文献",
   "library_view_card_files": "文件",
   "library_view_card_notes": "Zotero 笔记",
+  "library_view_heading_papers": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 篇文献",
+        "category=*": "{formatted} 篇文献"
+      }
+    }
+  ],
+  "library_view_heading_papers_of": [
+    {
+      "declarations": [
+        "input count",
+        "input total",
+        "local category = total: plural",
+        "local formatted = count: number",
+        "local all = total: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{formatted} / 1 篇文献",
+        "category=*": "{formatted} / {all} 篇文献"
+      }
+    }
+  ],
+  "library_view_heading_unread": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted} 篇未读"
+      }
+    }
+  ],
+  "library_view_heading_first_shown": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "显示前 {formatted} 篇"
+      }
+    }
+  ],
+  "library_view_heading_search": [
+    {
+      "declarations": [
+        "input count",
+        "input query",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 个结果匹配“{query}”",
+        "category=*": "{formatted} 个结果匹配“{query}”"
+      }
+    }
+  ],
+  "library_view_heading_everywhere": "所有文库",
+  "library_view_heading_tools": "排序与保存",
+  "library_view_heading_filters": "已启用的筛选",
+  "library_view_heading_remove_filter": "移除筛选：{name}",
+  "library_view_heading_clear_filters": "全部清除",
+  "library_view_card_your_annotations": "你的标注",
+  "library_view_card_see_all": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "查看 1 条标注",
+        "category=*": "查看全部 {formatted} 条标注"
+      }
+    }
+  ],
+  "library_view_card_hide_annotations": "收起标注",
+  "library_view_card_annotation_note": "笔记",
+  "library_view_card_annotation_image": "图片",
+  "library_view_card_annotation_ink": "手绘",
+  "library_view_card_added": "添加于 {date}",
+  "library_view_card_colours": "按颜色统计的标注",
   "instruction_show_in_library": "在文库中显示",
   "library_view_search_label": "搜索文献",
   "library_view_search_placeholder": "搜索文献",

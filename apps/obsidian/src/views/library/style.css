@@ -9,6 +9,14 @@
   --zt-query-toolbar-inset-end: var(--size-4-2);
 }
 
+/* The serif face of the list heading's title and the Reading Card's title,
+   a custom property a snippet or theme can set to its own display face. */
+.zt-library-view {
+  --zt-font-display:
+    ui-serif, "Iowan Old Style", "Charter", Georgia, "Noto Serif", "Songti SC",
+    "Noto Serif CJK SC", serif;
+}
+
 /* The Reading Card's disclosures and "Show more" are `<button>`s, and
    Obsidian's `button` rules are unlayered, so they outrank every `zt:`
    utility they wear. `revert-layer` rolls them back to the plugin's own

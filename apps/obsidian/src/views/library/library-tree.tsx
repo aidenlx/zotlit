@@ -1,8 +1,7 @@
 // The Library Tree of the Library View: Recent, then the Libraries in the
 // Library Scope with their nested Collections, each with its paper count, the
-// Reading State facets under them, the Tag Selector at its foot, and the
-// header of the list that names the selection with its unread count and its
-// selected tags. The tree reads its Collections, counts and tags again on
+// Reading State facets under them, and the Tag Selector at its foot. It
+// counts the unread Items of the selection for the list heading. The tree reads its Collections, counts and tags again on
 // every database change; a selection, a facet or a tag goes to the host,
 // which makes it the query of the list.
 //
@@ -11,7 +10,7 @@
 // @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
 import { Component } from "obsidian";
 import type { IconName } from "obsidian";
-import { Fragment, useSyncExternalStore } from "react";
+import { Fragment } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -25,7 +24,6 @@ import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
-import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryService } from "@/services/item-query/service";
@@ -481,15 +479,6 @@ export class LibraryTree extends Component {
   }
 
   /**
-   * Draw the list header into `el`.
-   * @param search the search summary that takes the place of the header's own
-   * text while a search is on screen, and the control beside it.
-   */
-  renderHeader(el: HTMLElement, search: HeaderSearch): void {
-    this.#mount(el, <ListHeader tree={this} search={search} />);
-  }
-
-  /**
    * Draw into `el` the button that shows the tree over a narrow pane. It
    * hides on a pane wide enough to show the tree beside the list.
    */
@@ -505,7 +494,7 @@ export class LibraryTree extends Component {
 }
 
 /** The name of a node: Recent, its Library's, or its Collection path. */
-function nodeLabel(
+export function nodeLabel(
   libraries: readonly TreeLibrary[] | null,
   node: LibraryNode,
 ): string {
@@ -517,79 +506,6 @@ function nodeLabel(
   return library
     ? libraryLabel(library.library)
     : libraryLabel({ selector: node.library, libraryID: 0, name: null });
-}
-
-/** What a search on screen puts in the header. */
-export interface HeaderSearch {
-  /** Calls `listener` whenever the summary may have changed. */
-  subscribe: (listener: () => void) => () => void;
-  /**
-   * The search summary for the selection named `selection`; `null` while no
-   * search is on screen or its count is unknown.
-   */
-  summary: (selection: string) => string | null;
-  /** The control beside the header. */
-  readonly action: ReactNode;
-}
-
-function ListHeader({
-  tree,
-  search,
-}: {
-  tree: LibraryTree;
-  search: HeaderSearch;
-}) {
-  const libraries = useStore(tree.store, (s) => s.libraries);
-  const node = useStore(tree.store, (s) => s.node);
-  const unread = useStore(tree.store, (s) => s.unread);
-  const tags = useStore(tree.store, (s) => s.tags);
-  const selection = nodeLabel(libraries, node);
-  const summary = useSyncExternalStore(search.subscribe, () =>
-    search.summary(selection),
-  );
-  // The tree names the selection with its paper count; the header adds the
-  // unread count. Recent, which the tree names, has no header text.
-  const own =
-    node.kind === "recent"
-      ? null
-      : unread
-        ? `${selection} ${m.library_view_header_unread({ count: unread })}`
-        : selection;
-  // The selected tags narrow the list too, so the header names them while
-  // any are selected, on Recent as well.
-  const tagged =
-    tags.length > 0
-      ? m.library_view_header_tags({
-          tags: new Intl.ListFormat(runtime.getLocale(), {
-            type: "conjunction",
-          }).format(tags),
-        })
-      : null;
-  const base = summary ?? own ?? (tagged === null ? null : selection);
-  const text = base !== null && tagged !== null ? `${base} ${tagged}` : base;
-  return (
-    <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-(--size-2-2) zt:gap-y-(--size-2-1) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
-      {/* Obsidian styles a bare heading element; the header keeps the UI
-          type scale. */}
-      {text !== null && (
-        <div
-          role="heading"
-          aria-level={2}
-          data-library-header=""
-          className="zt:m-0 zt:min-w-0 zt:truncate zt:text-(length:--font-ui-medium) zt:font-(--font-semibold) zt:group-data-zotero-missing:hidden"
-        >
-          {text}
-        </div>
-      )}
-      {search.action}
-      {/* A screen reader hears the search summary as it changes, and not a
-          tree selection, which the tree announces itself. The status is on
-          the page from the start, so the first count is heard too. */}
-      <div role="status" className="zt:sr-only" data-library-search-status="">
-        {summary ?? ""}
-      </div>
-    </div>
-  );
 }
 
 function TreeToggle({ tree }: { tree: LibraryTree }) {
@@ -624,7 +540,7 @@ interface Row {
 const RECENT: LibraryNode = { kind: "recent" };
 
 /** The icon of a node, as Zotero's collection tree draws one. */
-function nodeIcon(node: LibraryNode): IconName {
+export function nodeIcon(node: LibraryNode): IconName {
   if (node.kind === "recent") return "clock";
   if (node.kind === "collection") return "folder";
   return node.library.type === "group" ? "users" : "library";

@@ -29,7 +29,7 @@ import type { QueryViewState } from "@/views/query-view/view";
 
 import { librariesOf } from "./document";
 import type { LibraryNode } from "./document";
-import type { HeaderSearch } from "./library-tree";
+import type { HeaderSearch } from "./heading";
 import { searchTerms } from "./search";
 import { sameLibrary } from "./tree";
 
@@ -214,8 +214,8 @@ export class LibrarySearch extends Component {
   }
 
   /**
-   * What the search puts in the header: its match count, and the offer to
-   * search all libraries beside it while some match.
+   * What the search puts in the heading: its title and its status, where it
+   * searches, and the offer to search all libraries while some match.
    */
   header(query: StoreApi<QueryViewState>): HeaderSearch {
     const subscribe = (listener: () => void) => {
@@ -239,6 +239,18 @@ export class LibrarySearch extends Component {
           selection,
           count: shown.matched,
         });
+      },
+      title: () => {
+        const shown = this.#shown(query);
+        if (!shown || shown.matched === null) return null;
+        return m.library_view_heading_search({
+          count: shown.matched,
+          query: this.store.getState().text.trim(),
+        });
+      },
+      everywhere: () => {
+        const shown = this.#shown(query);
+        return shown !== null && shown.everywhere && !this.onRecent;
       },
       action: (
         <SearchAllButton
