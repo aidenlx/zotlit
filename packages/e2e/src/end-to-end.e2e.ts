@@ -23,7 +23,7 @@ import {
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
   PROTOCOL_VERSION,
@@ -263,6 +263,24 @@ async function activeTab(vaultId: string): Promise<ActiveTab> {
       "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
     ),
   ) as ActiveTab;
+}
+
+/**
+ * Wait until the active tab is Obsidian's PDF view of `path` with its first
+ * page loaded. The tab is active as the open starts, before the document
+ * loads; once it loads, the open makes the tab active again, and once its
+ * first page loads, it focuses the viewer. Either takes the keys and the
+ * active tab from a view a later step drives. The document alone comes
+ * before that focus; pdf.js draws the page views in the same callback that
+ * settles the first page, just before Obsidian's focus runs, so an eval that
+ * sees a page sees the focus done.
+ */
+function pdfOpened(vaultId: string, path: string): Promise<boolean> {
+  return obEvalUntil(
+    vaultId,
+    `(()=>{const view=app.workspace.activeLeaf?.view;return String(view?.getViewType()==='pdf'&&view.file?.path===${JSON.stringify(path)}&&(view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0);})()`,
+    { expected: "true", tries: 120 },
+  );
 }
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -591,6 +609,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  // A menu, dialog or popover a case leaves open covers what the next case
+  // presses. The case that leaves one fails here, and the next one starts
+  // with none: Escape closes a menu once it binds its keys, a timer after it
+  // shows, and the dialog on top.
+  afterEach(async () => {
+    const left = await obEval(
+      vaultId,
+      `(async()=>{${PAGE}const docs=()=>[document,...app.workspace.floatingSplit.children.map(split=>split.win.document)];const open=()=>docs().flatMap(doc=>[...doc.querySelectorAll('.menu, .modal-container, :popover-open')]);const left=open().map(el=>(el.matches(':popover-open')?'popover':el.classList.contains('menu')?'menu':'dialog')+': '+el.textContent.trim().slice(0,60));for(const el of open())if(el.matches(':popover-open'))el.hidePopover();await until('menus and dialogs close',async()=>{if(open().length===0)return true;await ${MENU_READY};activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return false;},5000);return JSON.stringify(left);})()`,
+    );
+    expect(
+      JSON.parse(left),
+      "menus, dialogs and popovers the case left open",
+    ).toEqual([]);
+  });
 
   it("shows the same Fixture Annotations in both surfaces with Zotero closed", async () => {
     const layout = await obEval(
@@ -1252,7 +1285,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const folderMenu = JSON.parse(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await until('folder menu opens',()=>activeDocument.querySelector('.menu .menu-item-title'));const titles=[...activeDocument.querySelectorAll('.menu .menu-item-title')].map(n=>n.textContent);activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return JSON.stringify(titles);})()`,
+        `(async()=>{${PAGE}app.workspace.leftSplit.expand();const explorer=app.workspace.getLeavesOfType('file-explorer')[0];await app.workspace.revealLeaf(explorer);const title=explorer.view.containerEl.querySelector('.nav-folder-title[data-path="query-files"]');title.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:10,clientY:10}));await until('folder menu opens',()=>activeDocument.querySelector('.menu .menu-item-title'));const titles=[...activeDocument.querySelectorAll('.menu .menu-item-title')].map(n=>n.textContent);await ${MENU_READY};activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await until('folder menu closes',()=>!activeDocument.querySelector('.menu'));return JSON.stringify(titles);})()`,
       ),
     ) as string[];
     expect(folderMenu).toContain(m.query_file_new());
@@ -2917,7 +2950,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `await until('rows',()=>row(${JSON.stringify(reading.key)}),10000);pressRow(row(${JSON.stringify(reading.key)}),'reading row');const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));keydown(row(${JSON.stringify(reading.key)}),{key:'ArrowDown'});return JSON.stringify({next:keys[keys.indexOf(${JSON.stringify(reading.key)})+1]})`,
       ),
     ) as { next: string };
-    expect(await selected()).toBe(next);
+    // A row drawn moments before takes the selection to its markup a frame
+    // later.
+    expect(
+      await readUntil(selected, (key) => key === next, {
+        what: "Selected row",
+      }),
+    ).toBe(next);
     expect((await active()).type).toBe("zotlit-library");
 
     // Enter opens the Item's Literature Note; Shift+Enter its PDF in
@@ -2931,9 +2970,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await inLibrary(
       `pressRow(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter',shiftKey:true});return true`,
     );
-    expect(await activeWhen((shown) => shown.type === "pdf")).toMatchObject({
-      path: annotationAttachment.path,
-    });
+    expect(await pdfOpened(vaultId, annotationAttachment.path!)).toBe(true);
 
     // On an Item with no Literature Note, Enter writes one through the
     // Profile selection, as the quick switcher does.
@@ -3365,19 +3402,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await inLibrary(
       `press(card.querySelector('[data-library-card-action="pdf"]'),'Open PDF');return true`,
     );
-    expect(await activeWhen((state) => state.type === "pdf")).toMatchObject({
-      path: annotationAttachment.path,
-    });
-    // The PDF tab is active before its document loads; once it loads, the
-    // open makes the tab active again, which would hide the Library View
-    // under a later step.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.workspace.getLeavesOfType('pdf').some(leaf=>leaf.view.file?.path===${JSON.stringify(annotationAttachment.path)}&&!!leaf.view.viewer?.child?.pdfViewer?.pdfViewer?.pdfDocument))`,
-        { expected: "true", tries: 120 },
-      ),
-    ).toBe(true);
+    expect(await pdfOpened(vaultId, annotationAttachment.path!)).toBe(true);
 
     // "Open in sidebar" pins the paper in the sidebar Annotation View, which
     // lists its cards.
@@ -3466,9 +3491,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `const target=row(${JSON.stringify(paper.key)});target.scrollIntoView({block:'center',behavior:'instant'});const box=target.getBoundingClientRect();const x=Math.round(box.right-60),y=Math.round(box.top+box.height/2);const hit=activeDocument.elementFromPoint(x,y);if(!target.contains(hit)||hit.closest('a, button'))throw new Error('No plain part of the row at '+x+','+y+': '+hit?.outerHTML.slice(0,80));const zoom=require('electron').webFrame.getZoomFactor();const contents=require('@electron/remote').getCurrentWebContents();const at={x:Math.round(x*zoom),y:Math.round(y*zoom),button:'left'};for(const clickCount of [1,2]){contents.sendInputEvent({type:'mouseDown',...at,clickCount});contents.sendInputEvent({type:'mouseUp',...at,clickCount});}return 'double-clicked';`,
       ),
     ).toBe("double-clicked");
-    expect(await activeWhen((state) => state.type === "pdf")).toMatchObject({
-      path: annotationAttachment.path,
-    });
+    expect(await pdfOpened(vaultId, annotationAttachment.path!)).toBe(true);
     // The keyboard that enters the list at its first row selects it, with
     // no card, so Space opens its card. Selecting the node again lets go of
     // the selection.
@@ -6289,7 +6312,7 @@ views:
     const menuReset = await inTable<
       Read & { auto: string[]; sized: string[]; after: number }
     >(
-      `const items=()=>[...activeDocument.querySelectorAll('.menu')].at(-1).querySelectorAll('.menu-item');const read=()=>[...items()].map(n=>n.textContent.trim()+(n.classList.contains('is-disabled')?' (disabled)':''));const open=async p=>{const r=th(p).getBoundingClientRect();th(p).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+5,clientY:r.top+5}));await until('header menu',()=>activeDocument.querySelector('.menu .menu-item'));};await open('date');const auto=read();const menus=()=>activeDocument.querySelectorAll('.menu').length;const opened=menus();await open('firstAuthor');await until('second menu',()=>menus()>opened);const sized=read();press([...items()].find(n=>n.textContent.trim()==='Reset column width'),'Reset column width');await until('auto width',()=>!('sized' in th('firstAuthor').dataset));return {auto,sized,after:width('firstAuthor')};`,
+      `const items=()=>[...activeDocument.querySelectorAll('.menu')].at(-1).querySelectorAll('.menu-item');const read=()=>[...items()].map(n=>n.textContent.trim()+(n.classList.contains('is-disabled')?' (disabled)':''));const open=async p=>{const r=th(p).getBoundingClientRect();th(p).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.left+5,clientY:r.top+5}));await until('header menu',()=>activeDocument.querySelector('.menu .menu-item'));};await open('date');const auto=read();await ${MENU_READY};activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await until('first menu closes',()=>!activeDocument.querySelector('.menu'));await open('firstAuthor');const sized=read();press([...items()].find(n=>n.textContent.trim()==='Reset column width'),'Reset column width');await until('auto width',()=>!('sized' in th('firstAuthor').dataset));await until('second menu closes',()=>!activeDocument.querySelector('.menu'));return {auto,sized,after:width('firstAuthor')};`,
     );
     expect(menuReset.auto).toEqual([
       "Move left",
@@ -8749,6 +8772,10 @@ views:
   it.skipIf(webWorkbenchEnabled)(
     "keeps desktop editing and Live Update available while web integration is off",
     async () => {
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(async () => {
+        await obEval(vaultId, "app.setting.close();true");
+      });
       await obEval(
         vaultId,
         "app.saveLocalStorage('zotlit-workbench-launch-approved','1');app.saveLocalStorage('zotlit-profile-customization','web');app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true,'server.live-update':true,'server.workbench':true});true",
