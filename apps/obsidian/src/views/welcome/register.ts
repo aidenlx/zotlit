@@ -15,6 +15,8 @@ import { openLibraryView } from "@/views/library/register";
 import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
 
 import { holdConnectionReadout } from "./connection";
+import { notFoundNoticeChange } from "./not-found-notice";
+import type { NotFoundSignal } from "./not-found-notice";
 
 export interface WelcomeRegistrationDeps {
   reads: Pick<ZoteroReadsService, "on">;
@@ -43,40 +45,50 @@ export function registerWelcomeView(
   // Fresh-device notice: the database service signals when the resolved DB
   // file is absent (auto-detect missed the install on this device). Attached
   // synchronously during onload — before the db service's first async refresh
-  // can emit — so the signal is never missed. The notice is the state "Zotero
-  // is not found", not one per signal: at most one shows, it goes once the
-  // database reads again, and none shows while a Library View is open, whose
-  // not-found card says the same and offers to locate the folder.
+  // can emit — so the signal is never missed. `notFoundNoticeChange` decides
+  // what each signal does to the notice.
   let notice: BaseNotice | null = null;
   const hide = () => {
     notice?.hide();
     notice = null;
   };
-  const libraryOpen = () =>
-    plugin.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0;
+  const apply = (signal: NotFoundSignal) => {
+    const change = notFoundNoticeChange(signal, {
+      shown: notice?.noticeEl.isConnected ?? false,
+      libraryOpen:
+        plugin.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0,
+    });
+    if (change === "hide") hide();
+    if (change === "show")
+      notice = notFoundNotice(() => {
+        hide();
+        void openLibraryView(plugin.app);
+      });
+  };
   plugin.register(
-    deps.reads.on("db-file-missing", () => {
-      if (notice?.noticeEl.isConnected || libraryOpen()) return;
-      notice = new BaseNotice(
-        BaseNotice.render((renderer) => {
-          renderer.setTitle(m.notice_db_not_found_on_device());
-          renderer.addAction((button) => {
-            button.setButtonText(m.notice_db_not_found_action()).onClick(() => {
-              hide();
-              void openLibraryView(plugin.app);
-            });
-          });
-        }),
-        0,
-      );
-    }),
+    deps.reads.on("db-file-missing", () => apply("db-file-missing")),
   );
-  plugin.register(deps.reads.on("changed", hide));
-  // A Library View opened another way takes over from the notice.
-  const layout = plugin.app.workspace.on("layout-change", () => {
-    if (libraryOpen()) hide();
-  });
+  plugin.register(deps.reads.on("changed", () => apply("changed")));
+  const layout = plugin.app.workspace.on("layout-change", () =>
+    apply("layout-change"),
+  );
   plugin.register(() => plugin.app.workspace.offref(layout));
+}
+
+/**
+ * The notice that Zotero's data folder is not on this device, whose action
+ * runs `locate`; it stays until dismissed.
+ */
+function notFoundNotice(locate: () => void): BaseNotice {
+  return new BaseNotice(
+    BaseNotice.render((renderer) => {
+      renderer.setTitle(m.notice_db_not_found_on_device());
+      renderer.addAction((button) => {
+        button.setButtonText(m.notice_db_not_found_action()).onClick(locate);
+      });
+    }),
+    0,
+  );
 }
 
 /** Show the Welcome View banner again, above the Library View brought forward. */

@@ -1,28 +1,9 @@
 // @vitest-environment happy-dom
 import type { App, Command } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { expect, it, vi } from "vitest";
 
 import { registerWelcomeView } from "./register";
 import type { WelcomeRegistrationDeps } from "./register";
-
-/** Every notice the registration showed, and whether it still shows. */
-const notices: { shown: boolean }[] = [];
-vi.mock("@/lib/notice", () => ({
-  BaseNotice: class {
-    static render = () => document.createDocumentFragment();
-    readonly entry = { shown: true };
-    // Obsidian takes a notice off the page when the researcher dismisses it.
-    readonly noticeEl = { isConnected: true };
-    constructor() {
-      notices.push(this.entry);
-    }
-    hide() {
-      this.entry.shown = false;
-    }
-  },
-}));
 
 vi.mock("@/views/library/view", () => ({
   LIBRARY_VIEW_TYPE: "zotlit-library",
@@ -117,58 +98,3 @@ it.each([false, true])(
     );
   },
 );
-
-describe("the notice of a Zotero data folder this device does not have", () => {
-  function setup(libraryOpen = false) {
-    const reads = createNanoEvents<{
-      "db-file-missing": () => void;
-      changed: () => void;
-    }>();
-    const app = {
-      workspace: {
-        getLeavesOfType: vi.fn((type: string) =>
-          libraryOpen && type === "zotlit-library" ? [{}] : [],
-        ),
-        on: vi.fn(() => ({})),
-        offref: vi.fn(),
-      },
-    } as unknown as App;
-    registerWelcomeView(
-      {
-        app,
-        register: vi.fn(),
-        addCommand: (command) => command,
-        registerView: vi.fn(),
-      },
-      {
-        reads: { on: reads.on.bind(reads) },
-        queries: { invalidate: vi.fn() },
-        settings: { update: vi.fn() },
-      } as unknown as WelcomeRegistrationDeps,
-    );
-    return reads;
-  }
-
-  beforeEach(() => {
-    notices.length = 0;
-  });
-
-  it("shows one notice however often the signal comes, and hides it once Zotero reads again", () => {
-    const reads = setup();
-    reads.emit("db-file-missing");
-    reads.emit("db-file-missing");
-    expect(notices).toHaveLength(1);
-    expect(notices[0]!.shown).toBe(true);
-    reads.emit("changed");
-    expect(notices[0]!.shown).toBe(false);
-    // A later miss says so again, with one notice.
-    reads.emit("db-file-missing");
-    expect(notices.filter((notice) => notice.shown)).toHaveLength(1);
-  });
-
-  it("shows no notice while a Library View is open, whose not-found card says the same", () => {
-    const reads = setup(true);
-    reads.emit("db-file-missing");
-    expect(notices).toHaveLength(0);
-  });
-});
