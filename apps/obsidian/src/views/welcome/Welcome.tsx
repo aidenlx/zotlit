@@ -810,9 +810,10 @@ export function Welcome() {
           dismiss button ends the content it closes. */}
       <div className="zt:max-w-[64rem]">
         <Header titleId={titleId} />
-        {/* What to do comes first; the Help Links take a 20rem column beside
-            it, and go last under 760px. */}
-        <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@min-[760px]:grid-cols-[minmax(0,1fr)_20rem] zt:@min-[760px]:gap-6">
+        {/* What to do comes first; the Help Links take a 22rem column beside
+            it, wide enough for each small tile's subtitle to keep to one
+            line, and go last under 760px. */}
+        <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@min-[760px]:grid-cols-[minmax(0,1fr)_22rem] zt:@min-[760px]:gap-6">
           <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
             {update && <UpdateCallout />}
             {migration && <MigrationGuide />}

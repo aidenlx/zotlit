@@ -3985,8 +3985,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(vaultId, `String(!!${banner})`, { expected: "true" }),
     ).toBe(true);
-    // So does the Library View's Welcome and help button in its tab header,
-    // with the setup steps, and focus moves to the banner.
+    // So does the Welcome & help row at the foot of the Library Tree, with
+    // the setup steps, and focus moves to the banner. A narrow pane shows the
+    // tree over the list once it is open, so the row is opened to first.
     await obEval(
       vaultId,
       `(async()=>{${PAGE}press(${banner}.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
@@ -3994,9 +3995,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;press(view.containerEl.querySelector('.view-actions [aria-label=${JSON.stringify(m.library_view_help_action())}]'),'Welcome and help');const el=await until('banner back',()=>${banner});await until('banner focused',()=>el.ownerDocument.activeElement===el);return JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],steps:el.querySelectorAll('[data-welcome-step]').length});})()`,
+        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;view.tree.setOpen(true);const row=await until('the tree foot',()=>{const n=view.contentEl.querySelector('[data-library-tree] [data-welcome-help-row]');return n?.checkVisibility()&&n;});press(row,${JSON.stringify(m.library_view_help_action())});const el=await until('banner back',()=>${banner});await until('banner focused',()=>el.ownerDocument.activeElement===el);return JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],steps:el.querySelectorAll('[data-welcome-step]').length,actions:view.containerEl.querySelectorAll('.view-actions [aria-label*="help" i]').length});})()`,
       ),
-    ).toBe(JSON.stringify({ dismissed: false, steps: 3 }));
+    ).toBe(JSON.stringify({ dismissed: false, steps: 3, actions: 0 }));
 
     // ZotLit reads a folder without Zotero's database: the tree and the
     // list say so and offer to locate it, in place of the papers. A narrow

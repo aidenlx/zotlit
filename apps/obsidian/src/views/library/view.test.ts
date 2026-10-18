@@ -2222,15 +2222,19 @@ describe("Welcome View banner once setup is complete", () => {
     expect(banner(view)).toContain(m.welcome_step_folder_title());
   });
 
-  it("shows the banner again with its setup steps from the Welcome and help button, after a dismissal, and moves focus to it", async () => {
+  it("shows the banner again with its setup steps from the Welcome & help row at the foot of the Library Tree, after a dismissal, and moves focus to it", async () => {
     const { view, settings } = await setUp();
     await act(() => {
       settings.update({ "welcome.dismissed": true });
     });
-    const help = (view as unknown as { actions: HTMLElement[] }).actions.find(
-      (el) => el.getAttribute("aria-label") === m.library_view_help_action(),
+    // At the foot of the Library Tree, a row with its visible label and no
+    // tooltip; the tab header holds no action of its own.
+    const help = view.contentEl.querySelector<HTMLElement>(
+      "[data-library-tree] [data-welcome-help-row]",
     );
-    expect(help).toBeDefined();
+    expect(help?.textContent).toBe(m.library_view_help_action());
+    expect(help?.hasAttribute("aria-label")).toBe(false);
+    expect((view as unknown as { actions: HTMLElement[] }).actions).toEqual([]);
     await act(() => help!.click());
     expect(settings.current?.["welcome.dismissed"]).toBe(false);
     expect(banner(view)).toContain(m.welcome_step_connect_title());
