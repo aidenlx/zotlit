@@ -767,6 +767,12 @@ function Popup({
    *
    * Both are listened to here rather than through JSX props, so they reach
    * the element under every DOM the component renders in.
+   *
+   * Preact renders the unmount inside the `beforetoggle` listener, so by the
+   * time a caller's own bubbling listener runs, the search field is gone and
+   * focus has dropped to the body. A caller that acts on the focus a closing
+   * popup holds, as the Select hands it back to its trigger, listens in the
+   * capture phase.
    */
   useLayoutEffect(() => {
     const popup = popupRef.current;
