@@ -56,6 +56,13 @@ export const PAPERS_FIELDS: readonly string[] = [
   "date",
   "publicationTitle",
   "publisher",
+  // The rest of the Library View's Reading Card header, which it shows from
+  // the row while it reads the Item.
+  "volume",
+  "issue",
+  "pages",
+  "DOI",
+  "citationKey",
   "attachments[].fileType",
   ...TABLE_FIELDS,
 ];

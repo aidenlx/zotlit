@@ -149,6 +149,12 @@ const settingsContent = "app.setting.containerEl";
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
 
 /**
+ * A page expression for the Library View heading under `el`: its title, then
+ * the counts under it, `|` between them; `null` with no heading.
+ */
+const LIBRARY_HEADING = `(h=>h?['[data-library-header]','[data-library-header-count]'].map(s=>h.querySelector(s)?.textContent??'').filter(t=>t!=='').join(' | '):null)(el.querySelector('[data-library-heading]'))`;
+
+/**
  * The Reading State of a Fixture Item, from the seed: its Annotations, the
  * Literature Note the Fixture Vault holds for every Item but the demo papers,
  * and a PDF the build writes to this device. The build writes a file for
@@ -308,18 +314,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   }
   /**
-   * The Library View header: the selection and, where some are unread, its
-   * unread count. The paper count shows beside the node in the tree.
+   * The Library View heading, as {@link LIBRARY_HEADING} reads it: the
+   * selection's name, then the papers it lists, "N of M" where a facet or a
+   * tag leaves `shown` of them, and, where some are unread, its unread count.
    */
   function libraryHeader(
     selection: string,
     items: readonly FixtureItem[],
-    noted?: (item: FixtureItem) => boolean,
+    {
+      noted,
+      shown,
+    }: { noted?: (item: FixtureItem) => boolean; shown?: number } = {},
   ): string {
     const unread = unreadOf(items, noted).length;
+    const papers =
+      shown === undefined
+        ? m.library_view_heading_papers({ count: items.length })
+        : m.library_view_heading_papers_of({
+            count: shown,
+            total: items.length,
+          });
     return unread === 0
-      ? selection
-      : `${selection} ${m.library_view_header_unread({ count: unread })}`;
+      ? `${selection} | ${papers}`
+      : `${selection} | ${papers} · ${m.library_view_heading_unread({ count: unread })}`;
   }
   const articlesProfile = {
     id: "Ar7Kd2QpX9Mn",
@@ -1607,7 +1624,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       /** The Sort button: whether it shows a sort as set, and its text. */
       sort: { set: boolean; text: string | null };
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];const sort=el.querySelector('[data-query-toolbar="sort"]');return JSON.stringify({sort:{set:sort?.hasAttribute('data-active')??false,text:sort?.textContent??null},phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),lines:rows.map(n=>n.querySelector('[data-query-papers-title]').parentElement.childElementCount)});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];const sort=el.querySelector('[data-query-toolbar="sort"]');return JSON.stringify({sort:{set:sort?.hasAttribute('data-active')??false,text:sort?.textContent??null},phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),lines:rows.map(n=>n.querySelector('[data-query-papers-title]').parentElement.childElementCount)});})()`;
     const shownWhen = (ready: (shown: Shown) => boolean) =>
       obReadUntil<Shown>(vaultId, readShown, {
         ready,
@@ -1635,13 +1652,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).length;
 
     // The new view opens on Recent: every Item of the Library Scope, newest
-    // change first, with no header text, since the tree names Recent.
+    // change first, under a heading that names Recent and counts its papers.
     await obEval(
       vaultId,
       "app.commands.executeCommandById('zotlit:open-library-view');true",
     );
     const opened = await shownWhen(listing(size([personal, shared])));
-    expect(opened).toMatchObject({ recent: true, header: null });
+    expect(opened).toMatchObject({
+      recent: true,
+      header: `${m.library_view_recent()} | ${m.library_view_heading_papers({ count: size([personal, shared]) })}`,
+    });
     expectRecent(opened, [personal, shared], -1);
     // On a pane too narrow for the tree beside the list, Recent's tree
     // toggle sits beside the search box, not on a row of its own.
@@ -1834,7 +1854,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},all:el.querySelector('[data-library-all]')?.getAttribute('data-library-all')??null,tree:[...el.querySelectorAll('[data-library-node]')].map(n=>({key:n.getAttribute('data-library-node'),level:Number(n.getAttribute('aria-level')),label:n.querySelector('[data-library-label]').textContent,count:n.querySelector('[data-library-count]')?.textContent??null,selected:n.getAttribute('aria-selected')==='true'})),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
     const shownWhen = (ready: (shown: Shown) => boolean) =>
       obReadUntil<Shown>(vaultId, readShown, {
         ready,
@@ -1990,7 +2010,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
-  it("draws My Library as two-line Papers with the seeded Literature Notes and Attachment kinds and a toolbar of the count, Sort and Save as query file, and expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, with Zotero closed", async () => {
+  it("draws My Library as two-line Papers with the seeded Literature Notes and Attachment kinds and Sort and Save as query file in its heading, and expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, with Zotero closed", async () => {
     const layout = await obEval(
       vaultId,
       "JSON.stringify(app.workspace.getLayout())",
@@ -2087,7 +2107,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // "Save as query file" away.
     expect(opened).toMatchObject({
       layout: "papers",
-      toolbar: ["data-query-results", "sort", "data-query-save-as"],
+      toolbar: ["sort", "data-query-save-as"],
       count: String(personal.length),
     });
     expect(
@@ -2233,7 +2253,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(`zotero://select/library/items/${notes[0]!.key}`);
   }, 180000);
 
-  it("scrolls the Library View's rows alone, under a search box, header and toolbar that stay put, keeps each row's trailing icons clear of the scrollbar, and keeps a row the arrow keys select in view under them, on a wide and a narrow pane", async () => {
+  it("scrolls the Library View's rows alone, under a search box and a heading that stay put, keeps each row's trailing icons clear of the scrollbar, and keeps a row the arrow keys select in view under them, on a wide and a narrow pane", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -2258,13 +2278,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       overflows: boolean;
       /** How far the list scrolled. */
       scrolled: number;
-      /** The on-screen tops of the search box and the toolbar, before and after the scroll. */
+      /** The on-screen tops of the search box and the heading, before and after the scroll. */
       tops: { before: number[]; after: number[] };
       /** The room between the rows' rightmost icon and the list's edges, in px. */
       icon: { toClient: number; toEdge: number };
       /** Obsidian's scrollbar width, in px. */
       scrollbar: number;
-      /** The row the arrow keys selected, against the list and the toolbar. */
+      /** The row the arrow keys selected, against the list and the heading. */
       moved: {
         up: { selected: boolean; inList: boolean; underToolbar: boolean };
         down: { selected: boolean; inList: boolean; underToolbar: boolean };
@@ -2275,7 +2295,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obEval(
           vaultId,
-          `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const width=el.style.width;el.style.width='${width}px';const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));try{await until('rows',()=>el.querySelectorAll('[data-query-papers-row]').length>10,10000);await frame();const list=el.querySelector('[data-query-layout]');const input=el.querySelector('[data-library-search] input');const toolbar=el.querySelector('[role="toolbar"]');const tops=()=>[input,toolbar].map(n=>n.getBoundingClientRect().top);list.scrollTop=0;await frame();const before=tops();list.scrollTop=list.scrollHeight;await frame();const after=tops();const scrolled=list.scrollTop;const box=list.getBoundingClientRect();const clientRight=box.left+list.clientLeft+list.clientWidth;const iconRight=Math.max(...[...list.querySelectorAll('[data-query-papers-note],[data-query-papers-attachment]')].filter(n=>n.checkVisibility()).map(n=>n.getBoundingClientRect().right));const rows=()=>[...list.querySelectorAll('[data-query-item-row]')];const place=row=>{const r=row.getBoundingClientRect();const b=list.getBoundingClientRect();return{selected:row.hasAttribute('data-selected'),inList:r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5,underToolbar:r.top>=toolbar.getBoundingClientRect().bottom-0.5};};const arrow=async(key,from,to)=>{const start=rows()[from];leaf.view.selection.setState({key:start.getAttribute('data-query-item-row'),card:false});await until('row selected',()=>start.hasAttribute('data-selected'));start.focus({preventScroll:true});list.scrollTop=key==='ArrowDown'?list.scrollHeight:0;await frame();activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await until('selection moves',()=>rows()[to].hasAttribute('data-selected'));await frame();return place(rows()[to]);};const n=rows().length;const down=await arrow('ArrowDown',0,1);const up=await arrow('ArrowUp',n-1,n-2);leaf.view.selection.setState({key:null,card:false});return JSON.stringify({overflows:list.scrollHeight>list.clientHeight,scrolled,tops:{before,after},icon:{toClient:clientRight-iconRight,toEdge:box.right-iconRight},scrollbar:parseFloat(getComputedStyle(document.body).getPropertyValue('--scrollbar-width')),moved:{down,up}});}finally{el.style.width=width;}})()`,
+          `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const width=el.style.width;el.style.width='${width}px';const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));try{await until('rows',()=>el.querySelectorAll('[data-query-papers-row]').length>10,10000);await frame();const list=el.querySelector('[data-query-layout]');const input=el.querySelector('[data-library-search] input');const toolbar=el.querySelector('[data-library-heading]');const tops=()=>[input,toolbar].map(n=>n.getBoundingClientRect().top);list.scrollTop=0;await frame();const before=tops();list.scrollTop=list.scrollHeight;await frame();const after=tops();const scrolled=list.scrollTop;const box=list.getBoundingClientRect();const clientRight=box.left+list.clientLeft+list.clientWidth;const iconRight=Math.max(...[...list.querySelectorAll('[data-query-papers-note],[data-query-papers-attachment]')].filter(n=>n.checkVisibility()).map(n=>n.getBoundingClientRect().right));const rows=()=>[...list.querySelectorAll('[data-query-item-row]')];const place=row=>{const r=row.getBoundingClientRect();const b=list.getBoundingClientRect();return{selected:row.hasAttribute('data-selected'),inList:r.top>=b.top-0.5&&r.bottom<=b.bottom+0.5,underToolbar:r.top>=toolbar.getBoundingClientRect().bottom-0.5};};const arrow=async(key,from,to)=>{const start=rows()[from];leaf.view.selection.setState({key:start.getAttribute('data-query-item-row'),card:false});await until('row selected',()=>start.hasAttribute('data-selected'));start.focus({preventScroll:true});list.scrollTop=key==='ArrowDown'?list.scrollHeight:0;await frame();activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await until('selection moves',()=>rows()[to].hasAttribute('data-selected'));await frame();return place(rows()[to]);};const n=rows().length;const down=await arrow('ArrowDown',0,1);const up=await arrow('ArrowUp',n-1,n-2);leaf.view.selection.setState({key:null,card:false});return JSON.stringify({overflows:list.scrollHeight>list.clientHeight,scrolled,tops:{before,after},icon:{toClient:clientRight-iconRight,toEdge:box.right-iconRight},scrollbar:parseFloat(getComputedStyle(document.body).getPropertyValue('--scrollbar-width')),moved:{down,up}});}finally{el.style.width=width;}})()`,
         ),
       ) as Pane;
 
@@ -2283,7 +2303,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const pane = await measure(width);
       expect(pane.overflows, `${width}px`).toBe(true);
       expect(pane.scrolled, `${width}px`).toBeGreaterThan(0);
-      // The search box and the toolbar keep their place as the rows scroll.
+      // The search box and the heading keep their place as the rows scroll.
       expect(pane.tops.after, `${width}px`).toEqual(pane.tops.before);
       // The rows' icons end inside the list's client box, and at least a
       // scrollbar's width short of its edge, so neither an overlay
@@ -2294,7 +2314,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       // ArrowDown from a row scrolled off the top, and ArrowUp from one
       // scrolled off the bottom, bring the row they select whole into the
-      // list, under the toolbar.
+      // list, under the heading.
       const whole = { selected: true, inList: true, underToolbar: true };
       expect(pane.moved, `${width}px`).toEqual({ down: whole, up: whole });
     }
@@ -2967,13 +2987,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const papers = await rowsWhen(library, drawn("papers"));
     expect(papers.rows.toSorted()).toEqual(expected);
 
-    // "Save as query file" is a toolbar button, and asks the name and the
-    // folder only.
-    expect(papers.toolbar).toEqual([
-      "data-query-results",
-      "sort",
-      "data-query-save-as",
-    ]);
+    // "Save as query file" sits in the heading beside Sort, and asks the
+    // name and the folder only.
+    expect(papers.toolbar).toEqual(["sort", "data-query-save-as"]);
     await obEval(
       vaultId,
       `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});press(leaf.view.contentEl.querySelector('[data-query-save-as]'),'Save as query file');return true;})()`,
@@ -3060,7 +3076,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,facets:Object.fromEntries([...el.querySelectorAll('[data-library-facet]')].map(n=>[n.getAttribute('data-library-facet'),n.getAttribute('aria-pressed')==='true'])),selected:el.querySelector('[data-library-node][aria-selected="true"]')?.getAttribute('data-library-node')??null,search:el.querySelector('[data-library-search] input').value,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row'))});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;const el=view.contentEl;return JSON.stringify({phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},facets:Object.fromEntries([...el.querySelectorAll('[data-library-facet]')].map(n=>[n.getAttribute('data-library-facet'),n.getAttribute('aria-pressed')==='true'])),selected:el.querySelector('[data-library-node][aria-selected="true"]')?.getAttribute('data-library-node')??null,search:el.querySelector('[data-library-search] input').value,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row'))});})()`;
     /** What the view shows once it lists every row it counts with `facets` on. */
     const shownWith = async (
       facets: readonly string[],
@@ -3169,7 +3185,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await facet("unread");
     const unread = await shownWith(
       ["unread"],
-      (shown) => shown.header === libraryHeader(sharedKey.name, filed, noted),
+      (shown) =>
+        shown.header ===
+        libraryHeader(sharedKey.name, filed, {
+          noted,
+          shown: unreadOf(filed, noted).length,
+        }),
     );
     expect(unread.rows.toSorted()).toEqual(keys(unreadOf(filed, noted)));
     expect(unread.rows).toContain(reader.key);
@@ -3228,8 +3249,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ["unread"],
           (shown) =>
             shown.header ===
-            m.library_view_search_matches_everywhere({
+            m.library_view_heading_search({
               count: anywhere.length,
+              query: reader.title,
             }),
         )
       ).rows,
@@ -3239,7 +3261,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ["unread"],
       (shown) =>
         shown.search === "" &&
-        shown.header === libraryHeader(sharedKey.name, filed, noted),
+        shown.header ===
+          libraryHeader(sharedKey.name, filed, {
+            noted,
+            shown: unreadOf(filed, noted).length,
+          }),
     );
 
     // A plugin reload comes back on the Collection with the facet on.
@@ -3254,7 +3280,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ["unread"],
       (shown) =>
         shown.selected === sharedNode &&
-        shown.header === libraryHeader(sharedKey.name, filed, noted),
+        shown.header ===
+          libraryHeader(sharedKey.name, filed, {
+            noted,
+            shown: unreadOf(filed, noted).length,
+          }),
     );
     expect(reloaded.rows.toSorted()).toEqual(unread.rows.toSorted());
   }, 180000);
@@ -3296,10 +3326,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       header: string | null;
       tags: string[];
       pressed: string[];
+      /** The filter chips under the heading, by their hook. */
+      chips: string[];
       count: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;const el=view.contentEl;const tags=[...el.querySelectorAll('[data-library-tag]')];return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,tags:tags.map(n=>n.getAttribute('data-library-tag')),pressed:tags.filter(n=>n.getAttribute('aria-pressed')==='true').map(n=>n.getAttribute('data-library-tag')),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row'))});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;const el=view.contentEl;const tags=[...el.querySelectorAll('[data-library-tag]')];return JSON.stringify({phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},tags:tags.map(n=>n.getAttribute('data-library-tag')),chips:[...el.querySelectorAll('[data-library-filter]')].map(n=>n.getAttribute('data-library-filter')),pressed:tags.filter(n=>n.getAttribute('aria-pressed')==='true').map(n=>n.getAttribute('data-library-tag')),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:[...el.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row'))});})()`;
     /** What the view shows once it lists every row it counts with `pressed` selected. */
     const shownWith = async (
       pressed: readonly string[],
@@ -3331,11 +3363,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `[...pane.querySelectorAll('[data-library-tag]')].find(n=>n.getAttribute('data-library-tag')===${JSON.stringify(name)})`,
         `${name} tag`,
       );
-    /** What the header adds while `tags` are selected. */
-    const tagged = (tags: readonly string[]) =>
-      m.library_view_header_tags({
-        tags: new Intl.ListFormat("en", { type: "conjunction" }).format(tags),
-      });
+    /** The chips under the heading while `tags` are selected. */
+    const tagged = (tags: readonly string[]) => tags.map((tag) => `tag:${tag}`);
 
     await obEval(
       vaultId,
@@ -3354,14 +3383,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(one.rows.toSorted()).toEqual(keys(withEvery([first])));
     expect(one.tags.toSorted()).toEqual(namesOf(withEvery([first])));
 
-    // A second tag narrows to the Items with both, and the header names them.
+    // A second tag narrows to the Items with both, the heading counts them
+    // of all My Library holds, and a chip under it names each tag.
     const second = one.tags.find((name) => name !== first)!;
     expect(second).toBeDefined();
     await tag(second);
     const both = [first, second].toSorted();
     const two = await shownWith(
       both,
-      (shown) => shown.header?.endsWith(` ${tagged(both)}`) === true,
+      (shown) => JSON.stringify(shown.chips) === JSON.stringify(tagged(both)),
+    );
+    expect(two.header).toContain(
+      m.library_view_heading_papers_of({
+        count: withEvery(both).length,
+        total: personal.length,
+      }),
     );
     expect(withEvery(both).length).toBeGreaterThan(0);
     expect(two.rows.toSorted()).toEqual(keys(withEvery(both)));
@@ -3474,7 +3510,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       searchAll: string | null;
       rows: string[];
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.search)return 'null';await view.searched;await view.query.settled;const el=view.contentEl;const input=el.querySelector('[data-library-search] input');return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,value:input.value,focused:document.activeElement===input,searchAll:el.querySelector('[data-library-search-all]')?.textContent??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.search)return 'null';await view.searched;await view.query.settled;const el=view.contentEl;const input=el.querySelector('[data-library-search] input');return JSON.stringify({phase:view.query.state.getState().phase,header:${LIBRARY_HEADING},value:input.value,focused:document.activeElement===input,searchAll:el.querySelector('[data-library-search-all]')?.textContent??null,rows:[...el.querySelectorAll('tr[data-query-table-row="item"], [data-query-papers-row]')].map(n=>n.getAttribute('data-query-key')??n.getAttribute('data-query-papers-row'))});})()`;
     const shownWhen = (ready: (shown: Shown) => boolean) =>
       obReadUntil<Shown>(vaultId, readShown, {
         ready: (shown) => shown.phase === "ready" && ready(shown),
@@ -3527,10 +3563,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) =>
         shown.rows.length === filed.length &&
         header(shown) ===
-          m.library_view_search_matches({
-            selection: sharedKey.name,
-            count: filed.length,
-          }) &&
+          `${m.library_view_heading_search({ count: filed.length, query: "duplicate" })} | ${m.library_view_search_everywhere()}` &&
         shown.searchAll === m.library_view_search_everywhere(),
     );
     expect(collection.rows).toEqual(filed);
@@ -3545,7 +3578,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const widened = await shownWhen(
       (shown) =>
         header(shown) ===
-        m.library_view_search_matches_everywhere({ count: everywhere.length }),
+        m.library_view_heading_search({
+          count: everywhere.length,
+          query: "duplicate",
+        }),
     );
     expect(widened.rows).toEqual(everywhere);
 
@@ -4126,7 +4162,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       .toSorted((a, b) => a.key.localeCompare(b.key));
     const authors = paper.creators
       .filter(({ creatorType }) => creatorType === "author")
-      .map(({ lastName }) => lastName);
+      .map(({ firstName, lastName }) => `${firstName} ${lastName}`);
 
     // The Library View on My Library, wide enough for the card, and a note
     // to cite into that was active last.
@@ -4142,7 +4178,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const card=el.querySelector('[data-library-card]');const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');${script}})()`,
       );
     /** What the card shows, `null` while it is out of view. */
-    const readCard = `const part=name=>card.querySelector('[data-library-card-'+name+']')?.textContent??null;return JSON.stringify(card.checkVisibility()?{title:part('title'),meta:part('meta'),abstract:part('abstract'),actions:[...card.querySelectorAll('[data-library-card-action]')].map(b=>b.textContent||b.getAttribute('aria-label')),cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),color:n.getAttribute('data-annot-color'),page:n.querySelector('.zt-annot-page-chip')?.textContent??null,text:n.textContent})).toSorted((a,b)=>a.key.localeCompare(b.key))}:null);`;
+    const readCard = `const part=name=>card.querySelector('[data-library-card-'+name+']')?.textContent??null;return JSON.stringify(card.checkVisibility()?{title:part('title'),creators:part('creators'),venue:part('venue'),citationKey:part('citekey'),abstract:part('abstract'),actions:[...card.querySelectorAll('[data-library-card-action]')].map(b=>b.textContent||b.getAttribute('aria-label')),cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),color:n.getAttribute('data-annot-color'),page:n.querySelector('.zt-annot-page-chip')?.textContent??null,text:n.textContent})).toSorted((a,b)=>a.key.localeCompare(b.key))}:null);`;
 
     // No row is selected: the card is out of view.
     expect(
@@ -4151,20 +4187,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("null");
 
-    // A click on the paper's row shows its card with its Annotations
-    // closed: one row that counts them, and no Annotation Card drawn.
+    // A click on the paper's row shows its card with a preview of its
+    // Annotations: the first two quoted, the count of each colour, and "See
+    // all", with no Annotation Card drawn.
     expect(
       JSON.parse(
         await inLibrary(
-          `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility()&&card.querySelector('[data-library-card-toggle="annotations"]'),10000);await leaf.view.card.settled;const toggle=card.querySelector('[data-library-card-toggle="annotations"]');return JSON.stringify({toggle:toggle.textContent,expanded:toggle.getAttribute('aria-expanded'),cards:card.querySelectorAll('.zt-annot-card').length});`,
+          `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility()&&card.querySelector('[data-library-card-toggle="annotations"]'),10000);await leaf.view.card.settled;const toggle=card.querySelector('[data-library-card-toggle="annotations"]');return JSON.stringify({toggle:toggle.textContent,expanded:toggle.getAttribute('aria-expanded'),cards:card.querySelectorAll('.zt-annot-card').length,quotes:card.querySelectorAll('[data-library-card-quote]').length,colours:[...card.querySelectorAll('[data-library-card-colour]')].reduce((sum,n)=>sum+Number(n.textContent.split(': ').at(-1)),0)});`,
         ),
       ),
     ).toEqual({
-      toggle: m.library_view_card_annotation_count({
-        count: seededCards.length,
-      }),
+      toggle: m.library_view_card_see_all({ count: seededCards.length }),
       expanded: "false",
       cards: 0,
+      quotes: Math.min(2, seededCards.length),
+      colours: seededCards.length,
     });
     // Opened, the card shows the seeded fields and abstract, the row menu's
     // actions, and its Annotations as cards.
@@ -4174,19 +4211,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ) as {
       title: string;
-      meta: string;
+      creators: string;
+      venue: string;
+      citationKey: string;
       abstract: string;
       actions: string[];
       cards: { key: string; color: string; page: string; text: string }[];
     };
     expect({
       title: shown.title,
-      meta: shown.meta,
+      creators: shown.creators,
+      venue: shown.venue,
+      citationKey: shown.citationKey,
       abstract: shown.abstract,
       actions: shown.actions,
     }).toEqual({
       title: paper.title,
-      meta: `${authors.join(", ")} · ${paper.date} · ${paper.venue}`,
+      // The authors in full, and the Venue with the year.
+      creators: authors.join(", "),
+      venue: `${paper.venue} · ${paper.date}`,
+      citationKey: paper.citationKey,
       abstract,
       // Two buttons; the rest of the row menu under More, and the sidebar
       // as an icon.

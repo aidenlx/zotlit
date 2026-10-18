@@ -47,6 +47,7 @@ import type {
   LibraryViewQuery,
   ReadingStateFacet,
 } from "./document";
+import { renderHeading } from "./heading";
 import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
@@ -247,6 +248,8 @@ export class LibraryView extends ItemView {
       save: () => this.#storage.save(),
       // The way to the full Query View: a Query File of the list.
       saveAs: () => void this.#saveAs(),
+      // Sort and Save sit in the title block over the list.
+      toolbar: "host",
       layout: { onEscape },
     });
     this.card = new ReadingCard(deps, {
@@ -338,12 +341,12 @@ export class LibraryView extends ItemView {
     // wide pane, and over it on a narrow one, as the tree does, once the
     // researcher asks for it.
     const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:hidden zt:w-80 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
+      cls: "zt:hidden zt:w-96 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
     // The tree toggle shares the search box's row, so it never takes a row
-    // of its own, as it would above Recent, whose header has no text. While
+    // of its own above the heading. While
     // Zotero is not found the toggle stays, so a narrow pane still opens the
     // tree and its not-found part; a wide pane, with no toggle, drops the row.
     const searchRow = main.createDiv({
@@ -383,7 +386,13 @@ export class LibraryView extends ItemView {
     this.tree.load();
     this.tree.render(treeEl.createDiv({ cls: hidden }));
     this.tree.renderToggle(toggleEl);
-    this.tree.renderHeader(header, this.search.header(this.query.state));
+    const heading = renderHeading(header, {
+      tree: this.tree,
+      query: this.query,
+      search: this.search.header(this.query.state),
+      clearFilters: () => this.#clearFilters(),
+    });
+    this.query.register(() => heading.unmount());
     this.search.load();
     this.search.render(searchEl);
     // On a narrow pane the tree shows over the list while it is open.
@@ -693,6 +702,18 @@ export class LibraryView extends ItemView {
         logger.warn("The Library View could not keep the selected tags", {
           error,
         });
+      });
+    this.#show(this.#found);
+  }
+
+  /** The researcher cleared the heading's filter chips: every facet off, every tag let go, in one run. */
+  #clearFilters(): void {
+    this.tree.showFacets([]);
+    this.tree.showTags([]);
+    this.#storage
+      .change((doc) => withTags(withFacets(doc, []), []))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not clear the filters", { error });
       });
     this.#show(this.#found);
   }

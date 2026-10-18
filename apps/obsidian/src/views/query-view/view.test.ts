@@ -11,6 +11,8 @@ import {
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
+import { createElement, Fragment } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { nameDictionary } from "@zotlit/item-query";
@@ -48,7 +50,7 @@ import type {
   VaultValue,
   VaultWrite,
 } from "./table-notes";
-import { QueryView, RERUN_DELAY_MS } from "./view";
+import { QueryView, RERUN_DELAY_MS, SaveAsButton, SortButton } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -173,6 +175,7 @@ async function mount(
     displayOnly,
     layouts,
     saveAs,
+    toolbar,
     rowPass,
     reason,
     creation = "created",
@@ -200,6 +203,7 @@ async function mount(
     displayOnly?: boolean;
     layouts?: readonly string[];
     saveAs?: () => void;
+    toolbar?: "host";
     rowPass?: ConstructorParameters<typeof QueryView>[1]["rowPass"];
     reason?: (row: QueryViewRow) => string | null;
     /**
@@ -372,6 +376,7 @@ async function mount(
     ...(displayOnly && { displayOnly }),
     ...(layouts && { layouts }),
     ...(saveAs && { saveAs }),
+    ...(toolbar && { toolbar }),
     ...(rowPass && { rowPass }),
     ...(reason && { reason }),
   });
@@ -917,6 +922,41 @@ describe("saving a toolbar edit", () => {
     expect(fixed.el.querySelector("[data-query-copy]")).not.toBeNull();
     expect(fixed.el.querySelector("[data-query-export]")).not.toBeNull();
     expect(fixed.el.querySelector("[data-query-limit]")).toBeNull();
+  });
+
+  it("draws no toolbar row where the host places Sort and Save as query file itself, which still sort and save from the host's place", async () => {
+    const saveAs = vi.fn();
+    const hosted = await mount([], undefined, {
+      displayOnly: true,
+      layouts: ["papers"],
+      saveAs,
+      toolbar: "host",
+    });
+    await act(() => hosted.view.setText(PAPERS_FILE));
+    await hosted.settle();
+    expect(hosted.el.querySelector('[role="toolbar"]')).toBeNull();
+    expect(hosted.el.querySelector("[data-query-results]")).toBeNull();
+    // The rows still show under where the row would be.
+    expect(hosted.el.querySelector("[data-query-layout]")).not.toBeNull();
+    const place = document.createElement("div");
+    document.body.append(place);
+    const root = createRoot(place);
+    cleanup.defer(() => act(() => root.unmount()));
+    await act(() =>
+      root.render(
+        createElement(
+          Fragment,
+          null,
+          createElement(SortButton, { view: hosted.view }),
+          createElement(SaveAsButton, { view: hosted.view }),
+        ),
+      ),
+    );
+    await act(() =>
+      place.querySelector<HTMLElement>("[data-query-save-as]")!.click(),
+    );
+    expect(saveAs).toHaveBeenCalledOnce();
+    expect(place.querySelector('[data-query-toolbar="sort"]')).not.toBeNull();
   });
 
   it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
