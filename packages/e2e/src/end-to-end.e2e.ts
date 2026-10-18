@@ -2300,6 +2300,184 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   }, 120000);
 
+  it("expands a row of the Library View, in a tab and in the sidebar, and of a Query File's Papers and Table, in one step whether ZotLit Query answers at once or late, with no row drawn again or over another, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const path = "query-files/Expanding.zotquery";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    await wideWindow(cleanup);
+
+    // A book with a Literature Note and nothing in Zotero under it, and a
+    // paper with Attachments, a Child Note and its Literature Note.
+    const noteOnly = ITEMS.find(({ key }) => key === "NW2CPDTC")!;
+    expect(
+      ATTACHMENTS.some(({ parentItemID }) => parentItemID === noteOnly.itemID),
+    ).toBe(false);
+    expect(
+      NOTES.some(
+        ({ parentItemID, trashed }) =>
+          parentItemID === noteOnly.itemID && !trashed,
+      ),
+    ).toBe(false);
+    const paper = annotationItem;
+
+    interface Expansion {
+      /** The row's `aria-expanded` once the frames are taken. */
+      expanded: string | null;
+      /** Per animation frame, from just before the click on: the Item rows, the next one's offset from the expanded one, the rows over another, the rows being read. */
+      frames: {
+        rows: number;
+        /** The height of the expanded row's own element: a Papers row holds its children. */
+        height: number;
+        next: number | null;
+        overlaps: number;
+        status: number;
+        /** The opacity of the "Loading…" text, while a row is read. */
+        loading: string | null;
+      }[];
+      /** The Item rows the expansion took out of the page. */
+      removed: string[];
+    }
+    /** An Item row to expand: the view that shows it, its rows, and its key. */
+    interface Target {
+      view: string;
+      rowSelector: string;
+      item: string;
+    }
+    /**
+     * Click the expander of the target's Item, with each ZotLit Query run
+     * held `delay` ms first, and read each frame the window draws until half
+     * a second after that.
+     */
+    const expand = async ({ view, rowSelector, item }: Target, delay: number) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{${PAGE}const view=${view};await app.workspace.revealLeaf(view.leaf);await view.query.settled;const el=view.contentEl;const rowSel=${JSON.stringify(rowSelector)};const button=await until('expander',()=>el.querySelector('[data-query-expand="item:${item}"]'),10000);const frame=()=>new Promise(r=>requestAnimationFrame(r));button.scrollIntoView({block:'center',behavior:'instant'});await frame();await frame();const rows=()=>[...el.querySelectorAll(rowSel)];const own=button.closest(rowSel);const at=rows().indexOf(own);const removed=[];const observer=new MutationObserver(records=>{for(const record of records)for(const n of record.removedNodes)if(n.nodeType===1&&(n.matches(rowSel)||n.querySelector(rowSel)))removed.push(n.getAttribute('data-query-papers-row')??n.getAttribute('data-query-key')??n.nodeName);});observer.observe(el,{childList:true,subtree:true});const frames=[];const take=()=>{const list=rows();const boxes=list.map(n=>n.getBoundingClientRect());const box=own.getBoundingClientRect();const top=box.top;frames.push({rows:list.length,height:Math.round(box.height),next:list[at+1]?Math.round(boxes[at+1].top-top):null,overlaps:boxes.filter((b,i)=>i>0&&b.top<boxes[i-1].bottom-0.5).length,status:el.querySelectorAll('[data-query-table-status]').length,loading:(()=>{const text=el.querySelector('[data-query-loading]');return text?getComputedStyle(text).opacity:null;})()});};const service=app.plugins.plugins.zotlit.services.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};let expanded=null;try{take();press(button,'expander');take();const start=performance.now();while(performance.now()-start<${delay}+500){await frame();take();}expanded=button.getAttribute('aria-expanded');}finally{service.run=run;observer.disconnect();}press(button,'collapse');return JSON.stringify({expanded,frames,removed});})()`,
+        ),
+      ) as Expansion;
+    /**
+     * The expansion draws the closed row, then the open one: the rows under
+     * it move once, straight to where the open row puts them, and none is
+     * drawn again or over another.
+     */
+    const oneStep = (what: string, expansion: Expansion) => {
+      expect.soft(expansion.expanded, what).toBe("true");
+      expect.soft(expansion.removed, what).toEqual([]);
+      const { frames } = expansion;
+      expect.soft(new Set(frames.map(({ rows }) => rows)).size, what).toBe(1);
+      expect
+        .soft(
+          frames.filter(({ overlaps }) => overlaps > 0),
+          what,
+        )
+        .toEqual([]);
+      expect.soft(frames[0]!.next, what).not.toBeNull();
+      // The row under it moves once: from under the closed row to under
+      // the open one.
+      expect
+        .soft([...new Set(frames.map(({ next }) => next))], what)
+        .toHaveLength(2);
+      expect
+        .soft(new Set(frames.map(({ height }) => height)).size, what)
+        .toBeLessThanOrEqual(2);
+    };
+
+    /**
+     * Expand the target with ZotLit Query answering at once, then with it
+     * held 400 ms. A row with rows to read shows them being read in the
+     * late case, in the room they take; the note-only row reads nothing.
+     */
+    const expandEach = async (what: string, target: Target) => {
+      oneStep(`${what}, fast read`, await expand(target, 0));
+      const late = await expand(target, 400);
+      oneStep(`${what}, slow read`, late);
+      expect
+        .soft(
+          late.frames.some(({ status }) => status > 0),
+          `${what}, slow read`,
+        )
+        .toBe(target.item !== noteOnly.key);
+      // Its "Loading…" text shows only once the read has taken a while.
+      const loading = late.frames.flatMap(({ loading }) =>
+        loading === null ? [] : [loading],
+      );
+      expect
+        .soft([loading[0], loading.at(-1)], `${what}, slow read`)
+        .toEqual(
+          target.item === noteOnly.key ? [undefined, undefined] : ["0", "1"],
+        );
+    };
+
+    // The Library View in a tab, on Papers.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)}});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');await until('library',()=>app.workspace.getLeavesOfType('zotlit-library')[0],10000);return true;})()`,
+    );
+    const library = "app.workspace.getLeavesOfType('zotlit-library')[0].view";
+    const papersRow = "li[data-query-papers-row]";
+    await expandEach("Library View tab, note only", {
+      view: library,
+      rowSelector: papersRow,
+      item: noteOnly.key,
+    });
+    await expandEach("Library View tab, Attachments", {
+      view: library,
+      rowSelector: papersRow,
+      item: paper.key,
+    });
+
+    // The Library View in the sidebar.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:'zotlit-library',active:true});app.workspace.rightSplit.expand();await app.workspace.revealLeaf(leaf);return true;})()`,
+    );
+    await expandEach("Library View sidebar, note only", {
+      view: library,
+      rowSelector: papersRow,
+      item: noteOnly.key,
+    });
+    await expandEach("Library View sidebar, Attachments", {
+      view: library,
+      rowSelector: papersRow,
+      item: paper.key,
+    });
+
+    // A Query File tab on Papers, then on the Table.
+    for (const layout of ["papers", "table"]) {
+      await obEval(
+        vaultId,
+        `(async()=>{const old=app.vault.getFileByPath(${JSON.stringify(path)});if(old)await app.vault.delete(old);const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
+          [
+            "views:",
+            `  - type: ${layout}`,
+            "    name: Mine",
+            "    from: items",
+            '    filters: library == "personal"',
+            "    limit: 100",
+            "",
+          ].join("\n"),
+        )});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      );
+      const tab = `app.workspace.getLeavesOfType('zotlit-query-file').find(leaf=>leaf.view.file?.path===${JSON.stringify(path)}).view`;
+      await expandEach(`Query File ${layout}, Attachments`, {
+        view: tab,
+        rowSelector:
+          layout === "papers" ? papersRow : 'tr[data-query-table-row="item"]',
+        item: paper.key,
+      });
+    }
+  }, 180000);
+
   it("opens a Library View Document an earlier build stored with the Table on Papers, and saves its Collection from the toolbar as a Query File whose tab lists the same papers with every control, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const savedPath = "query-files/Saved library.zotquery";

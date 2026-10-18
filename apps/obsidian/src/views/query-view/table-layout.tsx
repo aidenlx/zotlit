@@ -228,21 +228,58 @@ export function markers(kind: TableRowKind): string[] {
  */
 export const TABLE_FIELDS: readonly string[] = markers("item");
 
-function expandable(record: TableRecord): boolean {
-  return TABLE_CHILD_SOURCES.some((source) => {
-    if (source.parent !== record.kind) return false;
-    const keys = record.values[source.marker];
-    return Array.isArray(keys) && keys.length > 0;
+/** The keys a marker list names: an Indexed Key, or a record that carries one. */
+function markerKeys(value: QueryViewValue | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) =>
+    entry !== null && typeof entry === "object" && !Array.isArray(entry)
+      ? text(entry.indexedKey)
+      : text(entry),
+  );
+}
+
+/**
+ * The sources a row has rows of, each with the keys of those rows as the
+ * row's marker lists them, before any is read.
+ */
+function childSources(record: TableRecord) {
+  return TABLE_CHILD_SOURCES.flatMap((source) => {
+    if (source.parent !== record.kind) return [];
+    const keys = markerKeys(record.values[source.marker]);
+    return keys.length > 0 ? [{ source, keys }] : [];
   });
 }
 
+function expandable(record: TableRecord): boolean {
+  return childSources(record).length > 0;
+}
+
+/** The source of the rows of `kind`. */
+export const childSource = (kind: TableRowKind) =>
+  TABLE_CHILD_SOURCES.find((source) => source.kind === kind)!;
+
+/** A row under an expanded row, known by its marker while it is read. */
+export type PendingChild = Pick<TableRecord, "kind" | "key">;
+
 export type ChildState =
-  | { readonly phase: "loading" }
+  /**
+   * The rows are read. `pending` holds one entry per row the markers list,
+   * so the expansion takes the room its rows take from its first frame.
+   */
+  | { readonly phase: "loading"; readonly pending: readonly PendingChild[] }
   | { readonly phase: "ready"; readonly rows: readonly TableRecord[] }
   | { readonly phase: "failed" };
 
 export const id = (record: Pick<TableRecord, "kind" | "key">) =>
   `${record.kind}:${record.key}`;
+
+/**
+ * The text a row being read shows. It fades in after a short wait, so a
+ * read that answers at once never shows it; the row's room is there
+ * either way.
+ */
+export const LOADING_TEXT =
+  "zt:truncate zt:animate-in zt:fade-in zt:fill-mode-backwards zt:delay-150";
 
 /** The expanded rows and the rows under them, read when a row expands. */
 export function useChildren(query: Pick<QueryService, "run">) {
@@ -273,14 +310,23 @@ export function useChildren(query: Pick<QueryService, "run">) {
       set(key, null);
       return;
     }
+    // Only the sources the row's markers list rows of are read: a row with
+    // none, as a Papers row with a Literature Note alone, opens at once.
+    const reads = childSources(record);
+    if (reads.length === 0) {
+      set(key, { phase: "ready", rows: [] });
+      return;
+    }
     const controller = new AbortController();
     runs.current.set(key, controller);
-    set(key, { phase: "loading" });
-    const sources = TABLE_CHILD_SOURCES.filter(
-      (source) => source.parent === record.kind,
-    );
+    set(key, {
+      phase: "loading",
+      pending: reads.flatMap(({ source, keys }) =>
+        keys.map((childKey) => ({ kind: source.kind, key: childKey })),
+      ),
+    });
     void Promise.all(
-      sources.map((source) => source.load(record, query, controller.signal)),
+      reads.map(({ source }) => source.load(record, query, controller.signal)),
     ).then(
       (lists) => {
         if (controller.signal.aborted) return;
@@ -295,6 +341,19 @@ export function useChildren(query: Pick<QueryService, "run">) {
     );
   };
   return { children, toggle };
+}
+
+/** The room of a chevron, in a row with nothing under it. */
+export function ExpanderSpace() {
+  return (
+    <span className="clickable-icon zt:invisible zt:shrink-0">
+      <Icon
+        name="chevron-right"
+        size="var(--icon-xs)"
+        strokeWidth="var(--icon-xs-stroke-width)"
+      />
+    </span>
+  );
 }
 
 export function Expander({
@@ -318,10 +377,7 @@ export function Expander({
       strokeWidth="var(--icon-xs-stroke-width)"
     />
   );
-  if (!holdsMore && !expandable(record))
-    return (
-      <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
-    );
+  if (!holdsMore && !expandable(record)) return <ExpanderSpace />;
   return (
     <button
       type="button"
@@ -521,7 +577,35 @@ function ChildRows({
 }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
-  if (state.phase !== "ready")
+  if (state.phase === "loading")
+    return state.pending.map((child, at) => (
+      <tr key={id(child)} className={ROW} data-query-table-status="loading">
+        <td className={GUTTER} />
+        <td
+          colSpan={childSpan(columns)}
+          className={cn(CELL, "zt:ps-1 zt:text-(--text-muted)")}
+        >
+          <span
+            className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
+            style={indent(depth)}
+          >
+            <ExpanderSpace />
+            <Icon
+              name={childSource(child.kind).icon}
+              size="var(--icon-xs)"
+              strokeWidth="var(--icon-xs-stroke-width)"
+              className="zt:shrink-0"
+            />
+            {at === 0 && (
+              <span className={LOADING_TEXT} data-query-loading="">
+                {m.query_view_table_loading()}
+              </span>
+            )}
+          </span>
+        </td>
+      </tr>
+    ));
+  if (state.phase === "failed")
     return (
       <tr data-query-table-status={state.phase}>
         <td className={GUTTER} />
@@ -530,18 +614,14 @@ function ChildRows({
           style={indent(depth)}
           className={cn(CELL, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
         >
-          {state.phase === "loading"
-            ? m.query_view_table_loading()
-            : m.query_view_table_children_failed()}
+          {m.query_view_table_children_failed()}
         </td>
       </tr>
     );
   return (
     <>
       {state.rows.map((record) => {
-        const source = TABLE_CHILD_SOURCES.find(
-          (candidate) => candidate.kind === record.kind,
-        )!;
+        const source = childSource(record.kind);
         return (
           <ChildRow
             key={id(record)}

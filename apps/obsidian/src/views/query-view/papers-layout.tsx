@@ -25,9 +25,11 @@ import type { QueryLayout } from "./layouts";
 import { RecordGroupHeading, useRecordGroups } from "./record-rows";
 import {
   Expander,
+  ExpanderSpace,
+  LOADING_TEXT,
   ReaderLink,
-  TABLE_CHILD_SOURCES,
   TABLE_FIELDS,
+  childSource,
   id,
   useChildren,
 } from "./table-layout";
@@ -325,16 +327,38 @@ function ChildRows({
 }: Expansion & { parent: TableRecord; depth: number }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
-  if (state.phase !== "ready")
+  // A row being read takes the room of the row it becomes, so the rows
+  // under it move once, as it opens.
+  if (state.phase === "loading")
+    return state.pending.map((child, at) => (
+      <li
+        key={id(child)}
+        className={cn(CHILD_ROW, "zt:text-muted-foreground")}
+        style={indent(depth)}
+        data-query-table-status="loading"
+      >
+        <ExpanderSpace />
+        <Icon
+          name={childSource(child.kind).icon}
+          size="var(--icon-xs)"
+          strokeWidth="var(--icon-xs-stroke-width)"
+          className="zt:shrink-0 zt:text-(--icon-color)"
+        />
+        {at === 0 && (
+          <span className={LOADING_TEXT} data-query-loading="">
+            {m.query_view_table_loading()}
+          </span>
+        )}
+      </li>
+    ));
+  if (state.phase === "failed")
     return (
       <li
         className={cn(CHILD_ROW, "zt:text-muted-foreground")}
         style={indent(depth)}
         data-query-table-status={state.phase}
       >
-        {state.phase === "loading"
-          ? m.query_view_table_loading()
-          : m.query_view_table_children_failed()}
+        {m.query_view_table_children_failed()}
       </li>
     );
   const link = (target: ReaderTarget, children: ReactNode) => (
@@ -343,9 +367,7 @@ function ChildRows({
     </ReaderLink>
   );
   return state.rows.map((record) => {
-    const source = TABLE_CHILD_SOURCES.find(
-      (candidate) => candidate.kind === record.kind,
-    )!;
+    const source = childSource(record.kind);
     return (
       <Fragment key={id(record)}>
         <li
@@ -397,11 +419,7 @@ function LiteratureNoteRow({
     >
       {/* A row with nothing under it holds the place of a chevron, so the
           icon lines up with the rows above. */}
-      <Expander
-        record={{ kind: "note", key: note.path, values: {} }}
-        open={false}
-        onToggle={() => {}}
-      />
+      <ExpanderSpace />
       <Icon
         name="notebook-pen"
         size="var(--icon-xs)"
