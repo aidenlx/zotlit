@@ -39,7 +39,7 @@ If the database was readable and a later read fails, the view keeps the papers i
 
 The tree on the left lists <UiLabel name={m.library_view_recent()} /> first, then each library in your [library scope](/docs/reference/settings#library-scope) with its collections nested as in Zotero. Each library and collection shows how many papers it holds.
 
-Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, followed by the number of unread papers when it holds any, for example "Thesis / Chapter 2 <UiLabel name={m.library_view_header_unread({ count: 3 })} />". A paper counts as unread when it has no annotations and no literature note. The unread count, like the paper count in the tree, ignores search and the reading-state filters.
+Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, followed by the number of unread papers when it holds any, for example "Thesis / Chapter 2 <UiLabel name={m.library_view_header_unread({ count: 3 })} />". A paper counts as unread when it has no annotations and no literature note. The unread count, like the paper count in the tree, ignores search, the reading-state filters, and selected tags.
 
 When your Zotero database holds libraries outside your library scope, <UiLabel name={m.library_view_all_libraries()} /> below the tree adds them for the current session. <UiLabel name={m.library_view_scope_libraries()} /> hides them again.
 
