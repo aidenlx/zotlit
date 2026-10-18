@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// The Welcome View banner as it draws from its store: its setup steps, its
-// Help menu, and the template conversion and migration sections.
-import { Menu } from "@mock/obsidian";
+// The Welcome View banner as it draws from its store: its header, its timeline
+// of setup steps, its documentation and community links, and the template
+// conversion and migration sections.
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -109,13 +109,22 @@ describe("Welcome setup steps", () => {
     return node.classList.contains("zt:border-green");
   }
 
-  it("shows two steps, Connect and the folder, under the name alone", async () => {
+  it("shows the timeline of steps, Connect, the folder and the library, then the documentation links", async () => {
     const { container } = await render("fresh");
     expect(headings(container)).toEqual([
       "ZotLit",
       m.welcome_step_connect_title(),
       m.welcome_step_folder_title(),
+      m.welcome_step_library_title(),
+      m.welcome_keep_going_title(),
     ]);
+  });
+
+  it("shows the badge and the tagline under the name", async () => {
+    const { container } = await render("fresh");
+    const header = container.querySelector("header")!;
+    expect(header.textContent).toContain(m.welcome_badge());
+    expect(header.textContent).toContain(m.welcome_tagline());
   });
 
   it("marks the folder step done once the folder exists", async () => {
@@ -123,6 +132,24 @@ describe("Welcome setup steps", () => {
       literatureFolderExists: true,
     });
     expect(isDone(container, m.welcome_step_folder_title())).toBe(true);
+    expect(isDone(container, m.welcome_step_library_title())).toBe(false);
+  });
+
+  it("marks the library step done once ZotLit reads the library", async () => {
+    const { container } = await render("fresh", {
+      connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
+    });
+    expect(isDone(container, m.welcome_step_library_title())).toBe(true);
+    expect(isDone(container, m.welcome_step_folder_title())).toBe(false);
+  });
+
+  it("searches the library from the library step", async () => {
+    const { actions, container } = await render("fresh");
+    const button = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === m.welcome_action_search(),
+    );
+    await act(() => button?.click());
+    expect(actions.searchLibrary).toHaveBeenCalledOnce();
   });
 
   it("leaves out the Connect step while the Library View says Zotero is not found", async () => {
@@ -130,61 +157,81 @@ describe("Welcome setup steps", () => {
     expect(headings(container)).toEqual([
       "ZotLit",
       m.welcome_step_folder_title(),
+      m.welcome_step_library_title(),
+      m.welcome_keep_going_title(),
     ]);
   });
 });
 
 describe("Welcome links", () => {
-  it("puts the documentation and community links under one Help menu, each item opening its own page", async () => {
-    const { actions, container } = await render("fresh");
-    // No link shows on the banner itself.
-    expect(container.querySelectorAll("a")).toHaveLength(0);
-    const help = container.querySelector<HTMLElement>("[data-welcome-help]")!;
-    expect(help.textContent).toBe(m.welcome_help());
-    Menu.instances.length = 0;
-    await act(() => help.click());
-    const { items } = Menu.instances.at(-1)!;
-    const opened = items.map((item) => {
+  /** Each link on the banner: its label, the page it names, and the page a click opens. */
+  function links({
+    actions,
+    container,
+  }: {
+    actions: WelcomeActions;
+    container: HTMLElement;
+  }) {
+    return [...container.querySelectorAll("a")].map((a) => {
       vi.mocked(actions.openExternal).mockClear();
-      item.click();
-      return [item.title, vi.mocked(actions.openExternal).mock.calls];
+      a.click();
+      return [
+        a.textContent,
+        a.getAttribute("href"),
+        vi.mocked(actions.openExternal).mock.calls,
+      ];
     });
+  }
+
+  it("keeps the documentation, community and news links in view, each opening its own page", async () => {
+    const banner = await render("upgraded");
     // The docs site of the test build is https://zotlit.aidenlx.site.
-    expect(opened).toEqual([
-      [
+    const page = (label: string, url: string) => [label, url, [[url]]];
+    expect(links(banner)).toEqual([
+      page(
         m.welcome_docs_getting_started(),
-        [["https://zotlit.aidenlx.site/docs"]],
-      ],
-      [
+        "https://zotlit.aidenlx.site/docs",
+      ),
+      page(
         m.welcome_docs_templates(),
-        [["https://zotlit.aidenlx.site/docs/reference/templates"]],
-      ],
-      [
+        "https://zotlit.aidenlx.site/docs/reference/templates",
+      ),
+      page(
         m.welcome_docs_citations(),
-        [["https://zotlit.aidenlx.site/docs/how-to/insert-citations"]],
-      ],
-      [m.welcome_link_github(), [["https://github.com/aidenlx/zotlit"]]],
-      [
+        "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
+      ),
+      page(m.welcome_link_github(), "https://github.com/aidenlx/zotlit"),
+      page(
         m.welcome_link_discussions(),
-        [["https://zotlit.aidenlx.site/community"]],
-      ],
-      [m.welcome_link_sponsor(), [["https://github.com/sponsors/aidenlx"]]],
-      [m.welcome_link_blog(), [["https://zotlit.aidenlx.site/blog"]]],
-      [m.welcome_link_changelog(), [["https://zotlit.aidenlx.site/changelog"]]],
+        "https://zotlit.aidenlx.site/community",
+      ),
+      page(m.welcome_link_sponsor(), "https://github.com/sponsors/aidenlx"),
+      page(m.welcome_link_blog(), "https://zotlit.aidenlx.site/blog"),
+      page(m.welcome_link_changelog(), "https://zotlit.aidenlx.site/changelog"),
     ]);
   });
 
-  it.each([false, true])(
-    "shows the migration line only while a Migration Prompt is pending (%s)",
-    async (migrationPending) => {
-      const { container } = await render(
-        migrationPending ? "upgraded" : "fresh",
-      );
-      expect(
-        container.textContent?.includes(m.welcome_footer_migration_link()),
-      ).toBe(migrationPending);
-    },
-  );
+  it("groups the community and news links under their names", async () => {
+    const { container } = await render("fresh");
+    expect(container.textContent).toContain(m.welcome_group_community());
+    expect(container.textContent).toContain(m.welcome_group_news());
+  });
+
+  it("ends with the migration guide in the fresh state", async () => {
+    const banner = await render("fresh");
+    expect(links(banner).at(-1)).toEqual([
+      m.welcome_footer_migration_link(),
+      "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
+      [["https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1"]],
+    ]);
+  });
+
+  it("leaves out the footer migration line in the upgraded state, whose Migration Prompt says it", async () => {
+    const { container } = await render("upgraded");
+    expect(container.textContent).not.toContain(
+      m.welcome_footer_migration_link(),
+    );
+  });
 });
 
 it("replaces the pending prompt with the persisted result after conversion", async () => {
@@ -297,6 +344,7 @@ async function render(
     openExternal: vi.fn(),
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
+    searchLibrary: vi.fn(),
   };
   const container = document.createElement("div");
   document.body.append(container);

@@ -1,4 +1,4 @@
-// Live orchestration for the Welcome View quick-start step actions: open settings, pick the literature-note folder, and locate the Zotero data directory.
+// Live orchestration for the Welcome View quick-start step actions: open settings, pick the literature-note folder, search the library, and locate the Zotero data directory.
 import { FuzzySuggestModal } from "obsidian";
 import type { App, TFolder } from "obsidian";
 
@@ -14,6 +14,7 @@ const logger = getLogger(["views", "welcome"]);
 export interface SetupActions {
   openSettings: () => void;
   pickFolder: () => void;
+  searchLibrary: () => void;
   locateZotero: () => void;
 }
 
@@ -36,6 +37,11 @@ export function createSetupActions(deps: SetupActionsDeps): SetupActions {
           "note.literature-folder": folder.path,
         });
       }).open();
+    },
+    searchLibrary: () => {
+      deps.app.commands.executeCommandById(
+        `${deps.pluginId}:note-quick-switcher`,
+      );
     },
     locateZotero: () => {
       void browseForDataDir(deps);

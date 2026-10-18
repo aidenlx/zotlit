@@ -372,6 +372,7 @@ function pluginData(stored?: unknown) {
   const setupActions = {
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
+    searchLibrary: vi.fn(),
     locateZotero: vi.fn(),
   };
   const notes = new Set(NOTED);
