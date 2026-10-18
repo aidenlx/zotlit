@@ -272,6 +272,10 @@ export const DEMO_ITEMS: readonly FixtureItem[] = [
       author("Michael", "Droettboom"),
       author("Philip E.", "Bourne"),
     ],
+    tags: [
+      { name: "visualization", type: 0 },
+      { name: "research-practice", type: 0 },
+    ],
     dateModified: "2024-11-20 09:00:00",
     collectionIDs: [],
   },
@@ -286,6 +290,10 @@ export const DEMO_ITEMS: readonly FixtureItem[] = [
     venue: "PLoS Medicine",
     date: "2005",
     creators: [author("John P. A.", "Ioannidis")],
+    tags: [
+      { name: "methodology", type: 0 },
+      { name: "research-practice", type: 0 },
+    ],
     dateModified: "2024-11-19 09:00:00",
     collectionIDs: [],
   },
