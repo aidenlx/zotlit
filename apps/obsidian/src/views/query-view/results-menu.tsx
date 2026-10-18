@@ -144,10 +144,10 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         popoverTarget={popupId}
         aria-expanded={open}
         data-query-results=""
-        // A limit shows as set only where the researcher can set it, not
-        // where the host fixes one, as the Library View does.
+        // A limit the host writes itself, as the Library View does, shows
+        // as not set.
         data-active={
-          view.can.limit && current.limit !== undefined ? "" : undefined
+          view.setByResearcher(current).limit !== undefined ? "" : undefined
         }
         data-open={open ? "" : undefined}
         className={cn(

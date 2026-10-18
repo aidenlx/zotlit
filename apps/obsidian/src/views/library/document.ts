@@ -160,6 +160,11 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   };
 }
 
+/** The sort that selecting `node` writes; `null` for a node that keeps the sort. */
+function nodeSort(node: LibraryNode): readonly QueryFileSort[] | null {
+  return node.kind === "recent" ? RECENT_SORT : null;
+}
+
 /**
  * `doc` with `node` selected in the tree. Recent writes its sort; a later
  * sort change stays until the researcher selects Recent again.
@@ -168,9 +173,21 @@ export function withNode(
   doc: LibraryViewDocument,
   node: LibraryNode,
 ): LibraryViewDocument {
-  return node.kind === "recent"
-    ? { ...doc, node, sort: RECENT_SORT }
-    : { ...doc, node };
+  const sort = nodeSort(node);
+  return sort ? { ...doc, node, sort } : { ...doc, node };
+}
+
+/**
+ * What the view writes itself while `node` is selected: the node's sort and
+ * the row limit. The toolbar shows them as not set.
+ *
+ * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+ */
+export function libraryViewDefaults(node: LibraryNode): {
+  sort: readonly QueryFileSort[];
+  limit: number;
+} {
+  return { sort: nodeSort(node) ?? [], limit: LIBRARY_VIEW_ROW_LIMIT };
 }
 
 /** `doc` with `facets` as the active Reading State facets. */

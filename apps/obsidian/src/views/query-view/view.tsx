@@ -185,6 +185,15 @@ export interface QueryViewHost {
    */
   layouts?: readonly string[];
   /**
+   * The sort and the row limit the host writes into the shown view itself,
+   * as the Library View writes its row limit and Recent its sort. The
+   * toolbar marks a sort or a limit as set only where the view's differs.
+   * Absent: the host writes neither.
+   *
+   * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+   */
+  defaults?: () => QueryViewDefaults;
+  /**
    * What a click, a double click, the context menu and a drag do on an Item
    * row of the Papers and Table Layouts. Absent: the rows take no gesture.
    *
@@ -231,6 +240,12 @@ export interface QueryViewHost {
    * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
    */
   rowPass?: () => QueryRowPass | null;
+}
+
+/** The sort and the row limit a host writes into the shown view itself. */
+export interface QueryViewDefaults {
+  readonly sort?: readonly QueryFileSort[];
+  readonly limit?: number;
 }
 
 /** A condition on each row that the host applies after the query. */
@@ -709,6 +724,22 @@ export class QueryView extends Component implements HistorySurface {
   /** The changes the toolbar offers, as the host keeps them. */
   get can(): QueryViewCapabilities {
     return this.#host.displayOnly === true ? DISPLAY_CHANGES : EVERY_CHANGE;
+  }
+
+  /**
+   * The sort and the row limit of `view` that the researcher set: a sort or
+   * a limit equal to the one the host writes itself is the host's.
+   */
+  setByResearcher(view: QueryFileView): {
+    sort: readonly QueryFileSort[];
+    limit: number | undefined;
+  } {
+    const defaults = this.#host.defaults?.() ?? {};
+    const sort = view.sort ?? [];
+    return {
+      sort: sameSort(sort, defaults.sort ?? []) ? [] : sort,
+      limit: view.limit === defaults.limit ? undefined : view.limit,
+    };
   }
 
   /** The Layout types the host offers; `undefined` for every one. */
@@ -1440,12 +1471,14 @@ function SortButton({ view }: { view: QueryView }) {
   const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
   if (!current || !properties || ranked) return null;
   const sort = current.sort ?? [];
+  // A sort the host writes itself, as Recent does, shows as not set.
+  const set = view.setByResearcher(current).sort;
   return (
     <ToolbarPopover
       icon="arrow-up-down"
       label={m.query_view_sort()}
-      active={sort.length > 0}
-      count={sort.length}
+      active={set.length > 0}
+      count={set.length}
       hook="sort"
     >
       <SortEditor
@@ -1460,6 +1493,20 @@ function SortButton({ view }: { view: QueryView }) {
         }
       />
     </ToolbarPopover>
+  );
+}
+
+/** Whether `a` and `b` sort by the same properties, in the same directions. */
+function sameSort(
+  a: readonly QueryFileSort[],
+  b: readonly QueryFileSort[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      ({ property, direction }, at) =>
+        property === b[at]!.property && direction === b[at]!.direction,
+    )
   );
 }
 

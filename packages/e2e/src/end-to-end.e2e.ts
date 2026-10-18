@@ -3138,7 +3138,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
-  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane, and hides it with no selection and while Zotero's data folder is missing", async () => {
+  it("shows the selected row's Reading Card with its seeded fields, abstract and Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -3329,13 +3329,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ),
     ).toEqual({ selected: null, focused: paper.key });
+    // The arrow keys move the selection and leave the list uncovered; Space
+    // on the selected row opens its card over the list.
+    /** Press `key` where the focus is; report once the card shows or hides. */
+    const keyThen = (key: string, shows: boolean) =>
+      inLibrary(
+        `activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},bubbles:true,cancelable:true}));await until('card ${shows ? "shows" : "hides"}',()=>card.checkVisibility()===${shows});return JSON.stringify({card:card.checkVisibility(),selected:el.querySelector('[data-query-item-row][data-selected]')?.getAttribute('data-query-item-row')??null,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null});`,
+      );
+    /** The row after `key` on screen. */
+    const rowAfter = async (key: string) =>
+      JSON.parse(
+        await inLibrary(
+          `const keys=[...el.querySelectorAll('[data-query-item-row]')].map(n=>n.getAttribute('data-query-item-row'));return JSON.stringify(keys[keys.indexOf(${JSON.stringify(key)})+1]??null);`,
+        ),
+      ) as string;
     await inLibrary(
       `press(row(${JSON.stringify(paper.key)}),'paper row');await until('card',()=>card.checkVisibility());return true`,
     );
+    const next = await rowAfter(paper.key);
+    expect(next).not.toBeNull();
+    expect(JSON.parse(await keyThen("ArrowDown", false))).toEqual({
+      card: false,
+      selected: next,
+      focused: next,
+    });
+    expect(JSON.parse(await keyThen(" ", true))).toEqual({
+      card: true,
+      selected: next,
+      focused: next,
+    });
+    // ↑ goes back to the paper and puts its card away; a wide pane shows
+    // the card of the selected row beside the list.
+    expect(JSON.parse(await keyThen("ArrowUp", false))).toEqual({
+      card: false,
+      selected: paper.key,
+      focused: paper.key,
+    });
     expect(JSON.parse(await narrow(90, false))).toEqual({
       card: true,
       over: false,
       selected: paper.key,
+    });
+    // Beside a wide list the card follows the arrow keys.
+    expect(JSON.parse(await keyThen("ArrowDown", true))).toEqual({
+      card: true,
+      selected: next,
+      focused: next,
     });
 
     // While Zotero's data folder is missing the card goes with the list.

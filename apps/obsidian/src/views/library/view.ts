@@ -30,6 +30,7 @@ import { unavailable } from "@/views/welcome/connection";
 
 import {
   LIBRARY_LAYOUTS,
+  libraryViewDefaults,
   libraryViewQuery,
   libraryViewQueryFileLeftOut,
   libraryViewQueryFileText,
@@ -113,10 +114,16 @@ export class LibraryView extends ItemView {
   #shown: LibraryViewQuery | null = null;
   /** What the search last found, which a facet change lists again. */
   #found: SearchFound = { text: "" };
-  /** The selected row, by its Item's Indexed Key. */
-  readonly selection = createStore<{ key: string | null }>(() => ({
-    key: null,
-  }));
+  /**
+   * The selected row, by its Item's Indexed Key, and whether the researcher
+   * asked for its Reading Card: a click on the row or Space on it does, the
+   * arrow keys do not. A narrow pane shows the card over the list only
+   * while it is asked for; a wide pane shows it beside the list for every
+   * selected row.
+   */
+  readonly selection = createStore<{ key: string | null; card: boolean }>(
+    () => ({ key: null, card: false }),
+  );
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
   /** The write of the search text that the box last asked for. */
@@ -161,7 +168,7 @@ export class LibraryView extends ItemView {
       );
     const rows: ItemRowGestures = {
       selection: this.selection,
-      select: (key) => this.selection.setState({ key }),
+      select: (key) => this.selection.setState({ key, card: true }),
       first: () =>
         this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
       open: (key, event) =>
@@ -189,6 +196,8 @@ export class LibraryView extends ItemView {
       // The document keeps the sort, the Layout and the Visible Properties.
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
+      // The selected node's sort and the row limit are the view's own.
+      defaults: () => libraryViewDefaults(this.tree.store.getState().node),
       // Has note, and the Literature Note half of Unread, the vault answers.
       rowPass: () =>
         this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
@@ -270,9 +279,10 @@ export class LibraryView extends ItemView {
     // go with them.
     const hidden = "zt:group-data-zotero-missing:hidden";
     // The Reading Card shows while a row is selected: beside the list on a
-    // wide pane, and over it on a narrow one, as the tree does.
+    // wide pane, and over it on a narrow one, as the tree does, once the
+    // researcher asks for it.
     const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:hidden zt:w-80 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
+      cls: "zt:hidden zt:w-80 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
@@ -323,9 +333,10 @@ export class LibraryView extends ItemView {
     this.card.load();
     this.card.render(cardEl);
     this.card.register(
-      this.selection.subscribe(({ key }) => {
+      this.selection.subscribe(({ key, card }) => {
         this.card.show(key);
         cardEl.hidden = key === null;
+        shell.toggleAttribute("data-card-open", card);
       }),
     );
     // A selected row that leaves the list takes its selection with it, so
@@ -335,7 +346,7 @@ export class LibraryView extends ItemView {
         const { key } = this.selection.getState();
         if (phase !== "ready" || key === null) return;
         if (!results?.rows.some((row) => row.indexedKey === key))
-          this.selection.setState({ key: null });
+          this.selection.setState({ key: null, card: false });
       }),
     );
     // A Literature Note added or removed changes what the vault answers.
@@ -369,14 +380,16 @@ export class LibraryView extends ItemView {
    */
   #closeCard(): void {
     const row = this.#selectedRow();
-    this.selection.setState({ key: null });
+    this.selection.setState({ key: null, card: false });
     row?.focus();
   }
 
   /**
    * The row keys of the quick switcher (ADR 0073): ↑ and ↓ move the
    * selection; Enter opens the selected row's Literature Note, or writes it,
-   * Mod+Enter in a new pane; Shift+Enter opens its PDF.
+   * Mod+Enter in a new pane; Shift+Enter opens its PDF. Space opens the
+   * selected row's Reading Card, which a narrow pane shows over the list
+   * (ADR 0070).
    */
   #registerRowKeys(): void {
     for (const [key, step] of [
@@ -395,6 +408,11 @@ export class LibraryView extends ItemView {
         void act(this.#deps.items, key);
         return false;
       });
+    this.scope.register([], " ", (event) => {
+      if (!this.#onList(event.target) || !this.#selectedRow()) return;
+      this.selection.setState({ card: true });
+      return false;
+    });
   }
 
   /** Whether a key landed on the list, and not on a control that takes it. */
@@ -435,7 +453,10 @@ export class LibraryView extends ItemView {
   }
 
   #focus(row: HTMLElement): void {
-    this.selection.setState({ key: row.getAttribute(ITEM_ROW_ATTRIBUTE) });
+    this.selection.setState({
+      key: row.getAttribute(ITEM_ROW_ATTRIBUTE),
+      card: false,
+    });
     row.focus();
     row.scrollIntoView({ block: "nearest" });
   }
@@ -453,7 +474,7 @@ export class LibraryView extends ItemView {
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
     if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
-    this.selection.setState({ key: indexedKey });
+    this.selection.setState({ key: indexedKey, card: false });
     await this.searched;
     await this.query.settled;
     const row = this.#selectedRow();
@@ -509,7 +530,7 @@ export class LibraryView extends ItemView {
   #select(node: LibraryNode): void {
     this.tree.show(node);
     // The selected row leaves the list with its node.
-    this.selection.setState({ key: null });
+    this.selection.setState({ key: null, card: false });
     // The document takes the node at once (Recent writes its sort), and the
     // search runs again over the node.
     this.#storage

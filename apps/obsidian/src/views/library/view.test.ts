@@ -1070,6 +1070,37 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
   });
 });
 
+it("marks the Sort button as set only for a sort other than the one the selected node writes", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  /** The Sort button: whether it shows a sort as set, and its text. */
+  const sort = () => {
+    const button = view.contentEl.querySelector<HTMLElement>(
+      '[data-query-toolbar="sort"]',
+    )!;
+    return {
+      set: button.hasAttribute("data-active"),
+      text: button.textContent,
+    };
+  };
+  // Recent writes newest change first itself.
+  expect(sort()).toEqual({ set: false, text: "Sort" });
+  await act(async () => {
+    view.query.document.editView({
+      sort: [{ property: "title", direction: "ASC" }],
+    });
+    await view.query.flush();
+    await view.query.settled;
+  });
+  expect(sort()).toEqual({ set: true, text: "Sort1" });
+  await press(view, row(view, RECENT));
+  expect(sort()).toEqual({ set: false, text: "Sort" });
+  // A Library writes no sort: Recent's sort stays, and now the researcher
+  // has it.
+  await press(view, row(view, { kind: "library", library: LAB }));
+  expect(sort()).toEqual({ set: true, text: "Sort1" });
+});
+
 /** Two sorts from the toolbar, the second before the first is saved. */
 function sortTwice(view: LibraryView) {
   view.query.document.editView({
@@ -2122,6 +2153,27 @@ describe("Reading Card", () => {
     expect(shownCard(view)).toBeNull();
     expect(view.selection.getState().key).toBeNull();
     expect(document.activeElement).toBe(itemRow(view, B));
+  });
+
+  it("opens on a click or on Space on the selected row, and stays closed while the arrow keys move the selection", async () => {
+    const { deps, items } = pluginData();
+    const view = await openTab(deps);
+    // Space with no row selected leaves the list to scroll.
+    expect(await pressKey(view, itemRow(view, A), [" "])).toBe(false);
+    await act(() => itemRow(view, B).click());
+    expect(view.selection.getState()).toEqual({ key: B, card: true });
+    expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
+    expect(view.selection.getState()).toEqual({ key: C, card: false });
+    expect(document.activeElement).toBe(itemRow(view, C));
+    // Space on a button inside the row is the button's.
+    const inside = itemRow(view, C).createEl("button");
+    expect(await pressKey(view, inside, [" "])).toBe(false);
+    expect(view.selection.getState()).toEqual({ key: C, card: false });
+    expect(await pressKey(view, itemRow(view, C), [" "])).toBe(true);
+    expect(view.selection.getState()).toEqual({ key: C, card: true });
+    // Space only opens the card.
+    expect(items.openNote).not.toHaveBeenCalled();
+    expect(items.openPdf).not.toHaveBeenCalled();
   });
 
   it("shows no Annotations section for an Item with none", async () => {
