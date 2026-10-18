@@ -1,6 +1,5 @@
-// Welcome onboarding banner: the setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the store decides.
+// Welcome onboarding banner: the header, the timeline of setup steps with the documentation and community links, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the store decides.
 import { join } from "node:path/posix";
-import { Menu } from "obsidian";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -13,11 +12,9 @@ import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { showMenuAtButton } from "@/lib/menu";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { useWelcomeActions } from "./actions";
-import type { WelcomeActions } from "./actions";
 import {
   BLOG,
   CHANGELOG,
@@ -32,13 +29,14 @@ import {
 import { templateMigrationNotice } from "./migration-notice";
 import { bannerSections, useWelcomeStore } from "./store";
 
-type NodeState = "done" | "active" | "warn" | "todo";
+type NodeState = "done" | "active" | "warn" | "todo" | "keep";
 
 function nodeClass(state: NodeState): string {
   switch (state) {
     case "done":
       return "zt:border-green zt:text-green";
     case "active":
+    case "keep":
       return "zt:border-link zt:text-link";
     case "warn":
       return "zt:border-warning zt:text-warning";
@@ -58,24 +56,25 @@ function StepHeading({ children }: { children: ReactNode }) {
 function Header({ titleId }: { titleId: string }) {
   const actions = useWelcomeActions();
   return (
-    <header className="zt:flex zt:items-center zt:gap-3">
-      <span
-        id={titleId}
-        role="heading"
-        aria-level={2}
-        className="zt:min-w-0 zt:flex-1 zt:text-base zt:font-bold"
-      >
-        ZotLit
-      </span>
-      <Button
-        icon="circle-help"
-        data-welcome-help=""
-        onClick={(event) =>
-          showMenuAtButton(helpMenu(actions), event.currentTarget, "end")
-        }
-      >
-        {m.welcome_help()}
-      </Button>
+    <header className="zt:flex zt:items-start zt:gap-3">
+      <div className="zt:min-w-0 zt:flex-1">
+        <div className="zt:flex zt:flex-wrap zt:items-center zt:gap-2.5">
+          <span
+            id={titleId}
+            role="heading"
+            aria-level={2}
+            className="zt:text-base zt:font-bold"
+          >
+            ZotLit
+          </span>
+          <span className="zt:rounded-full zt:bg-primary zt:px-2 zt:py-0.5 zt:text-xs zt:text-primary-foreground">
+            {m.welcome_badge()}
+          </span>
+        </div>
+        <p className="zt:mt-1 zt:mb-0 zt:text-sm zt:text-muted-foreground">
+          {m.welcome_tagline()}
+        </p>
+      </div>
       <IconButton
         icon="x"
         data-welcome-dismiss=""
@@ -86,21 +85,36 @@ function Header({ titleId }: { titleId: string }) {
   );
 }
 
-/** One setup step: its state in a ring, then its heading, text and action. */
-function Step({
+/**
+ * One node of the timeline: its state in a ring, then its heading, text and
+ * action, with a line down to the next node unless it is the last. The ring is
+ * smaller than the Welcome View tab's, since the banner takes at most half the
+ * Library View; the line runs from the ring's centre.
+ */
+function TimelineNode({
   state,
   icon,
+  last,
   children,
 }: {
   state: NodeState;
   icon: IconName;
+  last?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="zt:grid zt:grid-cols-[28px_1fr] zt:gap-3">
+    <div
+      className={cn(
+        "zt:relative zt:grid zt:grid-cols-[32px_1fr] zt:gap-3",
+        !last && "zt:pb-4",
+      )}
+    >
+      {!last ? (
+        <div className="zt:absolute zt:top-8 zt:bottom-[-6px] zt:left-[15px] zt:w-0.5 zt:bg-border" />
+      ) : null}
       <div
         className={cn(
-          "zt:flex zt:size-7 zt:items-center zt:justify-center zt:rounded-full zt:border-2 zt:bg-background",
+          "zt:relative zt:z-[1] zt:flex zt:size-8 zt:items-center zt:justify-center zt:rounded-full zt:border-2 zt:bg-background",
           nodeClass(state),
         )}
       >
@@ -110,7 +124,7 @@ function Step({
           className={state === "active" ? "zt:animate-spin" : undefined}
         />
       </div>
-      <div className="zt:min-w-0 zt:pt-0.5">{children}</div>
+      <div className="zt:min-w-0 zt:pt-1">{children}</div>
     </div>
   );
 }
@@ -133,7 +147,7 @@ function StepConnect() {
         : "loader";
 
   return (
-    <Step state={state} icon={icon}>
+    <TimelineNode state={state} icon={icon}>
       <StepHeading>{m.welcome_step_connect_title()}</StepHeading>
       {connection.status === "checking" ? (
         <p className="zt:mt-1 zt:animate-pulse zt:text-sm zt:text-muted-foreground">
@@ -173,7 +187,7 @@ function StepConnect() {
           </Button>
         </>
       )}
-    </Step>
+    </TimelineNode>
   );
 }
 
@@ -182,7 +196,10 @@ function StepFolder() {
   const done = useWelcomeStore((s) => s.literatureFolderExists);
   const actions = useWelcomeActions();
   return (
-    <Step state={done ? "done" : "todo"} icon={done ? "check" : "folder"}>
+    <TimelineNode
+      state={done ? "done" : "todo"}
+      icon={done ? "check" : "folder"}
+    >
       <StepHeading>{m.welcome_step_folder_title()}</StepHeading>
       <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
         {m.welcome_step_folder_body({ folder: literatureFolder })}
@@ -190,38 +207,123 @@ function StepFolder() {
       <Button icon="folder" className="zt:mt-2" onClick={actions.pickFolder}>
         {m.welcome_action_pick_folder()}
       </Button>
-    </Step>
+    </TimelineNode>
   );
 }
 
-/** The documentation and community links, in the menu of the Help button. */
-const HELP_LINKS: readonly (readonly [IconName, () => string, string])[] = [
-  ["book-open", m.welcome_docs_getting_started, DOCS_GETTING_STARTED],
-  ["layout-template", m.welcome_docs_templates, DOCS_TEMPLATES],
-  ["quote", m.welcome_docs_citations, DOCS_CITATIONS],
-  ["git-branch", m.welcome_link_github, GITHUB],
-  ["messages-square", m.welcome_link_discussions, COMMUNITY],
-  ["heart", m.welcome_link_sponsor, SPONSOR],
-  ["rss", m.welcome_link_blog, BLOG],
-  ["history", m.welcome_link_changelog, CHANGELOG],
-];
+/** The library lists below the banner once ZotLit reads Zotero's database. */
+function StepLibrary() {
+  const done = useWelcomeStore((s) => s.connection.status === "connected");
+  const actions = useWelcomeActions();
+  return (
+    <TimelineNode
+      state={done ? "done" : "todo"}
+      icon={done ? "check" : "library"}
+    >
+      <StepHeading>{m.welcome_step_library_title()}</StepHeading>
+      <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
+        {m.welcome_step_library_body()}
+      </p>
+      <Button icon="search" className="zt:mt-2" onClick={actions.searchLibrary}>
+        {m.welcome_action_search()}
+      </Button>
+    </TimelineNode>
+  );
+}
 
-function helpMenu(actions: WelcomeActions): Menu {
-  const menu = new Menu();
-  for (const [icon, title, url] of HELP_LINKS)
-    menu.addItem((item) =>
-      item
-        .setIcon(icon)
-        .setTitle(title())
-        .onClick(() => actions.openExternal(url)),
-    );
-  return menu;
+function LinkPill({
+  icon,
+  iconClassName,
+  url,
+  children,
+}: {
+  icon: IconName;
+  iconClassName?: string;
+  url: string;
+  children: ReactNode;
+}) {
+  const actions = useWelcomeActions();
+  return (
+    <a
+      href={url}
+      onClick={(e) => {
+        e.preventDefault();
+        actions.openExternal(url);
+      }}
+      style={{ color: "var(--text-normal)", textDecoration: "none" }}
+      className="zt:inline-flex zt:cursor-pointer zt:items-center zt:gap-1.5 zt:rounded-full zt:border zt:border-border zt:px-2.5 zt:py-1 zt:text-xs zt:transition-colors zt:hover:bg-muted"
+    >
+      <Icon name={icon} className={cn("zt:text-link", iconClassName)} />
+      {children}
+    </a>
+  );
+}
+
+/** The last node of the timeline: the documentation links. */
+function KeepGoing() {
+  return (
+    <TimelineNode state="keep" icon="compass" last>
+      <StepHeading>{m.welcome_keep_going_title()}</StepHeading>
+      <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
+        {m.welcome_keep_going_body()}
+      </p>
+      <div className="zt:mt-2 zt:flex zt:flex-wrap zt:gap-2">
+        <LinkPill icon="book-open" url={DOCS_GETTING_STARTED}>
+          {m.welcome_docs_getting_started()}
+        </LinkPill>
+        <LinkPill icon="layout-template" url={DOCS_TEMPLATES}>
+          {m.welcome_docs_templates()}
+        </LinkPill>
+        <LinkPill icon="quote" url={DOCS_CITATIONS}>
+          {m.welcome_docs_citations()}
+        </LinkPill>
+      </div>
+    </TimelineNode>
+  );
+}
+
+function LinkGroup({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="zt:grid zt:grid-cols-[96px_1fr] zt:items-center zt:gap-3">
+      <div className="zt:text-xs zt:tracking-wider zt:text-faint zt:uppercase">
+        {name}
+      </div>
+      <div className="zt:flex zt:flex-wrap zt:gap-2">{children}</div>
+    </div>
+  );
+}
+
+/** The community and news links, each group under its name. */
+function FooterGroups() {
+  return (
+    <div className="zt:mt-4 zt:flex zt:flex-col zt:gap-3 zt:border-t zt:border-border zt:pt-4">
+      <LinkGroup name={m.welcome_group_community()}>
+        <LinkPill icon="git-branch" url={GITHUB}>
+          {m.welcome_link_github()}
+        </LinkPill>
+        <LinkPill icon="messages-square" url={COMMUNITY}>
+          {m.welcome_link_discussions()}
+        </LinkPill>
+        <LinkPill icon="heart" iconClassName="zt:text-pink" url={SPONSOR}>
+          {m.welcome_link_sponsor()}
+        </LinkPill>
+      </LinkGroup>
+      <LinkGroup name={m.welcome_group_news()}>
+        <LinkPill icon="rss" url={BLOG}>
+          {m.welcome_link_blog()}
+        </LinkPill>
+        <LinkPill icon="history" url={CHANGELOG}>
+          {m.welcome_link_changelog()}
+        </LinkPill>
+      </LinkGroup>
+    </div>
+  );
 }
 
 function FooterLink() {
   const actions = useWelcomeActions();
   return (
-    <p className="zt:mt-3 zt:mb-0 zt:text-xs zt:text-muted-foreground">
+    <p className="zt:mt-3 zt:mb-0 zt:text-xs zt:text-faint">
       {m.welcome_footer_migration_lead()}{" "}
       <a
         href={MIGRATION_GUIDE}
@@ -460,12 +562,17 @@ export function Welcome() {
       {migration && <MigrationGuide />}
       {companion && <CompanionGuidance />}
       {steps && (
-        <div className="zt:mt-4 zt:grid zt:gap-4 zt:@3xl:grid-cols-2">
-          {connect && <StepConnect />}
-          <StepFolder />
-        </div>
+        <>
+          <div className="zt:mt-4">
+            {connect && <StepConnect />}
+            <StepFolder />
+            <StepLibrary />
+            <KeepGoing />
+          </div>
+          <FooterGroups />
+          {migrationPending ? null : <FooterLink />}
+        </>
       )}
-      {migrationPending && <FooterLink />}
     </section>
   );
 }

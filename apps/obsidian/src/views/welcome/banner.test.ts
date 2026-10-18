@@ -72,6 +72,7 @@ async function setup(data: Record<string, unknown> = {}) {
     setupActions: {
       openSettings: vi.fn(),
       pickFolder: vi.fn(),
+      searchLibrary: vi.fn(),
       locateZotero: vi.fn(),
     },
     templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
@@ -110,8 +111,21 @@ it("shows the setup steps while setup is incomplete, with no Companion step", as
   const el = await open(deps);
   expect(heading(el, m.welcome_step_connect_title())).toBe(true);
   expect(heading(el, m.welcome_step_folder_title())).toBe(true);
+  expect(heading(el, m.welcome_step_library_title())).toBe(true);
   // ZotLit Companion is named at the action that needs it, not here.
   expect(el.textContent).not.toContain("Companion");
+});
+
+it("opens a documentation link in the browser", async () => {
+  const { deps } = await setup();
+  const el = await open(deps);
+  const opened = vi.spyOn(window, "open").mockReturnValue(null);
+  cleanup.defer(() => opened.mockRestore());
+  const link = [...el.querySelectorAll("a")].find(
+    (a) => a.textContent === m.welcome_docs_getting_started(),
+  );
+  await act(() => link?.click());
+  expect(opened.mock.calls).toEqual([["https://zotlit.aidenlx.site/docs"]]);
 });
 
 it("leaves out the Connect step while ZotLit cannot read the Zotero data folder, which the Library View says itself", async () => {
