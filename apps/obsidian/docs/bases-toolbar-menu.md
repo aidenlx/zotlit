@@ -199,6 +199,17 @@ Items by page:
 
 **Formula pages.** Add formula opens a page in the same menu. It picks a unique name from the search text, or "Untitled" when the field is empty, writes an empty formula, makes the property visible, and shows Edit property for it as a new property. The editor stands in the page. The `?` icon in the Formula label opens the docs page `bases/functions`. The status line reads "Valid formula" or "Invalid formula", with a `lucide-circle-check` or `lucide-x-circle` icon. Both texts are fixed English in the editor class, not message keys. The parse error shows as a tooltip on the status line.
 
+## Comboboxes
+
+Bases replaces a native `<select>` with one internal combobox class: a `PopoverSuggest` with a search field built in. It is not exported. The facts below come from the same `app.js` and `app.css` of 1.14.4.
+
+- **Trigger.** `div.combobox-button` holds an icon (`.combobox-button-icon`, shown only when the chosen item has one), the label, and a `lucide-chevrons-up-down` chevron at `--icon-xs`. It shares the `select, .combobox-button, .dropdown` rule: `--input-height`, `--dropdown-background`, `--input-shadow`, `--input-radius`, with `--dropdown-padding: 0 var(--size-2-3) 0 var(--size-4-2)` and a `--size-2-2` gap. A click, an arrow key or a printable character opens it.
+- **Popup.** `div.suggestion-container.combobox` on `<body>`: a "Search..." field always, with no item-count threshold, then the rows. A row is the item's icon if it has one, its title, and a check mark for the current value. The check comes first in the DOM but `order: 2` draws it at the end of the row. A query that matches nothing shows the field over an empty list.
+- **Property variant.** The same class, with items for the query's properties. Every row has the property type's icon, and a muted raw id (`file.name`) at the end where the id is not the display name. The trigger shows the type icon before the display name. There are no group headings.
+- **Which selects use it.** The filter property and operator, the sort and group-by property and direction, and the Configure page's layout and property options. The filter group's conjunction and a layout's `"dropdown"` options stay native selects.
+
+ZotLit draws the same control with `Select` (`apps/obsidian/src/components/select.tsx`) on the Chooser, wearing no Obsidian class. An option's `icon` and `detail` give the property variant. ZotLit keeps a native select wherever the choices are a few fixed ones: the conjunction, a sort or group direction, the rows, the layout and the list markers. In the Match editor, a select is a `Select` only where `MatchSelect` is `searchable` and the theme supplies `matchSelect`.
+
 ## ZotLit mapping
 
 `apps/obsidian/src/components/chooser.tsx` holds the ZotLit parts. The Query View consumers are in `apps/obsidian/src/views/query-view/` (`properties-menu.tsx`, `view-menu.tsx`, `configure-view.tsx`, `property-page.tsx`).
