@@ -29,7 +29,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
    - calls the Skill tool with `tdd` to build the ticket;
    - merges the integration branch tip into its own branch before reporting done
 
-5. Once an **implementer subagent** completes, merge its work to the integration branch with a **merger subagent**. Then give the ticket its one progress comment and close it, as `docs/agents/issue-tracker.md` describes.
+5. Once an **implementer subagent** completes, run the Standards axis of `code-review` on the ticket's diff (`<integration-branch>...<ticket-branch>`) in a fresh subagent, and send its hard violations back to the implementer. Merge once the axis is clean: merge its work to the integration branch with a **merger subagent**. Then give the ticket its one progress comment and close it, as `docs/agents/issue-tracker.md` describes.
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
