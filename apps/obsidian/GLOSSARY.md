@@ -914,7 +914,7 @@ The documentation and community links of the Welcome View: Getting started, Chat
 _Avoid_: footer links, resources
 
 **Release Note**:
-The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update raises a durable notice; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
+The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update shows a section in the Welcome View banner above the Library View, "ZotLit updated to <version>" with "What's new", until it is dismissed or opened; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
 
 **Migration Prompt**:
 The prominent banner in the Welcome View's upgraded state pointing a user upgraded from plugin v1 at the migration guide on the docs site. The banner shows whenever the Library View is open until the prompt is acknowledged — by opening the guide or dismissing the banner. The fresh state carries only a quiet footer link to the same guide, for v1 veterans starting a new vault.
