@@ -461,7 +461,7 @@ One named view of a Query File or Query Block: a Layout with its own filters, so
 _Avoid_: tab, page, saved search
 
 **Layout**:
-How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows with a reading-state line, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers and Table.
+How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers alone, so it shows no Layout switch.
 _Avoid_: view type, mode
 
 **Grouping**:
@@ -507,7 +507,7 @@ A main-area tab that shows the Zotero library read-only, with a Library Tree, a 
 _Avoid_: library tab, browser, library pane
 
 **Library View Document**:
-What the Library View shows, as one value: the selected Library Tree node, the active Reading State facets, the search text, the sort, the Layout and the Visible Properties. The text of its Query View follows from it.
+What the Library View shows, as one value: the selected Library Tree node, the active Reading State facets, the search text and the sort. The text of its Query View follows from it, always in the Papers Layout.
 _Avoid_: library state, view state
 
 **Library Tree**:
@@ -515,7 +515,7 @@ The tree on the left of the Library View: Recent, then each Library in the Libra
 _Avoid_: collection tree, sidebar tree, navigator
 
 **Papers Layout**:
-The Layout of the Library View for Items, also open to any Query File: two lines of title, creators, year and publication, and a reading-state line of colour marks and the Annotation count, a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
+The Layout of the Library View for Items, also open to any Query File: two lines per Item, the title on one and the creators, year and publication on the other, ending with the main Attachment's kind and a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
 _Avoid_: paper list, rich list
 
 **Reading Card**:
@@ -523,7 +523,7 @@ The pane on the right of the Library View that shows the selected Item: its bibl
 _Avoid_: detail pane, inspector, preview
 
 **Reading State**:
-What the researcher has done with an Item: whether it was read and when, its Annotations, and its Literature Note. The Library View shows it on each row and narrows by it with the Reading State facets Unread, Annotated, Has note and PDF.
+What the researcher has done with an Item: whether it was read and when, its Annotations, and its Literature Note. The Library View narrows by it with the Reading State facets Unread, Annotated, Has note and PDF, and the Reading Card shows it for the selected Item; a row shows only the note icon.
 _Avoid_: progress, status, read status
 
 **Show in Library**:
@@ -903,7 +903,7 @@ The agent-facing reference for ZotLit's part of native Pandoc export: obtaining 
 _Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
-The onboarding steps of ZotLit, as a dismissable banner above the Library View, the first screen — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. Its steps are Connect to Zotero, Choose where literature notes live and Open your library, with documentation links and, in the upgraded state, the Migration Prompt. It shows until dismissed or until ZotLit reads the Zotero database and the literature-notes folder exists; the "Open welcome view" command shows it again. It has no tab of its own.
+The onboarding steps of ZotLit, as a dismissable banner above the Library View, the first screen — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. It keeps the components of the Welcome View that once had its own tab: the header with its badge and tagline, the steps Connect to Zotero, Choose where literature notes live and Open your library as a timeline, the "Keep going" documentation links, the Community and News link groups, and, in the upgraded state, the Migration Prompt. It shows until dismissed or until ZotLit reads the Zotero database and the literature-notes folder exists; the "Open welcome view" command shows it again. It has no tab of its own.
 
 **Release Note**:
 The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update raises a durable notice; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
