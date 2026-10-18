@@ -30,6 +30,16 @@
       "dependsOn": ["^build", "transit"],
       "env": ["GITHUB_ACTIONS"]
     },
+    "@zotlit/obsidian#generate:language-packs": {
+      "cache": false,
+      "outputLogs": "errors-only"
+    },
+    "@zotlit/obsidian#typecheck": {
+      "dependsOn": ["^build", "transit", "generate:language-packs"]
+    },
+    "@zotlit/obsidian#typecheck:test": {
+      "dependsOn": ["^build", "transit", "generate:language-packs"]
+    },
     "fixture": {
       "dependsOn": [
         "^build",
