@@ -3712,6 +3712,37 @@ it("draws each Item of a Papers view in two lines, its title and its creators, y
   expect(cards(el)).toEqual([]);
 });
 
+it("ends every Papers row in the same two slots, the note's then the Attachment's, each kept where the row has none", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", { title: "Both", fileTypes: ["pdf"] }),
+        paperRow("ITEMBBBB", { title: "A PDF alone", fileTypes: ["pdf"] }),
+        paperRow("ITEMCCCC", { title: "A note alone" }),
+        paperRow("ITEMDDDD", { title: "Neither" }),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Both.md", ITEMCCCC: "Note alone.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const slots = [
+    ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+  ].map((node) =>
+    [...node.querySelectorAll<HTMLElement>("[data-query-papers-slot]")].map(
+      (slot) =>
+        `${slot.dataset.queryPapersSlot}:${slot.childElementCount > 0 ? "mark" : "empty"}`,
+    ),
+  );
+  expect(slots).toEqual([
+    ["note:mark", "attachment:mark"],
+    ["note:empty", "attachment:mark"],
+    ["note:mark", "attachment:empty"],
+    ["note:empty", "attachment:empty"],
+  ]);
+});
+
 it("starts a Papers row with the icon of its Item type, and a document for a type the map does not name", async () => {
   const { view, el, settle } = await mount([
     result([
