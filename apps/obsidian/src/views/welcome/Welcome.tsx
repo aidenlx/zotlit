@@ -449,7 +449,7 @@ function HelpTile({
         className={cn(
           "zt:text-xs zt:text-muted-foreground",
           // Under 760px the small tiles keep their icon and title only.
-          !primary && "zt:col-span-2 zt:@max-[759px]:hidden",
+          !primary && "zt:col-span-2 zt:@max-[760px]:hidden",
         )}
       >
         {subtitle}
