@@ -2,7 +2,7 @@
 // above the Library View, wires live step actions, and keeps the connection
 // status subscribed to database events while it is loaded.
 //
-// @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+// @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
 import { Component, normalizePath } from "obsidian";
 import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
