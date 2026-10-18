@@ -22,7 +22,7 @@ import { createStore } from "zustand/vanilla";
 import { useUniqueId } from "@zotlit/ui";
 
 import { Button } from "@/components/obsidian/button";
-import { Icon } from "@/components/obsidian/icon";
+import { FirstLine, Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import {
   ANNOTATION_COLORS,
@@ -644,18 +644,24 @@ function Fields({ fields, id }: { fields: readonly CardField[]; id?: string }) {
   );
 }
 
-/** A native button, drawn as a link, that opens and closes the body `controls` names. */
+/**
+ * A native button, drawn as a link, that opens and closes the body `controls`
+ * names. Its chevron points to the side while the body is shut and down while
+ * it is open, as the tree's do. `className` sets its size and its place.
+ */
 function Disclosure({
   name,
   open,
   controls,
   onToggle,
+  className,
   children,
 }: {
   name: string;
   open: boolean;
   controls: string;
   onToggle: () => void;
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -668,14 +674,11 @@ function Disclosure({
       className={cn(
         "zt-library-card-toggle zt:inline-flex zt:cursor-(--cursor) zt:items-center zt:gap-0.5 zt:rounded-(--radius-s) zt:text-xs zt:text-(--text-accent) zt:hover:underline",
         FOCUS_RING,
+        className,
       )}
     >
       {children}
-      <Icon
-        name={open ? "chevron-down" : "chevron-right"}
-        size="var(--icon-xs)"
-        strokeWidth="var(--icon-xs-stroke-width)"
-      />
+      <Icon name={open ? "chevron-down" : "chevron-right"} size="xs" />
     </button>
   );
 }
@@ -745,6 +748,9 @@ const ABSTRACT_LINES_LENGTH = 180;
 const CHIP =
   "zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--radius-l) zt:bg-(--background-modifier-hover) zt:px-(--size-4-2) zt:py-0.5 zt:text-xs zt:text-(--text-normal)";
 
+/** One line of chips: a chip's text line, and its `py-0.5` above and below. */
+const CHIP_LINE = "zt:h-[calc(1lh+--spacing(1))] zt:text-xs";
+
 /** The focus ring of a control drawn on an element of its own. */
 const FOCUS_RING =
   "zt:outline-hidden zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
@@ -757,11 +763,14 @@ function InfoLine({
   name,
   label,
   icon,
+  chips = false,
   children,
 }: {
   name: string;
   label: string;
   icon: IconName;
+  /** The line holds chips, so its icon centres on a chip's height. */
+  chips?: boolean;
   children: ReactNode;
 }) {
   const id = useUniqueId();
@@ -771,11 +780,15 @@ function InfoLine({
       data-library-card-part={name}
       className="zt:flex zt:min-w-0 zt:items-start zt:gap-(--size-4-2)"
     >
-      <Icon
-        name={icon}
-        size="var(--icon-xs)"
-        className="zt:mt-[0.2em] zt:shrink-0 zt:text-muted-foreground"
-      />
+      <FirstLine
+        className={chips ? CHIP_LINE : "zt:text-(length:--font-ui-small)"}
+      >
+        <Icon
+          name={icon}
+          size="xs"
+          className="zt:shrink-0 zt:text-muted-foreground"
+        />
+      </FirstLine>
       {/* Obsidian's unlayered `h3` rule would outrank the heading's size. */}
       <div role="heading" aria-level={3} id={id} className="zt:sr-only">
         {label}
@@ -832,7 +845,7 @@ function CardBody({ card }: { card: ReadingCard }) {
               {/* The icon of the Item type, from the map the Papers rows use. */}
               <Icon
                 name={itemTypeIcon(item.itemType)}
-                size="var(--icon-xs)"
+                size="xs"
                 className="zt:shrink-0"
                 data-library-card-type-icon={itemTypeIcon(item.itemType)}
               />
@@ -895,7 +908,7 @@ function CardBody({ card }: { card: ReadingCard }) {
               >
                 <Icon
                   name="link"
-                  size="var(--icon-xs)"
+                  size="xs"
                   className="zt:shrink-0 zt:text-muted-foreground"
                 />
                 <span className="zt:truncate">{`doi:${item.doi.text}`}</span>
@@ -908,7 +921,7 @@ function CardBody({ card }: { card: ReadingCard }) {
               >
                 <Icon
                   name="at-sign"
-                  size="var(--icon-xs)"
+                  size="xs"
                   className="zt:shrink-0 zt:text-muted-foreground"
                 />
                 <span className="zt:truncate zt:select-text">
@@ -1017,6 +1030,7 @@ function CardBody({ card }: { card: ReadingCard }) {
                   name="tags"
                   label={m.library_view_card_tags()}
                   icon="tag"
+                  chips
                 >
                   <ul className="zt:m-0 zt:flex zt:list-none zt:flex-wrap zt:gap-(--size-2-2) zt:p-0">
                     {/* A tag selects itself in the Tag Selector, which narrows
@@ -1070,7 +1084,7 @@ function CardBody({ card }: { card: ReadingCard }) {
                         >
                           <Icon
                             name={FILE_ICONS[file.fileType] ?? "file"}
-                            size="var(--icon-xs)"
+                            size="xs"
                             className="zt:shrink-0"
                           />
                           <span className="zt:truncate">{file.title}</span>
@@ -1257,26 +1271,17 @@ function Annotations({
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={cardsId}
-        data-library-card-toggle="annotations"
-        onClick={() => card.disclose("annotations", !open)}
-        className={cn(
-          "zt-library-card-toggle zt:inline-flex zt:cursor-(--cursor) zt:items-center zt:gap-0.5 zt:self-start zt:rounded-(--radius-s) zt:text-(length:--font-ui-small) zt:text-(--text-accent) zt:hover:underline",
-          FOCUS_RING,
-        )}
+      <Disclosure
+        name="annotations"
+        open={open}
+        controls={cardsId}
+        onToggle={() => card.disclose("annotations", !open)}
+        className="zt:self-start zt:text-(length:--font-ui-small)"
       >
         {open
           ? m.library_view_card_hide_annotations()
           : m.library_view_card_see_all({ count: item.annotations })}
-        <Icon
-          name={open ? "chevron-up" : "chevron-right"}
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
-        />
-      </button>
+      </Disclosure>
       <div id={cardsId} hidden={!open} className="zt:-mx-(--size-2-2)">
         {/* The Annotation Cards mount once "See all" opens them. */}
         {open &&
@@ -1302,6 +1307,7 @@ function CopyCitationKey({ onCopy }: { onCopy: () => void }) {
   return (
     <IconButton
       icon="copy"
+      size="xs"
       className="zt:shrink-0 zt:p-(--size-2-1)"
       data-library-card-copy=""
       {...tooltipAttrs(m.library_view_card_copy_citation_key())}

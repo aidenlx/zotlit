@@ -1176,8 +1176,7 @@ function RowShell({
       {leading ?? (
         <Icon
           name={icon ?? "check"}
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
+          size="s"
           className={cn("zt:shrink-0", !icon && "zt:invisible")}
         />
       )}
@@ -1427,8 +1426,7 @@ function PageHeader({
       >
         <Icon
           name="chevron-left"
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
+          size="s"
           className="zt:shrink-0 zt:text-muted-foreground"
         />
         <span className="zt:truncate">{title}</span>
@@ -1441,11 +1439,7 @@ function PageHeader({
         {...tooltipAttrs(closeLabel)}
         onClick={close}
       >
-        <Icon
-          name="x"
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
-        />
+        <Icon name="x" size="s" />
       </button>
     </div>
   );
@@ -1573,11 +1567,7 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
         {...tooltipAttrs(label)}
         style={anchor}
       >
-        <Icon
-          name="more-horizontal"
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
-        />
+        <Icon name="more-horizontal" size="s" />
       </button>
       <div
         ref={menu}
@@ -1614,22 +1604,12 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
                 item.onSelect();
               }}
             >
-              <Icon
-                name={item.icon}
-                size="var(--icon-s)"
-                strokeWidth="var(--icon-s-stroke-width)"
-                className="zt:shrink-0"
-              />
+              <Icon name={item.icon} size="s" className="zt:shrink-0" />
               <span className="zt:min-w-0 zt:flex-1 zt:truncate">
                 {item.title}
               </span>
               {item.checked && (
-                <Icon
-                  name="check"
-                  size="var(--icon-s)"
-                  strokeWidth="var(--icon-s-stroke-width)"
-                  className="zt:shrink-0"
-                />
+                <Icon name="check" size="s" className="zt:shrink-0" />
               )}
             </button>
           </Fragment>

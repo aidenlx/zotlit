@@ -581,7 +581,7 @@ export function VaultEditCell(props: VaultCellProps) {
             className="zt:invisible zt:absolute zt:inset-y-0 zt:end-0 zt:flex zt:items-center zt:px-2 zt:text-(--text-faint) zt:group-hover/vault:visible"
             {...tooltipAttrs(m.query_view_vault_managed())}
           >
-            <Icon name="lock" size="var(--icon-xs)" />
+            <Icon name="lock" size="xs" />
           </span>
         )}
         {draft !== null && (

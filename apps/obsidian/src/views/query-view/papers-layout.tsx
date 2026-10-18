@@ -13,7 +13,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { resolveVenue } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
 
-import { Icon } from "@/components/obsidian/icon";
+import { FirstLine, Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
 import { cn } from "@/lib/utils";
@@ -241,22 +241,27 @@ function PaperRow({
       <div
         {...row}
         {...(gestures && { role: "group", "aria-labelledby": titleId })}
-        className="zt:flex zt:items-start zt:gap-1 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-selected:bg-(--nav-item-background-selected)"
+        className="zt:flex zt:items-start zt:gap-1.5 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-selected:bg-(--nav-item-background-selected)"
       >
-        <Expander
-          record={item}
-          open={open}
-          onToggle={() => toggle(item)}
-          holdsMore={note !== null}
-        />
-        {/* Decoration: the title names the row, so the type is not read out. */}
-        <Icon
-          name={typeIcon}
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
-          className="zt:mt-0.5 zt:shrink-0 zt:text-(--icon-color)"
-          data-query-papers-icon={typeIcon}
-        />
+        {/* The chevron, the type and the marks at the end sit on the
+            title's line, not the row's top. */}
+        <FirstLine className="zt:text-sm">
+          <Expander
+            record={item}
+            open={open}
+            onToggle={() => toggle(item)}
+            holdsMore={note !== null}
+          />
+        </FirstLine>
+        <FirstLine className="zt:text-sm">
+          {/* Decoration: the title names the row, so the type is not read out. */}
+          <Icon
+            name={typeIcon}
+            size="s"
+            className="zt:shrink-0 zt:text-(--icon-color)"
+            data-query-papers-icon={typeIcon}
+          />
+        </FirstLine>
         <div className="zt:min-w-0 zt:flex-1">
           <div
             id={titleId}
@@ -274,30 +279,22 @@ function PaperRow({
             </div>
           )}
         </div>
-        <div className="zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:pt-0.5 zt:text-(--icon-color)">
+        <FirstLine className="zt:gap-1 zt:text-sm zt:text-(--icon-color)">
           {note !== null && (
             <span className="zt:flex" data-query-papers-note="">
               <span className="zt:sr-only">
                 {m.query_view_papers_note_marker()}
               </span>
-              <Icon
-                name="notebook-pen"
-                size="var(--icon-xs)"
-                strokeWidth="var(--icon-xs-stroke-width)"
-              />
+              <Icon name="notebook-pen" size="xs" />
             </span>
           )}
           {kind && (
             <span className="zt:flex" data-query-papers-attachment={kind.type}>
               <span className="zt:sr-only">{kind.label()}</span>
-              <Icon
-                name={kind.icon}
-                size="var(--icon-xs)"
-                strokeWidth="var(--icon-xs-stroke-width)"
-              />
+              <Icon name={kind.icon} size="xs" />
             </span>
           )}
-        </div>
+        </FirstLine>
       </div>
       {open && (
         <ul className="zt:m-0 zt:list-none zt:p-0 zt:pb-1">
@@ -347,8 +344,7 @@ function ChildRows({
         <ExpanderSpace />
         <Icon
           name={childSource(child.kind).icon}
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
+          size="xs"
           className="zt:shrink-0 zt:text-(--icon-color)"
         />
         {at === 0 && (
@@ -390,8 +386,7 @@ function ChildRows({
           />
           <Icon
             name={source.icon}
-            size="var(--icon-xs)"
-            strokeWidth="var(--icon-xs-stroke-width)"
+            size="xs"
             className="zt:shrink-0 zt:text-(--icon-color)"
           />
           {source.render(record, { parent, link })}
@@ -429,8 +424,7 @@ function LiteratureNoteRow({
       <ExpanderSpace />
       <Icon
         name="notebook-pen"
-        size="var(--icon-xs)"
-        strokeWidth="var(--icon-xs-stroke-width)"
+        size="xs"
         className="zt:shrink-0 zt:text-(--icon-color)"
       />
       <a

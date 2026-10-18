@@ -102,9 +102,9 @@ function TreeNotFound() {
   return (
     <div
       data-library-not-found="tree"
-      className="zt:flex zt:items-center zt:gap-(--size-2-2) zt:p-(--size-4-2) zt:px-(--size-4-4) zt:text-(length:--nav-item-size) zt:text-warning"
+      className="zt:flex zt:items-center zt:gap-(--size-2-3) zt:p-(--size-4-2) zt:px-(--size-4-4) zt:text-(length:--nav-item-size) zt:text-warning"
     >
-      <Icon name="triangle-alert" size="var(--icon-s)" />
+      <Icon name="triangle-alert" size="s" />
       {m.library_view_not_found_tree()}
     </div>
   );
@@ -117,11 +117,7 @@ function RefreshFailedNote({ actions }: { actions: Actions }) {
       data-library-refresh-failed=""
       className="zt:mx-(--zt-query-toolbar-inset-start) zt:mt-(--size-4-2) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-4-2) zt:rounded-(--radius-m) zt:border-(length:--border-width) zt:border-(--background-modifier-border) zt:px-(--size-4-3) zt:py-(--size-4-2) zt:text-(length:--font-ui-small) zt:text-muted-foreground"
     >
-      <Icon
-        name="triangle-alert"
-        size="var(--icon-s)"
-        className="zt:text-warning"
-      />
+      <Icon name="triangle-alert" size="s" className="zt:text-warning" />
       <span className="zt:min-w-0 zt:flex-1">
         {m.library_view_refresh_failed()}
       </span>

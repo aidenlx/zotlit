@@ -157,8 +157,7 @@ function ExpressionField({
               <span className="zt:flex zt:h-lh zt:shrink-0 zt:items-center">
                 <Icon
                   name={issue === null ? "circle-check" : "x-circle"}
-                  size="var(--icon-xs)"
-                  strokeWidth="var(--icon-xs-stroke-width)"
+                  size="xs"
                 />
               </span>
               {issue === null ? (

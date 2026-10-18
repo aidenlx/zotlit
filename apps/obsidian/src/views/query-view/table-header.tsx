@@ -567,7 +567,7 @@ export function TableHeader({
                   <Icon
                     name={icon}
                     data-query-icon={icon}
-                    size="var(--icon-xs)"
+                    size="xs"
                     className={cn(
                       "zt:flex zt:shrink-0",
                       editable && "zt:group-hover/column:hidden",
@@ -576,7 +576,7 @@ export function TableHeader({
                   {editable && (
                     <Icon
                       name="lucide-grip-vertical"
-                      size="var(--icon-xs)"
+                      size="xs"
                       className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                     />
                   )}
@@ -589,8 +589,7 @@ export function TableHeader({
                 >
                   <Icon
                     name="alert-triangle"
-                    size="var(--icon-xs)"
-                    strokeWidth="var(--icon-xs-stroke-width)"
+                    size="xs"
                     className="zt:shrink-0"
                   />
                   <span className="zt:truncate">{headerLabel(property)}</span>

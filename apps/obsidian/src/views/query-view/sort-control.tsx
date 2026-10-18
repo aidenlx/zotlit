@@ -128,11 +128,7 @@ export function RemoveButton({
       onClick={onClick}
       {...data}
     >
-      <Icon
-        name="trash-2"
-        size="var(--icon-s)"
-        strokeWidth="var(--icon-s-stroke-width)"
-      />
+      <Icon name="trash-2" size="s" />
     </button>
   );
 }

@@ -131,11 +131,8 @@ function LibraryHeading({ host }: { host: LibraryHeadingHost }) {
           data-library-heading-icon={searching ? "search" : nodeIcon(node)}
           className="zt:flex zt:size-9 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-(--radius-m) zt:bg-(--interactive-accent)/12 zt:text-(--text-accent)"
         >
-          <Icon
-            name={searching ? "search" : nodeIcon(node)}
-            size="var(--icon-m)"
-            strokeWidth="var(--icon-m-stroke-width)"
-          />
+          {/* Half the tile, as a Help Link tile holds its icon. */}
+          <Icon name={searching ? "search" : nodeIcon(node)} size="l" />
         </span>
         <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col">
           {crumbs.length > 0 && (
@@ -245,14 +242,14 @@ function FilterChip({
       {icon && (
         <Icon
           name={icon}
-          size="var(--icon-xs)"
+          size="xs"
           className="zt:shrink-0 zt:text-muted-foreground"
         />
       )}
       <span className="zt:truncate">{label}</span>
       <Icon
         name="x"
-        size="var(--icon-xs)"
+        size="xs"
         className="zt:shrink-0 zt:text-muted-foreground"
       />
     </span>

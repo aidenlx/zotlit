@@ -338,8 +338,7 @@ function FoldSection({
           <PopoverHeader>
             <Icon
               name="right-triangle"
-              size="var(--icon-xs)"
-              strokeWidth="var(--icon-xs-stroke-width)"
+              size="xs"
               className="zt:shrink-0 zt:[rotate:calc(var(--direction)*-90deg)] zt:text-(--nav-collapse-icon-color) zt:transition-[rotate] zt:duration-100 zt:group-open/fold:[rotate:none]"
             />
             <span data-filter-heading="" className="zt:min-w-0 zt:truncate">

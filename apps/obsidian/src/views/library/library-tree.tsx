@@ -661,7 +661,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
                   : -1
               }
               style={{ "--zt-library-depth": row.level - 1 } as CSSProperties}
-              className="zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:outline-hidden zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
+              className="zt:group zt:flex zt:min-w-0 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:py-(--size-2-2) zt:ps-[calc(var(--zt-library-depth)*var(--size-4-4)+var(--size-2-1))] zt:pe-(--size-4-2) zt:text-(length:--nav-item-size) zt:text-(--nav-item-color) zt:outline-hidden zt:hover:not-aria-selected:bg-(--nav-item-background-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:aria-selected:bg-(--nav-item-background-selected) zt:aria-selected:text-(--nav-item-color-selected)"
               onClick={() => tree.select(row.node)}
               onKeyDown={(event) => onKeyDown(event, index)}
             >
@@ -680,12 +680,13 @@ function TreePane({ tree }: { tree: LibraryTree }) {
               >
                 <Icon name="right-triangle" size="var(--size-4-3)" />
               </span>
-              {/* Decoration: the label names the node. */}
+              {/* Decoration: the label names the node. The chevron keeps the
+                  row's narrow gap; the label stands 6 px off the icon, as a
+                  button's does, and the icon takes the selected row's ink. */}
               <Icon
                 name={nodeIcon(row.node)}
-                size="var(--icon-s)"
-                strokeWidth="var(--icon-s-stroke-width)"
-                className="zt:shrink-0 zt:text-(--icon-color)"
+                size="s"
+                className="zt:me-(--size-2-2) zt:shrink-0 zt:text-(--icon-color) zt:group-aria-selected:text-(--nav-item-color-selected)"
                 data-library-icon={nodeIcon(row.node)}
               />
               <span
