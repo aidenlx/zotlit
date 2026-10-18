@@ -4018,7 +4018,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(vaultId, readNotFound, {
         expected: JSON.stringify({
-          tree: m.library_view_not_found_tree(),
+          tree: m.library_view_not_found(),
           list: [m.library_view_locate(), m.welcome_action_open_settings()],
           papers: false,
           search: false,

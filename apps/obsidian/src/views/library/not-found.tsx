@@ -105,7 +105,7 @@ function TreeNotFound() {
       className="zt:flex zt:items-center zt:gap-(--size-2-3) zt:p-(--size-4-2) zt:px-(--size-4-4) zt:text-(length:--nav-item-size) zt:text-warning"
     >
       <Icon name="triangle-alert" size="s" />
-      {m.library_view_not_found_tree()}
+      {m.library_view_not_found()}
     </div>
   );
 }
@@ -146,9 +146,9 @@ function ListNotFound({ actions }: { actions: Actions }) {
           aria-level={2}
           className="zt:text-(length:--font-ui-medium) zt:font-(--font-semibold)"
         >
-          {m.library_view_not_found_title()}
+          {m.library_view_not_found()}
         </div>
-        <p className="zt:mt-(--size-4-2) zt:text-sm zt:text-pretty zt:text-muted-foreground">
+        <p className="zt:mt-(--size-4-2) zt:text-sm zt:text-balance zt:text-muted-foreground">
           {m.library_view_not_found_body()}
         </p>
         <div className="zt:mt-(--size-4-4) zt:flex zt:flex-wrap zt:justify-center zt:gap-(--size-4-2)">

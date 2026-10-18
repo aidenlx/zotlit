@@ -29,9 +29,9 @@ After ZotLit updates, it opens the Library View with the banner above it, saying
 
 ### When ZotLit cannot find Zotero [#not-found]
 
-ZotLit looks for your library in the default Zotero profile. When it finds no database there, or the data folder you set holds none it can read, the list shows <UiLabel name={m.library_view_not_found_title()} /> in place of the filters, the search box, and the papers, and the tree pane shows <UiLabel name={m.library_view_not_found_tree()} />. The setup banner leaves out its <UiLabel name={m.welcome_step_connect_title()} /> step meanwhile, since the list says the same. Select <UiLabel name={m.library_view_locate()} /> and choose your Zotero data folder, or select <UiLabel name={m.welcome_action_open_settings()} /> to set the location in settings. Your papers appear as soon as the folder is set.
+ZotLit looks for your library in the default Zotero profile. When it finds no database there, or the data folder you set holds none it can read, the list and the tree pane both say <UiLabel name={m.library_view_not_found()} />, the list in place of the filters, the search box, and the papers. The setup banner leaves out its <UiLabel name={m.welcome_step_connect_title()} /> step meanwhile, since the list says the same. Select <UiLabel name={m.library_view_locate()} /> and choose your Zotero data folder, or select <UiLabel name={m.welcome_action_open_settings()} /> to set the location in settings. Your papers appear as soon as the folder is set.
 
-![The Library View with a one-line Zotero not found warning in the tree pane, and the card "Zotero library not found" in place of the list, with Locate data folder and Open settings buttons](/img/how-to/library-view-not-found.webp)
+![The Library View with a one-line Zotero not found warning in the tree pane, and the card "Zotero not found" in place of the list, with Locate data folder and Open settings buttons](/img/how-to/library-view-not-found.webp)
 
 When ZotLit cannot find Zotero, it also shows the notice <UiLabel name={m.notice_db_not_found_on_device()} /> The notice has a <UiLabel name={m.notice_db_not_found_action()} /> button that opens the Library View. Only one such notice shows at a time. It does not show while a Library View is open, and it goes away once ZotLit reads your database again.
 

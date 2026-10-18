@@ -1084,7 +1084,10 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   // The tree part is one line; the list says the rest, once.
   expect(notFound("tree").textContent).toBe("Zotero not found");
   expect(notFound("tree").querySelectorAll("button")).toHaveLength(0);
-  expect(notFound("list").textContent).toContain("Zotero library not found");
+  // Both name it in the same words.
+  expect(notFound("list").querySelector('[role="heading"]')?.textContent).toBe(
+    "Zotero not found",
+  );
   // The list's card stands centred in the list, as an empty list does; the
   // tree's line stays at the top of the tree.
   expect(notFound("list").closest("[data-pane-state]")).not.toBeNull();
