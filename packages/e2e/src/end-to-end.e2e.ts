@@ -4609,6 +4609,15 @@ views:
         expected: "true",
       }),
     ).toBe(true);
+    // Obsidian takes the menu's keys a timer after it shows, and a timer
+    // queued now runs after that one: a menu closed before it would leave
+    // its keys behind, and Enter with them.
+    expect(
+      await obEval(
+        vaultId,
+        "new Promise((resolve)=>activeWindow.setTimeout(()=>resolve('shown'),0))",
+      ),
+    ).toBe("shown");
     await click(editEntry);
     expect(
       await obEvalUntil(
@@ -4618,6 +4627,13 @@ views:
       ),
     ).toBe(true);
     await typeText(", d");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.activeElement?.matches('[data-query-vault-chip-input]')&&activeDocument.activeElement.value)`,
+        { expected: "c, d" },
+      ),
+    ).toBe(true);
     await key("Enter");
     expect(
       await obEvalUntil(

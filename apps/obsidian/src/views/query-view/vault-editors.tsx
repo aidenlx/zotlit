@@ -33,7 +33,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { showMenuAtButton } from "@/lib/menu";
+import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
 import { clearSuggestHighlight } from "@/lib/obsidian-private/suggest-highlight";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -159,13 +159,18 @@ export interface ChipMenu {
  * Remove from list. A right click opens it at the pointer; the menu key or
  * Shift+F10, which report no pointer, open it under the item.
  *
- * @returns the menu, which a caller watches to tell its keys from the item's.
+ * A second request while the item's menu stands, as a right click can
+ * raise, opens no second menu over it.
+ *
+ * @returns the menu, which a caller watches to tell its keys from the
+ *   item's; none where the item's menu stands already.
  */
 export function openChipMenu(
   chip: HTMLElement,
   pointer: globalThis.MouseEvent | null,
   { item, edit, remove }: ChipMenu,
-): Menu {
+): Menu | null {
+  if (hasActiveMenu(chip)) return null;
   const menu = new Menu();
   if (edit)
     menu.addItem((entry) =>
@@ -619,12 +624,14 @@ function ListEditor({
     pointer: MouseEvent | null,
     at: number,
   ) => {
-    menuStands.current = true;
-    openChipMenu(chip, pointer?.nativeEvent ?? null, {
+    const menu = openChipMenu(chip, pointer?.nativeEvent ?? null, {
       item: draft.items[at] ?? "",
       edit: () => editChip(at),
       remove: () => remove(at),
-    }).onHide(() => {
+    });
+    if (!menu) return;
+    menuStands.current = true;
+    menu.onHide(() => {
       // The key that closes the menu reaches the pill after the menu has
       // gone, so the pill hears it as the menu's until the key is done.
       chip.ownerDocument.defaultView?.setTimeout(() => {
