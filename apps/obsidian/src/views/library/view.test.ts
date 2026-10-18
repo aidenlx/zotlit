@@ -762,6 +762,25 @@ it("lists the libraries in the Library Scope with their Collections, each counti
   ]);
 });
 
+it("draws a clock for Recent, a library for My Library, a group for a group library and a folder for a Collection, each as decoration", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  const icons = [
+    ...view.contentEl.querySelectorAll<HTMLElement>("[data-library-node]"),
+  ].map((node) => {
+    const icon = node.querySelector("[data-library-icon]");
+    return `${node.querySelector("[data-library-label]")!.textContent}: ${icon?.getAttribute("data-library-icon")} ${icon?.getAttribute("aria-hidden")}`;
+  });
+  expect(icons).toEqual([
+    "Recent: clock true",
+    "My Library: library true",
+    "Reading list: folder true",
+    "Thesis: folder true",
+    "Lab: users true",
+    "Thesis: folder true",
+  ]);
+});
+
 it("opens a Collection to its subcollections, each counted alone", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);
