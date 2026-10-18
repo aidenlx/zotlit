@@ -4534,11 +4534,20 @@ views:
       (properties) => properties["zt-status"] === "to-read",
     );
 
-    // A text cell edits its value in place.
+    // A text cell edits its value in place, its first line where it was at
+    // rest (#1531).
+    /** The top of the first line of the text cell, from the top of its row. */
+    const firstLine = `(function(){const el=${cell(tieFirst, "zt-status")};const row=el.closest('tr').getBoundingClientRect().top;const field=el.querySelector('[data-query-vault-editor] textarea');if(field){const style=getComputedStyle(field);return String(field.getBoundingClientRect().top+parseFloat(style.borderTopWidth)+parseFloat(style.paddingTop)-row);}const walker=activeDocument.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()?1:3});const text=walker.nextNode();const range=activeDocument.createRange();range.selectNodeContents(text);const rect=range.getClientRects()[0];return String(rect.top-(parseFloat(getComputedStyle(text.parentElement).lineHeight)-rect.height)/2-row);})()`;
+    const restLine = Number(await obEval(vaultId, firstLine));
     await click(cell(tieFirst, "zt-status"));
     expect(await obEvalUntil(vaultId, focusedInput, { expected: "true" })).toBe(
       true,
     );
+    const editLine = Number(await obEval(vaultId, firstLine));
+    expect(
+      Math.abs(editLine - restLine),
+      `first line ${restLine} at rest, ${editLine} editing`,
+    ).toBeLessThan(0.5);
     // The field's text, selected, is replaced by what is typed.
     await obEval(
       vaultId,
