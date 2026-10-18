@@ -3545,6 +3545,7 @@ function paperRow(
     publisher?: string;
     fileTypes?: string[];
     attachments?: string[];
+    itemType?: string;
   },
 ): QueryViewRow {
   return {
@@ -3574,6 +3575,7 @@ function paperRow(
       publisher: values.publisher ?? null,
       "attachments[].fileType": values.fileTypes ?? [],
       "attachments[].indexedKey": values.attachments ?? [],
+      ...(values.itemType !== undefined && { itemType: values.itemType }),
     },
   };
 }
@@ -3668,6 +3670,32 @@ it("draws each Item of a Papers view in two lines, its title and its creators, y
     ),
   ).toEqual([]);
   expect(cards(el)).toEqual([]);
+});
+
+it("starts a Papers row with the icon of its Item type, and a document for a type the map does not name", async () => {
+  const { view, el, settle } = await mount([
+    result([
+      paperRow("ITEMAAAA", { title: "A book", itemType: "book" }),
+      paperRow("ITEMBBBB", { title: "A thesis", itemType: "thesis" }),
+      paperRow("ITEMCCCC", { title: "Unknown", itemType: "someFutureType" }),
+    ]),
+  ]);
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const icons = [
+    ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+  ].map((node) => {
+    const icon = node.querySelector("[data-query-papers-icon]");
+    return [
+      icon?.getAttribute("data-query-papers-icon"),
+      icon?.getAttribute("aria-hidden"),
+    ];
+  });
+  expect(icons).toEqual([
+    ["book", "true"],
+    ["graduation-cap", "true"],
+    ["file", "true"],
+  ]);
 });
 
 it("ends a Papers row's second line with the reason its host gives for the row", async () => {
