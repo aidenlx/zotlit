@@ -296,10 +296,7 @@ function SearchBox({ search }: { search: LibrarySearch }) {
   const text = useStore(search.store, (s) => s.text);
   const label = useUniqueId();
   return (
-    <div
-      data-library-search=""
-      className="zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)"
-    >
+    <div data-library-search="">
       <span id={label} className="zt:sr-only">
         {m.library_view_search_label()}
       </span>

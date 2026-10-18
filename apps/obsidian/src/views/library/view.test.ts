@@ -924,6 +924,19 @@ it("names the tree and the facets for a screen reader, with no tooltip over them
   );
 });
 
+it("puts the tree toggle in the search box's row, so on Recent, with no header text, it takes no row of its own", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  expect(header(view)).toBeUndefined();
+  const toggle = view.contentEl.querySelector<HTMLElement>(
+    "[data-library-tree-toggle]",
+  )!;
+  const row = toggle.closest<HTMLElement>("[data-library-search-row]");
+  expect(row?.contains(searchBox(view))).toBe(true);
+  // A control, its name is its tooltip.
+  expect(toggle.getAttribute("aria-label")).toBe(m.library_view_show_tree());
+});
+
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
   const { deps, lose, locate, setupActions } = pluginData();
   lose();

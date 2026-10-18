@@ -387,6 +387,14 @@ export class LibraryTree extends Component {
     this.#mount(el, <ListHeader tree={this} search={search} />);
   }
 
+  /**
+   * Draw into `el` the button that shows the tree over a narrow pane. It
+   * hides on a pane wide enough to show the tree beside the list.
+   */
+  renderToggle(el: HTMLElement): void {
+    this.#mount(el, <TreeToggle tree={this} />);
+  }
+
   #mount(el: HTMLElement, content: ReactNode): void {
     const root = createRoot(el);
     root.render(content);
@@ -431,7 +439,6 @@ function ListHeader({
 }) {
   const libraries = useStore(tree.store, (s) => s.libraries);
   const node = useStore(tree.store, (s) => s.node);
-  const open = useStore(tree.store, (s) => s.open);
   const unread = useStore(tree.store, (s) => s.unread);
   const selection = nodeLabel(libraries, node);
   const summary = useSyncExternalStore(search.subscribe, () =>
@@ -448,20 +455,8 @@ function ListHeader({
   const text = summary ?? own;
   return (
     <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-(--size-2-2) zt:gap-y-(--size-2-1) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)">
-      {/* Obsidian's own rule shows a clickable icon, so the narrow pane
-          shows and hides a wrapper. */}
-      <span className="zt:flex zt:@xl:hidden">
-        <IconButton
-          icon="library"
-          data-library-tree-toggle=""
-          pressed={open}
-          {...tooltipAttrs(m.library_view_show_tree())}
-          onClick={() => tree.setOpen(!open)}
-        />
-      </span>
       {/* Obsidian styles a bare heading element; the header keeps the UI
-          type scale. While Zotero is not found, the toggle above stays, so
-          a narrow pane still opens the tree and its not-found part. */}
+          type scale. */}
       {text !== null && (
         <div
           role="heading"
@@ -480,6 +475,23 @@ function ListHeader({
         {summary ?? ""}
       </div>
     </div>
+  );
+}
+
+function TreeToggle({ tree }: { tree: LibraryTree }) {
+  const open = useStore(tree.store, (s) => s.open);
+  return (
+    // Obsidian's own rule shows a clickable icon, so the narrow pane shows
+    // and hides a wrapper.
+    <span className="zt:flex zt:@xl:hidden">
+      <IconButton
+        icon="library"
+        data-library-tree-toggle=""
+        pressed={open}
+        {...tooltipAttrs(m.library_view_show_tree())}
+        onClick={() => tree.setOpen(!open)}
+      />
+    </span>
   );
 }
 

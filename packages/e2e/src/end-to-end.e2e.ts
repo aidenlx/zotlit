@@ -1531,7 +1531,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
-  it("opens a new Library View on Recent, lists the Library Scope newest change first in rows of two lines at most, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
+  it("opens a new Library View on Recent, lists the Library Scope newest change first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -1643,6 +1643,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const opened = await shownWhen(listing(size([personal, shared])));
     expect(opened).toMatchObject({ recent: true, header: null });
     expectRecent(opened, [personal, shared], -1);
+    // On a pane too narrow for the tree beside the list, Recent's tree
+    // toggle sits beside the search box, not on a row of its own.
+    const narrowRow = JSON.parse(
+      await obEval(
+        vaultId,
+        `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const width=el.style.width;el.style.width='400px';try{const toggle=el.querySelector('[data-library-tree-toggle]');const input=el.querySelector('[data-library-search] input');const t=toggle.getBoundingClientRect();const i=input.getBoundingClientRect();return JSON.stringify({toggle:toggle.checkVisibility(),beside:t.top<i.bottom&&t.bottom>i.top&&t.right<=i.left});}finally{el.style.width=width;}})()`,
+      ),
+    );
+    expect(narrowRow).toEqual({ toggle: true, beside: true });
 
     // Another Library Scope changes what Recent lists.
     await obEval(
@@ -2987,7 +2996,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   }, 180000);
 
-  it("opens the Library View once on a fresh install, shows the Welcome View banner above it until dismissed, and says where Zotero's data folder is missing until it is set", async () => {
+  it("opens the Library View once on a fresh install, shows the Welcome View banner above it until dismissed, whose Search your library focuses the Library View's search box, and says where Zotero's data folder is missing until it is set", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
     const reload =
@@ -3093,6 +3102,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }),
       }),
     ).toBe(true);
+    // Search your library puts the cursor in the Library View's own search
+    // box, just under the banner.
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;press([...${banner}.querySelectorAll('button')].find(n=>n.textContent===${JSON.stringify(m.welcome_action_search())}),'Search your library');const input=el.querySelector('[data-library-search] input');await until('search box focused',()=>input.ownerDocument.activeElement===input);return String(!activeDocument.querySelector('.modal-container'));})()`,
+      ),
+    ).toBe("true");
     // A notice over the tab's corner would cover the dismiss control.
     await clearNotices(vaultId);
     await obEval(

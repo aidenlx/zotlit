@@ -318,7 +318,18 @@ export class LibraryView extends ItemView {
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
-    const searchEl = main.createDiv({ cls: hidden });
+    // The tree toggle shares the search box's row, so it never takes a row
+    // of its own, as it would above Recent, whose header has no text. While
+    // Zotero is not found the toggle stays, so a narrow pane still opens the
+    // tree and its not-found part; a wide pane, with no toggle, drops the row.
+    const searchRow = main.createDiv({
+      cls: "zt:flex zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2) zt:@xl:group-data-zotero-missing:hidden",
+      attr: { "data-library-search-row": "" },
+    });
+    const toggleEl = searchRow.createDiv({ cls: "zt:contents" });
+    const searchEl = searchRow.createDiv({
+      cls: `zt:min-w-0 zt:flex-1 ${hidden}`,
+    });
     const note = main.createDiv();
     const header = main.createDiv();
     const list = main.createDiv();
@@ -340,6 +351,7 @@ export class LibraryView extends ItemView {
     for (const part of this.#parts) part.load();
     this.tree.load();
     this.tree.render(treeEl.createDiv({ cls: hidden }));
+    this.tree.renderToggle(toggleEl);
     this.tree.renderHeader(header, this.search.header(this.query.state));
     this.search.load();
     this.search.render(searchEl);
