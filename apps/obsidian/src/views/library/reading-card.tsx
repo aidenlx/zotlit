@@ -387,34 +387,47 @@ function Part({
       data-library-card-part={name}
       className={cn("zt:flex zt:flex-col zt:gap-(--size-2-2)", className)}
     >
-      <h3 id={id} className={LABEL}>
+      {/* Obsidian's unlayered `h3` rule would outrank the label's size. */}
+      <div role="heading" aria-level={3} id={id} className={LABEL}>
         {label}
-      </h3>
+      </div>
       {children}
     </section>
   );
 }
 
 /** A list of fields: each label over its value. */
-function Fields({ fields, id }: { fields: readonly CardField[]; id?: string }) {
+function Fields({
+  fields,
+  id,
+  after,
+}: {
+  fields: readonly CardField[];
+  id?: string;
+  /** What follows a field's value on its line, such as a copy button. */
+  after?: (field: CardField) => ReactNode;
+}) {
   return (
     <dl id={id} className="zt:m-0 zt:grid zt:grid-cols-1 zt:gap-y-(--size-4-2)">
       {fields.map((field) => (
         <div key={field.name} data-library-card-fact={field.name}>
           <dt className={LABEL}>{field.label}</dt>
-          <dd className="zt:m-0 zt:text-(length:--font-ui-small) zt:break-words zt:whitespace-pre-line zt:select-text">
-            {field.href ? (
-              <a
-                className="external-link"
-                href={field.href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {field.text}
-              </a>
-            ) : (
-              field.text
-            )}
+          <dd className="zt:m-0 zt:flex zt:items-center zt:gap-1 zt:text-(length:--font-ui-small)">
+            <span className="zt:min-w-0 zt:break-words zt:whitespace-pre-line zt:select-text">
+              {field.href ? (
+                <a
+                  className="external-link"
+                  href={field.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {field.text}
+                </a>
+              ) : (
+                field.text
+              )}
+            </span>
+            {after?.(field)}
           </dd>
         </div>
       ))}
@@ -620,9 +633,17 @@ function CardBody({ card }: { card: ReadingCard }) {
           data-library-card-part="facts"
           className="zt:flex zt:flex-col zt:gap-(--size-4-2)"
         >
-          {item.facts.length > 0 && <Fields fields={item.facts} />}
-          {item.facts.some((fact) => fact.name === "citationKey") && (
-            <CopyCitationKey onCopy={() => void items.copyCitationKey(key)} />
+          {item.facts.length > 0 && (
+            <Fields
+              fields={item.facts}
+              after={(fact) =>
+                fact.name === "citationKey" && (
+                  <CopyCitationKey
+                    onCopy={() => void items.copyCitationKey(key)}
+                  />
+                )
+              }
+            />
           )}
           {item.fields.length > 0 && (
             <>
@@ -776,7 +797,7 @@ function CopyCitationKey({ onCopy }: { onCopy: () => void }) {
   return (
     <IconButton
       icon="copy"
-      className="zt:self-start"
+      className="zt:shrink-0"
       data-library-card-copy=""
       {...tooltipAttrs(m.library_view_card_copy_citation_key())}
       onClick={onCopy}
