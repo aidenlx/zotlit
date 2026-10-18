@@ -196,3 +196,26 @@ it("passes over a note in Reading view, which shows no editor, and says where it
     m.library_view_cite_no_note(),
   );
 });
+
+it("parts a dropped or inserted citation from the word before it with a space, and adds none at a line start", async () => {
+  const env = setup();
+  const draft = env.note("Draft.md");
+  env.activate(draft);
+  env.activate(env.library);
+  const view = draft.leaf.view as MarkdownView;
+  const target = (at: number) => ({ editor: view.editor, info: view, at });
+
+  // Dropped right after LEFT.
+  await env.actions.insertCitation(KEY, target(4));
+  expect(draft.text()).toBe("LEFT [@vaswani2017] RIGHT");
+  // Dropped at the start of the line.
+  await env.actions.insertCitation(KEY, target(0));
+  expect(draft.text()).toBe("[@vaswani2017]LEFT [@vaswani2017] RIGHT");
+  // Inserted at the cursor, at the end of the line.
+  const { cm } = view.editor;
+  cm.dispatch({ selection: { anchor: cm.state.doc.length } });
+  await env.actions.insertCitation(KEY);
+  expect(draft.text()).toBe(
+    "[@vaswani2017]LEFT [@vaswani2017] RIGHT [@vaswani2017]",
+  );
+});

@@ -107,8 +107,16 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         isCurrent: () => info.file === file && info.editor === editor,
       });
       const { doc, selection } = editor.cm.state;
+      const start = at ?? selection.main.from;
       const end = at ?? selection.main.to;
-      const next = doc.sliceString(end, end + 1);
+      // The characters around the insert, so the citation sticks to neither.
+      const around = {
+        previous:
+          start === doc.lineAt(start).from
+            ? ""
+            : doc.sliceString(start - 1, start),
+        next: doc.sliceString(end, end + 1),
+      };
       const item = await read(indexedKey);
       if (!item) return;
       const outcome = await resolveCitationInsert(deps, { item }, "main");
@@ -116,7 +124,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         deps.notify(outcome.message);
         return;
       }
-      insertion.commit(padCitationInsert(outcome.text, next).text);
+      insertion.commit(padCitationInsert(outcome.text, around).text);
     },
     copyCitationKey: async (indexedKey) => {
       const item = await read(indexedKey);
