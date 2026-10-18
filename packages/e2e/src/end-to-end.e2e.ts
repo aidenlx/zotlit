@@ -4548,13 +4548,23 @@ views:
       Math.abs(editLine - restLine),
       `first line ${restLine} at rest, ${editLine} editing`,
     ).toBeLessThan(0.5);
-    // The field's text, selected, is replaced by what is typed.
+    // The vault's values for the property show as the edit starts, before
+    // a key is typed, as in a Bases cell (#1531): those that match the text.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `[...activeDocument.querySelectorAll('.suggestion-container .suggestion-item')].map(item=>item.textContent).join('|')`,
+        { expected: "unread" },
+      ),
+    ).toBe(true);
+    // The field's text, selected, is replaced by what is typed; it matches
+    // vault values, and Shift+Enter keeps the text over the highlighted one.
     await obEval(
       vaultId,
       "(()=>{activeDocument.activeElement.select();return true;})()",
     );
     await typeText("read");
-    await key("Enter");
+    await key("Enter", ["shift"]);
     await frontmatterWhen(
       notePath(tieFirst),
       (properties) => properties["zt-status"] === "read",
