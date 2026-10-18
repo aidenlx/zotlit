@@ -13,7 +13,7 @@ Proposed on 2026-10-18 after the second interface review.
 ## Consequences
 
 - The Tag Selector lists the tags of the Items the node lists with no facet and no search, as the paper count reads them (ADR 0072). While tags are selected, it lists only the tags of the Items that have every selected tag, so a click never leads to an empty list. A selected tag always shows, highlighted, even where the node holds no Item with it.
-- The tags come from one grouped Items query by `tags[]` per node and selection, in the worker, as the paper counts do. The list shows tag names without counts, sorted by name, and the "Filter tags" box narrows the names it shows. It never changes the list of papers.
+- The tags come from one grouped Items query by `tags[].name` per node and selection, in the worker, as the paper counts do. The list shows tag names without counts, sorted by name, and the "Filter tags" box narrows the names it shows. It never changes the list of papers.
 - The selected tags stay when the researcher selects another node, as in Zotero. "Deselect all" in the Tag Selector clears them. The list header names the selected tags while any are selected, so a filter is never invisible.
-- A tag `tag:` token in the search box and a selected tag are two ways to write the same condition; neither rewrites the other.
+- A `tag:` token in the search box and a selected tag are two ways to write the same condition; neither rewrites the other.
 - Zotero's coloured tags and its "Display automatic" switch are left out for now: the Library View reads tag names only.
