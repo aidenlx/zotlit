@@ -51,6 +51,8 @@ export {
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export { planPath } from "./projection";
+export { projectedSortKey, type SortKey } from "./fields";
+export { compareScalars, compareStrings } from "./collation";
 export { errorValueText } from "./filter-values";
 export {
   errorCell,

@@ -14,6 +14,7 @@ import {
 } from "@/lib/__fixtures__/obsidian-host";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { SettingsService } from "@/services/settings/service";
+import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
@@ -103,6 +104,7 @@ async function openLibrary() {
     query: { run: () => Promise.resolve(EMPTY) },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
   // The view's text is the toolbar's, which the storage takes changes from.
   const toolbar = { text: (): string | null => null };

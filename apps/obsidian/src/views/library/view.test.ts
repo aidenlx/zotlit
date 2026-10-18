@@ -39,6 +39,7 @@ import type {
 import { selectorKey } from "@/services/library-scope/scope";
 import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
+import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
 
@@ -377,10 +378,12 @@ function pluginData(stored?: unknown) {
   const notes = new Set(NOTED);
   const notesChanged = createNanoEvents<{ changed: () => void }>();
   const literatureNotes = {
+    ...noLiteratureNotes(),
     find: (itemKey: string) =>
       notes.has(itemKey) ? { path: `${itemKey}.md`, basename: itemKey } : null,
-    on: (_event: "changed", listener: () => void) =>
-      notesChanged.on("changed", listener),
+    on: (event: "changed" | "frontmatter-changed", listener: () => void) =>
+      event === "changed" ? notesChanged.on("changed", listener) : () => {},
+    itemKeys: () => [...notes],
     open: vi.fn(),
   };
   const items = {

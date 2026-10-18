@@ -15,6 +15,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes, QueryFileDataset } from "./query-file";
 import { moved } from "./reorder";
 import {
@@ -23,10 +24,11 @@ import {
   resizedWidth,
   withColumnWidth,
 } from "./table-columns";
+import { useVaultVersion } from "./vault-cell";
 import "./table-header.css";
 import type { QueryView } from "./view";
 import { viewProperties } from "./view-properties";
-import type { ViewProperties } from "./view-properties";
+import type { PropertyEntry, ViewProperties } from "./view-properties";
 
 /** The cell classes the header shares with the rows under it. */
 export interface HeaderClasses {
@@ -207,6 +209,21 @@ const LABEL =
 const DROP_LINE =
   "table-drag-target mod-col zt-column-drop-line zt:start-(--zt-drop-x) zt:top-(--zt-drop-top) zt:h-(--zt-drop-height) zt:transition-all zt:duration-75 zt:ease-in";
 
+/**
+ * The text of a column's header: a vault property without a Display Name
+ * shows its name, as a Bases column shows a note property, since its icon
+ * already marks it as a property of the note.
+ */
+function headerLabel(property: PropertyEntry): string {
+  if (
+    property.displayName !== null ||
+    property.kind !== "vault" ||
+    property.path === LITERATURE_NOTE
+  )
+    return property.label;
+  return vaultName(property.path) ?? property.label;
+}
+
 /** The header row: one cell for each visible property, the Literature Note Property among them. */
 export function TableHeader({
   view,
@@ -229,6 +246,9 @@ export function TableHeader({
   const editable = view.canSave;
   // A host that keeps no column widths offers no resize.
   const resizable = editable && view.can.columnWidth;
+  // A vault column's icon follows the values its notes hold.
+  const { literatureNotes } = view.tableDeps;
+  useVaultVersion(literatureNotes);
   /** The drag on now; the Table that closes ends it. */
   const drag = useRef<AbortController | null>(null);
   useEffect(() => () => drag.current?.abort(), []);
@@ -508,6 +528,9 @@ export function TableHeader({
         <th className={gutter} />
         {columns.map((property, at) => {
           const width = sizes?.[property.path];
+          const icon = propertyIcon(dataset, property, (name) =>
+            literatureNotes.propertyType(name),
+          );
           return (
             <th
               key={property.path}
@@ -542,7 +565,8 @@ export function TableHeader({
               {property.issue === null ? (
                 <span className={LABEL}>
                   <Icon
-                    name={propertyIcon(dataset, property)}
+                    name={icon}
+                    data-query-icon={icon}
                     size="var(--icon-xs)"
                     className={cn(
                       "zt:flex zt:shrink-0",
@@ -556,7 +580,7 @@ export function TableHeader({
                       className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                     />
                   )}
-                  <span className="zt:truncate">{property.label}</span>
+                  <span className="zt:truncate">{headerLabel(property)}</span>
                 </span>
               ) : (
                 <span
@@ -569,7 +593,7 @@ export function TableHeader({
                     strokeWidth="var(--icon-xs-stroke-width)"
                     className="zt:shrink-0"
                   />
-                  <span className="zt:truncate">{property.label}</span>
+                  <span className="zt:truncate">{headerLabel(property)}</span>
                 </span>
               )}
               {resizable && (

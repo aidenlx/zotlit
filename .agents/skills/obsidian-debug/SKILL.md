@@ -141,6 +141,13 @@ event go nowhere while `activeElement` still moves; pass `--no-throttle`, which 
 the window lacks focus. Call `getCurrentWindow().focus()` first; when the user is working in
 another app, the window may not keep it, and the check waits for them.
 
+### Menus bind their keys late
+
+`Menu.showAtPosition` binds a menu's keys a `setTimeout(0)` after it shows. A
+menu closed before that timer fires leaves its keys bound, and they swallow
+the next Enter. Between seeing a menu and pressing one of its items, wait one
+timer; E2E cases evaluate `MENU_READY` from `packages/e2e/src/page-gestures.ts`.
+
 ### CodeMirror editors
 
 Reach an editor's `EditorView` from its content element: `el.querySelector('.cm-content').cmTile.root.view`.

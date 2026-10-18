@@ -49,6 +49,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
+import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -239,16 +240,6 @@ function useChooserList(): ChooserListState {
   const state = useContext(ChooserListContext);
   if (!state) throw new Error("Chooser.Item rendered outside a Chooser.List");
   return state;
-}
-
-/**
- * Whether a keystroke belongs to an in-flight IME composition. Obsidian's
- * keymap dispatcher offers no such guard, so every handler below asks for
- * itself — the spec makes that each handler's own job. `keyCode` 229 is the
- * composition keystroke an IME reports before `isComposing` turns true.
- */
-function composing(event: KeyboardEvent): boolean {
-  return event.isComposing || event.keyCode === 229;
 }
 
 /**

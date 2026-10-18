@@ -18,12 +18,9 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
-import {
-  parseQueryFile,
-  serializeQueryFile,
-  viewFilter,
-} from "@/views/query-view/query-file";
+import { serializeQueryFile } from "@/views/query-view/query-file";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotationView } from "./view";
@@ -250,6 +247,7 @@ async function openSidebar(
     excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },
     noteFeature: {},
     noteIndex: { getNotesByItemKey: () => [] },
+    literatureNotes: noLiteratureNotes(),
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
@@ -541,8 +539,8 @@ it("keeps the last cards under a note when a filter condition has an error", asy
     problems: [],
     source: {},
   });
-  const file = parseQueryFile(query);
-  const composed = viewFilter(file, file.views[0]!)!;
+  // The filter ZotLit Query runs: the file's filters, then the view's.
+  const composed = '(attachment == this.attachment) && (colorName == "yellow")';
   const from = composed.indexOf("colorName");
   const { view, settle } = await openSidebar(
     [PDF],

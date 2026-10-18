@@ -11,8 +11,9 @@ import type { LibrarySelector } from "@/services/library-scope/scope";
 import {
   parseQueryFile,
   serializeQueryFile,
-  viewFilter,
 } from "@/views/query-view/query-file";
+import type { QueryFile, QueryFileView } from "@/views/query-view/query-file";
+import { splitFilters } from "@/views/query-view/view-plan/filter-split";
 
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
@@ -26,6 +27,10 @@ import {
 } from "./document";
 import type { LibraryViewDocument } from "./document";
 import { searchTerms } from "./search";
+
+/** The filter ZotLit Query runs for a view that holds no vault condition. */
+const viewFilter = (file: QueryFile, view: QueryFileView) =>
+  splitFilters(file, view).engine(null)?.text;
 
 /** A document with a value other than the default in every field. */
 const CHAPTER: LibraryViewDocument = {

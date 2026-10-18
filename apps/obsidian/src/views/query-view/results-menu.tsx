@@ -13,6 +13,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { writeClipboardRichText } from "@/lib/clipboard";
 import { saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { themeHook } from "@/lib/theme-hooks";
@@ -109,7 +110,7 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
           if (valid) view.document.editView({ limit: value }, { typed: true });
         }}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.key !== "Enter") return;
+          if (composing(event) || event.key !== "Enter") return;
           event.preventDefault();
           close();
         }}

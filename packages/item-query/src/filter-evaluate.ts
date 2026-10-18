@@ -124,6 +124,13 @@ function valueOf<Item>(
         clock,
       );
     case "method": {
+      if (node.membership) {
+        return invoke(
+          node.membership,
+          { name: node.name, subject: null, args: node.args.map(value) },
+          clock,
+        );
+      }
       const subject = value(node.subject);
       const method = methodOf(typeOf(subject), node.name);
       // An Error Value answers only the methods of every value.

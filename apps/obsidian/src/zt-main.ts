@@ -471,6 +471,8 @@ export default class ZotLitPlugin extends Plugin {
         importProfile: services.importProfile,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
+        profile: services.profile,
+        template: services.template,
         zoteroPref: services.zoteroPref,
         zoteroReads: services.zoteroReads,
       }),

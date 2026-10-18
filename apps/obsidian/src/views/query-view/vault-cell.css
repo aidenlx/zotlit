@@ -1,0 +1,20 @@
+/* A vault cell of the Table edits in place, as a Bases cell does: the field,
+   and the read-only date field a cell shows at rest,
+   have no border, fill, radius or focus ring of their own, only the cell's edit
+   ring, and it takes the cell's text. Obsidian's rules for bare fields are
+   unlayered, so they outrank every `zt:` utility a field wears. This rule is
+   unlayered too, and `revert-layer` rolls the field back to the plugin's own
+   layers: the scoped preflight clears the browser's chrome and the
+   utilities in `vault-editors.tsx` draw it. Obsidian's rules for the date
+   picker's icon are on a pseudo-element, so they still place it.
+   @see ./toolbar-button.css */
+.zt-root [data-query-vault-cell] :is(input:not([type="checkbox"]), textarea) {
+  all: revert-layer;
+}
+
+/* The checkbox keeps Obsidian's own box, its indeterminate bar among it,
+   but not the space Obsidian leaves after it for a label: a Bases checkbox
+   cell centres the box alone. */
+.zt-root input[data-query-vault-checkbox] {
+  margin: 0;
+}

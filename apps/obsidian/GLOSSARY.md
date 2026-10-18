@@ -473,7 +473,7 @@ The Item, and the Attachment when there is one, that a Query View is relative to
 _Avoid_: current note, scope
 
 **Property**:
-One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or the Literature Note Property.
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or a Vault Property.
 _Avoid_: column, field (on the view side), attribute
 
 **Visible Properties**:
@@ -484,9 +484,17 @@ _Avoid_: columns (alone), fields, shown properties
 A property of a Query File that a Formula under its top-level `formulas` key yields, named `formula.<name>`, added, edited and removed from the Properties popover. It is shown and exported like any other property; a record on which its Formula gives an Error Value shows that error in its cell. On a view whose Query Dataset cannot read its Formula, it is a problem of that view's property; a filter that reads such a Formula is a problem of that condition too.
 _Avoid_: computed property, calculated property, formula column
 
+**Vault Property**:
+A property `vault.<name>` of a view of Items: the value of the frontmatter key `<name>` on the Item's Literature Note, which the vault answers rather than ZotLit Query ([ADR 0070](docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md)). A Query View held by a Literature Note reads that note for its own Item, whichever note the Note Index ranks first. A cell shows the value, an empty cell where the note lacks the key or holds null, or a "No note" placeholder where the Item has no Literature Note. Its type is the one Obsidian assigns the property in the Properties panel, else the one its values show as, else text; the Table edits it with that type's editor. The Literature Note Property is the first of them.
+_Avoid_: note property, frontmatter column
+
 **Literature Note Property**:
-The property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the other Visible Properties, which are also the columns of copy and CSV export. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
+The Vault Property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the Visible Properties that are no Vault Property. Copy and CSV export write every Visible Property but the Literature Note Property, each Vault Property with the value its note holds. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
 _Avoid_: note column, Literature note column (in code)
+
+**View Plan**:
+What a Query View sends ZotLit Query for one view, and what the vault answers apart from it: the request without any Vault Property, the Vault Properties it sorts by, its vault conditions (the top-level `and` conditions that read a Vault Property) planned against the Literature Notes into a list of Indexed Keys, and how the returned rows are sorted and cut to `limit`. It is made before ZotLit Query runs, so `limit` counts the rows the researcher sees ([ADR 0070](docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md)). A vault condition inside an `or` or `not` group, or one mixed with a Zotero field, keeps the view from running, marked at its condition.
+_Avoid_: query plan (ZotLit Query's own plan of a filter)
 
 **Display Name**:
 The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.

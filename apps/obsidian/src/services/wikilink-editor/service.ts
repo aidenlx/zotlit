@@ -125,6 +125,7 @@ export class WikilinkEditor extends Service<void> {
     // invalidation is coarse, so
     // every change redraws every open editor.
     stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
+    stack.defer(this.#noteIndex.on("indexed", () => this.#redraw()));
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
     // lands or goes stale — until then they keep native presentation.

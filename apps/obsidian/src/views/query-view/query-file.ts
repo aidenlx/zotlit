@@ -8,16 +8,8 @@
 import * as v from "valibot";
 import { parse, stringify } from "yaml";
 
-import {
-  composeFilterTree,
-  joinComposed,
-  readFilterTree,
-} from "@zotlit/filter-expression";
-import type {
-  ComposedFilter,
-  FilterLeaf,
-  FilterTree,
-} from "@zotlit/filter-expression";
+import { readFilterTree } from "@zotlit/filter-expression";
+import type { FilterTree } from "@zotlit/filter-expression";
 import { FORMULA_SEGMENT, nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
 
@@ -463,6 +455,31 @@ export function formulaName(property: string): string | null {
     : null;
 }
 
+/** The namespace of the vault properties: `vault.<name>`. */
+const VAULT_PREFIX = "vault.";
+
+/**
+ * The name after `vault.` of a vault property, as it is, which is the
+ * frontmatter key it reads; `null` for a path of another kind.
+ *
+ * @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
+ */
+export function vaultName(property: string): string | null {
+  return property.startsWith(VAULT_PREFIX)
+    ? property.slice(VAULT_PREFIX.length)
+    : null;
+}
+
+/** The path of the vault property that reads the frontmatter key `name`. */
+export function vaultProperty(name: string): string {
+  return `${VAULT_PREFIX}${name}`;
+}
+
+/** Whether `property` is a vault property, which ZotLit Query never reads. */
+export function isVaultProperty(property: string): boolean {
+  return vaultName(property) !== null;
+}
+
 /**
  * The file with the Formula `name` set to `text`: an existing one changes in
  * place, a new one goes after the others.
@@ -649,54 +666,6 @@ export interface FilterLocation {
 /** A condition of the filters, with the message the Match editor marks it with. */
 export interface ConditionIssue extends FilterLocation {
   readonly message: string;
-}
-
-/** The Filter Expression of one view's filters, with each condition's place. */
-function composeView(
-  file: QueryFile,
-  view: QueryFileView,
-): ComposedFilter<FilterLocation & FilterLeaf> | undefined {
-  const sections: [FilterTree, FilterSection][] = [];
-  if (
-    file.filters !== undefined &&
-    (view.from ?? "annotations") === allViewsDataset(file)
-  )
-    sections.push([file.filters, "all"]);
-  if (view.filters !== undefined) sections.push([view.filters, "view"]);
-  if (sections.length === 0) return undefined;
-  // Each section's leaves carry their section, so the joined text keeps it.
-  const parts = sections.map(([tree, section]) => {
-    const { text, leaves } = composeFilterTree(tree);
-    return { text, leaves: leaves.map((leaf) => ({ ...leaf, section })) };
-  });
-  return joinComposed(parts, " && ");
-}
-
-/**
- * The Filter Expression of one view: the filters for all views of its dataset
- * and the view's own filters, both of which must hold. `undefined` where
- * neither names one.
- */
-export function viewFilter(
-  file: QueryFile,
-  view: QueryFileView,
-): string | undefined {
-  return composeView(file, view)?.text;
-}
-
-/**
- * The condition that a fault at `span` of the view's Filter Expression marks,
- * or `null` when the span does not fall inside one condition.
- */
-export function locateFilterFault(
-  file: QueryFile,
-  view: QueryFileView,
-  span: { readonly from: number; readonly to: number },
-): FilterLocation | null {
-  const leaf = composeView(file, view)?.leaves.find(
-    ({ from, to }) => from <= span.from && span.to <= to,
-  );
-  return leaf ? { section: leaf.section, path: leaf.path } : null;
 }
 
 /**

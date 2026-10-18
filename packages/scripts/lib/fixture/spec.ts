@@ -142,6 +142,33 @@ export const FIXTURE_ITEM_FIELDS = [
 
 export type FixtureItemField = (typeof FIXTURE_ITEM_FIELDS)[number];
 
+/** A vault property value as frontmatter holds it; `null` is an empty key. */
+export type FixtureVaultValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly string[];
+
+/**
+ * The property types the Fixture Vault records in `.obsidian/types.json`:
+ * one property for every type a Bases table shows, set on the vault cells
+ * showcase notes through {@link FixtureItem.vaultProperties}.
+ */
+export const VAULT_PROPERTY_TYPES: Readonly<Record<string, string>> = {
+  status: "text",
+  note: "text",
+  related: "text",
+  done: "checkbox",
+  rating: "number",
+  finished: "date",
+  started: "datetime",
+  projects: "multitext",
+  collections: "multitext",
+  tags: "tags",
+  aliases: "aliases",
+};
+
 export interface FixtureItem {
   itemID: number;
   libraryID: number;
@@ -179,6 +206,12 @@ export interface FixtureItem {
    * `this` comes from its `zotero-key`.
    */
   literatureNoteQueryBlock?: boolean;
+  /**
+   * Vault properties the seeded Literature Note carries in its frontmatter,
+   * typed by {@link VAULT_PROPERTY_TYPES}, so the vault cells showcase shows
+   * a value of every type in a Base and in a Query File's Table side by side.
+   */
+  vaultProperties?: Readonly<Record<string, FixtureVaultValue>>;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -790,6 +823,19 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "bushAsWeMayThink1945",
     literatureNoteName: "bushAsWeMayThink1945",
+    vaultProperties: {
+      status: "read",
+      note: "Foundational essay on the memex and associative trails; argues for machines that extend human memory.",
+      related: "[[tools-for-thought]]",
+      done: true,
+      rating: 5,
+      finished: "2026-09-02",
+      started: "2026-08-30T09:15:00",
+      projects: ["memex", "thesis", "hypertext history"],
+      collections: ["Reading/Hypertext", "Thesis"],
+      tags: ["reading/done", "hci"],
+      aliases: ["Memex essay"],
+    },
     title: "As We May Think",
     venue: "The Atlantic Monthly",
     date: "1945",
@@ -805,6 +851,17 @@ export const ITEMS: readonly FixtureItem[] = [
     citationKey: "nelsonComplexInformation1965",
     literatureNoteName: "nelsonComplexInformation1965",
     literatureNoteCitations: ["bushAsWeMayThink1945"],
+    vaultProperties: {
+      status: "reading",
+      related: "[Xanadu](https://xanadu.com)",
+      done: false,
+      rating: 3.5,
+      started: "2026-10-01T20:00:00",
+      projects: [
+        "hypertext",
+        "a very long project name that should wrap or truncate",
+      ],
+    },
     title:
       "Complex information processing: a file structure for the complex, the changing and the indeterminate",
     venue: "Proceedings of the 1965 20th National Conference",
@@ -820,6 +877,15 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "garfieldCitationIndexes1955",
     literatureNoteName: "garfieldCitationIndexes1955",
+    vaultProperties: {
+      status: "read",
+      note: "Citation index proposal.",
+      done: true,
+      rating: 4,
+      finished: "2026-08-21",
+      projects: ["citations"],
+      tags: ["bibliometrics"],
+    },
     title:
       "Citation Indexes for Science: A New Dimension in Documentation through Association of Ideas",
     venue: "Science",
@@ -836,6 +902,11 @@ export const ITEMS: readonly FixtureItem[] = [
     citationKey: "smallCoCitationScientific1973",
     literatureNoteName: "smallCoCitationScientific1973",
     literatureNoteCitations: ["garfieldCitationIndexes1955"],
+    vaultProperties: {
+      status: "to-read",
+      done: false,
+      projects: ["citations", "thesis, ch. 3"],
+    },
     title:
       "Co-citation in the Scientific Literature: A New Measure of the Relationship between Two Documents",
     venue: "Journal of the American Society for Information Science",
@@ -851,6 +922,14 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "bookSection",
     citationKey: "luhmannCommunicatingSlipBoxes1981",
     literatureNoteName: "luhmannCommunicatingSlipBoxes1981",
+    vaultProperties: {
+      status: "unread",
+      related: "[[Memex (device)]]",
+      done: false,
+      rating: 5,
+      finished: "2026-07-14",
+      projects: ["zettelkasten", "thesis"],
+    },
     title: "Communicating with Slip Boxes: An Empirical Account",
     venue: "Öffentliche Meinung und sozialer Wandel",
     date: "1981",
@@ -866,6 +945,13 @@ export const ITEMS: readonly FixtureItem[] = [
     citationKey: "ahrensHowTakeSmartNotes2017",
     literatureNoteName: "ahrensHowTakeSmartNotes2017",
     literatureNoteCitations: ["luhmannCommunicatingSlipBoxes1981"],
+    vaultProperties: {
+      status: "reading",
+      done: false,
+      rating: 4,
+      projects: ["zettelkasten"],
+      tags: ["pkm"],
+    },
     title:
       "How to Take Smart Notes: One Simple Technique to Boost Writing, Learning and Thinking",
     venue: "Sönke Ahrens",
@@ -927,6 +1013,13 @@ export const ITEMS: readonly FixtureItem[] = [
       "nelsonComplexInformation1965",
       "ahrensHowTakeSmartNotes2017",
     ],
+    vaultProperties: {
+      status: null,
+      done: null,
+      rating: null,
+      finished: null,
+      projects: [],
+    },
     title: "How can we develop transformative tools for thought?",
     venue: "numinous.productions",
     date: "2019",

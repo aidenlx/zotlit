@@ -744,6 +744,50 @@ export function methodOf(
   return METHODS[type].get(name) ?? ANY_METHODS.get(name);
 }
 
+/** A literal that a Set holds as {@link equals} compares it: by `===`. */
+type Member = null | boolean | number | string;
+
+/** NaN is the one scalar where `===` and a Set disagree. */
+const isMember = (value: FilterValue): value is Member =>
+  value === null ||
+  typeof value === "boolean" ||
+  typeof value === "string" ||
+  (typeof value === "number" && !Number.isNaN(value));
+
+/** The tests of each membership method, given the lookup of the list. */
+const MEMBERSHIP: Readonly<
+  Record<
+    string,
+    (has: (value: FilterValue) => boolean) => FunctionDefinition["call"]
+  >
+> = {
+  contains:
+    (has) =>
+    (_subject, [value = null]) =>
+      has(value),
+  containsAny: (has) => (_subject, args) => candidates(args).some(has),
+  containsAll: (has) => (_subject, args) => candidates(args).every(has),
+};
+
+/**
+ * `contains`, `containsAny`, or `containsAll` of a list whose elements are
+ * these literals, with the Set of the elements built once: a test is then
+ * one lookup, not a scan of the list. Undefined for another method or when
+ * an element is not a scalar, such as a date, which compares by the Query
+ * Clock. A value that is not a scalar equals no scalar, so the Set answers
+ * it as the scan does.
+ */
+export function literalMembership(
+  name: string,
+  elements: readonly FilterValue[],
+): FunctionDefinition | undefined {
+  const test = Object.hasOwn(MEMBERSHIP, name) ? MEMBERSHIP[name] : undefined;
+  const method = METHODS.list.get(name);
+  if (!test || !method || !elements.every(isMember)) return undefined;
+  const members = new Set<FilterValue>(elements);
+  return { ...method, call: test((value) => members.has(value)) };
+}
+
 /** Every method `name`, with the value type it belongs to. */
 export function methodsNamed(
   name: string,

@@ -1,8 +1,15 @@
 import { TFile } from "obsidian";
-import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
+import type {
+  App,
+  CachedMetadata,
+  EventRef,
+  Plugin,
+  TAbstractFile,
+} from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, readProfileStamp } from "@/lib/profile-stamp";
@@ -24,11 +31,31 @@ const logger = getLogger("note-index");
 
 /** The metadata cache holds no entry for the file's path yet. */
 const UNREAD = Symbol("unread");
-type Reading = FileContributions | typeof UNREAD;
+/**
+ * What the metadata cache holds for a file: its Indexed Keys, and its
+ * frontmatter serialized, `null` for a file that is gone or not Markdown.
+ */
+interface Read {
+  contributions: FileContributions;
+  frontmatter: string | null;
+}
+/** A file that is gone or not Markdown: no keys, no frontmatter. */
+const NONE: Read = { contributions: EMPTY_CONTRIBUTIONS, frontmatter: null };
+type Reading = Read | typeof UNREAD;
 
 interface NoteIndexEvents {
-  /** The mapping of `file` changed; `null` once the Full Scan read the whole vault. */
-  changed: (file: TFile | null) => void;
+  /** A note's Indexed Key contribution changed: it was added, moved or removed. */
+  changed: (file: TFile) => void;
+  /**
+   * The frontmatter of a note the index tracks changed, in any key; also
+   * when the note joins or leaves the index by a frontmatter edit.
+   */
+  "frontmatter-changed": (file: TFile) => void;
+  /**
+   * The Full Scan has indexed the notes: what the index answered before it
+   * may have changed in any way, with no `changed` for each note.
+   */
+  indexed: () => void;
 }
 
 export interface NoteIndexOptions {
@@ -93,6 +120,8 @@ export class NoteIndex extends Service<void> {
   readonly #notesByItemKey = new Map<string, Set<TFile>>();
   readonly #notesByNoteKey = new Map<string, Set<TFile>>();
   readonly #contribByFile = new Map<TFile, FileContributions>();
+  /** The frontmatter of each tracked file as last seen, serialized, to tell a frontmatter edit from a body edit. */
+  readonly #frontmatterByFile = new Map<TFile, string>();
   /** Settles once the Full Scan has populated the index. */
   readonly #indexed = Promise.withResolvers<void>();
   #disposed = false;
@@ -148,6 +177,24 @@ export class NoteIndex extends Service<void> {
     return { literatureNotes, importedNotes };
   }
 
+  /**
+   * The frontmatter keys found across the Literature Notes, in locale order,
+   * but Obsidian's reserved keys and ZotLit's system keys: the names a vault
+   * property can take.
+   */
+  getPropertyNames(): string[] {
+    const names = new Set<string>();
+    for (const [file, contribution] of this.#contribByFile) {
+      if (contribution.itemKey === null || contribution.noteKey !== null)
+        continue;
+      const frontmatter =
+        this.#app.metadataCache.getFileCache(file)?.frontmatter;
+      for (const name of Object.keys(frontmatter ?? {}))
+        if (!NON_VAULT_PROPERTY_KEYS.has(name)) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }
+
   /** Indexed keys that currently have at least one Literature Note. */
   getIndexedItemKeys(): string[] {
     return [...this.#notesByItemKey.keys()];
@@ -180,21 +227,21 @@ export class NoteIndex extends Service<void> {
     stack.use(
       registerEvent(
         metadataCache.on("changed", (file, _data, cache) => {
-          if (isMarkdownFile(file)) this.#apply(file, fileContributions(cache));
+          if (isMarkdownFile(file)) this.#apply(file, this.#readCache(cache));
         }),
       ),
     );
     stack.use(
       registerEvent(
         metadataCache.on("deleted", (file) => {
-          this.#apply(file, EMPTY_CONTRIBUTIONS);
+          this.#apply(file, NONE);
         }),
       ),
     );
     stack.use(
       registerEvent(
         vault.on("delete", (file) => {
-          if (isMarkdownFile(file)) this.#apply(file, EMPTY_CONTRIBUTIONS);
+          if (isMarkdownFile(file)) this.#apply(file, NONE);
         }),
       ),
     );
@@ -213,7 +260,7 @@ export class NoteIndex extends Service<void> {
         vault.on("rename", (file) => {
           if (!(file instanceof TFile)) return;
           if (!isMarkdownFile(file)) {
-            this.#apply(file, EMPTY_CONTRIBUTIONS);
+            this.#apply(file, NONE);
             return;
           }
           if (this.#contribByFile.has(file))
@@ -286,41 +333,71 @@ export class NoteIndex extends Service<void> {
    * file contributes nothing.
    */
   #read(file: TFile): Reading {
-    if (!isMarkdownFile(file)) return EMPTY_CONTRIBUTIONS;
+    if (!isMarkdownFile(file)) return NONE;
     const cache = this.#app.metadataCache.getFileCache(file);
-    return cache ? fileContributions(cache) : UNREAD;
+    return cache ? this.#readCache(cache) : UNREAD;
   }
 
-  /** Settles the file's mappings to `reading` and reports a move as `changed`. */
-  #apply(file: TFile, reading: Reading): void {
-    if (this.#settle(file, reading)) this.#emitter.emit("changed", file);
+  /** What a Markdown file's cache entry, as the cache hands it over, holds. */
+  #readCache(cache: CachedMetadata): Read {
+    return {
+      contributions: fileContributions(cache),
+      frontmatter: serializeFrontmatter(cache),
+    };
   }
 
   /**
-   * The one step that changes the index. An {@link UNREAD} file keeps what
-   * the index holds for it, and the cache's next `changed` or `deleted`
-   * settles it.
-   * @returns false when nothing moved.
+   * Settles the file to `reading`, and reports a move of its keys as
+   * `changed`, then an edit of its frontmatter as `frontmatter-changed`.
    */
-  #settle(file: TFile, reading: Reading): boolean {
-    if (reading === UNREAD) return false;
-    const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
-    const diff = diffContributions(prev, reading);
-    if (diff.empty) return false;
-
-    this.#applyDiff(file, diff);
-    if (hasContributions(reading)) {
-      this.#contribByFile.set(file, reading);
-    } else {
-      this.#contribByFile.delete(file);
-    }
-    return true;
+  #apply(file: TFile, reading: Reading): void {
+    const settled = this.#settle(file, reading);
+    if (settled.moved) this.#emitter.emit("changed", file);
+    if (settled.frontmatter) this.#emitter.emit("frontmatter-changed", file);
   }
 
   /**
-   * Reads every note at once, then says `changed` for the whole index: a
-   * consumer that read the index before the scan reads it again. Every later
-   * mapping change arrives as `changed` for its file.
+   * The one step that changes the index: the file's keys, and the
+   * frontmatter of a tracked file as last seen. An {@link UNREAD} file keeps
+   * what the index holds for it, and the cache's next `changed` or `deleted`
+   * settles it.
+   * @returns whether the keys moved, and whether the frontmatter of a note
+   * the index tracks, or tracked until now, changed; a file that is gone
+   * reports no frontmatter edit.
+   */
+  #settle(
+    file: TFile,
+    reading: Reading,
+  ): { moved: boolean; frontmatter: boolean } {
+    if (reading === UNREAD) return { moved: false, frontmatter: false };
+    const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
+    const diff = diffContributions(prev, reading.contributions);
+    if (!diff.empty) {
+      this.#applyDiff(file, diff);
+      if (hasContributions(reading.contributions)) {
+        this.#contribByFile.set(file, reading.contributions);
+      } else {
+        this.#contribByFile.delete(file);
+      }
+    }
+
+    const before = this.#frontmatterByFile.get(file);
+    const after = reading.frontmatter;
+    const tracked = this.#contribByFile.has(file);
+    if (tracked && after !== null) this.#frontmatterByFile.set(file, after);
+    else this.#frontmatterByFile.delete(file);
+    return {
+      moved: !diff.empty,
+      frontmatter:
+        after !== null && (tracked || before !== undefined) && before !== after,
+    };
+  }
+
+  /**
+   * Reads every note at once, then says `indexed`: a consumer that read the
+   * index before the scan reads it again. It says no `changed` for each note;
+   * every later change arrives as `changed` or `frontmatter-changed` for its
+   * file.
    */
   #fullScan(): void {
     if (this.#disposed) return;
@@ -332,7 +409,7 @@ export class NoteIndex extends Service<void> {
 
     logger.debug("Note index scanned", { count: this.#contribByFile.size });
     this.#indexed.resolve();
-    this.#emitter.emit("changed", null);
+    this.#emitter.emit("indexed");
   }
 
   #applyDiff(file: TFile, diff: ContribDiff): void {
@@ -355,8 +432,13 @@ export class NoteIndex extends Service<void> {
     this.#notesByItemKey.clear();
     this.#notesByNoteKey.clear();
     this.#contribByFile.clear();
+    this.#frontmatterByFile.clear();
     this.#warnedDuplicatePaths.clear();
   }
+}
+
+function serializeFrontmatter(cache: CachedMetadata | null): string {
+  return JSON.stringify(cache?.frontmatter ?? null);
 }
 
 /** Most-recently-modified first; ties broken by path for stable ordering. */

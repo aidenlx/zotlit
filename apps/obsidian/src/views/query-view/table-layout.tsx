@@ -30,14 +30,16 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
-import { CellContent } from "./record-rows";
+import { CellContent, recordCells, searchFinds } from "./record-rows";
 import { NO_RESULTS } from "./results";
 import { TableHeader, sizedMark } from "./table-header";
-import type { LiteratureNotes } from "./table-notes";
+import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { zoteroReaderUri } from "./table-readers";
 import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
+import { VaultEditCell, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -454,31 +456,41 @@ const indent = (depth: number) =>
   ({ "--zt-indent": `calc(${depth - 1} * var(--size-4-5))` }) as CSSProperties;
 
 /**
- * A cell's height, padding and row line: the row height of a Bases table,
- * and Obsidian's table border, so a theme that restyles tables restyles it.
+ * A cell's height, padding and row line: one line at the row height of a
+ * Bases table, and Obsidian's table border, so a theme that restyles tables
+ * restyles it. Every row is one line, so no value makes a row taller.
  */
 const CELL =
-  "zt:h-7.5 zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1";
+  "zt:group/cell zt:h-(--bases-table-row-height) zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1 zt:whitespace-nowrap";
 /** The narrow first column that holds a row's expand button. */
 const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 /**
  * A cell of a column the researcher resized, marked `data-sized`: it takes
  * no room of its own, so the header's width holds the column, and what does
- * not fit is clipped, as in a Bases table. Text still wraps, so only a word
- * longer than the column is cut.
+ * not fit is clipped, as in a Bases table.
  */
 const CLIP =
   "zt:data-sized:max-w-0 zt:data-sized:overflow-hidden zt:data-sized:text-ellipsis";
 /**
- * The first column of properties. Text wraps in every column, so a long
- * title stays readable in full; the first column keeps a width a title
- * reads well in, from its header cell, where a width the researcher sets
- * replaces it, and the others stop at the width of a Bases column.
+ * The first column of properties. It keeps a width a title reads well in,
+ * from its header cell, where a width the researcher sets replaces it.
  */
 const FIRST = cn("zt:ps-1", CLIP);
 const FIRST_HEADER = cn(FIRST, "zt:min-w-48");
 /** A column after the first: a line parts it from the one before it. */
-const LATER = cn("zt:max-w-75 zt:border-s-(length:--border-width)", CLIP);
+const LATER = cn("zt:border-s-(length:--border-width)", CLIP);
+/**
+ * The line of a cell, which ends in an ellipsis: a column that is not sized
+ * stops at the width of a Bases column, or wider for the first, where a
+ * title reads; a sized one takes the width of its header.
+ */
+const LINE =
+  "zt:block zt:truncate zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+/**
+ * A vault cell: its own line clips its value, so the table cell lets the
+ * editor that opens over it grow down over the rows below.
+ */
+const VAULT = "zt:relative zt:p-0 zt:data-sized:overflow-visible";
 const ROW = "zt:hover:bg-(--table-row-background-hover)";
 /** A header cell, which stays at the top as the rows scroll under it. */
 const HEADER =
@@ -625,17 +637,20 @@ export function TableLayout({ view }: { view: QueryView }) {
   const columns = useMemo(() => properties?.visible ?? [], [properties]);
   const scroller = useRef<HTMLDivElement>(null);
   const sizes = useStore(view.state, (s) => s.view?.columnSize);
-  const visible = useMemo(
-    () =>
-      search === ""
-        ? rows
-        : rows.filter(({ row }) =>
-            columns.some(({ path }) =>
-              cellText(path, row.values[path]).toLowerCase().includes(search),
-            ),
-          ),
-    [rows, columns, search],
-  );
+  // The search reads the vault properties as the cells do, again on a
+  // change of the notes, as the List and Cards search them.
+  const vaultVersion = useVaultVersion(literatureNotes);
+  const visible = useMemo(() => {
+    void vaultVersion;
+    if (search === "") return rows;
+    const host = view.vaultHost();
+    return rows.filter(({ row }) =>
+      searchFinds(
+        recordCells(row, columns, { notes: literatureNotes, host }).cells,
+        search,
+      ),
+    );
+  }, [rows, columns, search, literatureNotes, view, vaultVersion]);
   if (rows.length === 0) return null;
   let group: string | null = null;
   return (
@@ -644,7 +659,7 @@ export function TableLayout({ view }: { view: QueryView }) {
       className="zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto"
     >
       <table
-        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--font-smaller)"
+        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)"
         data-query-table=""
       >
         {properties && (
@@ -692,6 +707,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 columns={columns}
                 sizes={sizes}
                 notes={literatureNotes}
+                host={view.vaultHost()}
                 expanded={expanded}
                 toggle={toggle}
                 readers={readers}
@@ -711,6 +727,7 @@ function ItemRow({
   columns,
   sizes,
   notes,
+  host,
   expanded,
   toggle,
   readers,
@@ -722,6 +739,8 @@ function ItemRow({
   /** The widths the researcher set, by property path. */
   sizes: ColumnSizes | undefined;
   notes: LiteratureNotes;
+  /** The note that holds the view, where a note holds it. */
+  host: VaultHost | null;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
   readers: TableReaders;
@@ -748,21 +767,40 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map(({ path, kind }, at) => {
-          const note = kind === "literatureNote";
+        {columns.map(({ path }, at) => {
+          const note = path === LITERATURE_NOTE;
+          const name = note ? null : vaultName(path);
+          const line = cn(LINE, at === 0 ? "zt:max-w-100" : "zt:max-w-75");
           return (
             <td
               key={path}
-              className={cn(CELL, at === 0 ? FIRST : LATER, note && "zt:py-0")}
+              className={cn(
+                CELL,
+                at === 0 ? FIRST : LATER,
+                note && "zt:py-0",
+                // A vault cell fills the cell, so the whole of it edits.
+                name !== null && VAULT,
+              )}
               data-sized={sizedMark(sizes, path)}
             >
               {note ? (
-                <NoteCell notes={notes} itemKey={record.key} />
-              ) : (
-                <CellContent
-                  value={record.values[path]}
-                  text={cellText(path, record.values[path])}
+                <span className={line}>
+                  <NoteCell notes={notes} itemKey={record.key} />
+                </span>
+              ) : name !== null ? (
+                <VaultEditCell
+                  notes={notes}
+                  itemKey={record.key}
+                  name={name}
+                  host={host}
                 />
+              ) : (
+                <span className={line}>
+                  <CellContent
+                    value={record.values[path]}
+                    text={cellText(path, record.values[path])}
+                  />
+                </span>
               )}
             </td>
           );
