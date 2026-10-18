@@ -523,7 +523,7 @@ The Layout of the Library View for Items, also open to any Query File: two lines
 _Avoid_: paper list, rich list
 
 **Reading Card**:
-The pane on the right of the Library View that shows the selected Item, read-only: its key facts with the other fields under "All fields", its abstract, where it sits in the Libraries and Collections, its tags, files and Zotero notes, and its Annotations as Annotation Cards (closed until opened), the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected, beside the list in a wide pane and over it in a narrow one.
+The pane on the right of the Library View that shows the selected Item, read-only, like the title page of a paper: its title, creators and Venue, its DOI and citation key, its abstract, where it sits in the Libraries and Collections, its tags, files and Zotero notes, the other fields under "All fields", and last a preview of its first two Annotations that opens into every Annotation Card, the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected, beside the list in a wide pane and over it in a narrow one.
 _Avoid_: detail pane, inspector, preview
 
 **Reading State**:
