@@ -66,7 +66,7 @@ import {
   waitFor,
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { PAGE, pickQueryView } from "./page-gestures.ts";
+import { MENU_READY, PAGE, pickQueryView } from "./page-gestures.ts";
 import { raiseWindow } from "./reader-gestures.ts";
 import {
   clearVault,
@@ -4639,15 +4639,7 @@ views:
         expected: "true",
       }),
     ).toBe(true);
-    // Obsidian takes the menu's keys a timer after it shows, and a timer
-    // queued now runs after that one: a menu closed before it would leave
-    // its keys behind, and Enter with them.
-    expect(
-      await obEval(
-        vaultId,
-        "new Promise((resolve)=>activeWindow.setTimeout(()=>resolve('shown'),0))",
-      ),
-    ).toBe("shown");
+    expect(await obEval(vaultId, MENU_READY)).toBe("ready");
     await click(editEntry);
     expect(
       await obEvalUntil(

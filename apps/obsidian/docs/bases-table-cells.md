@@ -343,7 +343,7 @@ The Properties panel (96977-96991) passes the identical shape: `{app, key, onCha
 - Row styling: `.suggestion-container.mod-property-value .suggestion-item { font-size: var(--font-ui-small); padding: var(--size-2-3) var(--size-4-2) }` (10181). Wikilink values render as `mod-complex` with a link or alias flair (97886).
 
 - **Chip menu**: right-clicking a pill opens a `Menu` with Edit (`pencil`), Copy, and Remove from list (warning). Edit swaps the pill for an inline field. There is no keyboard route: Shift+F10 or the menu key on a focused pill opens nothing.
-- **Gotcha**: `Menu.showAtPosition` registers the menu's keys a `setTimeout(0)` after it shows. A menu closed before that timer fires leaves its keys registered, and they swallow Enter. Test input that picks a menu item must wait one timer after the menu opens.
+- **Gotcha**: a `Menu` binds its keys a timer after it shows; the obsidian-debug skill's "Menus bind their keys late" has the wait.
 
 ## 5. Selection and keyboard navigation (summary, `q7` 166378-166973, 167229)
 
