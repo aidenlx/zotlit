@@ -65,7 +65,7 @@ The menu does not offer Obsidian's `tags`, `aliases`, and `cssclasses`, or the k
   <Step>
     ### Save or cancel
 
-    Press `Enter`, or select anywhere outside the cell, to save. Press `Escape` to cancel.
+    Press `Enter`, or select anywhere outside the cell, to save. Press `Tab` to save and move to the next property in the row. Press `Escape` to cancel.
 
   </Step>
 </Steps>
@@ -76,14 +76,16 @@ To clear a value, delete the text and save. The note keeps the property with an 
 
 The field follows the property type that Obsidian's Properties panel shows for the property:
 
-- A checkbox property toggles when you select it.
-- A list property shows its items as chips. Type an item and press `Enter` to add it. Select the cross on a chip to remove it.
+- A checkbox property toggles when you select it. A box with a dash means that the note has no value.
+- A list, tags, or aliases property shows its items in a row. Type an item and press `Enter` to add it. A comma stays part of the item. To remove an item, select its cross, or press `Backspace` in the empty field and then `Backspace` again. In a list, `Escape` keeps the items that you added.
 - A number property saves only a number.
-- A date property opens a date field.
+- A date property opens a date field, and a date and time property opens a date and time field.
+
+Text and list fields suggest the values that your notes already hold for the property.
 
 To change the field, change the property type in Obsidian's Properties panel. [Values that an edit writes](/docs/reference/query-file-format#vault-values) lists every type.
 
-A cell with a lock icon is read-only. Its tooltip reads <UiLabel name={m.query_view_vault_managed()} /> The note's [profile](/docs/concepts/profiles) writes this property on every update, such as `title` or `citekey`. To keep your own value, change its merge strategy in [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
+Some cells are read-only. When you point to one, a lock icon shows at its end. The icon's tooltip reads <UiLabel name={m.query_view_vault_managed()} /> The note's [profile](/docs/concepts/profiles) writes this property on every update, such as `title` or `citekey`. To keep your own value, change its merge strategy in [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
 
 ## Start tracking a paper without a note [#create]
 
@@ -150,8 +152,8 @@ Keep each condition on a vault property as its own row, in a group of <UiLabel n
 
 For a checkbox property, choose <UiLabel name={m.workbench_filter_op_is_true()} /> or <UiLabel name={m.workbench_filter_op_is_false()} />. The condition reads `vault["done"] == true` as an expression.
 
-<UiLabel name={m.query_view_search()} /> in the Table does not search vault
-properties. In the List and Cards layouts, it does.
+<UiLabel name={m.query_view_search()} /> also finds papers by the values of
+their vault properties, in the Table as in the List and Cards layouts.
 
 ## Use the same properties in Bases [#bases]
 

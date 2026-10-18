@@ -2,21 +2,26 @@
 // frontmatter key on the Item's Literature Note, an empty cell where the note
 // lacks the key or holds null, and a placeholder where the Item has no note
 // to read it from. A cell reads again when the note's frontmatter changes,
-// with no new run of the view's query. In the Table a cell edits in place
-// with the editor of the property's type; a key the note's Profile replaces
-// on each update stays read-only. On a row with no note, the commit of an
-// edit creates the note first; opening the editor creates nothing.
+// with no new run of the view's query. In the Table a cell looks and edits
+// as a Bases cell does, by the property's type: one line of text, a link, a
+// number at the end, a checkbox, a date in the locale's form, or a row of
+// items or tags, clipped at the cell's edge; an edit opens over the cell and
+// grows down over the rows below, so no row moves. A key the note's Profile
+// replaces on each update stays read-only. On a row with no note, the commit
+// of an edit creates the note first; opening the editor creates nothing.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import type { ReactNode } from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -28,6 +33,7 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { LIST_TYPES } from "./table-notes";
 import type {
   LiteratureNotes,
   VaultHost,
@@ -36,13 +42,17 @@ import type {
   VaultWrite,
 } from "./table-notes";
 import {
-  VaultChips,
+  FIELD,
+  PILL,
+  TAG,
   VaultEditor,
   draftOf,
   listItems,
   valueOf,
 } from "./vault-editors";
-import type { VaultDraft } from "./vault-editors";
+import type { VaultDraft, VaultEditEnd } from "./vault-editors";
+import { dateInputValue, linkOf, tagText } from "./vault-value";
+import "./vault-cell.css";
 
 /** The vault property `name` of the Item `itemKey`, and where it is read. */
 export interface VaultCellProps {
@@ -171,15 +181,13 @@ function unwrittenMessage(result: VaultWrite, name: string): string | null {
   }
 }
 
-/** One vault cell on screen. */
+/** One vault cell on screen in the List and Cards: its text. */
 export function VaultCellContent({ value }: { value: VaultValue }) {
   const state = vaultState(value);
   return (
     <span
       data-query-vault={state}
-      className={
-        state === "no-note" ? "zt:text-(--text-faint) zt:italic" : undefined
-      }
+      className={state === "no-note" ? "zt:text-(--text-faint)" : undefined}
     >
       {state === "no-note" ? m.query_view_vault_no_note() : vaultText(value)}
     </span>
@@ -194,13 +202,153 @@ export function VaultCell(props: VaultCellProps) {
 const logger = getLogger("QueryView");
 
 /**
- * The vault cell of `name` for the Item `itemKey` in the Table: the whole
- * cell is the target of an edit, by a click or by Enter or Space, with the
- * editor of the type its value takes where the note's Profile does not
- * replace the key; a click toggles a checkbox. Enter or focus leaving the
- * editor writes it, creating the note where the Item has none; Escape drops
- * it. The click stops at the cell, so the gesture of the row or the block
- * that holds the view does not run.
+ * The line a Table cell shows at rest: one line at the row's height, which
+ * clips what does not fit. A column the researcher sized takes its width
+ * from its header; another stops at the width of a Bases column.
+ */
+const REST =
+  "zt:flex zt:h-full zt:max-w-75 zt:min-w-0 zt:items-center zt:overflow-hidden zt:px-2 zt:whitespace-nowrap zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+
+/** What a Table cell shows of its value at rest, by the property's type. */
+function VaultPreview({
+  props: { notes, itemKey, host },
+  value,
+  type,
+  checkbox,
+  editing,
+}: {
+  props: VaultCellProps;
+  value: VaultValue;
+  type: VaultPropertyType;
+  /** The cell edits, so the line under the editor only holds its width. */
+  editing: boolean;
+  /** The checkbox of a note's checkbox property. */
+  checkbox: ReactNode;
+}): ReactNode {
+  const state = vaultState(value);
+  if (!value.note)
+    return (
+      <span
+        data-query-vault={state}
+        className="zt:truncate zt:text-(--text-faint)"
+      >
+        {m.query_view_vault_no_note()}
+      </span>
+    );
+  if (type === "checkbox") return checkbox;
+  const current = value.value;
+  if (LIST_TYPES.has(type)) {
+    const tags = type === "tags";
+    return (
+      <span
+        data-query-vault={state}
+        className="zt:flex zt:min-w-0 zt:items-center zt:gap-(--size-2-2)"
+      >
+        {listItems(current).map((item, at) => (
+          <span
+            // Items may repeat, so the place keys each.
+            key={at}
+            data-query-vault-chip={editing ? undefined : item}
+            className={cn(PILL, tags && TAG)}
+          >
+            {tags ? tagText(item) : item}
+          </span>
+        ))}
+      </span>
+    );
+  }
+  const text = vaultText(value);
+  const date =
+    type === "date" || type === "datetime" ? dateInputValue(type, text) : "";
+  if (date !== "")
+    // The read-only native field shows the date as the field that edits it
+    // does, and as a Bases cell does: in the system's form, with its icon.
+    return (
+      <input
+        data-query-vault={state}
+        data-query-vault-date=""
+        type={type === "date" ? "date" : "datetime-local"}
+        value={date}
+        // Inert rather than read-only, which would hide the field's icon:
+        // the cell takes the click and the keys, as for any other value.
+        inert
+        tabIndex={-1}
+        className={cn(
+          FIELD,
+          "zt:pointer-events-none zt:-ms-2 zt:ps-7 zt:tabular-nums",
+        )}
+      />
+    );
+  const link =
+    type === "text" && typeof current === "string" ? linkOf(current) : null;
+  if (link?.kind === "internal") {
+    const ref = { target: link.target, itemKey, host };
+    return (
+      <a
+        data-query-vault={state}
+        className="internal-link zt:truncate zt:data-unresolved:opacity-(--link-unresolved-opacity)"
+        href={link.target}
+        data-href={link.target}
+        data-unresolved={notes.resolves(ref) ? undefined : ""}
+        onClick={(event) => {
+          // The link opens its note; the cell does not enter edit.
+          event.preventDefault();
+          event.stopPropagation();
+          notes.openLink(ref, event.nativeEvent);
+        }}
+      >
+        {link.text}
+      </a>
+    );
+  }
+  if (link?.kind === "external")
+    return (
+      <a
+        data-query-vault={state}
+        className="external-link zt:truncate"
+        href={link.target}
+        target="_blank"
+        rel="noopener nofollow"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {link.text}
+      </a>
+    );
+  return (
+    <span
+      data-query-vault={state}
+      className={cn("zt:truncate", type === "number" && "zt:tabular-nums")}
+    >
+      {text}
+    </span>
+  );
+}
+
+/** The vault cell after or before `cell` in its row that takes an edit. */
+function neighbour(
+  cell: HTMLElement,
+  how: "next" | "previous",
+): HTMLElement | undefined {
+  const cells = [
+    ...(cell
+      .closest("tr")
+      ?.querySelectorAll<HTMLElement>("[data-query-vault-cell][tabindex]") ??
+      []),
+  ];
+  return cells[cells.indexOf(cell) + (how === "next" ? 1 : -1)];
+}
+
+/**
+ * The vault cell of `name` for the Item `itemKey` in the Table, which looks
+ * and edits as a Bases cell does. The whole cell is the target of an edit,
+ * by a click or by Enter or Space, where the note's Profile does not
+ * replace the key; a click toggles a checkbox. The editor opens over the
+ * cell in the Bases edit ring and grows down over the rows below, so no row
+ * moves. Enter, Tab or focus leaving the editor writes it, creating the
+ * note where the Item has none; Escape drops it. After Enter or Escape
+ * focus returns to the cell; Tab and Shift+Tab move it to the next or the
+ * previous vault cell of the row. The click stops at the cell, so the
+ * gesture of the row or the block that holds the view does not run.
  */
 export function VaultEditCell(props: VaultCellProps) {
   const { notes, itemKey, name, host } = props;
@@ -209,14 +357,21 @@ export function VaultEditCell(props: VaultCellProps) {
   const type = useVaultType(notes, name, current);
   const managed = useVaultManaged(props) && value.note;
   const [draft, setDraft] = useState<VaultDraft | null>(null);
-  // Set when Enter or Escape ends the edit, so the blur that follows the
-  // field leaving the page does not end it again.
+  // Set when a key ends the edit, so the blur that follows the field
+  // leaving the page does not end it again.
   const ended = useRef(false);
-  const input = useRef<HTMLInputElement>(null);
+  /** Where focus goes once the editor has left the page. */
+  const after = useRef<VaultEditEnd | null>(null);
+  const cell = useRef<HTMLDivElement>(null);
   const labelId = useUniqueId();
   const editing = draft !== null;
-  useEffect(() => {
-    if (editing) input.current?.focus();
+  useLayoutEffect(() => {
+    const how = after.current;
+    if (editing || how === null) return;
+    after.current = null;
+    const el = cell.current;
+    if (!el || how === "leave") return;
+    (how === "stay" ? el : (neighbour(el, how) ?? el)).focus();
   }, [editing]);
   // A row with no note edits too: the first write creates the note.
   const editable = !managed;
@@ -238,9 +393,10 @@ export function VaultEditCell(props: VaultCellProps) {
     ended.current = false;
     setDraft(draftOf(type, current));
   };
-  const end = (commit: boolean, edited: VaultDraft) => {
+  const end = (commit: boolean, edited: VaultDraft, how: VaultEditEnd) => {
     if (ended.current) return;
     ended.current = true;
+    after.current = how;
     setDraft(null);
     const next = valueOf(type, edited);
     // Text that is no value of the type, or the value unchanged, writes nothing.
@@ -254,9 +410,9 @@ export function VaultEditCell(props: VaultCellProps) {
   };
   const checkbox = type === "checkbox";
   // A checkbox of a note is its own control; any other cell is one.
-  const target = editable && draft === null && !(checkbox && value.note);
+  const target = editable && !editing && !(checkbox && value.note);
   const activate = () => {
-    if (!editable || draft !== null) return;
+    if (!editable || editing) return;
     // A checkbox of a row with no note toggles on, creating the note.
     if (!checkbox) begin();
     else if (!value.note) void write(true);
@@ -272,15 +428,23 @@ export function VaultEditCell(props: VaultCellProps) {
         {m.query_view_vault_edit({ name })}
       </span>
       <div
+        ref={cell}
         data-query-vault-cell=""
         data-query-vault-name={name}
-        // The cell fills the table cell, so an empty value is a target too.
+        data-query-vault-type={type}
+        // The cell fills the table cell, above its row line, so an empty
+        // value is a target too.
+        // An editable cell shows the Bases cell ring on hover and focus.
         className={cn(
-          "zt:flex zt:h-full zt:min-h-7.5 zt:w-full zt:min-w-0 zt:items-center zt:gap-1 zt:px-2 zt:py-1",
+          "zt:group/vault zt:relative zt:h-[calc(var(--bases-table-row-height)-var(--border-width))] zt:w-full zt:min-w-0 zt:outline-none",
+          editable &&
+            !editing &&
+            "zt:rounded-(--bases-table-cell-radius-active) zt:hover:z-1 zt:hover:shadow-(--bases-table-cell-shadow-active) zt:focus-visible:z-1 zt:focus-visible:shadow-(--bases-table-cell-shadow-active)",
           target && !checkbox && "zt:cursor-text",
         )}
         role={target ? "button" : undefined}
-        tabIndex={target ? 0 : undefined}
+        // Tab and Shift+Tab find an editable cell, its own too while it edits.
+        tabIndex={target ? 0 : editing ? -1 : undefined}
         aria-labelledby={target ? labelId : undefined}
         onClick={(event) => {
           event.stopPropagation();
@@ -293,58 +457,71 @@ export function VaultEditCell(props: VaultCellProps) {
           event.stopPropagation();
           activate();
         }}
-        // Focus that leaves the whole editor, from its field or a chip's
-        // remove button, ends the edit; focus that moves inside it does not.
+        // Focus that leaves the whole editor, from its field or a pill,
+        // ends the edit; focus that moves inside it does not.
         onBlur={(event) => {
           if (draft === null) return;
           if (event.currentTarget.contains(event.relatedTarget as Node | null))
             return;
-          end(true, draft);
+          end(true, draft, "leave");
         }}
       >
-        {draft === null ? (
-          <>
-            {!value.note ? (
-              <VaultCellContent value={value} />
-            ) : checkbox ? (
+        <div
+          className={cn(
+            REST,
+            type === "number" && "zt:justify-end",
+            checkbox && value.note && "zt:justify-center",
+            managed && "zt:group-hover/vault:pe-6",
+            editing && "zt:invisible",
+          )}
+          aria-hidden={editing || undefined}
+        >
+          <VaultPreview
+            props={props}
+            value={value}
+            type={type}
+            editing={editing}
+            checkbox={
               <input
                 data-query-vault-checkbox=""
                 type="checkbox"
-                className="task-list-item-checkbox zt:m-0"
                 aria-labelledby={labelId}
                 checked={current === true}
+                // A note that lacks the key, or holds no value, shows the
+                // indeterminate box, as Bases does; `false` is an empty box.
+                data-indeterminate={current == null ? "true" : undefined}
+                aria-checked={current == null ? "mixed" : current === true}
                 disabled={!editable}
                 onChange={() => void write(current !== true)}
               />
-            ) : type === "multitext" ? (
-              <span
-                data-query-vault={vaultState(value)}
-                className="zt:flex zt:min-w-0 zt:flex-wrap zt:gap-1"
-              >
-                <VaultChips items={listItems(current)} />
-              </span>
-            ) : (
-              <VaultCellContent value={value} />
-            )}
-            {managed && (
-              <span
-                data-query-vault-managed=""
-                className="zt:ms-auto zt:flex zt:shrink-0 zt:text-(--text-faint)"
-                {...tooltipAttrs(m.query_view_vault_managed())}
-              >
-                <Icon name="lock" size="var(--icon-xs)" />
-              </span>
-            )}
-          </>
-        ) : (
-          <VaultEditor
-            type={type}
-            labelId={labelId}
-            draft={draft}
-            onDraft={setDraft}
-            onEnd={end}
-            inputRef={input}
+            }
           />
+        </div>
+        {managed && (
+          // The lock keeps the read-only mark and its tooltip, and shows on
+          // hover, over the end of the cell, rather than taking a place.
+          <span
+            data-query-vault-managed=""
+            className="zt:invisible zt:absolute zt:inset-y-0 zt:end-0 zt:flex zt:items-center zt:px-2 zt:text-(--text-faint) zt:group-hover/vault:visible"
+            {...tooltipAttrs(m.query_view_vault_managed())}
+          >
+            <Icon name="lock" size="var(--icon-xs)" />
+          </span>
+        )}
+        {draft !== null && (
+          <div
+            data-query-vault-editor=""
+            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-full zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--background-primary) zt:shadow-(--bases-table-cell-shadow-focus)"
+          >
+            <VaultEditor
+              type={type}
+              labelId={labelId}
+              draft={draft}
+              onDraft={setDraft}
+              onEnd={end}
+              suggestions={() => notes.suggestions(name, type)}
+            />
+          </div>
         )}
       </div>
     </>

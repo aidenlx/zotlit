@@ -72,6 +72,8 @@ const VAULT_FIELD_TYPES: Record<VaultPropertyType, FilterField["type"]> = {
   // A date, or a date and time, compares as the text the frontmatter holds.
   date: "text",
   datetime: "text",
+  tags: "list",
+  aliases: "list",
 };
 
 /** The kind of the condition on the vault property at `path`. */

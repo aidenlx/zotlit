@@ -177,6 +177,19 @@ declare module "obsidian" {
      * 1.14.0. Optional so a build that drops it is a guarded branch.
      */
     getCachedFiles?(): string[];
+    /**
+     * Every text value, or text inside a list, the frontmatter property
+     * `key` holds across the vault, each once. Internal; verified against
+     * Obsidian 1.14.4. Read it only through
+     * `src/lib/obsidian-private/property-values.ts`.
+     */
+    getFrontmatterPropertyValuesForKey?(key: string): string[];
+    /**
+     * The vault's tags, `#`-prefixed, with the count of each. Internal;
+     * verified against Obsidian 1.14.4. Read it only through
+     * `src/lib/obsidian-private/property-values.ts`.
+     */
+    getTags?(): Record<string, number>;
   }
   interface App {
     /** Native view factories, verified against Obsidian 1.14.1. */

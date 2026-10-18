@@ -2008,6 +2008,8 @@ describe("the generated Obsidian vault", () => {
       "query-files/Lab overview.md",
       "query-files/Reading annotations.zotquery",
       "query-files/Reading list.zotquery",
+      "query-files/Vault cells.base",
+      "query-files/Vault cells.zotquery",
       "tools-for-thought.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
@@ -2019,6 +2021,33 @@ describe("the generated Obsidian vault", () => {
 
       expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
     }
+  });
+
+  // The vault cells showcase: the same vault properties in a Base and in a
+  // Query File's Table, side by side, for every type a Bases table shows.
+  it("seeds vault property values and their types on the showcase notes", async () => {
+    const bush = await readFile(
+      join(layout.vaultDir, "literatures", "bushAsWeMayThink1945.md"),
+      "utf-8",
+    );
+    const types = JSON.parse(
+      await readFile(join(layout.vaultDir, ".obsidian", "types.json"), "utf-8"),
+    ) as { types: Record<string, string> };
+
+    expect(bush).toContain(
+      'projects:\n  - "memex"\n  - "thesis"\n  - "hypertext history"\n',
+    );
+    expect(bush).toContain("done: true\n");
+    expect(bush).toContain('started: "2026-08-30T09:15:00"\n');
+    expect(types.types).toMatchObject({
+      projects: "multitext",
+      done: "checkbox",
+      rating: "number",
+      finished: "date",
+      started: "datetime",
+      tags: "tags",
+      aliases: "aliases",
+    });
   });
 
   it("cites every declared Citation Key somewhere in the vault", async () => {

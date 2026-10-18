@@ -6,7 +6,7 @@
 // that note for its own Item, whichever note the Note Index ranks first.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { Keymap } from "obsidian";
+import { Keymap, parseLinktext } from "obsidian";
 import type { App, TFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -18,6 +18,10 @@ import {
   assignedWidget,
   onTypesChanged,
 } from "@/lib/obsidian-private/metadata-type-manager";
+import {
+  propertyValues,
+  vaultTags,
+} from "@/lib/obsidian-private/property-values";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteFeature } from "@/services/note-feature/operations";
@@ -42,7 +46,16 @@ export type VaultPropertyType =
   | "number"
   | "checkbox"
   | "date"
-  | "datetime";
+  | "datetime"
+  | "tags"
+  | "aliases";
+
+/** The types whose value is a list of strings, shown as pills. */
+export const LIST_TYPES: ReadonlySet<VaultPropertyType> = new Set([
+  "multitext",
+  "tags",
+  "aliases",
+]);
 
 /** The assigned widgets a vault property takes as its type; others infer. */
 const ASSIGNABLE: ReadonlySet<string> = new Set<VaultPropertyType>([
@@ -52,6 +65,8 @@ const ASSIGNABLE: ReadonlySet<string> = new Set<VaultPropertyType>([
   "checkbox",
   "date",
   "datetime",
+  "tags",
+  "aliases",
 ]);
 
 /**
@@ -87,6 +102,16 @@ export interface VaultEdit {
   readonly name: string;
   readonly value: unknown;
   /** The note that holds the view, where a note holds it. */
+  readonly host: VaultHost | null;
+}
+
+/**
+ * The link text `target`, held in a vault property of the Item `itemKey`,
+ * which resolves from the note {@link LiteratureNotes.read} reads.
+ */
+export interface VaultLinkRef {
+  readonly target: string;
+  readonly itemKey: string;
   readonly host: VaultHost | null;
 }
 
@@ -139,6 +164,15 @@ export interface LiteratureNotes {
    * {@link managed} tells, is not written.
    */
   write(edit: VaultEdit): Promise<VaultWrite>;
+  /**
+   * The values the vault holds for the property `name`, each once, which an
+   * edit of it suggests: the vault's tags for a property of tags.
+   */
+  suggestions(name: string, type: VaultPropertyType): readonly string[];
+  /** Whether a link in a vault property reaches a note. */
+  resolves(link: VaultLinkRef): boolean;
+  /** Open a link in a vault property; a Cmd/Ctrl press opens a new tab. */
+  openLink(link: VaultLinkRef, event: MouseEvent): void;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
   open(note: LiteratureNoteLink, event: MouseEvent): void;
   /** Create the Item's Literature Note, as the usual creation does. */
@@ -323,6 +357,19 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       });
       return found === null ? "created" : "written";
     },
+    suggestions: (name, type) =>
+      type === "tags" ? vaultTags(deps.app) : propertyValues(deps.app, name),
+    resolves: ({ target, itemKey, host }) =>
+      deps.app.metadataCache.getFirstLinkpathDest(
+        parseLinktext(target).path,
+        pathOf(itemKey, host) ?? "",
+      ) !== null,
+    openLink: ({ target, itemKey, host }, event) =>
+      void deps.app.workspace.openLinkText(
+        target,
+        pathOf(itemKey, host) ?? "",
+        Keymap.isModEvent(event),
+      ),
     open: (note, event) =>
       void deps.app.workspace.openLinkText(
         note.path,

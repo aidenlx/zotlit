@@ -18,6 +18,8 @@ const VAULT_ICONS: Record<VaultPropertyType, string> = {
   checkbox: "check-square",
   date: "calendar",
   datetime: "clock",
+  tags: "tags",
+  aliases: "forward",
 };
 
 /**
