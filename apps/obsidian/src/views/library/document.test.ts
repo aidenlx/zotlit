@@ -141,6 +141,30 @@ describe("withNode", () => {
       sort: [{ property: "dateModified", direction: "DESC" }],
     });
   });
+
+  it("leaves Recent for a Collection with no sort where the sort is still Recent's own", () => {
+    const recent = withNode(CHAPTER, { kind: "recent" });
+    expect(withNode(recent, CHAPTER.node)).toEqual({ ...CHAPTER, sort: [] });
+  });
+
+  it("leaves Recent with the sort the researcher set there", () => {
+    const sort = [{ property: "title", direction: "ASC" }] as const;
+    const recent = { ...CHAPTER, node: { kind: "recent" }, sort } as const;
+    expect(withNode(recent, MY_LIBRARY)).toEqual({
+      ...CHAPTER,
+      node: MY_LIBRARY,
+      sort,
+    });
+  });
+
+  it("keeps a newest-change-first sort that the researcher set on a Collection", () => {
+    const sort = [{ property: "dateModified", direction: "DESC" }] as const;
+    expect(withNode({ ...CHAPTER, sort }, MY_LIBRARY)).toEqual({
+      ...CHAPTER,
+      node: MY_LIBRARY,
+      sort,
+    });
+  });
 });
 
 const LABELS = {

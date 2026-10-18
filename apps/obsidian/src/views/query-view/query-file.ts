@@ -62,6 +62,20 @@ export interface QueryFileSort {
   readonly direction: QueryFileDirection;
 }
 
+/** Whether `a` and `b` sort by the same properties, in the same directions. */
+export function sameSort(
+  a: readonly QueryFileSort[],
+  b: readonly QueryFileSort[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      ({ property, direction }, at) =>
+        property === b[at]!.property && direction === b[at]!.direction,
+    )
+  );
+}
+
 /**
  * Something in the file that the parser could not read. The file still opens;
  * the view says what is wrong.

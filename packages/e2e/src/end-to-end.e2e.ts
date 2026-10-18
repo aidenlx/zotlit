@@ -1494,7 +1494,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
-  it("opens a new Library View on Recent, lists the Library Scope newest change first with no reason on its rows, and sorts that way again when Recent is selected again", async () => {
+  it("opens a new Library View on Recent, lists the Library Scope newest change first with no reason on its rows, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -1589,8 +1589,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       count: string | null;
       rows: string[];
       states: (string | null)[];
+      /** The Sort button: whether it shows a sort as set, and its text. */
+      sort: { set: boolean; text: string | null };
     }
-    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];return JSON.stringify({phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),states:rows.map(n=>n.querySelector('[data-query-papers-state]')?.textContent??null)});})()`;
+    const readShown = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.query.settled;await view.tree.settled;const el=view.contentEl;const rows=[...el.querySelectorAll('[data-query-papers-row]')];const sort=el.querySelector('[data-query-toolbar="sort"]');return JSON.stringify({sort:{set:sort?.hasAttribute('data-active')??false,text:sort?.textContent??null},phase:view.query.state.getState().phase,header:el.querySelector('[data-library-header]')?.textContent??null,recent:[...el.querySelectorAll('[data-library-node]')].some(n=>JSON.parse(n.getAttribute('data-library-node'))[0]==='recent'&&n.getAttribute('aria-selected')==='true'),count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rows:rows.map(n=>n.getAttribute('data-query-papers-row')),states:rows.map(n=>n.querySelector('[data-query-papers-state]')?.textContent??null)});})()`;
     const shownWhen = (ready: (shown: Shown) => boolean) =>
       obReadUntil<Shown>(vaultId, readShown, {
         ready,
@@ -1653,12 +1655,84 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) => shown.recent && listing(size([personal]))(shown),
     );
     expectRecent(again, [personal], -1);
-    expect(
-      await obEvalUntil(
+    expect(again.sort).toEqual({ set: false, text: "Sort" });
+    const saved = (doc: object) =>
+      obEvalUntil(
         vaultId,
-        `JSON.stringify(${services}.settings.current['library.document']?.node)`,
-        { expected: JSON.stringify({ kind: "recent" }) },
-      ),
+        `JSON.stringify(${services}.settings.current['library.document'],['node','kind','library','type','path','sort','property','direction'])`,
+        { expected: JSON.stringify(doc) },
+      );
+    expect(
+      await saved({
+        node: { kind: "recent" },
+        sort: [{ property: "dateModified", direction: "DESC" }],
+      }),
+    ).toBe(true);
+
+    // Leaving Recent clears its own sort: the seed's "Shared key" Collection
+    // of My Library lists in the default order, newest change first, and the
+    // Sort button shows no sort set.
+    const sharedKey = COLLECTIONS.find(
+      (entry) =>
+        entry.libraryID === personal.libraryID && entry.key === "SHAREDCL",
+    )!;
+    const subtree = (collectionID: number): number[] => [
+      collectionID,
+      ...COLLECTIONS.filter(
+        (entry) => entry.parentCollectionID === collectionID,
+      ).flatMap((child) => subtree(child.collectionID)),
+    ];
+    const inSharedKey = new Set(subtree(sharedKey.collectionID));
+    const filed = ITEMS.filter(({ collectionIDs }) =>
+      collectionIDs.some((id) => inSharedKey.has(id)),
+    );
+    const expectFiled = (shown: Shown, direction: 1 | -1) => {
+      expect(shown.rows.toSorted()).toEqual(filed.map(indexedKey).toSorted());
+      expect(shown.rows.map((key) => modified.get(key))).toEqual(
+        filed
+          .map(({ dateModified }) => dateModified)
+          .toSorted((a, b) => direction * a.localeCompare(b)),
+      );
+    };
+    const sharedKeyNode = JSON.stringify(["personal", sharedKey.name]);
+    const sharedKeyPath = {
+      kind: "collection",
+      library: { type: "personal" },
+      path: [sharedKey.name],
+    };
+    await pressNode(sharedKeyNode, "Shared key");
+    const unsorted = await shownWhen(
+      (shown) => !shown.recent && listing(filed.length)(shown),
+    );
+    expect(unsorted.sort).toEqual({ set: false, text: "Sort" });
+    expectFiled(unsorted, -1);
+    expect(await saved({ node: sharedKeyPath, sort: [] })).toBe(true);
+
+    // A sort the researcher changed on Recent is theirs: it stays on the
+    // Collection, and the Sort button shows it as set.
+    await pressNode(JSON.stringify(["recent"]), "Recent");
+    await shownWhen(
+      (shown) => shown.recent && listing(size([personal]))(shown),
+    );
+    await inLibrary(
+      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');const select=await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]'));select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))",
+    );
+    const resorted = await shownWhen(
+      (shown) =>
+        shown.recent && shown.sort.set && listing(size([personal]))(shown),
+    );
+    expectRecent(resorted, [personal], 1);
+    await pressNode(sharedKeyNode, "Shared key");
+    const kept = await shownWhen(
+      (shown) => !shown.recent && listing(filed.length)(shown),
+    );
+    expect(kept.sort).toEqual({ set: true, text: "Sort1" });
+    expectFiled(kept, 1);
+    expect(
+      await saved({
+        node: sharedKeyPath,
+        sort: [{ property: "dateModified", direction: "ASC" }],
+      }),
     ).toBe(true);
   });
 

@@ -1071,7 +1071,7 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
 });
 
 it("marks the Sort button as set only for a sort other than the one the selected node writes", async () => {
-  const { deps } = pluginData();
+  const { deps, run, settings } = pluginData();
   const view = await openTab(deps);
   /** The Sort button: whether it shows a sort as set, and its text. */
   const sort = () => {
@@ -1095,14 +1095,46 @@ it("marks the Sort button as set only for a sort other than the one the selected
   expect(sort()).toEqual({ set: true, text: "Sort1" });
   await press(view, row(view, RECENT));
   expect(sort()).toEqual({ set: false, text: "Sort" });
-  // A Library writes no sort: Recent's sort stays, and now the researcher
-  // has it.
+  // Leaving Recent clears its own sort: the Library lists unsorted.
   await press(view, row(view, { kind: "library", library: LAB }));
-  expect(sort()).toEqual({ set: true, text: "Sort1" });
+  expect(sort()).toEqual({ set: false, text: "Sort" });
+  expect(listRuns(run).at(-1)).not.toHaveProperty("sort");
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    node: { kind: "library", library: LAB },
+    sort: [],
+  });
+});
+
+it("keeps a sort the researcher changed on Recent once they leave it", async () => {
+  const { deps, run, settings } = pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    view.query.document.editView({
+      sort: [{ property: "title", direction: "ASC" }],
+    });
+    await view.query.flush();
+    await view.query.settled;
+  });
+  await press(view, row(view, { kind: "library", library: LAB }));
+  expect(
+    view.contentEl
+      .querySelector('[data-query-toolbar="sort"]')!
+      .hasAttribute("data-active"),
+  ).toBe(true);
+  expect(listRuns(run).at(-1)!.sort).toEqual([
+    { field: "title", direction: "asc" },
+  ]);
+  await settings.flush();
+  expect(settings.current?.["library.document"]).toMatchObject({
+    node: { kind: "library", library: LAB },
+    sort: [{ property: "title", direction: "ASC" }],
+  });
 });
 
 it("marks the Sort button again on a switch between Recent and My Library that leaves the query text as it was", async () => {
-  const { deps, rescope } = pluginData();
+  // On My Library, newest change first is the researcher's sort.
+  const { deps, rescope } = pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   await act(async () => {
     rescope([LIBRARIES[0]!]);
@@ -1113,11 +1145,8 @@ it("marks the Sort button again on a switch between Recent and My Library that l
       .querySelector('[data-query-toolbar="sort"]')!
       .hasAttribute("data-active");
   const text = view.query.document.text;
-  expect(set()).toBe(false);
-  // My Library writes no sort, so Recent's sort is now the researcher's.
-  await press(view, row(view, { kind: "library", library: PERSONAL }));
-  expect(view.query.document.text).toBe(text);
   expect(set()).toBe(true);
+  // Recent writes that same sort itself.
   await press(view, row(view, RECENT));
   expect(view.query.document.text).toBe(text);
   expect(set()).toBe(false);

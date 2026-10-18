@@ -58,7 +58,7 @@ import { ListLayout } from "./list-layout";
 import { PAPERS_FIELDS, PapersLayout } from "./papers-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
-import { locateFilterFault, viewFilter } from "./query-file";
+import { locateFilterFault, sameSort, viewFilter } from "./query-file";
 import type {
   QueryFile,
   QueryFileDataset,
@@ -1503,20 +1503,6 @@ function SortButton({ view }: { view: QueryView }) {
         }
       />
     </ToolbarPopover>
-  );
-}
-
-/** Whether `a` and `b` sort by the same properties, in the same directions. */
-function sameSort(
-  a: readonly QueryFileSort[],
-  b: readonly QueryFileSort[],
-): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      ({ property, direction }, at) =>
-        property === b[at]!.property && direction === b[at]!.direction,
-    )
   );
 }
 

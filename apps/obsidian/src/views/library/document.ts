@@ -32,6 +32,7 @@ import type {
 } from "@/services/library-scope/scope";
 import {
   parseQueryFile,
+  sameSort,
   serializeQueryFile,
 } from "@/views/query-view/query-file";
 import type { QueryFileSort } from "@/views/query-view/query-file";
@@ -166,15 +167,18 @@ function nodeSort(node: LibraryNode): readonly QueryFileSort[] | null {
 }
 
 /**
- * `doc` with `node` selected in the tree. Recent writes its sort; a later
- * sort change stays until the researcher selects Recent again.
+ * `doc` with `node` selected in the tree. Recent writes its sort, and
+ * leaving it clears that sort, so the next node opens unsorted; a sort the
+ * researcher changed while on Recent is theirs and stays.
  */
 export function withNode(
   doc: LibraryViewDocument,
   node: LibraryNode,
 ): LibraryViewDocument {
-  const sort = nodeSort(node);
-  return sort ? { ...doc, node, sort } : { ...doc, node };
+  const left = nodeSort(doc.node);
+  const sort =
+    nodeSort(node) ?? (left && sameSort(doc.sort, left) ? [] : doc.sort);
+  return { ...doc, node, sort };
 }
 
 /**
