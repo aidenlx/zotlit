@@ -69,7 +69,7 @@ function connectedReadout(
  * changed to one that does not read. The Library View then says "Zotero not
  * found" in place of its tree and list.
  *
- * @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+ * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
  */
 export function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
   return (

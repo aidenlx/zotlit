@@ -5,7 +5,7 @@
 // sidebar's, and its buttons run the operations of the row menu.
 //
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
-// @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+// @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import { Component, Scope } from "obsidian";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useStore } from "zustand";

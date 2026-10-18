@@ -4,7 +4,7 @@
 // Indexed Keys it found in that order. Escape clears the search, and the
 // view lists the tree node again.
 //
-// @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+// @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
 import { Component } from "obsidian";
 import { useSyncExternalStore } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -111,7 +111,7 @@ export class LibrarySearch extends Component {
         if (this.store.getState().everywhere || this.onRecent) void this.run();
       }),
     );
-    // A changed database may rank other Items for the same words (ADR 0072).
+    // A changed database may rank other Items for the same words (ADR 0073).
     this.register(
       this.#deps.reads.on("changed", () => {
         if (searchTerms(this.store.getState().text).words !== "")

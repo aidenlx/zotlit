@@ -2,7 +2,7 @@
 // the Library View again, the held connection readout, and the notice of a
 // Zotero data directory this device does not have.
 //
-// @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+// @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
 import { ItemView } from "obsidian";
 import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
@@ -101,7 +101,7 @@ export async function openWelcomeView(
   view?.welcome.request();
 }
 
-/** The view type of the Welcome tab that ZotLit had before ADR 0076. */
+/** The view type of the Welcome tab that ZotLit had before ADR 0077. */
 const WELCOME_VIEW_TYPE = "zotlit-welcome";
 
 /**

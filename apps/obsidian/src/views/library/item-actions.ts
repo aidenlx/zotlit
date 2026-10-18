@@ -4,7 +4,7 @@
 // "Insert Markdown citation" command, and the `zotero://select` link of the
 // citation popover.
 //
-// @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+// @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";

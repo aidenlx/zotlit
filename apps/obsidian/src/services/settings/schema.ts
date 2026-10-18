@@ -215,13 +215,13 @@ export const schema = v.object({
    * What the Library View shows, as its Library View Document; `null` until
    * the view saves one, and a new view opens on the default. Kept as a plain
    * JSON object: the Library View Document module reads it field by field,
-   * so one field this build cannot read never resets the rest. ADR 0070.
+   * so one field this build cannot read never resets the rest. ADR 0071.
    */
   "library.document": v.nullable(v.record(v.string(), jsonValueSchema)),
 
   /**
    * The researcher dismissed the Welcome View banner above the Library View;
-   * the open-welcome command shows it again. ADR 0076.
+   * the open-welcome command shows it again. ADR 0077.
    */
   "welcome.dismissed": v.boolean(),
 

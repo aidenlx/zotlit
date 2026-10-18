@@ -5,8 +5,8 @@
 // again on every database change; a selection or a facet goes to the host,
 // which makes it the query of the list.
 //
-// @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
-// @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+// @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
+// @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
 import { Component } from "obsidian";
 import { Fragment, useSyncExternalStore } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";

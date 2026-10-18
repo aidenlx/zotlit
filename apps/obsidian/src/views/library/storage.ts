@@ -3,7 +3,7 @@
 // the one held here; plugin data is read once, as the tab opens, and never
 // again while a write waits.
 //
-// @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+// @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import type { SettingsService } from "@/services/settings/service";
 
 import {

@@ -164,7 +164,7 @@ export interface QueryViewHost {
    * Absent: the Library Scope in force. A change runs again through
    * {@link QueryView.contextChanged}.
    *
-   * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+   * @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
    */
   libraries?: () => LibraryScope;
   /**
@@ -172,16 +172,16 @@ export interface QueryViewHost {
    * Properties, as the Library View Document does. The view then offers no
    * other change: no other view, grouping, filter, limit, column width,
    * Display Name or Formula, which would show and then be gone on reopen,
-   * and no toolbar search beside its own (ADR 0072).
+   * and no toolbar search beside its own (ADR 0073).
    *
-   * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+   * @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
    */
   displayOnly?: boolean;
   /**
    * The Layout types the host offers, in the order its view menu lists them.
    * Absent: every Layout of the view's dataset.
    *
-   * @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
+   * @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
    */
   layouts?: readonly string[];
   /**
@@ -190,14 +190,14 @@ export interface QueryViewHost {
    * toolbar marks a sort or a limit as set only where the view's differs.
    * Absent: the host writes neither.
    *
-   * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+   * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
    */
   defaults?: () => QueryViewDefaults;
   /**
    * What a click, a double click, the context menu and a drag do on an Item
    * row of the Papers and Table Layouts. Absent: the rows take no gesture.
    *
-   * @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+   * @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
    */
   rows?: ItemRowGestures;
   /**
@@ -206,7 +206,7 @@ export interface QueryViewHost {
    * (#1532), such as "read 2 h ago in Obsidian". `null`: no reason. Absent:
    * no row gives one.
    *
-   * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+   * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
    */
   reason?: (row: QueryViewRow) => string | null;
   /**
@@ -226,7 +226,7 @@ export interface QueryViewHost {
    * The Indexed Keys in the order the rows show in, in place of the sort: the
    * Library View's ranked search. `null` or absent: the order of the query.
    *
-   * @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+   * @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
    */
   rank?: () => readonly string[] | null;
   /**
@@ -237,7 +237,7 @@ export interface QueryViewHost {
    * with their fields. A condition with another `key` runs again through
    * {@link QueryView.contextChanged}.
    *
-   * @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+   * @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
    */
   rowPass?: () => QueryRowPass | null;
 }
@@ -262,12 +262,12 @@ export interface QueryRowPass {
  * one, so no control shows a change that would be gone on reopen. Each
  * control reads its own flag here.
  *
- * @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+ * @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
  */
 export interface QueryViewCapabilities {
   /**
    * Add, configure, reorder and switch the file's views. Without it the view
-   * menu switches only the Layout of the view on screen (ADR 0074).
+   * menu switches only the Layout of the view on screen (ADR 0075).
    */
   readonly views: boolean;
   readonly group: boolean;
@@ -280,7 +280,7 @@ export interface QueryViewCapabilities {
   readonly propertyPages: boolean;
   /**
    * Find text in the rows on screen. A host with a search of its own, as
-   * the Library View's search box, takes it away (ADR 0072).
+   * the Library View's search box, takes it away (ADR 0073).
    */
   readonly search: boolean;
 }

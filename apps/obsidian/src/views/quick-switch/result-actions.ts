@@ -1,8 +1,8 @@
 // What choosing a quick switcher result does, by its key: open the Item's
 // Literature Note, or write it, and open the Item's PDF. A Library View row
-// answers the same keys through the same functions (ADR 0073).
+// answers the same keys through the same functions (ADR 0074).
 //
-// @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+// @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import { MarkdownView } from "obsidian";
 import type { App, PaneType, TFile } from "obsidian";
 

@@ -4,7 +4,7 @@
 // it, and a toolbar change or a tree selection saves back into it. The tab
 // reads Zotero's database only, so Zotero does not need to run.
 //
-// @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+// @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
@@ -71,7 +71,7 @@ export interface LibraryViewDeps extends QueryViewDeps {
   lookup: LibrarySearchDeps["lookup"];
   /** What a row does with its Item. */
   items: ItemActions;
-  /** The Welcome View banner above the tab, and its setup actions. ADR 0076. */
+  /** The Welcome View banner above the tab, and its setup actions. ADR 0077. */
   welcome: WelcomeBannerDeps;
 }
 
@@ -90,7 +90,7 @@ const OWN_KEYS =
 /**
  * How long a click on a row waits before it opens the Reading Card over a
  * narrow list, so the second click of a double click still lands on the row
- * (ADR 0073): the usual double-click time of macOS and Windows.
+ * (ADR 0074): the usual double-click time of macOS and Windows.
  */
 const DOUBLE_CLICK_MS = 500;
 
@@ -111,7 +111,7 @@ export class LibraryView extends ItemView {
   readonly search: LibrarySearch;
   /** The Reading Card of the selected row. */
   readonly card: ReadingCard;
-  /** The Welcome View banner above the tree and the list. ADR 0076. */
+  /** The Welcome View banner above the tree and the list. ADR 0077. */
   readonly welcome: WelcomeBanner;
   readonly #deps: LibraryViewDeps;
   readonly #storage: LibraryViewStorage;
@@ -445,11 +445,11 @@ export class LibraryView extends ItemView {
   }
 
   /**
-   * The row keys of the quick switcher (ADR 0073): ↑ and ↓ move the
+   * The row keys of the quick switcher (ADR 0074): ↑ and ↓ move the
    * selection; Enter opens the selected row's Literature Note, or writes it,
    * Mod+Enter in a new pane; Shift+Enter opens its PDF. Space opens the
    * selected row's Reading Card, which a narrow pane shows over the list
-   * (ADR 0070).
+   * (ADR 0071).
    */
   #registerRowKeys(): void {
     for (const [key, step] of [

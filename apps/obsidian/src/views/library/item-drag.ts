@@ -3,7 +3,7 @@
 // Annotation drag's own (`application/x-zotlit-annotation`); outside a note
 // it carries the Item's `zotero://select` link as text.
 //
-// @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+// @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import { nanoid } from "nanoid";
 import type { App } from "obsidian";
 import type { DragEvent } from "react";

@@ -3,7 +3,7 @@
 // the actions of, or drags the Item of a row. A Layout spreads `useItemRow` on each Item row; a host
 // without gestures leaves the rows as they are.
 //
-// @see apps/obsidian/docs/adr/0073-library-view-rows-act-as-quick-switcher-results.md
+// @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import { useSyncExternalStore } from "react";
 import type { DragEvent, FocusEvent, HTMLAttributes, MouseEvent } from "react";
 import type { StoreApi } from "zustand/vanilla";

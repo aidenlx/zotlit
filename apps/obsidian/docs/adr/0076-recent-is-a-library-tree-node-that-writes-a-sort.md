@@ -12,7 +12,7 @@ Proposed on 2026-10-17 with [#1550](https://github.com/aidenlx/zotlit/issues/155
 
 ## Consequences
 
-- The Library View Document gains a `recent` node kind; its derivation sets the sort and adds no filter; the row limit is the Library View's (ADR 0070).
+- The Library View Document gains a `recent` node kind; its derivation sets the sort and adds no filter; the row limit is the Library View's (ADR 0071).
 - While Recent is selected, the sort control shows the last-activity sort, and changing it selects nothing else in the tree.
 - Recent shows no paper count.
 - The quick switcher's empty query and Recent share one last-activity sort once #1532 lands.

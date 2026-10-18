@@ -428,7 +428,7 @@ function CompanionGuidance() {
  * The Welcome View as a banner above the Library View: exactly the sections
  * {@link bannerSections} names, and nothing while it names none.
  *
- * @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+ * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
  */
 export function Welcome() {
   const shown = useWelcomeStore((s) => bannerSections(s) !== null);

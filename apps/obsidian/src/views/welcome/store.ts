@@ -66,7 +66,7 @@ export interface BannerSections {
  * remains or the steps show.
  *
  * @returns `null` where the banner shows nothing.
- * @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+ * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
  */
 export function bannerSections(state: WelcomeState): BannerSections | null {
   if (state.dismissed && !state.migrationPending) return null;

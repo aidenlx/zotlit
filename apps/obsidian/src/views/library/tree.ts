@@ -3,7 +3,7 @@
 // facet and no search: a Collection counts the distinct Items of its subtree,
 // as `collections.within` selects them, so the tree and the list header agree.
 //
-// @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
+// @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
 import { parseIndexedKey } from "@zotlit/db";
 
 import type { QueryViewGroup } from "@/services/item-query/query-view";

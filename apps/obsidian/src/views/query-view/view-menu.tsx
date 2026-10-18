@@ -6,16 +6,16 @@
 // the popover, as Bases does; a right-click on the button opens it for the
 // view on screen.
 //
-// A host that keeps only the Layout of its one view (`displayOnly`, ADR 0070)
+// A host that keeps only the Layout of its one view (`displayOnly`, ADR 0071)
 // gets the menu as a Layout switch: a row per Layout the host offers, and no
-// view to add or configure (ADR 0074). Below them, a host that can write what
+// view to add or configure (ADR 0075). Below them, a host that can write what
 // it shows as a Query File offers "Save as query file".
 //
 // It stands on the Chooser, the one popover that filters as the user types
 // (ADR 0044).
 //
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
-// @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
+// @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
 import { useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 

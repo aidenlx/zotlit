@@ -2,7 +2,7 @@
 // words go to the worker search, ranked as the quick switcher ranks, and
 // each `tag:` token narrows to the Items with that tag.
 //
-// @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
+// @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
 import { regex } from "arkregex";
 
 /** A `tag:` token: a bare name, or a quoted one that may hold spaces. */

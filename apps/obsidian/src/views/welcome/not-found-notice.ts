@@ -3,7 +3,7 @@
 // the database reads again, and none shows while a Library View is open,
 // whose not-found card says the same and offers to locate the folder.
 //
-// @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+// @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
 
 /**
  * What changes the notice: the database found no data folder, read again,

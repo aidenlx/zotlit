@@ -12,10 +12,10 @@ import * as v from "valibot";
 // the Library View and its storage all call it, so the tree's counts and the
 // list are built one way.
 //
-// @see apps/obsidian/docs/adr/0070-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
-// @see apps/obsidian/docs/adr/0071-the-library-tree-writes-filters.md
-// @see apps/obsidian/docs/adr/0072-search-enters-the-library-view-as-an-ordered-key-set.md
-// @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+// @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+// @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
+// @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
+// @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
 import type { FilterTree } from "@zotlit/filter-expression";
 
 import type {
@@ -114,7 +114,7 @@ export type StoredLibraryViewDocument = {
  * reads `lastRead` and the Obsidian usage ledger (#1532, #1533), last
  * activity is the Item's last change in Zotero.
  *
- * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+ * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
  */
 export const RECENT_SORT: readonly QueryFileSort[] = Object.freeze([
   { property: "dateModified", direction: "DESC" },
@@ -185,7 +185,7 @@ export function withNode(
  * What the view writes itself while `node` is selected: the node's sort and
  * the row limit. The toolbar shows them as not set.
  *
- * @see apps/obsidian/docs/adr/0075-recent-is-a-library-tree-node-that-writes-a-sort.md
+ * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
  */
 export function libraryViewDefaults(node: LibraryNode): {
   sort: readonly QueryFileSort[];
@@ -398,7 +398,7 @@ export function paperCountRequest(library: LibrarySelector): QueryViewRequest {
 
 /**
  * How the header counts the unread Items of `node`: the request with no
- * facet or search beside Unread, as the paper count reads them (ADR 0071),
+ * facet or search beside Unread, as the paper count reads them (ADR 0072),
  * and the rows of its answer that the vault leaves unread. `null` for
  * Recent, which counts nothing.
  */
@@ -470,7 +470,7 @@ export function vaultPass(
  * `doc` with the Library of its tree node as a filter, since a Query File
  * tab reads every Library in the Library Scope. Recent, which reads the
  * Library Scope too, needs none. The search stays out; a Query File cannot
- * express it (ADR 0072).
+ * express it (ADR 0073).
  */
 export function libraryViewQueryFileText(
   doc: LibraryViewDocument,
@@ -499,7 +499,7 @@ export function libraryViewQueryFileText(
 /**
  * What "Save as query file" leaves out of `doc`, for the dialog to say: the
  * search, and the facets whose Literature Note check the vault answers after
- * the query. A Query File can hold neither (ADR 0072).
+ * the query. A Query File can hold neither (ADR 0073).
  */
 export function libraryViewQueryFileLeftOut(doc: LibraryViewDocument): {
   facets: ReadingStateFacet[];

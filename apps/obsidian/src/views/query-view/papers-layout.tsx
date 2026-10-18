@@ -4,7 +4,7 @@
 // Attachment and a mark for its Literature Note, and expands into the rows
 // the Table expands into.
 //
-// @see apps/obsidian/docs/adr/0074-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
+// @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
 import { Fragment, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 

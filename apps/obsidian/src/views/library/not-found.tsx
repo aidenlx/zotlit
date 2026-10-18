@@ -4,7 +4,7 @@
 // Where only a refresh failed, the list keeps the rows it read last under a
 // short note.
 //
-// @see apps/obsidian/docs/adr/0076-the-library-view-is-the-first-screen.md
+// @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
 import { Component } from "obsidian";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
