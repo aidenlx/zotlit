@@ -442,6 +442,11 @@ export class LibraryView extends ItemView {
   /** The row of the selected Item, while one shows. */
   #selectedRow(): HTMLElement | undefined {
     const { key } = this.selection.getState();
+    return key === null ? undefined : this.#rowOf(key);
+  }
+
+  /** The row of the Item `key`, while one shows. */
+  #rowOf(key: string): HTMLElement | undefined {
     return this.#rows().find(
       (row) => row.getAttribute(ITEM_ROW_ATTRIBUTE) === key,
     );
@@ -483,13 +488,19 @@ export class LibraryView extends ItemView {
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
     if (this.search.store.getState().text !== "") this.search.clear();
     if (node) this.#select(node);
-    // Show in Library asks for the Reading Card, as a click does.
-    this.selection.setState({ key: indexedKey, card: true });
     await this.searched;
     await this.query.settled;
-    const row = this.#selectedRow();
-    if (!row) return "not-listed";
-    this.#focus(row);
+    const listed = this.query.state
+      .getState()
+      .results?.rows.some((row) => row.indexedKey === indexedKey);
+    if (!listed) {
+      this.selection.setState({ key: null, card: false });
+      return "not-listed";
+    }
+    // Show in Library asks for the Reading Card, as a click does.
+    this.selection.setState({ key: indexedKey, card: true });
+    const row = this.#rowOf(indexedKey);
+    if (row) this.#focus(row);
     return "listed";
   }
 

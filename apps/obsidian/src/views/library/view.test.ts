@@ -1547,12 +1547,15 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
   }));
   change([...many, { key: "YYYYYYYY", libraryID: 1, collections: [] }]);
   const view = await openTab(deps);
-  let outcome: unknown;
-  await act(async () => {
-    outcome = await view.reveal("YYYYYYYY");
-  });
-  expect(outcome).toBe("not-listed");
-  expect(view.selection.getState().key).toBeNull();
+  // The second time the list already shows My Library, and runs nothing.
+  for (const _ of [1, 2]) {
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await view.reveal("YYYYYYYY");
+    });
+    expect(outcome).toBe("not-listed");
+    expect(view.selection.getState()).toEqual({ key: null, card: false });
+  }
 });
 
 it("shows an Item filed in no Collection in its Library", async () => {
