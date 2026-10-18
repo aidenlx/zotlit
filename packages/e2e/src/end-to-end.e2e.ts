@@ -3185,6 +3185,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           steps: [
             m.welcome_step_connect_title(),
             m.welcome_step_folder_title(),
+            m.welcome_step_library_title(),
+            m.welcome_keep_going_title(),
           ],
           companion: false,
         }),
