@@ -23,3 +23,4 @@ Proposed on 2026-10-17 with [#1544](https://github.com/aidenlx/zotlit/issues/154
 - The search text is saved after a 500 ms pause and on close. The command and the ribbon put the cursor in the search box; a tab restored at startup does not take it from the editor. Escape clears the box, and on an empty box goes on to the view.
 - The Query View's own toolbar search, a text filter of the rows on screen, is a second search behaviour beside this one; the Library View does not offer it: `QueryView.can` has a `search` flag that `displayOnly` turns off (settled in the #1543 review).
 - The key set is asked again whenever the database changes, not only when the text or the Libraries change, so a renamed Item joins or leaves the results like any other row.
+- While a search is on screen its rank orders the rows, also over a sort on a `vault.` property (ADR 0070), as it does over any other sort.
