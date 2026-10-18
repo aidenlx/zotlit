@@ -14,8 +14,14 @@ import {
   renderMatches,
 } from "obsidian";
 import type { App } from "obsidian";
-import { useEffect, useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type {
+  HTMLAttributes,
+  KeyboardEvent,
+  ReactNode,
+  Ref,
+  RefObject,
+} from "react";
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
@@ -193,13 +199,32 @@ function useValueSuggest(
 }
 
 /**
- * A field in a cell: no chrome of its own, only the cell's ring, in the
- * cell's text and padding, as a Bases cell edits; a date shows at rest in
- * one too. `vault-cell.css` rolls
- * Obsidian's own field rules back, so these utilities draw it.
+ * The box a line of a vault cell sits in, the same at rest and in every
+ * editor: the cell's padding at its start and end, and above and below the
+ * half of the row the line leaves, so a line of text is a row tall and
+ * its first line sits where a Bases cell shows it, and stays there when an
+ * edit opens and as text wraps below it. A row of chips takes the row's
+ * height as its line, and so no padding above it.
  */
-export const FIELD =
-  "zt:relative zt:block zt:w-full zt:min-w-0 zt:bg-transparent zt:px-2 zt:py-1 zt:text-(--text-normal) zt:outline-none";
+export const LINE =
+  "zt:px-2 zt:py-[calc((var(--bases-table-row-height)-1lh)/2)]";
+
+/** The line a row of chips flows on, at rest and in the editor alike. */
+export const CHIPS = cn(LINE, "zt:leading-(--bases-table-row-height)");
+
+/**
+ * A field in a cell: no chrome of its own, only the cell's ring, in the
+ * cell's text and {@link LINE}, as a Bases cell edits; a date shows at rest
+ * in one too. `vault-cell.css` rolls Obsidian's own field rules back, so
+ * these utilities draw it.
+ */
+export const FIELD = cn(
+  "zt:relative zt:block zt:w-full zt:min-w-0 zt:bg-transparent zt:text-(--text-normal) zt:outline-none",
+  LINE,
+);
+
+/** A field one line tall: a number, a date, or a date and time. */
+export const ONE_LINE = "zt:h-(--bases-table-row-height)";
 
 export interface VaultEditorProps {
   readonly type: VaultPropertyType;
@@ -308,10 +333,7 @@ function FieldEditor({
         type={type === "date" ? "date" : "datetime-local"}
         max={type === "date" ? "9999-12-31" : "9999-12-31T23:59:59"}
         // Obsidian places the picker's icon at the start of the field.
-        className={cn(
-          FIELD,
-          "zt:h-(--bases-table-row-height) zt:ps-7 zt:tabular-nums",
-        )}
+        className={cn(FIELD, ONE_LINE, "zt:ps-7 zt:tabular-nums")}
       />
     );
   return (
@@ -322,7 +344,7 @@ function FieldEditor({
       inputMode={type === "number" ? "decimal" : undefined}
       className={cn(
         FIELD,
-        "zt:h-(--bases-table-row-height)",
+        ONE_LINE,
         type === "number" && "zt:text-end zt:tabular-nums",
       )}
     />
@@ -410,12 +432,12 @@ function ListEditor({
     move();
   };
   return (
-    // The pills flow as inline boxes on lines a row tall, so the editor
-    // that grows over the rows below ends on a row's edge, never across the
-    // pills of the next row, and a pill sits where it sits at rest.
-    // A press on the space between them goes to the field.
+    // The pills flow as inline boxes on lines a row tall, as they do at
+    // rest, so the editor that grows over the rows below ends on a row's
+    // edge, never across the pills of the next row, and a pill sits where
+    // it sits at rest. A press on the space between them goes to the field.
     <div
-      className="zt:min-h-full zt:px-2 zt:leading-(--bases-table-row-height) zt:whitespace-normal"
+      className={cn(CHIPS, "zt:whitespace-normal")}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
         event.preventDefault();
@@ -423,26 +445,18 @@ function ListEditor({
       }}
     >
       {draft.items.map((item, at) => (
-        <span
+        <VaultChip
           // Items may repeat, so the place keys each.
           key={at}
-          ref={(el) => {
+          item={item}
+          tags={type === "tags"}
+          chipRef={(el) => {
             pills.current[at] = el;
           }}
           tabIndex={-1}
           data-query-vault-chip={item}
-          className={cn(
-            PILL,
-            "zt:me-(--size-2-2) zt:inline-flex",
-            type === "tags" && TAG,
-          )}
           onKeyDown={(event) => onPillKey(event, at)}
         >
-          {/* An item too long for the column truncates before its x, as it
-              does at rest, so a pill stays one line and a row tall. */}
-          <span className="zt:min-w-0 zt:truncate">
-            {type === "tags" ? tagText(item) : item}
-          </span>
           {/* Bare rather than an `IconButton`: Obsidian's `clickable-icon`
               box would pad the x past the line and make the chip taller in
               the editor than at rest. The x is as tall as the text, so the
@@ -464,7 +478,7 @@ function ListEditor({
           >
             <Icon name="x" size="1em" />
           </span>
-        </span>
+        </VaultChip>
       ))}
       <input
         data-query-vault-input=""
@@ -489,11 +503,68 @@ function ListEditor({
  * One item of a list, with a ring when the keyboard is on it. A Bases list
  * cell parts its items by the gap alone, so "thesis hypertext history" reads
  * as one run of words; each item here is a quiet chip of its own, at rest and
- * in the editor alike. A tag takes {@link TAG} over it instead.
+ * in the editor alike, on the line of {@link CHIPS}. A tag takes {@link TAG}
+ * over it instead.
  */
 export const PILL =
-  "zt:flex zt:max-w-full zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:bg-(--background-modifier-hover) zt:px-(--size-2-2) zt:py-px zt:leading-(--line-height-tight) zt:outline-none zt:focus-visible:ring-1 zt:focus-visible:ring-(--background-modifier-border-focus)";
+  "zt:me-(--size-2-2) zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-(--size-2-1) zt:rounded-(--radius-s) zt:bg-(--background-modifier-hover) zt:px-(--size-2-2) zt:py-px zt:leading-(--line-height-tight) zt:outline-none zt:focus-visible:ring-1 zt:focus-visible:ring-(--background-modifier-border-focus)";
 
 /** A tag: Obsidian's tag colours, as a Bases tag cell shows it. */
 export const TAG =
   "zt:border-(length:--tag-border-width) zt:border-(--tag-border-color) zt:bg-(--tag-background) zt:px-(--tag-padding-x) zt:py-(--tag-padding-y) zt:leading-none zt:font-(--tag-weight) zt:text-(color:--tag-color) zt:hover:bg-(--tag-background-hover) zt:rounded-(--tag-radius)";
+
+/** Whether the text of `el` is wider than the box that clips it. */
+function useTruncated(el: RefObject<HTMLElement | null>, text: string) {
+  const [truncated, setTruncated] = useState(false);
+  useEffect(() => {
+    const label = el.current;
+    // The observer of the window the cell stands in, which a popout changes.
+    const Observer = label?.ownerDocument.defaultView?.ResizeObserver;
+    if (!label || !Observer) return;
+    const observer = new Observer(() =>
+      setTruncated(label.scrollWidth > label.clientWidth),
+    );
+    observer.observe(label);
+    return () => observer.disconnect();
+  }, [el, text]);
+  return truncated;
+}
+
+/**
+ * An item of a list as a chip, at rest and in the editor alike. An item too
+ * long for the column truncates with an ellipsis, before the x of the
+ * editor, so a chip stays one line; a truncated chip shows the whole item
+ * as its tooltip.
+ */
+export function VaultChip({
+  item,
+  tags,
+  chipRef,
+  children,
+  ...attrs
+}: {
+  readonly item: string;
+  readonly tags: boolean;
+  readonly chipRef?: Ref<HTMLSpanElement>;
+  /** What follows the item in the chip: the editor's x. */
+  readonly children?: ReactNode;
+} & Omit<HTMLAttributes<HTMLSpanElement>, "className" | "children"> & {
+    readonly "data-query-vault-chip"?: string;
+  }) {
+  const label = useRef<HTMLSpanElement>(null);
+  const text = tags ? tagText(item) : item;
+  const truncated = useTruncated(label, text);
+  return (
+    <span
+      {...attrs}
+      ref={chipRef}
+      className={cn(PILL, tags && TAG)}
+      {...(truncated ? tooltipAttrs(text) : {})}
+    >
+      <span ref={label} className="zt:min-w-0 zt:truncate">
+        {text}
+      </span>
+      {children}
+    </span>
+  );
+}
