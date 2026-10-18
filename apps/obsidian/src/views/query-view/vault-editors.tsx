@@ -15,7 +15,7 @@ import {
   prepareFuzzySearch,
   renderMatches,
 } from "obsidian";
-import type { App } from "obsidian";
+import type { App, SearchMatchPart, SearchResult } from "obsidian";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   HTMLAttributes,
@@ -232,26 +232,79 @@ function asksForMenu(event: KeyboardEvent): boolean {
 }
 
 /**
+ * How a Bases cell matches a property value to the typed text, as Obsidian
+ * 1.14.4's property value suggest does (its `getSuggestions`, read from
+ * `app.js`): the text whole, case aside, wherever it stands in the value;
+ * the fewer places, the earlier the first, and the shorter the value, the
+ * better. Unlike `prepareSimpleSearch`, which matches each word apart, a
+ * space is part of the text.
+ */
+function valueMatch(query: string): (value: string) => SearchResult | null {
+  const needle = query.toLowerCase();
+  return (value) => {
+    const text = value.toLowerCase();
+    const matches: SearchMatchPart[] = [];
+    for (
+      let at = text.indexOf(needle);
+      at !== -1;
+      at = text.indexOf(needle, at + needle.length + 1)
+    )
+      matches.push([at, at + needle.length]);
+    const first = matches[0]?.[0];
+    const end = matches.at(-1)?.[1];
+    if (first === undefined || end === undefined) return null;
+    const score =
+      -(matches.length - 1) -
+      (end - first + 1 - needle.length) / 100 -
+      first / 1000 -
+      text.length / 10_000;
+    return { score, matches };
+  };
+}
+
+/**
+ * How a Bases cell matches a tag to the typed text, as Obsidian's tag
+ * suggest does: a fuzzy match, case aside.
+ */
+function tagMatch(query: string): (tag: string) => SearchResult | null {
+  const search = prepareFuzzySearch(query.toLowerCase());
+  return (tag) => search(tag.toLowerCase());
+}
+
+/** The match of the typed text to a value, or to a tag. */
+const matchFor = (query: string, tags: boolean) =>
+  tags ? tagMatch(query) : valueMatch(query);
+
+/**
  * The values to suggest for `query`, less those in `taken`, as a Bases cell
  * suggests them: every value, in order, before a key is typed; then those
- * that match it, the best match first. The typed text itself is no
- * suggestion: Shift+Enter keeps it.
+ * that match it, the best match first, a tag by a fuzzy match and any other
+ * value by the text whole. The typed text itself is no suggestion:
+ * Shift+Enter keeps it.
  */
 export function suggestionsFor(
   values: readonly string[],
   query: string,
-  taken: readonly string[] = [],
+  {
+    taken = [],
+    tags = false,
+  }: {
+    /** The values the list holds already, which are no addition. */
+    readonly taken?: readonly string[];
+    /** Whether the values are tags. */
+    readonly tags?: boolean;
+  } = {},
 ): string[] {
   const listed = [...new Set(values)]
     .filter((value) => !taken.includes(value))
     .sort(byName);
   const text = query.trim();
   if (text === "") return listed;
-  const search = prepareFuzzySearch(text);
+  const match = matchFor(text, tags);
   return listed
     .flatMap((value) => {
-      const match = search(value);
-      return match ? [{ value, score: match.score }] : [];
+      const found = match(value);
+      return found ? [{ value, score: found.score }] : [];
     })
     .sort((a, b) => b.score - a.score)
     .map(({ value }) => value);
@@ -259,6 +312,8 @@ export function suggestionsFor(
 
 /** Where a {@link ValueSuggest} reads its values and hands its pick. */
 interface ValueSuggestSource {
+  /** Whether the values are tags, which match as Obsidian's tags do. */
+  readonly tags: boolean;
   values(): readonly string[];
   /** The values the list holds already, which are no addition. */
   taken(): readonly string[];
@@ -314,7 +369,10 @@ class ValueSuggest extends AbstractInputSuggest<string> {
     // Where the highlight cannot come off, Enter would take a value never
     // chosen, so the suggestions wait for a key.
     if (this.#query === "" && !canClearSuggestHighlight(this)) return [];
-    return suggestionsFor(this.#source.values(), query, this.#source.taken());
+    return suggestionsFor(this.#source.values(), query, {
+      taken: this.#source.taken(),
+      tags: this.#source.tags,
+    });
   }
 
   override renderSuggestion(value: string, el: HTMLElement): void {
@@ -325,7 +383,7 @@ class ValueSuggest extends AbstractInputSuggest<string> {
       value,
       this.#query === ""
         ? null
-        : (prepareFuzzySearch(this.#query)(value)?.matches ?? null),
+        : (matchFor(this.#query, this.#source.tags)(value)?.matches ?? null),
     );
   }
 
@@ -358,17 +416,19 @@ function useValueSuggest(
   const latest = useRef(source);
   latest.current = source;
   const suggests = source !== null;
+  const tags = source?.tags ?? false;
   useEffect(() => {
     const el = field.current;
     if (!el || !suggests) return;
     const suggest = new ValueSuggest(app, el, {
+      tags,
       values: () => latest.current?.values() ?? [],
       taken: () => latest.current?.taken() ?? [],
       pick: (value) => latest.current?.pick(value),
     });
     showAgain(el);
     return () => suggest.close();
-  }, [app, field, suggests]);
+  }, [app, field, suggests, tags]);
 }
 
 /**
@@ -467,6 +527,7 @@ function FieldEditor({
     field,
     text
       ? {
+          tags: false,
           values: suggestions,
           taken: () => [],
           pick: (value) => onEnd(true, { ...draft, text: value }, "stay"),
@@ -607,6 +668,7 @@ function ListEditor({
     type === "aliases"
       ? null
       : {
+          tags: type === "tags",
           values: suggestions,
           taken: () => draft.items,
           // As in Bases, the rest show again once one is added.
