@@ -2,7 +2,12 @@
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
-import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import {
+  Menu,
+  hideSuggestChooser,
+  resetMockPlatform,
+  setMockPlatform,
+} from "@mock/obsidian";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -4663,6 +4668,22 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         expect(document.activeElement).toBe(pill("memex"));
         await pressOn(pill("memex"), "Backspace");
         expect(suggested()).toContain("memex");
+      });
+
+      it("opens no suggestions before a key is typed where Obsidian cannot clear their highlight", async () => {
+        hideSuggestChooser(true);
+        onTestFinished(() => hideSuggestChooser(false));
+        const { cell, type, press, literatureNotes } = await projects();
+
+        await act(() => cell("projects").click());
+        expect(suggested()).toBeNull();
+        // Enter on the empty field ends the edit, taking no value.
+        await press("Enter");
+        expect(literatureNotes.write).not.toHaveBeenCalled();
+
+        await act(() => cell("projects").click());
+        await type("hyper");
+        expect(suggested()).toEqual(["hypertext *", "hypertext history"]);
       });
 
       it("adds a value clicked in the suggestions", async () => {

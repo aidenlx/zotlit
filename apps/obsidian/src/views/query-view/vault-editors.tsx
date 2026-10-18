@@ -34,7 +34,10 @@ import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
-import { clearSuggestHighlight } from "@/lib/obsidian-private/suggest-highlight";
+import {
+  canClearSuggestHighlight,
+  clearSuggestHighlight,
+} from "@/lib/obsidian-private/suggest-highlight";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { LIST_TYPES } from "./table-notes";
@@ -268,7 +271,8 @@ interface ValueSuggestSource {
  * suggest would read as a contenteditable, so it is told the field's value.
  * As in a Bases cell, nothing is highlighted before a key is typed, so
  * Enter takes no value until one is chosen, and Shift+Enter takes the typed
- * text over the highlighted value.
+ * text over the highlighted value; a build that cannot take the highlight
+ * off shows no suggestions before a key is typed.
  */
 class ValueSuggest extends AbstractInputSuggest<string> {
   readonly #source: ValueSuggestSource;
@@ -307,6 +311,9 @@ class ValueSuggest extends AbstractInputSuggest<string> {
 
   protected override getSuggestions(query: string): string[] {
     this.#query = query.trim();
+    // Where the highlight cannot come off, Enter would take a value never
+    // chosen, so the suggestions wait for a key.
+    if (this.#query === "" && !canClearSuggestHighlight(this)) return [];
     return suggestionsFor(this.#source.values(), query, this.#source.taken());
   }
 

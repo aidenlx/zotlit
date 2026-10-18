@@ -702,6 +702,16 @@ export abstract class EditorSuggest<T> {
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
+let suggestChooserHidden = false;
+
+/**
+ * Leave `forceSetSelectedItem` off the private chooser of each input suggest
+ * made from now on, as an Obsidian build without it would; `false` restores it.
+ */
+export function hideSuggestChooser(hidden: boolean): void {
+  suggestChooserHidden = hidden;
+}
+
 /**
  * Stand-in for Obsidian's input suggest, as Obsidian 1.14.4 drives it: the
  * field's focus and input ask {@link getSuggestions} for the field's value
@@ -722,9 +732,12 @@ export abstract class AbstractInputSuggest<T> {
   readonly suggestions: {
     values: T[];
     selectedItem: number;
-    forceSetSelectedItem(at: number, event: unknown): void;
+    /** Absent while {@link hideSuggestChooser} hides it. */
+    forceSetSelectedItem?(at: number, event: unknown): void;
     useSelectedItem(event: KeyboardEvent | MouseEvent): boolean;
   };
+  /** Highlight the item at `at`, as the chooser does. */
+  readonly #highlight: (at: number) => void;
   readonly #input: HTMLInputElement | HTMLDivElement;
   #shown = false;
 
@@ -736,15 +749,17 @@ export abstract class AbstractInputSuggest<T> {
     const items = () => [
       ...this.suggestEl.querySelectorAll<HTMLElement>(".suggestion-item"),
     ];
-    const chooser = {
+    const highlight = (at: number) => {
+      chooser.selectedItem = at;
+      items().forEach((el, i) => el.classList.toggle("is-selected", i === at));
+    };
+    this.#highlight = highlight;
+    const chooser: AbstractInputSuggest<T>["suggestions"] = {
       values: [] as T[],
       selectedItem: 0,
-      forceSetSelectedItem: (at: number, _event?: unknown) => {
-        chooser.selectedItem = at;
-        items().forEach((el, i) =>
-          el.classList.toggle("is-selected", i === at),
-        );
-      },
+      ...(!suggestChooserHidden && {
+        forceSetSelectedItem: (at: number, _event?: unknown) => highlight(at),
+      }),
       useSelectedItem: (event: KeyboardEvent | MouseEvent) => {
         const value = chooser.values[chooser.selectedItem];
         if (value === undefined) return false;
@@ -757,10 +772,7 @@ export abstract class AbstractInputSuggest<T> {
       const count = chooser.values.length;
       if (count === 0) return false;
       const at = chooser.selectedItem + by;
-      chooser.forceSetSelectedItem(
-        at < 0 ? count - 1 : at >= count ? 0 : at,
-        null,
-      );
+      highlight(at < 0 ? count - 1 : at >= count ? 0 : at);
       return false;
     };
     this.scope.register([], "ArrowUp", move(-1));
@@ -780,7 +792,7 @@ export abstract class AbstractInputSuggest<T> {
       const item = (event.target as HTMLElement).closest(".suggestion-item");
       const at = items().indexOf(item as HTMLElement);
       if (at === -1) return;
-      chooser.forceSetSelectedItem(at, event);
+      highlight(at);
       chooser.useSelectedItem(event);
     });
     input.addEventListener("input", () => this.#change());
@@ -832,7 +844,7 @@ export abstract class AbstractInputSuggest<T> {
         return el;
       }),
     );
-    this.suggestions.forceSetSelectedItem(0, null);
+    this.#highlight(0);
     this.open();
   }
 
