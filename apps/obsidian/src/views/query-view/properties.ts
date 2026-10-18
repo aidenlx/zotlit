@@ -5,6 +5,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 
 import { datasetSpec } from "./datasets";
+import { propertyIcon } from "./property-icon";
 import type { QueryFileDataset, QueryFileDirection } from "./query-file";
 
 /** How a property's values order, which names its two directions. */
@@ -15,6 +16,8 @@ export interface PropertyOption {
   readonly path: string;
   readonly label: string;
   readonly kind: PropertyKind;
+  /** The icon of the property's type, as the Bases property picker shows it. */
+  readonly icon: string;
 }
 
 /**
@@ -36,6 +39,7 @@ export function sortOptions(
       path,
       label: labelOf?.(path) ?? label(),
       kind,
+      icon: propertyIcon(dataset ?? "annotations", { path, kind: "field" }),
     }));
 }
 
@@ -49,6 +53,10 @@ export function groupOptions(
     // A grouping by a list path names one value of the list.
     label: labelOf?.(path.replace(/\[\]$/, "")) ?? label(),
     kind: "text",
+    icon: propertyIcon(dataset ?? "annotations", {
+      path: path.replace(/\[\]$/, ""),
+      kind: "field",
+    }),
   }));
 }
 

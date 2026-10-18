@@ -10,6 +10,8 @@ import type { ReactNode } from "react";
 
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
 import { Icon } from "@/components/obsidian/icon";
+import { Select } from "@/components/select";
+import type { SelectOption } from "@/components/select";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
@@ -43,8 +45,23 @@ function optionOf(
       path,
       label: path,
       kind: "text",
+      icon: "file-question",
     }
   );
+}
+
+/**
+ * A property as the property select offers it: its type icon before its
+ * name, and its path after it where the name is not the path, as the Bases
+ * property picker shows a property's id.
+ */
+export function propertySelectOption(option: PropertyOption): SelectOption {
+  return {
+    value: option.path,
+    label: option.label,
+    icon: <Icon name={option.icon} />,
+    detail: option.path,
+  };
 }
 
 /**
@@ -167,24 +184,16 @@ export function SortEditor({
                   </span>
                   <JoinedSelects
                     property={
-                      <Dropdown
+                      <Select
                         aria-label={m.query_view_sort_by()}
                         data-sort-property=""
                         className="zt:min-w-0 zt:flex-1"
                         value={sort.property}
+                        options={[option, ...unused].map(propertySelectOption)}
                         onChange={(property) =>
                           set(index, { ...sort, property })
                         }
-                      >
-                        {[option, ...unused].map((candidate) => (
-                          <DropdownItem
-                            key={candidate.path}
-                            value={candidate.path}
-                          >
-                            {candidate.label}
-                          </DropdownItem>
-                        ))}
-                      </Dropdown>
+                      />
                     }
                     direction={
                       <Dropdown

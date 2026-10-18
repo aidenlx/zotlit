@@ -692,7 +692,7 @@ export async function verifyReaderBackedExcerpts(
         const trigger=Array.from(root.querySelectorAll('button[aria-label]')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||button.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));
         if(!trigger)return JSON.stringify('no colour Chooser');
         press(trigger,'colour Chooser');
-        const list=await until('colour list opens',()=>{const list=Array.from(root.ownerDocument.querySelectorAll('[role="listbox"]')).find(l=>l.ownerDocument.getElementById(l.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.annot_view_filter_color_list())});return list?.checkVisibility()?list:null;});
+        const list=await until('colour list opens',()=>{const list=Array.from(root.ownerDocument.querySelectorAll('[role="listbox"]')).find(list=>root.ownerDocument.getElementById(list.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.annot_view_filter_color_list())});return list?.checkVisibility()?list:null;});
         const row=Array.from(list.querySelectorAll('[role="option"]')).find(option=>option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(target.color.toLowerCase())});
         if(!row)return JSON.stringify('no swatch');
         if(row.getAttribute('aria-selected')!=='true'){press(row,'colour row');await until('colour filter applies',()=>row.getAttribute('aria-selected')==='true');}

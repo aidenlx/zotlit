@@ -5,7 +5,7 @@
 import type { WorkbenchSliceId } from "#/document/controller";
 import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 import type { SliceLanguage } from "./slice-editor";
 
@@ -328,6 +328,49 @@ export interface WorkbenchTheme {
   ) => Extension;
   /** Draws a named icon; a host without one draws none. */
   readonly icon?: (name: WorkbenchIcon) => ReactNode;
+  /**
+   * Draws a searchable select of the Match editor in the host's own control,
+   * such as a popup with a search field. A select of a few fixed choices, and
+   * every select of a host without one, is a native `<select>`.
+   */
+  readonly matchSelect?: ComponentType<MatchSelectProps>;
+}
+
+/** One choice of a Match editor select. */
+export interface MatchSelectOption {
+  value: string;
+  label: string;
+  /** The glyph before the label, such as the icon of a property's type. */
+  icon?: ReactNode;
+  /**
+   * Muted text after the label in the host's list, such as a field's path. A
+   * native select shows the label alone.
+   */
+  detail?: string;
+}
+
+/** What a Match editor select hands the control that draws it. */
+export interface MatchSelectProps {
+  "aria-label": string;
+  value: string;
+  options: readonly MatchSelectOption[];
+  /** Shown while the value names no option, such as a choice not yet made. */
+  placeholder?: string;
+  /**
+   * A list long or open-ended enough to search, such as the fields a
+   * condition can test, which the host's own control draws. A few fixed
+   * choices stay a native select.
+   */
+  searchable?: boolean;
+  onChange: (value: string) => void;
+  /** The part the select stands as, with the host's class for it. */
+  "data-part"?: string;
+  className?: string;
+}
+
+/** The host's control for a Match editor select, if it supplies one. */
+export function useMatchSelect(): ComponentType<MatchSelectProps> | undefined {
+  return useContext(ThemeContext).matchSelect;
 }
 
 const ThemeContext = createContext<WorkbenchTheme>({});

@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { shimPopover } from "@/components/__fixtures__/popover";
 import {
   createObsidianHost,
   PluginStub,
@@ -2291,29 +2292,19 @@ it("says in the Save as query file dialog what the file leaves out, and offers t
   Object.assign(deps.app, {
     keymap: { pushScope: () => {}, popScope: () => {} },
   });
-  const proto: Partial<HTMLElement> = HTMLElement.prototype;
-  if (!proto.hidePopover) {
-    proto.hidePopover = () => {};
-    cleanup.defer(() => {
-      delete proto.hidePopover;
-    });
-  }
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
   await press(view, facet(view, "has-note"));
   await type(view, "figures");
   Modal.instances.length = 0;
-  await act(() => {
+  await act(() =>
     view.contentEl
       .querySelector<HTMLElement>("[data-query-view-menu]")!
-      .click();
-    // happy-dom has no popover, so the test sends the event that opens it.
-    document
-      .querySelector("[data-query-view-list]")!
-      .dispatchEvent(
-        Object.assign(new Event("beforetoggle"), { newState: "open" }),
-      );
-  });
+      .click(),
+  );
+  await shimPopover(
+    document.querySelector<HTMLElement>("[data-query-view-list]")!,
+  ).open();
   await act(() =>
     document
       .querySelector<HTMLElement>('[data-query-view-action="save-as"]')!

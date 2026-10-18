@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { nameDictionary } from "@zotlit/item-query";
 import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
+import { shimPopover } from "@/components/__fixtures__/popover";
+import type { ShimmedPopover } from "@/components/__fixtures__/popover";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -733,17 +735,14 @@ describe("saving a toolbar edit", () => {
       const mounted = await mount([], undefined, { displayOnly });
       await act(() => mounted.view.setText(FILE));
       await mounted.settle();
-      await act(() => {
+      await act(() =>
         mounted.el
           .querySelector<HTMLElement>("[data-query-properties]")!
-          .click();
-        // happy-dom has no popover, so the test sends the event that opens it.
-        mounted.el
-          .querySelector("[data-query-properties-popup]")!
-          .dispatchEvent(
-            Object.assign(new Event("beforetoggle"), { newState: "open" }),
-          );
-      });
+          .click(),
+      );
+      await shimPopover(
+        mounted.el.querySelector<HTMLElement>("[data-query-properties-popup]")!,
+      ).open();
       return mounted.el;
     };
     const full = await open(false);
@@ -776,15 +775,10 @@ describe("saving a toolbar edit", () => {
       el.querySelector<HTMLElement>("[data-query-view-menu]")!;
     // The menu names the Layout on screen; the view's own name is the host's.
     expect(trigger().textContent).toBe("Table");
-    await act(() => {
-      trigger().click();
-      // happy-dom has no popover, so the test sends the event that opens it.
-      document
-        .querySelector("[data-query-view-list]")!
-        .dispatchEvent(
-          Object.assign(new Event("beforetoggle"), { newState: "open" }),
-        );
-    });
+    await act(() => trigger().click());
+    await shimPopover(
+      document.querySelector<HTMLElement>("[data-query-view-list]")!,
+    ).open();
     expect(
       [...document.querySelectorAll("[data-query-view-layout-option]")].map(
         (row) => row.getAttribute("data-query-view-layout-option"),
@@ -793,13 +787,6 @@ describe("saving a toolbar edit", () => {
     expect(document.querySelector("[data-query-view-action]")).toBeNull();
     expect(document.querySelector("[data-query-view-configure]")).toBeNull();
 
-    const proto: Partial<HTMLElement> = HTMLElement.prototype;
-    if (!proto.hidePopover) {
-      proto.hidePopover = () => {};
-      onTestFinished(() => {
-        delete proto.hidePopover;
-      });
-    }
     await act(() =>
       document
         .querySelector<HTMLElement>('[data-query-view-layout-option="papers"]')!
@@ -904,9 +891,50 @@ it("collapses a group heading and expands it again", async () => {
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
 });
 
-function choose(select: HTMLSelectElement, value: string) {
-  select.value = value;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+/** A Select's popup, opened as the browser opens it (see `shimPopover`). */
+const shims = new WeakMap<HTMLElement, ShimmedPopover>();
+
+async function openSelect(trigger: Element): Promise<HTMLElement> {
+  const popup = trigger.ownerDocument.getElementById(
+    trigger.getAttribute("popovertarget")!,
+  )!;
+  let shim = shims.get(popup);
+  if (!shim) shims.set(popup, (shim = shimPopover(popup)));
+  await shim.open();
+  return popup;
+}
+
+/** The rows a Select offers, by value and by the label each row shows. */
+async function selectOptions(
+  trigger: Element,
+): Promise<{ value: string; label: string }[]> {
+  const popup = await openSelect(trigger);
+  const options = [
+    ...popup.querySelectorAll<HTMLElement>('[role="option"]'),
+  ].map((option) => ({
+    value: option.dataset.value!,
+    label: option.querySelector("[data-select-label]")!.textContent!,
+  }));
+  await act(() => popup.hidePopover());
+  return options;
+}
+
+/** Picks `value` from a native select, or the row of it from a Select's popup. */
+async function choose(trigger: Element, value: string): Promise<void> {
+  if (trigger.instanceOf(HTMLSelectElement)) {
+    await act(() => {
+      trigger.value = value;
+      trigger.dispatchEvent(new Event("input", { bubbles: true }));
+      trigger.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    return;
+  }
+  const popup = await openSelect(trigger);
+  await act(() =>
+    popup
+      .querySelector<HTMLElement>(`[role="option"][data-value="${value}"]`)!
+      .click(),
+  );
 }
 
 it("adds sorts from the toolbar, runs them in order, and saves them to the file", async () => {
@@ -926,18 +954,13 @@ it("adds sorts from the toolbar, runs them in order, and saves them to the file"
     editor().querySelector<HTMLButtonElement>("[data-sort-add]")!.click(),
   );
   const properties = () => [
-    ...editor().querySelectorAll<HTMLSelectElement>("[data-sort-property]"),
+    ...editor().querySelectorAll<HTMLElement>("[data-sort-property]"),
   ];
-  const options = [...properties()[0]!.options].map((o) => o.value);
+  const options = (await selectOptions(properties()[0]!)).map((o) => o.value);
   expect(options).not.toContain("text");
   expect(options).not.toContain("pageLabel");
-  await act(() => choose(properties()[1]!, "dateAdded"));
-  await act(() =>
-    choose(
-      editor().querySelectorAll<HTMLSelectElement>("[data-sort-direction]")[1]!,
-      "DESC",
-    ),
-  );
+  await choose(properties()[1]!, "dateAdded");
+  await choose(editor().querySelectorAll("[data-sort-direction]")[1]!, "DESC");
   await settle();
 
   expect(run.mock.calls.at(-1)![0].sort).toEqual([
@@ -963,7 +986,7 @@ it("adds sorts from the toolbar, runs them in order, and saves them to the file"
         }),
       );
   });
-  expect(properties().map((select) => select.value)).toEqual([
+  expect(properties().map((select) => select.dataset.value)).toEqual([
     "dateAdded",
     "sortIndex",
   ]);
@@ -980,12 +1003,7 @@ it("sets a Manual group order where a tick hides a group, and saves it to the fi
 
   const editor = () =>
     el.querySelector<HTMLElement>('[data-query-popover="group"]')!;
-  await act(() =>
-    choose(
-      editor().querySelector<HTMLSelectElement>("[data-group-direction]")!,
-      "MANUAL",
-    ),
-  );
+  await choose(editor().querySelector("[data-group-direction]")!, "MANUAL");
   await settle();
   const rows = () => [
     ...editor().querySelectorAll<HTMLElement>("[data-group-row]"),
@@ -1187,11 +1205,6 @@ function section(el: HTMLElement, name: "all" | "view"): HTMLElement {
   return el.querySelector<HTMLElement>(`[data-filter-section="${name}"]`)!;
 }
 
-function chooseValue(select: HTMLSelectElement, value: string) {
-  select.value = value;
-  select.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
 it("edits the filters for all views and for this view from the Filter popover", async () => {
   const written: string[] = [];
   const { view, el, run, settle } = await mount(
@@ -1208,9 +1221,7 @@ it("edits the filters for all views and for this view from the Filter popover", 
   expect(section(el, "view").textContent).toContain("This view");
 
   const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
-  await act(() =>
-    chooseValue(color!.querySelector('select[aria-label="Value"]')!, "red"),
-  );
+  await choose(color!.querySelector('[aria-label="Value"]')!, "red");
   await settle();
   expect(written.at(-1)).toContain(
     'filters:\n      and:\n        - colorName == "red"',
@@ -1227,12 +1238,7 @@ it("edits the filters for all views and for this view from the Filter popover", 
     placeholder!.querySelector<HTMLSelectElement>('select[aria-label="Value"]')!
       .value,
   ).toBe("");
-  await act(() =>
-    chooseValue(
-      placeholder!.querySelector('select[aria-label="Value"]')!,
-      "blue",
-    ),
-  );
+  await choose(placeholder!.querySelector('[aria-label="Value"]')!, "blue");
   await settle();
   expect(written).toHaveLength(writes + 1);
   expect(written.at(-1)).toMatch(
@@ -1257,9 +1263,13 @@ ${FILE}`),
   await settle();
 
   const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
-  const kinds = [...color!.querySelectorAll("option")].map(
-    (option) => option.textContent,
-  );
+  const kinds = (
+    await selectOptions(
+      color!.querySelector(
+        `[aria-label="${m.workbench_match_condition_kind()}"]`,
+      )!,
+    )
+  ).map((option) => option.label);
   expect(kinds).toContain("Highlight colour");
   expect(kinds).not.toContain("Color");
   // A field without a Display Name keeps the name of its condition.
@@ -2108,8 +2118,10 @@ it("offers Item fields to sort and group a view of Items by", async () => {
   await act(() =>
     el.querySelector<HTMLElement>('[data-query-toolbar="group"]')!.click(),
   );
-  const group = document.querySelector("[data-group-editor]")!;
-  expect(group.textContent).toContain("Item Type");
+  const offered = await selectOptions(
+    document.querySelector("[data-group-property]")!,
+  );
+  expect(offered.map((option) => option.label)).toContain("Item Type");
   expect(document.body.textContent).not.toContain("Attachment");
 });
 

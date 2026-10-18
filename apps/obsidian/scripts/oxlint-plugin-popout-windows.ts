@@ -54,7 +54,7 @@ export const noCrossWindowInstanceof: Rule = {
     },
     messages: {
       crossWindow:
-        "Use node.instanceOf({{type}}) or event.instanceOf({{type}}); global DOM constructors do not match pop-out window objects (see policies/popout-windows.md).",
+        "Use `{{replacement}}`; global DOM constructors do not match pop-out window objects (see policies/popout-windows.md).",
     },
     schema: [],
   },
@@ -67,10 +67,22 @@ export const noCrossWindowInstanceof: Rule = {
           !isWindowLocalConstructor(node.right.name)
         )
           return;
+        // The replacement names the checked value itself, so the message
+        // reads as the fix for this line rather than a pattern to adapt.
+        const left = context.sourceCode.getText(node.left);
+        const receiver =
+          node.left.type === "Identifier" ||
+          node.left.type === "MemberExpression" ||
+          node.left.type === "CallExpression"
+            ? left
+            : `(${left})`;
         context.report({
           node,
           messageId: "crossWindow",
-          data: { type: node.right.name },
+          data: {
+            type: node.right.name,
+            replacement: `${receiver}.instanceOf(${node.right.name})`,
+          },
         });
       },
     };

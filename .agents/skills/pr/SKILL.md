@@ -1,6 +1,6 @@
 ---
 name: pr
-description: "Use when writing a PR body."
+description: "Use when opening a PR or writing a PR body."
 metadata:
   credits:
     skill: show-me
@@ -8,6 +8,12 @@ metadata:
     organisation: Humanlayer
     url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
+
+## Base branch
+
+Open every PR against `next`: `gh pr create --base next`. The repository's default branch is `main`, so a PR opened without `--base` targets the wrong branch. `main` receives only stable graduations from `next` and emergency hotfixes, and a PR to `main` is made only when the user names one ([CONTRIBUTING.md](../../../CONTRIBUTING.md), ADR 0021).
+
+## Body
 
 Use this template for writing the PR body:
 

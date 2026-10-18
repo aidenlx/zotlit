@@ -324,10 +324,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     value: string;
   }): Promise<boolean> {
     // A kind change replaces the value control and its options on the next render.
-    const valueControl = `${kind === "collection" ? "input" : "select"}[aria-label=${JSON.stringify(m.workbench_filter_value())}]`;
+    const valueControl = `${kind === "collection" ? "input" : "button"}[aria-label=${JSON.stringify(m.workbench_filter_value())}]`;
     return obEvalUntil(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.workbench_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.value===${JSON.stringify(value)});})()`,
+      `(function(){${PAGE}var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(valueOf(row?.querySelector('button[aria-label=${JSON.stringify(m.workbench_match_condition_kind())}]'))===${JSON.stringify(kind)}&&valueOf(row.querySelector('select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]'))===${JSON.stringify(operator)}&&valueOf(row.querySelector('${valueControl}'))===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
@@ -339,18 +339,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     value: string,
   ): Promise<void> {
     const control = (label: string) =>
-      `Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]'))[${row}].querySelector('select[aria-label=${JSON.stringify(label)}]')`;
-    await obEval(
-      vaultId,
-      `(function(){var kind=${control(m.workbench_match_condition_kind())};kind.value=${JSON.stringify(kind)};kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    expect(await conditionReady({ row, kind, operator: "is", value: "" })).toBe(
-      true,
-    );
-    await obEval(
-      vaultId,
-      `(function(){var value=${control(m.workbench_filter_value())};value.value=${JSON.stringify(value)};value.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
+      `Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]'))[${row}].querySelector(':is(select,button)[aria-label=${JSON.stringify(label)}]')`;
+    // A row already of `kind` keeps its value: choosing the kind it holds
+    // changes nothing, as in a native select. A changed kind replaces the
+    // value control with an empty one.
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const kind=${control(m.workbench_match_condition_kind())};if(valueOf(kind)===${JSON.stringify(kind)})return true;await pick(kind,${JSON.stringify(kind)},'Condition type');await until('the ${kind} value control',()=>valueOf(${control(m.workbench_match_condition_kind())})===${JSON.stringify(kind)}&&valueOf(${control(m.workbench_filter_value())})==='');return true;})()`,
+      ),
+    ).toBe("true");
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}await pick(${control(m.workbench_filter_value())},${JSON.stringify(value)},'Value');return true;})()`,
+      ),
+    ).toBe("true");
     expect(await conditionReady({ row, kind, operator: "is", value })).toBe(
       true,
     );
@@ -925,7 +929,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * colors" for `null`), and closes the Chooser.
      */
     const pickColor = (color: string | null) =>
-      `(async()=>{${PAGE}const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';press(trigger,'colour Chooser');const list=await until('colour list opens',()=>{const list=Array.from(document.querySelectorAll('[role="listbox"]')).find(l=>l.ownerDocument.getElementById(l.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.annot_view_filter_color_list())});return list?.checkVisibility()?list:null;});const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});if(row){press(row,'colour row');await until('colour filter applies',()=>${color === null ? `trigger.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}` : `row.getAttribute('aria-selected')==='true'`});}(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
+      `(async()=>{${PAGE}const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';press(trigger,'colour Chooser');const list=await until('colour list opens',()=>{const list=Array.from(document.querySelectorAll('[role="listbox"]')).find(list=>document.getElementById(list.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.annot_view_filter_color_list())});return list?.checkVisibility()?list:null;});const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});if(row){press(row,'colour row');await until('colour filter applies',()=>${color === null ? `trigger.getAttribute('aria-label')===${JSON.stringify(m.annot_view_filter_color_trigger())}` : `row.getAttribute('aria-selected')==='true'`});}(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
     let picked = false;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
@@ -1461,7 +1465,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;${script};return true;})()`,
       );
     await inLibrary(
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');const select=await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]'));select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))",
+      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
     );
     expectSeedOrder(
       await libraryWhen(
@@ -1640,7 +1644,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A sort change keeps Recent selected; selecting Recent again after a
     // Library sorts newest change first again.
     await inLibrary(
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');const select=await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]'));select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))",
+      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
     );
     const ascending = await shownWhen(
       (shown) =>
@@ -1715,7 +1719,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) => shown.recent && listing(size([personal]))(shown),
     );
     await inLibrary(
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');const select=await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]'));select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))",
+      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
     );
     const resorted = await shownWhen(
       (shown) =>
@@ -2887,12 +2891,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     /**
      * Run `script` with the Library View's tab active and `el` its content.
      * `pressRow` presses a row near its start, where a reader clicks while
-     * the Reading Card over a narrow list covers the row's far end.
+     * the Reading Card over a narrow list covers the row's far end: it
+     * presses what stands at that point, inside the row, through `press`.
      */
     const inLibrary = (script: string) =>
       obEval(
         vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const keydown=(target,init)=>target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init}));const pressRow=(el,what)=>{if(!el)throw new Error('Missing: '+what);el.scrollIntoView({block:'center',behavior:'instant'});const r=el.getBoundingClientRect();const hit=el.ownerDocument.elementFromPoint(r.left+24,r.top+r.height/2);if(!hit||!el.contains(hit))throw new Error('Covered: '+what+' (by '+(hit?hit.outerHTML.slice(0,80):'nothing')+')');el.click();return el;};${script}})()`,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const keydown=(target,init)=>target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init}));const pressRow=(el,what)=>{if(!el)throw new Error('Missing: '+what);el.scrollIntoView({block:'center',behavior:'instant'});const r=el.getBoundingClientRect();const hit=el.ownerDocument.elementFromPoint(r.left+24,r.top+r.height/2);if(!hit||!el.contains(hit))throw new Error('Covered: '+what+' (by '+(hit?hit.outerHTML.slice(0,80):'nothing')+')');press(hit,what);return el;};${script}})()`,
       );
     const active = () => activeTab(vaultId);
     const activeWhen = (ready: (shown: ActiveTab) => boolean) =>
@@ -3794,7 +3799,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // and saves as the file's top-level filters; both sections hold. The
     // empty section starts folded, so the reader unfolds it first.
     await inPopover(
-      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');set(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'yellow');return true;`,
+      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await pick(section('all').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'yellow','Value');return true;`,
     );
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',
@@ -3871,7 +3876,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return lines[lines.indexOf(figureLine) + 1] ?? "";
     };
     await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');set(await until('new row',()=>section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')),'red');return true;`,
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');await until('new row',()=>section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'));return true;`,
     );
     // The focus goes to the new row's condition type.
     expect(
@@ -3879,6 +3884,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `return popover.ownerDocument.activeElement?.closest('[data-condition-row]')===[...section('view').querySelectorAll('[data-condition-row]')].at(-1)&&popover.ownerDocument.activeElement.getAttribute('aria-label');`,
       ),
     ).toBe(m.workbench_match_condition_kind());
+    await inPopover(
+      `await pick(section('view').querySelector('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]'),'red','Value');return true;`,
+    );
     const added = nextLine(
       (await tabWhen((tab) => nextLine(tab.text).startsWith("        - ")))
         .text,
@@ -3913,7 +3921,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // above the first row leaves its group.
     const nested = (line: string) => `    ${line}`;
     await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');set(await until('group row',()=>section('view').querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'red');return true;`,
+      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_group())}),'Add group');await pick(await until('group row',()=>section('view').querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'red','Value');return true;`,
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -3956,7 +3964,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     );
     await inPopover(
-      `const group=()=>${nestedGroup};press([...group().querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');set(await until('second row',()=>group()?.querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'blue');return true;`,
+      `const group=()=>${nestedGroup};press([...group().querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_match_add_condition())}),'Add condition');await pick(await until('second row',()=>group()?.querySelectorAll('[data-condition-row] select[aria-label="${m.workbench_filter_value()}"]')[1]),'blue','Value');return true;`,
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -4085,7 +4093,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inBlock = (script: string) =>
       obEval(
         vaultId,
-        `(()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.containerEl.querySelector('.block-language-zotquery');${script};return true;})()`,
       );
     await inBlock(
       "el.dataset.e2eMark='kept';press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
@@ -4108,7 +4116,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ).toBe(true);
       await inBlock(
-        `const select=el.querySelector('[data-query-popover="sort"] [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+        `await pick(el.querySelector('[data-query-popover="sort"] [${control}]'),${JSON.stringify(value)},'${control}')`,
       );
     }
     const written = original.replace(
@@ -4662,11 +4670,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
       return tab!;
     };
-    /** Choose an option of a select in the Group popover. */
+    /** Choose an option of a select in the Group popover, opening it first. */
     const choose = (selector: string, value: string) =>
       obEval(
         vaultId,
-        `(()=>{const el=app.workspace.getMostRecentLeaf().view.contentEl;const select=el.querySelector('[data-query-popover="group"] ${selector}');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="group"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="group"]'),'Group');await pick(popover.querySelector('${selector}'),${JSON.stringify(value)},${JSON.stringify(selector)});return true;})()`,
       );
 
     await tabWhen((tab) => tab.count !== null);
@@ -4998,7 +5006,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const figure = 'tags.contains("figure")';
     await obEval(
       vaultId,
-      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await until('placeholder row',all);set(all().querySelector('select[aria-label="${m.workbench_match_condition_kind()}"]'),'tags');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_filter_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
+      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const el=[...leaf.view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await until('placeholder row',all);await pick(all().querySelector('button[aria-label="${m.workbench_match_condition_kind()}"]'),'tags','Condition type');set(await until('tag value field',()=>all().querySelector('input[aria-label="${m.workbench_filter_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
     );
     const figures = byItem(await queryRows(figure)).cards;
     const myFigures = await queryKeys(
@@ -8187,7 +8195,7 @@ views:
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=${activeWorkbenchContent};var operator=editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(async()=>{${PAGE}var editor=${activeWorkbenchContent};await pick(editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.workbench_filter_operator())}]'),'contains','Operator');return true;})()`,
     );
     expect(
       await conditionReady({

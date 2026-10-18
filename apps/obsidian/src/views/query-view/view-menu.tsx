@@ -19,8 +19,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
-import { useUniqueId } from "@zotlit/ui";
-
 import {
   Chooser,
   chooserIconButton,
@@ -102,7 +100,6 @@ function LayoutSwitch({ view }: { view: QueryView }) {
   const file = useStore(view.state, (s) => s.file);
   const current = useStore(view.state, (s) => s.view);
   const popup = useRef<HTMLDivElement>(null);
-  const listName = useUniqueId();
   const offered = view.layouts;
   const { saveAs } = view;
   const layouts = useMemo(
@@ -165,11 +162,7 @@ function LayoutSwitch({ view }: { view: QueryView }) {
         className={popoverFallbacks}
         data-query-view-list=""
       >
-        {/* Names the list with no tooltip over it (policies/tooltips.md). */}
-        <span id={listName} hidden>
-          {m.query_view_layout()}
-        </span>
-        <Chooser.List groups={groups} aria-labelledby={listName}>
+        <Chooser.List groups={groups} label={m.query_view_layout()}>
           {(row) =>
             row.action ? (
               <Chooser.Action

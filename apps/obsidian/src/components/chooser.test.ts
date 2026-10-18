@@ -11,6 +11,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+import { shimPopover } from "./__fixtures__/popover";
 import { Chooser } from "./chooser";
 import type { ChooserRow } from "./chooser-logic";
 
@@ -65,12 +66,9 @@ function mount(app: App, trigger: { blocked?: boolean } = {}) {
   });
   render(ui, host);
   const popup = host.querySelector<HTMLElement>("[popover]")!;
+  const shim = shimPopover(popup);
   const toggle = (newState: "open" | "closed") =>
-    act(() => {
-      popup.dispatchEvent(
-        Object.assign(new Event("beforetoggle"), { newState }),
-      );
-    });
+    newState === "open" ? shim.open() : shim.close();
   const field = () => popup.querySelector("input");
   const options = () =>
     [...popup.querySelectorAll<HTMLElement>('[role="option"]')].map(

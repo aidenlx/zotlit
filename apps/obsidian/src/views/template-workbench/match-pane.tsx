@@ -5,13 +5,19 @@ import { useEffect, useState } from "react";
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { MatchPane, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
 
+import { Select } from "@/components/select";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { templateWorkbenchTheme } from "./theme";
 
-/** The Workbench theme with Obsidian's own dropdown for the Match editor's selects. */
+/**
+ * The Workbench theme with the plugin's own Select for the Match editor's
+ * selects, a popup with a search field as Bases picks a property or an
+ * operator. The other selects of the Workbench keep Obsidian's dropdown.
+ */
 export const matchTheme = {
   ...templateWorkbenchTheme,
+  matchSelect: Select,
   classes: {
     ...templateWorkbenchTheme.classes,
     select: {
