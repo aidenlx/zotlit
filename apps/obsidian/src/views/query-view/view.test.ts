@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { nameDictionary } from "@zotlit/item-query";
 import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
+import { shimPopover } from "@/components/__fixtures__/popover";
+import type { ShimmedPopover } from "@/components/__fixtures__/popover";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -723,23 +725,16 @@ it("collapses a group heading and expands it again", async () => {
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
 });
 
-/**
- * A Select's popup, opened as the browser opens it. happy-dom has no popover,
- * so this sends the toggle the browser sends, and stands in for the hide the
- * Select calls once a row is chosen.
- */
+/** A Select's popup, opened as the browser opens it (see `shimPopover`). */
+const shims = new WeakMap<HTMLElement, ShimmedPopover>();
+
 async function openSelect(trigger: Element): Promise<HTMLElement> {
   const popup = trigger.ownerDocument.getElementById(
     trigger.getAttribute("popovertarget")!,
   )!;
-  const toggle = (newState: "open" | "closed") =>
-    popup.dispatchEvent(Object.assign(new Event("beforetoggle"), { newState }));
-  if (!("hidePopover" in popup)) {
-    Object.assign(popup, { hidePopover: () => toggle("closed") });
-  }
-  await act(() => {
-    toggle("open");
-  });
+  let shim = shims.get(popup);
+  if (!shim) shims.set(popup, (shim = shimPopover(popup)));
+  await shim.open();
   return popup;
 }
 

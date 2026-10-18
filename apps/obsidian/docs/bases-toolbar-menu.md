@@ -210,6 +210,17 @@ Bases replaces a native `<select>` with one internal combobox class: a `PopoverS
 
 ZotLit draws the same control with `Select` (`apps/obsidian/src/components/select.tsx`) on the Chooser, wearing no Obsidian class. An option's `icon` and `detail` give the property variant. ZotLit keeps a native select wherever the choices are a few fixed ones: the conjunction, a sort or group direction, the rows, the layout and the list markers. In the Match editor, a select is a `Select` only where `MatchSelect` is `searchable` and the theme supplies `matchSelect`.
 
+### Keyboard and focus
+
+What a popup control owes the keyboard, the screen reader and the pointer. `Select` meets each item. A new control that opens a Chooser, or any popover of its own, is held to the same list.
+
+- **Opening.** ArrowDown and ArrowUp open it from the trigger. A printable key opens it searching for that key, with the first match highlighted. Space and Enter are the button's press.
+- **Shutting.** Escape, a pick, and a press outside shut it. So does focus leaving the popup by keyboard, Shift+Tab back onto the trigger included, since an open popup's scope goes on taking the arrows and Enter. A press on the trigger is the popover's own toggle.
+- **Focus back.** A popup that shuts while it holds focus hands focus to its trigger. The browser restores focus only for the first popover of a stack, so a popup inside the Sort, Group or Filter popover does this itself, from a capture-phase `beforetoggle` listener (the Chooser unmounts its session in its own listener).
+- **Names.** A combobox trigger carries `aria-controls` for the list box while the popup is open. The list box takes its name through `aria-labelledby`, since an `aria-label` on a container is a hover tooltip ([tooltips](../policies/tooltips.md)).
+- **Placement.** The popup flips in both axes: `position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline`.
+- **Verifying.** Focus and dismissal are checked in the running app with trusted input, not untrusted `.click()` or `dispatchEvent` alone: see the obsidian-debug skill, "Trusted input".
+
 ## ZotLit mapping
 
 `apps/obsidian/src/components/chooser.tsx` holds the ZotLit parts. The Query View consumers are in `apps/obsidian/src/views/query-view/` (`properties-menu.tsx`, `view-menu.tsx`, `configure-view.tsx`, `property-page.tsx`).

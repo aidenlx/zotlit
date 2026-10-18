@@ -866,24 +866,19 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
   );
 }
 
-/**
- * What the list box is called: its name, or the id of an element that names
- * it, such as the trigger of a Select. Required rather than optional: a list
- * box carries no name of its own, and an unnamed one is announced as a bare
- * "list box" — the caller is the only one that knows whether its rows are
- * tags or colours.
- */
-export type ChooserListName =
-  | { "aria-label": string; "aria-labelledby"?: never }
-  | { "aria-labelledby": string; "aria-label"?: never };
-
-export type ChooserListProps<Row extends ChooserRow> = ChooserListName &
-  ChooserListFields<Row>;
-
-interface ChooserListFields<Row extends ChooserRow> extends Omit<
+export interface ChooserListProps<Row extends ChooserRow> extends Omit<
   HTMLAttributes<HTMLDivElement>,
   "children" | "aria-label" | "aria-labelledby"
 > {
+  /**
+   * What the list box is called. Required rather than optional: a list box
+   * carries no name of its own, and an unnamed one is announced as a bare
+   * "list box" — the caller is the only one that knows whether its rows are
+   * tags or colours. It reaches the list box through `aria-labelledby` and a
+   * hidden element, since Obsidian shows a container's `aria-label` as a
+   * hover tooltip over every row.
+   */
+  label: string;
   /**
    * Every row the caller offers, in the order it wants them read, split into
    * the groups it wants them drawn in. A group is a heading and a separator,
@@ -917,6 +912,7 @@ interface ChooserListFields<Row extends ChooserRow> extends Omit<
 }
 
 function List<Row extends ChooserRow>({
+  label,
   groups,
   emptyLabel,
   children,
@@ -1006,6 +1002,9 @@ function List<Row extends ChooserRow>({
           {empty ? emptyLabel : ""}
         </div>
       )}
+      <span id={`${listId}-label`} hidden>
+        {label}
+      </span>
       {/* The tab index is programmatic: the popup focuses this element when the
           caller rendered no search field, and a Chooser still holds exactly
           one tab stop either way. */}
@@ -1013,6 +1012,7 @@ function List<Row extends ChooserRow>({
         ref={listRef}
         id={listId}
         role="listbox"
+        aria-labelledby={`${listId}-label`}
         tabIndex={-1}
         aria-multiselectable
         aria-activedescendant={activeOptionId ?? undefined}

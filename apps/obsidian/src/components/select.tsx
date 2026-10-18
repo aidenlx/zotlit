@@ -23,8 +23,6 @@ import type {
   RefObject,
 } from "react";
 
-import { useUniqueId } from "@zotlit/ui";
-
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
@@ -194,8 +192,6 @@ function SelectBody({
   ...rest
 }: SelectBodyProps) {
   const openSearch = useChooserOpenSearch();
-  const generatedId = useUniqueId();
-  const triggerId = rest.id ?? generatedId;
   const current = options.find((option) => option.value === value);
   const glyphs = options.some((option) => option.icon !== undefined);
   const rows: SelectRow[] = options.map((option) => ({
@@ -235,7 +231,6 @@ function SelectBody({
         blocked={disabled}
         data-value={value}
         {...rest}
-        id={triggerId}
         // The arrow keys open the popup from the trigger, as they open a
         // native select and the Bases combobox; a printable key opens it
         // searching for that key, as typing on a Bases combobox does.
@@ -311,9 +306,7 @@ function SelectBody({
         />
         <Chooser.List<SelectRow>
           groups={[{ items: rows }]}
-          // Named by its trigger, so the field's name stays off the list as
-          // a hover tooltip.
-          aria-labelledby={triggerId}
+          label={rest["aria-label"] ?? placeholder ?? ""}
           aria-multiselectable={false}
           emptyLabel={m.select_no_match()}
         >

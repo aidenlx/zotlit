@@ -71,14 +71,16 @@ Read the output text: `=> ` prefixes a result, and command failures come back as
 `Vault not found.`
 
 Write each call as one plain command with literal values: `<id>` is the vault ID
-`obsidian-vault.ts status` prints, typed out, and JS goes through `--code` or `--js`.
+`obsidian-vault.ts id` prints, typed out, and JS goes through `--code` or `--js`.
 
 ## Loop
 
 1. **Build** — the two build commands from Vault setup step 5. The second copies the
    bundle into this worktree's Development Vault; prefix it with `ZT_VAULT_CASE=<case>`
    to copy into a Vault Case vault, such as the `upgrader` vault.
-2. **Reload** — `obsidian-cli.ts vault=<id> plugin:reload id=zotlit`.
+2. **Reload** — `obsidian-cli.ts vault=<id> plugin:reload id=zotlit`. A leaf or embed open
+   across the reload keeps the old build's DOM: run `leaf.rebuildView()` on each ZotLit leaf,
+   or the note holding the embed, or open a fresh one, before you probe.
 3. **Open** — `obsidian-cli.ts vault=<id> command id=zotlit:<cmd>`, or `--code` to mount a view in a specific split.
 4. **Probe** — `obsidian-cli.ts --code '…' vault=<id>` with `getComputedStyle(el)` /
    `el.getBoundingClientRect()` to assert what actually rendered. A computed-style assertion is
@@ -134,7 +136,10 @@ wc.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
 ```
 
 Use `mouseDown`/`mouseUp` with `x`, `y`, `button: "left"`, `clickCount: 1` for a click at a
-point. The window must hold focus; pass `--no-throttle`.
+point. The window must hold focus, `document.hasFocus()` true, or the input and every focus
+event go nowhere while `activeElement` still moves; pass `--no-throttle`, which warns when
+the window lacks focus. Call `getCurrentWindow().focus()` first; when the user is working in
+another app, the window may not keep it, and the check waits for them.
 
 ### CodeMirror editors
 

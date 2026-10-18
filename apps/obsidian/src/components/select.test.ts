@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
+import { shimPopover } from "./__fixtures__/popover";
 import { Select } from "./select";
 import type { SelectOption } from "./select";
 
@@ -52,13 +53,8 @@ function mount(onChange: (next: string) => void = () => {}) {
   );
   const trigger = slot.querySelector<HTMLButtonElement>("button")!;
   const popup = slot.querySelector<HTMLElement>("[popover]")!;
-  const toggle = (newState: "open" | "closed") =>
-    popup.dispatchEvent(Object.assign(new Event("beforetoggle"), { newState }));
-  const hide = vi.fn(() => toggle("closed"));
-  Object.assign(popup, {
-    showPopover: () => toggle("open"),
-    hidePopover: hide,
-  });
+  shimPopover(popup);
+  const hide = vi.spyOn(popup, "hidePopover");
   const key = (init: KeyboardEventInit) =>
     act(() => {
       trigger.dispatchEvent(
@@ -86,8 +82,10 @@ it("opens searching for a printable key, on its first match", async () => {
     popup.querySelector('[role="option"]')!.id,
   );
   expect(trigger.getAttribute("aria-controls")).toBe(list.id);
-  // The trigger names the list; an `aria-label` would be a hover tooltip.
-  expect(list.getAttribute("aria-labelledby")).toBe(trigger.id);
+  // The list takes the field's name; an `aria-label` would be a hover tooltip.
+  expect(
+    document.getElementById(list.getAttribute("aria-labelledby")!)!.textContent,
+  ).toBe("Sort by");
   expect(list.hasAttribute("aria-label")).toBe(false);
 });
 
@@ -144,8 +142,6 @@ it("reports a picked row and hands focus back to the trigger", async () => {
   const onChange = vi.fn();
   const { trigger, popup, hide, key } = mount(onChange);
   await key({ key: "ArrowDown" });
-  // The browser focuses the search field as the popup shows.
-  popup.querySelector("input")!.focus();
   await act(() => {
     popup.querySelector<HTMLElement>('[data-value="volume"]')!.click();
   });
@@ -157,7 +153,7 @@ it("reports a picked row and hands focus back to the trigger", async () => {
 it("hands focus back to the trigger when it shuts from its search field", async () => {
   const { trigger, popup, key } = mount();
   await key({ key: "ArrowDown" });
-  popup.querySelector("input")!.focus();
+  expect(document.activeElement).toBe(popup.querySelector("input"));
   // Escape, or a press outside, shuts the popover without a pick.
   await act(() => popup.hidePopover());
   expect(document.activeElement).toBe(trigger);
