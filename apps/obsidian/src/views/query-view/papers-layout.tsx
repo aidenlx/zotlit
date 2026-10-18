@@ -1,5 +1,5 @@
 // The Papers layout: the Items of a view as a reading list, two lines per
-// Item. The title, cut to one line; then the creators, the year and the
+// Item after the icon of its Item type. The title, cut to one line; then the creators, the year and the
 // Venue, ending with the reason the host gives for the row. The row ends
 // with the kind of the Item's main Attachment and a mark for its Literature
 // Note, and expands into the rows the Table expands into. It reads no
@@ -15,6 +15,7 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { itemTypeIcon } from "@/lib/item-type-icon";
 import { cn } from "@/lib/utils";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
@@ -43,10 +44,11 @@ export const PAPERS_LAYOUT: QueryLayout = {
 };
 
 /**
- * The paths each Papers row reads beside the visible properties: its lines,
- * its Attachment kinds and what it expands into.
+ * The paths each Papers row reads beside the visible properties: its icon,
+ * its lines, its Attachment kinds and what it expands into.
  */
 export const PAPERS_FIELDS: readonly string[] = [
+  "itemType",
   "title",
   "creators",
   "date",
@@ -219,6 +221,7 @@ function PaperRow({
     .filter((part) => part !== "")
     .join(" · ");
   const kind = mainAttachmentKind(values);
+  const typeIcon = itemTypeIcon(text(values.itemType) || null);
   return (
     <li
       className="zt:border-b-(length:--border-width) zt:border-border"
@@ -236,6 +239,14 @@ function PaperRow({
           open={open}
           onToggle={() => toggle(item)}
           holdsMore={note !== null}
+        />
+        {/* Decoration: the title names the row, so the type is not read out. */}
+        <Icon
+          name={typeIcon}
+          size="var(--icon-s)"
+          strokeWidth="var(--icon-s-stroke-width)"
+          className="zt:mt-0.5 zt:shrink-0 zt:text-(--icon-color)"
+          data-query-papers-icon={typeIcon}
         />
         <div className="zt:min-w-0 zt:flex-1">
           <div

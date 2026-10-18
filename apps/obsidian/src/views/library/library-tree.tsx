@@ -8,6 +8,7 @@
 // @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
 import { Component } from "obsidian";
+import type { IconName } from "obsidian";
 import { Fragment, useSyncExternalStore } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -509,6 +510,13 @@ interface Row {
 /** Recent, at the top of the tree: it lists the whole Library Scope and counts nothing. */
 const RECENT: LibraryNode = { kind: "recent" };
 
+/** The icon of a node, as Zotero's collection tree draws one. */
+function nodeIcon(node: LibraryNode): IconName {
+  if (node.kind === "recent") return "clock";
+  if (node.kind === "collection") return "folder";
+  return node.library.type === "group" ? "users" : "library";
+}
+
 function rows(
   libraries: readonly TreeLibrary[],
   expanded: ReadonlySet<string>,
@@ -643,6 +651,14 @@ function TreePane({ tree }: { tree: LibraryTree }) {
               >
                 <Icon name="right-triangle" size="var(--size-4-3)" />
               </span>
+              {/* Decoration: the label names the node. */}
+              <Icon
+                name={nodeIcon(row.node)}
+                size="var(--icon-s)"
+                strokeWidth="var(--icon-s-stroke-width)"
+                className="zt:shrink-0 zt:text-(--icon-color)"
+                data-library-icon={nodeIcon(row.node)}
+              />
               <span
                 data-library-label=""
                 className="zt:min-w-0 zt:flex-1 zt:truncate"
