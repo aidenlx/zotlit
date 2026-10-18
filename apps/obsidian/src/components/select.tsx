@@ -17,6 +17,7 @@ import type {
   ButtonHTMLAttributes,
   FocusEvent,
   KeyboardEvent,
+  PointerEvent,
   ReactNode,
   Ref,
   RefObject,
@@ -131,13 +132,16 @@ export function Select({
   // focus back to its trigger. The browser restores focus only for the first
   // popover of a stack, and a Select in the Sort, Group or Filter popover is
   // the second, whose search field would leave focus nowhere.
+  const shutting = useRef(false);
   useLayoutEffect(() => {
     const shell = popup.current;
     if (!shell) return;
     const onBeforeToggle = (event: Event) => {
       if ((event as ToggleEvent).newState !== "closed") return;
       if (!shell.contains(shell.doc.activeElement)) return;
+      shutting.current = true;
       trigger.current?.focus({ preventScroll: true });
+      shutting.current = false;
     };
     // Captured, so it runs before the Chooser's own listener unmounts the
     // session, and the search field with it, which drops focus to the body.
@@ -161,6 +165,7 @@ export function Select({
         attach={attach}
         popup={popup}
         trigger={trigger}
+        shutting={shutting}
       />
     </Chooser>
   );
@@ -170,6 +175,8 @@ interface SelectBodyProps extends Omit<SelectProps, "onChange" | "ref"> {
   attach: (node: HTMLButtonElement | null) => void;
   popup: RefObject<HTMLDivElement | null>;
   trigger: RefObject<HTMLButtonElement | null>;
+  /** Set while a shutting popup hands focus back to the trigger. */
+  shutting: RefObject<boolean>;
 }
 
 /** The trigger and the popup, inside the Chooser whose search they open. */
@@ -183,6 +190,7 @@ function SelectBody({
   attach,
   popup,
   trigger,
+  shutting,
   ...rest
 }: SelectBodyProps) {
   const openSearch = useChooserOpenSearch();
@@ -200,15 +208,19 @@ function SelectBody({
     option,
   }));
 
-  // Focus that leaves the trigger and the popup together shuts the popup, as
-  // a Tab out of a native select's list does; a Shift+Tab back onto the
-  // trigger keeps it. A popover shuts on a press outside, not on focus moving
-  // out, and an open one goes on holding the keys of the control focus left
-  // for.
+  // Focus that leaves the popup shuts it, as a Tab or Shift+Tab out of a
+  // native select's list does. A popover shuts on a press outside, not on
+  // focus moving out, and an open one goes on holding the keys of the
+  // control focus left for, the trigger included. A press on the trigger
+  // moves focus there too, and is left to the popover, which shuts on it.
+  const pressed = useRef(false);
   const leave = (event: FocusEvent<HTMLElement>) => {
     const next = event.relatedTarget;
-    if (!next?.instanceOf(Node)) return;
-    if (popup.current?.contains(next) || trigger.current?.contains(next))
+    if (!next?.instanceOf(Node) || popup.current?.contains(next)) return;
+    if (
+      trigger.current?.contains(next) &&
+      (pressed.current || shutting.current)
+    )
       return;
     if (trigger.current?.getAttribute("aria-expanded") !== "true") return;
     popup.current?.hidePopover();
@@ -244,15 +256,17 @@ function SelectBody({
             event.nativeEvent.isComposing
           )
             return;
-          // Back on the trigger of an open popup, as a Shift+Tab leaves it,
-          // the key goes on into the search field: focus moving during the
-          // key press takes its character along.
-          if (trigger.current?.getAttribute("aria-expanded") === "true") {
-            popup.current?.querySelector("input")?.focus();
-            return;
-          }
           event.preventDefault();
           openSearch(event.key);
+        }}
+        onPointerDown={(event: PointerEvent<HTMLButtonElement>) => {
+          rest.onPointerDown?.(event);
+          pressed.current = true;
+          event.currentTarget.doc.addEventListener(
+            "pointerup",
+            () => (pressed.current = false),
+            { once: true, capture: true },
+          );
         }}
         onBlur={(event: FocusEvent<HTMLButtonElement>) => {
           rest.onBlur?.(event);

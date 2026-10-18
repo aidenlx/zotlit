@@ -99,8 +99,8 @@ it("leaves a shortcut and Space to the trigger", async () => {
   expect(trigger.hasAttribute("aria-controls")).toBe(false);
 });
 
-it("shuts when focus leaves for anywhere but its trigger", async () => {
-  const { trigger, popup, outside, hide, key } = mount();
+it("shuts when focus leaves for its trigger by keyboard, not by a press", async () => {
+  const { trigger, popup, hide, key } = mount();
   await key({ key: "ArrowDown" });
   const field = popup.querySelector("input")!;
   const leave = (to: Element) =>
@@ -109,13 +109,27 @@ it("shuts when focus leaves for anywhere but its trigger", async () => {
         new FocusEvent("focusout", { bubbles: true, relatedTarget: to }),
       );
     });
+  // A press on the trigger moves focus there and is the popover's to answer.
+  await act(() => {
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
   await leave(trigger);
   expect(hide).not.toHaveBeenCalled();
-  // Shift+Tab onto the trigger, then off it.
+  document.dispatchEvent(new PointerEvent("pointerup"));
+  // Shift+Tab onto the trigger shuts it, as it shuts a native select's list.
+  await leave(trigger);
+  expect(hide).toHaveBeenCalledOnce();
+});
+
+it("shuts when focus leaves for elsewhere", async () => {
+  const { popup, outside, hide, key } = mount();
+  await key({ key: "ArrowDown" });
   await act(() => {
-    trigger.dispatchEvent(
-      new FocusEvent("focusout", { bubbles: true, relatedTarget: outside }),
-    );
+    popup
+      .querySelector("input")!
+      .dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: outside }),
+      );
   });
   expect(hide).toHaveBeenCalledOnce();
 });
