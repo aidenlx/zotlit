@@ -226,8 +226,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       ),
       fields:
         "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-stretch zt:overflow-hidden",
+      // The kind's Select trigger and the native operator, a rule between.
       predicate:
-        "zt:flex zt:min-w-0 zt:max-w-full zt:[&>[data-part=wrapper]:nth-child(2)]:border-s zt:[&>[data-part=wrapper]]:border-border",
+        "zt:flex zt:min-w-0 zt:max-w-full zt:[&>[role=combobox]~[data-part=wrapper]]:border-s zt:[&>:is([role=combobox],[data-part=wrapper])]:border-border",
       value: cn(
         "zt:-ms-px zt:-mt-px zt:flex zt:max-w-full zt:min-w-0 zt:flex-auto zt:items-start zt:border-s zt:border-t zt:border-border zt:empty:hidden",
         "zt:[&>:is([data-part=input],div[data-part=control])]:w-[12ch] zt:[&>:not([data-part=actions],datalist)]:flex-auto",

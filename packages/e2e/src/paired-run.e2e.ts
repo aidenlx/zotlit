@@ -7397,7 +7397,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const inBlock = (script: string) =>
           obEval(
             vaultId!,
-            `(()=>{${PAGE}const el=${blockEl};${script};return true;})()`,
+            `(async()=>{${PAGE}const el=${blockEl};${script};return true;})()`,
           );
         await inBlock(
           "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
@@ -7425,7 +7425,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
           await inBlock(
-            `const select=el.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}))`,
+            `await pick(el.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]'),${JSON.stringify(value)},'${control}')`,
           );
         }
         const sorted = block.replace(

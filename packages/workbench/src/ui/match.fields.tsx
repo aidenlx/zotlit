@@ -157,15 +157,13 @@ function RowOperator({
       onChange={(value) =>
         onChange(withOperator(condition, value as FilterOperator))
       }
-    >
-      {FILTER_OPERATORS[field.type].map((operator) => (
-        <option key={operator} value={operator}>
-          {(field.type === "collection"
-            ? (COLLECTION_LABELS[operator] ?? OPERATOR_LABELS[operator])
-            : OPERATOR_LABELS[operator])(m)}
-        </option>
-      ))}
-    </MatchSelect>
+      options={FILTER_OPERATORS[field.type].map((operator) => ({
+        value: operator,
+        label: (field.type === "collection"
+          ? (COLLECTION_LABELS[operator] ?? OPERATOR_LABELS[operator])
+          : OPERATOR_LABELS[operator])(m),
+      }))}
+    />
   );
 }
 
@@ -214,24 +212,16 @@ function RowValue({
     });
     return (
       <MatchSelect
+        // A list as long as the item types, or as the user's libraries, takes
+        // a search; the colours and file types are a short fixed list.
+        searchable={field.kind === "item-type" || field.kind === "library"}
         {...part("control")}
         aria-label={m.workbench_filter_value()}
         value={condition.value}
         onChange={(value) => onChange({ ...condition, value })}
-      >
-        {condition.value === "" ? (
-          <option value="" disabled>
-            {m.workbench_match_value_empty()}
-          </option>
-        ) : options.some(([value]) => value === condition.value) ? null : (
-          <option value={condition.value}>{condition.value}</option>
-        )}
-        {options.map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </MatchSelect>
+        placeholder={m.workbench_match_value_empty()}
+        options={options.map(([value, label]) => ({ value, label }))}
+      />
     );
   }
   if (field.type === "number" || field.type === "date")
@@ -280,7 +270,8 @@ function FieldIcon({ field }: { field: FilterField }) {
  * The conditions of one dataset, as the Match editor offers them. A
  * condition shows `label(field)` where it gives one, else the name of its
  * kind, and `icon(field)` where it gives one, else the theme's icon of its
- * value type.
+ * value type. Its field's path stands beside its name, as the Bases property
+ * picker shows a property's id.
  */
 export function filterVocabulary(
   dataset: FilterDataset,
@@ -307,6 +298,7 @@ export function filterVocabulary(
       kind: field.kind,
       label: label?.(field) ?? KIND_LABELS[field.kind](m),
       icon: icon ? icon(field) : <FieldIcon field={field} />,
+      detail: field.path,
       fresh: () => freshFilterRow(field),
       parse: (text) => {
         const row = parseFilterRow(text, fields);
