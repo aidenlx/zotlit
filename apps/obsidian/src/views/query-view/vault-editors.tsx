@@ -948,14 +948,25 @@ function useTruncated(el: RefObject<HTMLElement | null>, text: string) {
   const [truncated, setTruncated] = useState(false);
   useEffect(() => {
     const label = el.current;
-    // The observer of the window the cell stands in, which a popout changes.
-    const Observer = label?.ownerDocument.defaultView?.ResizeObserver;
-    if (!label || !Observer) return;
-    const observer = new Observer(() =>
-      setTruncated(label.scrollWidth > label.clientWidth),
-    );
-    observer.observe(label);
-    return () => observer.disconnect();
+    if (!label) return;
+    // The observer of the window the cell stands in, which changes as the
+    // view moves into or out of a popout, whose closing would stop it.
+    const observe = (win: Window) => {
+      const next = new (win as Window & typeof globalThis).ResizeObserver(() =>
+        setTruncated(label.scrollWidth > label.clientWidth),
+      );
+      next.observe(label);
+      return next;
+    };
+    let observer = observe(label.win);
+    const stopMigration = label.onWindowMigrated((win) => {
+      observer.disconnect();
+      observer = observe(win);
+    });
+    return () => {
+      stopMigration();
+      observer.disconnect();
+    };
   }, [el, text]);
   return truncated;
 }

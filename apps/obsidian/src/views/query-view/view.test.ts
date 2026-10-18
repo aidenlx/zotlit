@@ -4087,6 +4087,53 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       expect(mounted.el.querySelector("[data-query-vault-input]")).toBeNull();
     });
 
+    it("tells a truncated chip by the window it stands in, after the view moves to another", async () => {
+      // Each element's listener for the view moving to another window.
+      const migrated = new Map<HTMLElement, (win: Window) => void>();
+      const original = HTMLElement.prototype.onWindowMigrated;
+      HTMLElement.prototype.onWindowMigrated = function (listener) {
+        migrated.set(this, listener);
+        return () => migrated.delete(this);
+      };
+      onTestFinished(() => {
+        HTMLElement.prototype.onWindowMigrated = original;
+      });
+      const disconnect = vi.spyOn(
+        window.ResizeObserver.prototype,
+        "disconnect",
+      );
+      const { cell } = await typed(["vault.authors"], {
+        authors: ["A long name of an author"],
+      });
+      const chip = cell("authors").querySelector<HTMLElement>(
+        "[data-query-vault-chip]",
+      )!;
+      const label = chip.firstElementChild as HTMLElement;
+      /** The observers of the other window, and what each observes. */
+      const observers: { listener: () => void; observed: Element[] }[] = [];
+      const other = {
+        ResizeObserver: class {
+          readonly observed: Element[] = [];
+          constructor(readonly listener: () => void) {
+            observers.push(this);
+          }
+          observe(el: Element) {
+            this.observed.push(el);
+          }
+          disconnect() {}
+        },
+      } as unknown as Window;
+
+      expect(migrated.has(label)).toBe(true);
+      await act(() => migrated.get(label)!(other));
+      expect(disconnect).toHaveBeenCalled();
+      expect(observers.map(({ observed }) => observed)).toEqual([[label]]);
+      Object.defineProperty(label, "scrollWidth", { value: 200 });
+      Object.defineProperty(label, "clientWidth", { value: 100 });
+      await act(() => observers[0]!.listener());
+      expect(chip.getAttribute("aria-label")).toBe("A long name of an author");
+    });
+
     it("shows tags without their #, and aliases as items", async () => {
       const { cell } = await typed(
         ["vault.tags", "vault.aliases"],
