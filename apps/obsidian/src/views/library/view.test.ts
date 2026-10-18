@@ -372,7 +372,6 @@ function pluginData(stored?: unknown) {
   const setupActions = {
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
-    searchLibrary: vi.fn(),
     locateZotero: vi.fn(),
   };
   const notes = new Set(NOTED);
@@ -1715,6 +1714,21 @@ it("has the search box focused when the command brings the tab forward", async (
       revealLeaf: () => Promise.resolve(),
     },
   } as unknown as App);
+  expect(document.activeElement).toBe(searchBox(view));
+});
+
+it("puts the cursor in its own search box from the Welcome View banner's Search your library", async () => {
+  const { deps } = pluginData();
+  const view = await openTab(deps);
+  await act(() => view.welcome.settled);
+  expect(document.activeElement).not.toBe(searchBox(view));
+  const button = [
+    ...view.contentEl.querySelectorAll<HTMLElement>(
+      "[data-welcome-banner] button",
+    ),
+  ].find((el) => el.textContent === m.welcome_action_search());
+  expect(button).toBeInstanceOf(HTMLElement);
+  await act(() => button!.click());
   expect(document.activeElement).toBe(searchBox(view));
 });
 

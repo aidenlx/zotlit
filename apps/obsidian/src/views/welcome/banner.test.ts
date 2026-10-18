@@ -72,7 +72,6 @@ async function setup(data: Record<string, unknown> = {}) {
     setupActions: {
       openSettings: vi.fn(),
       pickFolder: vi.fn(),
-      searchLibrary: vi.fn(),
       locateZotero: vi.fn(),
     },
     templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
@@ -86,7 +85,7 @@ async function setup(data: Record<string, unknown> = {}) {
 /** The banner, loaded into the page and settled on its connection readout. */
 async function open(deps: WelcomeBannerDeps) {
   const el = document.body.createDiv();
-  const banner = new WelcomeBanner(deps, el);
+  const banner = new WelcomeBanner(deps, { searchLibrary: vi.fn() }, el);
   await act(async () => {
     banner.load();
     await banner.settled;

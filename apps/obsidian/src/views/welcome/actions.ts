@@ -5,7 +5,13 @@ import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/
 
 import type { SetupActions } from "./setup-actions";
 
-export interface WelcomeActions extends SetupActions {
+/** What the view that hosts the banner does for it. */
+export interface WelcomeBannerHost {
+  /** Put the cursor in the host's own search box. */
+  searchLibrary: () => void;
+}
+
+export interface WelcomeActions extends SetupActions, WelcomeBannerHost {
   openExternal: (url: string) => void;
   /** Put the banner away; in the upgraded state this acknowledges the Migration Prompt. */
   dismiss: () => void;

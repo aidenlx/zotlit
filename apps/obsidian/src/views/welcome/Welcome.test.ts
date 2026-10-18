@@ -152,6 +152,13 @@ describe("Welcome setup steps", () => {
     expect(actions.searchLibrary).toHaveBeenCalledOnce();
   });
 
+  it("offers no search while the Library View says Zotero is not found, since its search box is gone", async () => {
+    const { container } = await render("fresh", { notFound: true });
+    expect(
+      [...container.querySelectorAll("button")].map((el) => el.textContent),
+    ).not.toContain(m.welcome_action_search());
+  });
+
   it("leaves out the Connect step while the Library View says Zotero is not found", async () => {
     const { container } = await render("fresh", { notFound: true });
     expect(headings(container)).toEqual([

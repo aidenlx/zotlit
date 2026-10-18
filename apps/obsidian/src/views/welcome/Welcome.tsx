@@ -211,9 +211,14 @@ function StepFolder() {
   );
 }
 
-/** The library lists below the banner once ZotLit reads Zotero's database. */
+/**
+ * The library lists below the banner once ZotLit reads Zotero's database.
+ * Its search is the Library View's own search box, which the not-found state
+ * takes away.
+ */
 function StepLibrary() {
   const done = useWelcomeStore((s) => s.connection.status === "connected");
+  const notFound = useWelcomeStore((s) => s.notFound);
   const actions = useWelcomeActions();
   return (
     <TimelineNode
@@ -224,9 +229,15 @@ function StepLibrary() {
       <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
         {m.welcome_step_library_body()}
       </p>
-      <Button icon="search" className="zt:mt-2" onClick={actions.searchLibrary}>
-        {m.welcome_action_search()}
-      </Button>
+      {notFound ? null : (
+        <Button
+          icon="search"
+          className="zt:mt-2"
+          onClick={actions.searchLibrary}
+        >
+          {m.welcome_action_search()}
+        </Button>
+      )}
     </TimelineNode>
   );
 }

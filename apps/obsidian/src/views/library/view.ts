@@ -157,6 +157,8 @@ export class LibraryView extends ItemView {
     // The banner takes at most half the tab.
     this.welcome = new WelcomeBanner(
       deps.welcome,
+      // The banner's Search your library is the search box under it.
+      { searchLibrary: () => this.search.focus() },
       this.contentEl.createDiv({
         cls: "zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto",
       }),

@@ -17,7 +17,7 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { WelcomeActionsContext } from "./actions";
-import type { WelcomeActions } from "./actions";
+import type { WelcomeActions, WelcomeBannerHost } from "./actions";
 import {
   readConnectionStatus,
   readConnectionSync,
@@ -50,6 +50,7 @@ export interface WelcomeBannerDeps {
 export class WelcomeBanner extends Component {
   readonly #store = createWelcomeStore();
   readonly #deps: WelcomeBannerDeps;
+  readonly #host: WelcomeBannerHost;
   /** Where the banner draws. */
   readonly el: HTMLElement;
   #root: Root | null = null;
@@ -58,9 +59,14 @@ export class WelcomeBanner extends Component {
   #checkingTimer: number | null = null;
   #connection: Promise<void> = Promise.resolve();
 
-  constructor(deps: WelcomeBannerDeps, el: HTMLElement) {
+  constructor(
+    deps: WelcomeBannerDeps,
+    host: WelcomeBannerHost,
+    el: HTMLElement,
+  ) {
     super();
     this.#deps = deps;
+    this.#host = host;
     this.el = el;
   }
 
@@ -135,6 +141,7 @@ export class WelcomeBanner extends Component {
         release.acknowledgeMigration();
       },
       ...this.#deps.setupActions,
+      ...this.#host,
     };
 
     // Seed the definite readout before first paint so an already-loaded DB
