@@ -13,8 +13,6 @@ metadata:
 
 Open every PR against `next`: `gh pr create --base next`. The repository's default branch is `main`, so a PR opened without `--base` targets the wrong branch. `main` receives only stable graduations from `next` and emergency hotfixes, and a PR to `main` is made only when the user names one ([CONTRIBUTING.md](../../../CONTRIBUTING.md), ADR 0021).
 
-Merge into `next` with squash and a summary commit message: `gh pr merge <n> --squash --subject "<PR title>" --body-file <summary>`, the body a short summary of the whole change.
-
 ## Body
 
 Use this template for writing the PR body:
