@@ -58,6 +58,7 @@ import {
 import type { CardField, CardHeader } from "./card-fields";
 import type { ReadingCardDisclosures } from "./document";
 import type { ItemActions } from "./item-actions";
+import type { MenuItem } from "./row-menu";
 import { libraryOf, sameLibrary } from "./tree";
 
 type Values = Readonly<Record<string, QueryViewValue>>;
@@ -88,7 +89,7 @@ export interface ReadingCardDeps extends QueryViewDeps {
 
 export interface ReadingCardHost {
   /** The row menu of the Item, under the button that asks for it. */
-  menu: (indexedKey: string, button: HTMLElement) => void;
+  menu: (item: MenuItem, button: HTMLElement) => void;
   /** Show the Item's Annotations in the sidebar Annotation View. */
   openInSidebar: (indexedKey: string) => void;
   /** Put away the card that shows over the list on a narrow pane. */
@@ -935,15 +936,20 @@ function CardBody({ card }: { card: ReadingCard }) {
           </div>
         )}
         <div className="zt:mt-(--size-4-4) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-2-2)">
+          {/* Open PDF leads where there is a PDF; without one, the
+              Literature Note is the primary action. */}
+          {item?.pdf && (
+            <Button
+              variant="cta"
+              icon="file-text"
+              data-library-card-action="pdf"
+              onClick={() => void items.openPdf(key, false)}
+            >
+              {m.library_view_menu_open_pdf()}
+            </Button>
+          )}
           <Button
-            variant="cta"
-            icon="file-text"
-            data-library-card-action="pdf"
-            onClick={() => void items.openPdf(key, false)}
-          >
-            {m.library_view_menu_open_pdf()}
-          </Button>
-          <Button
+            {...(!item?.pdf && { variant: "cta" as const })}
             icon={noted ? "notebook-pen" : "file-plus"}
             data-library-card-action="note"
             onClick={() => void items.openNote(key, false)}
@@ -957,7 +963,10 @@ function CardBody({ card }: { card: ReadingCard }) {
             {...tooltipAttrs(m.library_view_card_more())}
             data-library-card-action="more"
             onClick={(event: ReactMouseEvent<HTMLElement>) =>
-              host.menu(key, event.currentTarget)
+              host.menu(
+                { indexedKey: key, pdf: item?.pdf ?? false },
+                event.currentTarget,
+              )
             }
           />
           <IconButton

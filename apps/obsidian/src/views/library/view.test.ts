@@ -352,6 +352,7 @@ function answer(
               "attachments[].indexedKey": [...attachments],
             }),
             ...(title !== undefined && { title }),
+            ...(item.pdf && { "attachments[].fileType": ["pdf"] }),
             ...fields,
             // The Reading Card reads its one Item, and more of it.
             ...(request.limit === 1 && cardValues(item)),
@@ -1735,7 +1736,7 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
   deps.app.workspace.trigger = trigger;
   const view = await openTab(deps);
   await act(() => {
-    itemRow(view, C).dispatchEvent(
+    itemRow(view, B).dispatchEvent(
       new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
     );
   });
@@ -1751,16 +1752,33 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
   expect(menu.items.every((item) => item.icon !== null)).toBe(true);
   expect(trigger).toHaveBeenCalledExactlyOnceWith("zotlit:item-menu", menu, {
     source: "library-view",
-    indexedKey: C,
+    indexedKey: B,
   });
   // The menu acts on the row it opened over, which it selects without
   // opening its Reading Card.
-  expect(itemRows(view)[2]).toBe(`${C} *`);
-  expect(view.selection.getState()).toEqual({ key: C, card: false });
+  expect(itemRows(view)[1]).toBe(`${B} *`);
+  expect(view.selection.getState()).toEqual({ key: B, card: false });
   menu.items[1]!.click();
-  expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(C, "split");
+  expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(B, "split");
   menu.items[5]!.click();
-  expect(items.showInZotero).toHaveBeenCalledExactlyOnceWith(C);
+  expect(items.showInZotero).toHaveBeenCalledExactlyOnceWith(B);
+});
+
+it("offers no PDF to open in the menu of a row whose Item has no PDF", async () => {
+  const { deps } = pluginData();
+  deps.app.workspace.trigger = vi.fn();
+  const view = await openTab(deps);
+  await act(() => {
+    itemRow(view, C).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(Menu.instances.at(-1)!.items.map((item) => item.title)).toEqual([
+    "Write literature note",
+    "Insert citation",
+    "Copy citation key",
+    "Show in Zotero",
+  ]);
 });
 
 it("shows an Item in its first Collection, selected, with its Reading Card", async () => {
@@ -2467,6 +2485,39 @@ describe("Reading Card", () => {
     expect(items.insertCitation).toHaveBeenCalledExactlyOnceWith(B);
     await act(() => addNote(B));
     expect(button(view, "note").textContent).toBe("Open literature note");
+  });
+
+  it("offers no Open PDF for an Item with no PDF, and makes its Literature Note the primary button, from the row's header on", async () => {
+    const { deps, addNote } = pluginData();
+    deps.app.workspace.trigger = vi.fn();
+    const view = await openTab(deps);
+    const actions = () =>
+      [
+        ...card(view).querySelectorAll<HTMLElement>(
+          "[data-library-card-action]",
+        ),
+      ].map(
+        (el) =>
+          `${el.dataset.libraryCardAction}${el.classList.contains("mod-cta") ? " (primary)" : ""}`,
+      );
+    // While the card reads C, it shows C's header from its row.
+    await act(() => itemRow(view, C).click());
+    expect(actions()).toEqual(["note (primary)", "more", "sidebar"]);
+    await act(() => view.card.settled);
+    expect(actions()).toEqual(["note (primary)", "more", "sidebar"]);
+    await act(() => button(view, "more").click());
+    expect(
+      Menu.instances.at(-1)!.items.map((item) => item.title),
+    ).not.toContain("Open PDF");
+    await act(() => addNote(C));
+    expect(actions()).toEqual(["note (primary)", "more", "sidebar"]);
+    expect(button(view, "note").textContent).toBe("Open literature note");
+    // An Item with a PDF keeps Open PDF first, as the primary button.
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    expect(actions()).toEqual(["pdf (primary)", "note", "more", "sidebar"]);
   });
 
   it("puts itself away from its close button, which a narrow pane shows, and gives the focus back to the row", async () => {

@@ -150,6 +150,14 @@ function mainAttachmentKind(values: TableRecord["values"]) {
   return ATTACHMENT_KINDS.find((kind) => types.includes(kind.type)) ?? null;
 }
 
+/**
+ * Whether the Item has a PDF to open: the one rule for every surface that
+ * offers Open PDF, read from the Attachment kinds a Papers row reads.
+ */
+export function holdsPdf(values: Readonly<Record<string, QueryViewValue>>) {
+  return list(values["attachments[].fileType"]).includes("pdf");
+}
+
 /** The path of the Item's Literature Note, as the Note Index has it now. */
 function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
   return useSyncExternalStore(
