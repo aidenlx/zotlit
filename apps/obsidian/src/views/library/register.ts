@@ -8,7 +8,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
 import { LIBRARY_VIEW_ROW_LIMIT } from "./document";
-import { ZOTLIT_MARK_ICON, ZOTLIT_MARK_SVG } from "./icon";
+import { ZOTLIT_MARK_ICON, zotlitMarkSvg } from "./icon";
 import { LIBRARY_VIEW_TYPE, LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
@@ -21,7 +21,7 @@ export function registerLibraryView(
   plugin: LibraryViewPlugin,
   deps: LibraryViewDeps,
 ): void {
-  addIcon(ZOTLIT_MARK_ICON, ZOTLIT_MARK_SVG);
+  addIcon(ZOTLIT_MARK_ICON, zotlitMarkSvg());
   plugin.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, deps));
   const open = () => void openLibraryView(plugin.app);
   plugin.addCommand({
