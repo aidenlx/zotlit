@@ -414,6 +414,13 @@ export class LibraryView extends ItemView {
     // it, in a box of its own.
     this.#cardWidth = new CardWidth(cardEl, main, {
       stored: () => this.#storage.document().cardWidth,
+      // A drag past the minimum hides the card while the pointer stays
+      // there, and closes it on release.
+      collapse: (collapsed) => {
+        if (collapsed) cardEl.hidden = true;
+        else this.#showCard();
+      },
+      close: () => this.#closeCard({ keep: true }),
       keep: (width) => {
         this.#storage
           .change((doc) => withCardWidth(doc, width))
