@@ -2010,6 +2010,156 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  /**
+   * Reload the vault's window, as Obsidian's "Reload app without saving"
+   * does, and wait for ZotLit to load in the new page with plugin data read.
+   */
+  async function reloadWindow(): Promise<void> {
+    // The page before the reload carries a mark the new page lacks. The
+    // workspace saves its layout a while after a change; a researcher
+    // reloads later than that, so the case saves it at once.
+    await obEval(
+      vaultId,
+      "(async()=>{window.__ztBeforeReload=true;await app.workspace.requestSaveLayout.run();return true;})()",
+    );
+    await cli([`vault=${vaultId}`, "reload"]);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!window.__ztBeforeReload&&!!app.plugins.plugins.zotlit?.services?.settings?.current&&app.workspace.layoutReady)",
+        { expected: "true", tries: 120 },
+      ),
+    ).toBe(true);
+    await keepRendering(vaultId);
+  }
+
+  /** What the Library View shows that a reload must keep, once it settled. */
+  interface Kept {
+    phase: string;
+    open: string[];
+    selected: string | null;
+    card: string | null;
+    inView: boolean;
+    banner: boolean;
+    pressed: string | null;
+    rows: number;
+  }
+  const readKept = (help: string) =>
+    `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;await new Promise(r=>setTimeout(r,200));const el=view.contentEl;const row=el.querySelector('[data-query-item-row][data-selected]');const card=el.querySelector('[data-library-card]');let inView=false;if(row){const r=row.getBoundingClientRect();const hit=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);inView=!!hit&&row.contains(hit);}const action=view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)});return JSON.stringify({phase:view.query.state.getState().phase,open:[...el.querySelectorAll('[data-library-node][aria-expanded="true"]')].map(n=>n.getAttribute('data-library-node')),selected:row?.getAttribute('data-query-item-row')??null,card:card&&!card.hidden&&card.checkVisibility()?card.querySelector('[data-library-card-title]')?.textContent??'':null,inView,banner:!!el.querySelector('[data-welcome-banner]'),pressed:action?.getAttribute('aria-pressed')??null,rows:el.querySelectorAll('[data-query-item-row]').length});})()`;
+
+  it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper with its Reading Card in view, and the Welcome View banner they asked for, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,scope:${services}.settings.current[${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}]??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:saved.scope,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    await wideWindow(cleanup);
+    // The window is short, so the list scrolls under the banner.
+    await obEval(
+      vaultId,
+      "require('@electron/remote').getCurrentWindow().setSize(1600,640);true",
+    );
+    // My Library alone, with the banner put away.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},${JSON.stringify(LIBRARY_SCOPE_SETTING_KEY)}:{mode:'selected',libraries:[{type:'personal'}]},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+    );
+    const help = m.library_view_help_action();
+    const keptWhen = (ready: (kept: Kept) => boolean) =>
+      obReadUntil<Kept>(vaultId, readKept(help), {
+        ready,
+        what: "Library View",
+        tries: 120,
+      });
+    const personal = LIBRARIES.find(({ type }) => type === "user")!;
+    const parent = COLLECTIONS.find(
+      (entry) =>
+        entry.libraryID === personal.libraryID && entry.key === "PERSNAL2",
+    )!;
+    const parentKey = JSON.stringify(["personal", parent.name]);
+    const first = await keptWhen(
+      (kept) => kept.phase === "ready" && kept.rows > 0,
+    );
+    expect(first).toMatchObject({ banner: false, pressed: "false" });
+    expect(first.open).not.toContain(parentKey);
+
+    // Open the Collection, select the last paper, and ask for the banner.
+    const last = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const view=leaf.view;const el=view.contentEl;press([...el.querySelectorAll('[data-library-node]')].find(n=>n.getAttribute('data-library-node')===${JSON.stringify(parentKey)}).querySelector('[data-library-expand]'),'Collection disclosure');await until('Collection open',()=>[...el.querySelectorAll('[data-library-node][aria-expanded="true"]')].some(n=>n.getAttribute('data-library-node')===${JSON.stringify(parentKey)}));const rows=[...el.querySelectorAll('[data-query-item-row]')];const row=rows.at(-1);press(row,'last paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();});press(view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)}),'Welcome & help');await until('banner',()=>el.querySelector('[data-welcome-banner]'));return JSON.stringify(row.getAttribute('data-query-item-row'));})()`,
+      ),
+    ) as string;
+    const before = await keptWhen(
+      (kept) => kept.selected === last && kept.banner,
+    );
+    expect(before).toMatchObject({
+      open: expect.arrayContaining([parentKey]),
+      selected: last,
+      banner: true,
+      pressed: "true",
+    });
+    expect(before.card).not.toBeNull();
+
+    // A reload right after the changes keeps every one of them.
+    await reloadWindow();
+    const after = await keptWhen(
+      (kept) => kept.phase === "ready" && kept.selected !== null,
+    );
+    expect(after).toEqual({ ...before, inView: true });
+    // The list scrolled to the paper, which a fresh page would not show.
+    expect(
+      await obEval(
+        vaultId,
+        `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;let n=el.querySelector('[data-query-item-row][data-selected]');for(;n&&n!==el;n=n.parentElement)if(n.scrollTop>0)return 'scrolled';return 'top';})()`,
+      ),
+    ).toBe("scrolled");
+  });
+
+  it("keeps the Welcome View banner away after a window reload once the researcher dismissed it", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    const help = m.library_view_help_action();
+    const helpAction = `app.workspace.getLeavesOfType('zotlit-library')[0].view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)})`;
+    const banner = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl.querySelector('[data-welcome-banner]')`;
+    // The banner shows, as "Open welcome view" shows it, then the researcher
+    // dismisses it from its dismiss button.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await app.commands.executeCommandById('zotlit:open-welcome-view');const el=await until('banner',()=>${banner},5000);press(el.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
+    );
+    await reloadWindow();
+    const kept = await obReadUntil<Kept>(vaultId, readKept(help), {
+      ready: (shown) => shown.phase === "ready",
+      what: "Library View",
+      tries: 120,
+    });
+    expect(kept).toMatchObject({ banner: false, pressed: "false" });
+    expect(
+      await obEval(
+        vaultId,
+        `JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested'],action:!!${helpAction}})`,
+      ),
+    ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
+  });
+
   it("draws My Library as two-line Papers with the seeded Literature Notes and Attachment kinds and Sort and Save as query file in its heading, and expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, with Zotero closed", async () => {
     const layout = await obEval(
       vaultId,
