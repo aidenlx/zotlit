@@ -25,6 +25,7 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 
 import { Chooser, useChooserOpenSearch } from "./chooser";
@@ -248,7 +249,7 @@ function SelectBody({
             event.ctrlKey ||
             event.metaKey ||
             event.altKey ||
-            event.nativeEvent.isComposing
+            composing(event)
           )
             return;
           event.preventDefault();
@@ -282,8 +283,7 @@ function SelectBody({
         </span>
         <Icon
           name="chevrons-up-down"
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
+          size="xs"
           className="zt:shrink-0 zt:text-(--icon-color)"
         />
       </Chooser.Trigger>
@@ -336,8 +336,7 @@ function SelectBody({
                   )}
                   <Icon
                     name="check"
-                    size="var(--icon-xs)"
-                    strokeWidth="var(--icon-xs-stroke-width)"
+                    size="xs"
                     className="zt:invisible zt:shrink-0 zt:group-aria-selected:visible"
                   />
                 </>

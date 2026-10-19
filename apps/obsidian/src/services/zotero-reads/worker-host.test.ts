@@ -20,6 +20,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import { layerRcRef } from "./connection";
@@ -662,6 +663,8 @@ describe("ZoteroReads worker adapter", () => {
  */
 class StandInWorker extends EventTarget {
   static spawned: StandInWorker[] = [];
+  /** Whether a worker answers the close message, as a live one does. */
+  static answersClose = true;
   readonly posted: unknown[] = [];
   terminated = false;
   constructor() {
@@ -674,7 +677,7 @@ class StandInWorker extends EventTarget {
   postMessage(data: unknown): void {
     this.posted.push(data);
     // The close message: a live worker removes its snapshots and says so.
-    if (Array.isArray(data) && data[0] === 1)
+    if (StandInWorker.answersClose && Array.isArray(data) && data[0] === 1)
       queueMicrotask(() =>
         this.dispatchEvent(
           new MessageEvent("message", { data: WORKER_CLOSED }),
@@ -728,6 +731,59 @@ const openConnection = Effect.fnUntraced(function* (
     }),
   );
   return { scope, connection, worker, owner: worker.snapshotOwner! };
+});
+
+describe("connectWorker close", () => {
+  const warn = vi.spyOn(getLogger("zotero-reads"), "warn");
+  beforeEach(() => {
+    StandInWorker.spawned = [];
+    StandInWorker.answersClose = true;
+    vi.stubGlobal("Worker", StandInWorker);
+    warn.mockClear();
+  });
+  afterEach(() => {
+    StandInWorker.answersClose = true;
+    vi.unstubAllGlobals();
+  });
+
+  /** Close the connection's scope while the clock stands still. */
+  const closeOnStillClock = Effect.fnUntraced(function* () {
+    const { scope, worker } = yield* openConnection(
+      Effect.succeed(readsConfig("zotero.sqlite")),
+      async () => {},
+    );
+    const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
+    for (let turn = 0; turn < 100 && !closing.pollUnsafe(); turn++)
+      yield* Effect.yieldNow;
+    return { closing, worker };
+  });
+
+  it("terminates a worker once it answers the close message, without waiting or warning", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { closing, worker } = yield* closeOnStillClock();
+        return { closed: closing.pollUnsafe() !== undefined, worker };
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+    expect(result.closed).toBe(true);
+    expect(result.worker.terminated).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("terminates a worker that never answers the close message after the close timeout, and warns", async () => {
+    StandInWorker.answersClose = false;
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { closing, worker } = yield* closeOnStillClock();
+        const terminatedBefore = worker.terminated;
+        yield* TestClock.adjust("5 seconds");
+        yield* Fiber.join(closing);
+        return { terminatedBefore, terminated: worker.terminated };
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+    expect(result).toEqual({ terminatedBefore: false, terminated: true });
+    expect(warn).toHaveBeenCalledOnce();
+  });
 });
 
 describe("connectWorker read snapshot cleanup", () => {

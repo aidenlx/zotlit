@@ -37,6 +37,7 @@ It searches every library in your [library scope](/docs/reference/settings#libra
     - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
     - Press `Shift+Enter` to open the item's PDF instead. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
     - Press `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) to open that PDF in a new pane.
+    - Press `Alt+Enter` (`Option+Enter` on macOS) to show the item in the [Library View](/docs/how-to/use-library-view#show-in-library).
     - Press `Esc` to dismiss the switcher.
 
     If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief <UiLabel name={m.notice_creating_note()} /> notice, followed by <UiLabel name={m.notice_created_note()} />
@@ -44,7 +45,7 @@ It searches every library in your [library scope](/docs/reference/settings#libra
   </Step>
 </Steps>
 
-### Choose the profile that creates the note
+### Choose the profile that creates the note [#choose-profile]
 
 A [profile](/docs/concepts/profiles) supplies a note's name, folder, properties, and body. While your vault holds only the Default profile, the Default creates the note and ZotLit asks nothing.
 
@@ -56,6 +57,10 @@ Once you add a profile, ZotLit selects one by [Profile Match](/docs/reference/te
 A profile that matches the item carries the <UiLabel name={m.modal_profile_match_candidate()} /> badge in the picker. When nothing matched, the Default is preselected. When several profiles match, ZotLit names them above the results and the search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />.
 
 See [Use a different template for different notes](/docs/how-to/use-different-templates) to add a profile and set the conditions that select it.
+
+## Browse the Library View [#library-view]
+
+The Library View lists your library in a tab, by collection, recent activity, or reading state. Its rows take the same keys as the quick switcher: `Enter` opens or creates the literature note. See [Browse your library in the Library View](/docs/how-to/use-library-view#rows).
 
 ## Open the item's PDF in Obsidian [#open-pdf]
 

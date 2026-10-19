@@ -79,8 +79,7 @@ export function ToolbarButtonContent({
       {icon && (
         <Icon
           name={icon}
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
+          size="s"
           // A button that keeps its name gives up its icon instead on the
           // narrowest toolbar, so the row still holds every control.
           className={cn("zt:shrink-0", keepLabel && "zt:@max-2xs:hidden")}
@@ -98,8 +97,7 @@ export function ToolbarButtonContent({
       {chevron && (
         <Icon
           name="chevrons-up-down"
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
+          size="xs"
           className="zt:ms-auto zt:shrink-0 zt:text-muted-foreground"
         />
       )}

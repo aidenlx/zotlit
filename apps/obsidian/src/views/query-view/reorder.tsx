@@ -84,11 +84,5 @@ export function useReorder(
 }
 
 export function GripIcon() {
-  return (
-    <Icon
-      name="grip-vertical"
-      size="var(--icon-s)"
-      strokeWidth="var(--icon-s-stroke-width)"
-    />
-  );
+  return <Icon name="grip-vertical" size="s" />;
 }

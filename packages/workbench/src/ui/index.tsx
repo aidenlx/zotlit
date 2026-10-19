@@ -2,6 +2,7 @@ export { MatchEditor, MatchPane } from "./match";
 export { MatchExpressionInput } from "./match.expression";
 export { filterVocabulary } from "./match.fields";
 export type { FilterValues } from "./match.fields";
+export type { FilterField } from "#/match/fields";
 export { ChipInput } from "./match.chips";
 export { MatchInput } from "./match.input";
 export { MatchSelect } from "./match.rows";

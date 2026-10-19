@@ -30,7 +30,7 @@ export interface TemplateCiteItemData {
   abstract: string | null;
   /** Journal or container title; the CSL-inspired rename of `publicationTitle`. */
   containerTitle: string | null;
-  /** Citation key, from Better BibTeX or Zotero's native citation key. */
+  /** Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates. */
   citationKey: string | null;
   /** Alias for {@link citationKey}; both stay accessible on the item. */
   citekey: string | null;

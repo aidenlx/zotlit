@@ -168,10 +168,22 @@ export interface SettingsServiceOptions {
    * Throwing or returning a non-plain value triggers the defaults fallback.
    */
   migrateV9: (raw: unknown) => unknown;
+  /**
+   * The object this plugin's instances share across a reload, such as the
+   * `App`. An instance leaves its last write on it as it unloads, and the next
+   * instance waits for that write before it reads the plugin data, so a change
+   * made just before a reload is neither lost nor overwritten.
+   */
+  handoff?: object;
 }
+
+/** Where an unloading instance leaves its last write for the next one. */
+const LAST_WRITE = Symbol.for("zotlit.settings.last-write");
+type Handoff = { [LAST_WRITE]?: Promise<void> };
 
 export class SettingsService extends Service<void> {
   readonly #plugin;
+  readonly #handoff: Handoff | undefined;
   readonly #migrateLegacy;
   readonly #migrateV1;
   readonly #migrateV2;
@@ -190,6 +202,8 @@ export class SettingsService extends Service<void> {
   #loaded = false;
   #hydrationOrigin: HydrationOrigin | null = null;
   #pendingWrite: Promise<void> | undefined;
+  /** Whether the plugin began to unload: each change then goes to the next instance. */
+  #released = false;
 
   ready: Promise<void>;
 
@@ -206,6 +220,7 @@ export class SettingsService extends Service<void> {
     this.#migrateV7 = options.migrateV7;
     this.#migrateV8 = options.migrateV8;
     this.#migrateV9 = options.migrateV9;
+    this.#handoff = options.handoff as Handoff | undefined;
     this.#scheduleSave = debounce(
       () => this.#performSave(),
       SAVE_DEBOUNCE_MS,
@@ -377,6 +392,25 @@ export class SettingsService extends Service<void> {
     if (pending) await pending;
   }
 
+  /**
+   * Start writing any pending change now, as the plugin unloads, and leave
+   * the write where the next instance waits for it before it loads. A change
+   * made after this, such as a view that saves its state as it closes, is
+   * written at once and handed on the same way.
+   */
+  release(): void {
+    this.#released = true;
+    this.#handOff();
+  }
+
+  /** Write every change now, and leave that write as the last one. */
+  #handOff(): void {
+    const write = this.flush().catch((error: unknown) => {
+      console.error("settings save on unload failed", error);
+    });
+    if (this.#handoff) this.#handoff[LAST_WRITE] = write;
+  }
+
   #snapshot(): Settings {
     return { ...defaults, ...this.#overrides };
   }
@@ -404,6 +438,7 @@ export class SettingsService extends Service<void> {
     this.#broken = nextBroken;
     this.#notify();
     this.#scheduleSave();
+    if (this.#released) this.#handOff();
     return candidate;
   }
 
@@ -423,6 +458,8 @@ export class SettingsService extends Service<void> {
       await this.flush();
     });
 
+    const last = this.#handoff?.[LAST_WRITE];
+    if (last) await last;
     const raw = await this.#plugin.loadData();
     await this.#hydrateFrom(raw);
 
@@ -705,9 +742,12 @@ export class SettingsService extends Service<void> {
       ...Object.fromEntries(this.#broken),
       ...this.#overrides,
     };
+    const earlier = this.#pendingWrite;
     let promise!: Promise<void>;
     promise = (async () => {
       try {
+        // One write at a time, so the last change begun is the last to land.
+        if (earlier) await earlier.catch(() => {});
         await this.#plugin.saveData(payload);
       } finally {
         if (this.#pendingWrite === promise) {

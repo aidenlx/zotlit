@@ -21,13 +21,13 @@ export type ConnectionReadout =
 const ITEM_COUNT_KEY = ["welcome", "connection-readout"] as const;
 
 interface ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error">;
+  reads: Pick<ZoteroReadsService, "state" | "error" | "moved">;
   queries: Pick<QueryClientService, "peek">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
 }
 
 export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error" | "ready">;
+  reads: Pick<ZoteroReadsService, "state" | "error" | "moved" | "ready">;
   queries: Pick<QueryClientService, "peek" | "read">;
 }
 
@@ -63,24 +63,51 @@ function connectedReadout(
 }
 
 /**
- * A failed most-recent refresh (a broken or moved data path) keeps the
- * database serving a stale connection; surface that as missing so step 1
- * reflects the broken location instead of stale item data.
+ * ZotLit cannot read the Zotero data directory the settings name: no
+ * connection serves, as where the folder is missing or unreadable at start,
+ * or the one that serves reads another folder, as where the data folder
+ * changed to one that does not read. The Library View then says "Zotero not
+ * found" in place of its tree and list.
+ *
+ * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
  */
-function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
-  return deps.reads.state === "degraded" || deps.reads.error !== null;
+export function unavailable(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
+  return (
+    deps.reads.state === "degraded" ||
+    (deps.reads.error !== null && deps.reads.moved)
+  );
+}
+
+/**
+ * The last refresh of the database the settings name failed while that
+ * database still serves, as for a locked or briefly unreadable file: the
+ * Library View keeps its rows and says so.
+ */
+export function refreshFailed(
+  deps: Pick<ConnectionQueryDeps, "reads">,
+): boolean {
+  return !unavailable(deps) && deps.reads.error !== null;
+}
+
+/**
+ * Whether step 1 reads as missing: no connection serves, or the folder the
+ * settings name does not read, so step 1 shows the broken location rather
+ * than the earlier connection's item count.
+ */
+function missing(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
+  return unavailable(deps) || refreshFailed(deps);
 }
 
 export async function readConnectionStatus(
   deps: ReadConnectionStatusDeps,
 ): Promise<ConnectionReadout> {
   const { reads } = await deps.reads.ready;
-  if (unavailable(deps)) return { status: "missing" };
+  if (missing(deps)) return { status: "missing" };
 
   const held = await deps.queries.read(ITEM_COUNT_KEY, ({ signal }) =>
     Effect.runPromise(reads.ConnectionReadout({}), { signal }),
   );
-  if (held === null || deps.reads.state !== "ready" || unavailable(deps)) {
+  if (held === null || deps.reads.state !== "ready" || missing(deps)) {
     return { status: "missing" };
   }
   return connectedReadout(deps, held.itemCount);
@@ -98,7 +125,7 @@ export function readConnectionSync(
   deps: ReadConnectionSyncDeps,
 ): ConnectionReadout | null {
   if (deps.reads.state === "loading") return null;
-  if (unavailable(deps)) return { status: "missing" };
+  if (missing(deps)) return { status: "missing" };
 
   const held = deps.queries.peek<{ itemCount: number }>(ITEM_COUNT_KEY);
   return held === null ? null : connectedReadout(deps, held.value.itemCount);

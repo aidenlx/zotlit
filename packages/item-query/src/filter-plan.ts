@@ -25,6 +25,7 @@ import {
   GLOBAL_FUNCTION_NAMES,
   GLOBAL_FUNCTIONS,
   IF_FUNCTION,
+  literalMembership,
   methodOf,
   methodsNamed,
   parameterAt,
@@ -121,6 +122,12 @@ export type FilterNode<Item = QueryItem> = NodeBase &
         readonly name: string;
         readonly subject: FilterNode<Item>;
         readonly args: readonly FilterNode<Item>[];
+        /**
+         * Membership in a list of literals, built once when the filter is
+         * planned: the evaluator calls it in place of the method of the
+         * subject, which it does not evaluate.
+         */
+        readonly membership?: FunctionDefinition;
       }
     | {
         readonly kind: "property";
@@ -1292,6 +1299,9 @@ class Validator<Item, Needs> {
       return fail(argumentType(this.#callee(name, subject), args, wrong));
     }
     const valueType = commonType(fitting.map((method) => method.returns));
+    const literals =
+      subject.kind === "list" ? literalValues(subject.elements) : undefined;
+    const membership = literals && literalMembership(name, literals);
     return this.#track(
       {
         ...span,
@@ -1300,6 +1310,7 @@ class Validator<Item, Needs> {
         subject,
         args,
         valueType,
+        ...(membership ? { membership } : {}),
       },
       valueType === "list"
         ? name === "flat"
@@ -1325,6 +1336,18 @@ function literal(
   value: FilterValue,
 ): Span & { kind: "literal"; value: FilterValue } {
   return { ...span, kind: "literal", value };
+}
+
+/** The values of `nodes` when every one is a literal. */
+function literalValues(
+  nodes: readonly FilterNode<any>[],
+): FilterValue[] | undefined {
+  const values: FilterValue[] = [];
+  for (const node of nodes) {
+    if (node.kind !== "literal") return undefined;
+    values.push(node.value);
+  }
+  return values;
 }
 
 function isThis(node: ExpressionNode): boolean {

@@ -49,6 +49,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
+import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -239,16 +240,6 @@ function useChooserList(): ChooserListState {
   const state = useContext(ChooserListContext);
   if (!state) throw new Error("Chooser.Item rendered outside a Chooser.List");
   return state;
-}
-
-/**
- * Whether a keystroke belongs to an in-flight IME composition. Obsidian's
- * keymap dispatcher offers no such guard, so every handler below asks for
- * itself — the spec makes that each handler's own job. `keyCode` 229 is the
- * composition keystroke an IME reports before `isComposing` turns true.
- */
-function composing(event: KeyboardEvent): boolean {
-  return event.isComposing || event.keyCode === 229;
 }
 
 /**
@@ -1185,8 +1176,7 @@ function RowShell({
       {leading ?? (
         <Icon
           name={icon ?? "check"}
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
+          size="s"
           className={cn("zt:shrink-0", !icon && "zt:invisible")}
         />
       )}
@@ -1436,8 +1426,7 @@ function PageHeader({
       >
         <Icon
           name="chevron-left"
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
+          size="s"
           className="zt:shrink-0 zt:text-muted-foreground"
         />
         <span className="zt:truncate">{title}</span>
@@ -1450,11 +1439,7 @@ function PageHeader({
         {...tooltipAttrs(closeLabel)}
         onClick={close}
       >
-        <Icon
-          name="x"
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
-        />
+        <Icon name="x" size="s" />
       </button>
     </div>
   );
@@ -1572,6 +1557,7 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
     <>
       <button
         type="button"
+        id={`${id}-button`}
         popoverTarget={id}
         className={cn(
           chooserIconButton,
@@ -1581,18 +1567,15 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
         {...tooltipAttrs(label)}
         style={anchor}
       >
-        <Icon
-          name="more-horizontal"
-          size="var(--icon-s)"
-          strokeWidth="var(--icon-s-stroke-width)"
-        />
+        <Icon name="more-horizontal" size="s" />
       </button>
       <div
         ref={menu}
         id={id}
         popover="auto"
         role="menu"
-        aria-label={label}
+        // Named by its button: an `aria-label` would show a tooltip.
+        aria-labelledby={`${id}-button`}
         className={cn(
           "zt:inset-auto zt:my-1 zt:min-w-45 zt:flex-col zt:p-(--size-4-1) zt:[&:popover-open]:flex",
           "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
@@ -1621,22 +1604,12 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
                 item.onSelect();
               }}
             >
-              <Icon
-                name={item.icon}
-                size="var(--icon-s)"
-                strokeWidth="var(--icon-s-stroke-width)"
-                className="zt:shrink-0"
-              />
+              <Icon name={item.icon} size="s" className="zt:shrink-0" />
               <span className="zt:min-w-0 zt:flex-1 zt:truncate">
                 {item.title}
               </span>
               {item.checked && (
-                <Icon
-                  name="check"
-                  size="var(--icon-s)"
-                  strokeWidth="var(--icon-s-stroke-width)"
-                  className="zt:shrink-0"
-                />
+                <Icon name="check" size="s" className="zt:shrink-0" />
               )}
             </button>
           </Fragment>

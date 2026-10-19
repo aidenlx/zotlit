@@ -27,7 +27,7 @@ views:
 const VIEW = FILE.views[0]!;
 
 const entryOf = (path: string, faults = {}) =>
-  viewProperties(FILE, VIEW, faults).entries.find(
+  viewProperties(FILE, VIEW, { formulaIssues: faults }).entries.find(
     (entry) => entry.path === path,
   );
 
@@ -85,7 +85,7 @@ describe("viewProperties entries", () => {
   it("marks a Formula in the Visible Properties that the file does not define with its fault", () => {
     const view = { from: "items" as const, order: ["formula.gone"] };
     const properties = viewProperties(FILE, view, {
-      gone: "The formula gone has no definition.",
+      formulaIssues: { gone: "The formula gone has no definition." },
     });
     expect(properties.entries[0]).toMatchObject({
       path: "formula.gone",
@@ -274,6 +274,9 @@ describe("fieldLabel", () => {
     ["item.archiveID", "Item archive ID"],
     ["item.dateAdded", "Item date added"],
     ["item.itemType", "Item type"],
+    // A Vault Property reads as its frontmatter key, marked as the note's.
+    ["vault.citekey", "citekey (note)"],
+    ["vault.reading-status", "reading-status (note)"],
     // A path no label covers stays as it is.
     ["attachment.contentType", "attachment.contentType"],
   ])("names %s as %s", (property, label) => {
@@ -304,7 +307,9 @@ describe("viewProperties kinds", () => {
     ["item.title", "field", true],
     ['custom["Reading status"]', "field", false],
     ["formula.year", "formula", false],
-    [LITERATURE_NOTE, "literatureNote", false],
+    [LITERATURE_NOTE, "vault", false],
+    ["vault.reading-status", "vault", false],
+    ["vault.Reading status", "vault", false],
   ])(
     "names %s a %s, nested: %s; only a field's Projection Path nests by its dots",
     (path, kind, nested) => {
@@ -316,11 +321,11 @@ describe("viewProperties kinds", () => {
     },
   );
 
-  it("asks ZotLit Query for the Visible Properties but the Literature Note Property", () => {
+  it("asks ZotLit Query for the Visible Properties but the vault properties", () => {
     const properties = viewProperties(FILE, {
       type: "table",
       from: "items",
-      order: [LITERATURE_NOTE, "title", "formula.year"],
+      order: [LITERATURE_NOTE, "title", "vault.reading-status", "formula.year"],
     });
     expect(properties.queried.map((entry) => entry.path)).toEqual([
       "title",
@@ -400,5 +405,44 @@ describe("viewProperties Literature Note Property", () => {
       LITERATURE_NOTE,
     ]);
     expect(cards.orderOf([])).toEqual([]);
+  });
+});
+
+describe("viewProperties vault properties", () => {
+  const paths = (properties: ReturnType<typeof viewProperties>) =>
+    properties.visible.map((entry) => entry.path);
+
+  it.each(["table", "list", "cards"])(
+    "shows a vault property where the order of a %s of Items places it",
+    (type) => {
+      const properties = viewProperties(null, {
+        type,
+        from: "items",
+        order: ["title", "vault.reading-status"],
+      });
+      expect(paths(properties)).toEqual(["title", "vault.reading-status"]);
+      expect(properties.entry("vault.reading-status")).toMatchObject({
+        label: m.query_view_vault_property_label({ name: "reading-status" }),
+        formula: null,
+        fits: true,
+        place: 1,
+      });
+    },
+  );
+
+  it("keeps a vault property in the order of a view of another dataset, and names it no unused setting", () => {
+    const properties = viewProperties(null, {
+      type: "table",
+      from: "annotations",
+      order: ["comment", "vault.reading-status"],
+    });
+    expect(paths(properties)).toEqual(["comment"]);
+    expect(properties.entry("vault.reading-status").fits).toBe(false);
+    expect(properties.unused.order).toEqual([]);
+    expect(properties.orderOf(["comment", "color"])).toEqual([
+      "comment",
+      "color",
+      "vault.reading-status",
+    ]);
   });
 });

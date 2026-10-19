@@ -219,6 +219,14 @@ export interface AnnotationsLayoutHost {
    * so the query can run again and give the rows that list holds now.
    */
   onListChanged?: () => void;
+  /**
+   * What the host shows with the cards of the Attachments `attachmentKeys`,
+   * in the render that puts them on screen: the name of the Item they
+   * belong to, as the sidebar changes it with them. `null` for nothing.
+   */
+  publishing?: (
+    attachmentKeys: readonly string[],
+  ) => Partial<AnnotState> | null;
 }
 
 /** One Attachment's list as the layout last took it, or `null` where its read failed. */
@@ -426,11 +434,23 @@ export class AnnotationsLayout extends Component {
     this.#el = el;
     this.#root = createRoot(el);
     this.#root.render(
+      this.provide(
+        <AnnotActionsContext value={actions}>{content}</AnnotActionsContext>,
+      ),
+    );
+  }
+
+  /**
+   * `content` with what the layout's controls read from React context: the
+   * running App, which a Chooser's keyboard needs, and the card store. A host
+   * that draws one of those controls in a React root of its own, as the
+   * Library View's heading draws Sort, renders it inside this.
+   */
+  provide(content: ReactNode): ReactNode {
+    return (
       <AppContext value={this.#deps.app}>
-        <AnnotStoreProvider value={this.store}>
-          <AnnotActionsContext value={actions}>{content}</AnnotActionsContext>
-        </AnnotStoreProvider>
-      </AppContext>,
+        <AnnotStoreProvider value={this.store}>{content}</AnnotStoreProvider>
+      </AppContext>
     );
   }
 
@@ -710,7 +730,12 @@ export class AnnotationsLayout extends Component {
         return draft ? [[annotation.key, draft] as const] : [];
       }),
     );
-    this.store.setState({ ...composed, fieldDrafts, tagDrafts });
+    this.store.setState({
+      ...composed,
+      fieldDrafts,
+      tagDrafts,
+      ...this.#host.publishing?.(this.#shown),
+    });
   }
 
   /**

@@ -32,21 +32,31 @@ export interface SortEditorProps {
   options: readonly PropertyOption[];
   /** The sort properties the view's dataset lacks, which the view does not use. */
   unused?: readonly string[];
+  /** The name the view gives a property, for one the options do not list. */
+  labelOf?: (path: string) => string;
   onChange: (next: QueryFileSort[]) => void;
 }
 
-/** A property the file names that the options do not, shown by its path. */
+/**
+ * A property the file names that the options do not, as a saved sort on a
+ * Vault Property no Literature Note holds now: the name the view gives it,
+ * with the icon of a property it cannot place.
+ */
+export function unlistedOption(
+  path: string,
+  labelOf: (path: string) => string = (named) => named,
+): PropertyOption {
+  return { path, label: labelOf(path), kind: "text", icon: "file-question" };
+}
+
 function optionOf(
   options: readonly PropertyOption[],
   path: string,
+  labelOf?: (path: string) => string,
 ): PropertyOption {
   return (
-    options.find((option) => option.path === path) ?? {
-      path,
-      label: path,
-      kind: "text",
-      icon: "file-question",
-    }
+    options.find((option) => option.path === path) ??
+    unlistedOption(path, labelOf)
   );
 }
 
@@ -128,11 +138,7 @@ export function RemoveButton({
       onClick={onClick}
       {...data}
     >
-      <Icon
-        name="trash-2"
-        size="var(--icon-s)"
-        strokeWidth="var(--icon-s-stroke-width)"
-      />
+      <Icon name="trash-2" size="s" />
     </button>
   );
 }
@@ -150,6 +156,7 @@ export function SortEditor({
   value,
   options,
   unused: notUsed = [],
+  labelOf,
   onChange,
 }: SortEditorProps) {
   const reorder = useReorder(value.length, (from, to) =>
@@ -167,7 +174,7 @@ export function SortEditor({
         {value.length > 0 && (
           <div className={sortRowsClass}>
             {value.map((sort, index) => {
-              const option = optionOf(options, sort.property);
+              const option = optionOf(options, sort.property, labelOf);
               const { row, handle } = reorder(index);
               return (
                 <div

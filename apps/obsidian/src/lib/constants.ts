@@ -86,6 +86,19 @@ export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_ZOTERO_LASTMOD,
 ]);
 
+/**
+ * Frontmatter keys that no vault property names: Obsidian's reserved keys,
+ * which hold the note's tags, aliases and CSS classes, and ZotLit's system
+ * keys, which bind the note to its Item, its Profile and its style.
+ */
+export const NON_VAULT_PROPERTY_KEYS: ReadonlySet<string> = new Set([
+  "tags",
+  "aliases",
+  "cssclasses",
+  ...RESERVED_KEYS,
+  FIELD_CITATION_STYLE,
+]);
+
 export const ZOTERO_DB_FILENAME = "zotero.sqlite";
 export const ZOTERO_WAL_FILENAME = "zotero.sqlite-wal";
 export const ZOTERO_DB_READ_TEMP_PREFIX = "zotlit-db-";

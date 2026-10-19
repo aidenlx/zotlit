@@ -24,14 +24,17 @@ import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
 import { registerKeymap } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
 import { NewFormulaPage, PropertyPage } from "./property-page";
+import { LITERATURE_NOTE, vaultName, vaultProperty } from "./query-file";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
+import { useVaultPropertyNames } from "./vault-cell";
 import type { QueryView } from "./view";
-import { useViewProperties } from "./view-properties";
+import { isVaultPropertyName, useViewProperties } from "./view-properties";
 import type { PropertyEntry, ViewProperties } from "./view-properties";
 
 /** The page "Add formula" opens; a property's page is named by its path. */
@@ -54,7 +57,10 @@ function reordered(
 
 export function PropertiesMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
-  const properties = useViewProperties(view);
+  // The popover lists the names the Literature Notes give their properties.
+  const { literatureNotes } = view.tableDeps;
+  const names = useVaultPropertyNames(literatureNotes);
+  const properties = useViewProperties(view, names);
   if (!current || !properties) return null;
   // The popover ticks the properties the Layouts show; a change writes
   // them, with the unused ones the view keeps.
@@ -87,7 +93,13 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
           properties={properties}
           order={order}
           setOrder={setOrder}
-          iconOf={(entry) => propertyIcon(dataset, entry)}
+          iconOf={(entry) =>
+            propertyIcon(dataset, entry, (name) =>
+              literatureNotes.propertyType(name),
+            )
+          }
+          pages={view.can.propertyPages}
+          vaults={dataset === "items"}
         />
         <Chooser.Page>
           {(page) => {
@@ -123,6 +135,8 @@ function PropertyList({
   order,
   setOrder,
   iconOf,
+  pages,
+  vaults,
 }: {
   /** The Properties of the view, the visible ones first. */
   properties: ViewProperties;
@@ -130,6 +144,13 @@ function PropertyList({
   setOrder: (next: readonly string[]) => void;
   /** The type icon of a property. */
   iconOf: (entry: PropertyEntry) => string;
+  /**
+   * Whether a property opens its page, and a new Formula its own: not where
+   * the host keeps no Display Name and no Formula.
+   */
+  pages: boolean;
+  /** Whether the view can show vault properties: a view of Items. */
+  vaults: boolean;
 }) {
   const query = useChooserQuery().trim();
   const { scope, activeValue } = useChooserScope();
@@ -177,40 +198,57 @@ function PropertyList({
       (entry): ChooserRow => ({
         ...propertyRow(entry),
         // The right arrow opens the property's page.
-        next: () => openPage(entry.path),
+        ...(pages && { next: () => openPage(entry.path) }),
       }),
     );
     const actions: ChooserRow[] = [];
-    if (query !== "" && !byPath.has(query))
+    const typedVault = vaultName(query);
+    if (
+      query !== "" &&
+      !byPath.has(query) &&
+      (typedVault === null || isVaultPropertyName(typedVault))
+    )
       actions.push({
         value: "zt:add-property",
         label: m.query_view_properties_add({ name: query }),
         action: () => setOrder([...order, query]),
       });
-    actions.push(
-      {
+    // A name typed without the namespace is a new vault property too.
+    const vault = vaultProperty(query);
+    if (
+      vaults &&
+      typedVault === null &&
+      isVaultPropertyName(query) &&
+      !byPath.has(vault)
+    )
+      actions.push({
+        value: "zt:add-vault-property",
+        label: m.query_view_properties_add_vault({ name: query }),
+        action: () => setOrder([...order, vault]),
+      });
+    if (pages)
+      actions.push({
         value: "zt:add-formula",
         label: m.query_view_formula_add(),
         action: () => openPage(NEW_FORMULA_PAGE),
+      });
+    actions.push({
+      value: "zt:hide-all",
+      label: m.query_view_properties_hide_all(),
+      action: () => {
+        setOrder([]);
+        resort();
       },
-      {
-        value: "zt:hide-all",
-        label: m.query_view_properties_hide_all(),
-        action: () => {
-          setOrder([]);
-          resort();
-        },
-      },
-    );
+    });
     return [{ items }, { items: actions, pinned: true }];
-  }, [rows, byPath, order, query, setOrder, openPage]);
+  }, [rows, byPath, order, query, setOrder, openPage, pages, vaults]);
 
   // Alt with an up or down arrow moves the highlighted visible property one
   // place in the order, as in the Bases Properties menu.
   useLayoutEffect(() => {
     const move = (step: number) => (event: KeyboardEvent) => {
       // A page's fields keep their own keys.
-      if (event.isComposing || keys.current.page !== null) return;
+      if (composing(event) || keys.current.page !== null) return;
       const path = activeValue();
       const { order: now, setOrder: save } = keys.current;
       const at = path === null ? -1 : now.indexOf(path);
@@ -309,26 +347,32 @@ function PropertyList({
               </>
             }
             end={
-              <button
-                type="button"
-                tabIndex={-1}
-                className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
-                data-query-property-more={row.value}
-                {...tooltipAttrs(m.query_view_property_edit())}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openPage(entry.path);
-                }}
-              >
-                <RowIcon name="chevron-right" />
-              </button>
+              pages && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
+                  data-query-property-more={row.value}
+                  {...tooltipAttrs(m.query_view_property_edit())}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openPage(entry.path);
+                  }}
+                >
+                  <RowIcon name="chevron-right" />
+                </button>
+              )
             }
           >
             <span data-query-property-name="">{entry.label}</span>
-            {sharedLabels.has(entry.label) && entry.label !== entry.path && (
-              <span className="zt:text-(--text-faint)"> {entry.path}</span>
-            )}
+            {/* A Vault Property also shows its path, so `citekey (note)` reads
+                as the note's `vault.citekey`, as the Sort select shows it. */}
+            {(sharedLabels.has(entry.label) ||
+              (entry.kind === "vault" && entry.path !== LITERATURE_NOTE)) &&
+              entry.label !== entry.path && (
+                <span className="zt:text-(--text-faint)"> {entry.path}</span>
+              )}
           </Chooser.Item>
         );
       }}
@@ -338,14 +382,7 @@ function PropertyList({
 
 /** An icon of a row, at the size Obsidian draws a menu icon. */
 function RowIcon({ name, className }: { name: IconName; className?: string }) {
-  return (
-    <Icon
-      name={name}
-      size="var(--icon-s)"
-      strokeWidth="var(--icon-s-stroke-width)"
-      className={cn("zt:shrink-0", className)}
-    />
-  );
+  return <Icon name={name} size="s" className={cn("zt:shrink-0", className)} />;
 }
 
 /**

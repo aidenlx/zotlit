@@ -15,3 +15,7 @@ An Annotation View instance shows the Attachment its Follow Mode selects: Active
 - Active Tab adds to the view only what the active leaf cannot show. With a Literature Note or an Obsidian PDF view in front, the Item title and creators stay hidden, and the attachment picker appears only when a note's Item has more than one attachment. Zotero Reader and Pinned show the identity block, because nothing else on screen names the Item.
 - "Zotero reader closed" needs a Companion event the notify protocol does not carry today: `reader/inactive`, sent when the focused Zotero tab or window is no longer a reader. The Obsidian side keeps the last Reader Session target and flags it closed.
 - Mode and pin persist in the view's workspace state, so each Annotation View instance keeps its own choice across restarts; no plugin setting holds a default.
+
+## Amendment (#1552)
+
+The Reading Card's "Open in the annotation view" is a user gesture that pins the sidebar to the card's Item. The sidebar stays pinned until the researcher unpins it.

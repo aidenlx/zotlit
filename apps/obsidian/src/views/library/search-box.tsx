@@ -1,0 +1,416 @@
+// The search box of the Library View, its front door: the words go to the
+// worker search, ranked as the quick switcher ranks, over the Library of the
+// tree node or over every Library in the Library Scope; the host lists the
+// Indexed Keys it found in that order. Escape clears the search, and the
+// view lists the tree node again.
+//
+// @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
+import { Component } from "obsidian";
+import { useSyncExternalStore } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
+import type { StoreApi } from "zustand/vanilla";
+
+import { useUniqueId } from "@zotlit/ui";
+
+import { SearchInput } from "@/components/obsidian/search-input";
+import * as m from "@/lib/i18n/generated/messages";
+import type { ItemLookup, SearchSession } from "@/services/item-lookup/service";
+import type {
+  LibraryScope,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
+import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { QueryViewState } from "@/views/query-view/view";
+
+import { librariesOf } from "./document";
+import type { LibraryNode } from "./document";
+import type { HeaderSearch } from "./heading";
+import { searchTerms } from "./search";
+import { TextAction } from "./text-action";
+import { sameLibrary } from "./tree";
+
+/**
+ * The most hits a search asks for: past them, an Item that matches does not
+ * show. It stays below the row limit, so the sort never cuts a hit.
+ */
+export const LIBRARY_SEARCH_LIMIT = 500;
+
+export interface LibrarySearchDeps {
+  lookup: Pick<ItemLookup, "openSession">;
+  reads: Pick<ZoteroReadsService, "on">;
+  libraryScope: Pick<LibraryScopeService, "on" | "current" | "libraries">;
+}
+
+/** What a search found, as the derivation reads it. */
+export interface SearchFound {
+  /** The text searched for. */
+  readonly text: string;
+  /** The ranked Indexed Keys of the words; absent while there are none. */
+  readonly keys?: readonly string[];
+  /** The Libraries a search of all libraries reads; absent while it keeps to the node. */
+  readonly everywhere?: readonly LibrarySelector[];
+}
+
+export interface LibrarySearchHost {
+  /** The tree node the search keeps to. */
+  node: () => LibraryNode;
+  /** The Library Scope in force, which Recent reads. */
+  scope: () => LibraryScope;
+  /** List what the search found. */
+  found: (found: SearchFound) => void;
+  /** The researcher changed the text: keep it. */
+  keep: (text: string) => void;
+  /** Whether ZotLit reads Zotero's database; a search asks it only then. */
+  readable: () => boolean;
+}
+
+interface SearchState {
+  readonly text: string;
+  /** Whether the search reads every Library in the Library Scope. */
+  readonly everywhere: boolean;
+}
+
+export class LibrarySearch extends Component {
+  readonly store: StoreApi<SearchState>;
+  readonly #deps: LibrarySearchDeps;
+  readonly #host: LibrarySearchHost;
+  #session: SearchSession | null = null;
+  #input: HTMLInputElement | null = null;
+  /** Counts the searches, so only the newest one lists its hits. */
+  #runs = 0;
+  #settled: Promise<void> = Promise.resolve();
+  #roots: Root[] = [];
+
+  constructor(deps: LibrarySearchDeps, host: LibrarySearchHost) {
+    super();
+    this.#deps = deps;
+    this.#host = host;
+    this.store = createStore<SearchState>(() => ({
+      text: "",
+      everywhere: false,
+    }));
+  }
+
+  /** Settles once the newest search listed its hits. Never rejects. */
+  get settled(): Promise<void> {
+    return this.#settled;
+  }
+
+  override onload(): void {
+    const session = this.#deps.lookup.openSession();
+    this.#session = session;
+    this.register(() => session.close());
+    // The Libraries of the Library Scope are what a search of all libraries
+    // reads, and what Recent lists.
+    this.register(
+      this.#deps.libraryScope.on("changed", () => {
+        if (this.store.getState().everywhere || this.onRecent) void this.run();
+      }),
+    );
+    // A changed database may rank other Items for the same words (ADR 0073).
+    this.register(
+      this.#deps.reads.on("changed", () => {
+        if (searchTerms(this.store.getState().text).words !== "")
+          void this.run();
+      }),
+    );
+  }
+
+  override onunload(): void {
+    // A search that answers after the tab closed lists nothing.
+    this.#runs++;
+    for (const root of this.#roots) root.unmount();
+    this.#roots = [];
+    this.#session = null;
+  }
+
+  /** Show `text` as the search, and list what it finds. */
+  open(text: string): Promise<void> {
+    this.store.setState({ text });
+    return this.run();
+  }
+
+  /** The researcher typed `text`. */
+  type(text: string): void {
+    this.store.setState({ text, everywhere: this.#everywhere(text) });
+    this.#host.keep(text);
+    void this.run();
+  }
+
+  /** Clear the search, and list the tree node again. */
+  clear(): void {
+    this.type("");
+  }
+
+  /** Search every Library in the Library Scope, past the tree node. */
+  widen(): void {
+    this.store.setState({ everywhere: true });
+    void this.run();
+  }
+
+  /** Keep the search to the tree node again, as after a tree selection. */
+  narrow(): void {
+    this.store.setState({ everywhere: false });
+  }
+
+  /** Put the cursor in the search box. */
+  focus(): void {
+    this.#input?.focus();
+  }
+
+  /** Whether the tree node is Recent, which reads the Library Scope already. */
+  get onRecent(): boolean {
+    return this.#host.node().kind === "recent";
+  }
+
+  /** Whether the search reads every Library; an empty search reads none. */
+  #everywhere(text: string): boolean {
+    return text.trim() !== "" && this.store.getState().everywhere;
+  }
+
+  /** Search again, and list the hits once no newer search started. */
+  run(): Promise<void> {
+    const run = ++this.#runs;
+    const { text, everywhere } = this.store.getState();
+    const { words } = searchTerms(text);
+    const { libraryScope } = this.#deps;
+    const read = librariesOf(this.#host.node(), this.#host.scope());
+    const libraries = everywhere
+      ? (libraryScope.current?.available ?? [])
+      : libraryScope.libraries.filter(
+          ({ selector }) =>
+            read.mode === "all" ||
+            read.libraries.some((library) => sameLibrary(library, selector)),
+        );
+    this.#settled = (async () => {
+      const hits =
+        words === "" || !this.#session || !this.#host.readable()
+          ? null
+          : await this.#session.search(words, {
+              limit: LIBRARY_SEARCH_LIMIT,
+              libraries,
+            });
+      if (run !== this.#runs) return;
+      this.#host.found({
+        text,
+        ...(hits && { keys: hits.map(({ item }) => item.indexedKey) }),
+        ...(everywhere && {
+          everywhere: libraries.map(({ selector }) => selector),
+        }),
+      });
+    })();
+    return this.#settled;
+  }
+
+  /** Draw the search box into `el`. */
+  render(el: HTMLElement): void {
+    const root = createRoot(el);
+    root.render(<SearchBox search={this} />);
+    this.#roots.push(root);
+  }
+
+  /**
+   * What the search puts in the heading: its title and its status, where it
+   * searches, and the offer to search all libraries while some match.
+   */
+  header(query: StoreApi<QueryViewState>): HeaderSearch {
+    const subscribe = (listener: () => void) => {
+      const offText = this.store.subscribe(listener);
+      const offQuery = query.subscribe(listener);
+      return () => {
+        offText();
+        offQuery();
+      };
+    };
+    const header: HeaderSearch = {
+      subscribe,
+      summary: (selection) => {
+        const shown = this.#shown(query);
+        if (!shown || shown.matched === null) return null;
+        if (shown.everywhere && !this.onRecent)
+          return m.library_view_search_matches_everywhere({
+            count: shown.matched,
+          });
+        return m.library_view_search_matches({
+          selection,
+          count: shown.matched,
+        });
+      },
+      title: () => {
+        const shown = this.#shown(query);
+        if (!shown || shown.matched === null) return null;
+        return m.library_view_heading_search({
+          count: shown.matched,
+          query: this.store.getState().text.trim(),
+        });
+      },
+      everywhere: () => {
+        const shown = this.#shown(query);
+        return shown !== null && shown.everywhere && !this.onRecent;
+      },
+      action: (
+        <SearchAllButton
+          search={this}
+          subscribe={subscribe}
+          offered={() => {
+            const shown = this.#shown(query);
+            return (
+              shown !== null &&
+              !shown.everywhere &&
+              !this.onRecent &&
+              shown.matched !== 0
+            );
+          }}
+        />
+      ),
+    };
+    return header;
+  }
+
+  /**
+   * The search on screen and the count it matched, `null` while unknown;
+   * `null` itself while the box is empty.
+   */
+  #shown(
+    query: StoreApi<QueryViewState>,
+  ): { everywhere: boolean; matched: number | null } | null {
+    const { text, everywhere } = this.store.getState();
+    if (text.trim() === "") return null;
+    return {
+      everywhere,
+      matched: query.getState().results?.matched ?? null,
+    };
+  }
+
+  /**
+   * What an empty list says left it empty: the search, with the offer to
+   * search all libraries or to clear it, else the facets that are on or the
+   * tags selected, else
+   * `fallback`, the Query View's own sentence.
+   */
+  empty(
+    tree: StoreApi<{
+      readonly facets: readonly unknown[];
+      readonly tags: readonly unknown[];
+    }>,
+    fallback: string,
+  ): ReactNode {
+    return <EmptyList search={this} tree={tree} fallback={fallback} />;
+  }
+
+  /** @internal The box's input, for {@link focus}. */
+  set input(input: HTMLInputElement | null) {
+    this.#input = input;
+  }
+}
+
+function SearchBox({ search }: { search: LibrarySearch }) {
+  const text = useStore(search.store, (s) => s.text);
+  const label = useUniqueId();
+  return (
+    <div data-library-search="">
+      <span id={label} className="zt:sr-only">
+        {m.library_view_search_label()}
+      </span>
+      <SearchInput
+        ref={(input) => {
+          search.input = input;
+        }}
+        // Escape clears the box here, not the browser's own clear, so the
+        // view lists the tree node again at once.
+        type="text"
+        aria-labelledby={label}
+        className="zt:w-full"
+        value={text}
+        placeholder={m.library_view_search_placeholder()}
+        clearLabel={m.library_view_search_clear()}
+        onChange={(next) => search.type(next)}
+        onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+          if (event.key !== "Escape" || text === "") return;
+          event.preventDefault();
+          event.stopPropagation();
+          search.clear();
+        }}
+      />
+    </div>
+  );
+}
+
+function EmptyList({
+  search,
+  tree,
+  fallback,
+}: {
+  search: LibrarySearch;
+  tree: StoreApi<{
+    readonly facets: readonly unknown[];
+    readonly tags: readonly unknown[];
+  }>;
+  fallback: string;
+}) {
+  const text = useStore(search.store, (s) => s.text.trim());
+  const everywhere = useStore(search.store, (s) => s.everywhere);
+  const filters = useStore(tree, (s) => s.facets.length + s.tags.length);
+  if (text === "")
+    return filters === 0 ? (
+      fallback
+    ) : (
+      <p className="zt:m-0" data-library-empty="">
+        {m.library_view_empty_facets()}
+      </p>
+    );
+  // Recent reads every Library of the Library Scope already.
+  const widen = !everywhere && !search.onRecent;
+  // The heading says nothing matched; the list says how to recover. Muted,
+  // not the faint of an empty pane, so the hint reads at 4.5:1.
+  return (
+    <div className="zt:flex zt:flex-col zt:items-center zt:gap-(--size-4-2) zt:text-muted-foreground">
+      <p className="zt:m-0 zt:text-balance" data-library-empty="">
+        {widen
+          ? m.library_view_empty_search_widen()
+          : m.library_view_empty_search_clear()}
+      </p>
+      <TextAction
+        data-library-empty-action={widen ? "widen" : "clear"}
+        onActivate={() => (widen ? search.widen() : search.clear())}
+      >
+        {widen
+          ? m.library_view_search_everywhere()
+          : m.library_view_search_clear()}
+      </TextAction>
+    </div>
+  );
+}
+
+/**
+ * The offer to search all libraries, beside the header, while a search
+ * keeps to a Library or a Collection and finds something there: an empty
+ * list makes the same offer itself. Recent reads every Library of the
+ * Library Scope already.
+ */
+function SearchAllButton({
+  search,
+  subscribe,
+  offered,
+}: {
+  search: LibrarySearch;
+  subscribe: HeaderSearch["subscribe"];
+  /** Whether the search on screen keeps to the node and finds something there. */
+  offered: () => boolean;
+}) {
+  if (!useSyncExternalStore(subscribe, offered)) return null;
+  return (
+    <TextAction
+      data-library-search-all=""
+      className="zt:shrink-0 zt:group-data-zotero-missing:hidden"
+      onActivate={() => search.widen()}
+    >
+      {m.library_view_search_everywhere()}
+    </TextAction>
+  );
+}

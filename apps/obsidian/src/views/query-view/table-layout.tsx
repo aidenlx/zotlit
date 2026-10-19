@@ -14,7 +14,7 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { useStore } from "zustand";
 
-import { isPageNumber } from "@zotlit/db";
+import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -27,15 +27,19 @@ import type {
 import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import { useItemRow } from "./item-rows";
+import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
+import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
-import { CellContent } from "./record-rows";
+import { CellContent, recordCells, searchFinds } from "./record-rows";
 import { NO_RESULTS } from "./results";
 import { TableHeader, sizedMark } from "./table-header";
-import type { LiteratureNotes } from "./table-notes";
+import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { zoteroReaderUri } from "./table-readers";
 import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
+import { VaultEditCell, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -149,7 +153,9 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
         return [{ kind: "note", key: text(values.indexedKey), values }];
       });
     },
-    render: ({ key, values }) => text(values.title) || key,
+    render: ({ key, values }) => (
+      <ZoteroNoteLink noteKey={key}>{text(values.title) || key}</ZoteroNoteLink>
+    ),
   },
   {
     parent: "attachment",
@@ -222,24 +228,61 @@ export function markers(kind: TableRowKind): string[] {
  */
 export const TABLE_FIELDS: readonly string[] = markers("item");
 
-function expandable(record: TableRecord): boolean {
-  return TABLE_CHILD_SOURCES.some((source) => {
-    if (source.parent !== record.kind) return false;
-    const keys = record.values[source.marker];
-    return Array.isArray(keys) && keys.length > 0;
+/** The keys a marker list names: an Indexed Key, or a record that carries one. */
+function markerKeys(value: QueryViewValue | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) =>
+    entry !== null && typeof entry === "object" && !Array.isArray(entry)
+      ? text(entry.indexedKey)
+      : text(entry),
+  );
+}
+
+/**
+ * The sources a row has rows of, each with the keys of those rows as the
+ * row's marker lists them, before any is read.
+ */
+function childSources(record: TableRecord) {
+  return TABLE_CHILD_SOURCES.flatMap((source) => {
+    if (source.parent !== record.kind) return [];
+    const keys = markerKeys(record.values[source.marker]);
+    return keys.length > 0 ? [{ source, keys }] : [];
   });
 }
 
-type ChildState =
-  | { readonly phase: "loading" }
+function expandable(record: TableRecord): boolean {
+  return childSources(record).length > 0;
+}
+
+/** The source of the rows of `kind`. */
+export const childSource = (kind: TableRowKind) =>
+  TABLE_CHILD_SOURCES.find((source) => source.kind === kind)!;
+
+/** A row under an expanded row, known by its marker while it is read. */
+export type PendingChild = Pick<TableRecord, "kind" | "key">;
+
+export type ChildState =
+  /**
+   * The rows are read. `pending` holds one entry per row the markers list,
+   * so the expansion takes the room its rows take from its first frame.
+   */
+  | { readonly phase: "loading"; readonly pending: readonly PendingChild[] }
   | { readonly phase: "ready"; readonly rows: readonly TableRecord[] }
   | { readonly phase: "failed" };
 
-const id = (record: Pick<TableRecord, "kind" | "key">) =>
+export const id = (record: Pick<TableRecord, "kind" | "key">) =>
   `${record.kind}:${record.key}`;
 
+/**
+ * The text a row being read shows. It fades in after a short wait, so a
+ * read that answers at once never shows it; the row's room is there
+ * either way.
+ */
+export const LOADING_TEXT =
+  "zt:truncate zt:animate-in zt:fade-in zt:fill-mode-backwards zt:delay-150";
+
 /** The expanded rows and the rows under them, read when a row expands. */
-function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryService, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
@@ -267,14 +310,23 @@ function useChildren(query: Pick<QueryService, "run">) {
       set(key, null);
       return;
     }
+    // Only the sources the row's markers list rows of are read: a row with
+    // none, as a Papers row with a Literature Note alone, opens at once.
+    const reads = childSources(record);
+    if (reads.length === 0) {
+      set(key, { phase: "ready", rows: [] });
+      return;
+    }
     const controller = new AbortController();
     runs.current.set(key, controller);
-    set(key, { phase: "loading" });
-    const sources = TABLE_CHILD_SOURCES.filter(
-      (source) => source.parent === record.kind,
-    );
+    set(key, {
+      phase: "loading",
+      pending: reads.flatMap(({ source, keys }) =>
+        keys.map((childKey) => ({ kind: source.kind, key: childKey })),
+      ),
+    });
     void Promise.all(
-      sources.map((source) => source.load(record, query, controller.signal)),
+      reads.map(({ source }) => source.load(record, query, controller.signal)),
     ).then(
       (lists) => {
         if (controller.signal.aborted) return;
@@ -291,28 +343,33 @@ function useChildren(query: Pick<QueryService, "run">) {
   return { children, toggle };
 }
 
-function Expander({
+/** The room of a chevron, in a row with nothing under it. */
+export function ExpanderSpace() {
+  return (
+    <span className="clickable-icon zt:invisible zt:shrink-0">
+      <Icon name="chevron-right" size="xs" />
+    </span>
+  );
+}
+
+export function Expander({
   record,
   open,
   onToggle,
+  holdsMore = false,
 }: {
   record: TableRecord;
   open: boolean;
   onToggle: () => void;
+  /** Whether the row holds a child that Zotero does not, as Papers' Literature Note. */
+  holdsMore?: boolean;
 }) {
   // The chevron takes the icon button's own padding, and a row with nothing
   // under it holds a hidden one, so every row's text starts at one edge.
   const chevron = (
-    <Icon
-      name={open ? "chevron-down" : "chevron-right"}
-      size="var(--icon-xs)"
-      strokeWidth="var(--icon-xs-stroke-width)"
-    />
+    <Icon name={open ? "chevron-down" : "chevron-right"} size="xs" />
   );
-  if (!expandable(record))
-    return (
-      <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
-    );
+  if (!holdsMore && !expandable(record)) return <ExpanderSpace />;
   return (
     <button
       type="button"
@@ -369,9 +426,40 @@ function NoteCell({
         void notes.create(itemKey).finally(() => setCreating(false));
       }}
     >
-      <Icon name="file-plus" size="var(--icon-xs)" />
+      <Icon name="file-plus" size="xs" />
       {m.query_view_table_create_note()}
     </button>
+  );
+}
+
+/**
+ * A link that shows a Child Note in Zotero, which holds it: Obsidian has no
+ * view of a Zotero note. The system starts Zotero from the link where it is
+ * closed.
+ */
+export function ZoteroNoteLink({
+  noteKey,
+  children,
+}: {
+  noteKey: string;
+  children: ReactNode;
+}) {
+  const parsed = parseIndexedKey(noteKey);
+  if (!parsed) return children;
+  const uri = itemSelectUri(parsed.key, parsed.groupID);
+  return (
+    <a
+      className="external-link zt:truncate zt:bg-none zt:pe-0"
+      href={uri}
+      data-query-open="note"
+      onClick={(event) => {
+        event.preventDefault();
+        // The window of the link, which may be a pop-out.
+        event.currentTarget.win.open(uri);
+      }}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -381,7 +469,7 @@ function NoteCell({
  * a new tab, and Cmd/Ctrl+Alt a split. Its address is the Zotero link of the
  * target, which a drag carries out.
  */
-function ReaderLink({
+export function ReaderLink({
   readers,
   target,
   children,
@@ -416,31 +504,41 @@ const indent = (depth: number) =>
   ({ "--zt-indent": `calc(${depth - 1} * var(--size-4-5))` }) as CSSProperties;
 
 /**
- * A cell's height, padding and row line: the row height of a Bases table,
- * and Obsidian's table border, so a theme that restyles tables restyles it.
+ * A cell's height, padding and row line: one line at the row height of a
+ * Bases table, and Obsidian's table border, so a theme that restyles tables
+ * restyles it. Every row is one line, so no value makes a row taller.
  */
 const CELL =
-  "zt:h-7.5 zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1";
+  "zt:group/cell zt:h-(--bases-table-row-height) zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1 zt:whitespace-nowrap";
 /** The narrow first column that holds a row's expand button. */
 const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 /**
  * A cell of a column the researcher resized, marked `data-sized`: it takes
  * no room of its own, so the header's width holds the column, and what does
- * not fit is clipped, as in a Bases table. Text still wraps, so only a word
- * longer than the column is cut.
+ * not fit is clipped, as in a Bases table.
  */
 const CLIP =
   "zt:data-sized:max-w-0 zt:data-sized:overflow-hidden zt:data-sized:text-ellipsis";
 /**
- * The first column of properties. Text wraps in every column, so a long
- * title stays readable in full; the first column keeps a width a title
- * reads well in, from its header cell, where a width the researcher sets
- * replaces it, and the others stop at the width of a Bases column.
+ * The first column of properties. It keeps a width a title reads well in,
+ * from its header cell, where a width the researcher sets replaces it.
  */
 const FIRST = cn("zt:ps-1", CLIP);
 const FIRST_HEADER = cn(FIRST, "zt:min-w-48");
 /** A column after the first: a line parts it from the one before it. */
-const LATER = cn("zt:max-w-75 zt:border-s-(length:--border-width)", CLIP);
+const LATER = cn("zt:border-s-(length:--border-width)", CLIP);
+/**
+ * The line of a cell, which ends in an ellipsis: a column that is not sized
+ * stops at the width of a Bases column, or wider for the first, where a
+ * title reads; a sized one takes the width of its header.
+ */
+const LINE =
+  "zt:block zt:truncate zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+/**
+ * A vault cell: its own line clips its value, so the table cell lets the
+ * editor that opens over it grow down over the rows below.
+ */
+const VAULT = "zt:relative zt:p-0 zt:data-sized:overflow-visible";
 const ROW = "zt:hover:bg-(--table-row-background-hover)";
 /** A header cell, which stays at the top as the rows scroll under it. */
 const HEADER =
@@ -471,7 +569,34 @@ function ChildRows({
 }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
-  if (state.phase !== "ready")
+  if (state.phase === "loading")
+    return state.pending.map((child, at) => (
+      <tr key={id(child)} className={ROW} data-query-table-status="loading">
+        <td className={GUTTER} />
+        <td
+          colSpan={childSpan(columns)}
+          className={cn(CELL, "zt:ps-1 zt:text-(--text-muted)")}
+        >
+          <span
+            className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
+            style={indent(depth)}
+          >
+            <ExpanderSpace />
+            <Icon
+              name={childSource(child.kind).icon}
+              size="xs"
+              className="zt:shrink-0"
+            />
+            {at === 0 && (
+              <span className={LOADING_TEXT} data-query-loading="">
+                {m.query_view_table_loading()}
+              </span>
+            )}
+          </span>
+        </td>
+      </tr>
+    ));
+  if (state.phase === "failed")
     return (
       <tr data-query-table-status={state.phase}>
         <td className={GUTTER} />
@@ -480,18 +605,14 @@ function ChildRows({
           style={indent(depth)}
           className={cn(CELL, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
         >
-          {state.phase === "loading"
-            ? m.query_view_table_loading()
-            : m.query_view_table_children_failed()}
+          {m.query_view_table_children_failed()}
         </td>
       </tr>
     );
   return (
     <>
       {state.rows.map((record) => {
-        const source = TABLE_CHILD_SOURCES.find(
-          (candidate) => candidate.kind === record.kind,
-        )!;
+        const source = childSource(record.kind);
         return (
           <ChildRow
             key={id(record)}
@@ -552,12 +673,7 @@ function ChildRow({
               open={expanded.has(id(record))}
               onToggle={() => toggle(record)}
             />
-            <Icon
-              name={source.icon}
-              size="var(--icon-xs)"
-              strokeWidth="var(--icon-xs-stroke-width)"
-              className="zt:shrink-0"
-            />
+            <Icon name={source.icon} size="xs" className="zt:shrink-0" />
             {source.render(record, { parent, link })}
           </span>
         </td>
@@ -587,17 +703,20 @@ export function TableLayout({ view }: { view: QueryView }) {
   const columns = useMemo(() => properties?.visible ?? [], [properties]);
   const scroller = useRef<HTMLDivElement>(null);
   const sizes = useStore(view.state, (s) => s.view?.columnSize);
-  const visible = useMemo(
-    () =>
-      search === ""
-        ? rows
-        : rows.filter(({ row }) =>
-            columns.some(({ path }) =>
-              cellText(path, row.values[path]).toLowerCase().includes(search),
-            ),
-          ),
-    [rows, columns, search],
-  );
+  // The search reads the vault properties as the cells do, again on a
+  // change of the notes, as the List and Cards search them.
+  const vaultVersion = useVaultVersion(literatureNotes);
+  const visible = useMemo(() => {
+    void vaultVersion;
+    if (search === "") return rows;
+    const host = view.vaultHost();
+    return rows.filter(({ row }) =>
+      searchFinds(
+        recordCells(row, columns, { notes: literatureNotes, host }).cells,
+        search,
+      ),
+    );
+  }, [rows, columns, search, literatureNotes, view, vaultVersion]);
   if (rows.length === 0) return null;
   let group: string | null = null;
   return (
@@ -606,7 +725,7 @@ export function TableLayout({ view }: { view: QueryView }) {
       className="zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto"
     >
       <table
-        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--font-smaller)"
+        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)"
         data-query-table=""
       >
         {properties && (
@@ -654,9 +773,11 @@ export function TableLayout({ view }: { view: QueryView }) {
                 columns={columns}
                 sizes={sizes}
                 notes={literatureNotes}
+                host={view.vaultHost()}
                 expanded={expanded}
                 toggle={toggle}
                 readers={readers}
+                gestures={view.rows}
               />
             );
           })}
@@ -672,9 +793,11 @@ function ItemRow({
   columns,
   sizes,
   notes,
+  host,
   expanded,
   toggle,
   readers,
+  gestures,
 }: {
   heading: ReactNode;
   record: TableRecord;
@@ -682,15 +805,24 @@ function ItemRow({
   /** The widths the researcher set, by property path. */
   sizes: ColumnSizes | undefined;
   notes: LiteratureNotes;
+  /** The note that holds the view, where a note holds it. */
+  host: VaultHost | null;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
   readers: TableReaders;
+  gestures: ItemRowGestures | undefined;
 }) {
+  const row = useItemRow(gestures, record.key);
   return (
     <>
       {heading}
       <tr
-        className={ROW}
+        {...row}
+        className={cn(
+          ROW,
+          "zt:data-selected:bg-(--nav-item-background-selected)",
+          "zt:outline-hidden zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
+        )}
         data-query-table-row="item"
         data-query-key={record.key}
       >
@@ -701,21 +833,40 @@ function ItemRow({
             onToggle={() => toggle(record)}
           />
         </td>
-        {columns.map(({ path, kind }, at) => {
-          const note = kind === "literatureNote";
+        {columns.map(({ path }, at) => {
+          const note = path === LITERATURE_NOTE;
+          const name = note ? null : vaultName(path);
+          const line = cn(LINE, at === 0 ? "zt:max-w-100" : "zt:max-w-75");
           return (
             <td
               key={path}
-              className={cn(CELL, at === 0 ? FIRST : LATER, note && "zt:py-0")}
+              className={cn(
+                CELL,
+                at === 0 ? FIRST : LATER,
+                note && "zt:py-0",
+                // A vault cell fills the cell, so the whole of it edits.
+                name !== null && VAULT,
+              )}
               data-sized={sizedMark(sizes, path)}
             >
               {note ? (
-                <NoteCell notes={notes} itemKey={record.key} />
-              ) : (
-                <CellContent
-                  value={record.values[path]}
-                  text={cellText(path, record.values[path])}
+                <span className={line}>
+                  <NoteCell notes={notes} itemKey={record.key} />
+                </span>
+              ) : name !== null ? (
+                <VaultEditCell
+                  notes={notes}
+                  itemKey={record.key}
+                  name={name}
+                  host={host}
                 />
+              ) : (
+                <span className={line}>
+                  <CellContent
+                    value={record.values[path]}
+                    text={cellText(path, record.values[path])}
+                  />
+                </span>
               )}
             </td>
           );

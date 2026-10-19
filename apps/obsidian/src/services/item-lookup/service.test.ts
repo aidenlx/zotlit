@@ -37,6 +37,24 @@ describe("ItemLookup", () => {
     });
   });
 
+  it("searches the Libraries a search names in place of the Library Scope, a session's too", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+
+    const hits = await lookup.search("Alpha", { libraries: [library(2)] });
+    expect(hits.map((hit) => [hit.item.key, hit.library])).toEqual([
+      ["LIBRARY3", null],
+    ]);
+    expect(reads.searches.at(-1)?.libraryIDs).toEqual([2]);
+
+    using session = lookup.openSession();
+    await session.search("Alpha", { libraries: [library(USER_LIBRARY_ID)] });
+    expect(reads.searches.at(-1)?.libraryIDs).toEqual([USER_LIBRARY_ID]);
+  });
+
   it("labels hits only when two Libraries are in scope", async () => {
     await using reads = readsOver(() => seed(perLibraryRows()));
     const libraryScope = new FakeLibraryScope();

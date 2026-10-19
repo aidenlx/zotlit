@@ -65,6 +65,7 @@ export default defineConfig({
       },
     },
     setupFiles: ["./vitest.setup.js"],
+    globalSetup: ["./vitest.global-setup.ts"],
     // `// @vitest-environment` can't name a project by file path (its pragma only accepts `[\w-]+`), so the split happens here instead.
     projects: [
       {

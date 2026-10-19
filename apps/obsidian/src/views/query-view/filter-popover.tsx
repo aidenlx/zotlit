@@ -20,7 +20,11 @@ import {
   WorkbenchThemeProvider,
   filterVocabulary,
 } from "@zotlit/workbench/ui";
-import type { FilterValues, MatchFilter } from "@zotlit/workbench/ui";
+import type {
+  FilterField,
+  FilterValues,
+  MatchFilter,
+} from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
@@ -32,20 +36,22 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
 import { propertyIcon } from "./property-icon";
-import { allViewsDataset } from "./query-file";
+import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
   ConditionIssue,
   FilterSection,
   QueryFileDataset,
 } from "./query-file";
+import type { LiteratureNotes, VaultPropertyType } from "./table-notes";
 import { toolbarButtonLook } from "./toolbar-button";
 import {
   PopoverHeader,
   PopoverSection,
   ToolbarPopover,
 } from "./toolbar-popover";
+import { useVaultPropertyNames, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
-import { useViewProperties } from "./view-properties";
+import { fieldLabel, useViewProperties } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
 
 const logger = getLogger(["views", "query-view", "filter"]);
@@ -56,6 +62,42 @@ const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
 /** The issue of one condition, as the Query View last found it. */
 export type FilterIssue = ConditionIssue | null;
+
+/** How a condition tests a vault property of each type. */
+const VAULT_FIELD_TYPES: Record<VaultPropertyType, FilterField["type"]> = {
+  text: "text",
+  multitext: "list",
+  number: "number",
+  checkbox: "boolean",
+  // A date, or a date and time, compares as the text the frontmatter holds.
+  date: "text",
+  datetime: "text",
+  tags: "list",
+  aliases: "list",
+};
+
+/** The kind of the condition on the vault property at `path`. */
+const VAULT_KIND_PREFIX = "custom:";
+
+/**
+ * The conditions on the vault properties `names`. Each reads its property by
+ * bracket access, `vault["reading-status"]`, which a name with a hyphen needs.
+ */
+export function vaultFilterFields(
+  names: readonly string[],
+  notes: Pick<LiteratureNotes, "propertyType">,
+  properties: ViewProperties | null,
+): FilterField[] {
+  return names.map((name) => {
+    const property = vaultProperty(name);
+    return {
+      kind: `${VAULT_KIND_PREFIX}${property}`,
+      path: `vault[${JSON.stringify(name)}]`,
+      type: VAULT_FIELD_TYPES[notes.propertyType(name)],
+      label: properties?.entry(property).label ?? fieldLabel(property),
+    };
+  });
+}
 
 function samePath(a: readonly number[], b: readonly number[]): boolean {
   return a.length === b.length && a.every((value, at) => value === b[at]);
@@ -110,10 +152,17 @@ const filterTheme = {
         "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full",
         "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:px-(--size-2-1)",
       ),
+      // A condition keeps one line, as in Bases, at any depth: a nested
+      // group is narrower, so the property select gives up width first and
+      // the value keeps room for a few characters.
+      fields:
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-nowrap zt:items-stretch zt:overflow-hidden",
+      value: cn(matchTheme.classes.match?.value, "zt:min-w-[8ch]"),
       // The property select carries the icon of the property's type, as the
       // Bases property picker does, and is capped as Bases caps it; the
       // native operator after it stands behind a rule.
       predicate: cn(
+        "zt:[&>[data-part=wrapper]]:shrink-0",
         "zt:flex zt:max-w-full zt:min-w-0 zt:[&>:is([role=combobox],[data-part=wrapper])]:border-border",
         "zt:[&>[role=combobox]~[data-part=wrapper]]:border-s-(length:--border-width)",
         "zt:[&>[role=combobox]:first-of-type]:max-w-[14em]",
@@ -139,6 +188,10 @@ export interface FilterEditorProps {
   properties: ViewProperties | null;
   /** The sections that show; both by default. */
   sections?: readonly FilterSection[];
+  /** The conditions on vault properties, which a section of Items offers. */
+  vaultFields?: readonly FilterField[];
+  /** The type of the vault property `name`, for the icon of its condition. */
+  vaultType?: (name: string) => VaultPropertyType;
   /** Save one section's filters; answers whether they were kept. */
   onChange: (section: FilterSection, next: MatchTree | undefined) => boolean;
 }
@@ -153,6 +206,8 @@ export function FilterEditor({
   issue,
   properties,
   sections: shown = ["all", "view"],
+  vaultFields = [],
+  vaultType,
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
@@ -173,8 +228,9 @@ export function FilterEditor({
     return { ...created, inputSuggestions: undefined };
   }, [app]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
-  const vocabulary = (section: FilterSection) =>
-    filterVocabulary(section === "all" ? shared : dataset, {
+  const vocabulary = (section: FilterSection) => {
+    const of = section === "all" ? shared : dataset;
+    return filterVocabulary(of, {
       m: host.messages,
       values,
       issue: (_, path) =>
@@ -183,16 +239,25 @@ export function FilterEditor({
           : null,
       // A condition shows the Display Name of its field in the view's
       // Properties, and the icon the view's property list shows.
-      label: (field) => properties?.entry(field.path).displayName,
+      label: (field) =>
+        field.label ?? properties?.entry(field.path).displayName,
       icon: (field) => (
         <Icon
-          name={propertyIcon(section === "all" ? shared : dataset, {
-            path: field.path,
-            kind: "field",
-          })}
+          name={propertyIcon(
+            of,
+            field.kind.startsWith(VAULT_KIND_PREFIX)
+              ? {
+                  path: field.kind.slice(VAULT_KIND_PREFIX.length),
+                  kind: "vault",
+                }
+              : { path: field.path, kind: "field" },
+            vaultType,
+          )}
         />
       ),
+      extra: of === "items" ? vaultFields : [],
     });
+  };
   const sections = (
     [
       ["all", m.query_view_filter_all_views(), allViews],
@@ -273,8 +338,7 @@ function FoldSection({
           <PopoverHeader>
             <Icon
               name="right-triangle"
-              size="var(--icon-xs)"
-              strokeWidth="var(--icon-xs-stroke-width)"
+              size="xs"
               className="zt:shrink-0 zt:[rotate:calc(var(--direction)*-90deg)] zt:text-(--nav-collapse-icon-color) zt:transition-[rotate] zt:duration-100 zt:group-open/fold:[rotate:none]"
             />
             <span data-filter-heading="" className="zt:min-w-0 zt:truncate">
@@ -314,7 +378,16 @@ export function FilterButton({ view }: { view: QueryView }) {
     view.state,
     (s) => s.failure?.filterIssue ?? null,
   );
-  const properties = useViewProperties(view);
+  const { literatureNotes } = view.tableDeps;
+  const names = useVaultPropertyNames(literatureNotes);
+  const properties = useViewProperties(view, names);
+  // A change of a property's type changes no name, so it is read apart.
+  const vaultVersion = useVaultVersion(literatureNotes);
+  const vaultFields = useMemo(
+    () => vaultFilterFields(names, literatureNotes, properties),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `vaultVersion` reads the types again
+    [names, literatureNotes, properties, vaultVersion],
+  );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   if (!file || !shown) return null;
   return (
@@ -339,6 +412,8 @@ export function FilterButton({ view }: { view: QueryView }) {
         values={values}
         issue={filterIssue}
         properties={properties}
+        vaultFields={vaultFields}
+        vaultType={(name) => literatureNotes.propertyType(name)}
         onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>

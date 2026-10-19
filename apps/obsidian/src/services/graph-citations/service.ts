@@ -276,6 +276,7 @@ export class GraphCitations extends Service<void> {
       );
     }
     stack.defer(this.#noteIndex.on("changed", () => this.#invalidateLabels()));
+    stack.defer(this.#noteIndex.on("indexed", () => this.#invalidateLabels()));
     stack.defer(this.#reads.on("changed", () => this.#invalidateLabels()));
     stack.defer(
       this.#settings.subscribe((settings) => {

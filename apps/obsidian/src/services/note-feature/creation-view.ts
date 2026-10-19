@@ -121,28 +121,44 @@ export async function createNoteInteractively(
     indexedKey: item.indexedKey,
     selector: choice.id,
   });
-  const preview =
-    created?.preview ??
-    previews.find(({ selector }) => selector === choice.id)!;
-  return createNoteTaskWithToast(() => preview.create(), { app: deps.app });
+  if (created)
+    return createPrepared(
+      { ...created.preview, label: created.profile.label },
+      deps.app,
+    );
+  return createPrepared(
+    previews.find(({ selector }) => selector === choice.id)!,
+    deps.app,
+  );
 }
 
 /** Write through the prepared preview and report its Profile and path. */
 function createPrepared(
-  preview: PreparedCreationProfile,
+  preview: Pick<PreparedCreationProfile, "create" | "label">,
   app: App,
   reason?: string,
 ): Promise<TFile | null> {
   return createNoteTaskWithToast(() => preview.create(), {
     app,
     created: (file) =>
-      reason
-        ? m.notice_created_note_from_match({ reason, path: file.path })
-        : m.notice_created_note_under_profile({
-            profile: preview.label ?? m.settings_profile_default_name(),
-            path: file.path,
-          }),
+      createdNoteNotice(file, { label: preview.label, reason }),
   });
+}
+
+/**
+ * The words for a note created through a prepared Profile: the Match that
+ * chose it, or the Profile it was made under, and the new note's path.
+ */
+export function createdNoteNotice(
+  file: Pick<TFile, "path">,
+  { label, reason }: { label?: string; reason?: string },
+): string {
+  return reason
+    ? m.notice_created_note_from_match({ reason, path: file.path })
+    : m.notice_created_note_under_profile({
+        profile: label ?? m.settings_profile_default_name(),
+        path: file.path,
+      });
 }
 
 /** The resolved Profile lost its preview: the same problem its source reports. */

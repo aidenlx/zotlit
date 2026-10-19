@@ -374,6 +374,198 @@
   "command_undo_annotation_change_name": "Undo annotation change",
   "command_redo_annotation_change_name": "Redo annotation change",
   "annot_view_name": "Zotero annotations",
+  "command_open_library_view_name": "Open Zotero library",
+  "library_view_name": "Zotero library",
+  "library_view_help_action": "Welcome & help",
+  "library_view_papers_view_name": "Papers",
+  "library_view_tree_label": "Libraries",
+  "library_view_recent": "Recent",
+  "library_view_reveal_not_listed": [
+    {
+      "declarations": ["input limit", "local formatted = limit: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "Not in the first {formatted} papers. Search its title to show it."
+      }
+    }
+  ],
+  "library_view_facets_label": "Show only",
+  "library_view_facet_unread": "Unread",
+  "library_view_facet_annotated": "Annotated",
+  "library_view_facet_has_note": "Has note",
+  "library_view_facet_pdf": "PDF",
+  "library_view_tree_count": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted}"
+      }
+    }
+  ],
+  "library_view_tags_label": "Tags",
+  "library_view_tags_filter": "Filter tags",
+  "library_view_tags_clear": "Deselect all",
+  "library_view_tags_none": "No tags",
+  "library_view_tags_no_match": "No tags match",
+  "library_view_all_libraries": "Show all libraries",
+  "library_view_scope_libraries": "Hide other libraries",
+  "library_view_show_tree": "Show libraries and collections",
+  "library_view_not_found": "Zotero not found",
+  "library_view_locate": "Locate data folder",
+  "library_view_refresh_failed": "Couldn't refresh from Zotero. Showing the last list read.",
+  "library_view_empty_search_widen": "Try searching all libraries, or check the spelling.",
+  "library_view_empty_search_clear": "Check the spelling, or clear the search to see your papers again.",
+  "library_view_empty_facets": "No papers pass the filters you turned on.",
+  "library_view_save_leaves_out_facets": "A Query File can't check for a Literature Note, so this file leaves that check out of {facets}.",
+  "library_view_save_leaves_out_search": "A Query File can't hold the search, so this file leaves it out.",
+  "library_view_not_found_body": "Locate your Zotero data folder to list your papers here, whether or not Zotero is open.",
+  "library_view_menu_open_pdf": "Open PDF",
+  "library_view_menu_open_pdf_right": "Open PDF to the right",
+  "library_view_menu_open_note": "Open literature note",
+  "library_view_menu_write_note": "Write literature note",
+  "library_view_menu_insert_citation": "Insert citation",
+  "library_view_menu_show_in_zotero": "Show in Zotero",
+  "library_view_cite_no_note": "Open a note to insert the citation into it",
+  "library_view_card_annotations": "Annotations",
+  "library_view_card_more": "More actions",
+  "library_view_card_open_in_annot_view": "Open in the annotation view",
+  "library_view_card_close": "Close",
+  "library_view_card_resize_hint": "Drag to resize the item details, double-click to reset",
+  "library_view_card_failed": "Couldn't read this paper's annotations.",
+  "library_view_card_copy_citation_key": "Copy citation key",
+  "library_view_card_all_fields": "All fields",
+  "library_view_card_abstract": "Abstract",
+  "library_view_card_show_more": "Show more",
+  "library_view_card_show_less": "Show less",
+  "library_view_card_where": "Saved in",
+  "library_view_card_tags": "Tags",
+  "library_view_card_tag_filter": "Show papers tagged {tag}",
+  "library_view_card_files": "Files",
+  "library_view_card_notes": "Zotero notes",
+  "library_view_heading_papers": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 paper",
+        "category=*": "{formatted} papers"
+      }
+    }
+  ],
+  "library_view_heading_papers_of": [
+    {
+      "declarations": [
+        "input count",
+        "input total",
+        "local category = total: plural",
+        "local formatted = count: number",
+        "local all = total: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{formatted} of 1 paper",
+        "category=*": "{formatted} of {all} papers"
+      }
+    }
+  ],
+  "library_view_heading_unread": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "{formatted} unread"
+      }
+    }
+  ],
+  "library_view_heading_first_shown": [
+    {
+      "declarations": ["input count", "local formatted = count: number"],
+      "selectors": ["formatted"],
+      "match": {
+        "formatted=*": "first {formatted} shown"
+      }
+    }
+  ],
+  "library_view_heading_search": [
+    {
+      "declarations": [
+        "input count",
+        "input query",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match for “{query}”",
+        "category=*": "{formatted} matches for “{query}”"
+      }
+    }
+  ],
+  "library_view_heading_everywhere": "All libraries",
+  "library_view_heading_tools": "Sort and save",
+  "library_view_heading_filters": "Filters on",
+  "library_view_heading_remove_filter": "Remove filter: {name}",
+  "library_view_heading_clear_filters": "Clear all",
+  "library_view_card_your_annotations": "Your annotations",
+  "library_view_card_see_all": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "See 1 annotation",
+        "category=*": "See all {formatted} annotations"
+      }
+    }
+  ],
+  "library_view_card_hide_annotations": "Hide annotations",
+  "library_view_card_annotation_note": "note",
+  "library_view_card_annotation_image": "Image",
+  "library_view_card_annotation_ink": "Drawing",
+  "library_view_card_added": "Added {date}",
+  "library_view_card_colours": "Annotations by colour",
+  "instruction_show_in_library": "to show in library",
+  "library_view_search_label": "Search papers",
+  "library_view_search_placeholder": "Search papers",
+  "library_view_search_clear": "Clear search",
+  "library_view_search_matches": [
+    {
+      "declarations": [
+        "input selection",
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match in {selection}",
+        "category=*": "{formatted} matches in {selection}"
+      }
+    }
+  ],
+  "library_view_search_matches_everywhere": [
+    {
+      "declarations": [
+        "input count",
+        "local category = count: plural",
+        "local formatted = count: number"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 match in all libraries",
+        "category=*": "{formatted} matches in all libraries"
+      }
+    }
+  ],
+  "library_view_search_everywhere": "Search all libraries",
   "annot_view_loading": "Loading…",
   "annot_view_no_attachments": "No attachments available",
   "annot_view_mode_active_tab": "Active tab",
@@ -467,7 +659,7 @@
   "annot_view_color_orange": "Orange",
   "annot_view_color_gray": "Gray",
   "annot_view_color_plum": "Plum",
-  "annot_view_page": "p.\u00a0{page}",
+  "annot_view_page": "p. {page}",
   "annot_view_open_page": "Open in Zotero",
   "annot_view_unsupported_type": "Unsupported annotation type: {type}",
   "annot_view_menu_copy_backlink": "Copy backlink",
@@ -776,7 +968,7 @@
   "graph_citations_citekey_copied": "Citation key copied.",
   "graph_citations_citekey_copy_failed": "Failed to copy citation key.",
   "graph_citations_add_literature_notes_group": "Add literature notes group",
-  "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings \u2192 Core plugins.",
+  "graph_citations_core_plugin_disabled": "The Graph view core plugin is disabled. Turn it on in Settings → Core plugins.",
   "graph_citations_unavailable": "Citation graph is not available.",
   "graph_citations_disabled": "“Show citations in graph view” is turned off. Turn it on in Settings → ZotLit → Citations.",
   "settings_citation_editor_heading": "In-text citations",
@@ -1145,13 +1337,12 @@
   "notice_language_pack_restart": "Restart Obsidian to apply the ZotLit language pack.",
   "notice_language_pack_update_needed": "Update ZotLit to install the ZotLit language pack.",
   "notice_language_pack_reset": "Language packs removed. Restart Obsidian to apply.",
-  "notice_update_available": "ZotLit updated to v{version}.",
   "notice_update_see_whats_new": "See what's new",
   "companion_zotero_10_guidance": "Install or update ZotLit Companion, the Zotero add-on, so ZotLit reads recent changes from Zotero 10.",
   "notice_companion_install_action": "Open installation guide",
   "command_open_release_note_name": "Open release notes",
   "settings_update_notices_name": "Update notices",
-  "settings_update_notices_desc": "Show a notice linking to the release notes after ZotLit updates.",
+  "settings_update_notices_desc": "After ZotLit updates, say so above the Library View, with a link to the release notes.",
   "settings_language_pack_name": "Language pack",
   "settings_language_pack_desc": "Show ZotLit's interface in {language}. Installing downloads a language pack.",
   "settings_citation_index_reset_name": "Reset citation index",
@@ -1190,9 +1381,13 @@
   "template_data_explorer_menu_explore": "Explore template data",
   "template_data_explorer_menu_export_json": "Save template data as JSON",
   "template_data_explorer_export_failed": "Failed to save template data",
-  "welcome_view_name": "Welcome to ZotLit",
   "command_open_welcome_name": "Open welcome view",
   "welcome_badge": "Let's get started",
+  "welcome_badge_upgraded": "Welcome back",
+  "welcome_badge_updated": "Updated",
+  "welcome_update_title": "ZotLit updated to {version}",
+  "welcome_update_body": "See what's new in this release.",
+  "welcome_update_action": "What's new",
   "welcome_tagline": "Your Zotero library, inside Obsidian.",
   "welcome_step_connect_title": "Connect to Zotero",
   "welcome_step_connect_checking": "Looking for Zotero in your default profile…",
@@ -1213,26 +1408,26 @@
   ],
   "welcome_action_open_settings": "Open settings",
   "welcome_action_locate": "Locate manually",
-  "welcome_step_companion_installed_title": "ZotLit Companion is installed",
-  "welcome_step_companion_title": "Install ZotLit Companion",
-  "welcome_step_companion_upgrade_title": "Keep Zotero 10 changes available",
-  "welcome_step_companion_body": "ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. Install it before you create your first literature note.",
-  "welcome_action_install_companion": "Open installation guide",
   "welcome_step_folder_title": "Choose where literature notes live",
   "welcome_step_folder_body": "New notes default to the {folder} folder. Change it any time.",
   "welcome_action_pick_folder": "Pick folder",
   "welcome_pick_folder_placeholder": "Choose a folder for new literature notes",
-  "welcome_step_note_title": "Create your first literature note",
-  "welcome_step_note_body": "Search your library and turn any item into a fully-templated note.",
+  "welcome_dismiss": "Dismiss",
+  "welcome_step_library_title": "Open your library",
+  "welcome_step_library_body": "Your papers are listed below. Open a PDF to read it, and write a literature note when you need one.",
   "welcome_action_search": "Search your library",
-  "welcome_keep_going_title": "Keep going",
-  "welcome_keep_going_body": "Guides and references for when you want to go deeper.",
+  "welcome_step_done": "Done",
+  "welcome_step_library_done": "Listed below",
+  "welcome_help_links_name": "Help and community",
+  "welcome_help_getting_started_subtitle": "Set up ZotLit and write your first note",
+  "welcome_help_discussions_subtitle": "Ask the community",
+  "welcome_help_github_title": "Star on GitHub",
+  "welcome_help_github_subtitle": "Like ZotLit? Leave a star",
+  "welcome_help_templates_subtitle": "Shape your notes",
+  "welcome_help_citations_subtitle": "Cite while you write",
   "welcome_docs_getting_started": "Getting started",
   "welcome_docs_templates": "Templates",
   "welcome_docs_citations": "Citations",
-  "welcome_group_community": "Community",
-  "welcome_group_news": "News",
-  "welcome_link_github": "GitHub",
   "welcome_link_discussions": "Chat & discuss",
   "welcome_link_sponsor": "Sponsor",
   "welcome_link_blog": "Blog",
@@ -1241,6 +1436,7 @@
   "welcome_footer_migration_link": "Read the migration guide.",
   "welcome_migration_title": "Upgrading from ZotLit v1",
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
+  "welcome_companion_title": "ZotLit Companion for Zotero 10",
   "welcome_template_conversion_title": "Convert your literature note templates",
   "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. Before it writes anything, it renders one Zotero item (with one annotation and a one-item citation where your templates use them) through the old and the new templates and compares the output, and checks that the frontmatter fields still produce values. When the checks pass, it moves the old files to Obsidian’s configured trash.",
   "welcome_template_conversion_completed_title": "Literature note templates converted",
@@ -1272,6 +1468,12 @@
   "welcome_template_cleanup_body": "These old files could not be moved to trash and are still in your vault:",
   "welcome_template_cleanup_retry": "Retry cleanup",
   "welcome_action_open_migration_guide": "Open migration guide",
+  "welcome_template_conversion_lead": "ZotLit folds your legacy template files into template documents, checks that they render the same, then moves the old files to the trash.",
+  "welcome_how_it_works": "How it works",
+  "welcome_setup_done": "Setup done",
+  "welcome_setup_done_folder": "notes in {folder}",
+  "welcome_show_steps": "Show steps",
+  "welcome_hide_steps": "Hide steps",
   "workbench_profile_menu": "Open profile",
   "workbench_start_default": "Start from Default",
   "workbench_reload_profile": "Reload from Obsidian",
@@ -1786,10 +1988,18 @@
     "prefs_pane_label": "ZotLit",
     "prefs_open_section": "Opening in Obsidian",
     "prefs_pane_type": "Open notes in",
-    "prefs_pane_type_active": { "label": "Active tab" },
-    "prefs_pane_type_tab": { "label": "New tab" },
-    "prefs_pane_type_split": { "label": "New tab group" },
-    "prefs_pane_type_window": { "label": "New window" },
+    "prefs_pane_type_active": {
+      "label": "Active tab"
+    },
+    "prefs_pane_type_tab": {
+      "label": "New tab"
+    },
+    "prefs_pane_type_split": {
+      "label": "New tab group"
+    },
+    "prefs_pane_type_window": {
+      "label": "New window"
+    },
     "prefs_pane_type_description": "Where a literature note or the template data explorer opens in Obsidian. New window is desktop only.",
     "prefs_notify_section": "Obsidian Notifications",
     "prefs_notify_enable": {
@@ -2146,9 +2356,11 @@
   "workbench_filter_op_is": "is",
   "workbench_filter_op_is_all": "is all of",
   "workbench_filter_op_is_any": "is any of",
+  "workbench_filter_op_is_false": "is false",
   "workbench_filter_op_is_empty": "is empty",
   "workbench_filter_op_is_not": "is not",
   "workbench_filter_op_is_not_empty": "is not empty",
+  "workbench_filter_op_is_true": "is true",
   "workbench_filter_op_not_within": "is not inside",
   "workbench_filter_op_on_or_after": "is on or after",
   "workbench_filter_op_on_or_before": "is on or before",
@@ -2470,7 +2682,24 @@
   "query_view_layout_annotations": "Annotations",
   "query_view_layout_table": "Table",
   "query_view_table_literature_note": "Literature note",
+  "query_view_vault_property_label": "{name} (note)",
   "query_view_table_create_note": "Create",
+  "query_view_vault_no_note": "No note",
+  "query_view_vault_filter_nested": "A condition on a vault property cannot sit inside an \"or\" or \"not\" group.",
+  "query_view_vault_filter_nested_hint": "Move it to the top level of the filters, where every condition must hold.",
+  "query_view_vault_filter_mixed": "A condition on a vault property cannot also read a Zotero field.",
+  "query_view_vault_filter_mixed_hint": "Split it into two conditions: one on the vault property, one on the Zotero field.",
+  "query_view_vault_managed": "The note’s profile sets this value on each update.",
+  "query_view_vault_edit": "Edit {name}",
+  "query_view_vault_write_failed": "Could not save “{name}” to the note.",
+  "query_view_vault_remove_item": "Remove {item}",
+  "query_view_vault_chip_edit": "Edit",
+  "query_view_vault_chip_copy": "Copy",
+  "query_view_vault_chip_remove": "Remove from list",
+  "query_view_vault_chip_copy_item": "Copy “{item}”",
+  "query_view_vault_read_only": "{name}, set by the note’s profile",
+  "query_view_vault_not_written": "No note was created, so “{name}” was not saved.",
+  "query_view_vault_managed_not_written": "“{name}” was not saved: the note’s profile sets it on each update.",
   "query_view_table_expand": "Expand",
   "query_view_table_collapse": "Collapse",
   "query_view_table_loading": "Loading…",
@@ -2486,6 +2715,12 @@
   "query_view_show_page": "Show page",
   "query_view_layout_list": "List",
   "query_view_layout_cards": "Cards",
+  "query_view_layout_papers": "Papers",
+  "query_view_papers_more_creators": "{names} et al.",
+  "query_view_papers_attachment_pdf": "PDF",
+  "query_view_papers_attachment_epub": "EPUB",
+  "query_view_papers_attachment_web": "Web page",
+  "query_view_papers_note_marker": "Has a literature note",
   "query_view_dataset": "Rows",
   "query_view_dataset_desc": "Each row of the view is one Zotero annotation, attachment, or item.",
   "query_view_dataset_annotations": "Annotations",
@@ -2547,6 +2782,7 @@
   "query_view_properties_search": "Find or create…",
   "query_view_properties_empty": "No results found.",
   "query_view_properties_add": "Add \"{name}\" property",
+  "query_view_properties_add_vault": "Add \"{name}\" vault property",
   "query_view_properties_hide_all": "Hide all",
   "query_view_formula_add": "Add formula",
   "query_view_formula_name": "Name",
@@ -2599,7 +2835,9 @@
   "query_view_problem_group": "This view cannot group by \"{property}\".",
   "query_view_problem_no_view": "This file has no view named \"{name}\".",
   "query_view_problem_duplicate_view": "This file has more than one view named \"{name}\". Give each view a different name.",
+  "query_view_toolbar_label": "View controls",
   "query_view_sort": "Sort",
+  "query_view_sort_ranked": "Sort is off while search results show the best match first",
   "query_view_sort_by": "Sort by",
   "query_view_sort_add": "Add sort",
   "query_view_sort_remove": "Remove sort",

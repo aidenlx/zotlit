@@ -1254,7 +1254,7 @@
         },
         {
           "name": "citationKey",
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key.",
+          "description": "Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -2185,7 +2185,7 @@
         },
         {
           "name": "citationKey",
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key.",
+          "description": "Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -3402,7 +3402,7 @@
         },
         {
           "name": "citationKey",
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key.",
+          "description": "Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -4463,7 +4463,7 @@
         },
         {
           "name": "citationKey",
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key.",
+          "description": "Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates.",
           "optional": false,
           "type": {
             "kind": "union",
@@ -4966,7 +4966,7 @@
         },
         {
           "name": "citationKey",
-          "description": "Citation key, from Better BibTeX or Zotero's native citation key.",
+          "description": "Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates.",
           "optional": false,
           "type": {
             "kind": "union",

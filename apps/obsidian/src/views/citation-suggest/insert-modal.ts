@@ -55,10 +55,11 @@ export class InsertCitationModal extends ItemSearchModal {
       return;
     }
     const editor = this.#editor;
-    const padded = padCitationInsert(
-      outcome.text,
-      editor.getLine(to.line).charAt(to.ch),
-    );
+    const padded = padCitationInsert(outcome.text, {
+      previous:
+        from.ch === 0 ? "" : editor.getLine(from.line).charAt(from.ch - 1),
+      next: editor.getLine(to.line).charAt(to.ch),
+    });
     editor.replaceRange(padded.text, from, to);
     editor.setCursor(
       editor.offsetToPos(editor.posToOffset(from) + padded.cursor),

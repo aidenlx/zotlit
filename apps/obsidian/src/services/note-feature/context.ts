@@ -1,4 +1,6 @@
 import type {
+  CachedMetadata,
+  EventRef,
   FileManager,
   MetadataCache,
   TFile,
@@ -54,7 +56,13 @@ interface NoteVaultApp {
     "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink" | "renameFile">;
-  metadataCache: Pick<MetadataCache, "getFileCache">;
+  metadataCache: Pick<MetadataCache, "getFileCache" | "offref"> & {
+    /** A note the cache has parsed, as one just created is once it does. */
+    on(
+      name: "changed",
+      callback: (file: TFile, data: string, cache: CachedMetadata) => unknown,
+    ): EventRef;
+  };
   workspace: Pick<Workspace, "iterateAllLeaves">;
 }
 

@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 
+import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryFileView } from "./file-view";
 import type { QueryViewDeps } from "./view";
 
@@ -61,6 +62,7 @@ async function openTab() {
     query: { run: () => Promise.resolve(EMPTY) },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
   const tab = new QueryFileView(
     { app: deps.app } as unknown as WorkspaceLeaf,
@@ -91,7 +93,7 @@ async function openTab() {
   document.body.append(tab.contentEl);
   // What the tab's `onload` does, which the mock view cannot run.
   tab.query.load();
-  tab.query.render(tab.contentEl);
+  await act(() => tab.query.render(tab.contentEl));
   cleanup.defer(() => tab.query.unload());
   await act(async () => {
     tab.setViewData(FILE);
@@ -160,4 +162,29 @@ it("says a change is not saved when the write of a change that came during anoth
     await tab.query.flush();
   });
   expect(notSaved(tab)).toBe(true);
+});
+
+it("keeps every toolbar control, which the Library View leaves out, and offers no Save as query file", async () => {
+  const { tab } = await openTab();
+  const el = tab.contentEl;
+  const toolbar = [
+    ...el.querySelectorAll(
+      "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties], [data-query-save-as]",
+    ),
+  ].map(
+    (node) =>
+      node.getAttribute("data-query-toolbar") ??
+      [...node.attributes]
+        .map(({ name }) => name)
+        .find((name) => name.startsWith("data-query-")),
+  );
+  expect(toolbar).toEqual([
+    "data-query-view-menu",
+    "data-query-results",
+    "sort",
+    "group",
+    "filter",
+    "data-query-properties",
+    "search",
+  ]);
 });
