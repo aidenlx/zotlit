@@ -26,7 +26,7 @@ const STEP = 16;
  * How far past the minimum width a drag goes before the card collapses, in
  * pixels: half the minimum, so a drag that only overshoots it keeps the card.
  */
-export const CARD_CLOSE_PAST_MIN = CARD_WIDTH_MIN / 2;
+const CARD_CLOSE_PAST_MIN = CARD_WIDTH_MIN / 2;
 
 /**
  * The body class of a card resize on: the resize cursor over the whole page,
