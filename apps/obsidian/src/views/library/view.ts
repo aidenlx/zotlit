@@ -29,7 +29,6 @@ import type { QueryViewDeps } from "@/views/query-view/view";
 import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 import { unavailable } from "@/views/welcome/connection";
-import { renderWelcomeHelpRow } from "@/views/welcome/help-row";
 
 import {
   LIBRARY_LAYOUTS,
@@ -318,6 +317,34 @@ export class LibraryView extends ItemView {
     return LIBRARY_VIEW_TYPE;
   }
 
+  /**
+   * "Welcome & help" in the tab header toggles the Welcome View banner: it
+   * shows the banner with its setup steps and moves focus to it, as "Open
+   * welcome view" does, or dismisses it, as its dismiss button does. It
+   * reads as pressed while the banner shows, whatever brought it (ADR 0077).
+   */
+  #addWelcomeAction(): void {
+    const action = this.addAction(
+      "circle-help",
+      m.library_view_help_action(),
+      () => {
+        if (this.welcome.shown) {
+          this.welcome.dismiss();
+          return;
+        }
+        // Over a narrow pane the tree steps aside for the banner.
+        this.tree.setOpen(false);
+        this.welcome.request();
+      },
+    );
+    this.welcome.register(
+      this.welcome.subscribeShown((shown) => {
+        action.classList.toggle("is-active", shown);
+        action.setAttribute("aria-pressed", String(shown));
+      }),
+    );
+  }
+
   override getDisplayText(): string {
     return m.library_view_name();
   }
@@ -345,21 +372,9 @@ export class LibraryView extends ItemView {
       cls: "zt:hidden zt:w-56 zt:shrink-0 zt:flex-col zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:flex zt:group-data-tree-open:flex zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
       attr: { "data-library-tree": "" },
     });
-    // The tree scrolls above its foot, which stays in reach: the way back to
-    // the Welcome View banner (ADR 0077).
     const treeEl = treePane.createDiv({
       cls: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:scroll-gutter",
     });
-    const treeFoot = treePane.createDiv({
-      cls: "zt:shrink-0 zt:border-t-(length:--border-width) zt:border-(--divider-color) zt:p-(--size-4-2)",
-    });
-    this.register(
-      renderWelcomeHelpRow(treeFoot, () => {
-        // Over a narrow pane the tree steps aside for the banner.
-        this.tree.setOpen(false);
-        this.welcome.request();
-      }),
-    );
     const main = shell.createDiv({
       cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
     });
@@ -413,6 +428,7 @@ export class LibraryView extends ItemView {
       this.welcome,
     );
     for (const part of this.#parts) part.load();
+    this.#addWelcomeAction();
     this.tree.load();
     this.tree.render(treeEl.createDiv({ cls: hidden }));
     this.tree.renderToggle(toggleEl);

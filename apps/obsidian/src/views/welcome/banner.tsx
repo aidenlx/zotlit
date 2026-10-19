@@ -84,7 +84,7 @@ export class WelcomeBanner extends Component {
   /**
    * Show the banner, its setup steps included, until the researcher
    * dismisses it, and move focus to it, as "Open welcome view" and the
-   * Library View's "Welcome and help" ask.
+   * Library View's "Welcome & help" ask.
    */
   request(): void {
     this.#deps.settings.update({ "welcome.dismissed": false });
@@ -94,9 +94,39 @@ export class WelcomeBanner extends Component {
     }));
   }
 
+  /**
+   * Put the banner away, as its dismiss button and the Library View's
+   * "Welcome & help" do; this acknowledges the Migration Prompt of the
+   * upgraded state and the update of the running version.
+   */
+  dismiss(): void {
+    const { settings, release } = this.#deps;
+    this.#store.setState({ requested: false, converted: false });
+    settings.update({ "welcome.dismissed": true });
+    release.acknowledgeMigration();
+    release.acknowledgeUpdate();
+  }
+
   /** Whether the banner shows anything now. */
   get shown(): boolean {
     return bannerSections(this.#store.getState()) !== null;
+  }
+
+  /**
+   * Call `listener` with whether the banner shows, now and on every change,
+   * whatever brings it or puts it away.
+   *
+   * @returns what stops the calls.
+   */
+  subscribeShown(listener: (shown: boolean) => void): () => void {
+    let last = this.shown;
+    listener(last);
+    return this.#store.subscribe(() => {
+      const shown = this.shown;
+      if (shown === last) return;
+      last = shown;
+      listener(shown);
+    });
   }
 
   /** Settles once the last connection readout started has landed. */
@@ -158,12 +188,7 @@ export class WelcomeBanner extends Component {
         return result;
       },
       openExternal: (url) => window.open(url),
-      dismiss: () => {
-        this.#store.setState({ requested: false, converted: false });
-        settings.update({ "welcome.dismissed": true });
-        release.acknowledgeMigration();
-        release.acknowledgeUpdate();
-      },
+      dismiss: () => this.dismiss(),
       openReleaseNote: () => {
         void release.openReleaseNote();
         release.acknowledgeUpdate();

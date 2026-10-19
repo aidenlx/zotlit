@@ -579,7 +579,11 @@ function pluginData(stored?: unknown) {
       settings,
       setupActions,
       templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
-      release: { hasV1Templates: () => false, acknowledgeMigration: vi.fn() },
+      release: {
+        hasV1Templates: () => false,
+        acknowledgeMigration: vi.fn(),
+        acknowledgeUpdate: vi.fn(),
+      },
     },
     literatureNotes,
     readers: { open: () => Promise.resolve() },
@@ -2291,26 +2295,51 @@ describe("Welcome View banner once setup is complete", () => {
     expect(banner(view)).toContain(m.welcome_step_folder_title());
   });
 
-  it("shows the banner again with its setup steps from the Welcome & help row at the foot of the Library Tree, after a dismissal, and moves focus to it", async () => {
+  it("toggles the banner from the Welcome & help view action, which reads as pressed while the banner shows", async () => {
     const { view, settings } = await setUp();
     await act(() => {
       settings.update({ "welcome.dismissed": true });
     });
-    // At the foot of the Library Tree, a row with its visible label and no
-    // tooltip; the tab header holds no action of its own.
-    const help = view.contentEl.querySelector<HTMLElement>(
-      "[data-library-tree] [data-welcome-help-row]",
-    );
-    expect(help?.textContent).toBe(m.library_view_help_action());
-    expect(help?.hasAttribute("aria-label")).toBe(false);
-    expect((view as unknown as { actions: HTMLElement[] }).actions).toEqual([]);
-    await act(() => help!.click());
+    // One action in the tab header, named by its tooltip; the Library Tree
+    // keeps no row of its own for it.
+    const { actions } = view as unknown as { actions: HTMLElement[] };
+    expect(actions.map((a) => a.getAttribute("aria-label"))).toEqual([
+      m.library_view_help_action(),
+    ]);
+    const [help] = actions as [HTMLElement];
+    expect(view.contentEl.querySelector("[data-welcome-help-row]")).toBeNull();
+    expect(help.classList.contains("is-active")).toBe(false);
+    expect(help.getAttribute("aria-pressed")).toBe("false");
+
+    // Hidden: it shows the banner with its setup steps and moves focus to it.
+    await act(() => help.click());
     expect(settings.current?.["welcome.dismissed"]).toBe(false);
     expect(banner(view)).toContain(m.welcome_step_connect_title());
     expect(banner(view)).toContain(m.welcome_step_folder_title());
     expect(view.contentEl.ownerDocument.activeElement).toBe(
       view.contentEl.querySelector("[data-welcome-banner]"),
     );
+    expect(help.classList.contains("is-active")).toBe(true);
+    expect(help.getAttribute("aria-pressed")).toBe("true");
+
+    // Showing: it dismisses the banner, as the dismiss button does.
+    await act(() => help.click());
+    expect(settings.current?.["welcome.dismissed"]).toBe(true);
+    expect(banner(view)).toEqual([]);
+    expect(help.classList.contains("is-active")).toBe(false);
+    expect(help.getAttribute("aria-pressed")).toBe("false");
+
+    // The state follows the banner whatever moves it: the command shows it,
+    // its dismiss button puts it away.
+    await act(() => view.welcome.request());
+    expect(help.getAttribute("aria-pressed")).toBe("true");
+    await act(() =>
+      view.contentEl
+        .querySelector<HTMLElement>("[data-welcome-dismiss]")!
+        .click(),
+    );
+    expect(help.getAttribute("aria-pressed")).toBe("false");
+    expect(help.classList.contains("is-active")).toBe(false);
   });
 
   it("offers the template conversion while it is pending", async () => {

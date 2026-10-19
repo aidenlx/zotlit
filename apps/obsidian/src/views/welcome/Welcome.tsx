@@ -79,7 +79,9 @@ function Header({ titleId }: { titleId: string }) {
   const actions = useWelcomeActions();
   const badge = BADGE_TEXT[useWelcomeStore(bannerBadge)]();
   return (
-    <header className="zt:flex zt:items-start zt:gap-3">
+    // The dismiss button keeps the banner's top-right corner, outside the
+    // column, so the header leaves its width free at the end of the line.
+    <header className="zt:flex zt:items-start zt:pe-[calc(var(--icon-size)+var(--size-2-3)*2+var(--size-4-2))]">
       {/* The tagline joins the title's line where the pane is wide enough. */}
       <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-x-2.5 zt:gap-y-1">
         <span
@@ -102,8 +104,12 @@ function Header({ titleId }: { titleId: string }) {
           {m.welcome_tagline()}
         </p>
       </div>
+      {/* At the banner's top-right corner, on the banner's own insets,
+          whatever the width: where a dismissable bar's close button sits.
+          It stays after the header in the focus order. */}
       <IconButton
         icon="x"
+        className="zt:absolute zt:end-(--size-4-2) zt:top-(--size-4-4)"
         data-welcome-dismiss=""
         {...tooltipAttrs(m.welcome_dismiss())}
         onClick={actions.dismiss}
@@ -803,11 +809,11 @@ export function Welcome() {
       tabIndex={-1}
       // The bar spans the tab; its content starts where the Library Tree's
       // rows do, at the tree's own inset.
-      className="zt:@container zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-2) zt:py-(--size-4-4) zt:outline-none"
+      className="zt:@container zt:relative zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-2) zt:py-(--size-4-4) zt:outline-none"
     >
-      {/* One column, at most 64rem, holds the header, its dismiss button and
-          the body, so on a large pane the banner reads as one block and the
-          dismiss button ends the content it closes. */}
+      {/* One column, at most 64rem, holds the header and the body, so on a
+          large pane the banner reads as one block; the dismiss button stays
+          at the bar's corner. */}
       <div className="zt:max-w-[64rem]">
         <Header titleId={titleId} />
         {/* What to do comes first; the Help Links take a 22rem column beside
