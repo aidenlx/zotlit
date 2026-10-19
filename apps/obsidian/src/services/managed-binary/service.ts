@@ -356,6 +356,7 @@ export class ManagedBinaryService<
     if (this.#binary.startOnInstall) {
       // The status stays `installing` through the start and its release, so
       // a concurrent install() shares this whole operation.
+      // oxlint-disable-next-line typescript/await-thenable -- Engine may be sync or async disposable
       await using _engine = await this.#startEngine();
     }
     this.#logger.info("Installed the binary", { binary, version, sha256 });
@@ -409,6 +410,7 @@ export class ManagedBinaryService<
   async #dropEngine(): Promise<void> {
     const pending = this.#engine;
     this.#engine = undefined;
+    // oxlint-disable-next-line typescript/await-thenable -- Engine may be sync or async disposable
     await using _engine = await pending?.catch(() => undefined);
   }
 

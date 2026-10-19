@@ -1988,7 +1988,7 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
   const { deps, change } = pluginData();
   // A thousand Items of My Library come before the one revealed.
   const octal = (n: number) =>
-    [...n.toString(8).padStart(6, "0")]
+    Array.from(n.toString(8).padStart(6, "0"))
       .map((digit) => "ABCDEFGH"[Number(digit)])
       .join("");
   const many = Array.from({ length: 1000 }, (_, n) => ({

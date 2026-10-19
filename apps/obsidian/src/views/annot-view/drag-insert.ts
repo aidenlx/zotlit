@@ -248,6 +248,7 @@ async function insertDrop(
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;
+    // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
     dropEvent: globalThis.DragEvent;
     editor: Editor;
     info: MarkdownFileInfo;

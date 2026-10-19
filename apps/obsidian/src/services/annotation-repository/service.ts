@@ -647,8 +647,8 @@ function historyChangeOf(
 }
 
 interface TextSave {
-  idleTimer: ReturnType<typeof setTimeout> | null;
-  burstTimer: ReturnType<typeof setTimeout> | null;
+  idleTimer: number | null;
+  burstTimer: number | null;
 }
 
 /** The fields a write in flight proposes, as Zotero will answer them. */
@@ -3627,14 +3627,14 @@ export class AnnotationRepository extends Service<void> {
     if (this.#savingText(field, draft.annotationKey)) return;
     if (!this.#canAutosave(draft)) return;
     if (sameText(draft.text, draft.baseline)) return;
-    if (save.idleTimer !== null) clearTimeout(save.idleTimer);
-    save.idleTimer = setTimeout(() => {
+    if (save.idleTimer !== null) window.clearTimeout(save.idleTimer);
+    save.idleTimer = window.setTimeout(() => {
       save.idleTimer = null;
       void this.submitTextField(field, draft.annotationKey, {
         automatic: true,
       });
     }, TEXT_IDLE_SAVE_MS);
-    save.burstTimer ??= setTimeout(() => {
+    save.burstTimer ??= window.setTimeout(() => {
       save.burstTimer = null;
       void this.submitTextField(field, draft.annotationKey, {
         automatic: true,
@@ -3643,8 +3643,8 @@ export class AnnotationRepository extends Service<void> {
   }
 
   #clearTextTimers(save: TextSave): void {
-    if (save.idleTimer !== null) clearTimeout(save.idleTimer);
-    if (save.burstTimer !== null) clearTimeout(save.burstTimer);
+    if (save.idleTimer !== null) window.clearTimeout(save.idleTimer);
+    if (save.burstTimer !== null) window.clearTimeout(save.burstTimer);
     save.idleTimer = null;
     save.burstTimer = null;
   }

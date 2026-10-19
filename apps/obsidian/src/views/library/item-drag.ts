@@ -64,6 +64,7 @@ export function createItemDrag(deps: ItemDragDeps) {
  * Refuse an Item dropped back on the Library View, so the pointer shows
  * that it lands nowhere.
  */
+// eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
 export function refuseItemDrop(event: globalThis.DragEvent): void {
   if (!event.dataTransfer?.types.includes(ITEM_DRAG_TYPE)) return;
   event.preventDefault();

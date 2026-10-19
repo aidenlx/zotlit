@@ -1005,7 +1005,7 @@ export function interfaceFont(window_: Window): MeasuredFont {
     measure: (text, fontSize) => {
       let context = measureContexts.get(document_);
       if (!context) {
-        const created = document_.createElement("canvas").getContext("2d");
+        const created = document_.win.createEl("canvas").getContext("2d");
         if (!created) throw new Error("No 2D canvas to measure text with");
         context = created;
         measureContexts.set(document_, context);

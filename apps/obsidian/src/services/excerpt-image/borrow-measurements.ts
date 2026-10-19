@@ -212,6 +212,7 @@ async function pass(options: {
 export async function runReaderMeasurements(): Promise<ReaderMeasurements> {
   const folder = await mkdtemp(join(tmpdir(), "zotlit-reader-measurements-"));
   const count: Counters = { loads: 0, renders: 0, documentBytes: 0 };
+  // eslint-disable-next-line obsidianmd/no-global-this -- installs a document stub where no window exists
   const global = globalThis as { document?: unknown };
   const previousDocument = global.document;
   global.document = { createElement: canvasStub };

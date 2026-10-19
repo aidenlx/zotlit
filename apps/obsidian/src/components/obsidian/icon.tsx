@@ -19,7 +19,7 @@ export interface IconProps extends Omit<
    * pairs with it; or a CSS length, or a number treated as px, which keeps
    * the stroke of the context.
    */
-  size?: IconSize | number | string;
+  size?: IconSize | number | (string & Record<never, never>);
   strokeWidth?: number | string;
 }
 

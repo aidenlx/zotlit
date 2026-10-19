@@ -516,7 +516,7 @@ export class QueryView extends Component implements HistorySurface {
   #drawnCards: AnnotState["annotations"] | undefined = undefined;
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
-  #rerunTimer: ReturnType<typeof setTimeout> | null = null;
+  #rerunTimer: number | null = null;
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
     this.#deps = deps;
@@ -682,14 +682,14 @@ export class QueryView extends Component implements HistorySurface {
   /** Run again, after a short wait, once a shown Attachment gains or loses an Annotation. */
   #listChanged(): void {
     this.#cancelRerun();
-    this.#rerunTimer = setTimeout(() => {
+    this.#rerunTimer = window.setTimeout(() => {
       this.#rerunTimer = null;
       this.#refresh(true);
     }, RERUN_DELAY_MS);
   }
 
   #cancelRerun(): void {
-    if (this.#rerunTimer !== null) clearTimeout(this.#rerunTimer);
+    if (this.#rerunTimer !== null) window.clearTimeout(this.#rerunTimer);
     this.#rerunTimer = null;
   }
 

@@ -1436,11 +1436,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       childrenOf(expanded)
         .filter(([kind]) => kind === "attachment")
         .map(([, key]) => key)
-        .toSorted(),
+        .toSorted((a, b) => String(a).localeCompare(String(b))),
     ).toEqual(
       attachmentsOf(paper)
         .map(({ key }) => key)
-        .toSorted(),
+        .toSorted((a, b) => String(a).localeCompare(String(b))),
     );
     expect(
       childrenOf(expanded)
@@ -1462,8 +1462,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       childrenOf(withAnnotations)
         .filter(([kind]) => kind === "annotation")
         .map(([, key]) => key)
-        .toSorted(),
-    ).toEqual(pdfAnnotations.map(({ key }) => key).toSorted());
+        .toSorted((a, b) => String(a).localeCompare(String(b))),
+    ).toEqual(
+      pdfAnnotations
+        .map(({ key }) => key)
+        .toSorted((a, b) => String(a).localeCompare(String(b))),
+    );
 
     // The PDF opens in Obsidian's reader, an Annotation at its page, and the
     // Literature Note in Obsidian.

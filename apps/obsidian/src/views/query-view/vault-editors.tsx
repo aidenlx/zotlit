@@ -214,6 +214,7 @@ function addChipItems(menu: Menu, { item, edit, remove }: ChipMenu) {
 function showMenu(
   menu: Menu,
   anchor: HTMLElement,
+  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   pointer: globalThis.MouseEvent | null,
 ) {
   if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
@@ -234,6 +235,7 @@ function showMenu(
  */
 export function openChipMenu(
   chip: HTMLElement,
+  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   pointer: globalThis.MouseEvent | null,
   item: ChipMenu,
 ): Menu | null {
@@ -1002,7 +1004,7 @@ function useTruncated(el: RefObject<HTMLElement | null>, text: string) {
     // The observer of the window the cell stands in, which changes as the
     // view moves into or out of a popout, whose closing would stop it.
     const observe = (win: Window) => {
-      const next = new (win as Window & typeof globalThis).ResizeObserver(() =>
+      const next = new (win as Window & typeof window).ResizeObserver(() =>
         setTruncated(label.scrollWidth > label.clientWidth),
       );
       next.observe(label);

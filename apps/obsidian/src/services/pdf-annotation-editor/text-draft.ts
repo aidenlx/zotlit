@@ -44,7 +44,7 @@ export function createTextDraftArea(
   document_: Document,
   { input, finish }: TextDraftEvents,
 ): HTMLTextAreaElement {
-  const area = document_.createElement("textarea");
+  const area = document_.win.createEl("textarea");
   area.classList.add(themeHook.pdfTextDraft);
   area.dir = "auto";
   area.spellcheck = false;

@@ -64,8 +64,7 @@ export class QueryFileDocument {
   /** The place of the view on screen in the file's list; `-1` for none. */
   #shown = -1;
   /** The text of a typed change that waits for its delay before it is saved. */
-  #typedSave: { text: string; timer: ReturnType<typeof setTimeout> } | null =
-    null;
+  #typedSave: { text: string; timer: number } | null = null;
   /** The host's last write, which settles once it is done. Never rejects. */
   #writing: Promise<void> = Promise.resolve();
   /** How many writes the host has to do or to finish. */
@@ -319,7 +318,7 @@ export class QueryFileDocument {
     } else this.#choose();
     this.#cancelTypedSave();
     if (typed) {
-      const timer = setTimeout(() => {
+      const timer = window.setTimeout(() => {
         this.#typedSave = null;
         this.#save(text);
       }, SAVE_DELAY_MS);
@@ -328,7 +327,7 @@ export class QueryFileDocument {
   }
 
   #cancelTypedSave(): void {
-    if (this.#typedSave) clearTimeout(this.#typedSave.timer);
+    if (this.#typedSave) window.clearTimeout(this.#typedSave.timer);
     this.#typedSave = null;
   }
 

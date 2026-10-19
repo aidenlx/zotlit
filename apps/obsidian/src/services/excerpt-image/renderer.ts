@@ -525,6 +525,7 @@ export class ExcerptRenderer implements AsyncDisposable {
     );
     box = bounds(scale);
     const canvas = stack.adopt(
+      // eslint-disable-next-line obsidianmd/prefer-create-el -- renders offscreen, outside any Obsidian window
       (this.#host.canvas ?? (() => document.createElement("canvas")))(),
       (canvas) => {
         canvas.width = 0;

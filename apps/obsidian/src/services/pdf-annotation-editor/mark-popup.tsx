@@ -566,11 +566,9 @@ export class MarkPopup extends PopoutAwareHoverPopover {
     if (!this.hoverEl.isConnected || this.#resizeWin === win) return;
     this.#resize?.disconnect();
     this.#resizeWin = win;
-    const resize = new (win as Window & typeof globalThis).ResizeObserver(
-      () => {
-        if (this.hoverEl.isConnected) this.position();
-      },
-    );
+    const resize = new (win as Window & typeof window).ResizeObserver(() => {
+      if (this.hoverEl.isConnected) this.position();
+    });
     resize.observe(this.#content);
     this.#resize = resize;
   }
