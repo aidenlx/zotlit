@@ -26,6 +26,7 @@ import {
   formulaName,
   formulaProperty,
   isVaultProperty,
+  vaultName,
   vaultProperty,
 } from "./query-file";
 import type {
@@ -373,7 +374,9 @@ export function usedGroupBy(
  */
 export function fieldLabel(property: string): string {
   if (property === LITERATURE_NOTE) return m.query_view_table_literature_note();
-  return labelOf(property) ?? property;
+  // A Vault Property reads as its frontmatter key, as Bases names a note
+  // property; its icon already marks it as a property of the note.
+  return labelOf(property) ?? vaultName(property) ?? property;
 }
 
 function labelOf(property: string): string | undefined {

@@ -4164,7 +4164,7 @@ describe("vault properties", () => {
     await settle();
 
     expect(view.table()).toEqual({
-      header: ["Title", "vault.status"],
+      header: ["Title", "status"],
       body: [
         ["Ten simple rules", "reading, to cite"],
         ["Deep learning", ""],
