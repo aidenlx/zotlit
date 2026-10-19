@@ -25,3 +25,10 @@
 .zt-root button.zt-library-card-toggle {
   all: revert-layer;
 }
+
+/* A Reading Card resize keeps its cursor wherever the pointer goes: a rule
+   over every element of the page, which no utility on the edge reaches. */
+body.zt-is-resizing-library-card,
+body.zt-is-resizing-library-card * {
+  cursor: col-resize !important;
+}

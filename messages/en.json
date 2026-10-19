@@ -431,6 +431,7 @@
   "library_view_card_more": "More actions",
   "library_view_card_open_in_annot_view": "Open in the annotation view",
   "library_view_card_close": "Close",
+  "library_view_card_resize_hint": "Drag to resize the item details, double-click to reset",
   "library_view_card_failed": "Couldn't read this paper's annotations.",
   "library_view_card_copy_citation_key": "Copy citation key",
   "library_view_card_all_fields": "All fields",

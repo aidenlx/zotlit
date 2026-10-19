@@ -30,6 +30,7 @@ import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 import { unavailable } from "@/views/welcome/connection";
 
+import { CardWidth } from "./card-width";
 import {
   LIBRARY_LAYOUTS,
   libraryViewDefaults,
@@ -39,6 +40,7 @@ import {
   pruneExpanded,
   vaultPass,
   withCardDisclosure,
+  withCardWidth,
   withExpanded,
   withFacets,
   withNode,
@@ -143,6 +145,8 @@ export class LibraryView extends ItemView {
   );
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
+  /** The Reading Card's resizable inner edge, once the tab has opened. */
+  #cardWidth: CardWidth | null = null;
   /** The click that waits out a double click before it opens the card. */
   #cardTimer: number | null = null;
   /** The write of the search text that the box last asked for. */
@@ -396,10 +400,27 @@ export class LibraryView extends ItemView {
     // wide pane, and over it on a narrow one, as the tree does, once the
     // researcher asks for it.
     const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:hidden zt:w-96 zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
+      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
+    // The card's inner edge sets its width; the card itself renders beside
+    // it, in a box of its own.
+    this.#cardWidth = new CardWidth(cardEl, main, {
+      stored: () => this.#storage.document().cardWidth,
+      keep: (width) => {
+        this.#storage
+          .change((doc) => withCardWidth(doc, width))
+          .catch((error: unknown) => {
+            logger.warn("The Library View could not keep the card's width", {
+              error,
+            });
+          });
+      },
+    });
+    const cardBody = cardEl.createDiv({
+      cls: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
+    });
     // The tree toggle shares the search box's row, so it never takes a row
     // of its own above the heading. While
     // Zotero is not found the toggle stays, so a narrow pane still opens the
@@ -475,12 +496,13 @@ export class LibraryView extends ItemView {
       }),
     );
     this.card.load();
-    this.card.render(cardEl);
+    this.card.render(cardBody);
     this.card.register(
       this.selection.subscribe(({ key, card }) => {
         this.card.show(key);
         cardEl.hidden = key === null;
         shell.toggleAttribute("data-card-open", card);
+        this.#cardWidth?.apply();
       }),
     );
     // A selected row that leaves the list takes its selection with it, so
@@ -504,6 +526,8 @@ export class LibraryView extends ItemView {
     await this.#deps.settings.loaded;
     this.#storage.load();
     const doc = this.#storage.document();
+    this.#cardWidth?.load(shell);
+    this.#cardWidth?.apply();
     this.card.showDisclosures(doc.card);
     this.tree.show(doc.node);
     this.tree.showExpanded(doc.expanded);
@@ -920,6 +944,7 @@ export class LibraryView extends ItemView {
 
   protected override async onClose(): Promise<void> {
     this.#cancelCard();
+    this.#cardWidth?.unload();
     this.#keep.run();
     await this.#saving;
     this.search.unload();
