@@ -527,12 +527,12 @@ Each suite file builds its own Fixture and vaults under `.scratch/`. `.scratch/a
 
 | Suite | Fixture | Vault | Zotero |
 | --- | --- | --- | --- |
-| `end-to-end.e2e.ts` | `.scratch/e2e-fixture` | `.scratch/e2e-fixture-vault-<worktree-folder-name>`, and one `.scratch/e2e-<name>-<worktree-folder-name>` vault for each test that needs a vault of its own | None. The suite reads the database from disk. |
+| End-to-end Run area files (`packages/e2e/src/*.e2e.ts` except `paired-run`, `citation-index`, `query-cancel`, `walkthrough`) | `.scratch/e2e-fixture` | `.scratch/e2e-fixture-vault-<worktree-folder-name>`, and one `.scratch/e2e-<name>-<worktree-folder-name>` vault for each test that needs a vault of its own | None. The suite reads the database from disk. |
 | `paired-run.e2e.ts` | `.scratch/e2e-paired-fixture` | `.scratch/e2e-paired-vault-<worktree-folder-name>` | Its own Paired Zotero, with the Local API open. |
 
 Each vault starts new, with no stored state. The folder name includes the worktree, so runs in two worktrees use different vaults. At the end, it stops its Paired Zotero, removes its vault and the vault's local storage, and deletes its Fixture. If a run stops before this cleanup, the next run removes what it left first. The two files run one after the other, because both use the one desktop Obsidian.
 
-The `end-to-end.e2e.ts` suite covers a Literature Note render through the update-all-notes batch operation. It also changes to the `available` Scope Case and verifies the reported Library Scope.
+The End-to-end Run suite covers a Literature Note render through the update-all-notes batch operation. It also changes to the `available` Scope Case and verifies the reported Library Scope.
 
 If desktop Obsidian is not reachable, all tests skip and the command exits successfully.
 

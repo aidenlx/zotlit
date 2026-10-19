@@ -6,7 +6,7 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 
 - `pnpm e2e` (root) or `pnpm --filter @zotlit/e2e e2e` — runs the suite.
 - `pnpm e2e:query` (root) — builds dependencies and runs only the ZotLit Query CLI cases, including cancellation.
-- For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/end-to-end.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
+- For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/<area>.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
 - Worker responsiveness: `pnpm e2e:worker` requires desktop Obsidian and passes only when the unchanged refresh, changed-Item rebuild, and rejected-snapshot cases all execute. The commit hook runs it for the paths listed in `lefthook.yml`. Its worker timer detects stalls that sequential search p99 can hide.
 
@@ -14,6 +14,26 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 - `pnpm --filter @zotlit/e2e test` — unit tests of the measurement record (`src/**/*.test.ts`, `vitest.unit.config.ts`). They touch no Obsidian.
 
 The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
+
+## End-to-end Run layout
+
+Shared Fixture setup, vault bootstrap, and helpers live in `src/e2e-run-*.ts` (`e2e-run-fixture.ts`, `e2e-run-lifecycle.ts`, `e2e-run-suite-helpers.ts`, and related modules). Every area file calls `registerEndToEndRunHooks()` so the Fixture vault opens once per run across files.
+
+Add a new case to the area file that matches its feature (create a new area file only when an existing one would pass ~2,000 lines):
+
+| File | Area |
+| --- | --- |
+| `annotations.e2e.ts` | Annotation View, sidebar grouping, early Query File embeds |
+| `annotations-excerpts.e2e.ts` | PDF excerpts, rendering, worker reads |
+| `query-file.e2e.ts` | Query File tabs, new-query hotkey |
+| `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts` | Query View UI, formulas, table and Items layout |
+| `library-view.e2e.ts`, `library-view-navigation.e2e.ts`, `library-view-reading.e2e.ts` | Library View browsing, search, Reading Card |
+| `literature-notes.e2e.ts` | Literature Note create/update, profiles, match workbench |
+| `local-bridge.e2e.ts` | Local Bridge / web workbench (needs `WEB_WORKBENCH_ENABLED=true`) |
+| `follow-mode.e2e.ts` | Follow Mode menu rendering |
+| `query-cli*.e2e.ts` | `zotlit:query`, schema, scope CLI |
+| `fresh-destination.e2e.ts` | Fresh vault destination flow |
+| `window-reload.e2e.ts` | Window reload startup order |
 
 The default reporter prints suite progress, the run's evidence folder, and the final counts. Each run writes its evidence to its own folder, `.scratch/e2e-results/<start time>-<pid>/`, and `.scratch/e2e-results/latest` points to the run that started last. Read `results.json` there for individual results and `console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that folder with the launch error chain. The ten newest run folders stay; copy evidence you need to retain longer. A tool that reads the results of a run it starts sets `ZOTLIT_E2E_RESULTS` to the folder (see `src/verify-worker.ts`).
 
