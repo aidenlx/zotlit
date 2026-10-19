@@ -434,11 +434,23 @@ export class AnnotationsLayout extends Component {
     this.#el = el;
     this.#root = createRoot(el);
     this.#root.render(
+      this.provide(
+        <AnnotActionsContext value={actions}>{content}</AnnotActionsContext>,
+      ),
+    );
+  }
+
+  /**
+   * `content` with what the layout's controls read from React context: the
+   * running App, which a Chooser's keyboard needs, and the card store. A host
+   * that draws one of those controls in a React root of its own, as the
+   * Library View's heading draws Sort, renders it inside this.
+   */
+  provide(content: ReactNode): ReactNode {
+    return (
       <AppContext value={this.#deps.app}>
-        <AnnotStoreProvider value={this.store}>
-          <AnnotActionsContext value={actions}>{content}</AnnotActionsContext>
-        </AnnotStoreProvider>
-      </AppContext>,
+        <AnnotStoreProvider value={this.store}>{content}</AnnotStoreProvider>
+      </AppContext>
     );
   }
 

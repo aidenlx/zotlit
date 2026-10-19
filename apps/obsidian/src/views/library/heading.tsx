@@ -52,7 +52,9 @@ export interface LibraryHeadingHost {
 /** Draw the heading into `el`; unmount the root it returns as the view closes. */
 export function renderHeading(el: HTMLElement, host: LibraryHeadingHost): Root {
   const root = createRoot(el);
-  root.render(<LibraryHeading host={host} />);
+  // Sort is the Query View's own control, drawn outside the Query View's
+  // root, so it gets the context that root gives its controls.
+  root.render(host.query.layout.provide(<LibraryHeading host={host} />));
   return root;
 }
 

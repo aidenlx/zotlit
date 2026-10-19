@@ -1786,6 +1786,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("picks a sort property in the Library View's Sort popover from the property Select's options, and the row keeps one property Select", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // A new Library View opens on Recent, whose sort is last change first.
+    await obEval(
+      vaultId,
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':null});await settings.flush();app.commands.executeCommandById('zotlit:open-library-view');return true;})()`,
+    );
+    // The heading draws the Sort control in a React root of its own; the
+    // property Select's popup opens its Chooser there, with its search and
+    // rows, and a pick shuts it.
+    const picked = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);const el=leaf.view.contentEl;await until('rows',()=>el.querySelectorAll('[data-query-papers-row]').length>0,20000);press(el.querySelector('[data-query-toolbar="sort"]'),'Sort');const popover=await until('Sort popover',()=>el.querySelector('[data-query-popover="sort"]:popover-open'));await pick(await until('sort property',()=>popover.querySelector('[data-sort-property]')),'title','sort property');const triggers=popover.querySelectorAll('[data-sort-property]').length;popover.hidePopover();return JSON.stringify({triggers});})()`,
+      ),
+    ) as { triggers: number };
+    expect(picked).toEqual({ triggers: 1 });
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `JSON.stringify(${services}.settings.current['library.document']?.sort)`,
+        {
+          expected: JSON.stringify([{ property: "title", direction: "DESC" }]),
+        },
+      ),
+    ).toBe(true);
+  });
+
   it("filters the Library View from the Library Tree, with counts that match the seed and follow a database change", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
