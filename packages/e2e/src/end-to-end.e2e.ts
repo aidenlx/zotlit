@@ -71,6 +71,7 @@ import {
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
 import { MENU_READY, PAGE, pickQueryView } from "./page-gestures.ts";
+import { verifyPdfReads } from "./pdf-reads.ts";
 import { raiseWindow } from "./reader-gestures.ts";
 import { verifyRecentUses } from "./recent-uses.ts";
 import {
@@ -1944,6 +1945,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     ).toBe(true);
   });
+
+  it("records PDF reads from every open route and page changes, preserves restored reads, and excludes standalone Attachments", async () => {
+    await verifyPdfReads(vaultId, e2eFixture.databasePath, reloadWindow);
+  }, 180000);
 
   it("ranks Literature Note opens from every route and tab returns in Recent and empty search, keeps Uses through reloads, and excludes browsing and Companion updates", async () => {
     await verifyRecentUses(vaultId, e2eVaultPath, reloadWindow);

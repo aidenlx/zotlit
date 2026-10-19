@@ -261,6 +261,7 @@ export function buildServices(
     })
     .use({
       pdfAnnotationEditor: ({
+        useLedger,
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
@@ -269,6 +270,9 @@ export function buildServices(
         settings,
       }) => {
         reader = new PdfAnnotationEditor({
+          recordRead: ({ itemKey, instant }) => {
+            useLedger.record(itemKey, "read", instant);
+          },
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,

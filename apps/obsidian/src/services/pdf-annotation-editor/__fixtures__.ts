@@ -202,7 +202,7 @@ export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
 /** The viewer child, its toolbar slot, and the page renders it dispatches. */
 export function pdfReader(page = pageView()) {
   const toolbarRightEl = createDiv();
-  const listeners: ((event: unknown) => void)[] = [];
+  const listeners: { event: string; listener: (event: unknown) => void }[] = [];
   const child: Record<string, unknown> = {
     // `on` and `off` read the event bus through this, and Obsidian's `unload`
     // closes it and nulls it — see `closeViewer` below.
@@ -214,8 +214,8 @@ export function pdfReader(page = pageView()) {
         getPageLabels: vi.fn(async () => null),
       },
     },
-    on: vi.fn((_event: string, listener: (event: unknown) => void) => {
-      listeners.push(listener);
+    on: vi.fn((event: string, listener: (event: unknown) => void) => {
+      listeners.push({ event, listener });
     }),
     off: vi.fn(),
     getPage: vi.fn((pageNumber: number) =>
@@ -233,8 +233,8 @@ export function pdfReader(page = pageView()) {
     /** What Obsidian dispatches once PDF.js paints page one. */
     renderFirstPage: () => {
       page.renderingState = 3;
-      for (const listener of listeners) {
-        listener({ pageNumber: 1, source: page });
+      for (const { event, listener } of listeners) {
+        if (event === "pagerendered") listener({ pageNumber: 1, source: page });
       }
     },
     /**
