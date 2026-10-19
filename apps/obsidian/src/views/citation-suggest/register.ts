@@ -6,6 +6,7 @@ import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { SettingsService } from "@/services/settings/service";
+import type { UseLedger } from "@/services/use-ledger/service";
 
 import { CitationEditorSuggest } from "./editor-suggest";
 import { InsertCitationModal } from "./insert-modal";
@@ -18,6 +19,7 @@ export interface CitationSuggestDeps {
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
   citationLookup: Pick<CitationLookup, "read" | "status">;
+  useLedger: Pick<UseLedger, "record">;
 }
 
 export function registerCitationSuggest(

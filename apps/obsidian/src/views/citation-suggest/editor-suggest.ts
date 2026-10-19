@@ -138,13 +138,38 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const padded = padCitationInsert(outcome.text, {
       next: line.charAt(context.end.ch),
     });
-    context.editor.replaceRange(padded.text, context.start, context.end);
-    context.editor.setCursor(
-      context.editor.offsetToPos(
-        context.editor.posToOffset(context.start) + padded.cursor,
-      ),
-    );
+    commitCitationInsert(this.#deps, {
+      indexedKey: hit.item.indexedKey,
+      text: outcome.text,
+      insert: () => {
+        context.editor.replaceRange(padded.text, context.start, context.end);
+        context.editor.setCursor(
+          context.editor.offsetToPos(
+            context.editor.posToOffset(context.start) + padded.cursor,
+          ),
+        );
+        return true;
+      },
+    });
   }
+}
+
+/**
+ * Commit one resolved citation and record the Use only after the destination
+ * accepts nonempty text. The callback returns false when a stale destination
+ * writes nothing.
+ */
+export function commitCitationInsert(
+  deps: Pick<CitationSuggestDeps, "useLedger">,
+  {
+    indexedKey,
+    text,
+    insert,
+  }: { indexedKey: string; text: string; insert: () => boolean },
+): boolean {
+  if (text.length === 0 || !insert()) return false;
+  deps.useLedger.record(indexedKey, "cited");
+  return true;
 }
 
 /** Editor-insert payload for a citation: replacement text plus cursor offset. */
