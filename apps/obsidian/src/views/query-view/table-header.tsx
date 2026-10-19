@@ -16,7 +16,6 @@ import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
-import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes, QueryFileDataset } from "./query-file";
 import { moved } from "./reorder";
 import {
@@ -29,7 +28,7 @@ import { useVaultVersion } from "./vault-cell";
 import "./table-header.css";
 import type { QueryView } from "./view";
 import { viewProperties } from "./view-properties";
-import type { PropertyEntry, ViewProperties } from "./view-properties";
+import type { ViewProperties } from "./view-properties";
 
 /** The cell classes the header shares with the rows under it. */
 export interface HeaderClasses {
@@ -209,21 +208,6 @@ const LABEL =
  */
 const DROP_LINE =
   "table-drag-target mod-col zt-column-drop-line zt:start-(--zt-drop-x) zt:top-(--zt-drop-top) zt:h-(--zt-drop-height) zt:transition-all zt:duration-75 zt:ease-in";
-
-/**
- * The text of a column's header: a vault property without a Display Name
- * shows its name, as a Bases column shows a note property, since its icon
- * already marks it as a property of the note.
- */
-function headerLabel(property: PropertyEntry): string {
-  if (
-    property.displayName !== null ||
-    property.kind !== "vault" ||
-    property.path === LITERATURE_NOTE
-  )
-    return property.label;
-  return vaultName(property.path) ?? property.label;
-}
 
 /** The header row: one cell for each visible property, the Literature Note Property among them. */
 export function TableHeader({
@@ -515,7 +499,7 @@ export function TableHeader({
                       className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                     />
                   )}
-                  <span className="zt:truncate">{headerLabel(property)}</span>
+                  <span className="zt:truncate">{property.label}</span>
                 </span>
               ) : (
                 <span
@@ -527,7 +511,7 @@ export function TableHeader({
                     size="xs"
                     className="zt:shrink-0"
                   />
-                  <span className="zt:truncate">{headerLabel(property)}</span>
+                  <span className="zt:truncate">{property.label}</span>
                 </span>
               )}
               {resizable && (

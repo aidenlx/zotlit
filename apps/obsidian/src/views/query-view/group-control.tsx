@@ -22,6 +22,7 @@ import {
   RemoveButton,
   propertySelectOption,
   sortRowClass,
+  unlistedOption,
   sortRowsClass,
 } from "./sort-control";
 import {
@@ -46,6 +47,8 @@ export interface GroupEditorProps {
   groups: readonly LayoutGroup[];
   /** Whether the view's dataset lacks the group property, so the view does not use it. */
   unused?: boolean;
+  /** The name the view gives a property, for one the options do not list. */
+  labelOf?: (path: string) => string;
   onChange: (next: GroupSetting) => void;
 }
 
@@ -57,6 +60,7 @@ export function GroupEditor({
   options,
   groups,
   unused = false,
+  labelOf,
   onChange,
 }: GroupEditorProps) {
   const { groupBy, groupOrder } = value;
@@ -79,12 +83,9 @@ export function GroupEditor({
                     { value: NONE, label: m.query_view_group_by_none() },
                     ...(!option && groupBy
                       ? [
-                          propertySelectOption({
-                            path: groupBy.property,
-                            label: groupBy.property,
-                            kind: "text",
-                            icon: "file-question",
-                          }),
+                          propertySelectOption(
+                            unlistedOption(groupBy.property, labelOf),
+                          ),
                         ]
                       : []),
                     ...options.map(propertySelectOption),
