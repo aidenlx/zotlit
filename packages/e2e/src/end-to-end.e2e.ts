@@ -1501,6 +1501,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       failure: null,
     });
     expectSeedOrder(opened, -1);
+    // The ribbon icon and the tab draw the 16-unit mark, both inks in the
+    // icon's one color.
+    const icons = JSON.parse(
+      await obEval(
+        vaultId,
+        `JSON.stringify([document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${m.command_open_library_view_name()}"] svg`)}),app.workspace.getLeavesOfType('zotlit-library')[0].tabHeaderInnerIconEl.querySelector('svg')].map(svg=>{const g=svg?.querySelector('g');return g&&{transform:g.getAttribute('transform'),fill:g.getAttribute('fill'),paths:[...g.querySelectorAll('path')].map(p=>p.getAttribute('d'))};}))`,
+      ),
+    ) as unknown[];
+    const mark = {
+      transform: "scale(6.25)",
+      fill: "currentColor",
+      paths: [
+        "M1.69 1 H12 V4 L5.97 12 H15 V15 H1.78 A0.78 0.78 0 0 1 1 14.22 V12.55 A1.65 1.65 0 0 1 1.33 11.56 L7.03 4 H1.21 A0.21 0.21 0 0 1 1 3.79 V1.69 A0.69 0.69 0 0 1 1.69 1 Z",
+        "M12 1 H15 V12 L13.5 10.5 L12 12 Z",
+      ],
+    };
+    expect(icons).toEqual([mark, mark]);
 
     // With another tab in front, the command and the ribbon icon each bring
     // the one Library View tab back.
