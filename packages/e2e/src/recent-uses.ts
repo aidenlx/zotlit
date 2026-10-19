@@ -77,6 +77,12 @@ export async function verifyRecentUses(
       ),
     ).toEqual([key]);
     expect((await timeline())[0]?.indexedKey).toBe(key);
+    const metadata = await obJson<string>(
+      vaultId,
+      `(()=>{const row=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-query-papers-row="${key}"]');return JSON.stringify(row.querySelector('[data-query-papers-title]').parentElement.lastElementChild.textContent);})()`,
+    );
+    expect(metadata).toContain("opened ");
+    expect(metadata.endsWith("in Obsidian")).toBe(true);
   };
   const quick = async (choose: boolean, alt = false) => {
     await run(

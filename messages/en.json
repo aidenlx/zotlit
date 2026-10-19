@@ -1,4 +1,10 @@
 {
+  "library_recent_opened": "opened {time} in Obsidian",
+  "library_recent_read_obsidian": "read {time} in Obsidian",
+  "library_recent_cited": "cited {time} in Obsidian",
+  "library_recent_read_zotero": "read {time} in Zotero",
+  "library_recent_added": "added to Zotero {time}",
+  "library_recent_notes_edited": "notes edited in Zotero {time}",
   "settings_excerpt_cache_clear_name": "Clear excerpt image cache",
   "settings_excerpt_cache_clear_desc": "Remove cached excerpt images on this device for this vault.",
   "settings_excerpt_cache_clear_confirm_body": "Cached excerpt images will be generated again when needed. Images saved in your vault will remain unchanged.",

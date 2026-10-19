@@ -59,6 +59,8 @@ export interface ViewPlanSources {
    * Library; absent or `undefined`: the Library Scope in force.
    */
   libraries?(): LibraryScope | undefined;
+  /** Extra projection paths the host reads for the shown layout. */
+  fields?(view: QueryFileView): readonly string[];
   /** The note that holds the view and the Item it names; `null` elsewhere. */
   host(): VaultHost | null;
   notes: ViewPlanNotes;
@@ -147,6 +149,7 @@ export class ViewPlanner {
       ...new Set([
         ...(grouped?.fields ?? []),
         ...layoutFields(view),
+        ...(this.#sources.fields?.(view) ?? []),
         ...viewProperties(file, view).queried.map(({ path }) => path),
       ]),
     ];

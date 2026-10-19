@@ -217,13 +217,15 @@ export interface QueryViewHost {
   rows?: ItemRowGestures;
   /**
    * Why `row` is in the list; the second line of a Papers row ends with it.
-   * The Library View's Recent gives one once last activity is defined
-   * (#1532), such as "read 2 h ago in Obsidian". `null`: no reason. Absent:
+   * The Library View's Recent gives one, such as "read 2 h ago in Obsidian".
+   * `null`: no reason. Absent:
    * no row gives one.
    *
    * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
    */
   reason?: (row: QueryViewRow) => string | null;
+  /** Extra projection paths the host reads for the shown layout. */
+  fields?: (view: QueryFileView) => readonly string[];
   /**
    * The whole empty state, in place of the view's own sentence and its hint
    * to change a filter: the host's derived text holds filters the researcher
@@ -532,6 +534,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#planner = new ViewPlanner({
       context: () => host.context(),
       libraries: () => host.libraries?.(),
+      fields: (view) => host.fields?.(view) ?? [],
       host: () => this.vaultHost(),
       notes: deps.literatureNotes,
     });

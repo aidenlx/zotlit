@@ -1,4 +1,10 @@
 {
+  "library_recent_opened": "{time}在 Obsidian 中打开",
+  "library_recent_read_obsidian": "{time}在 Obsidian 中阅读",
+  "library_recent_cited": "{time}在 Obsidian 中引用",
+  "library_recent_read_zotero": "{time}在 Zotero 中阅读",
+  "library_recent_added": "{time}添加到 Zotero",
+  "library_recent_notes_edited": "{time}在 Zotero 中编辑笔记",
   "settings_excerpt_cache_clear_name": "清除摘录图片缓存",
   "settings_excerpt_cache_clear_desc": "删除当前设备上此仓库的摘录图片缓存。",
   "settings_excerpt_cache_clear_confirm_body": "缓存的摘录图片将在需要时重新生成。已保存到仓库的图片将保持不变。",

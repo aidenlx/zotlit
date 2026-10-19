@@ -539,6 +539,7 @@ function pluginData(stored?: unknown) {
     );
   };
   const deps = {
+    useLedger: { get: () => undefined },
     app: {
       ...host.app,
       scope: undefined,
@@ -801,6 +802,94 @@ it("opens on Recent, every Library in the Library Scope newest activity first, w
   expect(request).not.toHaveProperty("filter");
   expect(request).not.toHaveProperty("context");
 });
+
+// Failures: wrong newest signal, Use losing a tie, invalid dates, and leakage
+// into other Library nodes or their query projections.
+it("shows the newest Zotero activity only on Recent and stops requesting it on other nodes", async () => {
+  const { deps, change, run } = pluginData();
+  change([
+    {
+      ...SEED[0]!,
+      fields: {
+        dateAdded: "2025-01-01T00:00:00Z",
+        lastRead: "2025-02-01T00:00:00Z",
+      },
+    },
+  ]);
+  const view = await openTab(deps);
+  expect(view.contentEl.textContent).toContain("in Zotero");
+  expect(listRuns(run).at(-1)?.fields).toContain("notes[].dateModified");
+  await press(view, row(view, MY_LIBRARY));
+  expect(view.contentEl.textContent).not.toContain("in Zotero");
+  expect(listRuns(run).at(-1)?.fields).not.toContain("notes[].dateModified");
+});
+
+it.each([
+  [
+    { dateAdded: "2025-01-01T00:00:00Z" },
+    undefined,
+    "added to Zotero 1 day ago",
+  ],
+  [
+    {
+      dateAdded: "2024-01-01T00:00:00Z",
+      "notes[].dateModified": ["2025-01-01T00:00:00Z"],
+    },
+    undefined,
+    "notes edited in Zotero 1 day ago",
+  ],
+  [
+    {
+      dateAdded: "2024-01-01T00:00:00Z",
+      "annotations[].dateModified": [
+        "2024-12-01T00:00:00Z",
+        "2025-01-01T00:00:00Z",
+      ],
+    },
+    undefined,
+    "notes edited in Zotero 1 day ago",
+  ],
+  [{ lastRead: "2025-01-01T00:00:00Z" }, "read", "read 1 day ago in Obsidian"],
+  [
+    { lastRead: "2025-01-01T00:00:00Z" },
+    "opened",
+    "opened 1 day ago in Obsidian",
+  ],
+  [
+    { lastRead: "2025-01-01T00:00:00Z" },
+    "cited",
+    "cited 1 day ago in Obsidian",
+  ],
+  [
+    { lastRead: "2025-01-01T12:00:00Z" },
+    "opened",
+    "read 12 hours ago in Zotero",
+  ],
+] as const)(
+  "ends a Recent row with its winning activity %#",
+  async (fields, kind, expected) => {
+    const now = vi
+      .spyOn(Temporal.Now, "instant")
+      .mockReturnValue(Temporal.Instant.from("2025-01-02T00:00:00Z"));
+    cleanup.defer(() => now.mockRestore());
+    const { deps, change } = pluginData();
+    const item = SEED[0]!;
+    change([{ ...item, fields }]);
+    deps.useLedger = {
+      get: () =>
+        kind
+          ? { kind, instant: Temporal.Instant.from("2025-01-01T00:00:00Z") }
+          : undefined,
+    };
+    const view = await openTab(deps);
+    const paper = view.contentEl.querySelector(
+      `[data-query-papers-row="${item.key}"]`,
+    )!;
+    const metadata = paper.querySelector("[data-query-papers-title]")!
+      .parentElement!.children[1]!;
+    expect(metadata.textContent.endsWith(expected)).toBe(true);
+  },
+);
 
 it("opens on the document plugin data holds, once it has loaded", async () => {
   const { deps, run } = pluginData({
