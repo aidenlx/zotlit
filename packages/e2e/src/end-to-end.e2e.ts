@@ -318,6 +318,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       "app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);true",
     );
+    // The renderer lays out at the new width once its window has it and
+    // both sidebars have finished collapsing.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "JSON.stringify([activeWindow.outerWidth,...[app.workspace.leftSplit,app.workspace.rightSplit].map(split=>Math.round(split.containerEl.getBoundingClientRect().width))])",
+        { expected: "[1600,0,0]" },
+      ),
+    ).toBe(true);
   }
   /**
    * The Library View heading, as {@link LIBRARY_HEADING} reads it: the
