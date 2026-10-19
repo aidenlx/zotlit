@@ -257,6 +257,12 @@ interface ActiveTab {
   type: string | null;
   path: string | null;
   key: string | null;
+  /**
+   * Whether the tab is still opening its file. Obsidian drops an open into
+   * a tab whose open is under way, so a step that opens something there
+   * waits for this to clear.
+   */
+  opening: boolean;
 }
 
 /** The active tab of the vault's window, as {@link ActiveTab} reads it. */
@@ -264,7 +270,7 @@ async function activeTab(vaultId: string): Promise<ActiveTab> {
   return JSON.parse(
     await obEval(
       vaultId,
-      "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null});})()",
+      "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null,opening:!!app.workspace.activeLeaf?.working});})()",
     ),
   ) as ActiveTab;
 }
@@ -3884,8 +3890,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await inLibrary(
       `pressRow(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter'});return true`,
     );
+    // Shift+Enter opens the PDF in the tab the note opened in, once that
+    // open is done.
     expect(
-      await activeWhen((shown) => shown.type === "markdown"),
+      await activeWhen((shown) => shown.type === "markdown" && !shown.opening),
     ).toMatchObject({ key: reading.key });
     await inLibrary(
       `pressRow(row(${JSON.stringify(reading.key)}),'reading row');keydown(row(${JSON.stringify(reading.key)}),{key:'Enter',shiftKey:true});return true`,
@@ -4541,9 +4549,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await inLibrary(
       `press(card.querySelector('[data-library-card-action="note"]'),'Open literature note');return true`,
     );
+    // Open PDF opens in the tab the note opened in, once that open is done.
     expect(
       await activeWhen(
-        (state) => state.type === "markdown" && state.key === paper.key,
+        (state) =>
+          state.type === "markdown" &&
+          state.key === paper.key &&
+          !state.opening,
       ),
     ).toMatchObject({ key: paper.key });
     await inLibrary(
