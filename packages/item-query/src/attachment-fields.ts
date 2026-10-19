@@ -152,7 +152,7 @@ export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
       (item.attachment.tags ?? []).toSorted(compareStrings),
     ),
   ],
-  ...(["dateAdded", "dateModified"] as const).map(
+  ...(["dateAdded", "dateModified", "lastRead"] as const).map(
     (name) =>
       [
         name,
@@ -199,7 +199,7 @@ export function attachmentFieldDefinition(
   );
 }
 
-for (const name of ["dateAdded", "dateModified"] as const) {
+for (const name of ["dateAdded", "dateModified", "lastRead"] as const) {
   const definition = ATTACHMENT_FIELDS.get(name)!;
   ATTACHMENT_FIELDS.set(name, {
     ...definition,
@@ -230,6 +230,7 @@ export const ATTACHMENT_SORT_FIELDS = parentSortFields(
     "key",
     "dateAdded",
     "dateModified",
+    "lastRead",
     "title",
     "contentType",
     "fileType",

@@ -204,6 +204,20 @@ const PLAN_PATHS: readonly {
   reads: Record<string, number[]>;
 }[] = [
   {
+    name: "Item lastRead sort",
+    attachment: true,
+    relation: true,
+    request: {
+      fields: ["lastRead"],
+      sort: [{ field: "lastRead", direction: "desc" }],
+      limit: 10,
+    },
+    reads: {
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "item-attachments": [...Array<number>(10).fill(250), 100, 10],
+    },
+  },
+  {
     name: "relation-page-budget-exhausted",
     bound: true,
     relation: true,
@@ -1027,9 +1041,7 @@ describe("Attachment active cancellation", () => {
           }
         }
         expect(
-          checkpoints.has(
-            relation ? "relation-candidate-set" : "attachment-details",
-          ),
+          checkpoints.has(relation ? "item-attachments" : "attachment-details"),
         ).toBe(true);
       });
 

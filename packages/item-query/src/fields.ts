@@ -514,6 +514,37 @@ const attachmentsField: FieldDefinition = recordField({
   needs: (attachments) => ({ attachments }),
 });
 
+/** The newest read of a live child Attachment, in milliseconds. */
+function lastRead(item: QueryItem): number | null {
+  let latest: number | null = null;
+  for (const attachment of item.attachments ?? []) {
+    const value = attachment.scan.lastRead;
+    if (value !== null && (latest === null || value > latest)) latest = value;
+  }
+  return latest;
+}
+
+const lastReadField: FieldDefinition = {
+  shape: STRING,
+  needs: () => ({ attachments: [{}] }),
+  read: (item) => {
+    const value = lastRead(item);
+    return value === null
+      ? null
+      : Temporal.Instant.fromEpochMilliseconds(value);
+  },
+  sortKey: lastRead,
+  filter: {
+    type: "date",
+    read: (item) => {
+      const value = lastRead(item);
+      return value === null
+        ? null
+        : timestamp(Temporal.Instant.fromEpochMilliseconds(value));
+    },
+  },
+};
+
 const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   string,
   FieldDefinition
@@ -532,6 +563,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   ],
   ["dateAdded", scanTimestamp("dateAdded")],
   ["dateModified", scanTimestamp("dateModified")],
+  ["lastRead", lastReadField],
   ["library", libraryField],
   ["key", keyField],
   ["indexedKey", indexedKeyField],

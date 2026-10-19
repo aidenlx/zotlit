@@ -67,6 +67,7 @@ export const ANNOTATION_LOADING: LoadingDescriptor<
         itemType: "attachment",
         dateAdded: row.attachmentDateAdded,
         dateModified: row.attachmentDateModified,
+        lastRead: row.attachmentLastRead,
         libraryID: row.libraryID,
         parent: row.parent,
       }),

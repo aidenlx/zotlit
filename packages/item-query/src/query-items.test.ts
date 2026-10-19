@@ -3313,3 +3313,36 @@ it("keeps invalid group paths and corrections on the group argument", async () =
     ).toBe(true);
   }
 });
+
+it("reads the newest live Attachment lastRead for each Item, including group Items", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite.exec(`UPDATE itemAttachments SET lastRead = CASE
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2LIVE') THEN 1704067200
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2LINK') THEN 1704153600
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2TRSH') THEN 1735689600
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2GRUP') THEN 1704240000
+    ELSE NULL END`);
+  for (const direction of ["asc", "desc"] as const) {
+    const { exit } = await runEffect(
+      collectQuery(ITEMS, {
+        libraries: [personal, group],
+        fields: ["lastRead"],
+        filter: 'key == "ART2FULL" || key == "GRP2BK22"',
+        sort: [{ field: "lastRead", direction }],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    const read = [
+      { indexedKey: "ART2FULL", values: { lastRead: "2024-01-02T00:00:00Z" } },
+      {
+        indexedKey: "ART2FULLg4815",
+        values: { lastRead: "2024-01-03T00:00:00Z" },
+      },
+    ];
+    expect(JSON.parse(JSON.stringify(exit.value.rows))).toEqual([
+      ...(direction === "asc" ? read : read.toReversed()),
+      { indexedKey: "GRP2BK22g4815", values: { lastRead: null } },
+    ]);
+  }
+});
