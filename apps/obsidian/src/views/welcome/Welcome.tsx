@@ -26,6 +26,7 @@ import {
   MIGRATION_GUIDE,
   SPONSOR,
 } from "./links";
+import { ZotLitLockup } from "./lockup";
 import { templateMigrationNotice } from "./migration-notice";
 import { bannerBadge, bannerSections, useWelcomeStore } from "./store";
 
@@ -75,46 +76,73 @@ const BADGE_TEXT = {
   "get-started": m.welcome_badge,
 } satisfies Record<ReturnType<typeof bannerBadge>, () => string>;
 
+/**
+ * The centered column of a wide banner: the header and the sections share it,
+ * so they share its start edge. Stacked, it takes the full width.
+ */
+const COLUMN =
+  "zt:col-start-1 zt:w-full zt:min-w-0 zt:@min-[760px]:mx-auto zt:@min-[760px]:max-w-[40rem]";
+
+/**
+ * A tinted or bordered surface whose content keeps the column's start edge:
+ * it hangs outside the column by its inline padding and border.
+ */
+const HANGING = "zt:-mx-[calc(--spacing(3)+1px)] zt:border zt:px-3";
+
 function Header({ titleId }: { titleId: string }) {
-  const actions = useWelcomeActions();
   const badge = BADGE_TEXT[useWelcomeStore(bannerBadge)]();
   return (
-    // The dismiss button keeps the banner's top-right corner, outside the
-    // column, so the header leaves its width free at the end of the line.
-    <header className="zt:flex zt:items-start zt:pe-[calc(var(--icon-size)+var(--size-2-3)*2+var(--size-4-2))]">
-      {/* The tagline joins the title's line where the pane is wide enough. */}
-      <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-x-2.5 zt:gap-y-1">
-        <span
-          id={titleId}
-          role="heading"
-          aria-level={2}
-          className="zt:text-base zt:font-bold"
-        >
-          ZotLit
-        </span>
-        {/* Text on the accent fill reads below 4.5:1 in either theme, so
-            the accent keeps to the border. */}
-        <span
-          data-welcome-badge=""
-          className="zt:rounded-full zt:border zt:border-primary zt:bg-muted zt:px-2 zt:py-0.5 zt:text-xs zt:text-foreground"
-        >
-          {badge}
-        </span>
-        <p className="zt:m-0 zt:text-sm zt:text-muted-foreground">
-          {m.welcome_tagline()}
-        </p>
-      </div>
-      {/* At the banner's top-right corner, on the banner's own insets,
-          whatever the width: where a dismissable bar's close button sits.
-          It stays after the header in the focus order. */}
-      <IconButton
-        icon="x"
-        className="zt:absolute zt:end-(--size-4-2) zt:top-(--size-4-4)"
-        data-welcome-dismiss=""
-        {...tooltipAttrs(m.welcome_dismiss())}
-        onClick={actions.dismiss}
-      />
+    // Stacked, the header shares its line with the dismiss button, so it
+    // leaves the button's width free at the end.
+    <header
+      className={cn(
+        COLUMN,
+        "zt:row-start-1 zt:flex zt:flex-wrap zt:content-start zt:items-center zt:gap-x-2.5 zt:gap-y-1 zt:@max-[760px]:pe-[calc(var(--icon-size)+var(--size-2-3)+var(--size-4-2))]",
+      )}
+    >
+      {/* The lockup draws the name and the hidden text says it. The title's
+          line is as tall as the dismiss button, so the two share a center. */}
+      <span
+        id={titleId}
+        role="heading"
+        aria-level={2}
+        className="zt:flex zt:min-h-(--zt-banner-line) zt:items-center"
+      >
+        <span className="zt:sr-only">ZotLit</span>
+        <ZotLitLockup />
+      </span>
+      {/* Text on the accent fill reads below 4.5:1 in either theme, so
+          the accent keeps to the border. */}
+      <span
+        data-welcome-badge=""
+        className="zt:rounded-full zt:border zt:border-primary zt:bg-muted zt:px-2 zt:py-0.5 zt:text-xs zt:text-foreground"
+      >
+        {badge}
+      </span>
+      {/* The tagline joins the title's line where the column is wide enough. */}
+      <p className="zt:m-0 zt:text-sm zt:text-muted-foreground">
+        {m.welcome_tagline()}
+      </p>
     </header>
+  );
+}
+
+/**
+ * The dismiss button, on the header's line at the banner's top-end corner
+ * whatever the width: where a dismissable bar's close button sits. Its glyph
+ * ends on the banner's content end, the Help Links' end edge. It follows the
+ * header in the focus order.
+ */
+function Dismiss() {
+  const actions = useWelcomeActions();
+  return (
+    <IconButton
+      icon="x"
+      className="zt:col-start-1 zt:row-start-1 zt:-me-(--size-2-3) zt:self-start zt:justify-self-end zt:@min-[760px]:col-start-2"
+      data-welcome-dismiss=""
+      {...tooltipAttrs(m.welcome_dismiss())}
+      onClick={actions.dismiss}
+    />
   );
 }
 
@@ -165,11 +193,15 @@ function StepRow({
       // A flex box, not a list item: Obsidian's unlayered `ol` rule sets a
       // decimal marker that `zt:list-none` cannot reach, and the mark already
       // carries the number.
-      className="zt:flex zt:flex-col zt:gap-0.5 zt:rounded-lg zt:border zt:border-transparent zt:px-3 zt:py-1.5"
+      className={cn(
+        HANGING,
+        "zt:flex zt:flex-col zt:gap-0.5 zt:rounded-lg zt:border-transparent zt:py-1.5",
+      )}
       style={open ? ACCENT_SURFACE : undefined}
     >
       <div className="zt:flex zt:min-h-7 zt:items-center zt:gap-2">
         <span
+          data-welcome-mark=""
           className={cn(
             "zt:flex zt:size-5 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-full zt:border-2 zt:text-xs zt:font-semibold zt:tabular-nums",
             markClass(step.state, open),
@@ -340,9 +372,13 @@ function FoldedChecklist({ connect }: { connect: boolean }) {
     <div className="zt:flex zt:flex-col zt:gap-0.5">
       <div
         data-welcome-setup-done=""
-        className="zt:flex zt:min-h-7 zt:items-center zt:gap-2 zt:px-3 zt:py-1.5"
+        className={cn(
+          HANGING,
+          "zt:flex zt:min-h-7 zt:items-center zt:gap-2 zt:border-transparent zt:py-1.5",
+        )}
       >
         <span
+          data-welcome-mark=""
           className={cn(
             "zt:flex zt:size-5 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-full zt:border-2",
             markClass("done", false),
@@ -429,6 +465,7 @@ function HelpTile({
       onClick={useOpenExternal(url)}
       aria-labelledby={titleId}
       aria-describedby={subtitleId}
+      data-welcome-help-tile=""
       style={{ ...LINK_COLOR, textDecoration: "none" }}
       className={cn(
         "zt:grid zt:min-w-0 zt:cursor-pointer zt:grid-cols-[auto_minmax(0,1fr)] zt:items-center zt:gap-x-2 zt:gap-y-0.5 zt:rounded-lg zt:border zt:bg-background zt:px-2.5 zt:py-1.5 zt:transition-colors zt:hover:border-(--background-modifier-border-hover) zt:hover:bg-(--background-modifier-hover)",
@@ -491,7 +528,11 @@ function HelpLinks() {
   const migrationPending = useWelcomeStore((s) => s.migrationPending);
   const nameId = useUniqueId();
   return (
-    <nav aria-labelledby={nameId} data-welcome-help="" className="zt:min-w-0">
+    <nav
+      aria-labelledby={nameId}
+      data-welcome-help=""
+      className="zt:min-w-0 zt:@max-[760px]:mt-1 zt:@min-[760px]:col-start-2 zt:@min-[760px]:row-start-2"
+    >
       <span id={nameId} className="zt:sr-only">
         {m.welcome_help_links_name()}
       </span>
@@ -569,8 +610,10 @@ function Callout({
 }) {
   return (
     <div
+      data-welcome-callout=""
       className={cn(
-        "zt:flex zt:flex-col zt:gap-0.5 zt:rounded-lg zt:border zt:px-3 zt:py-2",
+        HANGING,
+        "zt:flex zt:flex-col zt:gap-0.5 zt:rounded-lg zt:py-2",
         tone === "muted" && "zt:border-border zt:bg-background",
       )}
       style={tone === "accent" ? ACCENT_SURFACE : undefined}
@@ -808,30 +851,36 @@ export function Welcome() {
       aria-labelledby={titleId}
       data-welcome-banner=""
       tabIndex={-1}
-      // The bar spans the tab; its content starts where the Library Tree's
-      // rows do, at the tree's own inset.
-      className="zt:@container zt:relative zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-2) zt:py-(--size-4-4) zt:outline-none"
+      // The bar spans the tab with one inline margin at both of its ends.
+      // The title's line is the dismiss button's height.
+      className="zt:@container zt:border-b-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-secondary) zt:px-(--size-4-6) zt:py-(--size-4-4) zt:outline-none zt:[--zt-banner-line:calc(var(--icon-size)+var(--size-2-2)*2)]"
     >
-      {/* One column, at most 64rem, holds the header and the body, so on a
-          large pane the banner reads as one block; the dismiss button stays
-          at the bar's corner. */}
-      <div className="zt:max-w-[64rem]">
+      {/* On a wide pane the Help Links take a 22rem column at the end, wide
+          enough for each small tile's subtitle to keep to one line, and what
+          to do sits centered in the rest, in a column at most 40rem wide;
+          the header takes the first row, so the first section and the Help
+          Links start on one line under it. Under 760px it stacks, with the
+          Help Links last. */}
+      <div className="zt:grid zt:grid-cols-1 zt:gap-y-3 zt:@min-[760px]:grid-cols-[minmax(0,1fr)_22rem] zt:@min-[760px]:gap-x-8">
         <Header titleId={titleId} />
-        {/* What to do comes first; the Help Links take a 22rem column beside
-            it, wide enough for each small tile's subtitle to keep to one
-            line, and go last under 760px. */}
-        <div className="zt:mt-3 zt:grid zt:grid-cols-1 zt:gap-4 zt:@min-[760px]:grid-cols-[minmax(0,1fr)_22rem] zt:@min-[760px]:gap-6">
-          <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3">
-            {update && <UpdateCallout />}
-            {migration && <MigrationGuide />}
-            {conversion === "offer" && <ConversionOffer />}
-            {conversion === "result" && <ConversionResult />}
-            {companion && <CompanionGuidance />}
-            {steps === "open" && <Checklist connect={connect} />}
-            {steps === "folded" && <FoldedChecklist connect={connect} />}
-          </div>
-          <HelpLinks />
+        <Dismiss />
+        {/* What to do comes first. */}
+        <div
+          data-welcome-column=""
+          className={cn(
+            COLUMN,
+            "zt:flex zt:flex-col zt:gap-3 zt:@min-[760px]:row-start-2",
+          )}
+        >
+          {update && <UpdateCallout />}
+          {migration && <MigrationGuide />}
+          {conversion === "offer" && <ConversionOffer />}
+          {conversion === "result" && <ConversionResult />}
+          {companion && <CompanionGuidance />}
+          {steps === "open" && <Checklist connect={connect} />}
+          {steps === "folded" && <FoldedChecklist connect={connect} />}
         </div>
+        <HelpLinks />
       </div>
     </section>
   );
