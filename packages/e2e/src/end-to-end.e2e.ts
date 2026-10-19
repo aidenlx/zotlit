@@ -4387,31 +4387,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await reloadAndCheck();
     expect(await libraryLeaves()).toBe("0");
 
-    // A Welcome tab that a workspace saved before the banner turns into the
-    // Library View, and closes where one is open already.
-    const welcomeTab = (want: string) =>
-      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.setViewState({type:'zotlit-welcome'});${PAGE}await until('the Welcome tab',()=>app.workspace.getLeavesOfType('zotlit-welcome').length===0,5000);return JSON.stringify({library:app.workspace.getLeavesOfType('zotlit-library').length,${want}});})()`;
-    expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          welcomeTab("turned:leaf.view.getViewType()==='zotlit-library'"),
-        ),
-      ),
-    ).toEqual({ library: 1, turned: true });
-    expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          welcomeTab("closed:!app.workspace.getLeafById(leaf.id)"),
-        ),
-      ),
-    ).toEqual({ library: 1, closed: true });
-    await obEval(
-      vaultId,
-      "app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());true",
-    );
-
     // Setup is incomplete while the literature-notes folder is missing: the
     // banner shows the checklist and the Help Links above the Library View,
     // and names no Companion.

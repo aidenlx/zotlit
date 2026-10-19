@@ -30,7 +30,6 @@ it.each([false, true])(
       {
         app,
         register: vi.fn(),
-        registerView: vi.fn(),
         addCommand: (command) => {
           commands.push(command);
           return command;
@@ -54,47 +53,5 @@ it.each([false, true])(
       existing ? [[leaf, { focus: true }]] : [],
     );
     expect(workspace.revealLeaf).toHaveBeenCalledWith(leaf);
-  },
-);
-
-it.each([false, true])(
-  "turns a Welcome tab a saved workspace restores into the Library View, or closes it beside an open one (%s)",
-  async (existing) => {
-    const library = { view: {} };
-    const workspace = {
-      getLeavesOfType: vi.fn((type: string) =>
-        existing && type === "zotlit-library" ? [library] : [],
-      ),
-      onLayoutReady: (callback: () => void) => callback(),
-      on: vi.fn(() => ({})),
-      offref: vi.fn(),
-    };
-    const app = { workspace } as unknown as App;
-    const views = new Map<string, (leaf: never) => { onOpen(): unknown }>();
-    registerWelcomeView(
-      {
-        app,
-        register: vi.fn(),
-        addCommand: (command) => command,
-        registerView: (type, factory) => void views.set(type, factory as never),
-      },
-      {
-        reads: { on: vi.fn(() => () => {}) },
-        queries: { invalidate: vi.fn() },
-        settings: { update: vi.fn() },
-      } as unknown as WelcomeRegistrationDeps,
-    );
-    const changed = Promise.withResolvers<void>();
-    const leaf = {
-      setViewState: vi.fn(async () => changed.resolve()),
-      detach: vi.fn(() => changed.resolve()),
-    };
-    const view = views.get("zotlit-welcome")!(leaf as never);
-    await view.onOpen();
-    await changed.promise;
-    expect(leaf.detach.mock.calls).toHaveLength(existing ? 1 : 0);
-    expect(leaf.setViewState.mock.calls).toEqual(
-      existing ? [] : [[{ type: "zotlit-library" }]],
-    );
   },
 );

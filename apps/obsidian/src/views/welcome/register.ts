@@ -3,8 +3,7 @@
 // Zotero data directory this device does not have.
 //
 // @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
-import { ItemView } from "obsidian";
-import type { App, Plugin, WorkspaceLeaf } from "obsidian";
+import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -25,13 +24,9 @@ export interface WelcomeRegistrationDeps {
 }
 
 export function registerWelcomeView(
-  plugin: Pick<Plugin, "addCommand" | "app" | "register" | "registerView">,
+  plugin: Pick<Plugin, "addCommand" | "app" | "register">,
   deps: WelcomeRegistrationDeps,
 ): void {
-  plugin.registerView(
-    WELCOME_VIEW_TYPE,
-    (leaf) => new WelcomeTab(leaf, plugin.app),
-  );
   plugin.register(
     holdConnectionReadout({ reads: deps.reads, queries: deps.queries }),
   );
@@ -99,43 +94,4 @@ export async function openWelcomeView(
   settings.update({ "welcome.dismissed": false });
   const view = await openLibraryView(app);
   view?.welcome.request();
-}
-
-/** The view type of the Welcome tab that ZotLit had before ADR 0077. */
-const WELCOME_VIEW_TYPE = "zotlit-welcome";
-
-/**
- * A Welcome tab that a workspace saved before the Welcome View became a
- * banner. It turns into the Library View, or closes where a Library View tab
- * is already open, so no empty tab is left.
- */
-class WelcomeTab extends ItemView {
-  readonly #app: App;
-
-  constructor(leaf: WorkspaceLeaf, app: App) {
-    super(leaf);
-    this.#app = app;
-  }
-
-  override getViewType(): string {
-    return WELCOME_VIEW_TYPE;
-  }
-
-  override getDisplayText(): string {
-    return m.library_view_name();
-  }
-
-  protected override async onOpen(): Promise<void> {
-    const { workspace } = this.#app;
-    // A restored tab opens while the workspace still loads its layout, and
-    // the leaf takes no other view until this one has opened: the change
-    // waits for both.
-    workspace.onLayoutReady(() =>
-      this.contentEl.win.setTimeout(() => {
-        if (workspace.getLeavesOfType(LIBRARY_VIEW_TYPE).length > 0)
-          this.leaf.detach();
-        else void this.leaf.setViewState({ type: LIBRARY_VIEW_TYPE });
-      }),
-    );
-  }
 }
