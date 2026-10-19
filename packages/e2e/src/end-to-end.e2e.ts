@@ -3984,19 +3984,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(vaultId, `String(!!${banner})`, { expected: "true" }),
     ).toBe(true);
-    // So does the Welcome & help row at the foot of the Library Tree, with
-    // the setup steps, and focus moves to the banner. A narrow pane shows the
-    // tree over the list once it is open, so the row is opened to first.
+    // So does the Welcome & help view action in the tab header, with the
+    // setup steps, and focus moves to the banner; the action reads as
+    // pressed while the banner shows, and a second press dismisses it.
     await obEval(
       vaultId,
       `(async()=>{${PAGE}press(${banner}.querySelector('[data-welcome-dismiss]'),'Dismiss the welcome banner');await until('banner gone',()=>!${banner});return true;})()`,
     );
+    const helpAction = `app.workspace.getLeavesOfType('zotlit-library')[0].view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${m.library_view_help_action()}"]`)})`;
+    const readHelpAction = `const action=${helpAction};const pressed={active:action.classList.contains('is-active'),pressed:action.getAttribute('aria-pressed')};`;
     expect(
       await obEval(
         vaultId,
-        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;view.tree.setOpen(true);const row=await until('the tree foot',()=>{const n=view.contentEl.querySelector('[data-library-tree] [data-welcome-help-row]');return n?.checkVisibility()&&n;});press(row,${JSON.stringify(m.library_view_help_action())});const el=await until('banner back',()=>${banner});await until('banner focused',()=>el.ownerDocument.activeElement===el);return JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],steps:el.querySelectorAll('[data-welcome-step]').length,actions:view.containerEl.querySelectorAll('.view-actions [aria-label*="help" i]').length});})()`,
+        `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;const before={active:${helpAction}.classList.contains('is-active'),pressed:${helpAction}.getAttribute('aria-pressed')};press(${helpAction},${JSON.stringify(m.library_view_help_action())});const el=await until('banner back',()=>${banner});await until('banner focused',()=>el.ownerDocument.activeElement===el);${readHelpAction}return JSON.stringify({before,dismissed:${services}.settings.current['welcome.dismissed'],steps:el.querySelectorAll('[data-welcome-step]').length,rows:view.contentEl.querySelectorAll('[data-welcome-help-row]').length,...pressed});})()`,
       ),
-    ).toBe(JSON.stringify({ dismissed: false, steps: 3, actions: 0 }));
+    ).toBe(
+      JSON.stringify({
+        before: { active: false, pressed: "false" },
+        dismissed: false,
+        steps: 3,
+        rows: 0,
+        active: true,
+        pressed: "true",
+      }),
+    );
+    expect(
+      await obEval(
+        vaultId,
+        `(async()=>{${PAGE}press(${helpAction},${JSON.stringify(m.library_view_help_action())});await until('banner gone',()=>!${banner});await ${services}.settings.flush();const saved=JSON.parse(await app.vault.adapter.read(${dataPath}))['welcome.dismissed'];${readHelpAction}return JSON.stringify({dismissed:${services}.settings.current['welcome.dismissed'],saved,...pressed});})()`,
+      ),
+    ).toBe(
+      JSON.stringify({
+        dismissed: true,
+        saved: true,
+        active: false,
+        pressed: "false",
+      }),
+    );
 
     // ZotLit reads a folder without Zotero's database: the tree and the
     // list say so and offer to locate it, in place of the papers. A narrow
