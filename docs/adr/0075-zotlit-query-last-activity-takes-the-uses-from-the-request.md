@@ -10,6 +10,7 @@ Amends [ADR 0071](0071-zotlit-query-is-one-command-over-three-datasets-with-rela
 
 - Item Query has the field `lastActivity`: the newest of the `lastRead` of the Item's Attachments, its `dateAdded`, the newest `dateModified` of its child notes and Annotations, and its last Use. Attachments gain the field `lastRead`, and Items its maximum over their Attachments, as `lastRead`.
 - The engine cannot see the vault, so a request carries the Uses: at most a few hundred `Indexed Key → instant` pairs from the plugin's Use Ledger. A request without them computes `lastActivity` from Zotero alone.
+- The field `lastActivitySource` names the winning signal: `read`, `note`, `annotation`, `added`, or `use`. A Zotero tie keeps the read, then the note edit, then the addition; a Use wins a tie. A host words the reason from it and asks its ledger only for the kind of a `use`, so the engine is the one place that chooses.
 - `lastActivity` is a Sortable Field, the second exception after the First Author to the rule that a value derived from a Relation List is projection only. The item search index orders its empty query by the same value, so the quick switcher, the Citation Suggester, the pickers and Recent share one order.
 
 ## Why

@@ -29,6 +29,6 @@ Recent lists now put the papers you worked on last at the top. Opening a Literat
 
 The Library View explains each paper's position with a reason and relative time. The empty <UiLabel name={m.command_open_lit_note_name()} /> list, Citation Suggester, <UiLabel name={m.command_insert_citation_name()} /> picker, annotation pin picker, and Template Workbench <UiLabel name={m.workbench_recently_updated()} /> list use the same order. See [How Recent orders papers](/docs/how-to/use-library-view#recent).
 
-The Library View's <UiLabel name={m.library_view_facet_unread()} /> filter now leaves out papers with a Zotero read time. ZotLit Query also exposes `lastRead` and `lastActivity` for custom reading lists, including activity from this device in Last Activity.
+The Library View's <UiLabel name={m.library_view_facet_unread()} /> filter now leaves out papers with a Zotero read time. ZotLit Query also exposes `lastRead`, `lastActivity`, and `lastActivitySource` for custom reading lists, including activity from this device in Last Activity.
 
 Opening and citing stay on the device where they happen. Zotero reading activity syncs between devices. If you granted Write Authorization, reading a My Library PDF in Obsidian also updates Zotero's Recently Read list. This write-back stays silent when Zotero is unavailable and never interrupts reading with a permission prompt.

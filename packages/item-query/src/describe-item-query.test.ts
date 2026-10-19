@@ -198,6 +198,13 @@ describe("describeItemQuery fields", () => {
       sort: true,
       description: expect.stringContaining("this device's Uses"),
     });
+    expect(entry("lastActivitySource")).toMatchObject({
+      type: "string",
+      filter: "string",
+      projection: true,
+      sort: false,
+      valueForms: ["read", "note", "annotation", "added", "use"],
+    });
     expect(entry("lastRead")).toMatchObject({
       type: "string",
       filter: "date",

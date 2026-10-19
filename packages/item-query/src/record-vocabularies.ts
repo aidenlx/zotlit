@@ -12,7 +12,7 @@ import {
 } from "./attachment-fields";
 import type { QueryAttachment } from "./attachment-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
-import { fieldDefinition, itemFilterRegistry } from "./fields";
+import { ACTIVITY_FIELDS, fieldDefinition, itemFilterRegistry } from "./fields";
 import type { QueryItem, FieldNeeds } from "./fields";
 import {
   NOTE_PARENTS,
@@ -47,11 +47,11 @@ export const itemVocabulary = (): RecordVocabulary<QueryItem, FieldNeeds> => ({
   summary: ITEM_SUMMARY,
   projectionFields: [...ITEM_SUMMARY, "key"],
   field: (name) =>
-    name === "lastActivity" ? undefined : fieldDefinition(name),
+    ACTIVITY_FIELDS.has(name) ? undefined : fieldDefinition(name),
   filter: {
     ...itemFilterRegistry,
     field: (name) => {
-      if (name === "lastActivity") return undefined;
+      if (ACTIVITY_FIELDS.has(name)) return undefined;
       if (name === "custom")
         return {
           filterable: true,

@@ -8,7 +8,7 @@ import type { QueryAnnotation } from "./annotation-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
-import { BUILT_IN_NAMES } from "./fields";
+import { ACTIVITY_FIELDS, BUILT_IN_NAMES } from "./fields";
 import type {
   FieldDefinition as ItemFieldDefinition,
   QueryItem,
@@ -183,7 +183,7 @@ const itemParent = liftParentRecord({
     "dateModified",
     "firstAuthor",
   ],
-  listed: () => BUILT_IN_NAMES.filter((name) => name !== "lastActivity"),
+  listed: () => BUILT_IN_NAMES.filter((name) => !ACTIVITY_FIELDS.has(name)),
   syntax: "fields",
 });
 export const ATTACHMENT_PARENTS = [itemParent];

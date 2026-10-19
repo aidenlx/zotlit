@@ -68,7 +68,7 @@ The first of the Primary Creators of an Item: the creators of the first role tha
 _Avoid_: first creator (that is `creators[0]`), lead author
 
 **Last Activity**:
-The newest instant at which the researcher worked on an Item: the newest `lastRead` of its Attachments, its `dateAdded`, the newest edit of its child notes and Annotations, and its last Use, which the request supplies because the engine cannot see the vault. It is the field `lastActivity` of Item Query. An edit of the Item's own fields is not activity.
+The newest instant at which the researcher worked on an Item: the newest `lastRead` of its Attachments, its `dateAdded`, the newest edit of its child notes and Annotations, and its last Use, which the request supplies because the engine cannot see the vault. It is the field `lastActivity` of Item Query; `lastActivitySource` names the signal that set it, so a host can word it without choosing again. An edit of the Item's own fields is not activity.
 _Avoid_: last modified, dateModified (that is the Item's own last edit)
 
 **Query Group**:

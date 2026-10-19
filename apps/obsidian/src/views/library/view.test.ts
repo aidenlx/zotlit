@@ -38,6 +38,7 @@ import type {
 import { selectorKey } from "@/services/library-scope/scope";
 import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
+import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
@@ -803,93 +804,107 @@ it("opens on Recent, every Library in the Library Scope newest activity first, w
   expect(request).not.toHaveProperty("context");
 });
 
-// Failures: wrong newest signal, Use losing a tie, invalid dates, and leakage
-// into other Library nodes or their query projections.
+// Failures: a wrong message for the signal Item Query chose, a stale Use
+// worded as current, and leakage into other Library nodes or their query
+// projections.
 it("shows the newest Zotero activity only on Recent and stops requesting it on other nodes", async () => {
   const { deps, change, run } = pluginData();
   change([
     {
       ...SEED[0]!,
       fields: {
-        dateAdded: "2025-01-01T00:00:00Z",
-        lastRead: "2025-02-01T00:00:00Z",
+        lastActivity: "2025-02-01T00:00:00Z",
+        lastActivitySource: "read",
       },
     },
   ]);
   const view = await openTab(deps);
   expect(view.contentEl.textContent).toContain("in Zotero");
-  expect(listRuns(run).at(-1)?.fields).toContain("notes[].dateModified");
+  expect(listRuns(run).at(-1)?.fields).toContain("lastActivitySource");
   await press(view, row(view, MY_LIBRARY));
   expect(view.contentEl.textContent).not.toContain("in Zotero");
-  expect(listRuns(run).at(-1)?.fields).not.toContain("notes[].dateModified");
+  expect(listRuns(run).at(-1)?.fields).not.toContain("lastActivitySource");
 });
 
 it.each([
   [
-    { dateAdded: "2025-01-01T00:00:00Z" },
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "added" },
     undefined,
     "added to Zotero 1 day ago",
   ],
   [
-    {
-      dateAdded: "2024-01-01T00:00:00Z",
-      "notes[].dateModified": ["2025-01-01T00:00:00Z"],
-    },
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "note" },
     undefined,
     "notes edited in Zotero 1 day ago",
   ],
   [
-    {
-      dateAdded: "2024-01-01T00:00:00Z",
-      "annotations[].dateModified": [
-        "2024-12-01T00:00:00Z",
-        "2025-01-01T00:00:00Z",
-      ],
-    },
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "annotation" },
     undefined,
     "notes edited in Zotero 1 day ago",
   ],
-  [{ lastRead: "2025-01-01T00:00:00Z" }, "read", "read 1 day ago in Obsidian"],
   [
-    { lastRead: "2025-01-01T00:00:00Z" },
+    { lastActivity: "2025-01-01T12:00:00Z", lastActivitySource: "read" },
+    "opened",
+    "read 12 hours ago in Zotero",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "use" },
+    "read",
+    "read 1 day ago in Obsidian",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "use" },
     "opened",
     "opened 1 day ago in Obsidian",
   ],
   [
-    { lastRead: "2025-01-01T00:00:00Z" },
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "use" },
     "cited",
     "cited 1 day ago in Obsidian",
-  ],
-  [
-    { lastRead: "2025-01-01T12:00:00Z" },
-    "opened",
-    "read 12 hours ago in Zotero",
   ],
 ] as const)(
   "ends a Recent row with its winning activity %#",
   async (fields, kind, expected) => {
-    const now = vi
-      .spyOn(Temporal.Now, "instant")
-      .mockReturnValue(Temporal.Instant.from("2025-01-02T00:00:00Z"));
-    cleanup.defer(() => now.mockRestore());
-    const { deps, change } = pluginData();
-    const item = SEED[0]!;
-    change([{ ...item, fields }]);
-    deps.useLedger = {
-      get: () =>
-        kind
-          ? { kind, instant: Temporal.Instant.from("2025-01-01T00:00:00Z") }
-          : undefined,
-    };
-    const view = await openTab(deps);
-    const paper = view.contentEl.querySelector(
-      `[data-query-papers-row="${item.key}"]`,
-    )!;
+    const paper = await recentRow(fields, kind);
     const metadata = paper.querySelector("[data-query-papers-title]")!
       .parentElement!.children[1]!;
     expect(metadata.textContent.endsWith(expected)).toBe(true);
   },
 );
+
+it.each([
+  // The ledger moved on since the query ran: no reason until the rerun.
+  [
+    { lastActivity: "2024-12-01T00:00:00Z", lastActivitySource: "use" },
+    "cited",
+  ],
+  [{ lastActivity: "invalid", lastActivitySource: "added" }, undefined],
+] as const)("gives a Recent row no reason %#", async (fields, kind) => {
+  const paper = await recentRow(fields, kind);
+  expect(paper.textContent).not.toMatch(/ ago/);
+});
+
+/** The Recent row of an Item with `fields`, its ledger holding a `kind` Use. */
+async function recentRow(
+  fields: Readonly<Record<string, string>>,
+  kind: UseKind | undefined,
+): Promise<Element> {
+  const now = vi
+    .spyOn(Temporal.Now, "instant")
+    .mockReturnValue(Temporal.Instant.from("2025-01-02T00:00:00Z"));
+  cleanup.defer(() => now.mockRestore());
+  const { deps, change } = pluginData();
+  const item = SEED[0]!;
+  change([{ ...item, fields }]);
+  deps.useLedger = {
+    get: () =>
+      kind
+        ? { kind, instant: Temporal.Instant.from("2025-01-01T00:00:00Z") }
+        : undefined,
+  };
+  const view = await openTab(deps);
+  return view.contentEl.querySelector(`[data-query-papers-row="${item.key}"]`)!;
+}
 
 it("opens on the document plugin data holds, once it has loaded", async () => {
   const { deps, run } = pluginData({

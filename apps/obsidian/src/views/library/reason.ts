@@ -1,13 +1,13 @@
+import type { LastActivitySource } from "@zotlit/item-query";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import type { QueryViewValue } from "@/services/item-query/query-view";
-import type { Use } from "@/services/use-ledger/service";
+import type { Use, UseKind } from "@/services/use-ledger/service";
 
 export const RECENT_REASON_FIELDS = [
-  "dateAdded",
-  "lastRead",
-  "notes[].dateModified",
-  "annotations[].dateModified",
+  "lastActivity",
+  "lastActivitySource",
 ] as const;
 
 type Message = (inputs: { time: string }) => string;
@@ -26,42 +26,47 @@ function timeFormatter(): Intl.RelativeTimeFormat {
   return relativeTime.formatter;
 }
 
-/** The newest activity, using the same signals as Last Activity. */
+const ZOTERO_MESSAGES: Readonly<
+  Record<Exclude<LastActivitySource, "use">, Message>
+> = {
+  read: m.library_recent_read_zotero,
+  note: m.library_recent_notes_edited,
+  annotation: m.library_recent_notes_edited,
+  added: m.library_recent_added,
+};
+
+const USE_MESSAGES: Readonly<Record<UseKind, Message>> = {
+  opened: m.library_recent_opened,
+  read: m.library_recent_read_obsidian,
+  cited: m.library_recent_cited,
+};
+
+/**
+ * The Last Activity of a row, worded. Item Query picks the signal; the
+ * ledger only names the kind of a Use, and only when it is the one the query
+ * saw.
+ */
 export function recentReason(
   values: Readonly<Record<string, QueryViewValue>>,
   use: Use | undefined,
 ): string | null {
-  let instant = -Infinity;
-  let message: Message | undefined;
-  const consider = (value: QueryViewValue | undefined, candidate: Message) => {
-    const dates = Array.isArray(value) ? value : [value];
-    for (const date of dates) {
-      if (typeof date !== "string") continue;
-      let timestamp: number;
-      try {
-        timestamp = Temporal.Instant.from(date).epochMilliseconds;
-      } catch {
-        continue;
-      }
-      if (timestamp > instant) {
-        instant = timestamp;
-        message = candidate;
-      }
-    }
-  };
-  // A Zotero-only tie keeps the read, then the note edit, then the addition.
-  consider(values.lastRead, m.library_recent_read_zotero);
-  consider(values["notes[].dateModified"], m.library_recent_notes_edited);
-  consider(values["annotations[].dateModified"], m.library_recent_notes_edited);
-  consider(values.dateAdded, m.library_recent_added);
-  if (use && use.instant.epochMilliseconds >= instant) {
-    instant = use.instant.epochMilliseconds;
-    message = {
-      opened: m.library_recent_opened,
-      read: m.library_recent_read_obsidian,
-      cited: m.library_recent_cited,
-    }[use.kind];
+  const { lastActivity, lastActivitySource: source } = values;
+  if (typeof lastActivity !== "string" || typeof source !== "string")
+    return null;
+  let instant: number;
+  try {
+    instant = Temporal.Instant.from(lastActivity).epochMilliseconds;
+  } catch {
+    return null;
   }
+  // A Use the ledger replaced since the query ran waits for the rerun the
+  // change starts.
+  const message =
+    source === "use"
+      ? use?.instant.epochMilliseconds === instant
+        ? USE_MESSAGES[use.kind]
+        : undefined
+      : ZOTERO_MESSAGES[source as Exclude<LastActivitySource, "use">];
   if (!message) return null;
   const seconds = (instant - Temporal.Now.instant().epochMilliseconds) / 1000;
   const magnitude = Math.abs(seconds);
