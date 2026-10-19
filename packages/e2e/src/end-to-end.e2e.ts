@@ -2341,6 +2341,164 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
+  it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and opens it on a row click at the width it had, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    await wideWindow(cleanup);
+    const shots = "/tmp/lv-card-close-shots";
+    /** Save a picture of the window as `<name>.png` in {@link shots}. */
+    const screenshot = async (name: string) => {
+      await mkdir(shots, { recursive: true });
+      await cli([
+        `vault=${vaultId}`,
+        "dev:screenshot",
+        `path=${join(shots, `${name}.png`)}`,
+      ]);
+    };
+    /** Whether the card shows, its width, the list's, and what plugin data keeps. */
+    interface CardClosed {
+      phase: string;
+      shown: boolean;
+      width: number;
+      list: number;
+      selected: string | null;
+      focused: string | null;
+      stored: number | null;
+      closed: boolean | null;
+      kept: string | null;
+    }
+    const view = `app.workspace.getLeavesOfType('zotlit-library')[0]?.view`;
+    const readClosed = `(async()=>{const view=${view};if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const doc=${services}.settings.current['library.document'];return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),selected:view.selection.getState().key,focused:activeDocument.activeElement?.getAttribute('data-query-item-row')??null,stored:doc?.cardWidth??null,closed:doc?.cardClosed??null,kept:doc?.selected??null});})()`;
+    const closedWhen = (ready: (shown: CardClosed) => boolean) =>
+      obReadUntil<CardClosed>(vaultId, readClosed, {
+        ready,
+        what: "Reading Card",
+        tries: 120,
+      });
+    const rows = `[...${view}.contentEl.querySelectorAll('[data-query-item-row]')]`;
+    const rowKey = async (index: number) =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `JSON.stringify(${rows}[${index}].getAttribute('data-query-item-row'))`,
+        ),
+      ) as string;
+    const clickRow = (index: number) =>
+      obEval(
+        vaultId,
+        `(async()=>{${PAGE}press(${rows}[${index}],'paper ${index}');return true;})()`,
+      );
+    const edge = `${view}.contentEl.querySelector('[data-library-card] [data-library-card-resizer]')`;
+    /**
+     * Drag the edge: press it, then move the pointer by each of `steps`
+     * pixels away from the list, a frame apiece, and let go where `release`.
+     */
+    const drag = (steps: number[], { press = true, release = true } = {}) =>
+      obEval(
+        vaultId,
+        `(async()=>{const edge=${edge};const r=edge.getBoundingClientRect();window.__lvccDrag??={x:r.left+r.width/2,y:r.top+r.height/2};const {x,y}=window.__lvccDrag;const fire=(type,clientX)=>edge.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX,clientY:y}));if(${press})fire('pointerdown',x);let last=0;for(const step of ${JSON.stringify(steps)}){last=step;fire('pointermove',x+step);await new Promise(r=>requestAnimationFrame(r));}if(${release}){fire('pointerup',x+last);delete window.__lvccDrag;}return true;})()`,
+      );
+    // My Library with the card 400px wide, and its first paper selected.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify({ ...MY_LIBRARY_DOCUMENT, cardWidth: 400 })},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
+    );
+    const first = await rowKey(0);
+    const second = await rowKey(1);
+    const open = await closedWhen((shown) => shown.shown);
+    expect(open).toMatchObject({ width: 400, selected: first, closed: null });
+
+    // The close button shows on the wide pane too; it hides the card, the
+    // list takes its room, and the row keeps the selection and the focus.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}press(${view}.contentEl.querySelector('[data-library-card] [data-library-card-close]'),'close button');return true;})()`,
+    );
+    const closed = await closedWhen((shown) => shown.closed === true);
+    expect(closed).toMatchObject({
+      shown: false,
+      selected: first,
+      focused: first,
+      stored: 400,
+    });
+    expect(closed.list).toBe(open.list + open.width);
+    await screenshot("wide-closed");
+
+    // The arrow keys move the selection and leave the card closed.
+    await obEval(
+      vaultId,
+      "activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));true",
+    );
+    expect(
+      await closedWhen((shown) => shown.selected === second),
+    ).toMatchObject({ shown: false, closed: true });
+
+    // A reload keeps it closed beside the restored selection.
+    await closedWhen((shown) => shown.kept === second);
+    await reloadWindow();
+    expect(
+      await closedWhen(
+        (shown) => shown.phase === "ready" && shown.selected === second,
+      ),
+    ).toMatchObject({ shown: false, closed: true, stored: 400 });
+
+    // A click on a row opens it again, at its width.
+    await clickRow(1);
+    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+      width: 400,
+      closed: null,
+    });
+
+    // A drag 300px away from the list takes the card 156px under its
+    // 288px minimum, past the 144px that collapses it while the pointer
+    // stays; back within the threshold it shows again at the minimum.
+    await drag([100, 200, 300], { release: false });
+    expect(await closedWhen((shown) => !shown.shown)).toMatchObject({
+      closed: null,
+      stored: 400,
+    });
+    await screenshot("mid-drag-collapsed");
+    await drag([200], { press: false, release: false });
+    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+      width: 288,
+    });
+    // Let go past the threshold, it closes and keeps the width it had.
+    await drag([300], { press: false });
+    expect(await closedWhen((shown) => shown.closed === true)).toMatchObject({
+      shown: false,
+      stored: 400,
+      focused: second,
+    });
+    await clickRow(1);
+    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+      width: 400,
+      closed: null,
+    });
+
+    // Escape during a collapsed drag puts the card and its width back.
+    await drag([100, 200, 300], { release: false });
+    await closedWhen((shown) => !shown.shown);
+    await obEval(
+      vaultId,
+      "activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));delete window.__lvccDrag;true",
+    );
+    expect(await closedWhen((shown) => shown.shown)).toMatchObject({
+      width: 400,
+      stored: 400,
+      closed: null,
+    });
+  });
+
   it("draws My Library as two-line Papers with the seeded Literature Notes and Attachment kinds and Sort and Save as query file in its heading, and expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, with Zotero closed", async () => {
     const layout = await obEval(
       vaultId,

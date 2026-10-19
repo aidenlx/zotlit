@@ -1,21 +1,32 @@
 // The Reading Card's inner edge, which sets its width as a sidebar's edge
 // does: a drag, the arrow keys, Home and End, and a double click for the
-// default. The width the researcher sets is the document's `cardWidth`; the
-// width on screen is that one clamped to the pane, so a pane that narrows
-// for a while never loses the width kept.
+// default. A drag well past the minimum closes the card, as an Obsidian
+// sidebar collapses. The width the researcher sets is the document's
+// `cardWidth`; the width on screen is that one clamped to the pane, so a pane
+// that narrows for a while never loses the width kept.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { setTooltip } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { CARD_WIDTH_DEFAULT, cardWidthBounds } from "./document";
+import {
+  CARD_WIDTH_DEFAULT,
+  CARD_WIDTH_MIN,
+  cardWidthBounds,
+} from "./document";
 
 /** The custom property the card's width utility reads. */
 const CARD_WIDTH = "--zt-library-card-width";
 
 /** How far one arrow key moves the edge, in pixels. */
 const STEP = 16;
+
+/**
+ * How far past the minimum width a drag goes before the card collapses, in
+ * pixels: half the minimum, so a drag that only overshoots it keeps the card.
+ */
+const CARD_CLOSE_PAST_MIN = CARD_WIDTH_MIN / 2;
 
 /**
  * The body class of a card resize on: the resize cursor over the whole page,
@@ -36,6 +47,13 @@ export interface CardWidthHost {
   stored(): number | undefined;
   /** Keep the width the researcher set; `undefined` returns to the default. */
   keep(width: number | undefined): void;
+  /**
+   * Hide the card while a drag holds it past the minimum, or show it again
+   * as it was.
+   */
+  collapse(collapsed: boolean): void;
+  /** Close the card, as a drag let go past the minimum asks. */
+  close(): void;
 }
 
 /**
@@ -159,7 +177,10 @@ export class CardWidth {
   /**
    * Follow a drag on the edge with the pointer, as a column's edge does: the
    * width keeps when the pointer lets go after it moved; Escape, a lost
-   * pointer or the view that closes put it back.
+   * pointer or the view that closes put it back. A pointer
+   * {@link CARD_CLOSE_PAST_MIN} past the minimum collapses the card while it
+   * stays there; let go there, the card closes and keeps the width it had
+   * before the drag.
    */
   #resize(event: PointerEvent): void {
     if (event.button !== 0) return;
@@ -178,7 +199,13 @@ export class CardWidth {
     let width = start;
     let changed = false;
     let kept = false;
+    let collapsed = false;
     let frame = 0;
+    const collapse = (now: boolean) => {
+      if (now === collapsed) return;
+      collapsed = now;
+      this.#host.collapse(now);
+    };
     try {
       handle.setPointerCapture(pointerId);
     } catch {
@@ -195,6 +222,7 @@ export class CardWidth {
         if (handle.hasPointerCapture?.(pointerId))
           handle.releasePointerCapture(pointerId);
         if (this.#drag === controller) this.#drag = null;
+        collapse(false);
         if (!kept) this.apply();
       },
       { once: true },
@@ -211,7 +239,9 @@ export class CardWidth {
         if (frame) return;
         frame = win.requestAnimationFrame(() => {
           frame = 0;
-          width = this.#show(width);
+          collapse(width < CARD_WIDTH_MIN - CARD_CLOSE_PAST_MIN);
+          // A collapsed card keeps the width it would come back at.
+          if (!collapsed) width = this.#show(width);
         });
       },
       options,
@@ -222,9 +252,14 @@ export class CardWidth {
         if (!mine(up)) return;
         // A press that does not move, as half of a double click, sets nothing.
         if (changed) {
-          kept = true;
           win.cancelAnimationFrame(frame);
-          this.#host.keep(this.#show(width));
+          if (width < CARD_WIDTH_MIN - CARD_CLOSE_PAST_MIN) {
+            // The card closes before it shows again, at the width it had.
+            this.#host.close();
+          } else {
+            kept = true;
+            this.#host.keep(this.#show(width));
+          }
         }
         controller.abort();
       },

@@ -33,6 +33,7 @@ import {
   tagListRequest,
   tagNames,
   pruneExpanded,
+  withCardClosed,
   withCardWidth,
   withExpanded,
   withNode,
@@ -406,6 +407,44 @@ describe("the Reading Card's width", () => {
     expect(cardWidthBounds(500)).toEqual({ min: 288, max: 288 });
     expect(clampCardWidth(400, 500)).toBe(288);
     expect(clampCardWidth(5000)).toBe(5000);
+  });
+});
+
+describe("the Reading Card closed", () => {
+  it("round-trips a closed card, and stores nothing for an open one", () => {
+    const closed = withCardClosed(withCardWidth(CHAPTER, 480), true);
+    expect(closed).toEqual({ ...CHAPTER, cardWidth: 480, cardClosed: true });
+    expect(serializeLibraryViewDocument(closed)).toMatchObject({
+      cardClosed: true,
+      cardWidth: 480,
+    });
+    expect(
+      parseLibraryViewDocument(serializeLibraryViewDocument(closed)),
+    ).toEqual(closed);
+    expect(serializeLibraryViewDocument(CHAPTER)).not.toHaveProperty(
+      "cardClosed",
+    );
+  });
+
+  it("opens it again without the field, and keeps the width", () => {
+    const closed = withCardClosed(withCardWidth(CHAPTER, 480), true);
+    expect(withCardClosed(closed, false)).toEqual({
+      ...CHAPTER,
+      cardWidth: 480,
+    });
+    expect(withCardClosed(closed, false)).not.toHaveProperty("cardClosed");
+  });
+
+  it("reads the card open unless the field is true, and keeps the rest", () => {
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    for (const cardClosed of [false, "true", 1, null, {}, undefined])
+      expect(parseLibraryViewDocument({ ...stored, cardClosed })).toEqual(
+        CHAPTER,
+      );
+    expect(parseLibraryViewDocument({ ...stored, cardClosed: true })).toEqual({
+      ...CHAPTER,
+      cardClosed: true,
+    });
   });
 });
 
