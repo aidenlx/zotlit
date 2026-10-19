@@ -185,7 +185,7 @@ export function mount(
 export function renderWithMessages(
   ui: ReactNode,
   options?: Parameters<typeof renderUI>[1],
-) {
+): ReturnType<typeof renderUI> {
   return renderUI(ui, {
     wrapper: ({ children }) => (
       <WorkbenchMessagesProvider messages={m}>
