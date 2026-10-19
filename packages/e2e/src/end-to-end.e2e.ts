@@ -4779,20 +4779,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       dismiss: Box;
       glyph: Box;
     }
-    const measure = `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl;const b=await until('banner',()=>el?.querySelector('[data-welcome-banner]'),5000);await new Promise(r=>setTimeout(r,300));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const R=n=>{const r=n.getBoundingClientRect();return{l:r.left,r:r.right,t:r.top,b:r.bottom};};const all=(...s)=>{for(const q of s){const n=[...b.querySelectorAll(q)];if(n.length)return n;}return [];};const cs=getComputedStyle(b);const help=b.querySelector('[data-welcome-help]');const column=b.querySelector('[data-welcome-column]')??help.parentElement.firstElementChild;const grid=help.parentElement;const notices=[...b.querySelectorAll('[role=heading][aria-level="3"]')].filter(n=>!n.closest('[data-welcome-step]'));const banner=R(b);return JSON.stringify({banner,contentStart:banner.l+parseFloat(cs.paddingLeft),contentEnd:banner.r-parseFloat(cs.paddingRight),gap:parseFloat(getComputedStyle(grid).columnGap)||0,lockup:R(b.querySelector('[data-welcome-lockup]')??b.querySelector('[role=heading][aria-level="2"]')),marks:all('[data-welcome-mark]','[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child').map(R),notices:notices.map(R),surfaces:[...b.querySelectorAll('[data-welcome-step][data-open]'),...notices.map(n=>n.closest('[data-welcome-callout]')??n.parentElement.parentElement)].map(R),header:R(b.querySelector('header')),column:R(column),first:R(column.firstElementChild),help:R(help),tiles:all('[data-welcome-help-tile]','[data-welcome-help] > div > a').map(R),dismiss:R(b.querySelector('[data-welcome-dismiss]')),glyph:R(b.querySelector('[data-welcome-dismiss] svg'))});})()`;
+    /** The sections each case's banner renders, which the measure waits for. */
+    interface Sections {
+      open: number;
+      done: number;
+      callouts: number;
+    }
+    /**
+     * Measure the banner once the window is `width` wide, the banner's
+     * connection readout has landed and it renders `sections`.
+     */
+    const measure = (width: number, sections: Sections) =>
+      `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;await until('the window at ${width}px',()=>activeWindow.outerWidth===${width},5000);await view.welcome.decided;await view.welcome.settled;const el=view.contentEl;const b=await until('the banner sections',()=>{const b=el.querySelector('[data-welcome-banner]');return b&&b.querySelectorAll('[data-welcome-step][data-open]').length===${sections.open}&&b.querySelectorAll('[data-welcome-setup-done]').length===${sections.done}&&b.querySelectorAll('[data-welcome-callout]').length===${sections.callouts}&&b;},5000);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const R=n=>{const r=n.getBoundingClientRect();return{l:r.left,r:r.right,t:r.top,b:r.bottom};};const all=(...s)=>{for(const q of s){const n=[...b.querySelectorAll(q)];if(n.length)return n;}return [];};const cs=getComputedStyle(b);const help=b.querySelector('[data-welcome-help]');const column=b.querySelector('[data-welcome-column]')??help.parentElement.firstElementChild;const grid=help.parentElement;const notices=[...b.querySelectorAll('[role=heading][aria-level="3"]')].filter(n=>!n.closest('[data-welcome-step]'));const banner=R(b);return JSON.stringify({banner,contentStart:banner.l+parseFloat(cs.paddingLeft),contentEnd:banner.r-parseFloat(cs.paddingRight),gap:parseFloat(getComputedStyle(grid).columnGap)||0,lockup:R(b.querySelector('[data-welcome-lockup]')??b.querySelector('[role=heading][aria-level="2"]')),marks:all('[data-welcome-mark]','[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child').map(R),notices:notices.map(R),surfaces:[...b.querySelectorAll('[data-welcome-step][data-open]'),...notices.map(n=>n.closest('[data-welcome-callout]')??n.parentElement.parentElement)].map(R),header:R(b.querySelector('header')),column:R(column),first:R(column.firstElementChild),help:R(help),tiles:all('[data-welcome-help-tile]','[data-welcome-help] > div > a').map(R),dismiss:R(b.querySelector('[data-welcome-dismiss]')),glyph:R(b.querySelector('[data-welcome-dismiss] svg'))});})()`;
     const shots = join(workspaceRoot, ".scratch/e2e-screenshots");
     await mkdir(shots, { recursive: true });
     const cases = {
       // Setup is incomplete: the literature-notes folder is missing, so its
       // step opens on the accent surface.
-      setup: `{'welcome.dismissed':false,'welcome.requested':true,'welcome.steps-shown':false,'release.update-pending':false,'note.template-conversion-pending':false}`,
+      setup: {
+        settings: `{'welcome.dismissed':false,'welcome.requested':true,'welcome.steps-shown':false,'release.update-pending':false,'note.template-conversion-pending':false}`,
+        sections: { open: 1, done: 0, callouts: 0 },
+      },
       // An update beside the template conversion, with the done steps
       // folded into Setup done.
-      update: `{'welcome.dismissed':false,'welcome.requested':false,'welcome.steps-shown':false,'release.update-pending':true,'release.notices-enabled':true,'note.template-conversion-pending':true}`,
+      update: {
+        settings: `{'welcome.dismissed':false,'welcome.requested':false,'welcome.steps-shown':false,'release.update-pending':true,'release.notices-enabled':true,'note.template-conversion-pending':true}`,
+        sections: { open: 0, done: 1, callouts: 2 },
+      },
     };
     const widths = { wide: 1750, medium: 1050, narrow: 740 };
     const results: Record<string, Layout> = {};
-    for (const [name, settings] of Object.entries(cases)) {
+    for (const [name, { settings, sections }] of Object.entries(cases)) {
       await obEval(
         vaultId,
         `(async()=>{const settings=${services}.settings;settings.updateDefaultLiteratureNoteProfileBindings({'note.literature-folder':${JSON.stringify(name === "setup" ? "Banner alignment, not yet created" : folder)}});settings.update(${settings});await settings.flush();return true;})()`,
@@ -4803,7 +4820,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           `require('@electron/remote').getCurrentWindow().setSize(${width},900);true`,
         );
         const label = `${name}-${size}`;
-        results[label] = JSON.parse(await obEval(vaultId, measure)) as Layout;
+        results[label] = JSON.parse(
+          await obEval(vaultId, measure(width, sections)),
+        ) as Layout;
         await cli([
           `vault=${vaultId}`,
           "dev:screenshot",
