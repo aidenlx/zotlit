@@ -51,7 +51,7 @@ import {
 } from "./toolbar-popover";
 import { useVaultPropertyNames, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
-import { useViewProperties } from "./view-properties";
+import { fieldLabel, useViewProperties } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
 
 const logger = getLogger(["views", "query-view", "filter"]);
@@ -94,7 +94,7 @@ export function vaultFilterFields(
       kind: `${VAULT_KIND_PREFIX}${property}`,
       path: `vault[${JSON.stringify(name)}]`,
       type: VAULT_FIELD_TYPES[notes.propertyType(name)],
-      label: properties?.entry(property).displayName ?? name,
+      label: properties?.entry(property).label ?? fieldLabel(property),
     };
   });
 }

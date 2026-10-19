@@ -26,6 +26,7 @@ import {
   formulaName,
   formulaProperty,
   isVaultProperty,
+  vaultName,
   vaultProperty,
 } from "./query-file";
 import type {
@@ -373,7 +374,13 @@ export function usedGroupBy(
  */
 export function fieldLabel(property: string): string {
   if (property === LITERATURE_NOTE) return m.query_view_table_literature_note();
-  return labelOf(property) ?? property;
+  const label = labelOf(property);
+  if (label !== undefined) return label;
+  // A Vault Property reads as its frontmatter key, marked as the note's: the
+  // note can hold a stale copy of a field the database also has, so
+  // `citekey (note)` never reads as the Citation key itself.
+  const name = vaultName(property);
+  return name === null ? property : m.query_view_vault_property_label({ name });
 }
 
 function labelOf(property: string): string | undefined {
