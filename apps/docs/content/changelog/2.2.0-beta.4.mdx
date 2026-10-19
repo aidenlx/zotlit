@@ -1,34 +1,88 @@
 ---
 version: "2.2.0-beta.4"
-date: "2026-10-17"
-description: "Recent papers follow your work, reading status in the Query View, and edit in place"
+date: "2026-10-19"
+description: "Library View, visual query tables and blocks, reading status tracking"
 ---
 
+import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This beta lets an items view show, edit, sort, and filter the properties of your Literature Notes, such as a reading status.
+This beta introduces the Library View to browse your Zotero library directly in Obsidian. It turns ZotLit Query into interactive tables and note blocks. You can also track reading status in place and view recent papers ranked by active research.
+
+## Highlights
+
+### Browse your Zotero library directly in Obsidian
+
+![The Library View with a collection filtered to papers with PDFs, and the Reading Card showing a paper's abstract, attachment, and annotation counts by color](/img/changelog/library-view.webp)
+
+The Library View is a visual library browser directly inside Obsidian. It opens with <Command inline name={m.command_open_library_view_name()} /> or from the ribbon. It reads directly from your local Zotero database, so it works without the ZotLit Companion or a local server.
+
+The sidebar tree shows your collections, subcollections, and paper counts. Quick filters let you focus on <UiLabel name={m.library_view_facet_unread()} />, <UiLabel name={m.library_view_facet_annotated()} />, papers with literature notes, or papers with PDFs. You can also filter papers by tags.
+
+The papers list shows two-line cards with reading status indicators and citation keys. Press the arrow keys to browse, or drag a row into an open note to insert a citation. On the right, the Reading Card shows metadata, an abstract, and expandable annotation previews. See [Browse your library in the Library View](/docs/how-to/use-library-view) for a full walkthrough.
+
+![A table of papers with reading status, note, related, done, rating, and finished columns from each literature note, with the status cell of one paper open for editing and suggesting read, reading, to-read, and unread](/img/changelog/reading-status-table.webp)
+
+To track reading status, select <UiLabel name={m.annot_view_save_as_query_file()} /> and switch the view to the Table layout. Add a literature note property such as `reading-status` in <UiLabel name={m.query_view_properties()} />, then select a cell to change the value without opening the note. Checkboxes toggle with one click, lists edit as chips, and dates open pickers. A paper without a note shows <UiLabel name={m.query_view_vault_no_note()} />; type a value there to create the note and save the value. Values live in your notes, so Obsidian's Properties panel and Bases show the same values. See [Track reading status in the Query View](/docs/how-to/track-reading-status).
+
+## Breaking Changes
+
+### Default literature notes display annotations in a Query Block
+
+![A literature note with an embedded query block that groups the paper's annotations by color, with the Yellow group's two cards side by side above the Red and Purple groups](/img/changelog/query-block-in-note.webp)
+
+The default note template now embeds an interactive query block instead of a static markdown list.
+
+Updating an existing default note replaces its static annotation list with a query block. Annotations appear as interactive cards that reflect live changes in Zotero.
+
+To keep a static markdown list instead, use a custom template with an annotation loop. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) and [Customize a template](/docs/how-to/customize-a-template).
 
 ## What's New
 
-### Track reading status beside your Zotero fields
+### Interactive Query Files and embedded Query Blocks
 
-An items view can now show any property of each paper's Literature Note as a column, next to the title, authors, and date from Zotero. Type a name such as `reading-status` in <UiLabel name={m.query_view_properties()} /> to add it. The values live in your notes, so Obsidian's Properties panel and Bases show the same values.
+![A query file showing papers in a table with reading status and note columns, beside a note whose embedded query block groups annotations by paper](/img/changelog/query-file-and-block.webp)
 
-In the Table layout, select a cell to change the value without opening the note. The field follows the property type that Obsidian shows: a checkbox toggles with one click, a list edits as chips, and a date opens a date picker. A property that your profile rewrites on every update shows a lock icon and stays read-only.
+You can now create standalone `.zotquery` query files and embed query blocks in any note. Create a new file with <Command inline name={m.command_new_query_file_name()} /> or from an empty tab.
 
-A paper without a Literature Note shows <UiLabel name={m.query_view_vault_no_note()} />. Type a value there, and ZotLit creates the note through your profile, then saves the value.
+Each query view can display as a Table, Cards, a List, or Annotations. In the Table layout, drag column headers to reorder or resize columns. Expand rows to inspect attached files and child notes, or click links to open PDFs directly.
 
-Sort a reading list by status, with empty values last, or filter it to the papers you have not read yet. Papers without a note count as having no value, and `limit` still counts the rows you see. Copy and CSV export include the new columns.
+The visual filter editor supports nested condition groups with drag-and-drop reordering. The toolbar includes sorting, grouping, search, and export to CSV or TSV. You can also add custom Formula properties and set custom display names for columns.
 
-See [Track reading status in the Query View](/docs/how-to/track-reading-status) for the steps, and for a starter base that shows the same status in Obsidian Bases.
+See [Query files and query blocks](/docs/concepts/query-files-and-query-blocks) and [Use query files](/docs/how-to/use-query-files) for details.
 
-### Recent papers follow your work
+### Recent papers follow your active research
 
-Recent lists now put the papers you worked on last at the top. Opening a Literature Note, reading a PDF, citing a paper, reading in Zotero, adding a paper, and editing its Zotero notes or annotations all count. Bulk field edits in Zotero no longer fill the top of the list.
+Recent lists now put the papers you worked on last at the top. Opening a literature note, reading a PDF, citing a paper, and editing notes or annotations all count.
 
-The Library View explains each paper's position with a reason and relative time. The empty <UiLabel name={m.command_open_lit_note_name()} /> list, Citation Suggester, <UiLabel name={m.command_insert_citation_name()} /> picker, annotation pin picker, and Template Workbench <UiLabel name={m.workbench_recently_updated()} /> list use the same order. See [How Recent orders papers](/docs/how-to/use-library-view#recent).
+The Library View explains each paper's position with a reason and relative time. The Quick Switcher, Citation Suggester, and Template Workbench use this same order.
 
-The Library View's <UiLabel name={m.library_view_facet_unread()} /> filter now leaves out papers with a Zotero read time. ZotLit Query also exposes `lastRead`, `lastActivity`, and `lastActivitySource` for custom reading lists, including activity from this device in Last Activity.
+The Library View's <UiLabel name={m.library_view_facet_unread()} /> filter leaves out papers with a Zotero read time. With Write Authorization enabled, reading a PDF in Obsidian updates Zotero's Recently Read list.
 
-Opening and citing stay on the device where they happen. Zotero reading activity syncs between devices. If you granted Write Authorization, reading a My Library PDF in Obsidian also updates Zotero's Recently Read list. This write-back stays silent when Zotero is unavailable and never interrupts reading with a permission prompt.
+See [How Recent orders papers](/docs/how-to/use-library-view#recent) for details.
+
+### Sidebar Annotation View built on the Query View engine
+
+The sidebar <UiLabel name={m.annot_view_name()} /> view now runs on the Query View engine. You can save the sidebar view and its active filters directly as a `.zotquery` file.
+
+Newly created annotations appear on screen immediately without waiting for database sync. The view shows clear diagnostic messages if database reads fail or a filter has an error.
+
+See [Use the annotation view](/docs/how-to/use-annotation-view) for more information.
+
+### Other improvements
+
+- In the Quick Switcher, press `Alt+Enter` on a result to reveal and select that paper in the Library View.
+- Color and tag filter buttons in the annotation view remain visible when empty. A tooltip explains why the filter is disabled.
+- ZotLit Query introduces `firstAuthor` for the primary creator and supports querying parent attachment fields for annotations.
+- Export to PDF prints query view rows cleanly without toolbar cutoffs.
+
+## Bug Fixes
+
+### Connections
+
+- When another local service used Zotero's HTTP port, the connection probe previously failed with an unhelpful error. It now detects that Zotero is unreachable and prompts you to open Zotero and check settings.
+
+### Notes and annotations
+
+- Inserting an annotation into a note open in Reading view previously wrote markdown into the hidden source editor. ZotLit now requires an active editor tab and alerts you if the note is in Reading view.
