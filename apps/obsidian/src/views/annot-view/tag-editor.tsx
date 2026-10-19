@@ -280,6 +280,7 @@ function TagField({
     // Escape closes the editor alone, never a surface around it, wherever in
     // the editor focus stands: the field or a chip's remove button. With the
     // suggestion popup open, Escape is the popup's.
+    // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
     const escape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" || suggest.current?.showing) return;
       event.preventDefault();

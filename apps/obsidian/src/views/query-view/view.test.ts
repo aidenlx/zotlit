@@ -4840,6 +4840,7 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
     it("tells a truncated chip by the window it stands in, after the view moves to another", async () => {
       // Each element's listener for the view moving to another window.
       const migrated = new Map<HTMLElement, (win: Window) => void>();
+      // oxlint-disable-next-line typescript/unbound-method -- saved to restore after the test
       const original = HTMLElement.prototype.onWindowMigrated;
       HTMLElement.prototype.onWindowMigrated = function (listener) {
         migrated.set(this, listener);

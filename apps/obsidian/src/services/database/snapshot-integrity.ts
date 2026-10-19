@@ -44,6 +44,7 @@ export async function verifySnapshot(path: string): Promise<void> {
     worker.onmessageerror = () =>
       reply.reject(new Error("Invalid database snapshot verification reply"));
     cleanup.adopt(
+      // eslint-disable-next-line obsidianmd/prefer-window-timers -- runs under Node tests with no window
       setTimeout(
         () =>
           reply.reject(new Error("Database snapshot verification timed out")),

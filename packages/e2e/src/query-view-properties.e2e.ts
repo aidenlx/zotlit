@@ -134,7 +134,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as { name: string | null; type: string | null; text: string | null };
     const rows = await queryRows("pageLabel,colorName", "2");
     const cell = (value: unknown) => {
-      const text = value === null || value === undefined ? "" : String(value);
+      const text =
+        value === null || value === undefined
+          ? ""
+          : String(value as string | number | boolean);
       return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     expect(exported).toEqual({
@@ -275,7 +278,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         row.indexedKey,
         row.values["formula.year"] === null
           ? ""
-          : String(row.values["formula.year"]),
+          : String(row.values["formula.year"] as string | number),
       ]);
     };
     /** The key and the cell of one column of each Table row. */

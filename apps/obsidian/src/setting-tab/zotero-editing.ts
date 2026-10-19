@@ -98,14 +98,14 @@ function renderEditingRow(
   const stack = new DisposableStack();
 
   const desc = createFragment();
-  const statusEl = createEl("div", {
+  const statusEl = createDiv({
     cls: "zt:font-medium zt:text-foreground",
     attr: { role: "status" },
   });
   desc.append(statusEl);
   const detailEl = createSpan({ cls: "zt:block zt:text-(--text-muted)" });
   desc.append(detailEl);
-  const rememberedEl = createEl("div", {
+  const rememberedEl = createDiv({
     cls: "zt:mt-1 zt:text-muted-foreground",
     text: m.settings_zotero_editing_saved(),
   });

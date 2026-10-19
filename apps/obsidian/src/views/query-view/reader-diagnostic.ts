@@ -47,7 +47,9 @@ export function readerDiagnostic(
     corrections,
     excerpt: {
       line: head + at + tail,
+      // oxlint-disable-next-line typescript/no-misused-spread -- offsets count code points, not grapheme clusters
       from: [...head].length,
+      // oxlint-disable-next-line typescript/no-misused-spread -- offsets count code points, not grapheme clusters
       length: Math.max(1, [...at].length),
     },
   };

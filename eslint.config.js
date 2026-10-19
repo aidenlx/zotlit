@@ -61,6 +61,8 @@ export default [
       // renderer.
       "**/__fixtures__/**",
       "**/*.browser-test.ts",
+      // Benchmarks run under Vitest and report results through the console.
+      "**/*.bench.ts",
     ],
   },
 

@@ -103,7 +103,7 @@ describe("getItemDisplayRefByID", () => {
 describe("getItemDisplayRefsByIDs", () => {
   it("answers each live id as getItemDisplayRefByID does, and leaves out the rest", () => {
     const refs = getItemDisplayRefsByIDs(db, [1, 6, 7, 2, 9999, 1]);
-    expect([...refs.keys()].toSorted()).toEqual([1, 6, 7]);
+    expect([...refs.keys()].toSorted((a, b) => a - b)).toEqual([1, 6, 7]);
     for (const itemID of [1, 6, 7])
       expect(refs.get(itemID)).toEqual(getItemDisplayRefByID(db, itemID));
   });

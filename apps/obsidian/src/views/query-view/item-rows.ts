@@ -15,6 +15,7 @@ export interface ItemRowGestures {
   /** The Indexed Key of the row the list shows first; `null` for none. */
   first(): string | null;
   /** A click on the row, away from its links and buttons. */
+  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   click(key: string, event: globalThis.MouseEvent): void;
   /**
    * Select the row, and nothing more: the row itself takes the focus, as
@@ -22,8 +23,10 @@ export interface ItemRowGestures {
    */
   select(key: string): void;
   /** A double click on the row, away from its links and buttons. */
+  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   open(key: string, event: globalThis.MouseEvent): void;
   /** The row's context menu, which acts on the row: the host selects it. */
+  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   menu(key: string, event: globalThis.MouseEvent): void;
   /** The researcher starts to drag the row. */
   drag(key: string, event: DragEvent<HTMLElement>): void;

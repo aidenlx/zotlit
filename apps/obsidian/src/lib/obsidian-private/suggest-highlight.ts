@@ -16,10 +16,9 @@ let warned = false;
 
 /** The private chooser of `suggest`, where this build gives it one. */
 function chooser(suggest: PopoverSuggest<unknown>) {
-  const forceSetSelectedItem = suggest.suggestions?.forceSetSelectedItem;
-  if (typeof forceSetSelectedItem === "function")
-    return (at: number) =>
-      forceSetSelectedItem.call(suggest.suggestions, at, null);
+  const { suggestions } = suggest;
+  if (typeof suggestions?.forceSetSelectedItem === "function")
+    return (at: number) => suggestions.forceSetSelectedItem?.(at, null);
   if (!warned) {
     warned = true;
     logger.warn(

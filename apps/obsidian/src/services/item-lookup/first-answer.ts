@@ -20,7 +20,7 @@ export interface FirstAnswerView {
  */
 export class FirstAnswerGate {
   readonly #view: FirstAnswerView;
-  #timer: ReturnType<typeof setTimeout> | undefined;
+  #timer: number | undefined;
   /** The open that still waits for its first answer, or `null`. */
   #pendingOpen: object | null = null;
 
@@ -34,7 +34,7 @@ export class FirstAnswerGate {
     const pendingOpen = {};
     this.#pendingOpen = pendingOpen;
     this.#view.hide();
-    this.#timer = setTimeout(() => {
+    this.#timer = window.setTimeout(() => {
       if (this.#pendingOpen !== pendingOpen) return;
       this.#view.showLoading();
       this.#settle(pendingOpen);
@@ -42,7 +42,7 @@ export class FirstAnswerGate {
   }
 
   close(): void {
-    clearTimeout(this.#timer);
+    window.clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#pendingOpen = null;
   }
@@ -60,7 +60,7 @@ export class FirstAnswerGate {
 
   #settle(pendingOpen: object): void {
     if (this.#pendingOpen !== pendingOpen) return;
-    clearTimeout(this.#timer);
+    window.clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#pendingOpen = null;
     this.#view.reveal();

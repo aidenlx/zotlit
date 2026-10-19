@@ -166,6 +166,7 @@ async function pngBytes(
   );
   try {
     signal?.throwIfAborted();
+    // eslint-disable-next-line obsidianmd/prefer-create-el -- runs in the CLI renderer, outside any Obsidian window
     const canvas = document.createElement("canvas");
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
