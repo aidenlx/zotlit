@@ -102,6 +102,13 @@ export interface LibraryViewDocument {
    * inner edge; absent for the default, {@link CARD_WIDTH_DEFAULT}.
    */
   readonly cardWidth?: number;
+  /**
+   * Whether the researcher closed the Reading Card, from its close button or
+   * by dragging its edge past the minimum; absent while it is not. A closed
+   * card stays off a wide pane as the selection moves, until a row click,
+   * Space or "Show in Library" opens it again.
+   */
+  readonly cardClosed?: boolean;
 }
 
 /** The Reading Card's width, in pixels, until the researcher sets one: 24rem. */
@@ -174,6 +181,7 @@ export type StoredLibraryViewDocument = {
   expanded: string[];
   selected: string | null;
   cardWidth?: number;
+  cardClosed?: boolean;
 };
 
 /**
@@ -238,7 +246,8 @@ function openTo(expanded: readonly string[], node: LibraryNode): string[] {
  * as the `layout` and `order` of an earlier build, is ignored. A card width
  * that is not a finite number is dropped, so the card takes its default; one
  * below {@link CARD_WIDTH_MIN} takes the minimum. The pane, which sets the
- * maximum, clamps it again as the view applies it.
+ * maximum, clamps it again as the view applies it. The card is closed only
+ * where `cardClosed` is `true`.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -281,6 +290,7 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     ),
     ...(typeof cardWidth === "number" &&
       Number.isFinite(cardWidth) && { cardWidth: clampCardWidth(cardWidth) }),
+    ...(stored.cardClosed === true && { cardClosed: true }),
   };
 }
 
@@ -354,6 +364,15 @@ export function withCardWidth(
   return width === undefined || !Number.isFinite(width)
     ? rest
     : { ...rest, cardWidth: clampCardWidth(width) };
+}
+
+/** `doc` with the Reading Card closed, or open again. */
+export function withCardClosed(
+  doc: LibraryViewDocument,
+  closed: boolean,
+): LibraryViewDocument {
+  const { cardClosed: _, ...rest } = doc;
+  return closed ? { ...rest, cardClosed: true } : rest;
 }
 
 /** `doc` with the paper `selected`, by its Indexed Key, or none. */
@@ -446,6 +465,7 @@ export function serializeLibraryViewDocument(
     expanded: [...doc.expanded],
     selected: doc.selected,
     ...(doc.cardWidth !== undefined && { cardWidth: doc.cardWidth }),
+    ...(doc.cardClosed === true && { cardClosed: true }),
   };
 }
 
