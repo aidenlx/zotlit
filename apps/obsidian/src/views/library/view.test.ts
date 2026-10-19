@@ -234,6 +234,7 @@ const NOTED = ["AAAAAAAA", "DDDDDDDD"];
  * Query answers it for a {@link SeedItem}.
  */
 const CONDITIONS: readonly [string, (item: SeedItem) => boolean][] = [
+  ["lastRead == null", () => true],
   ["annotations.isEmpty()", (item) => (item.annotations ?? 0) === 0],
   ["annotations.length > 0", (item) => (item.annotations ?? 0) > 0],
   [

@@ -32,6 +32,7 @@ const parent = alias(items, "attachmentParent");
 /** An Attachment identity and the parent values needed for reading order. */
 export interface AttachmentScanRow extends ScanRow {
   libraryID: number;
+  lastRead: number | null;
   parent: ScanRow;
 }
 
@@ -43,6 +44,7 @@ function selectAttachments(db: NodeDatabaseClient) {
       itemType: sql<string>`'attachment'`,
       dateAdded: sql<number | null>`unixepoch(${items.dateAdded}) * 1000`,
       dateModified: sql<number | null>`unixepoch(${items.dateModified}) * 1000`,
+      lastRead: sql<number | null>`${itemAttachments.lastRead} * 1000`,
       libraryID: items.libraryID,
       parent: {
         itemID: parent.itemID,

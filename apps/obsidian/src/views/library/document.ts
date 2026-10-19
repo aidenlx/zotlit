@@ -542,8 +542,10 @@ export const LIBRARY_VIEW_ROW_LIMIT = 1000;
 const FACETS: Readonly<
   Record<ReadingStateFacet, { filter?: string; vault?: VaultCondition }>
 > = {
-  // `lastRead` joins this once ZotLit Query reads it (#1532, #1533).
-  unread: { filter: "annotations.isEmpty()", vault: "no-literature-note" },
+  unread: {
+    filter: "annotations.isEmpty() && lastRead == null",
+    vault: "no-literature-note",
+  },
   annotated: { filter: "annotations.length > 0" },
   "has-note": { vault: "has-literature-note" },
   pdf: {

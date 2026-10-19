@@ -162,6 +162,11 @@ const LIBRARY_HEADING = `(h=>h?['[data-library-header]','[data-library-header-co
  * only the demo vault holds.
  */
 const readingState = {
+  read: (item: FixtureItem) =>
+    ATTACHMENTS.some(
+      (attachment) =>
+        attachment.parentItemID === item.itemID && attachment.lastRead != null,
+    ),
   annotated: (item: FixtureItem) => {
     const ids = new Set(
       ATTACHMENTS.filter(
@@ -182,12 +187,15 @@ const readingState = {
     ),
 };
 
-/** The Items of `items` with no Annotation and no Literature Note. */
+/** The Items with no Zotero read, Annotation, or Literature Note. */
 function unreadOf(
   items: readonly FixtureItem[],
   noted: (item: FixtureItem) => boolean = readingState.noted,
 ): FixtureItem[] {
-  return items.filter((item) => !readingState.annotated(item) && !noted(item));
+  return items.filter(
+    (item) =>
+      !readingState.read(item) && !readingState.annotated(item) && !noted(item),
+  );
 }
 
 async function openProfilesSettings(
@@ -3703,7 +3711,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The vault loses the Literature Note of an Item with no Annotation: the
     // Item becomes unread, in the list and in the header's count.
     const reader = filed.find(
-      (item) => !readingState.annotated(item) && readingState.noted(item),
+      (item) =>
+        !readingState.read(item) &&
+        !readingState.annotated(item) &&
+        readingState.noted(item),
     )!;
     const notePath = await obEval(
       vaultId,
@@ -3715,6 +3726,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         `(async()=>{await app.vault.rename(app.vault.getAbstractFileByPath(${JSON.stringify(from)}),${JSON.stringify(to)});return true;})()`,
       );
+    // A paper already read in Zotero stays out of Unread after its note is removed.
+    const readPaper = filed.find(
+      (item) => readingState.read(item) && !readingState.annotated(item),
+    )!;
+    expect(readPaper.key).toBe("IANNP5A2");
+    const readNotePath = await obEval(
+      vaultId,
+      `${services}.noteIndex.getNotesByItemKey(${JSON.stringify(readPaper.key)})[0]?.path??''`,
+    );
+    expect(readNotePath).not.toBe("");
+    await moveNote(readNotePath, `${readNotePath}.away`);
+    cleanup.defer(async () => {
+      await moveNote(`${readNotePath}.away`, readNotePath);
+    });
     const away = `${notePath}.away`;
     await moveNote(notePath, away);
     cleanup.defer(async () => {
@@ -3734,6 +3759,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(unread.rows.toSorted()).toEqual(keys(unreadOf(filed, noted)));
     expect(unread.rows).toContain(reader.key);
+    expect(unread.rows).not.toContain(readPaper.key);
 
     // A search keeps to the facets: in the Collection, then in every
     // Library, each in the quick switcher's rank.

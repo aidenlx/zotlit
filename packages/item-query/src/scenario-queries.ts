@@ -512,6 +512,16 @@ const byAccessDate = (direction: SortSpec["direction"]): SortSpec[] => [
 
 /** The scenario requests that the filter list does not give. */
 const REQUESTS: readonly ScenarioQuery[] = [
+  {
+    name: "lastRead filter, projection and sort",
+    libraries: ["personal", "group"],
+    request: {
+      fields: ["lastRead"],
+      filter: "lastRead == null",
+      sort: [{ field: "lastRead", direction: "desc" }],
+      limit: 2,
+    },
+  },
   ...[
     "library",
     "date.year",

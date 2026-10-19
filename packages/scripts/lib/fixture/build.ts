@@ -776,7 +776,7 @@ function seedDatabase(
     ]),
   );
   insert(
-    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path) values (?, ?, ?, ?, ?, ?)",
+    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path, lastRead) values (?, ?, ?, ?, ?, ?, ?)",
     attachments.map((attachment) => [
       attachment.itemID,
       attachment.parentItemID,
@@ -787,6 +787,7 @@ function seedDatabase(
         ? ids.charsets["utf-8"]
         : null,
       attachmentDatabasePath(attachment, layout, linkedAttachmentVaultDir),
+      attachment.lastRead ?? null,
     ]),
   );
   insert(

@@ -1497,6 +1497,8 @@ export const EXCERPT_RENDERING_CASES: readonly FixtureExcerptCase[] = [
 ];
 
 interface FixtureAttachmentBase {
+  /** Last read in Zotero, in Unix seconds; absent means never read. */
+  lastRead?: number;
   /** Manual or automatic Zotero Tags on the Attachment. */
   tags?: readonly { name: string; type: 0 | 1 }[];
   itemID: number;
@@ -1603,6 +1605,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     itemID: 21,
     libraryID: 1,
     key: "PDFSTR22",
+    lastRead: 1735776000,
     parentItemID: 20,
     linkMode: "imported_file",
     contentType: "application/pdf",
@@ -1682,6 +1685,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     itemID: 29,
     libraryID: 1,
     key: "IANPDF25",
+    lastRead: 1735689600,
     parentItemID: 28,
     linkMode: "imported_file",
     contentType: "application/pdf",
