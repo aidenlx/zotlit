@@ -15,7 +15,7 @@
     "dev": "turbo run dev",
     "fixture": "turbo run fixture --output-logs=full --",
     "e2e": "turbo run e2e --",
-    "e2e:query": "turbo run e2e --filter=@zotlit/e2e -- --project=desktop src/end-to-end.e2e.ts src/query-cancel.e2e.ts -t \"zotlit:query|ZotLit Query\"",
+    "e2e:query": "turbo run e2e --filter=@zotlit/e2e -- --project=desktop src/query-cli.e2e.ts src/query-cli-attachments.e2e.ts src/query-cli-scope.e2e.ts src/query-cancel.e2e.ts -t \"zotlit:query|ZotLit Query\"",
     "e2e:worker": "node packages/e2e/src/verify-worker.ts",
     "test": "turbo run test",
     "test:eval-runtime": "node --test skills/zotlit-query/evals/*.test.mjs",
