@@ -64,7 +64,7 @@ export async function verifyRecentUses(
     run(
       `const leaf=app.workspace.getLeaf(false);await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(sourcePath)}),{state:{mode:${JSON.stringify(mode)},source:${mode === "source"}}});app.workspace.setActiveLeaf(leaf,{focus:true});app.workspace.requestActiveLeafEvents.run();return true;`,
     );
-  const first = async (key: string) => {
+  const first = async (key: string, reason = "opened") => {
     await obReadUntil<string[]>(
       vaultId,
       `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return '[]';await view.query.settled;return JSON.stringify([...view.contentEl.querySelectorAll('[data-query-papers-row]')].map(n=>n.getAttribute('data-query-papers-row')));})()`,
@@ -81,7 +81,7 @@ export async function verifyRecentUses(
       vaultId,
       `(()=>{const row=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-query-papers-row="${key}"]');return JSON.stringify(row.querySelector('[data-query-papers-title]').parentElement.lastElementChild.textContent);})()`,
     );
-    expect(metadata).toContain("opened ");
+    expect(metadata).toContain(`${reason} `);
     expect(metadata.endsWith("in Obsidian")).toBe(true);
   };
   const quick = async (choose: boolean, alt = false) => {
@@ -176,7 +176,7 @@ export async function verifyRecentUses(
   await run(
     `const leaf=app.workspace.activeLeaf;const editor=leaf.view.editor;editor.setValue('');editor.focus();const cm=editor.cm;for(const ch of ${JSON.stringify(`[@${targetTitle}`)}){cm.dispatch(cm.state.replaceSelection(ch),{userEvent:'input.type'});await new Promise(resolve=>setTimeout(resolve,70));}const popup=await until('Citation Suggester',()=>[...activeDocument.querySelectorAll('.suggestion-container')].at(-1));const row=await until('Alpha citation',()=>[...popup.querySelectorAll('.suggestion-item')].find(n=>n.textContent.includes(${JSON.stringify(targetTitle)})));row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));row.dispatchEvent(new MouseEvent('click',{bubbles:true}));await until('citation inserted',()=>editor.getValue()===${JSON.stringify(`[@${targetCitekey}]`)});return true;`,
   );
-  await first(target);
+  await first(target, "cited");
   await emptyCitationFirst();
 
   // Dragging a Library row into the note runs the same successful insert
@@ -188,7 +188,7 @@ export async function verifyRecentUses(
   await run(
     `const note=app.workspace.getLeaf('split');await note.openFile(app.vault.getFileByPath(${JSON.stringify(sourcePath)}),{state:{mode:'source',source:true}});const editor=note.view.editor;editor.setValue('');const cm=editor.cm;const library=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(library);await library.view.query.settled;const row=await until('Alpha row',()=>library.view.contentEl.querySelector('[data-query-item-row="${target}"]'));row.scrollIntoView({block:'center',behavior:'instant'});const transfer=new DataTransfer();row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));const at=cm.coordsAtPos(0);if(!at)throw Error('Citation destination is not visible');cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(at.left+1),clientY:Math.floor((at.top+at.bottom)/2)}));row.dispatchEvent(new DragEvent('dragend',{bubbles:true}));await until('dragged citation inserted',()=>editor.getValue()===${JSON.stringify(`[@${targetCitekey}]`)});return true;`,
   );
-  await first(target);
+  await first(target, "cited");
   await emptyCitationFirst();
   await run(
     `const leaves=app.workspace.getLeavesOfType('markdown').filter(l=>l.view.file?.path===${JSON.stringify(sourcePath)});for(const leaf of leaves)leaf.view.editor.setValue(${JSON.stringify(sourceText)});for(const leaf of leaves)await leaf.view.save();return true;`,
