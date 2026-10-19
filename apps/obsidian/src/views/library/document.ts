@@ -3,7 +3,7 @@ import * as v from "valibot";
 // The Library View Document: what the Library View shows, as one plain value
 // that plugin data keeps per vault, and the one module that reads, changes
 // and derives it. Its transitions take a tree selection, the tree nodes
-// left open, the selected paper, the facets, the search and a toolbar change; its derivations give the list's query (the
+// left open, the selected paper, the Reading Card's width, the facets, the search and a toolbar change; its derivations give the list's query (the
 // tree node, the facets and the selected tags become the filters for all views, Recent adds none
 // and reads the whole Library Scope, a search becomes its ranked key set, and
 // the sort passes through to the one Items view, always in the Papers
@@ -97,6 +97,39 @@ export interface LibraryViewDocument {
   readonly expanded: readonly string[];
   /** The Indexed Key of the paper the Reading Card shows; `null` for none. */
   readonly selected: string | null;
+  /**
+   * The Reading Card's width in pixels, as the researcher set it by its
+   * inner edge; absent for the default, {@link CARD_WIDTH_DEFAULT}.
+   */
+  readonly cardWidth?: number;
+}
+
+/** The Reading Card's width, in pixels, until the researcher sets one: 24rem. */
+export const CARD_WIDTH_DEFAULT = 384;
+/** The narrowest the Reading Card can be, in pixels: 18rem. */
+export const CARD_WIDTH_MIN = 288;
+/** The room the list keeps beside the Reading Card, in pixels: 20rem. */
+export const CARD_LIST_MIN = 320;
+
+/**
+ * The widths the Reading Card can take in a pane `pane` pixels wide: at
+ * least {@link CARD_WIDTH_MIN}, and at most what leaves the list
+ * {@link CARD_LIST_MIN}, unless the pane is too narrow for both.
+ */
+export function cardWidthBounds(pane: number): { min: number; max: number } {
+  return {
+    min: CARD_WIDTH_MIN,
+    max: Math.max(CARD_WIDTH_MIN, Math.round(pane) - CARD_LIST_MIN),
+  };
+}
+
+/**
+ * `width` within the {@link cardWidthBounds} of a pane `pane` pixels wide,
+ * in whole pixels; `pane` absent takes the floor alone.
+ */
+export function clampCardWidth(width: number, pane?: number): number {
+  const { min, max } = cardWidthBounds(pane ?? Number.POSITIVE_INFINITY);
+  return Math.round(Math.min(max, Math.max(min, width)));
 }
 
 /** The Reading Card's disclosures, open or closed. */
@@ -140,6 +173,7 @@ export type StoredLibraryViewDocument = {
   card: { allFields: boolean; annotations: boolean };
   expanded: string[];
   selected: string | null;
+  cardWidth?: number;
 };
 
 /**
@@ -201,7 +235,10 @@ function openTo(expanded: readonly string[], node: LibraryNode): string[] {
  * of an earlier build has no tags, and selects none; nor does it hold open
  * nodes or a selected paper. The Collections above the selected node open
  * on read, as the tree shows a selection. A field it no longer reads, such
- * as the `layout` and `order` of an earlier build, is ignored.
+ * as the `layout` and `order` of an earlier build, is ignored. A card width
+ * that is not a finite number is dropped, so the card takes its default; one
+ * below {@link CARD_WIDTH_MIN} takes the minimum. The pane, which sets the
+ * maximum, clamps it again as the view applies it.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -219,6 +256,7 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const tags = field(v.array(v.unknown()), "tags", []);
   const expanded = field(v.array(v.unknown()), "expanded", []);
   const node = field(nodeSchema, "node", defaults.node);
+  const cardWidth = stored.cardWidth;
   return {
     node,
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
@@ -241,6 +279,8 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
       "selected",
       defaults.selected,
     ),
+    ...(typeof cardWidth === "number" &&
+      Number.isFinite(cardWidth) && { cardWidth: clampCardWidth(cardWidth) }),
   };
 }
 
@@ -300,6 +340,20 @@ export function withExpanded(
   expanded: Iterable<string>,
 ): LibraryViewDocument {
   return { ...doc, expanded: [...new Set(expanded)] };
+}
+
+/**
+ * `doc` with the Reading Card `width` pixels wide, at least
+ * {@link CARD_WIDTH_MIN}; `undefined` returns it to the default.
+ */
+export function withCardWidth(
+  doc: LibraryViewDocument,
+  width: number | undefined,
+): LibraryViewDocument {
+  const { cardWidth: _, ...rest } = doc;
+  return width === undefined || !Number.isFinite(width)
+    ? rest
+    : { ...rest, cardWidth: clampCardWidth(width) };
 }
 
 /** `doc` with the paper `selected`, by its Indexed Key, or none. */
@@ -391,6 +445,7 @@ export function serializeLibraryViewDocument(
     card: { ...doc.card },
     expanded: [...doc.expanded],
     selected: doc.selected,
+    ...(doc.cardWidth !== undefined && { cardWidth: doc.cardWidth }),
   };
 }
 

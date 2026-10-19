@@ -130,10 +130,10 @@ function LibraryHeading({ host }: { host: LibraryHeadingHost }) {
         <span
           aria-hidden="true"
           data-library-heading-icon={searching ? "search" : nodeIcon(node)}
-          className="zt:flex zt:size-9 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-(--radius-m) zt:bg-(--interactive-accent)/12 zt:text-(--text-accent)"
+          className="zt:flex zt:size-7 zt:shrink-0 zt:items-center zt:justify-center zt:rounded-(--radius-m) zt:bg-(--interactive-accent)/12 zt:text-(--text-accent)"
         >
-          {/* Half the tile, as a Help Link tile holds its icon. */}
-          <Icon name={searching ? "search" : nodeIcon(node)} size="l" />
+          {/* A small tile beside a title one step above the body text. */}
+          <Icon name={searching ? "search" : nodeIcon(node)} size="m" />
         </span>
         <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col">
           {crumbs.length > 0 && (
@@ -155,7 +155,7 @@ function LibraryHeading({ host }: { host: LibraryHeadingHost }) {
             role="heading"
             aria-level={2}
             data-library-header=""
-            className="zt:m-0 zt:truncate zt:font-(family-name:--zt-font-display) zt:text-xl zt:leading-(--line-height-tight) zt:font-(--font-semibold) zt:text-(--text-normal)"
+            className="zt:m-0 zt:truncate zt:text-(length:--font-ui-medium) zt:leading-(--line-height-tight) zt:font-(--font-semibold) zt:text-(--text-normal)"
           >
             {searchTitle ?? name}
           </div>

@@ -2185,6 +2185,123 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
 
+  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, and returns it to 24rem on a double click, with Zotero closed", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.settings.current['library.document']??null,dismissed:${services}.settings.current['welcome.dismissed'],requested:${services}.settings.current['welcome.requested']})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update({'library.document':saved.document,'welcome.dismissed':saved.dismissed,'welcome.requested':saved.requested});await settings.flush();await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    await wideWindow(cleanup);
+    /** Save a picture of the window as `library-card-<name>.png`. */
+    const screenshot = async (name: string) => {
+      const folder = join(workspaceRoot, ".scratch/e2e-screenshots");
+      await mkdir(folder, { recursive: true });
+      await cli([
+        `vault=${vaultId}`,
+        "dev:screenshot",
+        `path=${join(folder, `library-${name}.png`)}`,
+      ]);
+    };
+    /** The card's width, its edge's values and the width plugin data keeps. */
+    interface CardWidth {
+      phase: string;
+      shown: boolean;
+      width: number;
+      list: number;
+      now: number;
+      min: number;
+      max: number;
+      stored: number | null;
+      label: string | null;
+    }
+    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
+    const widthWhen = (ready: (shown: CardWidth) => boolean) =>
+      obReadUntil<CardWidth>(vaultId, readWidth, {
+        ready,
+        what: "Reading Card width",
+        tries: 120,
+      });
+    const edge = `app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl.querySelector('[data-library-card] [data-library-card-resizer]')`;
+    const keys = (...names: string[]) =>
+      obEval(
+        vaultId,
+        `(async()=>{const edge=${edge};edge.focus();for(const key of ${JSON.stringify(names)}){edge.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));await new Promise(r=>requestAnimationFrame(r));}return true;})()`,
+      );
+    // My Library with no width kept, and its first paper selected.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());const settings=${services}.settings;settings.update({'library.document':${JSON.stringify(MY_LIBRARY_DOCUMENT)},'welcome.dismissed':true,'welcome.requested':false});await settings.flush();await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const el=leaf.view.contentEl;const row=await until('rows',()=>el.querySelector('[data-query-item-row]'),20000);press(row,'first paper');await until('card',()=>{const card=el.querySelector('[data-library-card]');return !card.hidden&&card.checkVisibility();},5000);return true;})()`,
+    );
+    const first = await widthWhen((shown) => shown.shown);
+    // The default 24rem, said on its edge, which names what it does.
+    expect(first).toMatchObject({
+      width: 384,
+      now: 384,
+      min: 288,
+      stored: null,
+      label: m.library_view_card_resize_hint(),
+    });
+    expect(first.max).toBe(first.width + first.list - 320);
+    await screenshot("card-default");
+
+    // Three presses toward the list widen it by 16px each.
+    await keys("ArrowLeft", "ArrowLeft", "ArrowLeft");
+    expect(await widthWhen((shown) => shown.stored === 432)).toMatchObject({
+      width: 432,
+      now: 432,
+    });
+    await keys("ArrowRight");
+    await widthWhen((shown) => shown.stored === 416);
+    // Home and End take it to its narrowest and its widest, which leaves
+    // the list 20rem.
+    await keys("Home");
+    expect(await widthWhen((shown) => shown.stored === 288)).toMatchObject({
+      width: 288,
+    });
+    await keys("End");
+    const widest = await widthWhen((shown) => shown.stored === first.max);
+    expect(widest).toMatchObject({ width: first.max, list: 320 });
+
+    // A drag of the edge 100px away from the list, back from the widest.
+    await obEval(
+      vaultId,
+      `(async()=>{const edge=${edge};const r=edge.getBoundingClientRect();const x=r.left+r.width/2;const y=r.top+r.height/2;const fire=(type,clientX)=>edge.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,button:0,buttons:type==='pointerup'?0:1,clientX,clientY:y}));fire('pointerdown',x);if(!document.body.classList.contains('zt-is-resizing-library-card'))throw new Error('No resize cursor');for(const step of [25,50,75,100]){fire('pointermove',x+step);await new Promise(r=>requestAnimationFrame(r));}fire('pointerup',x+100);return true;})()`,
+    );
+    const dragged = await widthWhen(
+      (shown) => shown.stored === first.max - 100,
+    );
+    expect(dragged).toMatchObject({ width: first.max - 100 });
+    await screenshot("card-resized");
+
+    // A reload keeps the width.
+    await reloadWindow();
+    const after = await widthWhen(
+      (shown) => shown.phase === "ready" && shown.shown,
+    );
+    expect(after).toMatchObject({
+      width: dragged.width,
+      now: dragged.width,
+      stored: dragged.width,
+    });
+
+    // A double click puts the default back, and keeps no width.
+    await obEval(
+      vaultId,
+      `(()=>{${edge}.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,detail:2}));return true;})()`,
+    );
+    expect(await widthWhen((shown) => shown.stored === null)).toMatchObject({
+      width: 384,
+      now: 384,
+    });
+  });
+
   it("draws My Library as two-line Papers with the seeded Literature Notes and Attachment kinds and Sort and Save as query file in its heading, and expands a paper into its seeded Attachments, Child Notes and Annotations that open their targets, with Zotero closed", async () => {
     const layout = await obEval(
       vaultId,

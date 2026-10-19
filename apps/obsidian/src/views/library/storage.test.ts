@@ -21,6 +21,7 @@ import type { QueryViewDeps } from "@/views/query-view/view";
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
   libraryViewQuery,
+  withCardWidth,
   withExpanded,
   withNode,
   withSelected,
@@ -265,4 +266,16 @@ it("writes once more after a write that runs, holding the last change asked for 
   await Promise.all([first, ...rest]);
   expect(saveData).toHaveBeenCalledTimes(2);
   expect(saved(plugin)).toMatchObject({ selected: "1:CCCC3333" });
+});
+
+it("writes the Reading Card's width to disk at once, and drops it on a reset", async () => {
+  const { plugin, saveData, storage } = await openLibrary();
+  saveData.mockClear();
+  await storage.change((doc) => withCardWidth(doc, 456));
+  expect(saveData).toHaveBeenCalledTimes(1);
+  expect(saved(plugin)).toMatchObject({ cardWidth: 456 });
+  await storage.change((doc) => withCardWidth(doc, undefined));
+  expect(saveData).toHaveBeenCalledTimes(2);
+  expect(saved(plugin)).not.toHaveProperty("cardWidth");
+  expect(storage.document()).not.toHaveProperty("cardWidth");
 });

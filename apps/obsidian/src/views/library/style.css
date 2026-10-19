@@ -9,8 +9,9 @@
   --zt-query-toolbar-inset-end: var(--size-4-2);
 }
 
-/* The serif face of the list heading's title and the Reading Card's title,
-   a custom property a snippet or theme can set to its own display face. */
+/* The serif face of the Reading Card's title, the one place it shows: the
+   list heading's title is chrome and keeps the interface face. A custom
+   property a snippet or theme can set to its own display face. */
 .zt-library-view {
   --zt-font-display:
     ui-serif, "Iowan Old Style", "Charter", Georgia, "Noto Serif", "Songti SC",
@@ -23,4 +24,11 @@
    layers, so the utilities draw them. @see ../query-view/record-rows.css */
 .zt-root button.zt-library-card-toggle {
   all: revert-layer;
+}
+
+/* A Reading Card resize keeps its cursor wherever the pointer goes: a rule
+   over every element of the page, which no utility on the edge reaches. */
+body.zt-is-resizing-library-card,
+body.zt-is-resizing-library-card * {
+  cursor: col-resize !important;
 }

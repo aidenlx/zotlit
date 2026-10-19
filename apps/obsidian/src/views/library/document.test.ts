@@ -21,6 +21,9 @@ import type { QueryFile, QueryFileView } from "@/views/query-view/query-file";
 import { splitFilters } from "@/views/query-view/view-plan/filter-split";
 
 import {
+  CARD_WIDTH_MIN,
+  cardWidthBounds,
+  clampCardWidth,
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
   libraryViewQuery,
   libraryViewQueryFileLeftOut,
@@ -30,6 +33,7 @@ import {
   tagListRequest,
   tagNames,
   pruneExpanded,
+  withCardWidth,
   withExpanded,
   withNode,
   withSelected,
@@ -348,6 +352,60 @@ describe("withExpanded, withSelected and pruneExpanded", () => {
       expanded: [reading],
     });
     expect(pruneExpanded(CHAPTER, () => true)).toBe(CHAPTER);
+  });
+});
+
+describe("the Reading Card's width", () => {
+  it("round-trips a width the researcher set, and stores none for the default", () => {
+    const wide = withCardWidth(CHAPTER, 480);
+    expect(wide).toEqual({ ...CHAPTER, cardWidth: 480 });
+    expect(
+      parseLibraryViewDocument(serializeLibraryViewDocument(wide)),
+    ).toEqual(wide);
+    expect(serializeLibraryViewDocument(CHAPTER)).not.toHaveProperty(
+      "cardWidth",
+    );
+    expect(
+      parseLibraryViewDocument(serializeLibraryViewDocument(CHAPTER)),
+    ).not.toHaveProperty("cardWidth");
+  });
+
+  it("drops a width that is not a finite number, and keeps the rest", () => {
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    for (const cardWidth of ["480", null, Number.NaN, Infinity, -Infinity, {}])
+      expect(parseLibraryViewDocument({ ...stored, cardWidth })).toEqual(
+        CHAPTER,
+      );
+  });
+
+  it("takes the minimum for a width below it, and whole pixels", () => {
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    expect(
+      parseLibraryViewDocument({ ...stored, cardWidth: 12 }).cardWidth,
+    ).toBe(CARD_WIDTH_MIN);
+    expect(
+      parseLibraryViewDocument({ ...stored, cardWidth: -400 }).cardWidth,
+    ).toBe(CARD_WIDTH_MIN);
+    expect(
+      parseLibraryViewDocument({ ...stored, cardWidth: 400.6 }).cardWidth,
+    ).toBe(401);
+  });
+
+  it("returns to the default when the width is reset", () => {
+    expect(withCardWidth(withCardWidth(CHAPTER, 480), undefined)).toEqual(
+      CHAPTER,
+    );
+  });
+
+  it("keeps the list 20rem beside the card, and the card 18rem, the floor winning on a narrow pane", () => {
+    expect(cardWidthBounds(1200)).toEqual({ min: 288, max: 880 });
+    expect(clampCardWidth(2000, 1200)).toBe(880);
+    expect(clampCardWidth(100, 1200)).toBe(288);
+    expect(clampCardWidth(500, 1200)).toBe(500);
+    // Below 608px of pane there is no room for both: the card keeps 18rem.
+    expect(cardWidthBounds(500)).toEqual({ min: 288, max: 288 });
+    expect(clampCardWidth(400, 500)).toBe(288);
+    expect(clampCardWidth(5000)).toBe(5000);
   });
 });
 

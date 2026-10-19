@@ -869,7 +869,7 @@ function CardBody({ card }: { card: ReadingCard }) {
           role="heading"
           aria-level={2}
           id={titleId}
-          className="zt:m-0 zt:mt-(--size-2-3) zt:font-(family-name:--zt-font-display) zt:text-xl zt:leading-snug zt:font-(--font-semibold) zt:break-words zt:text-(--text-normal) zt:select-text"
+          className="zt:m-0 zt:mt-(--size-2-3) zt:font-(family-name:--zt-font-display) zt:text-base zt:leading-[1.3] zt:font-(--font-semibold) zt:text-balance zt:break-words zt:text-(--text-normal) zt:select-text"
           data-library-card-title=""
         >
           {item?.title}
