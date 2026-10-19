@@ -19,28 +19,29 @@ it("keeps the 300 most recently used Items across reloads", async () => {
     metadataCache: { on: () => ({ e: { offref: () => {} } }) },
   } as unknown as App;
   let epoch = 1;
-  const ledger = new UseLedger({
-    app,
-    now: () => Temporal.Instant.fromEpochMilliseconds(epoch++),
-  });
-  await ledger.ready;
-  for (let item = 0; item < 300; item++)
-    ledger.record(
-      item
-        .toString(6)
-        .split("")
-        .map((digit) => "ABCDEF"[Number(digit)])
-        .join("")
-        .padStart(8, "A"),
-      "opened",
-    );
-  ledger.record("AAAAAAAA", "opened");
-  ledger.record("NEWKEYZZ", "opened");
-  expect(Object.keys(ledger.current)).toHaveLength(300);
-  expect(ledger.get("AAAAAAAB")).toBeUndefined();
-  expect(ledger.get("AAAAAAAA")?.instant.epochMilliseconds).toBe(301);
-  expect(ledger.get("NEWKEYZZ")?.instant.epochMilliseconds).toBe(302);
-  await ledger[Symbol.asyncDispose]();
+  {
+    await using ledger = new UseLedger({
+      app,
+      now: () => Temporal.Instant.fromEpochMilliseconds(epoch++),
+    });
+    await ledger.ready;
+    for (let item = 0; item < 300; item++)
+      ledger.record(
+        item
+          .toString(6)
+          .split("")
+          .map((digit) => "ABCDEF"[Number(digit)])
+          .join("")
+          .padStart(8, "A"),
+        "opened",
+      );
+    ledger.record("AAAAAAAA", "opened");
+    ledger.record("NEWKEYZZ", "opened");
+    expect(Object.keys(ledger.current)).toHaveLength(300);
+    expect(ledger.get("AAAAAAAB")).toBeUndefined();
+    expect(ledger.get("AAAAAAAA")?.instant.epochMilliseconds).toBe(301);
+    expect(ledger.get("NEWKEYZZ")?.instant.epochMilliseconds).toBe(302);
+  }
   await using reloaded = new UseLedger({ app });
   await reloaded.ready;
   expect(Object.keys(reloaded.current)).toHaveLength(300);

@@ -31,9 +31,16 @@ export async function verifyRecentUses(
   const originalNote = await readFile(join(vaultPath, targetPath), "utf8");
   const saved = await obEval(
     vaultId,
-    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current})`,
+    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current,ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
   );
   await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    const restored = await obEval(
+      vaultId,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+    );
+    expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
+  });
   cleanup.defer(async () => {
     await run(
       `await app.vault.modify(app.vault.getFileByPath('${targetPath}'),${JSON.stringify(originalNote)});const saved=JSON.parse(${JSON.stringify(saved)});s.settings.update({'library.document':saved.settings['library.document']??null,'citation.pandoc-citations':saved.settings['citation.pandoc-citations'],'citation.open-as-links':saved.settings['citation.open-as-links']});await s.settings.flush();await app.workspace.changeLayout(saved.layout);const file=app.vault.getFileByPath(${JSON.stringify(sourcePath)});if(file)await app.vault.delete(file);return true;`,

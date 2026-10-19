@@ -26,7 +26,7 @@ export async function verifyPdfReads(
     );
   const saved = await obEval(
     vaultId,
-    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current})`,
+    `JSON.stringify({layout:app.workspace.getLayout(),settings:${services}.settings.current,ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
   );
   using db = new DatabaseSync(databasePath);
   const attachment = db
@@ -35,6 +35,13 @@ export async function verifyPdfReads(
     )
     .get(attachmentKey) as { itemID: number; parentItemID: number };
   await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    const restored = await obEval(
+      vaultId,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+    );
+    expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
+  });
   cleanup.defer(async () => {
     db.prepare("UPDATE itemAttachments SET parentItemID=? WHERE itemID=?").run(
       attachment.parentItemID,

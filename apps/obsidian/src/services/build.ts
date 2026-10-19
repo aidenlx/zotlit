@@ -272,12 +272,11 @@ export function buildServices(
         settings,
       }) => {
         reader = new PdfAnnotationEditor({
-          recordRead: ({ attachmentKey, itemKey, instant }) => {
+          recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
             useLedger.record(itemKey, "read", instant);
             void writeReadUse(
               { reads: zoteroReads, api: zoteroLocalApi },
-              attachmentKey,
-              instant,
+              { attachmentKey, instant, serverID },
             );
           },
           app: plugin.app,

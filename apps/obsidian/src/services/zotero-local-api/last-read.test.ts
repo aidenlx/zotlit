@@ -232,7 +232,10 @@ it.each([null, "BBBBBBBBBBBB"])(
         [Symbol.asyncDispose]: async () => {},
       }),
     } as unknown as ZoteroReadsService;
-    await writeReadUse({ reads, api: client }, ATTACHMENT_KEY, NOW);
+    await writeReadUse(
+      { reads, api: client },
+      { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
+    );
     expect(requests).toHaveLength(1);
   },
 );
@@ -248,7 +251,10 @@ it("contains a database failure without delaying local reading", async () => {
     },
   } as unknown as ZoteroReadsService;
   await expect(
-    writeReadUse({ reads, api: client }, ATTACHMENT_KEY, NOW),
+    writeReadUse(
+      { reads, api: client },
+      { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
+    ),
   ).resolves.toBeUndefined();
   expect(requests).toHaveLength(1);
 });

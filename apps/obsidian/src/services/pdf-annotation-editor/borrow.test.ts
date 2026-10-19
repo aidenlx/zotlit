@@ -169,6 +169,7 @@ it("withdraws a lent document when the binding lets its controller go", async ()
     pdfView("paper.pdf", reader),
     attachmentReads({
       kind: "resolved",
+      serverID: null,
       attachmentKey: "ABCD2345",
       itemKey: "WXYZ6789g4711",
       openable: true,
@@ -250,6 +251,7 @@ it("leaves the reader session's own role untouched", async () => {
     view,
     attachmentReads({
       kind: "resolved",
+      serverID: null,
       attachmentKey: "ABCD2345",
       itemKey: "WXYZ6789g4711",
       openable: true,

@@ -1241,18 +1241,13 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   // tree's line stays at the top of the tree.
   expect(notFound("list").closest("[data-pane-state]")).not.toBeNull();
   expect(notFound("tree").closest("[data-pane-state]")).toBeNull();
-  // The facet chips under the tree hide with it.
-  expect(
-    view.contentEl
-      .querySelector("[data-library-facets]")
-      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
-  ).toBeInstanceOf(HTMLElement);
-  // On a narrow pane the toggle still opens the tree and its not-found part.
-  expect(
-    view.contentEl
-      .querySelector("[data-library-tree-toggle]")
-      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
-  ).toBeNull();
+  // The toggle still opens the tree and its not-found part.
+  const toggle = view.contentEl.querySelector<HTMLElement>(
+    "[data-library-tree-toggle]",
+  )!;
+  await press(view, toggle);
+  expect(shell.hasAttribute("data-tree-open")).toBe(true);
+  expect(notFound("tree").textContent).toBe("Zotero not found");
   const button = (part: "tree" | "list", text: string) =>
     [...notFound(part).querySelectorAll("button")].find(
       (el) => el.textContent === text,

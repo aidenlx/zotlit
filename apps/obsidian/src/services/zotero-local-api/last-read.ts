@@ -11,8 +11,15 @@ const logger = getLogger("last-read");
 /** Send only this live read, against the database that resolved its Attachment. */
 export async function writeReadUse(
   { reads, api }: { reads: ZoteroReadsService; api: ZoteroLocalApiClient },
-  attachmentKey: string,
-  instant: Temporal.Instant,
+  {
+    attachmentKey,
+    instant,
+    serverID: resolvedServerID,
+  }: {
+    attachmentKey: string;
+    instant: Temporal.Instant;
+    serverID: string | null;
+  },
 ): Promise<void> {
   const parsed = parseIndexedKey(attachmentKey);
   const state = api.state;
@@ -21,8 +28,26 @@ export async function writeReadUse(
     parsed.groupID !== null ||
     state.kind !== "available" ||
     !state.authorized
-  )
+  ) {
+    logger.trace("Read write-back skipped", {
+      attachmentKey,
+      reason: !parsed
+        ? "invalid attachment"
+        : parsed.groupID !== null
+          ? "group attachment"
+          : state.kind !== "available"
+            ? "unavailable"
+            : "unauthorized",
+    });
     return;
+  }
+  if (resolvedServerID === null || resolvedServerID !== state.source.serverID) {
+    logger.trace("Read write-back skipped", {
+      attachmentKey,
+      reason: "resolved source differs",
+    });
+    return;
+  }
   try {
     let serverID: string | null;
     {
@@ -32,7 +57,13 @@ export async function writeReadUse(
       );
       serverID = database.serverID;
     }
-    if (serverID !== state.source.serverID) return;
+    if (serverID !== resolvedServerID) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "current database differs",
+      });
+      return;
+    }
     await api.writeLastRead(attachmentKey, serverID, instant);
   } catch (error) {
     logger.debug("Could not write this read Use to Zotero", {

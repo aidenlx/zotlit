@@ -37,6 +37,7 @@ const PROBE_COUNT = 11;
 /** A Zotero attachment as the resolver of issue #1141 reports one. */
 const RESOLVED = {
   kind: "resolved",
+  serverID: null,
   attachmentKey: "ABCD2345",
   itemKey: "WXYZ6789g4711",
   openable: true,
@@ -850,6 +851,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
     app,
     attachments: attachmentReads({
       kind: "resolved",
+      serverID: null,
       attachmentKey: "LSTAND23",
       itemKey: null,
       openable: true,

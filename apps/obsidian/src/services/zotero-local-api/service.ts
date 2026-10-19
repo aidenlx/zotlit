@@ -426,8 +426,18 @@ export class ZoteroLocalApiClient extends Service<void> {
       state.kind !== "available" ||
       !state.authorized ||
       state.source.serverID !== serverID
-    )
+    ) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason:
+          state.kind !== "available"
+            ? "unavailable"
+            : !state.authorized
+              ? "unauthorized"
+              : "source changed",
+      });
       return;
+    }
     const target = `${serverID}/${attachmentKey}`;
     const previous = this.#readWrites.get(target) ?? Promise.resolve();
     const signal = AbortSignal.any([
@@ -441,6 +451,11 @@ export class ZoteroLocalApiClient extends Service<void> {
           await this.#writeLastRead(attachmentKey, serverID, {
             instant,
             signal,
+          });
+        else
+          logger.trace("Read write-back skipped", {
+            attachmentKey,
+            reason: "cancelled",
           });
       });
     this.#readWrites.set(target, writing);
@@ -458,24 +473,66 @@ export class ZoteroLocalApiClient extends Service<void> {
     { instant, signal }: { instant: Temporal.Instant; signal: AbortSignal },
   ): Promise<void> {
     const parsed = parseIndexedKey(attachmentKey);
-    if (!parsed || parsed.groupID !== null) return;
+    if (!parsed || parsed.groupID !== null) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "not a personal attachment",
+      });
+      return;
+    }
     const state = this.#state;
     if (
       state.kind !== "available" ||
       !state.authorized ||
       state.source.serverID !== serverID
-    )
-      return;
-    if (this.#readOnlyLibraries.has("users/0")) return;
-    if (!(await this.#hasKey(serverID))) {
-      if (this.#serverID === serverID) this.#setAuthorized(false);
+    ) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason:
+          state.kind !== "available"
+            ? "unavailable"
+            : !state.authorized
+              ? "unauthorized"
+              : "source changed",
+      });
       return;
     }
-    if (this.#serverID !== serverID) return;
+    if (this.#readOnlyLibraries.has("users/0")) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "read-only library",
+      });
+      return;
+    }
+    if (!(await this.#hasKey(serverID))) {
+      if (this.#serverID === serverID) this.#setAuthorized(false);
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "missing authorization",
+      });
+      return;
+    }
+    if (this.#serverID !== serverID) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "source changed",
+      });
+      return;
+    }
     const path = `/api/users/0/items/${parsed.key}`;
     const reply = await this.#send(path, { serverID, signal });
-    if (this.#serverID !== serverID) return;
+    if (this.#serverID !== serverID) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "source changed",
+      });
+      return;
+    }
     if ("failure" in reply) {
+      logger.trace("Read write-back refused", {
+        attachmentKey,
+        reason: reply.failure.kind,
+      });
       if (reply.failure.kind === "server-changed") {
         await this.#writeRefused(reply.failure, "users/0", true);
       } else {
@@ -495,10 +552,22 @@ export class ZoteroLocalApiClient extends Service<void> {
       }),
       parseJson(reply.value.text),
     );
-    if (!item.success) return;
+    if (!item.success) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "malformed attachment",
+      });
+      return;
+    }
     const lastRead = Math.floor(instant.epochMilliseconds / 1000);
-    if ((item.output.data.lastRead ?? 0) >= lastRead) return;
-    await this.authorizedSend(path, {
+    if ((item.output.data.lastRead ?? 0) >= lastRead) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "stored read is newer or equal",
+      });
+      return;
+    }
+    const written = await this.authorizedSend(path, {
       library: "users/0",
       expectedServerID: serverID,
       silent: true,
@@ -506,6 +575,11 @@ export class ZoteroLocalApiClient extends Service<void> {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version: item.output.version, lastRead }),
+    });
+    logger.trace("Read write-back outcome", {
+      attachmentKey,
+      outcome: "failure" in written ? "refused" : "sent",
+      reason: "failure" in written ? written.failure.kind : "accepted",
     });
   }
 
@@ -637,7 +711,10 @@ export class ZoteroLocalApiClient extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    stack.defer(() => this.#readLifetime.abort());
+    stack.defer(async () => {
+      this.#readLifetime.abort();
+      await Promise.allSettled(this.#readWrites.values());
+    });
     stack.defer(
       this.#localServer.on("db/updated", () => {
         void this.#reprobe("freshness signal", true);

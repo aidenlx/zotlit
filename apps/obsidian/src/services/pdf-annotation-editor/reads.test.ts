@@ -16,7 +16,11 @@ it("records opens and closes, and limits page reads per Attachment to five minut
     now: () => now,
     record: (read) => recorded.push(read),
   });
-  const target = { attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" };
+  const target = {
+    serverID: null,
+    attachmentKey: "PDFABCDE",
+    itemKey: "AAAAAAAA",
+  };
   reads.record(target, "open");
   now = now.add({ minutes: 4, seconds: 59 });
   reads.record(target, "page");
@@ -48,18 +52,36 @@ it("keeps Attachments independent, excludes standalone reads and preserves a del
     now: () => now,
     record: (read) => recorded.push(read),
   });
-  reads.record({ attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" }, "open");
-  reads.record({ attachmentKey: "PDFOTHER", itemKey: "AAAAAAAA" }, "page");
-  reads.record({ attachmentKey: "PDFALONE", itemKey: null }, "open");
-  reads.record({ attachmentKey: "PDFALONE", itemKey: null }, "page");
-  reads.record({ attachmentKey: "PDFALONE", itemKey: null }, "close");
+  reads.record(
+    { serverID: null, attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" },
+    "open",
+  );
+  reads.record(
+    { serverID: null, attachmentKey: "PDFOTHER", itemKey: "AAAAAAAA" },
+    "page",
+  );
+  reads.record(
+    { serverID: null, attachmentKey: "PDFALONE", itemKey: null },
+    "open",
+  );
+  reads.record(
+    { serverID: null, attachmentKey: "PDFALONE", itemKey: null },
+    "page",
+  );
+  reads.record(
+    { serverID: null, attachmentKey: "PDFALONE", itemKey: null },
+    "close",
+  );
   const opened = Temporal.Instant.from("2026-10-19T00:00:00Z");
   reads.record(
-    { attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" },
+    { serverID: null, attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" },
     "open",
     opened,
   );
-  reads.record({ attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" }, "page");
+  reads.record(
+    { serverID: null, attachmentKey: "PDFABCDE", itemKey: "AAAAAAAA" },
+    "page",
+  );
   expect(recorded.map((r) => [r.attachmentKey, r.instant.toString()])).toEqual([
     ["PDFABCDE", "2026-10-19T00:10:00Z"],
     ["PDFOTHER", "2026-10-19T00:10:00Z"],
