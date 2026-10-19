@@ -2047,7 +2047,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const readKept = (help: string) =>
     `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.tree)return 'null';await view.searched;await view.query.settled;await view.tree.settled;await new Promise(r=>setTimeout(r,200));const el=view.contentEl;const row=el.querySelector('[data-query-item-row][data-selected]');const card=el.querySelector('[data-library-card]');let inView=false;if(row){const r=row.getBoundingClientRect();const hit=el.ownerDocument.elementFromPoint(r.left+r.width/2,r.top+r.height/2);inView=!!hit&&row.contains(hit);}const action=view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${help}"]`)});return JSON.stringify({phase:view.query.state.getState().phase,open:[...el.querySelectorAll('[data-library-node][aria-expanded="true"]')].map(n=>n.getAttribute('data-library-node')),selected:row?.getAttribute('data-query-item-row')??null,card:card&&!card.hidden&&card.checkVisibility()?card.querySelector('[data-library-card-title]')?.textContent??'':null,inView,banner:!!el.querySelector('[data-welcome-banner]'),pressed:action?.getAttribute('aria-pressed')??null,rows:el.querySelectorAll('[data-query-item-row]').length});})()`;
 
-  it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper with its Reading Card in view, and the Welcome View banner they asked for, with Zotero closed", async () => {
+  it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper in view with its Reading Card beside a wide list and none over a narrow one, and the Welcome View banner they asked for, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -2121,6 +2121,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;let n=el.querySelector('[data-query-item-row][data-selected]');for(;n&&n!==el;n=n.parentElement)if(n.scrollTop>0)return 'scrolled';return 'top';})()`,
       ),
     ).toBe("scrolled");
+
+    // On a narrow pane the restored paper is selected as the arrow keys
+    // select a row: its card does not open over the list, which stays
+    // uncovered with the row in view.
+    await obEval(
+      vaultId,
+      "require('@electron/remote').getCurrentWindow().setSize(900,640);true",
+    );
+    await reloadWindow();
+    const narrow = await keptWhen(
+      (kept) => kept.phase === "ready" && kept.selected !== null,
+    );
+    expect(narrow).toMatchObject({
+      selected: last,
+      card: null,
+      inView: true,
+      banner: true,
+      pressed: "true",
+    });
   });
 
   it("keeps the Welcome View banner away after a window reload once the researcher dismissed it", async () => {

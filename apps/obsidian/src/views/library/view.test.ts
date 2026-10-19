@@ -2437,7 +2437,7 @@ it("lets go of the selected row once a search leaves it out, and hides its Readi
   ).toBe(true);
 });
 
-it("opens again on the paper the researcher selected, with its Reading Card, scrolled into view", async () => {
+it("opens again on the paper the researcher selected, scrolled into view, with its Reading Card beside a wide list", async () => {
   const { deps, settings } = pluginData();
   const first = await openTab(deps);
   await act(() => itemRow(first, C).click());
@@ -2448,7 +2448,9 @@ it("opens again on the paper the researcher selected, with its Reading Card, scr
   cleanup.defer(() => scrolled.mockRestore());
   const view = await openTab(deps);
   expect(itemRows(view).slice(0, 3)).toEqual([A, B, `${C} *`]);
-  expect(view.selection.getState()).toEqual({ key: C, card: true });
+  // Selected as the arrow keys select: a wide pane shows the card beside
+  // the list, and a narrow one leaves the list uncovered.
+  expect(view.selection.getState()).toEqual({ key: C, card: false });
   expect(
     view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
   ).toBe(false);

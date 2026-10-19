@@ -521,8 +521,7 @@ export class LibraryView extends ItemView {
   }
 
   /**
-   * Select the paper the document kept, with its Reading Card, and scroll
-   * its row into view, once the list first lands its rows. A paper the list
+   * Select the paper the document kept and scroll its row into view, once the list first lands its rows. A paper the list
    * no longer holds is let go of. A list that fails, as before Zotero's
    * database is read, waits for one that lands; a selection the researcher
    * made first stays.
@@ -538,7 +537,9 @@ export class LibraryView extends ItemView {
         this.#keepSelected(null);
         return;
       }
-      this.selection.setState({ key: selected, card: true });
+      // As the arrow keys select a row: the card shows beside a wide list
+      // and stays off a narrow one until the researcher asks for it.
+      this.selection.setState({ key: selected, card: false });
       // The list draws its rows a frame or more after they land.
       void this.#drawn(selected).then((row) => {
         if (this.selection.getState().key === selected)
