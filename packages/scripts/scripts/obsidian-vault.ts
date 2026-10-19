@@ -372,20 +372,35 @@ async function create(
   // A fresh vault starts in Restricted Mode, which makes it ignore the seeded
   // `community-plugins.json`. Trusting the vault reloads the window, and the
   // plugin loads from that file — no separate `plugin:enable` needed.
+  const trustedPage = await obEval("String(performance.timeOrigin)", id);
   const trusted = await cli([`vault=${id}`, "plugins:restrict", "off"]);
   if (!/disabled|^off$/i.test(trusted)) {
     throw new Error(`could not leave Restricted Mode in ${id}: ${trusted}`);
   }
+  // Obsidian loads the plugin in the old page, answers, and reloads the window
+  // 10 ms later. A call that reaches the reloading window runs before its
+  // `eval` command is registered and answers `Command "eval" not found`, so
+  // every check below waits for the new page.
+  const reloads = /reloading/i.test(trusted);
 
   // Confirm the plugin object exists — `enabledPlugins` only mirrors
   // `community-plugins.json` and says nothing about what actually loaded.
+  let reloaded = !reloads;
   const loaded = await waitFor(async () => {
     const answer = await obEval(
-      `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
+      `JSON.stringify([String(performance.timeOrigin),${JSON.stringify(pluginId)} in app.plugins.plugins])`,
       id,
     ).catch(rethrowUnreachable);
-    return answer === "true";
+    if (!answer) return false;
+    const [page, present] = JSON.parse(answer) as [string, boolean];
+    reloaded ||= page !== trustedPage;
+    return reloaded && present;
   });
+  if (!reloaded) {
+    throw new Error(
+      `vault ${id} left Restricted Mode but its window never reloaded`,
+    );
+  }
   if (!loaded) {
     throw new Error(
       `${pluginId} did not load in ${id}. Run 'pnpm --filter @zotlit/obsidian build:dev' and create again.`,
