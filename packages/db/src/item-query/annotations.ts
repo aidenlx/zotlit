@@ -40,6 +40,7 @@ export interface AnnotationScanRow extends ScanRow {
   attachmentKey: string;
   attachmentDateAdded: number | null;
   attachmentDateModified: number | null;
+  attachmentLastRead: number | null;
   parent: ScanRow;
   sortIndex: string;
 }
@@ -55,6 +56,9 @@ function selectAnnotations(db: NodeDatabaseClient) {
       libraryID: items.libraryID,
       attachmentID: attachment.itemID,
       attachmentKey: attachment.key,
+      attachmentLastRead: sql<
+        number | null
+      >`${itemAttachments.lastRead} * 1000`,
       attachmentDateAdded: sql<
         number | null
       >`unixepoch(${attachment.dateAdded}) * 1000`,

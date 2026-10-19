@@ -106,7 +106,7 @@ const logger = getLogger(["views", "query-view"]);
 
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
-  query: Pick<QueryService, "run">;
+  query: Pick<QueryService, "run" | "on">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<ZoteroReadsService, "on" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
@@ -217,13 +217,15 @@ export interface QueryViewHost {
   rows?: ItemRowGestures;
   /**
    * Why `row` is in the list; the second line of a Papers row ends with it.
-   * The Library View's Recent gives one once last activity is defined
-   * (#1532), such as "read 2 h ago in Obsidian". `null`: no reason. Absent:
+   * The Library View's Recent gives one, such as "read 2 h ago in Obsidian".
+   * `null`: no reason. Absent:
    * no row gives one.
    *
    * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
    */
   reason?: (row: QueryViewRow) => string | null;
+  /** Extra projection paths the host reads for the shown layout. */
+  fields?: (view: QueryFileView) => readonly string[];
   /**
    * The whole empty state, in place of the view's own sentence and its hint
    * to change a filter: the host's derived text holds filters the researcher
@@ -532,6 +534,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#planner = new ViewPlanner({
       context: () => host.context(),
       libraries: () => host.libraries?.(),
+      fields: (view) => host.fields?.(view) ?? [],
       host: () => this.vaultHost(),
       notes: deps.literatureNotes,
     });
@@ -577,6 +580,7 @@ export class QueryView extends Component implements HistorySurface {
     const { query, literatureNotes, readers } = this.#deps;
     return {
       query: {
+        on: (...args) => query.on(...args),
         run: (request, signal) => {
           const libraries = this.#host.libraries?.();
           return query.run(
@@ -652,6 +656,13 @@ export class QueryView extends Component implements HistorySurface {
     // Attachment's Annotations reaches the cards through the layout, which
     // reads the live records again; an Annotation added to or removed from an
     // Attachment the cards show runs the query again, so it takes its place.
+    subscriptions.defer(
+      this.#deps.query.on("changed", () => {
+        // Only Item queries expose Last Activity. Annotation follow owns
+        // its rebind when the active note changes.
+        if (this.state.getState().view?.from === "items") rerun();
+      }),
+    );
     subscriptions.defer(reads.on("changed", rerun));
     subscriptions.defer(reads.on("degraded", rerun));
     subscriptions.defer(reads.on("db-file-missing", rerun));

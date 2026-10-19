@@ -19,6 +19,7 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { SettingsService } from "@/services/settings/service";
+import type { UseLedger } from "@/services/use-ledger/service";
 import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
@@ -64,6 +65,7 @@ import { FACET_LABELS, LibraryTree } from "./library-tree";
 import type { LibraryTreeDeps } from "./library-tree";
 import { ZoteroNotFound } from "./not-found";
 import { ReadingCard } from "./reading-card";
+import { recentReason, RECENT_REASON_FIELDS } from "./reason";
 import { rowMenu } from "./row-menu";
 import type { MenuItem } from "./row-menu";
 import { LibrarySearch } from "./search-box";
@@ -77,6 +79,7 @@ const logger = getLogger(["library-view"]);
 export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
+  useLedger: Pick<UseLedger, "get">;
   settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
   libraryScope: QueryViewDeps["libraryScope"] &
     LibraryTreeDeps["libraryScope"] &
@@ -259,6 +262,15 @@ export class LibraryView extends ItemView {
       rowPass: () =>
         this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
       rows,
+      fields: (view) =>
+        view.type === "papers" &&
+        this.tree.store.getState().node.kind === "recent"
+          ? RECENT_REASON_FIELDS
+          : [],
+      reason: (row) =>
+        this.tree.store.getState().node.kind === "recent"
+          ? recentReason(row.values, deps.useLedger.get(row.indexedKey))
+          : null,
       // The empty list names the search or the facets, which the derived
       // text holds as filters the researcher never wrote.
       empty: ({ fallback }) => this.search.empty(this.tree.store, fallback),

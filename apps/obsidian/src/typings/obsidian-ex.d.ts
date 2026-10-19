@@ -134,6 +134,8 @@ declare module "obsidian" {
     getConfig(key: "readableLineLength"): boolean;
   }
   interface Workspace {
+    /** Flushes deferred file-open/active-leaf events. Verified in Obsidian 1.14.4. */
+    requestActiveLeafEvents: { run(): void };
     on(
       name: "zotlit:workbench-selection",
       callback: (
@@ -613,6 +615,8 @@ declare module "obsidian" {
     /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
     on(event: "pagerendered", listener: PDFPageRenderedListener): void;
     off(event: "pagerendered", listener: PDFPageRenderedListener): void;
+    on(event: "pagechanging", listener: () => void): void;
+    off(event: "pagechanging", listener: () => void): void;
     /** The PDF.js page view for a one-based page number, once that page is built. */
     getPage(pageNumber: number): PDFPageView | undefined;
     /** Applies an Obsidian PDF subpath such as `#page=3`. */

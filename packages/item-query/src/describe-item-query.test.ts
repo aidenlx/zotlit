@@ -191,6 +191,26 @@ describe("describeItemQuery fields", () => {
     using scenario = openScenarioDatabase();
     const { fields } = await schema(scenario);
     const entry = (path: string) => fields.find((field) => field.path === path);
+    expect(entry("lastActivity")).toMatchObject({
+      type: "string",
+      filter: "date",
+      projection: true,
+      sort: true,
+      description: expect.stringContaining("this device's Uses"),
+    });
+    expect(entry("lastActivitySource")).toMatchObject({
+      type: "string",
+      filter: "string",
+      projection: true,
+      sort: false,
+      valueForms: ["read", "note", "annotation", "added", "use"],
+    });
+    expect(entry("lastRead")).toMatchObject({
+      type: "string",
+      filter: "date",
+      projection: true,
+      sort: true,
+    });
 
     expect(entry("date")).toEqual({
       path: "date",

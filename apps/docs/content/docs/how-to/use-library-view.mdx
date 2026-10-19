@@ -9,7 +9,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Library View is a tab that lists your Zotero library inside Obsidian. Use it to find a paper and open its PDF, write its literature note, or cite it. Browsing, searching, and opening papers only read your library. The one change the view makes in Zotero is an annotation you edit in the [Reading Card](#reading-card).
+The Library View is a tab that lists your Zotero library inside Obsidian. Use it to find a paper and open its PDF, write its literature note, or cite it. Browsing and searching only read your library. Editing an annotation in the [Reading Card](#reading-card) changes it in Zotero. Reading a PDF can also update its read time, as described in [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian#recently-read).
 
 The Library View reads the Zotero database directly. Zotero does not need to be open, and you do not need ZotLit Companion, the Zotero add-on, to browse, search, or open a PDF.
 
@@ -41,7 +41,7 @@ If the database was readable and a later read fails, the view keeps the papers i
 
 The tree on the left lists <UiLabel name={m.library_view_recent()} /> first, then each library in your [library scope](/docs/reference/settings#library-scope) with its collections nested as in Zotero. Each library and collection shows how many papers it holds.
 
-Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, with the library and the collections above it, such as "My Library › Thesis ›" over "Chapter 2". Under the name it counts the papers listed and, when the selection holds any, the unread ones, for example "<UiLabel name={m.library_view_heading_papers({ count: 12 })} /> · <UiLabel name={m.library_view_heading_unread({ count: 3 })} />". While a filter or a tag narrows the list, it counts what is left of the whole, for example <UiLabel name={m.library_view_heading_papers_of({ count: 3, total: 12 })} />. A paper counts as unread when it has no annotations and no literature note. The unread count, like the paper count in the tree, ignores search, the reading-state filters, and selected tags.
+Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, with the library and the collections above it, such as "My Library › Thesis ›" over "Chapter 2". Under the name it counts the papers listed and, when the selection holds any, the unread ones, for example "<UiLabel name={m.library_view_heading_papers({ count: 12 })} /> · <UiLabel name={m.library_view_heading_unread({ count: 3 })} />". While a filter or a tag narrows the list, it counts what is left of the whole, for example <UiLabel name={m.library_view_heading_papers_of({ count: 3, total: 12 })} />. A paper counts as unread when it has no Zotero read time, no annotations, and no literature note. The unread count, like the paper count in the tree, ignores search, the reading-state filters, and selected tags.
 
 When your Zotero database holds libraries outside your library scope, <UiLabel name={m.library_view_all_libraries()} /> under the last library adds them for the current session. <UiLabel name={m.library_view_scope_libraries()} /> hides them again.
 
@@ -52,8 +52,26 @@ On a narrow pane the tree is hidden. Select <UiLabel name={m.library_view_show_t
 ### Recent [#recent]
 
 <UiLabel name={m.library_view_recent()} /> lists every paper in your library
-scope, the most recently edited in Zotero first. A new Library View opens on
+scope by **Last Activity**, newest first. Last Activity is the newest time that
+you opened, read, or cited the paper in Obsidian; read it in Zotero; added it to
+Zotero; or edited one of its Zotero notes or annotations. An edit to the paper's
+own fields does not count. A new Library View opens on
 <UiLabel name={m.library_view_recent()} />.
+
+Each row gives the activity that set its place in the list:
+
+| Reason                                                                  | What it means                                                  |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| <UiLabel name={m.library_recent_opened({ time: "3 min ago" })} />       | You opened the paper's literature note or returned to its tab. |
+| <UiLabel name={m.library_recent_read_obsidian({ time: "2 h ago" })} />  | You read the paper's PDF in Obsidian.                          |
+| <UiLabel name={m.library_recent_cited({ time: "yesterday" })} />        | You inserted the paper's citation or copied its citation key.  |
+| <UiLabel name={m.library_recent_read_zotero({ time: "yesterday" })} />  | You read one of the paper's attachments in Zotero.             |
+| <UiLabel name={m.library_recent_added({ time: "3 days ago" })} />       | You added the paper to Zotero.                                 |
+| <UiLabel name={m.library_recent_notes_edited({ time: "last week" })} /> | You edited a child note or annotation in Zotero.               |
+
+Opening and citing count on the device where they happen. They do not move the
+paper on another device. Reading recorded by Zotero syncs through Zotero and
+can move the paper on each device.
 
 <UiLabel name={m.library_view_recent()} /> shows no paper count in the tree, and
 <UiLabel name={m.library_view_all_libraries()} /> does not add libraries to it.
@@ -80,12 +98,12 @@ A search shows at most 500 matches.
 
 The buttons below the tree narrow the list by what you have done with each paper:
 
-| Filter                                              | Shows the papers that                               |
-| --------------------------------------------------- | --------------------------------------------------- |
-| <UiLabel name={m.library_view_facet_unread()} />    | Have no annotations and no literature note.         |
-| <UiLabel name={m.library_view_facet_annotated()} /> | Have at least one annotation.                       |
-| <UiLabel name={m.library_view_facet_has_note()} />  | Have a literature note in this vault.               |
-| <UiLabel name={m.library_view_facet_pdf()} />       | Have a PDF attachment whose file is on this device. |
+| Filter                                              | Shows the papers that                                      |
+| --------------------------------------------------- | ---------------------------------------------------------- |
+| <UiLabel name={m.library_view_facet_unread()} />    | Have no Zotero read time, annotations, or literature note. |
+| <UiLabel name={m.library_view_facet_annotated()} /> | Have at least one annotation.                              |
+| <UiLabel name={m.library_view_facet_has_note()} />  | Have a literature note in this vault.                      |
+| <UiLabel name={m.library_view_facet_pdf()} />       | Have a PDF attachment whose file is on this device.        |
 
 Each filter you turn on also shows as a chip under the heading. Select a chip to turn its filter off, or <UiLabel name={m.library_view_heading_clear_filters()} /> beside the chips to turn off every filter and let go of every tag at once.
 

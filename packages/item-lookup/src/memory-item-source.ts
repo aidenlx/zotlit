@@ -259,7 +259,9 @@ function signatureOf(rows: readonly MemoryItemRow[]): IndexSignature {
       (sum, { indexed }) =>
         sum +
         Math.floor(indexed.dateModified.epochMilliseconds / 1000) +
-        indexed.itemID,
+        indexed.itemID +
+        ((((indexed.lastActivity ?? 0) / 1000) * ((indexed.itemID % 997) + 1)) %
+          2147483647),
       0,
     ),
   };

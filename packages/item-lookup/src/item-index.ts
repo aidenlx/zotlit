@@ -46,7 +46,7 @@ import type {
 } from "@zotlit/db";
 
 import { makeEngineIndexBuilder, searchEngineIndex } from "./engine";
-import type { EngineIndex, SearchMatches } from "./engine";
+import type { EngineIndex, SearchMatches, SearchOptions } from "./engine";
 import { layerSegmenterNone, Segmenter } from "./segmenter";
 import { makeSegmenterSwitch, SegmenterBinaryReader } from "./segmenter-switch";
 import type { SegmenterBinary } from "./segmenter-switch";
@@ -125,7 +125,7 @@ export class ItemIndex extends Context.Service<
     readonly search: (
       libraries: readonly number[],
       query: string,
-      limit: number,
+      options: SearchOptions,
     ) => Effect.Effect<readonly SearchHit[], SourceUnavailable>;
     /**
      * Replace the settings. Calls serialize in arrival order. Returns once the
@@ -538,14 +538,14 @@ function makeItemIndex(initial: IndexSettings) {
     const search = (
       libraries: readonly number[],
       query: string,
-      limit: number,
+      options: SearchOptions,
     ): Effect.Effect<readonly SearchHit[], SourceUnavailable> =>
       Effect.scoped(
         Effect.gen(function* () {
           const built = yield* holdIndex(yield* indexFor(libraries));
           // Dropped in between: wait for the list's next index.
-          if (!built) return yield* search(libraries, query, limit);
-          const hits = yield* searchEngineIndex(built.engine, query, limit);
+          if (!built) return yield* search(libraries, query, options);
+          const hits = yield* searchEngineIndex(built.engine, query, options);
           const items = yield* built.binding.source.itemsByIndexedKey(
             hits.map((hit) => hit.indexedKey),
           );

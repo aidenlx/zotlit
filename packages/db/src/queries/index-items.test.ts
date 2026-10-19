@@ -80,12 +80,25 @@ describe("getIndexedItemsByID", () => {
 });
 
 describe("getIndexSignature", () => {
+  it("notices a child note moving its activity between parents", () => {
+    sqlite.exec("insert into itemNotes (itemID, parentItemID) values (5, 1)");
+    const before = getIndexSignature(db, USER_LIBRARY_ID);
+    expect(
+      getIndexedItemsByID(db, [1, 2]).map((item) => item.lastActivity),
+    ).toEqual([1714521600000, 1704067200000]);
+    sqlite.exec("update itemNotes set parentItemID = 2 where itemID = 5");
+    expect(
+      getIndexedItemsByID(db, [1, 2]).map((item) => item.lastActivity),
+    ).toEqual([1704067200000, 1714521600000]);
+    expect(getIndexSignature(db, USER_LIBRARY_ID)).not.toEqual(before);
+  });
+
   it("counts only indexed items and checksums the row set", () => {
     const signature = getIndexSignature(db, USER_LIBRARY_ID);
 
     // ARTICLE (id1) + BOOKSEC (id2) + NEWEST (id7) — excludes DELETED + child types.
     expect(signature.count).toBe(3);
-    expect(signature.checksum).toBe(5159635210);
+    expect(signature.checksum).toBe(7985155987);
   });
 
   it("moves the checksum when a non-max item is edited into the max second", () => {
@@ -99,7 +112,7 @@ describe("getIndexSignature", () => {
 
     expect(after.count).toBe(before.count);
     expect(after.checksum).not.toBe(before.checksum);
-    expect(after.checksum).toBe(5188579210);
+    expect(after.checksum).toBe(8014099987);
   });
 });
 

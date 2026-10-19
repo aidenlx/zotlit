@@ -71,7 +71,9 @@ import {
   WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
 import { MENU_READY, PAGE, pickQueryView } from "./page-gestures.ts";
+import { verifyPdfReads } from "./pdf-reads.ts";
 import { raiseWindow } from "./reader-gestures.ts";
+import { verifyRecentUses } from "./recent-uses.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -163,6 +165,11 @@ const LIBRARY_HEADING = `(h=>h?['[data-library-header]','[data-library-header-co
  * only the demo vault holds.
  */
 const readingState = {
+  read: (item: FixtureItem) =>
+    ATTACHMENTS.some(
+      (attachment) =>
+        attachment.parentItemID === item.itemID && attachment.lastRead != null,
+    ),
   annotated: (item: FixtureItem) => {
     const ids = new Set(
       ATTACHMENTS.filter(
@@ -183,12 +190,45 @@ const readingState = {
     ),
 };
 
-/** The Items of `items` with no Annotation and no Literature Note. */
+/** Expected activity from the committed Fixture facts, independent of Query output. */
+function fixtureActivity(item: FixtureItem): string {
+  const attachments = ATTACHMENTS.filter(
+    (entry) => entry.parentItemID === item.itemID,
+  );
+  return [
+    item.dateAdded ?? item.dateModified,
+    ...attachments.flatMap((entry) =>
+      entry.lastRead === undefined
+        ? []
+        : [
+            Temporal.Instant.fromEpochMilliseconds(entry.lastRead * 1000)
+              .toString()
+              .slice(0, 19)
+              .replace("T", " "),
+          ],
+    ),
+    ...NOTES.filter(
+      (entry) => entry.parentItemID === item.itemID && !entry.trashed,
+    ).map((entry) => entry.dateModified),
+    ...ANNOTATIONS.filter((entry) =>
+      attachments.some(
+        (attachment) => attachment.itemID === entry.parentItemID,
+      ),
+    ).map((entry) => entry.dateModified),
+  ]
+    .toSorted()
+    .at(-1)!;
+}
+
+/** The Items with no Zotero read, Annotation, or Literature Note. */
 function unreadOf(
   items: readonly FixtureItem[],
   noted: (item: FixtureItem) => boolean = readingState.noted,
 ): FixtureItem[] {
-  return items.filter((item) => !readingState.annotated(item) && !noted(item));
+  return items.filter(
+    (item) =>
+      !readingState.read(item) && !readingState.annotated(item) && !noted(item),
+  );
 }
 
 async function openProfilesSettings(
@@ -1581,7 +1621,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
-  it("opens a new Library View on Recent, lists the Library Scope newest change first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
+  it("refreshes the empty quick switcher after a lastRead-only write without restarting Obsidian", async () => {
+    const readItem = ITEMS.find((item) => item.itemID === 20)!;
+    const attachment = ATTACHMENTS.find(
+      (entry) => entry.parentItemID === readItem.itemID,
+    )!;
+    using sqlite = new DatabaseSync(e2eFixture.databasePath);
+    const saved = sqlite
+      .prepare("SELECT lastRead FROM itemAttachments WHERE itemID = ?")
+      .get(attachment.itemID) as { lastRead: number | null };
+    const modified = sqlite
+      .prepare("SELECT dateModified FROM items WHERE itemID = ?")
+      .get(readItem.itemID);
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      sqlite
+        .prepare("UPDATE itemAttachments SET lastRead = ? WHERE itemID = ?")
+        .run(saved.lastRead, attachment.itemID);
+      await obEval(
+        vaultId,
+        "(async()=>{activeDocument.querySelector('.prompt input')?.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await app.plugins.plugins.zotlit.services.zoteroReads.refresh();return true;})()",
+      );
+    });
+    const recent =
+      "(async()=>JSON.stringify((await app.plugins.plugins.zotlit.services.itemLookup.search('',{limit:1})).map(hit=>hit.item.indexedKey)))()";
+    await obEval(vaultId, recent);
+    sqlite
+      .prepare("UPDATE itemAttachments SET lastRead = ? WHERE itemID = ?")
+      .run(2208988800, attachment.itemID);
+    expect(
+      sqlite
+        .prepare("SELECT dateModified FROM items WHERE itemID = ?")
+        .get(readItem.itemID),
+    ).toEqual(modified);
+    await obReadUntil<string[]>(vaultId, recent, {
+      ready: (keys) => keys[0] === readItem.key,
+      what: "empty search to reflect the Zotero read",
+      tries: 160,
+    });
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:note-quick-switcher');true",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.querySelector('.prompt .suggestion-item')?.textContent.includes(${JSON.stringify(readItem.title)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  });
+
+  it("opens a new Library View on Recent, lists the Library Scope newest activity first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -1624,8 +1715,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       )!;
       return groupID === null ? item.key : `${item.key}g${groupID}`;
     };
-    const modified = new Map(
-      ITEMS.map((item) => [indexedKey(item), item.dateModified]),
+    const uses = await obJson<Record<string, number>>(
+      vaultId,
+      `JSON.stringify(${services}.useLedger.uses)`,
+    );
+    const activity = new Map(
+      ITEMS.map((item) => [
+        indexedKey(item),
+        Math.max(
+          Temporal.Instant.from(`${fixtureActivity(item).replace(" ", "T")}Z`)
+            .epochMilliseconds,
+          uses[indexedKey(item)] ?? 0,
+        ),
+      ]),
     );
     const expectRecent = (
       shown: Shown,
@@ -1636,10 +1738,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         libraries.some(({ libraryID }) => libraryID === item.libraryID),
       );
       expect(shown.rows.toSorted()).toEqual(items.map(indexedKey).toSorted());
-      expect(shown.rows.map((key) => modified.get(key))).toEqual(
+      expect(shown.rows.map((key) => activity.get(key))).toEqual(
         items
-          .map(({ dateModified }) => dateModified)
-          .toSorted((a, b) => direction * a.localeCompare(b)),
+          .map((item) => activity.get(indexedKey(item))!)
+          .toSorted((a, b) => direction * (a - b)),
       );
       // A row holds two lines at most: the title, then creators, year and
       // Venue. It has no reading-state line.
@@ -1696,6 +1798,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       header: `${m.library_view_recent()} | ${m.library_view_heading_papers({ count: size([personal, shared]) })}`,
     });
     expectRecent(opened, [personal, shared], -1);
+    const reasons = await obJson<Record<string, string>>(
+      vaultId,
+      `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;return JSON.stringify(Object.fromEntries([...view.contentEl.querySelectorAll('[data-query-papers-row]')].map(row=>[row.getAttribute('data-query-papers-row'),row.querySelector('[data-query-papers-title]').parentElement.lastElementChild.textContent])));})()`,
+    );
+    // These seed signals are newer than their parent Item's addition.
+    for (const [key, reason] of [
+      ["SAKIMA22", "in Zotero"],
+      ["AAAAAAAA", "notes edited in Zotero"],
+      ["BBBB2222", "added to Zotero"],
+    ]) {
+      // A preceding case can have used a paper in the shared Fixture vault.
+      expect(reasons[key!]).toContain(
+        uses[key!] === activity.get(key!) ? "in Obsidian" : reason,
+      );
+    }
+
+    const emptySearch = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>JSON.stringify((await ${services}.itemLookup.search('',{limit:500})).map(hit=>hit.item.indexedKey)))()`,
+      ),
+    );
+    expect(emptySearch).toEqual(opened.rows);
+
     // On a pane too narrow for the tree beside the list, Recent's tree
     // toggle sits beside the search box, not on a row of its own.
     const narrowRow = JSON.parse(
@@ -1715,7 +1841,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectRecent(narrowed, [personal], -1);
 
     // A sort change keeps Recent selected; selecting Recent again after a
-    // Library sorts newest change first again.
+    // Library sorts newest activity first again.
     await inLibrary(
       "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
     );
@@ -1742,9 +1868,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await saved({
         node: { kind: "recent" },
-        sort: [{ property: "dateModified", direction: "DESC" }],
+        sort: [{ property: "lastActivity", direction: "DESC" }],
       }),
     ).toBe(true);
+
+    const modified = new Map(
+      ITEMS.map((item) => [indexedKey(item), item.dateModified]),
+    );
 
     // Leaving Recent clears its own sort: the seed's "Shared key" Collection
     // of My Library lists in the default order, newest change first, and the
@@ -1804,14 +1934,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) => !shown.recent && listing(filed.length)(shown),
     );
     expect(kept.sort).toEqual({ set: true, text: "Sort1" });
-    expectFiled(kept, 1);
+    expect(kept.rows.map((key) => activity.get(key))).toEqual(
+      filed
+        .map((item) => activity.get(indexedKey(item))!)
+        .toSorted((a, b) => a - b),
+    );
     expect(
       await saved({
         node: sharedKeyPath,
-        sort: [{ property: "dateModified", direction: "ASC" }],
+        sort: [{ property: "lastActivity", direction: "ASC" }],
       }),
     ).toBe(true);
   });
+
+  it("records PDF reads from every open route and page changes, preserves restored reads, and excludes standalone Attachments", async () => {
+    await verifyPdfReads(vaultId, e2eFixture.databasePath, reloadWindow);
+  }, 180000);
+
+  it("ranks Literature Note opens from every route and tab returns in Recent and empty search, keeps Uses through reloads, and excludes browsing and Companion updates", async () => {
+    await verifyRecentUses(vaultId, e2eVaultPath, reloadWindow);
+  }, 180000);
 
   it("picks a sort property in the Library View's Sort popover from the property Select's options, and the row keeps one property Select", async () => {
     const services = "app.plugins.plugins.zotlit.services";
@@ -3704,7 +3846,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The vault loses the Literature Note of an Item with no Annotation: the
     // Item becomes unread, in the list and in the header's count.
     const reader = filed.find(
-      (item) => !readingState.annotated(item) && readingState.noted(item),
+      (item) =>
+        !readingState.read(item) &&
+        !readingState.annotated(item) &&
+        readingState.noted(item),
     )!;
     const notePath = await obEval(
       vaultId,
@@ -3716,6 +3861,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         `(async()=>{await app.vault.rename(app.vault.getAbstractFileByPath(${JSON.stringify(from)}),${JSON.stringify(to)});return true;})()`,
       );
+    // A paper already read in Zotero stays out of Unread after its note is removed.
+    const readPaper = filed.find(
+      (item) => readingState.read(item) && !readingState.annotated(item),
+    )!;
+    expect(readPaper.key).toBe("IANNP5A2");
+    const readNotePath = await obEval(
+      vaultId,
+      `${services}.noteIndex.getNotesByItemKey(${JSON.stringify(readPaper.key)})[0]?.path??''`,
+    );
+    expect(readNotePath).not.toBe("");
+    await moveNote(readNotePath, `${readNotePath}.away`);
+    cleanup.defer(async () => {
+      await moveNote(`${readNotePath}.away`, readNotePath);
+    });
     const away = `${notePath}.away`;
     await moveNote(notePath, away);
     cleanup.defer(async () => {
@@ -3735,6 +3894,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(unread.rows.toSorted()).toEqual(keys(unreadOf(filed, noted)));
     expect(unread.rows).toContain(reader.key);
+    expect(unread.rows).not.toContain(readPaper.key);
 
     // A search keeps to the facets: in the Collection, then in every
     // Library, each in the quick switcher's rank.
@@ -9773,6 +9933,10 @@ views:
   // an oversight: update-all-notes is itself a batch write of Literature
   // Notes, so exercising it also exercises rendering one.
   it("renders a Literature Note via the update-all-notes batch operation", async () => {
+    const usesBefore = await obEval(
+      vaultId,
+      "JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current)",
+    );
     const noteName = targetItem.literatureNoteName ?? targetItem.key;
     const notePath = join(e2eVaultPath, "literatures", `${noteName}.md`);
     if (booksNotePath === "") {
@@ -9821,6 +9985,12 @@ views:
         { expected: "true" },
       ),
     ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        "JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current)",
+      ),
+    ).toBe(usesBefore);
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
     // remaining group items (8, 9, 10, 79) are created under Default, the batch's

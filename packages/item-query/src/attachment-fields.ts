@@ -8,7 +8,7 @@ import type { QueryAnnotation } from "./annotation-fields";
 import type { AttachmentNeeds } from "./attachment-hydration";
 import { compareStrings } from "./collation";
 import type { SortableField } from "./dataset";
-import { BUILT_IN_NAMES } from "./fields";
+import { ACTIVITY_FIELDS, BUILT_IN_NAMES } from "./fields";
 import type {
   FieldDefinition as ItemFieldDefinition,
   QueryItem,
@@ -152,7 +152,7 @@ export const ATTACHMENT_FIELDS = new Map<string, FieldDefinition>([
       (item.attachment.tags ?? []).toSorted(compareStrings),
     ),
   ],
-  ...(["dateAdded", "dateModified"] as const).map(
+  ...(["dateAdded", "dateModified", "lastRead"] as const).map(
     (name) =>
       [
         name,
@@ -183,7 +183,7 @@ const itemParent = liftParentRecord({
     "dateModified",
     "firstAuthor",
   ],
-  listed: () => BUILT_IN_NAMES,
+  listed: () => BUILT_IN_NAMES.filter((name) => !ACTIVITY_FIELDS.has(name)),
   syntax: "fields",
 });
 export const ATTACHMENT_PARENTS = [itemParent];
@@ -199,7 +199,7 @@ export function attachmentFieldDefinition(
   );
 }
 
-for (const name of ["dateAdded", "dateModified"] as const) {
+for (const name of ["dateAdded", "dateModified", "lastRead"] as const) {
   const definition = ATTACHMENT_FIELDS.get(name)!;
   ATTACHMENT_FIELDS.set(name, {
     ...definition,
@@ -230,6 +230,7 @@ export const ATTACHMENT_SORT_FIELDS = parentSortFields(
     "key",
     "dateAdded",
     "dateModified",
+    "lastRead",
     "title",
     "contentType",
     "fileType",

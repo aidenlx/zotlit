@@ -417,6 +417,7 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       settings: services.settings,
       citationLookup: services.citationLookup,
+      useLedger: services.useLedger,
     });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
@@ -433,6 +434,7 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack.use(
       registerProtocolHandlers(this, {
+        useLedger: services.useLedger,
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
@@ -497,6 +499,7 @@ export default class ZotLitPlugin extends Plugin {
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
+      useLedger: services.useLedger,
       ...queryViewDeps,
       libraryScope: services.libraryScope,
       settings: services.settings,
@@ -525,6 +528,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         settings: services.settings,
         citationLookup: services.citationLookup,
+        useLedger: services.useLedger,
         notify: (message) => new BaseNotice(message),
       }),
       lookup: services.itemLookup,

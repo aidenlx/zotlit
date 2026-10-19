@@ -103,7 +103,7 @@ function setup(kind: HostKind) {
     app,
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run },
+    query: { run, on: () => () => {} },
     cardFocus,
     annotations: {
       on: off,

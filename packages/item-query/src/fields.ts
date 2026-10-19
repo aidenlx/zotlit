@@ -51,6 +51,7 @@ import type { ProjectionJson } from "./value-text";
  */
 export interface QueryItem {
   readonly scan: ScanRow;
+  readonly lastUse?: number;
   readonly groupID: number | null;
   readonly hydrated: HydratedItem;
   /** The custom fields of the source, for the complete `custom` object. */
@@ -106,6 +107,7 @@ export type SortKey = string | number | boolean | null;
  * Schema read the same entries, so a field exists only here.
  */
 export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
+  readonly description?: string;
   readonly relation?: () => RecordVocabulary<any, any>;
   readonly project?: (
     item: Item,
@@ -514,6 +516,123 @@ const attachmentsField: FieldDefinition = recordField({
   needs: (attachments) => ({ attachments }),
 });
 
+/** The newest read of a live child Attachment, in milliseconds. */
+function lastRead(item: QueryItem): number | null {
+  let latest: number | null = null;
+  for (const attachment of item.attachments ?? []) {
+    const value = attachment.scan.lastRead;
+    if (value !== null && (latest === null || value > latest)) latest = value;
+  }
+  return latest;
+}
+
+const lastReadField: FieldDefinition = {
+  shape: STRING,
+  needs: () => ({ attachments: [{}] }),
+  read: (item) => {
+    const value = lastRead(item);
+    return value === null
+      ? null
+      : Temporal.Instant.fromEpochMilliseconds(value);
+  },
+  sortKey: lastRead,
+  filter: {
+    type: "date",
+    read: (item) => {
+      const value = lastRead(item);
+      return value === null
+        ? null
+        : timestamp(Temporal.Instant.fromEpochMilliseconds(value));
+    },
+  },
+};
+
+const LAST_ACTIVITY_SOURCES = [
+  "read",
+  "note",
+  "annotation",
+  "added",
+  "use",
+] as const;
+
+/** The kind of signal that set Last Activity. */
+export type LastActivitySource = (typeof LAST_ACTIVITY_SOURCES)[number];
+
+/** The newest work on the paper and its signal; `null` without one. */
+function lastActivity(
+  item: QueryItem,
+): { readonly at: number; readonly source: LastActivitySource } | null {
+  // A Zotero tie keeps the read, then the note edit, then the addition. A Use
+  // wins a tie: it names the action in Obsidian.
+  const signals: [number | null, LastActivitySource][] = [
+    [lastRead(item), "read"],
+  ];
+  for (const note of item.notes ?? [])
+    signals.push([note.scan.dateModified, "note"]);
+  for (const annotation of item.annotations ?? [])
+    signals.push([annotation.scan.dateModified, "annotation"]);
+  signals.push([item.scan.dateAdded, "added"]);
+  let latest: { at: number; source: LastActivitySource } | null = null;
+  for (const [at, source] of signals)
+    if (at !== null && (latest === null || at > latest.at))
+      latest = { at, source };
+  const use = item.lastUse;
+  if (use !== undefined && (latest === null || use >= latest.at))
+    latest = { at: use, source: "use" };
+  return latest;
+}
+
+const lastActivityAt = (item: QueryItem): number | null =>
+  lastActivity(item)?.at ?? null;
+
+const LAST_ACTIVITY_NEEDS = (): FieldNeeds => ({
+  attachments: [{}],
+  notes: [{}],
+  annotations: [{}],
+});
+
+const lastActivityField: FieldDefinition = {
+  description:
+    "Newest addition, Attachment read, child note or Annotation edit, or Use. Includes this device's Uses when the plugin supplies them.",
+  shape: STRING,
+  needs: LAST_ACTIVITY_NEEDS,
+  read: (item) => {
+    const value = lastActivityAt(item);
+    return value === null
+      ? null
+      : Temporal.Instant.fromEpochMilliseconds(value);
+  },
+  sortKey: lastActivityAt,
+  filter: {
+    type: "date",
+    read: (item) => {
+      const value = lastActivityAt(item);
+      return value === null
+        ? null
+        : timestamp(Temporal.Instant.fromEpochMilliseconds(value));
+    },
+  },
+};
+
+const lastActivitySourceField: FieldDefinition = {
+  description:
+    'The signal that set lastActivity: "read", "note", "annotation", "added", or "use" for a Use on this device.',
+  shape: STRING,
+  valueForms: LAST_ACTIVITY_SOURCES,
+  needs: LAST_ACTIVITY_NEEDS,
+  read: (item) => lastActivity(item)?.source ?? null,
+  filter: {
+    type: "string",
+    read: (item) => lastActivity(item)?.source ?? null,
+  },
+};
+
+/** Fields that read the request's Uses, so only Item Query offers them. */
+export const ACTIVITY_FIELDS: ReadonlySet<string> = new Set([
+  "lastActivity",
+  "lastActivitySource",
+]);
+
 const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   string,
   FieldDefinition
@@ -532,6 +651,9 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   ],
   ["dateAdded", scanTimestamp("dateAdded")],
   ["dateModified", scanTimestamp("dateModified")],
+  ["lastRead", lastReadField],
+  ["lastActivity", lastActivityField],
+  ["lastActivitySource", lastActivitySourceField],
   ["library", libraryField],
   ["key", keyField],
   ["indexedKey", indexedKeyField],

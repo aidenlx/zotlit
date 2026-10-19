@@ -26,6 +26,7 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
+import type { UseLedger } from "@/services/use-ledger/service";
 import type { SearchHit as ReadsSearchHit } from "@/services/zotero-reads/rpc";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -48,6 +49,7 @@ export interface SearchHit extends ReadsSearchHit {
 }
 
 export interface ItemLookupDeps {
+  useLedger: Pick<UseLedger, "ready" | "uses">;
   reads: Pick<ZoteroReadsService, "ready">;
   libraryScope: Pick<LibraryScopeService, "ready" | "on" | "current">;
 }
@@ -73,12 +75,14 @@ interface ItemLookupReady {
 
 export class ItemLookup extends Service<ItemLookupReady> {
   readonly #reads;
+  readonly #useLedger;
   readonly #libraryScope;
   ready: Promise<ItemLookupReady>;
 
   constructor(deps: ItemLookupDeps) {
     super();
     this.#reads = deps.reads;
+    this.#useLedger = deps.useLedger;
     this.#libraryScope = deps.libraryScope;
     this.ready = this.#load();
   }
@@ -207,7 +211,11 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
     this.commit(stack.move());
 
-    await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
+    await Promise.all([
+      this.#reads.ready,
+      this.#libraryScope.ready,
+      this.#useLedger.ready,
+    ]);
     logger.info("Item lookup ready");
     scopeKey = scopeKeyOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);
@@ -232,6 +240,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
           libraryIDs: libraries.map((library) => library.libraryID),
           query,
           limit,
+          ...(query.trim() === "" ? { uses: this.#useLedger.uses } : {}),
         }),
       ),
       Effect.map((hits) => {

@@ -15,6 +15,7 @@ const VAULT = "/Users/me/Vault";
 
 const RESOLVED_PDF: AttachmentResolution = {
   kind: "resolved",
+  serverID: null,
   attachmentKey: "PDFSTR22",
   itemKey: "SAKIMA22",
   openable: true,
@@ -22,6 +23,7 @@ const RESOLVED_PDF: AttachmentResolution = {
 
 const RESOLVED_EPUB: AttachmentResolution = {
   kind: "resolved",
+  serverID: null,
   attachmentKey: "EPUBSTR2",
   itemKey: "SAKIMA22",
   openable: false,

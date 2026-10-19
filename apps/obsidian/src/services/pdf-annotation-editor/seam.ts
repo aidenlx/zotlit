@@ -240,6 +240,18 @@ export function onPageRendered(
   });
 }
 
+/** PDF.js emits pagechanging only when its current page number changes. */
+export function onPageChanged(
+  controller: PDFViewerController,
+  listener: () => void,
+): Disposable {
+  controller.on("pagechanging", listener);
+  return disposable(() => {
+    if (!viewerOpen(controller, "remove a page-change listener")) return;
+    controller.off("pagechanging", listener);
+  });
+}
+
 /**
  * The reader's right toolbar slot, which P10 guards, and `null` once the child
  * holding it unloaded — Obsidian nulls the toolbar there, and a binding

@@ -33,6 +33,8 @@ export interface TargetLibrary {
 }
 
 export interface ItemQueryRequest {
+  /** Last Uses by Indexed Key, as epoch milliseconds. Omitted: Zotero activity alone. */
+  readonly uses?: Readonly<Record<string, number>>;
   /**
    * The Target Libraries: each Library once, in any order. Their Items make
    * one result set. An empty list gives an empty Query Result; a Library that

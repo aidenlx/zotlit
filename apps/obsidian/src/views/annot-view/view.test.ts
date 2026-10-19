@@ -234,7 +234,7 @@ async function openSidebar(
       on: () => () => {},
     },
     pdfReaders: { on: () => () => {}, sessionForPath: () => null },
-    query: { run },
+    query: { run, on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
       capability: { kind: "writable" },

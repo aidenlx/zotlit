@@ -124,7 +124,7 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       facets: [],
       tags: [],
       search: "",
-      sort: [{ property: "dateModified", direction: "DESC" }],
+      sort: [{ property: "lastActivity", direction: "DESC" }],
       // The Reading Card opens with All fields and Annotations closed.
       card: { allFields: false, annotations: false },
       // No Collection open, and no paper selected.
@@ -273,11 +273,11 @@ describe("withNode", () => {
     });
   });
 
-  it("selects Recent with its sort, newest change first, and keeps the rest", () => {
+  it("selects Recent with its sort, newest activity first, and keeps the rest", () => {
     expect(withNode(CHAPTER, { kind: "recent" })).toEqual({
       ...CHAPTER,
       node: { kind: "recent" },
-      sort: [{ property: "dateModified", direction: "DESC" }],
+      sort: [{ property: "lastActivity", direction: "DESC" }],
       selected: null,
     });
   });
@@ -645,9 +645,9 @@ describe("libraryViewQuery — the Reading State facets", () => {
     expect(query.vault).toEqual(["has-literature-note"]);
   });
 
-  it("reads Unread as an Item with no Annotation, and no Literature Note in the vault", () => {
+  it("reads Unread as an Item with no Zotero read, Annotation, or Literature Note", () => {
     const { query, file, filter } = derive({ facets: ["unread"] });
-    expect(file.filters).toBe("annotations.isEmpty()");
+    expect(file.filters).toBe("annotations.isEmpty() && lastRead == null");
     expect(plans(filter)).toBe(true);
     expect(query.vault).toEqual(["no-literature-note"]);
   });
@@ -971,11 +971,11 @@ describe("libraryViewQueryFileText — Save as query file", () => {
     expect(selects(filter, seed("ABCD2345"))).toBe(false);
   });
 
-  it("writes Recent with no filter, as a Query File tab reads the Library Scope, newest change first", () => {
+  it("writes Recent with no filter, as a Query File tab reads the Library Scope, newest activity first", () => {
     const { file, view } = saved({ node: { kind: "recent" } });
     expect(file.filters).toBeUndefined();
     expect(view.sort).toEqual([
-      { property: "dateModified", direction: "DESC" },
+      { property: "lastActivity", direction: "DESC" },
     ]);
   });
 

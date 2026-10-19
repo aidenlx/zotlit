@@ -53,6 +53,7 @@ export const ITEM_QUERY_LAYOUT = {
   itemAttachments: [
     "itemID",
     "parentItemID",
+    "lastRead",
     "linkMode",
     "contentType",
     "path",

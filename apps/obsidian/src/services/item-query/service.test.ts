@@ -53,6 +53,7 @@ function setup(
   });
   const service = new QueryService({
     pluginVersion: "2.2.0-beta.2",
+    useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
     reads,
     zoteroPref: {
       sourceId: "captured-source",
@@ -847,6 +848,7 @@ describe("Item Query worker jobs", () => {
     failed.catch(() => {});
     const service = new QueryService({
       pluginVersion: "2.2.0-beta.2",
+      useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
       reads,
       zoteroPref: {
         sourceId: "captured-source",

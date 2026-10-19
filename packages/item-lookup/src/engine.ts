@@ -25,6 +25,12 @@ export interface ItemHit {
   matches: SearchMatches;
 }
 
+export interface SearchOptions {
+  limit: number;
+  /** Last Uses by Indexed Key, as epoch milliseconds; applies to empty queries. */
+  uses?: Readonly<Record<string, number>>;
+}
+
 export interface EngineIndexOptions {
   /**
    * Local `libraryID`s of every Library the index covers, in canonical order.
@@ -85,6 +91,7 @@ interface IndexedRecord {
   citationKey: string | null;
   /** Position in the global order; see {@link orderComparator}. */
   order: number;
+  lastActivity: number | null;
 }
 
 /**
@@ -95,8 +102,10 @@ export interface EngineIndex {
   readonly size: number;
   /** @internal */
   readonly mini: MiniSearch<IndexedSearchDocument>;
-  /** @internal Every record in global order. */
-  readonly ordered: readonly IndexedRecord[];
+  /** @internal Last Activity order for empty searches. */
+  readonly recent: readonly IndexedRecord[];
+  /** @internal */
+  readonly byKey: ReadonlyMap<string, IndexedRecord>;
   /** @internal */
   readonly byId: ReadonlyMap<number, IndexedRecord>;
   /** @internal The word splitter the index was built with, reused for queries. */
@@ -149,8 +158,8 @@ export const buildEngineIndex = <E, R>(
  * - Items whose citation key starts with the whole query come first, shortest
  *   key first.
  * - A bare Zotero key answers every Item holding that key.
- * - The empty query answers the global order: newest `dateModified` first,
- *   then canonical Library order, then item id. The same order breaks ties.
+ * - The empty query answers Last Activity order, including request Uses, with
+ *   Indexed Key text order for ties. Nonempty ties retain modification order.
  *
  * The lookup and the ranking are separate steps with a yield between them, so
  * an interrupt can end a search mid-query.
@@ -158,14 +167,15 @@ export const buildEngineIndex = <E, R>(
 export const searchEngineIndex = (
   index: EngineIndex,
   query: string,
-  limit: number,
+  { limit, uses }: SearchOptions,
 ): Effect.Effect<readonly ItemHit[]> =>
   Effect.gen(function* () {
     if (limit <= 0) return [];
     const lookup = lookupQuery(index, query, index.words);
-    if (lookup.kind !== "ranked") return finishLookup(index, lookup, limit);
+    if (lookup.kind !== "ranked")
+      return finishLookup(index, lookup, { limit, uses });
     yield* Effect.yieldNow;
-    return finishLookup(index, lookup, limit);
+    return finishLookup(index, lookup, { limit, uses });
   });
 
 // ---------------------------------------------------------------------------
@@ -207,6 +217,7 @@ function createCore(
                 ? normalize(item.citationKey)
                 : null,
               order: 0,
+              lastActivity: item.lastActivity,
             },
           });
           return toSearchDocument(item, languageLookup);
@@ -226,7 +237,8 @@ function createCore(
       return {
         size: ordered.length,
         mini,
-        ordered,
+        recent: ordered.toSorted(compareRecent),
+        byKey: new Map(ordered.map((record) => [record.indexedKey, record])),
         byId: new Map(ordered.map((record) => [record.itemID, record])),
         words,
       };
@@ -344,11 +356,13 @@ function lookupQuery(
 function finishLookup(
   index: EngineIndex,
   lookup: Lookup,
-  limit: number,
+  { limit, uses }: SearchOptions,
 ): ItemHit[] {
   switch (lookup.kind) {
     case "all":
-      return index.ordered.slice(0, limit).map((record) => hitOf(record, []));
+      return recentRecords(index, { limit, uses }).map((record) =>
+        hitOf(record, []),
+      );
     case "none":
       return [];
     case "key":
@@ -359,6 +373,34 @@ function finishLookup(
     case "ranked":
       return rankResults(index, lookup, limit);
   }
+}
+
+function compareRecent(a: IndexedRecord, b: IndexedRecord): number {
+  return (
+    (b.lastActivity ?? -Infinity) - (a.lastActivity ?? -Infinity) ||
+    (a.indexedKey < b.indexedKey ? -1 : a.indexedKey > b.indexedKey ? 1 : 0)
+  );
+}
+
+function recentRecords(
+  index: EngineIndex,
+  { limit, uses }: SearchOptions,
+): readonly IndexedRecord[] {
+  const candidates = new Map(
+    index.recent.slice(0, limit).map((record) => [record.indexedKey, record]),
+  );
+  // A Use can only raise activity, so only used Items can displace the baseline top results.
+  for (const [key, use] of Object.entries(uses ?? {})) {
+    const record = index.byKey.get(key);
+    if (
+      record &&
+      Number.isFinite(use) &&
+      (record.lastActivity === null || use > record.lastActivity)
+    ) {
+      candidates.set(key, { ...record, lastActivity: use });
+    }
+  }
+  return [...candidates.values()].sort(compareRecent).slice(0, limit);
 }
 
 interface RankedResult {

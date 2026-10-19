@@ -18,6 +18,7 @@ import type { AttachmentOpenLookupDeps } from "@/services/attachment-open/action
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
 import {
+  commitCitationInsert,
   padCitationInsert,
   resolveCitationInsert,
 } from "@/views/citation-suggest/editor-suggest";
@@ -34,7 +35,7 @@ const logger = getLogger(["library-view", "item-actions"]);
 
 export type ItemActionsDeps = NoteResultDeps &
   AttachmentOpenLookupDeps &
-  Pick<CitationSuggestDeps, "citationLookup"> & {
+  Pick<CitationSuggestDeps, "citationLookup" | "useLedger"> & {
     noteFeature: CitationSuggestDeps["noteFeature"];
     /** Show a short message to the researcher. */
     notify: (message: string) => void;
@@ -124,7 +125,12 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         deps.notify(outcome.message);
         return;
       }
-      insertion.commit(padCitationInsert(outcome.text, around).text);
+      commitCitationInsert(deps, {
+        indexedKey,
+        text: outcome.text,
+        insert: () =>
+          insertion.commit(padCitationInsert(outcome.text, around).text),
+      });
     },
     copyCitationKey: async (indexedKey) => {
       const item = await read(indexedKey);
@@ -135,10 +141,16 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         deps.notify(m.notice_no_citekey({ key: item.key }));
         return;
       }
-      await toast.promise(navigator.clipboard.writeText(citationKey), {
-        success: m.graph_citations_citekey_copied(),
-        error: m.graph_citations_citekey_copy_failed(),
-      });
+      try {
+        await toast.promise(navigator.clipboard.writeText(citationKey), {
+          success: m.graph_citations_citekey_copied(),
+          error: m.graph_citations_citekey_copy_failed(),
+          swallowError: false,
+        });
+      } catch {
+        return;
+      }
+      deps.useLedger.record(indexedKey, "cited");
     },
     showInZotero: (indexedKey) => {
       const parsed = parseIndexedKey(indexedKey);

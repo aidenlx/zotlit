@@ -29,6 +29,8 @@ export type AttachmentResolution =
   | {
       kind: "resolved";
       attachmentKey: string;
+      /** Identity of the database that resolved this file. */
+      serverID: string | null;
       /** The parent Item's Indexed Key; `null` for a standalone Attachment. */
       itemKey: string | null;
       /**
@@ -61,7 +63,7 @@ const PATH_INDEX_KEY = ["attachment-resolver", "path-index"] as const;
 type PathIndex = ReadonlyMap<string, AttachmentResolution>;
 
 export interface AttachmentResolverDeps {
-  reads: Pick<ZoteroReadsService, "ready" | "on">;
+  reads: Pick<ZoteroReadsService, "ready" | "on" | "acquireRead">;
   queries: Pick<
     QueryClientService,
     "client" | "ask" | "invalidate" | "peek" | "watch"
@@ -171,7 +173,11 @@ export class AttachmentResolver extends Service<void> {
   /** Builds the index into the held value; a failure keeps what it holds. */
   async #build(): Promise<void> {
     await this.#queries.ask<PathIndex>(PATH_INDEX_KEY, async ({ signal }) => {
-      const { reads } = await this.#reads.ready;
+      await using lease = await this.#reads.acquireRead();
+      const { reads } = lease;
+      const { serverID } = await Effect.runPromise(reads.DatabaseIdentity({}), {
+        signal,
+      });
       const slices = await Effect.runPromise(
         Stream.runCollect(reads.AttachmentPathIndex({})),
         { signal },
@@ -182,6 +188,7 @@ export class AttachmentResolver extends Service<void> {
         dataDir: this.#zoteroPref.dataDir,
         baseAttachmentPath: this.#zoteroPref.baseAttachmentPath,
         platform: this.#platform,
+        serverID,
       });
       if (collisions.length > 0) {
         logger.warn("Several Zotero attachments name one file", { collisions });
@@ -197,6 +204,7 @@ export class AttachmentResolver extends Service<void> {
 
 export interface PathIndexContext extends AttachmentPathContext {
   platform: NodeJS.Platform;
+  serverID?: string | null;
 }
 
 /** One file named by more than one Attachment, as the warning reports it. */
@@ -212,7 +220,7 @@ export type PathCollision = {
  */
 export function buildPathIndex(
   attachments: readonly AttachmentWithParentKey[],
-  { platform, ...pathContext }: PathIndexContext,
+  { platform, serverID = null, ...pathContext }: PathIndexContext,
 ): {
   index: ReadonlyMap<string, AttachmentResolution>;
   collisions: PathCollision[];
@@ -238,6 +246,7 @@ export function buildPathIndex(
     index.set(pathKey, {
       kind: "resolved",
       attachmentKey: chosen.indexedKey,
+      serverID,
       itemKey: chosen.parentIndexedKey,
       openable: isPdfAttachment(chosen.contentType, chosenPath),
     });

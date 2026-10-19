@@ -45,6 +45,7 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     },
   };
   await using query = new QueryService({
+    useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
     pluginVersion: "2.2.0",
     reads: service,
     zoteroPref: {

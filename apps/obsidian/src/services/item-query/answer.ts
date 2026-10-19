@@ -82,6 +82,7 @@ export type AnswerJob = QueryCommand & {
    * its available Libraries.
    */
   scope: LibraryScope;
+  uses?: Readonly<Record<string, number>>;
 };
 
 /** The environment of one answer inside its Query Job. */
@@ -218,6 +219,7 @@ function answerQuery(
   const operation = Effect.gen(function* () {
     const available = yield* targetLibraries(named, job.scope);
     const request: ItemQueryRequest = {
+      ...(job.uses ? { uses: job.uses } : {}),
       filter: decoded.filter,
       group: decoded.group,
       fields: decoded.fields,
@@ -265,6 +267,7 @@ function answerQuery(
 export type AnswerViewJob = QueryViewCommand & {
   /** The Library Scope in force: the default Target Libraries. */
   scope: LibraryScope;
+  uses?: Readonly<Record<string, number>>;
 };
 
 /**
@@ -285,6 +288,7 @@ export function answerView(
   return Effect.gen(function* () {
     const available = yield* targetLibraries(named, job.scope);
     const request: ItemQueryRequest = {
+      ...(job.uses ? { uses: job.uses } : {}),
       filter: view.filter,
       group: view.group,
       fields: view.fields,

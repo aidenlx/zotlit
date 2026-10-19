@@ -7,7 +7,7 @@ import {
 } from "@zotlit/db/test-scenario";
 
 import type { ItemQueryRequest } from ".";
-import { ATTACHMENTS, AttachmentFileResolver, collectQuery } from ".";
+import { ATTACHMENTS, ITEMS, AttachmentFileResolver, collectQuery } from ".";
 import { runEffect } from "./test-helpers";
 
 it("returns the files of one paper with Attachment defaults and parent identity", async () => {
@@ -560,4 +560,92 @@ it("groups and sorts Attachment file types in text order", async () => {
     ["pdf", 1],
     ["web", 1],
   ]);
+});
+
+it("projects Zotero lastRead seconds as instants and sorts never-read Attachments last", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .exec(`UPDATE itemAttachments SET lastRead = 1704067200 WHERE itemID = (SELECT itemID FROM items WHERE key = 'PDF2LIVE');
+    UPDATE itemAttachments SET lastRead = 1704153600 WHERE itemID = (SELECT itemID FROM items WHERE key = 'PDF2LINK')`);
+  for (const direction of ["asc", "desc"] as const) {
+    const { exit } = await runEffect(
+      collectQuery(ATTACHMENTS, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        fields: ["lastRead"],
+        sort: [{ field: "lastRead", direction }],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    const read = [
+      {
+        indexedKey: "PDF2LIVE",
+        itemIndexedKey: "ART2FULL",
+        values: { lastRead: "2024-01-01T00:00:00Z" },
+      },
+      {
+        indexedKey: "PDF2LINK",
+        itemIndexedKey: "ART2FULL",
+        values: { lastRead: "2024-01-02T00:00:00Z" },
+      },
+    ];
+    expect(JSON.parse(JSON.stringify(exit.value.rows))).toEqual([
+      ...(direction === "asc" ? read : read.toReversed()),
+      {
+        indexedKey: "URL2LIVE",
+        itemIndexedKey: "ART2FULL",
+        values: { lastRead: null },
+      },
+      {
+        indexedKey: "WEB2LIVE",
+        itemIndexedKey: "ART2FULL",
+        values: { lastRead: null },
+      },
+    ]);
+  }
+});
+
+it("filters lastRead instants and nulls on Attachments, Items, and group Attachment rows", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite.exec(
+    `UPDATE itemAttachments SET lastRead = 1704067200 WHERE itemID IN (SELECT itemID FROM items WHERE key IN ('PDF2LIVE', 'PDF2GRUP'))`,
+  );
+  for (const [dataset, keys] of [
+    [ATTACHMENTS, ["PDF2GRUPg4815", "PDF2LIVE"]],
+    [ITEMS, ["ART2FULL", "ART2FULLg4815"]],
+  ] as const) {
+    const { exit } = await runEffect(
+      collectQuery(dataset, {
+        libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+        fields: ["lastRead"],
+        filter: 'lastRead >= date("2024-01-01T00:00:00Z")',
+        sort: [],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    expect(exit.value.rows!.map((row) => row.indexedKey)).toEqual(keys);
+    expect(
+      JSON.parse(
+        JSON.stringify(exit.value.rows!.map((row) => row.values.lastRead)),
+      ),
+    ).toEqual(["2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"]);
+    const unread = await runEffect(
+      collectQuery(dataset, {
+        libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
+        fields: ["lastRead"],
+        filter: "lastRead == null",
+        sort: [],
+      }),
+      { client: scenario.db },
+    );
+    if (unread.exit._tag === "Failure")
+      throw new Error(String(unread.exit.cause));
+    expect(unread.exit.value.rows!.length).toBeGreaterThan(0);
+    for (const row of unread.exit.value.rows!)
+      expect(row.values.lastRead).toBeNull();
+    expect(unread.exit.value.rows!.map((row) => row.indexedKey)).not.toEqual(
+      expect.arrayContaining([...keys]),
+    );
+  }
 });

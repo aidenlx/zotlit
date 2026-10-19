@@ -22,12 +22,14 @@ const alpha = item({
   itemID: 1,
   title: "Alpha transit memo",
   dateModified: "2024-01-01T00:00:00Z",
+  lastActivity: 1704067200000,
 });
 const beta = item({
   key: "BETA",
   itemID: 2,
   title: "Beta transit report",
   dateModified: "2025-01-01T00:00:00Z",
+  lastActivity: 1735689600000,
 });
 const gamma = item({
   key: "GAMMA",
@@ -35,6 +37,7 @@ const gamma = item({
   libraryID: GROUP_LIBRARY_ID,
   title: "Gamma river survey",
   dateModified: "2023-01-01T00:00:00Z",
+  lastActivity: 1672531200000,
 });
 
 const delta = item({
@@ -42,6 +45,7 @@ const delta = item({
   itemID: 4,
   title: "Delta transit notes",
   dateModified: "2026-01-01T00:00:00Z",
+  lastActivity: 1767225600000,
 });
 
 // `Intl.Segmenter` keeps `长江流域` whole; jieba's `cut_for_search` adds
@@ -51,6 +55,7 @@ const chinese = item({
   itemID: 9,
   title: "长江流域的城市化研究",
   dateModified: "2022-01-01T00:00:00Z",
+  lastActivity: 1640995200000,
 });
 const JIEBA_ONLY = "流域";
 const WHOLE_RUN = "长江流域";
@@ -137,10 +142,10 @@ function withIndex<A>(
       source,
       reader,
       search: (libraries, query) =>
-        search(libraries, query, 50).pipe(
+        search(libraries, query, { limit: 50 }).pipe(
           Effect.map((hits) => hits.map((hit) => hit.item.indexedKey)),
         ),
-      hits: (libraries, query) => search(libraries, query, 50),
+      hits: (libraries, query) => search(libraries, query, { limit: 50 }),
       configure,
     });
   }).pipe(
@@ -346,6 +351,7 @@ describe("Item Index", () => {
       itemID: 5,
       title: "Epsilon transit atlas",
       dateModified: "2027-01-01T00:00:00Z",
+      lastActivity: 1798761600000,
     });
     const answer = await withIndex(
       ({ source, search }) =>
@@ -430,6 +436,7 @@ describe("Item Index", () => {
       itemID: 2,
       title: "Beta transit summary",
       dateModified: "2025-01-01T00:00:00Z",
+      lastActivity: 1735689600000,
     });
     const result = await withIndex(({ source, hits }) =>
       Effect.gen(function* () {

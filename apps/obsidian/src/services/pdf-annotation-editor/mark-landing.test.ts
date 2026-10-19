@@ -9,6 +9,7 @@ import type { PdfPageAnnotation } from "./render";
 
 const RESOLVED: AttachmentResolution = {
   kind: "resolved",
+  serverID: null,
   attachmentKey: "RGRPDF24",
   itemKey: "SAKIMA22",
   openable: true,
