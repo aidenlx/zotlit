@@ -12,6 +12,7 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
@@ -244,6 +245,8 @@ export function TableHeader({
 }) {
   const columns = properties.visible;
   const editable = view.canSave;
+  // A host that keeps no column widths offers no resize.
+  const resizable = editable && view.can.columnWidth;
   // A vault column's icon follows the values its notes hold.
   const { literatureNotes } = view.tableDeps;
   useVaultVersion(literatureNotes);
@@ -359,107 +362,41 @@ export function TableHeader({
     event.stopPropagation();
     const handle = event.currentTarget;
     const th = handle.closest("th")!;
-    const { doc, win } = th;
-    const controller = begin();
-    const { signal } = controller;
     const before = {
       sized: th.dataset.sized,
       width: th.style.getPropertyValue(COLUMN_WIDTH),
     };
     const start = th.getBoundingClientRect().width;
-    const origin = event.clientX;
     const min = minColumnWidth(th);
     const direction = isRTL(th) ? "rtl" : "ltr";
-    let width = Math.max(min, Math.round(start));
-    let changed = false;
+    const widthAt = (delta: number) =>
+      resizedWidth({ start, delta, direction, min });
     let saved = false;
-    let frame = 0;
-    const { pointerId } = event;
-    const options = { capture: true, signal };
-    // The window follows the pointer; capture keeps it past the window's edge.
-    try {
-      handle.setPointerCapture(pointerId);
-    } catch {
-      // A pointer the browser does not track, as a test sends, has no capture.
-    }
-    handle.classList.add("is-active");
-    doc.body.classList.add(RESIZING);
-    signal.addEventListener(
-      "abort",
-      () => {
-        win.cancelAnimationFrame(frame);
-        handle.classList.remove("is-active");
-        doc.body.classList.remove(RESIZING);
-        if (handle.hasPointerCapture(pointerId))
-          handle.releasePointerCapture(pointerId);
+    pointerDrag({
+      press: event,
+      handle,
+      cursor: RESIZING,
+      controller: begin(),
+      move: (delta) => showWidth(th, widthAt(delta)),
+      drop: (delta) => {
+        const width = widthAt(delta);
+        saved = true;
+        swallowClick(th.win);
+        showWidth(th, width);
+        // The widths as the view holds them now, which a save can change
+        // while the drag is on.
+        const current = view.state.getState().view?.columnSize;
+        if (current?.[path] !== width)
+          view.document.editView({
+            columnSize: withColumnWidth(current, path, width),
+          });
+      },
+      end: () => {
         if (saved) return;
         if (before.sized === undefined) markSized(th, false);
         th.style.setProperty(COLUMN_WIDTH, before.width);
       },
-      { once: true },
-    );
-    const end = () => controller.abort();
-    const mine = (pointer: globalThis.PointerEvent) =>
-      pointer.pointerId === pointerId;
-    win.addEventListener(
-      "pointermove",
-      (move) => {
-        if (!mine(move)) return;
-        if (move.clientX !== origin) changed = true;
-        if (!changed) return;
-        width = resizedWidth({
-          start,
-          delta: move.clientX - origin,
-          direction,
-          min,
-        });
-        if (frame) return;
-        frame = win.requestAnimationFrame(() => {
-          frame = 0;
-          showWidth(th, width);
-        });
-      },
-      options,
-    );
-    win.addEventListener(
-      "pointerup",
-      (up) => {
-        if (!mine(up)) return;
-        // A press that does not move, as half of a double click, sets nothing.
-        if (changed) {
-          saved = true;
-          swallowClick(win);
-          win.cancelAnimationFrame(frame);
-          showWidth(th, width);
-          // The widths as the view holds them now, which a save can change
-          // while the drag is on.
-          const current = view.state.getState().view?.columnSize;
-          if (current?.[path] !== width)
-            view.document.editView({
-              columnSize: withColumnWidth(current, path, width),
-            });
-        }
-        end();
-      },
-      options,
-    );
-    win.addEventListener(
-      "pointercancel",
-      (cancel) => {
-        if (mine(cancel)) end();
-      },
-      options,
-    );
-    win.addEventListener(
-      "keydown",
-      (key) => {
-        if (key.key !== "Escape") return;
-        key.preventDefault();
-        key.stopPropagation();
-        end();
-      },
-      options,
-    );
+    });
   };
 
   const resetColumn = (path: string) => {
@@ -493,7 +430,7 @@ export function TableHeader({
     const toEnd = at < 0 || at >= columns.length - 1;
     // Left and right as the researcher sees them, in either direction.
     const rtl = isRTL(th);
-    new Menu()
+    const menu = new Menu()
       .addItem((item) =>
         item
           .setTitle(m.query_view_table_move_column_left())
@@ -507,17 +444,16 @@ export function TableHeader({
           .setIcon("lucide-arrow-right")
           .setDisabled(rtl ? toStart : toEnd)
           .onClick(() => stepColumn(path, rtl ? -1 : 1)),
-      )
-      .addSeparator()
-      .addItem((item) =>
+      );
+    if (view.can.columnWidth)
+      menu.addSeparator().addItem((item) =>
         item
           .setTitle(m.query_view_table_reset_column_width())
           .setIcon("lucide-rotate-ccw")
           .setDisabled(sizes?.[path] === undefined)
           .onClick(() => resetColumn(path)),
-      )
-      .setParentElement(th)
-      .showAtMouseEvent(event.nativeEvent);
+      );
+    menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 
   const { gutter, cell, first, later } = classes;
@@ -566,7 +502,7 @@ export function TableHeader({
                   <Icon
                     name={icon}
                     data-query-icon={icon}
-                    size="var(--icon-xs)"
+                    size="xs"
                     className={cn(
                       "zt:flex zt:shrink-0",
                       editable && "zt:group-hover/column:hidden",
@@ -575,7 +511,7 @@ export function TableHeader({
                   {editable && (
                     <Icon
                       name="lucide-grip-vertical"
-                      size="var(--icon-xs)"
+                      size="xs"
                       className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                     />
                   )}
@@ -588,14 +524,13 @@ export function TableHeader({
                 >
                   <Icon
                     name="alert-triangle"
-                    size="var(--icon-xs)"
-                    strokeWidth="var(--icon-xs-stroke-width)"
+                    size="xs"
                     className="zt:shrink-0"
                   />
                   <span className="zt:truncate">{headerLabel(property)}</span>
                 </span>
               )}
-              {editable && (
+              {resizable && (
                 <span
                   className={RESIZER}
                   data-query-column-resizer={property.path}

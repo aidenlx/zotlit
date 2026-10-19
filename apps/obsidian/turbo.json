@@ -25,7 +25,8 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
-        "$TURBO_ROOT$/messages/**"
+        "$TURBO_ROOT$/messages/**",
+        "$TURBO_ROOT$/assets/logo/**"
       ]
     },
     "build:dev": {
@@ -42,7 +43,8 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
-        "$TURBO_ROOT$/messages/**"
+        "$TURBO_ROOT$/messages/**",
+        "$TURBO_ROOT$/assets/logo/**"
       ]
     },
     "dev": {
@@ -62,7 +64,8 @@
       "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
     },
     "test": {
-      "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/assets/logo/**"]
     }
   }
 }

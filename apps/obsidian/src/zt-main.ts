@@ -74,6 +74,8 @@ import {
 } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
+import { itemActions } from "./views/library/item-actions";
+import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
@@ -99,6 +101,7 @@ import {
   registerTemplateWorkbenchView,
 } from "./views/template-workbench/register";
 import { registerWelcomeView } from "./views/welcome/register";
+import { createSetupActions } from "./views/welcome/setup-actions";
 import "./zt-main.css";
 
 function showInstallerUpdateNotice(): BaseNotice {
@@ -425,6 +428,7 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       settings: services.settings,
       zoteroPref: services.zoteroPref,
+      showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
     });
 
     void stack.use(
@@ -492,6 +496,39 @@ export default class ZotLitPlugin extends Plugin {
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
+    registerLibraryView(this, {
+      ...queryViewDeps,
+      libraryScope: services.libraryScope,
+      settings: services.settings,
+      welcome: {
+        app: this.app,
+        reads: services.zoteroReads,
+        queries: services.queryClient,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        setupActions: createSetupActions({
+          app: this.app,
+          settings: services.settings,
+          zoteroPref: services.zoteroPref,
+          pluginId: this.manifest.id,
+        }),
+        templateMigration: services.templateMigration,
+        release: services.release,
+      },
+      items: itemActions({
+        app: this.app,
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+        reads: services.zoteroReads,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        citationLookup: services.citationLookup,
+        notify: (message) => new BaseNotice(message),
+      }),
+      lookup: services.itemLookup,
+    });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
     // View each step the Attachment they show, and a Query View the
@@ -675,14 +712,9 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     registerWelcomeView(this, {
-      app: this.app,
       reads: services.zoteroReads,
       queries: services.queryClient,
-      zoteroPref: services.zoteroPref,
-      noteIndex: services.noteIndex,
       settings: services.settings,
-      templateMigration: services.templateMigration,
-      release: services.release,
     });
 
     stack.defer(
@@ -748,6 +780,10 @@ export default class ZotLitPlugin extends Plugin {
   }
 
   override onunload(): void {
+    // Start the last settings write now rather than at the end of disposal, so
+    // an instance enabled straight after reads it; a view that saves as it
+    // closes after this hands its write on the same way.
+    this.#services?.settings.release();
     // Drop the service bag before async disposal so late callers fail clearly.
     this.#services = undefined;
 

@@ -107,7 +107,9 @@ type ServiceErrorHandler = (key: string, error: ServiceInitError) => void;
  *
  * Each `use()` call accepts exactly one keyed factory. The factory receives the
  * services registered so far, and the returned service is moved into the owning
- * `AsyncDisposableStack`. Factory throws and startup failures are wrapped in
+ * `AsyncDisposableStack`, so services dispose one at a time, newest first: an
+ * older service stays usable while a newer one tears down, and a slow teardown
+ * delays every older one. Factory throws and startup failures are wrapped in
  * `ServiceInitError` (original error preserved as `cause`); the wrapped
  * rejection — not the original — is what dependents awaiting `ready` observe.
  * `ready` failures are reported through the provided error handler in addition

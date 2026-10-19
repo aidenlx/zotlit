@@ -152,7 +152,7 @@ describe("decideRelease", () => {
         noticesEnabled: true,
       }),
     );
-    expect(decision.branch).toBe("update-notice");
+    expect(decision.branch).toBe("update");
     expect(decision.setMigrationPending).toBe(false);
   });
 
@@ -167,7 +167,7 @@ describe("decideRelease", () => {
     const decision = decideRelease(
       input({ recordedVersion: "2.0.0-alpha.5", noticesEnabled: true }),
     );
-    expect(decision.branch).toBe("update-notice");
+    expect(decision.branch).toBe("update");
   });
 
   it("strict version increase with notices off → nothing (still records)", () => {
@@ -196,7 +196,7 @@ describe("decideRelease", () => {
     const decision = decideRelease(
       input({ recordedVersion: "2.1.0", currentVersion: "2.1.1" }),
     );
-    expect(decision.branch).toBe("update-notice");
+    expect(decision.branch).toBe("update");
   });
 
   it("pre-release increase → update notice", () => {
@@ -206,7 +206,7 @@ describe("decideRelease", () => {
         currentVersion: "2.0.0-alpha.6",
       }),
     );
-    expect(decision.branch).toBe("update-notice");
+    expect(decision.branch).toBe("update");
   });
 
   it("equal version → nothing", () => {
@@ -234,5 +234,53 @@ describe("decideRelease", () => {
       input({ origin: "current", recordedVersion: "not-a-semver" }),
     );
     expect(decision.branch).toBe("none");
+  });
+
+  describe("the pending update the banner announces", () => {
+    it("an upgrade with notices on marks the update pending", () => {
+      const decision = decideRelease(
+        input({ recordedVersion: "2.1.0", currentVersion: "2.1.1" }),
+      );
+      expect(decision.branch).toBe("update");
+      expect(decision.setUpdatePending).toBe(true);
+    });
+
+    it.each<[string, Partial<ReleaseCheckInput>]>([
+      ["a fresh install", { origin: "absent", recordedVersion: null }],
+      ["an upgrade from v1", { origin: "legacy", recordedVersion: null }],
+      [
+        "a downgrade",
+        {
+          recordedVersion: "2.1.1",
+          currentVersion: "2.1.0",
+        },
+      ],
+      [
+        "an upgrade with notices off",
+        {
+          recordedVersion: "2.1.0",
+          currentVersion: "2.1.1",
+          noticesEnabled: false,
+        },
+      ],
+      [
+        "an upgrade the Companion notice announces",
+        {
+          recordedVersion: "2.0.1",
+          currentVersion: "2.1.0",
+        },
+      ],
+      ["data with no recorded version", { recordedVersion: null }],
+    ])("%s marks no update pending", (_, state) => {
+      const decision = decideRelease(input(state));
+      expect(decision.branch).not.toBe("update");
+      expect(decision.setUpdatePending ?? false).toBe(false);
+    });
+
+    it("a relaunch on the same version keeps an update not yet seen", () => {
+      const decision = decideRelease(input({ recordedVersion: CURRENT }));
+      expect(decision.branch).toBe("none");
+      expect(decision.setUpdatePending).toBeUndefined();
+    });
   });
 });

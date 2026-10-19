@@ -98,6 +98,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
               literatureNotes.propertyType(name),
             )
           }
+          pages={view.can.propertyPages}
           vaults={dataset === "items"}
         />
         <Chooser.Page>
@@ -134,6 +135,7 @@ function PropertyList({
   order,
   setOrder,
   iconOf,
+  pages,
   vaults,
 }: {
   /** The Properties of the view, the visible ones first. */
@@ -142,6 +144,11 @@ function PropertyList({
   setOrder: (next: readonly string[]) => void;
   /** The type icon of a property. */
   iconOf: (entry: PropertyEntry) => string;
+  /**
+   * Whether a property opens its page, and a new Formula its own: not where
+   * the host keeps no Display Name and no Formula.
+   */
+  pages: boolean;
   /** Whether the view can show vault properties: a view of Items. */
   vaults: boolean;
 }) {
@@ -191,7 +198,7 @@ function PropertyList({
       (entry): ChooserRow => ({
         ...propertyRow(entry),
         // The right arrow opens the property's page.
-        next: () => openPage(entry.path),
+        ...(pages && { next: () => openPage(entry.path) }),
       }),
     );
     const actions: ChooserRow[] = [];
@@ -219,23 +226,22 @@ function PropertyList({
         label: m.query_view_properties_add_vault({ name: query }),
         action: () => setOrder([...order, vault]),
       });
-    actions.push(
-      {
+    if (pages)
+      actions.push({
         value: "zt:add-formula",
         label: m.query_view_formula_add(),
         action: () => openPage(NEW_FORMULA_PAGE),
+      });
+    actions.push({
+      value: "zt:hide-all",
+      label: m.query_view_properties_hide_all(),
+      action: () => {
+        setOrder([]);
+        resort();
       },
-      {
-        value: "zt:hide-all",
-        label: m.query_view_properties_hide_all(),
-        action: () => {
-          setOrder([]);
-          resort();
-        },
-      },
-    );
+    });
     return [{ items }, { items: actions, pinned: true }];
-  }, [rows, byPath, order, query, setOrder, openPage, vaults]);
+  }, [rows, byPath, order, query, setOrder, openPage, pages, vaults]);
 
   // Alt with an up or down arrow moves the highlighted visible property one
   // place in the order, as in the Bases Properties menu.
@@ -341,20 +347,22 @@ function PropertyList({
               </>
             }
             end={
-              <button
-                type="button"
-                tabIndex={-1}
-                className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
-                data-query-property-more={row.value}
-                {...tooltipAttrs(m.query_view_property_edit())}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openPage(entry.path);
-                }}
-              >
-                <RowIcon name="chevron-right" />
-              </button>
+              pages && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className={cn(chooserIconButton, "zt:-m-(--size-2-2)")}
+                  data-query-property-more={row.value}
+                  {...tooltipAttrs(m.query_view_property_edit())}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openPage(entry.path);
+                  }}
+                >
+                  <RowIcon name="chevron-right" />
+                </button>
+              )
             }
           >
             <span data-query-property-name="">{entry.label}</span>
@@ -370,14 +378,7 @@ function PropertyList({
 
 /** An icon of a row, at the size Obsidian draws a menu icon. */
 function RowIcon({ name, className }: { name: IconName; className?: string }) {
-  return (
-    <Icon
-      name={name}
-      size="var(--icon-s)"
-      strokeWidth="var(--icon-s-stroke-width)"
-      className={cn("zt:shrink-0", className)}
-    />
-  );
+  return <Icon name={name} size="s" className={cn("zt:shrink-0", className)} />;
 }
 
 /**

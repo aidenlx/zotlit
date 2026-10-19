@@ -283,8 +283,7 @@ function SelectBody({
         </span>
         <Icon
           name="chevrons-up-down"
-          size="var(--icon-xs)"
-          strokeWidth="var(--icon-xs-stroke-width)"
+          size="xs"
           className="zt:shrink-0 zt:text-(--icon-color)"
         />
       </Chooser.Trigger>
@@ -337,8 +336,7 @@ function SelectBody({
                   )}
                   <Icon
                     name="check"
-                    size="var(--icon-xs)"
-                    strokeWidth="var(--icon-xs-stroke-width)"
+                    size="xs"
                     className="zt:invisible zt:shrink-0 zt:group-aria-selected:visible"
                   />
                 </>

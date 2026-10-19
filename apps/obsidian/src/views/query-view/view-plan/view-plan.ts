@@ -12,8 +12,10 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import { grouping } from "@/views/query-view/datasets";
 import { layoutOf } from "@/views/query-view/layouts";
+import { PAPERS_FIELDS } from "@/views/query-view/papers-layout";
 import { isVaultProperty } from "@/views/query-view/query-file";
 import type {
   FilterLocation,
@@ -52,6 +54,11 @@ export interface ViewPlanNotes {
 export interface ViewPlanSources {
   /** The Query Context `this` reads; `undefined` where it has no value. */
   context(): QueryContext | undefined;
+  /**
+   * The Libraries the query reads, as the Library View gives its selected
+   * Library; absent or `undefined`: the Library Scope in force.
+   */
+  libraries?(): LibraryScope | undefined;
   /** The note that holds the view and the Item it names; `null` elsewhere. */
   host(): VaultHost | null;
   notes: ViewPlanNotes;
@@ -139,12 +146,13 @@ export class ViewPlanner {
     const fields = [
       ...new Set([
         ...(grouped?.fields ?? []),
-        ...(layoutOf(view)?.type === "table" ? TABLE_FIELDS : []),
+        ...layoutFields(view),
         ...viewProperties(file, view).queried.map(({ path }) => path),
       ]),
     ];
     const formulas = file.formulas ?? {};
     const context = this.#sources.context();
+    const libraries = this.#sources.libraries?.();
     const request: QueryViewRequest = {
       from: view.from ?? "annotations",
       ...(engine && { filter: engine.text }),
@@ -157,6 +165,7 @@ export class ViewPlanner {
       fields,
       ...(Object.keys(formulas).length > 0 && { formulas }),
       limit: view.limit ?? null,
+      ...(libraries && { libraries }),
       ...(context && { context }),
     };
     const planned = vaultSort.length > 0 ? vaultSortRequest(request) : request;
@@ -223,5 +232,17 @@ export class ViewPlanner {
     });
     this.#vaultFilter = { key, filter };
     return filter;
+  }
+}
+
+/** The paths the view's Layout reads from each row beside the visible properties. */
+function layoutFields(view: QueryFileView): readonly string[] {
+  switch (layoutOf(view)?.type) {
+    case "table":
+      return TABLE_FIELDS;
+    case "papers":
+      return PAPERS_FIELDS;
+    default:
+      return [];
   }
 }

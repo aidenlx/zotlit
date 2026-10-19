@@ -436,8 +436,11 @@ export class WorkspaceLeaf {
 export class ItemView {
   readonly contentEl: HTMLElement;
   readonly titleEl: HTMLElement;
+  /** The leaf's App, as Obsidian's `View` keeps it. */
+  app: App;
 
   constructor(readonly leaf: ObsidianWorkspaceLeaf) {
+    this.app = Reflect.get(leaf, "app") as App;
     if (typeof Reflect.get(leaf, "updateHeader") !== "function")
       leaf.updateHeader = () => {};
     const content = globalThis.document?.createElement("div");
@@ -871,6 +874,12 @@ export abstract class AbstractInputSuggest<T> {
     this.#shown = false;
     this.suggestEl.remove();
     window.removeEventListener("keydown", this.#onKey, true);
+  }
+
+  onSelect(
+    _callback: (value: T, event: MouseEvent | KeyboardEvent) => unknown,
+  ): this {
+    return this;
   }
 
   protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
@@ -1537,6 +1546,10 @@ function inputElStub(): HTMLInputElement {
     removeEventListener: () => {},
     focus: () => {},
     select: () => {},
+    attributes: {} as Record<string, string>,
+    setAttr: (name: string, value: string) => {
+      input.attributes[name] = value;
+    },
   };
   return input as unknown as HTMLInputElement;
 }

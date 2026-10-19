@@ -259,9 +259,10 @@ export class CitationText extends Service<void> {
     // Renaming or creating a Literature Note is a cross-document input: which
     // Literature Note a wikilink resolves to decides what a citekey here
     // reaches. The Note Index reports every moved mapping as `changed`, and
-    // its one Full Scan per session is silent, so nothing here flushes text
-    // wholesale.
+    // its one Full Scan per session as `indexed`, which a reader of the
+    // index before the scan reads again.
     stack.defer(this.#noteIndex.on("changed", () => this.#invalidate()));
+    stack.defer(this.#noteIndex.on("indexed", () => this.#invalidate()));
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.

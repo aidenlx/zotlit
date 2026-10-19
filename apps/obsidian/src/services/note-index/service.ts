@@ -29,6 +29,20 @@ export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 
 const logger = getLogger("note-index");
 
+/** The metadata cache holds no entry for the file's path yet. */
+const UNREAD = Symbol("unread");
+/**
+ * What the metadata cache holds for a file: its Indexed Keys, and its
+ * frontmatter serialized, `null` for a file that is gone or not Markdown.
+ */
+interface Read {
+  contributions: FileContributions;
+  frontmatter: string | null;
+}
+/** A file that is gone or not Markdown: no keys, no frontmatter. */
+const NONE: Read = { contributions: EMPTY_CONTRIBUTIONS, frontmatter: null };
+type Reading = Read | typeof UNREAD;
+
 interface NoteIndexEvents {
   /** A note's Indexed Key contribution changed: it was added, moved or removed. */
   changed: (file: TFile) => void;
@@ -213,45 +227,47 @@ export class NoteIndex extends Service<void> {
     stack.use(
       registerEvent(
         metadataCache.on("changed", (file, _data, cache) => {
-          if (!isMarkdownFile(file)) return;
-          const before = this.#frontmatterByFile.get(file);
-          this.#applyFile(file, cache);
-          this.#applyFrontmatter(file, before, cache);
+          if (isMarkdownFile(file)) this.#apply(file, this.#readCache(cache));
         }),
       ),
     );
     stack.use(
       registerEvent(
         metadataCache.on("deleted", (file) => {
-          this.#applyFile(file, null);
-          this.#frontmatterByFile.delete(file);
+          this.#apply(file, NONE);
         }),
       ),
     );
     stack.use(
       registerEvent(
         vault.on("delete", (file) => {
-          if (!isMarkdownFile(file)) return;
-          this.#applyFile(file, null);
-          this.#frontmatterByFile.delete(file);
+          if (isMarkdownFile(file)) this.#apply(file, NONE);
         }),
       ),
     );
-    // The metadata cache fires neither `changed` nor `deleted` on rename: it
-    // rekeys its entries by path and mutates the `TFile` in place, so the maps
-    // here already hold the renamed file. Consumers still see a moved mapping,
-    // since the link target path changed under them.
+    // A rename changes the file's identity, not its content. Obsidian moves the
+    // same `TFile` to the new path in place, so the maps here already hold the
+    // renamed file; consumers still hear the moved mapping, since the link
+    // target path changed under them. The metadata cache follows a rename as
+    // one more vault `rename` listener, in registration order, and only
+    // rekeys its entry: it fires no `changed`. It subscribes when its initial
+    // load is done, so a plugin loaded during startup hears the rename before
+    // the cache rekeys, and `getFileCache` has nothing for the new path yet
+    // (Obsidian 1.14.4). The vault calls its listeners synchronously, so the
+    // file is read once that dispatch is over.
     stack.use(
       registerEvent(
         vault.on("rename", (file) => {
           if (!(file instanceof TFile)) return;
-          const cache = isMarkdownFile(file)
-            ? metadataCache.getFileCache(file)
-            : null;
-          const applied = this.#applyFile(file, cache);
-          if (!applied && this.#contribByFile.has(file)) {
-            this.#emitter.emit("changed", file);
+          if (!isMarkdownFile(file)) {
+            this.#apply(file, NONE);
+            return;
           }
+          if (this.#contribByFile.has(file))
+            this.#emitter.emit("changed", file);
+          queueMicrotask(() => {
+            if (!this.#disposed) this.#apply(file, this.#read(file));
+          });
         }),
       ),
     );
@@ -312,56 +328,83 @@ export class NoteIndex extends Service<void> {
   }
 
   /**
-   * Applies the file's contribution diff and reports it as `changed`.
-   * @returns false when nothing moved, so no `changed` went out.
+   * What the metadata cache holds for the file now: its contributions, or
+   * {@link UNREAD} while the cache has no entry for its path. A non-Markdown
+   * file contributes nothing.
    */
-  #applyFile(file: TFile, cache: CachedMetadata | null): boolean {
-    const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
-    const next = cache ? fileContributions(cache) : EMPTY_CONTRIBUTIONS;
-    const diff = diffContributions(prev, next);
-    if (diff.empty) return false;
+  #read(file: TFile): Reading {
+    if (!isMarkdownFile(file)) return NONE;
+    const cache = this.#app.metadataCache.getFileCache(file);
+    return cache ? this.#readCache(cache) : UNREAD;
+  }
 
-    this.#applyDiff(file, diff);
-    if (hasContributions(next)) {
-      this.#contribByFile.set(file, next);
-    } else {
-      this.#contribByFile.delete(file);
-    }
-    this.#emitter.emit("changed", file);
-    return true;
+  /** What a Markdown file's cache entry, as the cache hands it over, holds. */
+  #readCache(cache: CachedMetadata): Read {
+    return {
+      contributions: fileContributions(cache),
+      frontmatter: serializeFrontmatter(cache),
+    };
   }
 
   /**
-   * Keeps the frontmatter of a tracked file, and reports an edit of it as
-   * `frontmatter-changed`. `before` is its frontmatter as last seen, while
-   * it was tracked.
+   * Settles the file to `reading`, and reports a move of its keys as
+   * `changed`, then an edit of its frontmatter as `frontmatter-changed`.
    */
-  #applyFrontmatter(
+  #apply(file: TFile, reading: Reading): void {
+    const settled = this.#settle(file, reading);
+    if (settled.moved) this.#emitter.emit("changed", file);
+    if (settled.frontmatter) this.#emitter.emit("frontmatter-changed", file);
+  }
+
+  /**
+   * The one step that changes the index: the file's keys, and the
+   * frontmatter of a tracked file as last seen. An {@link UNREAD} file keeps
+   * what the index holds for it, and the cache's next `changed` or `deleted`
+   * settles it.
+   * @returns whether the keys moved, and whether the frontmatter of a note
+   * the index tracks, or tracked until now, changed; a file that is gone
+   * reports no frontmatter edit.
+   */
+  #settle(
     file: TFile,
-    before: string | undefined,
-    cache: CachedMetadata | null,
-  ): void {
+    reading: Reading,
+  ): { moved: boolean; frontmatter: boolean } {
+    if (reading === UNREAD) return { moved: false, frontmatter: false };
+    const prev = this.#contribByFile.get(file) ?? EMPTY_CONTRIBUTIONS;
+    const diff = diffContributions(prev, reading.contributions);
+    if (!diff.empty) {
+      this.#applyDiff(file, diff);
+      if (hasContributions(reading.contributions)) {
+        this.#contribByFile.set(file, reading.contributions);
+      } else {
+        this.#contribByFile.delete(file);
+      }
+    }
+
+    const before = this.#frontmatterByFile.get(file);
+    const after = reading.frontmatter;
     const tracked = this.#contribByFile.has(file);
-    const after = serializeFrontmatter(cache);
-    if (tracked) this.#frontmatterByFile.set(file, after);
+    if (tracked && after !== null) this.#frontmatterByFile.set(file, after);
     else this.#frontmatterByFile.delete(file);
-    if ((tracked || before !== undefined) && before !== after)
-      this.#emitter.emit("frontmatter-changed", file);
+    return {
+      moved: !diff.empty,
+      frontmatter:
+        after !== null && (tracked || before !== undefined) && before !== after,
+    };
   }
 
   /**
-   * Reported as one `indexed`, not a `changed` for each note: every later
-   * mapping change arrives as `changed`.
+   * Reads every note at once, then says `indexed`: a consumer that read the
+   * index before the scan reads it again. It says no `changed` for each note;
+   * every later change arrives as `changed` or `frontmatter-changed` for its
+   * file.
    */
   #fullScan(): void {
     if (this.#disposed) return;
     this.#clear();
 
     for (const file of this.#app.vault.getMarkdownFiles()) {
-      const cache = this.#app.metadataCache.getFileCache(file);
-      if (!cache) continue;
-      const contributions = fileContributions(cache);
-      this.#insertContributions(file, contributions);
+      this.#settle(file, this.#read(file));
     }
 
     logger.debug("Note index scanned", { count: this.#contribByFile.size });
@@ -383,22 +426,6 @@ export class NoteIndex extends Service<void> {
     if (diff.noteKey.add) {
       addIndexedFile(this.#notesByNoteKey, diff.noteKey.add, file);
     }
-  }
-
-  #insertContributions(file: TFile, contributions: FileContributions): void {
-    if (!hasContributions(contributions)) return;
-
-    if (contributions.itemKey) {
-      addIndexedFile(this.#notesByItemKey, contributions.itemKey, file);
-    }
-    if (contributions.noteKey) {
-      addIndexedFile(this.#notesByNoteKey, contributions.noteKey, file);
-    }
-    this.#contribByFile.set(file, contributions);
-    this.#frontmatterByFile.set(
-      file,
-      serializeFrontmatter(this.#app.metadataCache.getFileCache(file)),
-    );
   }
 
   #clear(): void {

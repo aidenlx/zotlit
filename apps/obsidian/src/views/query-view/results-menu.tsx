@@ -61,7 +61,11 @@ function CountText({ view }: { view: QueryView }) {
   if (!results) return null;
   const { count, matched, truncated } = results;
   return (
-    <span data-query-count={count} data-query-matched={matched}>
+    <span
+      className="zt:tabular-nums"
+      data-query-count={count}
+      data-query-matched={matched}
+    >
       {truncated
         ? m.query_view_results_limited({ count: matched, shown: count })
         : m.query_view_results({ count })}
@@ -119,6 +123,8 @@ export function ResultsMenu({ view }: { view: QueryView }) {
   const current = useStore(view.state, (s) => s.view);
   const phase = useStore(view.state, (s) => s.phase);
   const matched = useStore(view.state, (s) => s.results?.matched ?? 0);
+  // A limit the host writes itself shows as not set.
+  useStore(view.state, (s) => s.defaults);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
   const popupId = useUniqueId();
@@ -141,7 +147,11 @@ export function ResultsMenu({ view }: { view: QueryView }) {
         popoverTarget={popupId}
         aria-expanded={open}
         data-query-results=""
-        data-active={current.limit !== undefined ? "" : undefined}
+        // A limit the host writes itself, as the Library View does, shows
+        // as not set.
+        data-active={
+          view.setByResearcher(current).limit !== undefined ? "" : undefined
+        }
         data-open={open ? "" : undefined}
         className={cn(
           toolbarButtonClass,
@@ -170,22 +180,24 @@ export function ResultsMenu({ view }: { view: QueryView }) {
       >
         {open && (
           <>
-            <LimitField view={view} close={close} />
+            {view.can.limit && <LimitField view={view} close={close} />}
             <PopoverActions>
               {/* The row stays in place while no limit is set, dimmed as Bases
                   dims it, so the rows under it hold still as a limit is typed. */}
-              <PopoverAction
-                icon="rotate-ccw"
-                data-query-show-all=""
-                disabled={current.limit === undefined || phase !== "ready"}
-                className="zt:disabled:cursor-default zt:disabled:text-faint zt:disabled:hover:bg-transparent zt:disabled:[&_svg]:text-faint"
-                onClick={() => {
-                  view.document.editView({ limit: undefined });
-                  close();
-                }}
-              >
-                {m.query_view_show_all({ count: matched })}
-              </PopoverAction>
+              {view.can.limit && (
+                <PopoverAction
+                  icon="rotate-ccw"
+                  data-query-show-all=""
+                  disabled={current.limit === undefined || phase !== "ready"}
+                  className="zt:disabled:cursor-default zt:disabled:text-faint zt:disabled:hover:bg-transparent zt:disabled:[&_svg]:text-faint"
+                  onClick={() => {
+                    view.document.editView({ limit: undefined });
+                    close();
+                  }}
+                >
+                  {m.query_view_show_all({ count: matched })}
+                </PopoverAction>
+              )}
               <PopoverAction
                 icon="copy"
                 data-query-copy=""

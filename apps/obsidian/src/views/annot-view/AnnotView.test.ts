@@ -277,6 +277,39 @@ describe("the card list", () => {
   });
 });
 
+describe("an empty or error state", () => {
+  /** The shared frame `node` sits in, which centres it in the pane. */
+  const frameOf = (node: Element | null | undefined) =>
+    node?.closest("[data-pane-state]") ?? null;
+
+  it("stands centred in the pane where no Attachment is followed, or the query cannot read", async () => {
+    const { host, store } = await mountList();
+    await act(() => store.setState({ attachments: null, annotations: null }));
+    // Whatever the follow mode says to do, it says it in the frame.
+    const empty = host.querySelector(".pane-empty");
+    expect(empty?.textContent).not.toBe("");
+    expect(frameOf(empty)).not.toBeNull();
+
+    await act(() =>
+      store.setState({
+        queryProblem: { message: "The filter has an error.", detail: "" },
+      }),
+    );
+    const problem = host.querySelector("[data-annot-view-problem]");
+    expect(problem?.getAttribute("role")).toBe("alert");
+    expect(frameOf(problem)).not.toBeNull();
+  });
+
+  it("stands centred in the list where a search hides every card", async () => {
+    const { host, store } = await mountList();
+    await act(() => store.setState({ filterQuery: "nothing matches" }));
+    const empty = [...host.querySelectorAll(".pane-empty")].find((el) =>
+      el.textContent?.includes(m.annot_view_filter_no_match()),
+    );
+    expect(frameOf(empty)).not.toBeNull();
+  });
+});
+
 /** A press and its click on one element, as the browser delivers them. */
 async function press(
   el: Element,

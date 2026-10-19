@@ -461,7 +461,7 @@ One named view of a Query File or Query Block: a Layout with its own filters, so
 _Avoid_: tab, page, saved search
 
 **Layout**:
-How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), List, or Cards.
+How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers alone, so it shows no Layout switch.
 _Avoid_: view type, mode
 
 **Grouping**:
@@ -499,6 +499,44 @@ _Avoid_: query plan (ZotLit Query's own plan of a filter)
 **Display Name**:
 The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.
 _Avoid_: alias, column title, rename (the action, not the text)
+
+### Library view
+
+**Library View** _(Obsidian)_:
+A main-area tab that shows the Zotero library read-only, with a Library Tree, a search box, the Item list of a Query View and a Reading Card. It keeps no file: what it shows is its Library View Document, saved per vault in plugin data, and "Save as query file" turns it into a Query File.
+_Avoid_: library tab, browser, library pane
+
+**Library View Document**:
+What the Library View shows, as one value: the selected Library Tree node, the tree nodes left open, the active Reading State facets, the selected tags of the Tag Selector, the search text, the sort, the paper the Reading Card shows, its open disclosures, its width and whether it is closed. The text of its Query View follows from it, always in the Papers Layout.
+_Avoid_: library state, view state
+
+**Library Tree**:
+The tree on the left of the Library View: Recent, then each Library in the Library Scope with its Collections nested as in Zotero, each node with its paper count. Selecting a node changes the filters of the list; the tree never holds rows of its own. "Show all libraries" adds the Libraries outside the Library Scope for the session.
+_Avoid_: collection tree, sidebar tree, navigator
+
+**Tag Selector**:
+The tags under the Library Tree, as in Zotero's main window: the tag names of the Items the selected node lists, with a box that filters the names. Selecting tags narrows the list to the Items with every selected tag ([ADR 0078](docs/adr/0078-the-tag-selector-writes-tag-filters.md)).
+_Avoid_: tag cloud, tag pane, tag filter (alone)
+
+**Papers Layout**:
+The Layout of the Library View for Items, also open to any Query File: two lines per Item after the icon of its Item type, the title on one and the creators, year and publication on the other, ending with the main Attachment's kind and a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
+_Avoid_: paper list, rich list
+
+**Reading Card**:
+The pane on the right of the Library View that shows the selected Item, read-only, like the title page of a paper: its title, creators and Venue, its DOI and citation key, its abstract, where it sits in the Libraries and Collections, its tags, files and Zotero notes, the other fields under "All fields", and last a preview of its first two Annotations that opens into every Annotation Card, the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected, beside the list in a wide pane and over it in a narrow one.
+_Avoid_: detail pane, inspector, preview
+
+**Reading State**:
+What the researcher has done with an Item: whether it was read and when, its Annotations, and its Literature Note. The Library View narrows by it with the Reading State facets Unread, Annotated, Has note and PDF, and the Reading Card shows it for the selected Item; a row shows only the note icon.
+_Avoid_: progress, status, read status
+
+**Show in Library**:
+The quick switcher action, Alt+Enter, that opens the Library View on an Item's first Collection with its row selected.
+_Avoid_: reveal in library, locate
+
+**Recent**:
+The node at the top of the Library Tree that lists Items by last activity, newest first. Once last activity is defined (#1532), each row gives the reason it is there, such as "read 2 h ago in Obsidian"; until then Recent sorts by when Zotero last edited the Item and gives no reason. It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
+_Avoid_: history, recently read (Zotero's name for its own list)
 
 ### Note content
 
@@ -869,13 +907,17 @@ The agent-facing reference for ZotLit's part of native Pandoc export: obtaining 
 _Avoid_: Pandoc installer, Pandoc setup command
 
 **Welcome View** _(Obsidian)_:
-The onboarding tab opened directly in the active leaf on the plugin's first launch in a vault — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. Combines quick-start steps, live setup actions, a Zotero connection status readout, documentation links, and (in the upgraded state) the Migration Prompt.
+The onboarding steps of ZotLit, as a dismissable banner above the Library View, the first screen — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. It shows a header with its badge and tagline, the steps Connect to Zotero, Choose where literature notes live and Open your library as a checklist that opens only the next step, the Help Links beside them, and, in the upgraded state, the Migration Prompt. It shows until dismissed, which works in every case, or until ZotLit reads the Zotero database and the literature-notes folder exists; the "Open welcome view" command shows it again, and the Library View's "Welcome & help" view action toggles it. It has no tab of its own.
+
+**Help Links**:
+The documentation and community links of the Welcome View: Getting started, Chat & discuss, GitHub (asking for a star if the researcher likes ZotLit), Templates and Citations as tiles, Blog, Changelog and Sponsor as text links. They show whenever the Welcome View banner shows, whatever its mode or sections.
+_Avoid_: footer links, resources
 
 **Release Note**:
-The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update raises a durable notice; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
+The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update shows a section in the Welcome View banner above the Library View, "ZotLit updated to <version>" with "What's new", until it is dismissed or opened; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
 
 **Migration Prompt**:
-The prominent banner in the Welcome View's upgraded state pointing a user upgraded from plugin v1 at the migration guide on the docs site. The view re-opens on every launch until the prompt is acknowledged — by opening the guide or explicitly dismissing. The fresh state carries only a quiet footer link to the same guide, for v1 veterans starting a new vault.
+The prominent banner in the Welcome View's upgraded state pointing a user upgraded from plugin v1 at the migration guide on the docs site. The banner shows whenever the Library View is open until the prompt is acknowledged — by opening the guide or dismissing the banner. The fresh state carries only a quiet footer link to the same guide, for v1 veterans starting a new vault.
 
 **Legacy Data**:
 Plugin settings on disk written by ZotLit v1 — recognized by the absence of any settings version marker. Detected once during settings load, then silently migrated to the current shape; its one-launch presence is what distinguishes a v1 upgrader from a fresh install.

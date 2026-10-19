@@ -13,6 +13,7 @@ interface ZoteroSchema {
 
 interface ZoteroSchemaItemType {
   readonly itemType: string;
+  readonly fields: readonly { readonly field: string }[];
 }
 
 interface ZoteroSchemaLocale {
@@ -52,6 +53,8 @@ function render(schema: ZoteroSchema): string {
     "export interface ZoteroItemType {",
     "  readonly name: string;",
     "  readonly labels: Readonly<Record<ItemTypeLabelLocale, string>>;",
+    "  /** The type's own fields, in the order Zotero's item pane shows them. */",
+    "  readonly fields: readonly string[];",
     "}",
     "",
     "/**",
@@ -78,6 +81,7 @@ function renderItemType(
     "    labels: {",
     labels,
     "    },",
+    `    fields: ${JSON.stringify(itemType.fields.map(({ field }) => field))},`,
     "  },",
   ].join("\n");
 }

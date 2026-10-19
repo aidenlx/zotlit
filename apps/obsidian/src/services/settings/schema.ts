@@ -36,6 +36,18 @@ type SettingsValue =
   | readonly SettingsValue[]
   | { readonly [key: string]: SettingsValue };
 
+/** Any JSON value, unchecked past its being JSON: its owner reads it. */
+const jsonValueSchema: v.GenericSchema<SettingsValue> = v.lazy(() =>
+  v.union([
+    v.string(),
+    v.number(),
+    v.boolean(),
+    v.null(),
+    v.array(jsonValueSchema),
+    v.record(v.string(), jsonValueSchema),
+  ]),
+);
+
 const frontmatterFieldsSchema = v.pipe(
   v.array(frontmatterFieldSchema),
   v.checkItems(
@@ -199,9 +211,39 @@ export const schema = v.object({
   /** The font size the PDF reader's text tool types at, in PDF points. */
   "reader.text-font-size": textFontSizeSchema,
 
+  /**
+   * What the Library View shows, as its Library View Document; `null` until
+   * the view saves one, and a new view opens on the default. Kept as a plain
+   * JSON object: the Library View Document module reads it field by field,
+   * so one field this build cannot read never resets the rest. ADR 0071.
+   */
+  "library.document": v.nullable(v.record(v.string(), jsonValueSchema)),
+
+  /**
+   * The researcher dismissed the Welcome View banner above the Library View;
+   * the open-welcome command shows it again. ADR 0077.
+   */
+  "welcome.dismissed": v.boolean(),
+  /**
+   * The researcher asked for the Welcome View banner ("Open welcome view",
+   * "Welcome & help", "Review conversion"), so it shows with its setup steps
+   * until they dismiss it, across reloads. ADR 0077.
+   */
+  "welcome.requested": v.boolean(),
+  /**
+   * "Show steps" on the banner's folded "Setup done" line is open, until the
+   * banner is dismissed. ADR 0077.
+   */
+  "welcome.steps-shown": v.boolean(),
+
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
+  /**
+   * The running version is an update the Welcome View banner announces until
+   * the researcher opens "What's new" or dismisses the banner. ADR 0077.
+   */
+  "release.update-pending": v.boolean(),
 }) satisfies v.GenericSchema<unknown, Record<string, SettingsValue>>;
 
 export type Settings = v.InferOutput<typeof schema>;
@@ -254,8 +296,13 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.recent-colors": [],
   "reader.ink-width": DEFAULT_INK_WIDTH,
   "reader.text-font-size": DEFAULT_TEXT_FONT_SIZE,
+  "library.document": null,
+  "welcome.dismissed": false,
+  "welcome.requested": false,
+  "welcome.steps-shown": false,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,
   "release.migration-pending": false,
+  "release.update-pending": false,
 } satisfies Settings);

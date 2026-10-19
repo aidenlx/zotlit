@@ -96,18 +96,20 @@ async function runCheck(opts: {
   recordedVersion?: string | null;
   currentVersion?: string;
   noticesEnabled?: boolean;
+  updatePending?: boolean;
 }): Promise<{
   update: ReturnType<typeof vi.fn>;
-  openWelcomeView: ReturnType<typeof vi.fn>;
+  openFirstScreen: ReturnType<typeof vi.fn>;
 }> {
   const update = vi.fn();
-  const openWelcomeView = vi.fn();
+  const openFirstScreen = vi.fn();
   let layoutReady: (() => void | Promise<void>) | undefined;
   const settings = {
     loaded: Promise.resolve({
       "release.previous-version": opts.recordedVersion ?? null,
       "release.migration-pending": opts.migrationPending ?? false,
       "release.notices-enabled": opts.noticesEnabled ?? true,
+      "release.update-pending": opts.updatePending ?? false,
       "template.folder": CONFIGURED_TEMPLATE_FOLDER,
     } as Partial<Settings>),
     hydrationOrigin: opts.origin,
@@ -127,11 +129,11 @@ async function runCheck(opts: {
     app,
     version: opts.currentVersion ?? "2.0.0",
     settings,
-    openWelcomeView,
+    openFirstScreen,
   });
   await service.ready;
   await layoutReady?.();
-  return { update, openWelcomeView };
+  return { update, openFirstScreen };
 }
 
 describe("ReleaseService Companion update notice", () => {
@@ -167,13 +169,119 @@ describe("ReleaseService Companion update notice", () => {
   });
 });
 
+describe("ReleaseService update", () => {
+  it("an upgrade marks the update pending and opens the first screen, where the banner announces it", async () => {
+    const { update, openFirstScreen } = await runCheck({
+      origin: "current",
+      templateFiles: [],
+      recordedVersion: "2.1.0",
+      currentVersion: "2.1.1",
+    });
+    expect(openFirstScreen).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith({
+      "release.previous-version": "2.1.1",
+      "release.update-pending": true,
+    });
+  });
+
+  it.each([
+    ["a downgrade", { recordedVersion: "2.1.1", currentVersion: "2.1.0" }],
+    [
+      "an upgrade with notices off",
+      {
+        recordedVersion: "2.1.0",
+        currentVersion: "2.1.1",
+        noticesEnabled: false,
+      },
+    ],
+  ])("%s opens nothing and marks no update", async (_, versions) => {
+    const { update, openFirstScreen } = await runCheck({
+      origin: "current",
+      templateFiles: [],
+      ...versions,
+    });
+    expect(openFirstScreen).not.toHaveBeenCalled();
+    for (const [patch] of update.mock.calls) {
+      expect(patch).not.toHaveProperty("release.update-pending", true);
+    }
+  });
+
+  it("a fresh install opens the first screen with no update to announce", async () => {
+    const { update, openFirstScreen } = await runCheck({
+      origin: "absent",
+      templateFiles: [],
+      currentVersion: "2.1.1",
+    });
+    expect(openFirstScreen).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith({
+      "release.previous-version": "2.1.1",
+    });
+  });
+
+  it("acknowledging the update clears it, once", async () => {
+    const update = vi.fn();
+    await using service = new ReleaseService({
+      app: fakeApp(),
+      version: "2.1.1",
+      settings: {
+        current: { "release.update-pending": true } as Partial<Settings>,
+        update,
+      } as unknown as SettingsService,
+    });
+    service.acknowledgeUpdate();
+    expect(update).toHaveBeenCalledWith({ "release.update-pending": false });
+  });
+});
+
+describe("ReleaseService checked", () => {
+  it("settles once the launch check has opened the first screen", async () => {
+    let layoutReady: (() => void | Promise<void>) | undefined;
+    const opened = Promise.withResolvers<void>();
+    const settings = {
+      loaded: Promise.resolve({
+        "release.previous-version": null,
+        "release.migration-pending": false,
+        "release.notices-enabled": true,
+        "template.folder": CONFIGURED_TEMPLATE_FOLDER,
+      } as Partial<Settings>),
+      hydrationOrigin: "absent",
+      update: vi.fn(),
+    } as unknown as SettingsService;
+    await using service = new ReleaseService({
+      app: {
+        workspace: {
+          onLayoutReady: (cb: () => void | Promise<void>) => {
+            layoutReady = cb;
+          },
+        },
+        internalPlugins: { getEnabledPluginById: () => null },
+        vault: vaultWith([]),
+      } as unknown as App,
+      version: "2.0.0",
+      settings,
+      openFirstScreen: () => opened.promise,
+    });
+    await service.ready;
+    let checked = false;
+    void service.checked.then(() => {
+      checked = true;
+    });
+    void layoutReady?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(checked).toBe(false);
+    opened.resolve();
+    await service.checked;
+    expect(checked).toBe(true);
+  });
+});
+
 describe("ReleaseService templates-only v1 detection", () => {
-  it("absent origin + ejected v1 templates opens upgraded, arms the prompt, and reconstructs the folder", async () => {
-    const { update, openWelcomeView } = await runCheck({
+  it("absent origin + ejected v1 templates opens the first screen, arms the prompt, and reconstructs the folder", async () => {
+    const { update, openFirstScreen } = await runCheck({
       origin: "absent",
       templateFiles: ["zt-note.eta.md"],
     });
-    expect(openWelcomeView).toHaveBeenCalledWith("upgraded");
+    expect(openFirstScreen).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledWith({
       "release.previous-version": "2.0.0",
       "release.migration-pending": true,
@@ -181,23 +289,23 @@ describe("ReleaseService templates-only v1 detection", () => {
     });
   });
 
-  it("absent origin with no ejected templates opens fresh and leaves the folder alone", async () => {
-    const { update, openWelcomeView } = await runCheck({
+  it("absent origin with no ejected templates opens the first screen and leaves the folder alone", async () => {
+    const { update, openFirstScreen } = await runCheck({
       origin: "absent",
       templateFiles: [],
     });
-    expect(openWelcomeView).toHaveBeenCalledWith("fresh");
+    expect(openFirstScreen).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledWith({
       "release.previous-version": "2.0.0",
     });
   });
 
-  it("malformed origin with ejected templates present still opens fresh, not upgraded", async () => {
-    const { update, openWelcomeView } = await runCheck({
+  it("malformed origin with ejected templates present opens the first screen without arming the prompt", async () => {
+    const { update, openFirstScreen } = await runCheck({
       origin: "malformed",
       templateFiles: ["zt-note.eta.md"],
     });
-    expect(openWelcomeView).toHaveBeenCalledWith("fresh");
+    expect(openFirstScreen).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledWith({
       "release.previous-version": "2.0.0",
     });
@@ -206,33 +314,33 @@ describe("ReleaseService templates-only v1 detection", () => {
 
 describe("ReleaseService pending Migration Prompt re-probe", () => {
   it("configured folder still holds ejected templates: nothing opens, flag untouched", async () => {
-    const { update, openWelcomeView } = await runCheck({
+    const { update, openFirstScreen } = await runCheck({
       origin: "current",
       migrationPending: true,
       templateFiles: ["zt-note.eta.md"],
       folderPath: CONFIGURED_TEMPLATE_FOLDER,
     });
-    expect(openWelcomeView).not.toHaveBeenCalled();
+    expect(openFirstScreen).not.toHaveBeenCalled();
     for (const call of update.mock.calls) {
       expect(call[0]).not.toHaveProperty("release.migration-pending");
     }
   });
 
   it("configured folder empty: nothing opens, flag auto-clears", async () => {
-    const { update, openWelcomeView } = await runCheck({
+    const { update, openFirstScreen } = await runCheck({
       origin: "current",
       migrationPending: true,
       templateFiles: [],
       folderPath: CONFIGURED_TEMPLATE_FOLDER,
     });
-    expect(openWelcomeView).not.toHaveBeenCalled();
+    expect(openFirstScreen).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ "release.migration-pending": false }),
     );
   });
 
   it("configured folder missing entirely: nothing opens, flag auto-clears", async () => {
-    const { update, openWelcomeView } = await runCheck({
+    const { update, openFirstScreen } = await runCheck({
       origin: "current",
       migrationPending: true,
       templateFiles: ["zt-note.eta.md"],
@@ -240,7 +348,7 @@ describe("ReleaseService pending Migration Prompt re-probe", () => {
       // to a missing folder from the service's perspective.
       folderPath: "some-other-folder",
     });
-    expect(openWelcomeView).not.toHaveBeenCalled();
+    expect(openFirstScreen).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ "release.migration-pending": false }),
     );

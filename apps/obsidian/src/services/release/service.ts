@@ -1,4 +1,4 @@
-// Once-per-launch release check: onboarding branch, update notice, Release Note.
+// Once-per-launch release check: onboarding branch, the update the banner announces, Release Note.
 
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
@@ -31,26 +31,38 @@ export interface ReleaseServiceOptions {
   /** The plugin's current version, from the manifest. */
   version: string;
   settings: SettingsService;
-  openWelcomeView?: (mode: "fresh" | "upgraded") => void | Promise<void>;
+  /**
+   * Open the first screen, the Library View, where the Welcome View shows as
+   * a banner; the Migration Prompt in it follows `release.migration-pending`,
+   * and the update section `release.update-pending`.
+   */
+  openFirstScreen?: () => void | Promise<void>;
 }
 
 export class ReleaseService extends Service<void> {
   readonly #app: App;
   readonly #version: string;
   readonly #settings: SettingsService;
-  readonly #openWelcomeView?: (
-    mode: "fresh" | "upgraded",
-  ) => void | Promise<void>;
+  readonly #openFirstScreen?: () => void | Promise<void>;
   #stopped = false;
+  readonly #checked = Promise.withResolvers<void>();
 
   ready: Promise<void>;
+
+  /**
+   * Settles once the launch check has run and opened what it opens, the first
+   * screen included. Never rejects.
+   */
+  get checked(): Promise<void> {
+    return this.#checked.promise;
+  }
 
   constructor(options: ReleaseServiceOptions) {
     super();
     this.#app = options.app;
     this.#version = options.version;
     this.#settings = options.settings;
-    this.#openWelcomeView = options.openWelcomeView;
+    this.#openFirstScreen = options.openFirstScreen;
     this.ready = this.#load();
   }
 
@@ -60,10 +72,17 @@ export class ReleaseService extends Service<void> {
     // check on disposal to avoid touching settings after the plugin unloads.
     stack.defer(() => {
       this.#stopped = true;
+      this.#checked.resolve();
     });
     // The launch check needs settings loaded and the workspace ready to open
     // leaves; `ready` settles now, the check runs after layout is ready.
-    this.#app.workspace.onLayoutReady(() => this.#runCheck());
+    this.#app.workspace.onLayoutReady(() =>
+      this.#runCheck()
+        .catch((error: unknown) => {
+          logger.error("Release check failed", { error });
+        })
+        .finally(() => this.#checked.resolve()),
+    );
     this.commit(stack.move());
   }
 
@@ -94,13 +113,29 @@ export class ReleaseService extends Service<void> {
 
   /**
    * Clear the Migration Prompt flag by hand. The setting-tab reminder's
-   * "Mark as done" control wires this up; the Welcome View banner no longer
-   * has a dismiss control. No-op when the flag is already clear.
+   * "Mark as done" control and the dismiss control of the Welcome View banner
+   * wire this up. No-op when the flag is already clear.
    */
   acknowledgeMigration(): void {
     if (this.#settings.current?.["release.migration-pending"] !== true) return;
     this.#settings.update({ "release.migration-pending": false });
     logger.info("Migration Prompt acknowledged");
+  }
+
+  /**
+   * Mark the update of the running version as seen, so the banner announces
+   * the next one only: "What's new" and the banner's dismiss control wire
+   * this up. No-op when no update is pending.
+   */
+  acknowledgeUpdate(): void {
+    if (this.#settings.current?.["release.update-pending"] !== true) return;
+    this.#settings.update({ "release.update-pending": false });
+    logger.info("Update acknowledged", { version: this.#version });
+  }
+
+  /** The running version, which the banner names in its update section. */
+  get version(): string {
+    return this.#version;
   }
 
   async #runCheck(): Promise<void> {
@@ -138,14 +173,12 @@ export class ReleaseService extends Service<void> {
       case "companion-notice":
         this.#showCompanionNotice();
         break;
-      case "update-notice":
-        this.#showUpdateNotice();
-        break;
+      // An update opens the first screen too: its banner announces the update
+      // while `release.update-pending` holds.
+      case "update":
       case "welcome-fresh":
-        void this.#openWelcomeView?.("fresh");
-        break;
       case "welcome-upgraded":
-        void this.#openWelcomeView?.("upgraded");
+        await this.#openFirstScreen?.();
         break;
       case "none":
         break;
@@ -165,6 +198,12 @@ export class ReleaseService extends Service<void> {
       patch["release.migration-pending"] = decision.setMigrationPending;
     }
     if (
+      decision.setUpdatePending !== undefined &&
+      current["release.update-pending"] !== decision.setUpdatePending
+    ) {
+      patch["release.update-pending"] = decision.setUpdatePending;
+    }
+    if (
       decision.setTemplateFolder !== undefined &&
       current["template.folder"] !== decision.setTemplateFolder
     ) {
@@ -179,22 +218,6 @@ export class ReleaseService extends Service<void> {
     if (!folder) return false;
     return folder.children.some(
       (child) => child instanceof TFile && V1_EJECTED_TEMPLATE.test(child.name),
-    );
-  }
-
-  #showUpdateNotice(): void {
-    new BaseNotice(
-      BaseNotice.render((renderer) => {
-        renderer.setTitle(
-          m.notice_update_available({ version: this.#version }),
-        );
-        renderer.addAction((button) => {
-          button
-            .setButtonText(m.notice_update_see_whats_new())
-            .onClick(() => void this.openReleaseNote());
-        });
-      }),
-      0,
     );
   }
 

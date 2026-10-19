@@ -34,6 +34,8 @@ export interface ResultSnapshot {
   groups: readonly LayoutGroup[];
   /** Whether the view's limit cut the rows short. */
   truncated: boolean;
+  /** Whether the rows show in the host's rank, such as a search's, in place of the sort. */
+  ranked: boolean;
   /** What the run says about its query, each once. */
   warnings: readonly QueryViewWarning[];
   /**
@@ -60,6 +62,7 @@ export const NO_RESULTS: ResultSnapshot = {
   matched: 0,
   groups: [],
   truncated: false,
+  ranked: false,
   warnings: [],
   formulaIssues: nameDictionary(),
 };

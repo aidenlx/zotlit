@@ -11,6 +11,8 @@ import {
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
+import { createElement, Fragment } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { nameDictionary } from "@zotlit/item-query";
@@ -31,6 +33,7 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import type { LibraryScope } from "@/services/library-scope/scope";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { requested } from "./__fixtures__/query-run";
@@ -47,7 +50,7 @@ import type {
   VaultValue,
   VaultWrite,
 } from "./table-notes";
-import { QueryView, RERUN_DELAY_MS } from "./view";
+import { QueryView, RERUN_DELAY_MS, SaveAsButton, SortButton } from "./view";
 import type { QueryViewDeps } from "./view";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -168,6 +171,13 @@ async function mount(
     canSave,
     context = () => undefined,
     contextSource,
+    libraries,
+    displayOnly,
+    layouts,
+    saveAs,
+    toolbar,
+    rowPass,
+    reason,
     creation = "created",
     values = {},
     notePaths = [],
@@ -189,6 +199,13 @@ async function mount(
     canSave?: () => boolean;
     context?: () => QueryContext | undefined;
     contextSource?: ContextSource;
+    libraries?: () => LibraryScope;
+    displayOnly?: boolean;
+    layouts?: readonly string[];
+    saveAs?: () => void;
+    toolbar?: "host";
+    rowPass?: ConstructorParameters<typeof QueryView>[1]["rowPass"];
+    reason?: (row: QueryViewRow) => string | null;
     /**
      * What the usual creation does for an edit of an Item with no note:
      * create its note at `<key>.md`, or have the Profile prompt cancelled.
@@ -275,6 +292,7 @@ async function mount(
       notesChanged.emit("changed");
     }),
   };
+  const readers = { open: vi.fn(() => Promise.resolve()) };
   const deps = {
     app: editorApp() as unknown as App,
     reads: {
@@ -336,6 +354,7 @@ async function mount(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     literatureNotes,
+    readers,
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
@@ -353,6 +372,13 @@ async function mount(
     onSelectView,
     ...(canSave && { canSave }),
     ...(layout && { layout }),
+    ...(libraries && { libraries }),
+    ...(displayOnly && { displayOnly }),
+    ...(layouts && { layouts }),
+    ...(saveAs && { saveAs }),
+    ...(toolbar && { toolbar }),
+    ...(rowPass && { rowPass }),
+    ...(reason && { reason }),
   });
   const saved: string[] = [];
   const el = document.createElement("div");
@@ -382,6 +408,7 @@ async function mount(
     onSelectView,
     saved,
     literatureNotes,
+    readers,
   };
 }
 
@@ -587,6 +614,73 @@ it("says why when the query cannot read Zotero's data, rather than looking empty
   expect(el.querySelector("[data-query-empty]")).toBeNull();
 });
 
+/** The shared frame `node` sits in, which centres it in the space under the toolbar. */
+function frameOf(node: Element | null): Element | null {
+  return node?.closest("[data-pane-state]") ?? null;
+}
+
+/** Whether the rows' layout is out of the flow, so the frame takes the space. */
+function rowsHidden(el: HTMLElement): boolean {
+  return el.querySelector(".annots-container")?.closest("[hidden]") != null;
+}
+
+it("centres the empty list in the space under the toolbar, with the rows' layout out of the flow", async () => {
+  const { view, el, settle } = await mount([result([])]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  const empty = el.querySelector("[data-query-empty]");
+  expect(empty?.textContent).toContain(m.query_view_no_results_annotations());
+  expect(frameOf(empty)).not.toBeNull();
+  expect(rowsHidden(el)).toBe(true);
+});
+
+it("centres the diagnostic of a failed run that has no rows to show", async () => {
+  const { view, el, settle } = await mount([
+    {
+      kind: "failed",
+      diagnostic: {
+        code: "source-unavailable",
+        message: "The Zotero database cannot be read.",
+        hint: "Check the Zotero data directory.",
+        severity: "error",
+        report: ["The Zotero database cannot be read."],
+        found: "",
+        expected: [],
+        suggestions: [],
+      },
+    },
+  ]);
+  await act(() => view.setText(FILE));
+  await settle();
+
+  const box = el.querySelector('[data-query-diagnostic="source-unavailable"]');
+  expect(box?.getAttribute("role")).toBe("alert");
+  expect(frameOf(box)).not.toBeNull();
+  expect(rowsHidden(el)).toBe(true);
+});
+
+it("keeps the note of a failed run inline above the last good rows", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")]), filterFault(1, 11)],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => {
+    view.document.setFilters("view", {
+      and: ['colourName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  const note = el.querySelector("[data-query-filter-error]");
+  expect(note).not.toBeNull();
+  expect(el.querySelector("[data-pane-state]")).toBeNull();
+  expect(rowsHidden(el)).toBe(false);
+  expect(cards(el)).toEqual(["ANNOTBBB"]);
+});
+
 it("shows where this.item gets an Item above the diagnostic of a filter that reads it unbound", async () => {
   const at = "this.item";
   const { view, el, settle } = await mount(
@@ -734,6 +828,183 @@ describe("saving a toolbar edit", () => {
       limit: 5,
       context: { attachment: "PDFBBBBB" },
     });
+  });
+
+  it("reads the Libraries the host selects, and runs again once the host selects others", async () => {
+    let libraries: LibraryScope = {
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    };
+    const { view, run, settle } = await mount([], undefined, {
+      libraries: () => libraries,
+    });
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![0].libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "personal" }],
+    });
+
+    // The same Libraries run nothing.
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+
+    libraries = {
+      mode: "selected",
+      libraries: [{ type: "group", groupID: 4815 }],
+    };
+    await act(() => view.contextChanged());
+    await settle();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![0].libraries).toEqual({
+      mode: "selected",
+      libraries: [{ type: "group", groupID: 4815 }],
+    });
+  });
+
+  it("offers only the result count, Sort and Save as query file where the host keeps only the sort and offers one Layout, and every control where it keeps the file", async () => {
+    const toolbar = (el: HTMLElement) =>
+      [
+        ...el.querySelectorAll(
+          "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties], [data-query-save-as]",
+        ),
+      ].map(
+        (node) =>
+          node.getAttribute("data-query-toolbar") ??
+          [...node.attributes]
+            .map(({ name }) => name)
+            .find((name) => name.startsWith("data-query-")),
+      );
+    const full = await mount([]);
+    await act(() => full.view.setText(FILE));
+    await full.settle();
+    expect(toolbar(full.el)).toEqual([
+      "data-query-view-menu",
+      "data-query-results",
+      "sort",
+      "group",
+      "filter",
+      "data-query-properties",
+      "search",
+    ]);
+    cleanup.dispose();
+    cleanup = new DisposableStack();
+    document.body.replaceChildren();
+
+    const saveAs = vi.fn();
+    const fixed = await mount([], undefined, {
+      displayOnly: true,
+      layouts: ["papers"],
+      saveAs,
+    });
+    await act(() => fixed.view.setText(PAPERS_FILE));
+    await fixed.settle();
+    // A host that keeps only the sort has a search of its own (ADR 0073).
+    expect(toolbar(fixed.el)).toEqual([
+      "data-query-results",
+      "sort",
+      "data-query-save-as",
+    ]);
+    const button = fixed.el.querySelector<HTMLElement>("[data-query-save-as]")!;
+    // A labelled button: its name is its tooltip, and shows on a wide pane.
+    expect(button.getAttribute("aria-label")).toBe(
+      m.annot_view_save_as_query_file(),
+    );
+    await act(() => button.click());
+    expect(saveAs).toHaveBeenCalledOnce();
+
+    // The result count still opens its menu, with no limit to set.
+    await shimPopover(
+      fixed.el.querySelector<HTMLElement>("[data-query-results-popup]")!,
+    ).open();
+    expect(fixed.el.querySelector("[data-query-copy]")).not.toBeNull();
+    expect(fixed.el.querySelector("[data-query-export]")).not.toBeNull();
+    expect(fixed.el.querySelector("[data-query-limit]")).toBeNull();
+  });
+
+  it("draws no toolbar row where the host places Sort and Save as query file itself, which still sort and save from the host's place", async () => {
+    const saveAs = vi.fn();
+    const hosted = await mount([], undefined, {
+      displayOnly: true,
+      layouts: ["papers"],
+      saveAs,
+      toolbar: "host",
+    });
+    await act(() => hosted.view.setText(PAPERS_FILE));
+    await hosted.settle();
+    expect(hosted.el.querySelector('[role="toolbar"]')).toBeNull();
+    expect(hosted.el.querySelector("[data-query-results]")).toBeNull();
+    // The rows still show under where the row would be.
+    expect(hosted.el.querySelector("[data-query-layout]")).not.toBeNull();
+    const place = document.createElement("div");
+    document.body.append(place);
+    const root = createRoot(place);
+    cleanup.defer(() => act(() => root.unmount()));
+    await act(() =>
+      root.render(
+        createElement(
+          Fragment,
+          null,
+          createElement(SortButton, { view: hosted.view }),
+          createElement(SaveAsButton, { view: hosted.view }),
+        ),
+      ),
+    );
+    await act(() =>
+      place.querySelector<HTMLElement>("[data-query-save-as]")!.click(),
+    );
+    expect(saveAs).toHaveBeenCalledOnce();
+    expect(place.querySelector('[data-query-toolbar="sort"]')).not.toBeNull();
+  });
+
+  it("switches only between the Layouts the host offers from the view menu, with no view to add or configure, where the host keeps only the Layout of its view", async () => {
+    const { view, el, settle, saved } = await mount(
+      [result([]), result([])],
+      undefined,
+      { displayOnly: true, layouts: ["papers", "table"] },
+    );
+    await act(() =>
+      view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+`),
+    );
+    await settle();
+    const trigger = () =>
+      el.querySelector<HTMLElement>("[data-query-view-menu]")!;
+    // The menu names the Layout on screen; the view's own name is the host's.
+    expect(trigger().textContent).toBe("Table");
+    await act(() => trigger().click());
+    await shimPopover(
+      document.querySelector<HTMLElement>("[data-query-view-list]")!,
+    ).open();
+    expect(
+      [...document.querySelectorAll("[data-query-view-layout-option]")].map(
+        (row) => row.getAttribute("data-query-view-layout-option"),
+      ),
+    ).toEqual(["papers", "table"]);
+    expect(document.querySelector("[data-query-view-action]")).toBeNull();
+    expect(document.querySelector("[data-query-view-configure]")).toBeNull();
+
+    await act(() =>
+      document
+        .querySelector<HTMLElement>('[data-query-view-layout-option="papers"]')!
+        .click(),
+    );
+    await act(() => view.flush());
+    await settle();
+    expect(saved.at(-1)).toContain("type: papers");
+    expect(trigger().textContent).toBe("Papers");
+  });
+
+  it("leaves the Libraries to the Library Scope where the host selects none", async () => {
+    const { view, run, settle } = await mount([]);
+    await act(() => view.setText(FILE));
+    await settle();
+    expect(run.mock.calls[0]![0]).not.toHaveProperty("libraries");
   });
 
   it("says a change is not saved when the host cannot write it, until a later save works", async () => {
@@ -1434,6 +1705,95 @@ function item(key: string, title: string, year: string): QueryViewRow {
     values: { title, "date.year": year, tags: ["thesis"] },
   };
 }
+
+it("shows only the rows the host keeps after the query, cut to the view's limit, and counts them, reading the fields of those rows alone", async () => {
+  // The host answers a condition the query cannot: here, which Items have a
+  // note in the vault.
+  const kept = new Set(["ITEMAAAA", "ITEMCCCC", "ITEMDDDD"]);
+  let pass: { key: string; keeps: (indexedKey: string) => boolean } | null = {
+    key: "noted",
+    keeps: (indexedKey) => kept.has(indexedKey),
+  };
+  const rows = [
+    item("ITEMAAAA", "Ten simple rules", "2021"),
+    item("ITEMBBBB", "Reading at scale", "2019"),
+    item("ITEMCCCC", "Close reading", "2018"),
+    item("ITEMDDDD", "Distant reading", "2013"),
+  ];
+  const [a, , c, d] = rows as [
+    QueryViewRow,
+    QueryViewRow,
+    QueryViewRow,
+    QueryViewRow,
+  ];
+  // Each condition reads every match by key, then the rows it keeps; the
+  // engine gives those back in an order of its own.
+  const { view, el, run, settle } = await mount(
+    [result(rows), result([c, a]), result(rows), result([d, a]), result(rows)],
+    undefined,
+    { rowPass: () => pass },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    limit: 2
+    order:
+      - title
+`),
+  );
+  await settle();
+  // The query reads the key of every match, so the limit cuts the kept rows
+  // alone; only the rows on screen are read with their fields.
+  const [keys, page] = run.mock.calls.map(([request]) => request);
+  expect(keys).toMatchObject({ fields: [], limit: null });
+  expect(page!.fields).toEqual(expect.arrayContaining(["title"]));
+  expect(page!.filter).toBe('["ITEMAAAA","ITEMCCCC"].contains(indexedKey)');
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMCCCC"]);
+  expect(el.querySelector("[data-query-row]")?.textContent).toContain(
+    "Ten simple rules",
+  );
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe(
+    "2 of 3 results",
+  );
+
+  // Another condition of the host runs again, with the same text.
+  kept.delete("ITEMCCCC");
+  pass = { key: "noted-2", keeps: (indexedKey) => kept.has(indexedKey) };
+  await act(() => view.contextChanged());
+  await settle();
+  expect(run).toHaveBeenCalledTimes(4);
+  expect(shownRows(el)).toEqual(["ITEMAAAA", "ITEMDDDD"]);
+  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
+
+  // Without a condition, the query takes the view's limit again.
+  pass = null;
+  await act(() => view.contextChanged());
+  await settle();
+  expect(run).toHaveBeenCalledTimes(5);
+  expect(run.mock.calls[4]![0]).toMatchObject({ limit: 2 });
+});
+
+it("reads no rows where the host keeps none of the matches", async () => {
+  const { view, el, run, settle } = await mount(
+    [result([item("ITEMAAAA", "Ten simple rules", "2021")])],
+    undefined,
+    { rowPass: () => ({ key: "none", keeps: () => false }) },
+  );
+  await act(() =>
+    view.setText(`views:
+  - type: list
+    name: Sources
+    from: items
+    order:
+      - title
+`),
+  );
+  await settle();
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(shownRows(el)).toEqual([]);
+});
 
 it("lists the Items of an items view, with the visible properties in their order", async () => {
   const { view, el, run, settle } = await mount([
@@ -3207,6 +3567,345 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   await settle();
   expect(written.at(-1)).not.toContain("myField");
   expect(page()).not.toBe(null);
+});
+
+const PAPERS_FILE = `views:
+  - type: papers
+    name: Papers
+    from: items
+`;
+
+function paperRow(
+  key: string,
+  values: {
+    title: string;
+    creators?: { family: string; literal?: string; role: string }[];
+    year?: number;
+    publicationTitle?: string;
+    publisher?: string;
+    fileTypes?: string[];
+    attachments?: string[];
+    itemType?: string;
+  },
+): QueryViewRow {
+  return {
+    indexedKey: key,
+    values: {
+      title: values.title,
+      creators: (values.creators ?? []).map(({ family, literal, role }) => ({
+        family: literal ? "" : family,
+        given: "",
+        literal: literal ?? null,
+        role,
+        fullName: literal ?? family,
+      })),
+      date:
+        values.year === undefined
+          ? null
+          : {
+              kind: "year",
+              value: null,
+              year: values.year,
+              month: null,
+              day: null,
+              text: null,
+              raw: `${values.year}-00-00 ${values.year}`,
+            },
+      publicationTitle: values.publicationTitle ?? null,
+      publisher: values.publisher ?? null,
+      "attachments[].fileType": values.fileTypes ?? [],
+      "attachments[].indexedKey": values.attachments ?? [],
+      ...(values.itemType !== undefined && { itemType: values.itemType }),
+    },
+  };
+}
+
+/** Each Papers row on screen, as its lines and end marks read. */
+function papers(el: HTMLElement) {
+  return [...el.querySelectorAll<HTMLElement>("[data-query-papers-row]")].map(
+    (node) => ({
+      key: node.dataset.queryPapersRow,
+      title: node.querySelector("[data-query-papers-title]")?.textContent,
+      meta: node.querySelector("[data-query-papers-meta]")?.textContent,
+      lines: node.querySelector("[data-query-papers-title]")?.parentElement
+        ?.childElementCount,
+      attachment:
+        node.querySelector<HTMLElement>("[data-query-papers-attachment]")
+          ?.dataset.queryPapersAttachment ?? null,
+      note: node.querySelector("[data-query-papers-note]") !== null,
+    }),
+  );
+}
+
+it("draws each Item of a Papers view in two lines, its title and its creators, year and Venue, and ends it with its main Attachment kind and its Literature Note", async () => {
+  const { view, el, run, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", {
+          title: "Ten simple rules for better figures",
+          creators: [
+            { family: "Rougier", role: "author" },
+            { family: "Droettboom", role: "author" },
+            { family: "Editor", role: "editor" },
+          ],
+          year: 2014,
+          publicationTitle: "PLOS Computational Biology",
+          publisher: "PLOS",
+          fileTypes: ["web", "pdf"],
+          attachments: ["WEBAAAAA", "PDFAAAAA"],
+        }),
+        paperRow("ITEMBBBB", {
+          title: "The structure of scientific revolutions",
+          creators: [
+            { family: "", literal: "Kuhn Society", role: "author" },
+            { family: "B", role: "author" },
+            { family: "C", role: "author" },
+            { family: "D", role: "author" },
+          ],
+          year: 1962,
+          publisher: "University of Chicago Press",
+          fileTypes: ["epub"],
+          attachments: ["EPUBBBBB"],
+        }),
+        paperRow("ITEMCCCC", { title: "A note with no file" }),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+
+  expect(view.state.getState().problems).toEqual([]);
+  expect(papers(el)).toEqual([
+    {
+      key: "ITEMAAAA",
+      title: "Ten simple rules for better figures",
+      meta: "Rougier, Droettboom · 2014 · PLOS Computational Biology",
+      lines: 2,
+      attachment: "pdf",
+      note: true,
+    },
+    {
+      key: "ITEMBBBB",
+      title: "The structure of scientific revolutions",
+      meta: "Kuhn Society, B, C et al. · 1962 · University of Chicago Press",
+      lines: 2,
+      attachment: "epub",
+      note: false,
+    },
+    {
+      key: "ITEMCCCC",
+      title: "A note with no file",
+      meta: undefined,
+      lines: 1,
+      attachment: null,
+      note: false,
+    },
+  ]);
+  // The row reads no Annotation: the Reading Card and the facets carry it.
+  expect(
+    (run.mock.calls[0]![0].fields ?? []).filter((field) =>
+      field.startsWith("annotations"),
+    ),
+  ).toEqual([]);
+  expect(cards(el)).toEqual([]);
+});
+
+it("ends every Papers row in the same two slots, the note's then the Attachment's, each kept where the row has none", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", { title: "Both", fileTypes: ["pdf"] }),
+        paperRow("ITEMBBBB", { title: "A PDF alone", fileTypes: ["pdf"] }),
+        paperRow("ITEMCCCC", { title: "A note alone" }),
+        paperRow("ITEMDDDD", { title: "Neither" }),
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Both.md", ITEMCCCC: "Note alone.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const slots = [
+    ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+  ].map((node) =>
+    [...node.querySelectorAll<HTMLElement>("[data-query-papers-slot]")].map(
+      (slot) =>
+        `${slot.dataset.queryPapersSlot}:${slot.childElementCount > 0 ? "mark" : "empty"}`,
+    ),
+  );
+  expect(slots).toEqual([
+    ["note:mark", "attachment:mark"],
+    ["note:empty", "attachment:mark"],
+    ["note:mark", "attachment:empty"],
+    ["note:empty", "attachment:empty"],
+  ]);
+});
+
+it("starts a Papers row with the icon of its Item type, and a document for a type the map does not name", async () => {
+  const { view, el, settle } = await mount([
+    result([
+      paperRow("ITEMAAAA", { title: "A book", itemType: "book" }),
+      paperRow("ITEMBBBB", { title: "A thesis", itemType: "thesis" }),
+      paperRow("ITEMCCCC", { title: "Unknown", itemType: "someFutureType" }),
+    ]),
+  ]);
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const icons = [
+    ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+  ].map((node) => {
+    const icon = node.querySelector("[data-query-papers-icon]");
+    return [
+      icon?.getAttribute("data-query-papers-icon"),
+      icon?.getAttribute("aria-hidden"),
+    ];
+  });
+  expect(icons).toEqual([
+    ["book", "true"],
+    ["graduation-cap", "true"],
+    ["file", "true"],
+  ]);
+});
+
+it("ends a Papers row's second line with the reason its host gives for the row", async () => {
+  const { view, el, settle } = await mount(
+    [
+      result([
+        paperRow("ITEMAAAA", {
+          title: "Annotated",
+          creators: [{ family: "Rougier", role: "author" }],
+          year: 2014,
+        }),
+        paperRow("ITEMBBBB", { title: "Untouched" }),
+        paperRow("ITEMCCCC", { title: "No reason" }),
+      ]),
+    ],
+    undefined,
+    {
+      reason: ({ indexedKey }) =>
+        indexedKey === "ITEMCCCC" ? null : `edited ${indexedKey}`,
+    },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  expect(papers(el).map(({ meta, lines }) => [meta, lines])).toEqual([
+    ["Rougier · 2014 · edited ITEMAAAA", 2],
+    ["edited ITEMBBBB", 2],
+    [undefined, 1],
+  ]);
+});
+
+it("expands a Papers row into its Attachments, Child Notes and Literature Note, and an Attachment into its Annotations, each opening its own target", async () => {
+  const openWindow = vi.spyOn(window, "open").mockImplementation(() => null);
+  onTestFinished(() => openWindow.mockRestore());
+  const item = paperRow("ITEMAAAA", {
+    title: "Ten simple rules for better figures",
+    attachments: ["PDFAAAAA"],
+  });
+  const { view, el, run, settle, readers, literatureNotes } = await mount(
+    [
+      result([
+        {
+          ...item,
+          values: {
+            ...item.values,
+            notes: [{ indexedKey: "NXTEAAAA", title: "Reading notes" }],
+          },
+        },
+        paperRow("ITEMBBBB", { title: "Nothing under it" }),
+      ]),
+      result([
+        {
+          indexedKey: "PDFAAAAA",
+          values: {
+            title: "Rougier et al. - 2014.pdf",
+            "annotations[].indexedKey": ["ANNOTAAA"],
+          },
+        },
+      ]),
+      result([
+        {
+          indexedKey: "ANNOTAAA",
+          values: {
+            text: "Rule 1: know your audience",
+            color: "#ffd400",
+            pageLabel: "3",
+            pageIndex: 2,
+          },
+        },
+      ]),
+    ],
+    undefined,
+    { notes: { ITEMAAAA: "Rougier 2014.md" } },
+  );
+  await act(() => view.setText(PAPERS_FILE));
+  await settle();
+  const children = () =>
+    [...el.querySelectorAll<HTMLElement>("[data-query-papers-child]")].map(
+      (node) => [node.dataset.queryPapersChild, node.textContent?.trim()],
+    );
+
+  // Only an Item with something under it can expand.
+  expect(
+    [...el.querySelectorAll("[data-query-expand]")].map((node) =>
+      node.getAttribute("data-query-expand"),
+    ),
+  ).toEqual(["item:ITEMAAAA"]);
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="item:ITEMAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(run.mock.calls[1]![0]).toMatchObject({
+    from: "attachments",
+    filter: 'item.indexedKey == "ITEMAAAA"',
+  });
+  await act(async () => {
+    el.querySelector<HTMLElement>(
+      '[data-query-expand="attachment:PDFAAAAA"]',
+    )!.click();
+  });
+  await act(async () => {});
+  expect(children()).toEqual([
+    ["attachment", "Rougier et al. - 2014.pdf"],
+    ["annotation", "Rule 1: know your audiencePage 3"],
+    ["note", "Reading notes"],
+    ["literature-note", "Rougier 2014"],
+  ]);
+
+  const child = (kind: string) =>
+    el.querySelector<HTMLElement>(
+      `[data-query-papers-child="${kind}"] a, [data-query-papers-child="${kind}"] [data-query-note]`,
+    )!;
+  await act(() => child("attachment").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    { kind: "attachment", attachmentKey: "PDFAAAAA" },
+    false,
+  );
+  await act(() => child("annotation").click());
+  expect(readers.open).toHaveBeenLastCalledWith(
+    {
+      kind: "annotation",
+      attachmentKey: "PDFAAAAA",
+      annotationKey: "ANNOTAAA",
+      pageIndex: 2,
+      pageLabel: "3",
+    },
+    false,
+  );
+  // A Child Note lives in Zotero, which shows it from its link.
+  await act(() => child("note").click());
+  expect(openWindow).toHaveBeenCalledWith(
+    "zotero://select/library/items/NXTEAAAA",
+  );
+  await act(() => child("literature-note").click());
+  expect(literatureNotes.open).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "Rougier 2014.md" }),
+    expect.anything(),
+  );
 });
 
 describe("vault properties", () => {

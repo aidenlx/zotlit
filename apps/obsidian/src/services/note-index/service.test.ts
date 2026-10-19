@@ -75,8 +75,30 @@ class MockMetadataCache {
     return this.getCache(file.path);
   }
 
+  /** As Obsidian: `null` for a path it holds nothing for, `{}` for a non-Markdown file. */
   getCache(path: string): CachedMetadata | null {
-    return this.fileCache.get(path) ?? null;
+    const cache = this.fileCache.get(path);
+    if (!cache) return null;
+    return path.endsWith(".md") ? cache : {};
+  }
+
+  /**
+   * Obsidian's `watchVaultChanges()`: the cache follows a rename or delete as
+   * one more vault listener, in registration order. It subscribes once its
+   * initial load is done, so a plugin loaded during startup hears a rename
+   * before the cache rekeys; one enabled at runtime hears it after.
+   */
+  watchVault(vault: MockVault): void {
+    vault.on("rename", (...args) => {
+      const [file, oldPath] = args as [TFile, string];
+      const cache = this.fileCache.get(oldPath);
+      if (!cache) return;
+      this.fileCache.delete(oldPath);
+      this.fileCache.set(file.path, cache);
+    });
+    vault.on("delete", (file) => {
+      this.fileCache.delete((file as TFile).path);
+    });
   }
 
   on(name: MetadataEvent, callback: Callback): EventRef {
@@ -99,17 +121,6 @@ class MockMetadataCache {
   change(file: TFile, cache: CachedMetadata): void {
     this.fileCache.set(file.path, cache);
     this.#emit("changed", file, "", cache);
-  }
-
-  renameCache(oldPath: string, newPath: string): void {
-    const cache = this.fileCache.get(oldPath);
-    if (!cache) return;
-    this.fileCache.delete(oldPath);
-    this.fileCache.set(newPath, cache);
-  }
-
-  deleteCache(path: string): void {
-    this.fileCache.delete(path);
   }
 
   /**
@@ -141,8 +152,6 @@ class MockVault {
     delete: new Set(),
   };
 
-  constructor(readonly metadataCache: MockMetadataCache) {}
-
   getMarkdownFiles(): TFile[] {
     return [...this.files.values()].filter((file) => file.extension === "md");
   }
@@ -173,7 +182,6 @@ class MockVault {
     this.files.delete(oldPath);
     updateFilePath(file, newPath);
     this.files.set(newPath, file);
-    this.metadataCache.renameCache(oldPath, newPath);
     this.#emit("rename", file, oldPath);
     return file;
   }
@@ -183,7 +191,6 @@ class MockVault {
     if (!file) throw new Error(`Missing file: ${path}`);
 
     this.files.delete(path);
-    this.metadataCache.deleteCache(path);
     this.#emit("delete", file);
   }
 
@@ -241,7 +248,7 @@ describe("NoteIndex", () => {
   });
 
   it("waits for cache completion when loaded during startup", async () => {
-    const { metadataCache, workspace, service } = await makeHarness(
+    const { metadataCache, workspace, service, vault } = await makeHarness(
       {
         "paper.md": cache({ itemKey: ITEM_A }),
       },
@@ -250,9 +257,23 @@ describe("NoteIndex", () => {
 
     expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
 
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+  });
+
+  it("says indexed, not changed for each note, once the Full Scan has read the notes the cache held at startup", async () => {
+    const { metadataCache, workspace, service, vault } = await makeHarness(
+      { "paper.md": cache({ itemKey: ITEM_A }) },
+      { enabledAtRuntime: false },
+    );
+    await service.ready;
+    const heard: string[] = [];
+    service.on("changed", (file) => heard.push(`changed ${file.path}`));
+    service.on("indexed", () => heard.push("indexed"));
+    startup({ metadataCache, workspace, vault });
+    // The whole index changed, not one file.
+    expect(heard).toEqual(["indexed"]);
   });
 
   it("whenIndexed resolves immediately once the Full Scan has run", async () => {
@@ -265,7 +286,7 @@ describe("NoteIndex", () => {
   });
 
   it("whenIndexed waits for the Full Scan when loaded during startup", async () => {
-    const { metadataCache, workspace, service } = await makeHarness(
+    const { metadataCache, workspace, service, vault } = await makeHarness(
       { "paper.md": cache({ itemKey: ITEM_A }) },
       { enabledAtRuntime: false },
     );
@@ -277,13 +298,13 @@ describe("NoteIndex", () => {
     });
     expect(settled).toBe(false);
 
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
     await gate;
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
   it("tells its consumers when the Full Scan has indexed the notes", async () => {
-    const { metadataCache, workspace, service } = await makeHarness(
+    const { metadataCache, workspace, service, vault } = await makeHarness(
       { "paper.md": cache({ itemKey: ITEM_A }) },
       { enabledAtRuntime: false },
     );
@@ -293,16 +314,16 @@ describe("NoteIndex", () => {
       seen.push(paths(service.getNotesByItemKey(ITEM_A))),
     );
 
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     expect(seen).toEqual([["paper.md"]]);
   });
 
   it("keeps per-file mappings when the cache resolves again after the Full Scan", async () => {
-    const { metadataCache, workspace, service } = await makeHarness({
+    const { metadataCache, workspace, service, vault } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),
     });
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     // A rescan would read this silent cache swap; the per-file path never sees it.
     metadataCache.setCache("paper.md", cache({ itemKey: ITEM_B }));
@@ -316,7 +337,7 @@ describe("NoteIndex", () => {
     const { service, vault, metadataCache, workspace } = await makeHarness({
       "paper.md": cache({}),
     });
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
     const changed: string[] = [];
     service.on("changed", (file) => changed.push(file.path));
 
@@ -333,7 +354,7 @@ describe("NoteIndex", () => {
     const { service, vault, metadataCache, workspace } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),
     });
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
     const changed: string[] = [];
     service.on("changed", (file) => changed.push(file.path));
 
@@ -446,7 +467,7 @@ describe("NoteIndex", () => {
     const { service, vault, metadataCache, workspace } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),
     });
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     metadataCache.change(
       vault.files.get("paper.md")!,
@@ -458,13 +479,13 @@ describe("NoteIndex", () => {
   });
 
   it("scans once on resolved when the build has no clean-cache hook", async () => {
-    const { service, metadataCache, workspace } = await makeHarness(
+    const { service, metadataCache, workspace, vault } = await makeHarness(
       { "paper.md": cache({ itemKey: ITEM_A }) },
       { cleanCacheHook: false },
     );
     const gate = service.whenIndexed();
 
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     await expect(gate).resolves.toBeUndefined();
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
@@ -487,66 +508,12 @@ describe("NoteIndex", () => {
   });
 
   it("whenIndexed settles on an empty vault", async () => {
-    const { service, metadataCache, workspace } = await makeHarness({});
+    const { service, metadataCache, workspace, vault } = await makeHarness({});
 
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     await expect(service.whenIndexed()).resolves.toBeUndefined();
     expect(service.getIndexedItemKeys()).toEqual([]);
-  });
-
-  it("emits changed for a renamed Literature Note and follows the new path", async () => {
-    const { service, vault, metadataCache, workspace } = await makeHarness({
-      "paper.md": cache({ itemKey: ITEM_A }),
-    });
-    startup({ metadataCache, workspace });
-    const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file.path));
-
-    vault.renameFile("paper.md", "Notes/paper.md");
-
-    expect(changed).toEqual(["Notes/paper.md"]);
-    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
-      "Notes/paper.md",
-    ]);
-  });
-
-  it("stays quiet for a renamed ordinary note", async () => {
-    const { service, vault, metadataCache, workspace } = await makeHarness({
-      "plain.md": cache({}),
-    });
-    startup({ metadataCache, workspace });
-    const changed: string[] = [];
-    service.on("changed", (file) => changed.push(file.path));
-
-    vault.renameFile("plain.md", "Notes/plain.md");
-
-    expect(changed).toEqual([]);
-  });
-
-  it("drops a Literature Note renamed out of Markdown", async () => {
-    const { service, vault, metadataCache, workspace } = await makeHarness({
-      "paper.md": cache({ itemKey: ITEM_A }),
-    });
-    startup({ metadataCache, workspace });
-
-    vault.renameFile("paper.md", "paper.txt");
-
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
-  });
-
-  it("indexes a note renamed into Markdown once its cache arrives", async () => {
-    const { service, vault, metadataCache, workspace } = await makeHarness({});
-    vault.addFile("paper.txt");
-    startup({ metadataCache, workspace });
-
-    // Obsidian has parsed nothing for the new path at rename time.
-    const file = vault.renameFile("paper.txt", "paper.md");
-    expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
-
-    metadataCache.change(file, cache({ itemKey: ITEM_A }));
-
-    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
   it("orders shared-key notes by mtime descending, then path", async () => {
@@ -559,7 +526,7 @@ describe("NoteIndex", () => {
     vault.files.get("old.md")!.stat.mtime = 100;
     vault.files.get("new.md")!.stat.mtime = 200;
     // tie-a.md and tie-b.md keep the default mtime 0 → path breaks the tie.
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
       "new.md",
@@ -596,7 +563,7 @@ describe("NoteIndex", () => {
     const { service, vault, metadataCache, workspace } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),
     });
-    startup({ metadataCache, workspace });
+    startup({ metadataCache, workspace, vault });
 
     vault.deleteFile("paper.md");
 
@@ -635,6 +602,86 @@ describe("NoteIndex", () => {
 });
 
 /**
+ * Obsidian hears a rename in vault listener order. A plugin loaded during
+ * startup subscribes before the metadata cache and hears it before the cache
+ * rekeys the path; a plugin enabled at runtime subscribes after.
+ */
+describe.each([
+  { load: "during startup", enabledAtRuntime: false },
+  { load: "at runtime", enabledAtRuntime: true },
+])("NoteIndex after a rename, loaded $load", ({ enabledAtRuntime }) => {
+  async function loaded(files: Record<string, CachedMetadata>) {
+    const harness = await makeHarness(files, { enabledAtRuntime });
+    if (!enabledAtRuntime) startup(harness);
+    const changed: string[] = [];
+    harness.service.on("changed", (file) => changed.push(file.path));
+    return { ...harness, changed };
+  }
+
+  it("keeps a moved Literature Note under its key and says it moved", async () => {
+    const { service, vault, changed } = await loaded({
+      "literatures/paper.md": cache({ itemKey: ITEM_A }),
+    });
+
+    vault.renameFile("literatures/paper.md", "Drafts/moved.md");
+    await settled();
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
+      "Drafts/moved.md",
+    ]);
+    expect(changed).toEqual(["Drafts/moved.md"]);
+
+    vault.renameFile("Drafts/moved.md", "literatures/paper.md");
+    await settled();
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
+      "literatures/paper.md",
+    ]);
+  });
+
+  it("drops a Literature Note renamed out of Markdown and takes it back on the way in", async () => {
+    const { service, vault, changed } = await loaded({
+      "paper.md": cache({ itemKey: ITEM_A }),
+    });
+
+    vault.renameFile("paper.md", "paper.md.away");
+    await settled();
+    expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+
+    // The cache still holds the parse under the restored path and reports no change.
+    vault.renameFile("paper.md.away", "paper.md");
+    await settled();
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+    expect(changed).toEqual(["paper.md.away", "paper.md"]);
+  });
+
+  it("stays quiet for a renamed ordinary note", async () => {
+    const { vault, changed } = await loaded({ "plain.md": cache({}) });
+
+    vault.renameFile("plain.md", "Notes/plain.md");
+    await settled();
+
+    expect(changed).toEqual([]);
+  });
+
+  it("indexes a file renamed into Markdown once the cache reports its parse", async () => {
+    const { service, vault, metadataCache } = await loaded({});
+    vault.addFile("paper.txt");
+
+    // The cache holds nothing for the file yet.
+    const file = vault.renameFile("paper.txt", "paper.md");
+    await settled();
+    expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+
+    metadataCache.change(file, cache({ itemKey: ITEM_A }));
+    expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+  });
+});
+
+/** Lets the vault finish its synchronous rename dispatch and what follows it. */
+function settled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
  * `enabledAtRuntime: true` is the runtime-enable shape: layout ready, cache
  * clean. The default is plugin load during startup: neither yet, both settle
  * on `startup()`.
@@ -651,14 +698,15 @@ async function makeHarness(
     // A build that dropped the internal hook.
     delete (metadataCache as { onCleanCache?: unknown }).onCleanCache;
   }
-  const vault = new MockVault(metadataCache);
+  const vault = new MockVault();
+  const app = { metadataCache, vault, workspace } as unknown as App;
+  if (options.enabledAtRuntime) metadataCache.watchVault(vault);
 
   for (const [path, fileCache] of Object.entries(files)) {
     vault.addFile(path);
     metadataCache.setCache(path, fileCache);
   }
 
-  const app = { metadataCache, vault, workspace } as unknown as App;
   const plugin = { app } as unknown as Plugin;
   const service = new NoteIndex({ plugin, app });
   services.push(service);
@@ -666,8 +714,14 @@ async function makeHarness(
   return { app, metadataCache, workspace, service, vault };
 }
 
-/** Obsidian's startup order: the cache initializes and drains, then layout is ready. */
-function startup(harness: Pick<Harness, "metadataCache" | "workspace">): void {
+/**
+ * Obsidian's startup order: the cache finishes its initial load and starts
+ * following the vault, drains, then layout is ready.
+ */
+function startup(
+  harness: Pick<Harness, "metadataCache" | "workspace" | "vault">,
+): void {
+  harness.metadataCache.watchVault(harness.vault);
   harness.metadataCache.resolve();
   harness.workspace.ready();
 }

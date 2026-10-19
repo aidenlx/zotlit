@@ -53,6 +53,21 @@ Imports all child notes attached to regular items and all standalone notes in ev
 
 The Zotero entry scopes the import to the row you right-click, subcollections included. That target is exact, so it runs whether or not the row is in your library scope.
 
+## Library View [#library-view]
+
+<Command name={m.command_open_library_view_name()} />
+
+Opens the Library View, a tab titled <UiLabel name={m.library_view_name()} /> that lists your Zotero library, and puts the cursor in its search box. If the tab is already open, the command brings it forward. See [Browse your library in the Library View](/docs/how-to/use-library-view).
+
+| Entry point     | Details                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| Command palette | Always available                                                                                             |
+| Ribbon          | The ZotLit icon                                                                                              |
+| Quick switcher  | `Alt+Enter` (`Option+Enter` on macOS) on a result opens the view on that item. See [below](#quick-switcher). |
+| Automatic       | Opens once on a new install and once after a v1-to-v2 upgrade, with the setup banner above it                |
+
+A selected row in the view answers the quick switcher's chords below, and its right-click menu lists every action on the item. See [Open, write, and cite from a row](/docs/how-to/use-library-view#rows).
+
 ## Literature note quick switcher [#quick-switcher]
 
 <Command name={m.command_open_lit_note_name()} />
@@ -63,7 +78,7 @@ Opens a modal to search every library in your [library scope](/docs/reference/se
 | --------------- | ---------------- |
 | Command palette | Always available |
 
-A result takes four chords, listed along the bottom of the modal:
+A result takes five chords, listed along the bottom of the modal:
 
 | Chord                                           | Result                                                           |
 | ----------------------------------------------- | ---------------------------------------------------------------- |
@@ -71,6 +86,9 @@ A result takes four chords, listed along the bottom of the modal:
 | `Ctrl+Enter` (`Cmd+Enter` on macOS)             | The same, in a new pane.                                         |
 | `Shift+Enter`                                   | Opens the item's PDF in Obsidian's PDF reader, without the note. |
 | `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new pane.                                         |
+| `Alt+Enter` (`Option+Enter` on macOS)           | Shows the item in the [Library View](#library-view).             |
+
+`Alt+Enter` opens the Library View on the item's first collection, or on its library when the item is in no collection, and selects its row. It clears the view's search and turns off its reading-state filters, so nothing hides the row. When the item falls beyond the view's limit of 1,000 papers, nothing is selected and a notice says so.
 
 The two PDF chords run <UiLabel name={m.command_open_pdf_name()} /> on the selected result, listed under [Literature note actions](#literature-note-actions).
 
@@ -327,7 +345,9 @@ Creates a query file named `Untitled.zotquery` and opens it in a tab. The file h
 
 <UiLabel name={m.annot_view_save_as_query_file()} /> in the annotation view's
 **More options** menu also creates a query file. See [Save the annotation
-sidebar as a query file](/docs/how-to/use-query-files#save-sidebar).
+sidebar as a query file](/docs/how-to/use-query-files#save-sidebar). The Library
+View's view menu has the same entry. See [Save the view as a query
+file](/docs/how-to/use-library-view#save-as-query-file).
 
 ## Template data explorer
 
@@ -406,12 +426,12 @@ Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m
 
 <Command name={m.command_open_welcome_name()} />
 
-Opens the ZotLit Welcome View for guided setup and v1-to-v2 migration.
+Opens the [Library View](#library-view) and shows the setup banner above it, even after you dismissed it or setup is complete. The banner holds the setup steps, after a v1-to-v2 upgrade the link to the migration guide, and after ZotLit updates the link to the release notes.
 
-| Entry point     | Details                                             |
-| --------------- | --------------------------------------------------- |
-| Command palette | Always available                                    |
-| Automatic       | Opens on first launch, and after a v1-to-v2 upgrade |
+| Entry point     | Details                                                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                          |
+| Automatic       | The banner shows over the Library View on a new install, after a v1-to-v2 upgrade, and after ZotLit updates, until you dismiss it or what it says is done |
 
 <Command name={m.command_open_release_note_name()} />
 
@@ -421,7 +441,7 @@ Opens the release notes for the installed ZotLit version.
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Command palette | Always available                                                                                                                                                              |
 | Settings        | The <UiLabel name={m.settings_resources_whats_new_button()} /> button in the <UiLabel name={m.settings_resources_whats_new_name({ version: "…" })} /> row of the settings tab |
-| Update notice   | The <UiLabel name={m.notice_update_see_whats_new()} /> button on the notice shown after ZotLit updates                                                                        |
+| Welcome banner  | The <UiLabel name={m.welcome_update_action()} /> button on the banner shown above the Library View after ZotLit updates                                                       |
 
 ## Entry-point summary
 
@@ -430,6 +450,7 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_refresh_db_name()} />                      |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_update_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_import_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_library_view_name()} />               |   yes   |  yes   |      no      | Always                                              |
 | <UiLabel name={m.command_open_lit_note_name()} />                   |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_insert_citation_name()} />                 |   yes   |   no   |      no      | An editor is open                                   |
 | <UiLabel name={m.command_open_citekey_name()} />                    |   yes   |   no   |      no      | Cursor on a recognized citation key                 |

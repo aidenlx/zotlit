@@ -9,8 +9,12 @@ The Obsidian plugin. When docs say "ZotLit" with no qualifier, they mean the Obs
 _Avoid_: ZotLit for Obsidian, the Obsidian plugin (as a standing name; fine as an occasional clarifier)
 
 **ZotLit Companion**:
-The required Zotero add-on. Write “ZotLit Companion, the Zotero add-on” on first use in a page and “the Companion” later. It installs under the display name “ZotLit” in Zotero's add-on manager, so docs never call it by its displayed name alone.
+The optional Zotero add-on: browsing, searching and reading need only the Zotero database, and the Companion adds current reads on systems where ZotLit reads only the main database file (Windows, ext4), the actions in Zotero's menus and live updates. Docs name it at the step that needs it, never as a prerequisite. Write “ZotLit Companion, the Zotero add-on” on first use in a page and “the Companion” later. It installs under the display name “ZotLit” in Zotero's add-on manager, so docs never call it by its displayed name alone.
 _Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
+
+**Library View**:
+The main-area tab that lists the Zotero library, titled “Zotero library” in Obsidian. Docs call it “the Library View” and quote its tab and command names from their Messages. It is the first screen of a new install, and the getting-started pages start from it.
+_Avoid_: library tab, library browser, Zotero library (as the name of the view; it is the tab's title)
 
 **Template Workbench**:
 The workflow for building and testing a Template Document — a Literature Note Profile's template document, the Citation Template (**citation text** in reader-facing prose), or a Shared Partial (**partial**). Three surfaces serve it: the web Workbench at `/workbench`, which edits Profile documents alone; the Template Workbench CLI for agents; and the Template Workbench View in Obsidian, which opens all three kinds. The term names the activity, not one surface; each surface qualifies by host when the difference matters.

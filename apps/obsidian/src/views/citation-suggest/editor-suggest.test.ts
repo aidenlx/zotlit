@@ -433,7 +433,7 @@ describe("resolveCitationTrigger", () => {
 describe("padCitationInsert", () => {
   it("ends a bracketed citation at its closing bracket, with the cursor after it", () => {
     for (const next of ["", ".", " "]) {
-      expect(padCitationInsert("[@smith2024]", next)).toEqual({
+      expect(padCitationInsert("[@smith2024]", { next })).toEqual({
         text: "[@smith2024]",
         cursor: 12,
       });
@@ -448,21 +448,41 @@ describe("padCitationInsert", () => {
   });
 
   it("appends the space before a non-space character", () => {
-    expect(padCitationInsert("@smith2024", ".")).toEqual({
+    expect(padCitationInsert("@smith2024", { next: "." })).toEqual({
       text: "@smith2024 ",
       cursor: 11,
     });
   });
 
   it("reuses a space already at the insert position, moving the cursor past it", () => {
-    expect(padCitationInsert("@smith2024", " ")).toEqual({
+    expect(padCitationInsert("@smith2024", { next: " " })).toEqual({
       text: "@smith2024",
       cursor: 11,
     });
   });
 
+  it("parts the citation from a word or punctuation before it with one space, the cursor following it", () => {
+    expect(
+      padCitationInsert("(Matuschak and Nielsen 2019)", {
+        previous: ".",
+        next: "",
+      }),
+    ).toEqual({ text: " (Matuschak and Nielsen 2019) ", cursor: 30 });
+    expect(
+      padCitationInsert("[@smith2024]", { previous: "e", next: "." }),
+    ).toEqual({ text: " [@smith2024]", cursor: 13 });
+  });
+
+  it("adds no space before at a line start, after a space, or inside an opening bracket or quote", () => {
+    for (const previous of ["", " ", "\t", "(", "[", "“", '"']) {
+      expect(padCitationInsert("[@smith2024]", { previous, next: "" })).toEqual(
+        { text: "[@smith2024]", cursor: 12 },
+      );
+    }
+  });
+
   it("keeps the padded alternate format from re-matching the At Trigger", () => {
-    const padded = padCitationInsert("@smith2024", "");
+    const padded = padCitationInsert("@smith2024", { next: "" });
     const line = `see ${padded.text}`;
     expect(
       resolveCitationTrigger(line, 4 + padded.cursor, { atTrigger: true }),

@@ -149,6 +149,10 @@ if (typeof Element !== "undefined") {
   proto.empty ??= function () {
     while (this.firstChild) this.removeChild(this.firstChild);
   };
+  proto.setAttr ??= function (name, value) {
+    if (value === null) this.removeAttribute(name);
+    else this.setAttribute(name, String(value));
+  };
 }
 
 if (typeof HTMLElement !== "undefined") {
