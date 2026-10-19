@@ -274,9 +274,9 @@ describe("fieldLabel", () => {
     ["item.archiveID", "Item archive ID"],
     ["item.dateAdded", "Item date added"],
     ["item.itemType", "Item type"],
-    // A Vault Property reads as its frontmatter key, as Bases names it.
-    ["vault.citekey", "citekey"],
-    ["vault.reading-status", "reading-status"],
+    // A Vault Property reads as its frontmatter key, marked as the note's.
+    ["vault.citekey", "citekey (note)"],
+    ["vault.reading-status", "reading-status (note)"],
     // A path no label covers stays as it is.
     ["attachment.contentType", "attachment.contentType"],
   ])("names %s as %s", (property, label) => {
@@ -422,7 +422,7 @@ describe("viewProperties vault properties", () => {
       });
       expect(paths(properties)).toEqual(["title", "vault.reading-status"]);
       expect(properties.entry("vault.reading-status")).toMatchObject({
-        label: "reading-status",
+        label: "reading-status (note)",
         formula: null,
         fits: true,
         place: 1,

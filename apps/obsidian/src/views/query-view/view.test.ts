@@ -2237,7 +2237,7 @@ views:
     '(itemType == "book")\n&& ([].contains(indexedKey))',
   );
   expect(tableText(el)).toEqual([
-    ["", "Title", "reading-status", "Literature note"],
+    ["", "Title", "reading-status (note)", "Literature note"],
     ["", "Ten simple rules", m.query_view_vault_no_note(), "Create"],
   ]);
 });
@@ -4139,7 +4139,7 @@ describe("vault properties", () => {
         ?.querySelector("[data-query-icon]")
         ?.getAttribute("data-query-icon");
 
-    expect(header("vault.status")?.textContent).toBe("status");
+    expect(header("vault.status")?.textContent).toBe("status (note)");
     expect(icon("vault.tags")).toBe("tags");
     expect(icon("vault.aliases")).toBe("forward");
   });
@@ -4164,7 +4164,7 @@ describe("vault properties", () => {
     await settle();
 
     expect(view.table()).toEqual({
-      header: ["Title", "status"],
+      header: ["Title", "status (note)"],
       body: [
         ["Ten simple rules", "reading, to cite"],
         ["Deep learning", ""],
