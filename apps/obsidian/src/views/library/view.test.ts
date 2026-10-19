@@ -2018,6 +2018,58 @@ it("leaves the search box unfocused when the command brings the tab forward unde
   expect(document.activeElement).not.toBe(searchBox(view));
 });
 
+/**
+ * Hold the banner's connection readout until the returned call lands it, as
+ * on a first launch, where Zotero's database is still loading.
+ */
+function holdReadout(deps: LibraryViewDeps) {
+  const ready = Promise.withResolvers<unknown>();
+  Object.assign(deps.welcome.reads, { ready: ready.promise });
+  return async (view: LibraryView) => {
+    await act(async () => {
+      ready.resolve({
+        reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
+      });
+      await view.welcome.settled;
+    });
+    await act(() => view.arrived);
+  };
+}
+
+it("leaves the search box unfocused when the command brings the tab forward before the banner's readout lands, and the banner comes to show", async () => {
+  const { deps } = pluginData();
+  const land = holdReadout(deps);
+  const view = await openTab(deps);
+  await bringForward(view);
+  await land(view);
+  expect(view.contentEl.querySelector("[data-welcome-banner]")).not.toBeNull();
+  expect(document.activeElement).not.toBe(searchBox(view));
+});
+
+it("has the search box focused once the banner's readout lands where no banner comes to show", async () => {
+  const { deps, host } = pluginData();
+  host.vault.addFile("literatures/Paper.md", "");
+  const land = holdReadout(deps);
+  const view = await openTab(deps);
+  await bringForward(view);
+  await land(view);
+  expect(view.contentEl.querySelector("[data-welcome-banner]")).toBeNull();
+  expect(document.activeElement).toBe(searchBox(view));
+});
+
+it("leaves the cursor where the researcher moved it while the banner's readout was pending", async () => {
+  const { deps, host } = pluginData();
+  host.vault.addFile("literatures/Paper.md", "");
+  const land = holdReadout(deps);
+  const view = await openTab(deps);
+  await bringForward(view);
+  const elsewhere = document.body.createEl("input");
+  cleanup.defer(() => elsewhere.remove());
+  elsewhere.focus();
+  await land(view);
+  expect(document.activeElement).toBe(elsewhere);
+});
+
 it("puts the cursor in its own search box from the Welcome View banner's Search your library", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);

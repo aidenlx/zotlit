@@ -4558,6 +4558,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("leaves the search box unfocused on a fresh install's first screen, under the Welcome View banner", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
+    const folder = `${services}.settings.current['note.default-profile'].bindings['note.literature-folder']`;
+    const aside = "zotlit-e2e-literature-aside";
+    /** Start ZotLit as a fresh install, with no plugin data. */
+    const freshInstall = (before: string) =>
+      `(async()=>{app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await ${services}.settings.flush();const folder=${folder};await app.plugins.disablePlugin('zotlit');await app.vault.adapter.remove(${dataPath});${before}await app.plugins.enablePlugin('zotlit');await ${services}.release.checked;return true;})()`;
+    const snapshot = await obEval(
+      vaultId,
+      `(async()=>JSON.stringify({layout:app.workspace.getLayout(),data:await app.vault.adapter.read(${dataPath})}))()`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});await ${services}.settings.flush();const folder=${folder};await app.plugins.disablePlugin('zotlit');if(await app.vault.adapter.exists(${JSON.stringify(aside)}))await app.vault.adapter.rename(${JSON.stringify(aside)},folder);await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    // A fresh install whose literature-notes folder is missing: setup is
+    // incomplete, and the release check opens the Library View with the
+    // Welcome View banner above it.
+    await obEval(vaultId, freshInstall(""));
+    await obEval(
+      vaultId,
+      freshInstall(
+        `if(folder&&await app.vault.adapter.exists(folder))await app.vault.adapter.rename(folder,${JSON.stringify(aside)});`,
+      ),
+    );
+    // Once the banner settles, the cursor is not in the box right under it.
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(async()=>{${PAGE}const view=await until('the Library View',()=>app.workspace.getLeavesOfType('zotlit-library')[0]?.view.search&&app.workspace.getLeavesOfType('zotlit-library')[0].view,10000);await until('banner',()=>view.contentEl.querySelector('[data-welcome-banner]'),10000);await view.welcome.settled;await view.arrived;await view.searched;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const input=view.contentEl.querySelector('[data-library-search] input');return JSON.stringify({banner:view.welcome.shown,focused:input.ownerDocument.activeElement===input});})()`,
+        ),
+      ),
+    ).toEqual({ banner: true, focused: false });
+  });
+
   it("opens the Library View after an update of ZotLit in its own tab beside the open note, with no notice, and announces the update in the banner beside the Help Links until What's new acknowledges it", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const dataPath = "app.vault.configDir+'/plugins/zotlit/data.json'";
