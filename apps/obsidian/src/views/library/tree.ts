@@ -13,6 +13,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
+import { nodeKey } from "./document";
 import type { LibraryNode } from "./document";
 
 export interface TreeCollection {
@@ -111,4 +112,55 @@ export function libraryOf(indexedKey: string): LibrarySelector | null {
   return parsed.groupID === null
     ? { type: "personal" }
     : { type: "group", groupID: parsed.groupID };
+}
+
+/** The mark before the {@link nodeKey} of a Library the researcher closed. */
+export const CLOSED_PREFIX = "closed:";
+
+/**
+ * Whether the tree knows the open-node key `key` once `libraries` are read:
+ * a node of a Library read in full must be in it; the nodes of a Library the
+ * tree did not read, or read in part, stay for a later read.
+ */
+export function knowsNode(
+  libraries: readonly { tree: TreeLibrary; complete: boolean }[],
+): (key: string) => boolean {
+  const known = new Set<string>();
+  const read = new Set<string>();
+  const walk = (library: LibrarySelector, list: readonly TreeCollection[]) => {
+    for (const { path, children } of list) {
+      known.add(nodeKey({ kind: "collection", library, path }));
+      walk(library, children);
+    }
+  };
+  for (const { tree, complete } of libraries) {
+    if (!complete) continue;
+    const { selector } = tree.library;
+    read.add(selectorKey(selector));
+    known.add(
+      `${CLOSED_PREFIX}${nodeKey({ kind: "library", library: selector })}`,
+    );
+    walk(selector, tree.collections);
+  }
+  return (key) => {
+    if (known.has(key)) return true;
+    const names = parseNames(
+      key.startsWith(CLOSED_PREFIX) ? key.slice(CLOSED_PREFIX.length) : key,
+    );
+    return names !== null && !read.has(names[0]!);
+  };
+}
+
+/** The names of a {@link nodeKey}; `null` for a key that is none. */
+function parseNames(key: string): string[] | null {
+  try {
+    const names: unknown = JSON.parse(key);
+    return Array.isArray(names) &&
+      names.length > 0 &&
+      names.every((name) => typeof name === "string")
+      ? names
+      : null;
+  } catch {
+    return null;
+  }
 }

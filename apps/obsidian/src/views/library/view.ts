@@ -36,15 +36,19 @@ import {
   libraryViewQuery,
   libraryViewQueryFileLeftOut,
   libraryViewQueryFileText,
+  pruneExpanded,
   vaultPass,
   withCardDisclosure,
+  withExpanded,
   withFacets,
   withNode,
   withSearch,
+  withSelected,
   withTags,
 } from "./document";
 import type {
   LibraryNode,
+  LibraryViewDocument,
   LibraryViewLabels,
   LibraryViewQuery,
   ReadingStateFacet,
@@ -284,6 +288,12 @@ export class LibraryView extends ItemView {
       filter: (facets) => this.#filter(facets),
       tag: (tags) => this.#tag(tags),
       scope: () => this.#scope(),
+      expand: (expanded) => this.#expand((doc) => withExpanded(doc, expanded)),
+      prune: (know) => {
+        const doc = this.#storage.document();
+        if (pruneExpanded(doc, know) !== doc)
+          this.#expand((now) => pruneExpanded(now, know));
+      },
     });
     this.search = new LibrarySearch(deps, {
       node: () => this.tree.store.getState().node,
@@ -496,10 +506,82 @@ export class LibraryView extends ItemView {
     const doc = this.#storage.document();
     this.card.showDisclosures(doc.card);
     this.tree.show(doc.node);
+    this.tree.showExpanded(doc.expanded);
     this.tree.showFacets(doc.facets);
     this.tree.showTags(doc.tags);
     this.tree.refresh();
+    // The document keeps the selected paper, whatever selects it.
+    this.card.register(
+      this.selection.subscribe(({ key }) => {
+        if (key !== this.#storage.document().selected) this.#keepSelected(key);
+      }),
+    );
+    this.#restoreSelection();
     await this.search.open(doc.search);
+  }
+
+  /**
+   * Select the paper the document kept and scroll its row into view, once the list first lands its rows. A paper the list
+   * no longer holds is let go of. A list that fails, as before Zotero's
+   * database is read, waits for one that lands; a selection the researcher
+   * made first stays.
+   */
+  #restoreSelection(): void {
+    const { selected } = this.#storage.document();
+    if (selected === null) return;
+    const off = this.query.state.subscribe(({ phase, results }) => {
+      if (phase !== "ready" || !results) return;
+      off();
+      if (this.selection.getState().key !== null) return;
+      if (!results.rows.some((row) => row.indexedKey === selected)) {
+        this.#keepSelected(null);
+        return;
+      }
+      // As the arrow keys select a row: the card shows beside a wide list
+      // and stays off a narrow one until the researcher asks for it.
+      this.selection.setState({ key: selected, card: false });
+      // The list draws its rows a frame or more after they land.
+      void this.#drawn(selected).then((row) => {
+        if (this.selection.getState().key === selected)
+          row?.scrollIntoView({ block: "nearest" });
+      });
+    });
+    this.query.register(off);
+  }
+
+  /**
+   * The row of the Item `key` once the list draws it, within half a second
+   * of its rows landing; `undefined` where it draws none by then.
+   */
+  async #drawn(key: string): Promise<HTMLElement | undefined> {
+    const win = this.contentEl.win;
+    for (let frame = 0; frame < 30; frame++) {
+      const row = this.#rowOf(key);
+      if (row) return row;
+      await new Promise((resolve) => win.requestAnimationFrame(resolve));
+    }
+    return undefined;
+  }
+
+  /** Keep the paper `key` as the selected one, or none. */
+  #keepSelected(key: string | null): void {
+    this.#storage
+      .change((doc) => withSelected(doc, key))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the selected paper", {
+          error,
+        });
+      });
+  }
+
+  /** The researcher opened or closed tree nodes: show them, and keep them. */
+  #expand(change: (doc: LibraryViewDocument) => LibraryViewDocument): void {
+    this.#storage.change(change).catch((error: unknown) => {
+      logger.warn("The Library View could not keep the open tree nodes", {
+        error,
+      });
+    });
+    this.tree.showExpanded(this.#storage.document().expanded);
   }
 
   /** The values of the list's row of the Item `key`, where the list shows it. */
@@ -721,10 +803,8 @@ export class LibraryView extends ItemView {
   /** The researcher picked `node` in the tree: list it, and keep it. */
   #select(node: LibraryNode): void {
     this.tree.show(node);
-    // The selected row leaves the list with its node.
-    this.selection.setState({ key: null, card: false });
-    // The document takes the node at once (Recent writes its sort), and the
-    // search runs again over the node.
+    // The document takes the node at once (Recent writes its sort, and the
+    // Collections above it open), and the search runs again over the node.
     this.#storage
       .change((doc) => withNode(doc, node))
       .catch((error: unknown) => {
@@ -732,6 +812,9 @@ export class LibraryView extends ItemView {
           error,
         });
       });
+    this.tree.showExpanded(this.#storage.document().expanded);
+    // The selected row leaves the list with its node.
+    this.selection.setState({ key: null, card: false });
     this.search.narrow();
     void this.search.run();
   }

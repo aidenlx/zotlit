@@ -333,7 +333,8 @@ function Checklist({ connect }: { connect: boolean }) {
 function FoldedChecklist({ connect }: { connect: boolean }) {
   const connection = useWelcomeStore((s) => s.connection);
   const literatureFolder = useWelcomeStore((s) => s.literatureFolder);
-  const [open, setOpen] = useState(false);
+  const open = useWelcomeStore((s) => s.stepsShown);
+  const { showSteps } = useWelcomeActions();
   const stepsId = useUniqueId();
   return (
     <div className="zt:flex zt:flex-col zt:gap-0.5">
@@ -372,7 +373,7 @@ function FoldedChecklist({ connect }: { connect: boolean }) {
           icon={open ? "chevrons-down-up" : "chevrons-up-down"}
           aria-expanded={open}
           aria-controls={stepsId}
-          onClick={() => setOpen((now) => !now)}
+          onClick={() => showSteps(!open)}
         >
           {open ? m.welcome_hide_steps() : m.welcome_show_steps()}
         </Button>

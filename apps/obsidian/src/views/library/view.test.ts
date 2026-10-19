@@ -42,8 +42,8 @@ import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-no
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
 
+import { nodeKey } from "./document";
 import type { LibraryNode } from "./document";
-import { nodeKey } from "./library-tree";
 import { openLibraryView } from "./register";
 import { LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
@@ -909,6 +909,61 @@ it("opens a Collection to its subcollections, each counted alone", async () => {
     "    Chapter 2 2",
     "Lab 2",
     "  Thesis 1",
+  ]);
+});
+
+it("keeps the nodes the researcher opens and closes in the document, and opens on them again", async () => {
+  const { deps, settings } = pluginData();
+  const first = await openTab(deps);
+  await press(
+    first,
+    row(first, THESIS).querySelector("[data-library-expand]")!,
+  );
+  await press(
+    first,
+    row(first, { kind: "library", library: LAB }).querySelector(
+      "[data-library-expand]",
+    )!,
+  );
+  await act(() => settings.flush());
+  expect(settings.current?.["library.document"]?.expanded).toEqual([
+    JSON.stringify(["personal", "Thesis"]),
+    `closed:${JSON.stringify(["group:4815"])}`,
+  ]);
+  await act(() => first.close());
+  const view = await openTab(deps);
+  expect(tree(view)).toEqual([
+    "Recent",
+    "My Library 5",
+    "  Reading list 1",
+    "  Thesis 3",
+    "    Chapter 1 1",
+    "    Chapter 2 2",
+    "Lab 2",
+  ]);
+  await press(view, row(view, THESIS).querySelector("[data-library-expand]")!);
+  await act(() => settings.flush());
+  expect(settings.current?.["library.document"]?.expanded).toEqual([
+    `closed:${JSON.stringify(["group:4815"])}`,
+  ]);
+});
+
+it("drops the open nodes Zotero no longer has from the document, and keeps the rest", async () => {
+  const { deps, settings } = pluginData({
+    node: { kind: "recent" },
+    expanded: [
+      JSON.stringify(["personal", "Thesis"]),
+      JSON.stringify(["personal", "Old name"]),
+      // A Library outside the Library Scope keeps its nodes for when it shows.
+      JSON.stringify(["group:77", "Drafts"]),
+    ],
+  });
+  const view = await openTab(deps);
+  expect(tree(view)).toContain("    Chapter 1 1");
+  await act(() => settings.flush());
+  expect(settings.current?.["library.document"]?.expanded).toEqual([
+    JSON.stringify(["personal", "Thesis"]),
+    JSON.stringify(["group:77", "Drafts"]),
   ]);
 });
 
@@ -2380,6 +2435,50 @@ it("lets go of the selected row once a search leaves it out, and hides its Readi
   expect(
     view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
   ).toBe(true);
+});
+
+it("opens again on the paper the researcher selected, scrolled into view, with its Reading Card beside a wide list", async () => {
+  const { deps, settings } = pluginData();
+  const first = await openTab(deps);
+  await act(() => itemRow(first, C).click());
+  await act(() => settings.flush());
+  expect(settings.current?.["library.document"]?.selected).toBe(C);
+  await act(() => first.close());
+  const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+  cleanup.defer(() => scrolled.mockRestore());
+  const view = await openTab(deps);
+  expect(itemRows(view).slice(0, 3)).toEqual([A, B, `${C} *`]);
+  // Selected as the arrow keys select: a wide pane shows the card beside
+  // the list, and a narrow one leaves the list uncovered.
+  expect(view.selection.getState()).toEqual({ key: C, card: false });
+  expect(
+    view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
+  ).toBe(false);
+  // The list draws the row before it scrolls there.
+  await vi.waitFor(() =>
+    expect(scrolled.mock.contexts).toContain(itemRow(view, C)),
+  );
+});
+
+it("lets go of the selected paper in the document once the researcher picks another node", async () => {
+  const { deps, settings } = pluginData();
+  const view = await openTab(deps);
+  await act(() => itemRow(view, A).click());
+  await press(view, row(view, MY_LIBRARY));
+  await act(() => settings.flush());
+  expect(settings.current?.["library.document"]?.selected).toBeNull();
+});
+
+it("opens with no paper selected where the list no longer holds the one it kept, and forgets it", async () => {
+  const { deps, settings } = pluginData({
+    node: { kind: "recent" },
+    selected: "1:ZZZZZZZZ",
+  });
+  const view = await openTab(deps);
+  expect(view.selection.getState().key).toBeNull();
+  expect(itemRows(view).some((key) => key.endsWith("*"))).toBe(false);
+  await act(() => settings.flush());
+  expect(settings.current?.["library.document"]?.selected).toBeNull();
 });
 
 describe("Reading Card", () => {

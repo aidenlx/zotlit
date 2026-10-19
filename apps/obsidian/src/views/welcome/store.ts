@@ -1,4 +1,4 @@
-// Per-instance store for one Welcome View banner: the Migration Prompt flag, the pending update, the dismissal, the request to show it, the connection readout, and the seeded literature-notes folder, with the one decision of which sections the banner shows.
+// Per-instance store for one Welcome View banner: the Migration Prompt flag, the pending update, the dismissal, the request to show it and its open steps, the connection readout, and the seeded literature-notes folder, with the one decision of which sections the banner shows.
 import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
@@ -17,10 +17,15 @@ export interface WelcomeState {
   /** `welcome.dismissed`: the researcher put the banner away. */
   dismissed: boolean;
   /**
-   * The researcher asked for the banner ("Open welcome view", "Review
-   * conversion") in this session; a dismissal puts it away.
+   * `welcome.requested`: the researcher asked for the banner ("Open welcome
+   * view", "Welcome & help", "Review conversion"); a dismissal puts it away.
    */
   requested: boolean;
+  /**
+   * `welcome.steps-shown`: "Show steps" opened the checklist under the
+   * folded "Setup done" line; a dismissal folds it again.
+   */
+  stepsShown: boolean;
   /**
    * How many times the researcher asked for the banner in this session; each
    * request moves focus to it.
@@ -157,6 +162,7 @@ export function createWelcomeStore() {
     migrationPending: false,
     dismissed: false,
     requested: false,
+    stepsShown: false,
     requests: 0,
     converted: false,
     connection: { status: "checking" },

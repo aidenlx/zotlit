@@ -18,6 +18,8 @@ export interface WelcomeActions extends SetupActions, WelcomeBannerHost {
    * upgraded state and the update of the running version.
    */
   dismiss: () => void;
+  /** Open or fold the checklist under the "Setup done" line, until a dismissal. */
+  showSteps: (shown: boolean) => void;
   /** Open the Release Note of the running version, acknowledging its update. */
   openReleaseNote: () => void;
   retryTemplateCleanup: () => Promise<void>;

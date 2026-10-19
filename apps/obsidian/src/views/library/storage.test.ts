@@ -21,7 +21,9 @@ import type { QueryViewDeps } from "@/views/query-view/view";
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
   libraryViewQuery,
+  withExpanded,
   withNode,
+  withSelected,
 } from "./document";
 import type { LibraryViewDocument } from "./document";
 import { LibraryViewStorage } from "./storage";
@@ -153,6 +155,8 @@ it("reads the document that plugin data holds", async () => {
       path: ["Thesis", "Chapter 2"],
     },
     facets: ["annotated"],
+    // The Collection above the selected one opens.
+    expanded: [JSON.stringify(["personal", "Thesis"])],
   });
   expect(query.state.getState().file?.filters).toEqual({
     and: ['collections.within("Thesis/Chapter 2")', "annotations.length > 0"],
@@ -167,10 +171,13 @@ it("writes a toolbar change to the document in plugin data at once", async () =>
     });
     await query.flush();
   });
-  // The stored document, of an earlier build, selected no tags.
+  // The stored document, of an earlier build, selected no tags, left no
+  // node open but the one above the selected Collection, and no paper.
   expect(saved(plugin)).toEqual({
     ...STORED,
     tags: [],
+    expanded: [JSON.stringify(["personal", "Thesis"])],
+    selected: null,
     sort: [{ property: "title", direction: "ASC" }],
   });
   expect(storage.document().sort).toEqual([
@@ -218,7 +225,44 @@ it("keeps Recent as the tree selection with its sort, newest change first", asyn
   expect(saved(plugin)).toEqual({
     ...STORED,
     tags: [],
+    expanded: [JSON.stringify(["personal", "Thesis"])],
+    selected: null,
     node: { kind: "recent" },
     sort: [{ property: "dateModified", direction: "DESC" }],
   });
+});
+
+it("writes the changes of one task to disk once, holding the last of them", async () => {
+  const { plugin, saveData, storage } = await openLibrary();
+  saveData.mockClear();
+  const reading = JSON.stringify(["personal", "Reading"]);
+  await Promise.all([
+    storage.change((doc) => withExpanded(doc, [...doc.expanded, reading])),
+    storage.change((doc) => withSelected(doc, "1:ABCD2345")),
+  ]);
+  expect(saveData).toHaveBeenCalledTimes(1);
+  expect(saved(plugin)).toMatchObject({
+    expanded: [JSON.stringify(["personal", "Thesis"]), reading],
+    selected: "1:ABCD2345",
+  });
+});
+
+it("writes once more after a write that runs, holding the last change asked for meanwhile", async () => {
+  const { plugin, saveData, storage } = await openLibrary();
+  saveData.mockClear();
+  const disk = Promise.withResolvers<void>();
+  saveData.mockImplementationOnce(async (data) => {
+    await disk.promise;
+    plugin.data = data;
+  });
+  const first = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+  const rest = [
+    storage.change((doc) => withSelected(doc, "1:BBBB2222")),
+    storage.change((doc) => withSelected(doc, "1:CCCC3333")),
+  ];
+  disk.resolve();
+  await Promise.all([first, ...rest]);
+  expect(saveData).toHaveBeenCalledTimes(2);
+  expect(saved(plugin)).toMatchObject({ selected: "1:CCCC3333" });
 });

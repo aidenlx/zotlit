@@ -8,10 +8,14 @@ import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { QueryClientService } from "@/services/query-client/service";
 import type { ReleaseService } from "@/services/release/service";
-import type { SettingsService } from "@/services/settings/service";
+import type {
+  SettingsPatch,
+  SettingsService,
+} from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -32,6 +36,8 @@ import {
 } from "./store";
 import { Welcome } from "./Welcome";
 
+const logger = getLogger(["welcome", "banner"]);
+
 // Delay before the connection spinner appears; a readout that settles faster —
 // the common case, since the DB is usually already loaded on open — resolves
 // straight to connected/missing without ever flashing the spinner.
@@ -42,7 +48,7 @@ export interface WelcomeBannerDeps {
   reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
   queries: Pick<QueryClientService, "peek" | "read">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
-  settings: Pick<SettingsService, "subscribe" | "update">;
+  settings: Pick<SettingsService, "subscribe" | "update" | "flush">;
   setupActions: SetupActions;
   templateMigration: Pick<
     LiteratureNoteTemplateMigrationService,
@@ -87,11 +93,22 @@ export class WelcomeBanner extends Component {
    * Library View's "Welcome & help" ask.
    */
   request(): void {
-    this.#deps.settings.update({ "welcome.dismissed": false });
-    this.#store.setState((s) => ({
-      requested: true,
-      requests: s.requests + 1,
-    }));
+    this.#keep({ "welcome.dismissed": false, "welcome.requested": true });
+    this.#store.setState((s) => ({ requests: s.requests + 1 }));
+  }
+
+  /**
+   * Write `patch` to plugin data and on to disk at once, so a reload right
+   * after it shows the banner as it is now.
+   */
+  #keep(patch: SettingsPatch): void {
+    const { settings } = this.#deps;
+    settings.update(patch);
+    settings.flush().catch((error: unknown) => {
+      logger.warn("The Welcome View banner could not keep its state", {
+        error,
+      });
+    });
   }
 
   /**
@@ -100,11 +117,15 @@ export class WelcomeBanner extends Component {
    * upgraded state and the update of the running version.
    */
   dismiss(): void {
-    const { settings, release } = this.#deps;
-    this.#store.setState({ requested: false, converted: false });
-    settings.update({ "welcome.dismissed": true });
+    const { release } = this.#deps;
+    this.#store.setState({ converted: false });
     release.acknowledgeMigration();
     release.acknowledgeUpdate();
+    this.#keep({
+      "welcome.dismissed": true,
+      "welcome.requested": false,
+      "welcome.steps-shown": false,
+    });
   }
 
   /** Whether the banner shows anything now. */
@@ -148,6 +169,8 @@ export class WelcomeBanner extends Component {
           this.#store.setState({
             migrationPending: s["release.migration-pending"],
             dismissed: s["welcome.dismissed"],
+            requested: s["welcome.requested"],
+            stepsShown: s["welcome.steps-shown"],
             literatureFolder,
             literatureFolderExists: folderExists(literatureFolder),
             templateConversionPending: s["note.template-conversion-pending"],
@@ -189,6 +212,7 @@ export class WelcomeBanner extends Component {
       },
       openExternal: (url) => window.open(url),
       dismiss: () => this.dismiss(),
+      showSteps: (shown) => this.#keep({ "welcome.steps-shown": shown }),
       openReleaseNote: () => {
         void release.openReleaseNote();
         release.acknowledgeUpdate();

@@ -22,6 +22,10 @@ export class LibraryViewStorage {
   #held: LibraryViewDocument = DEFAULT_LIBRARY_VIEW_DOCUMENT;
   /** The toolbar's text that {@link #held} has taken in. */
   #taken: string | null = null;
+  /** The write to disk under way. */
+  #writing: Promise<void> | null = null;
+  /** The write to disk that the saves since {@link #writing} began wait for. */
+  #queued: Promise<void> | null = null;
 
   /**
    * @param toolbar the Query View's text as it stands: a toolbar change
@@ -61,11 +65,32 @@ export class LibraryViewStorage {
    * holds it; rejects where the write failed, so the toolbar says the
    * change is not saved.
    */
-  async save(): Promise<void> {
+  save(): Promise<void> {
+    // Plugin data takes the document at once. The write to disk starts in
+    // the next microtask, so the changes of one task, such as a tree
+    // selection and the paper it lets go of, share it; a write asked for
+    // while one runs waits for it and then writes the latest document, so
+    // the arrow keys moving the selection never queue a write per key.
     this.#settings.update({
       [KEY]: serializeLibraryViewDocument(this.document()),
     });
-    await this.#settings.flush();
+    if (this.#queued) return this.#queued;
+    const earlier = this.#writing ?? Promise.resolve();
+    const queued = earlier
+      .catch(() => {})
+      .then(() => {
+        this.#queued = null;
+        const writing = this.#settings.flush();
+        this.#writing = writing;
+        writing
+          .finally(() => {
+            if (this.#writing === writing) this.#writing = null;
+          })
+          .catch(() => {});
+        return writing;
+      });
+    this.#queued = queued;
+    return queued;
   }
 
   /** {@link set}, then {@link save}. */
