@@ -325,7 +325,7 @@ async function mount(
         ],
       },
     },
-    query: { run },
+    query: { run, on: () => () => {} },
     annotations: {
       read: () => Promise.resolve(list),
       peek: () => ({ value: list }),
@@ -3803,6 +3803,11 @@ it("ends a Papers row's second line with the reason its host gives for the row",
     ["edited ITEMBBBB", 2],
     [undefined, 1],
   ]);
+  await act(() =>
+    view.setText(PAPERS_FILE.replace("type: papers", "type: table")),
+  );
+  await settle();
+  expect(el.textContent).not.toContain("edited ITEM");
 });
 
 it("expands a Papers row into its Attachments, Child Notes and Literature Note, and an Attachment into its Annotations, each opening its own target", async () => {

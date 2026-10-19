@@ -1,4 +1,4 @@
-import type { App, PaneType } from "obsidian";
+import type { App, PaneType, TFile } from "obsidian";
 
 import type { Item, ItemRef } from "@zotlit/db";
 import type { ProtocolAction } from "@zotlit/protocol";
@@ -9,6 +9,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
+import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
@@ -25,6 +26,7 @@ import {
 } from "./update-single";
 
 export interface CompanionNoteDeps extends InteractiveCreationDeps {
+  useLedger: Pick<UseLedger, "withoutNoteUse">;
   zoteroReads: Pick<ZoteroReadsService, "ready">;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "resolveCompanionNote" | "updateNote">;
@@ -42,6 +44,13 @@ export async function openCompanionNote(
   },
 ): Promise<void> {
   const pane = options.paneType ?? false;
+  const open = (file: TFile) => {
+    const navigate = () =>
+      deps.app.workspace.openLinkText(file.path, "", pane, { active: true });
+    return options.action === "update"
+      ? deps.useLedger.withoutNoteUse(file, navigate)
+      : navigate();
+  };
   const target = await deps.noteFeature.resolveCompanionNote(ref.indexedKey, {
     profile: options.profile,
   });
@@ -52,9 +61,7 @@ export async function openCompanionNote(
   }
   if (target.outcome === "existing") {
     const file = resolveLiteratureNoteWithWarning(target.files)!;
-    await deps.app.workspace.openLinkText(file.path, "", pane, {
-      active: true,
-    });
+    await open(file);
     if (target.keptProfile || target.diagnostic) {
       new BaseNotice(notice!);
     } else if (options.action === "update") {
@@ -85,9 +92,7 @@ export async function openCompanionNote(
     direct: true,
   });
   if (file) {
-    await deps.app.workspace.openLinkText(file.path, "", pane, {
-      active: true,
-    });
+    await open(file);
   }
 }
 

@@ -59,6 +59,15 @@ The annotation view comes forward in the sidebar with the PDF, so the item's hig
 
 To keep your sidebar as it is, turn off <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} />. See [Settings](/docs/reference/settings#reader).
 
+## Keep the read time in Zotero [#recently-read]
+
+If you already granted Write Authorization with <UiLabel name={m.capability_enable_editing()} /> and **Always Allow**, reading a PDF from My Library in Obsidian updates its last-read time in Zotero. The paper then appears in Zotero's Recently Read list, and the read time syncs through Zotero.
+
+ZotLit does not ask for Write Authorization while you read. Without it, with
+Zotero closed, or if the update fails, the read still counts on this device and
+no notice appears. Reads of group-library PDFs in Obsidian also stay on this
+device.
+
 ## See also
 
 <Cards>

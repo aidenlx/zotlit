@@ -57,6 +57,7 @@ const FIXTURE_ROWS = `
 
 const ROUGIER = {
   kind: "resolved",
+  serverID: null,
   attachmentKey: "RGRPDF24",
   itemKey: "RUGIER24",
   openable: true,
@@ -81,6 +82,7 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
   expect(paths.map((path) => resolver.resolve(path))).toEqual([
     {
       kind: "resolved",
+      serverID: null,
       attachmentKey: "PDFSTR22",
       itemKey: "SAKIMA22",
       openable: true,
@@ -88,12 +90,14 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
     // A web snapshot resolves, but Obsidian's PDF view cannot host it.
     {
       kind: "resolved",
+      serverID: null,
       attachmentKey: "HTMLSNAP",
       itemKey: "SAKIMA22",
       openable: false,
     },
     {
       kind: "resolved",
+      serverID: null,
       attachmentKey: "PDFLINKD",
       itemKey: "SAKIMA22",
       openable: true,
@@ -101,6 +105,7 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
     ROUGIER,
     {
       kind: "resolved",
+      serverID: null,
       attachmentKey: "IANPDF25",
       itemKey: "IANNP5A2",
       openable: true,
@@ -108,6 +113,7 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
     // A standalone attachment names itself and no Item (Ruling 14).
     {
       kind: "resolved",
+      serverID: null,
       attachmentKey: "LSEPDF22",
       itemKey: null,
       openable: true,
@@ -194,6 +200,7 @@ it("prefers the personal library, then the lowest item ID, when several attachme
   expect(resolver.resolve(`${VAULT_DIR}/attachments/rougier-2014.pdf`)).toEqual(
     {
       kind: "resolved",
+      serverID: null,
       attachmentKey: "RGREARL8",
       itemKey: "RUGIERE8",
       openable: true,
@@ -239,6 +246,7 @@ it("reports each file several attachments name, with the one it kept and the one
   ]);
   expect(index.get(path)).toEqual({
     kind: "resolved",
+    serverID: null,
     attachmentKey: "RGREARL8",
     itemKey: "RUGIERE8",
     openable: true,
@@ -330,6 +338,7 @@ it("rebuilds after the database changed, answering from the previous index meanw
 
   expect(resolver.resolve(path)).toEqual({
     kind: "resolved",
+    serverID: null,
     attachmentKey: "IANPDF25",
     itemKey: "IANNP5A2",
     openable: true,
@@ -363,6 +372,7 @@ it("keeps the previous index when a rebuild fails, and asks again after the fail
 
   expect(f.resolver.resolve(path)).toMatchObject({
     kind: "resolved",
+    serverID: null,
     attachmentKey: "IANPDF25",
   });
 });
@@ -381,6 +391,7 @@ it("rebuilds after the resolved Zotero paths changed", async () => {
 
   expect(resolver.resolve(path)).toEqual({
     kind: "resolved",
+    serverID: null,
     attachmentKey: "PDFSTR22",
     itemKey: "SAKIMA22",
     openable: true,

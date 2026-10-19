@@ -13,6 +13,7 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import {
   ANNOTATIONS,
+  ATTACHMENTS,
   consumeQuery,
   collectQuery,
   ITEMS,
@@ -3312,4 +3313,169 @@ it("keeps invalid group paths and corrections on the group argument", async () =
       ),
     ).toBe(true);
   }
+});
+
+it("reads the newest live Attachment lastRead for each Item, including group Items", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite.exec(`UPDATE itemAttachments SET lastRead = CASE
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2LIVE') THEN 1704067200
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2LINK') THEN 1704153600
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2TRSH') THEN 1735689600
+    WHEN itemID = (SELECT itemID FROM items WHERE key = 'PDF2GRUP') THEN 1704240000
+    ELSE NULL END`);
+  for (const direction of ["asc", "desc"] as const) {
+    const { exit } = await runEffect(
+      collectQuery(ITEMS, {
+        libraries: [personal, group],
+        fields: ["lastRead"],
+        filter: 'key == "ART2FULL" || key == "GRP2BK22"',
+        sort: [{ field: "lastRead", direction }],
+      }),
+      { client: scenario.db },
+    );
+    if (exit._tag === "Failure") throw new Error(String(exit.cause));
+    const read = [
+      { indexedKey: "ART2FULL", values: { lastRead: "2024-01-02T00:00:00Z" } },
+      {
+        indexedKey: "ART2FULLg4815",
+        values: { lastRead: "2024-01-03T00:00:00Z" },
+      },
+    ];
+    expect(JSON.parse(JSON.stringify(exit.value.rows))).toEqual([
+      ...(direction === "asc" ? read : read.toReversed()),
+      { indexedKey: "GRP2BK22g4815", values: { lastRead: null } },
+    ]);
+  }
+});
+
+it("orders Last Activity by Zotero work and request Uses before applying the limit", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .exec(`UPDATE items SET dateAdded = '2024-01-01 00:00:00', dateModified = '2030-01-01 00:00:00';
+    UPDATE itemAttachments SET lastRead = NULL;
+    UPDATE items SET dateModified = '2024-01-02 00:00:00' WHERE itemID IN (SELECT itemID FROM itemNotes) OR itemID IN (SELECT itemID FROM itemAnnotations);
+    UPDATE itemAttachments SET lastRead = 1704240000 WHERE itemID = (SELECT itemID FROM items WHERE key = 'PDF2GRUP');`);
+  const request: ItemQueryRequest = {
+    libraries: [personal, group],
+    fields: ["lastActivity"],
+    filter: 'key == "ART2FULL"',
+    sort: [{ field: "lastActivity", direction: "desc" }],
+    limit: 1,
+  };
+  const zotero = await result(scenario, request);
+  expect(JSON.parse(JSON.stringify(zotero.rows))).toEqual([
+    {
+      indexedKey: "ART2FULLg4815",
+      values: { lastActivity: "2024-01-03T00:00:00Z" },
+    },
+  ]);
+  const used = await result(scenario, {
+    ...request,
+    uses: { ART2FULL: 1704326400000, ART2FULLg4815: 1704067200000 },
+  });
+  expect(JSON.parse(JSON.stringify(used.rows))).toEqual([
+    {
+      indexedKey: "ART2FULL",
+      values: { lastActivity: "2024-01-04T00:00:00Z" },
+    },
+  ]);
+});
+
+it("Last Activity follows child edits and additions and names its signal, with nulls last and stable ties", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  scenario.sqlite
+    .exec(`UPDATE items SET dateAdded = 'invalid', dateModified = '2030-01-01 00:00:00';
+    UPDATE itemAttachments SET lastRead = NULL;
+    UPDATE items SET dateModified = 'invalid' WHERE itemID IN (SELECT itemID FROM itemNotes) OR itemID IN (SELECT itemID FROM itemAnnotations);
+    UPDATE items SET dateAdded = '2024-01-01 00:00:00' WHERE key = 'GRP2BK22';
+    UPDATE items SET dateModified = '2024-01-02 00:00:00' WHERE key = 'NTE2CHLD';
+    UPDATE items SET dateModified = '2024-01-03 00:00:00' WHERE key = 'ANN2HGHT';
+    UPDATE items SET dateModified = '2040-01-01 00:00:00' WHERE key = 'NTE2TRSH';`);
+  const request: ItemQueryRequest = {
+    libraries: [personal, group],
+    fields: ["lastActivity", "lastActivitySource"],
+    filter: 'key == "ART2FULL" || key == "GRP2BK22"',
+    sort: [{ field: "lastActivity", direction: "desc" }],
+  };
+  const project = async (uses?: Record<string, number>) =>
+    JSON.parse(
+      JSON.stringify(
+        (await result(scenario, uses ? { ...request, uses } : request)).rows,
+      ),
+    );
+  expect(await project()).toEqual([
+    {
+      indexedKey: "ART2FULL",
+      values: {
+        lastActivity: "2024-01-03T00:00:00Z",
+        lastActivitySource: "annotation",
+      },
+    },
+    {
+      indexedKey: "GRP2BK22g4815",
+      values: {
+        lastActivity: "2024-01-01T00:00:00Z",
+        lastActivitySource: "added",
+      },
+    },
+    {
+      indexedKey: "ART2FULLg4815",
+      values: { lastActivity: null, lastActivitySource: null },
+    },
+  ]);
+  scenario.sqlite.exec(
+    "UPDATE items SET dateModified = '2024-01-04 00:00:00' WHERE key = 'NTE2CHLD'",
+  );
+  expect((await project())[0]).toEqual({
+    indexedKey: "ART2FULL",
+    values: {
+      lastActivity: "2024-01-04T00:00:00Z",
+      lastActivitySource: "note",
+    },
+  });
+  const tied = await result(scenario, {
+    ...request,
+    uses: { ART2FULLg4815: 1704326400000 },
+  });
+  expect(keys(tied)).toEqual(["ART2FULL", "ART2FULLg4815", "GRP2BK22g4815"]);
+  const ascending = await result(scenario, {
+    ...request,
+    sort: [{ field: "lastActivity", direction: "asc" }],
+  });
+  expect(keys(ascending)).toEqual([
+    "GRP2BK22g4815",
+    "ART2FULL",
+    "ART2FULLg4815",
+  ]);
+  // A read on the note edit's instant keeps the read; a Use there wins.
+  scenario.sqlite.exec(
+    "UPDATE itemAttachments SET lastRead = 1704326400 WHERE itemID = (SELECT itemID FROM items WHERE key = 'PDF2LIVE')",
+  );
+  expect((await project())[0].values.lastActivitySource).toBe("read");
+  expect(
+    (await project({ ART2FULL: 1704326400000 }))[0].values.lastActivitySource,
+  ).toBe("use");
+  const added = await result(scenario, {
+    ...request,
+    filter: 'lastActivitySource == "added"',
+  });
+  expect(keys(added)).toEqual(["GRP2BK22g4815"]);
+});
+
+it("offers Last Activity on Item Query only", async () => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  for (const dataset of [ATTACHMENTS, ANNOTATIONS])
+    for (const field of ["item.lastActivity", "item.lastActivitySource"]) {
+      const { exit } = await runEffect(
+        collectQuery(dataset, {
+          libraries: [personal],
+          fields: [field],
+        }),
+        { client: scenario.db },
+      );
+      if (!Exit.isFailure(exit)) throw new Error("the query did not fail");
+      const error = Cause.findErrorOption(exit.cause);
+      if (error._tag === "None") throw new Error(String(exit.cause));
+      expect(error.value).toBeInstanceOf(ItemQueryError);
+    }
 });

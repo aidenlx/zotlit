@@ -236,6 +236,7 @@ async function harness(
   // ZotLit Query tests the Profile Matches over the same database.
   const query = stack.use(
     new QueryService({
+      useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
       pluginVersion: "2.2.0",
       reads: zoteroReads,
       zoteroPref: {

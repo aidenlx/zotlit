@@ -680,6 +680,7 @@ export class ZoteroReads extends RpcGroup.make(
       libraryIDs: Schema.Array(Schema.Number),
       query: Schema.String,
       limit: Schema.Number,
+      uses: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
     },
     success: Schema.Array(SearchHitSchema),
     error: DbUnavailable,

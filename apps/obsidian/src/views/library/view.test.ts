@@ -38,6 +38,7 @@ import type {
 import { selectorKey } from "@/services/library-scope/scope";
 import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
+import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
@@ -234,6 +235,7 @@ const NOTED = ["AAAAAAAA", "DDDDDDDD"];
  * Query answers it for a {@link SeedItem}.
  */
 const CONDITIONS: readonly [string, (item: SeedItem) => boolean][] = [
+  ["lastRead == null", () => true],
   ["annotations.isEmpty()", (item) => (item.annotations ?? 0) === 0],
   ["annotations.length > 0", (item) => (item.annotations ?? 0) > 0],
   [
@@ -538,6 +540,7 @@ function pluginData(stored?: unknown) {
     );
   };
   const deps = {
+    useLedger: { get: () => undefined },
     app: {
       ...host.app,
       scope: undefined,
@@ -559,7 +562,7 @@ function pluginData(stored?: unknown) {
         }),
     },
     libraryScope,
-    query: { run },
+    query: { run, on: () => () => {} },
     lookup: {
       openSession: () => ({
         search,
@@ -782,7 +785,7 @@ async function openTab(deps: LibraryViewDeps) {
 const RECENT: LibraryNode = { kind: "recent" };
 const MY_LIBRARY: LibraryNode = { kind: "library", library: PERSONAL };
 
-it("opens on Recent, every Library in the Library Scope newest change first, where plugin data holds no document", async () => {
+it("opens on Recent, every Library in the Library Scope newest activity first, where plugin data holds no document", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
   expect(listRuns(run)).toHaveLength(1);
@@ -790,7 +793,7 @@ it("opens on Recent, every Library in the Library Scope newest change first, whe
   expect(request).toMatchObject({
     from: "items",
     libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
-    sort: [{ field: "dateModified", direction: "desc" }],
+    sort: [{ field: "lastActivity", direction: "desc" }],
   });
   expect(row(view, RECENT).getAttribute("aria-selected")).toBe("true");
   // Recent names itself, with the papers it lists and no unread count.
@@ -800,6 +803,108 @@ it("opens on Recent, every Library in the Library Scope newest change first, whe
   expect(request).not.toHaveProperty("filter");
   expect(request).not.toHaveProperty("context");
 });
+
+// Failures: a wrong message for the signal Item Query chose, a stale Use
+// worded as current, and leakage into other Library nodes or their query
+// projections.
+it("shows the newest Zotero activity only on Recent and stops requesting it on other nodes", async () => {
+  const { deps, change, run } = pluginData();
+  change([
+    {
+      ...SEED[0]!,
+      fields: {
+        lastActivity: "2025-02-01T00:00:00Z",
+        lastActivitySource: "read",
+      },
+    },
+  ]);
+  const view = await openTab(deps);
+  expect(view.contentEl.textContent).toContain("in Zotero");
+  expect(listRuns(run).at(-1)?.fields).toContain("lastActivitySource");
+  await press(view, row(view, MY_LIBRARY));
+  expect(view.contentEl.textContent).not.toContain("in Zotero");
+  expect(listRuns(run).at(-1)?.fields).not.toContain("lastActivitySource");
+});
+
+it.each([
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "added" },
+    undefined,
+    "added to Zotero 1 day ago",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "note" },
+    undefined,
+    "notes edited in Zotero 1 day ago",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "annotation" },
+    undefined,
+    "notes edited in Zotero 1 day ago",
+  ],
+  [
+    { lastActivity: "2025-01-01T12:00:00Z", lastActivitySource: "read" },
+    "opened",
+    "read 12 hours ago in Zotero",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "use" },
+    "read",
+    "read 1 day ago in Obsidian",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "use" },
+    "opened",
+    "opened 1 day ago in Obsidian",
+  ],
+  [
+    { lastActivity: "2025-01-01T00:00:00Z", lastActivitySource: "use" },
+    "cited",
+    "cited 1 day ago in Obsidian",
+  ],
+] as const)(
+  "ends a Recent row with its winning activity %#",
+  async (fields, kind, expected) => {
+    const paper = await recentRow(fields, kind);
+    const metadata = paper.querySelector("[data-query-papers-title]")!
+      .parentElement!.children[1]!;
+    expect(metadata.textContent.endsWith(expected)).toBe(true);
+  },
+);
+
+it.each([
+  // The ledger moved on since the query ran: no reason until the rerun.
+  [
+    { lastActivity: "2024-12-01T00:00:00Z", lastActivitySource: "use" },
+    "cited",
+  ],
+  [{ lastActivity: "invalid", lastActivitySource: "added" }, undefined],
+] as const)("gives a Recent row no reason %#", async (fields, kind) => {
+  const paper = await recentRow(fields, kind);
+  expect(paper.textContent).not.toMatch(/ ago/);
+});
+
+/** The Recent row of an Item with `fields`, its ledger holding a `kind` Use. */
+async function recentRow(
+  fields: Readonly<Record<string, string>>,
+  kind: UseKind | undefined,
+): Promise<Element> {
+  const now = vi
+    .spyOn(Temporal.Now, "instant")
+    .mockReturnValue(Temporal.Instant.from("2025-01-02T00:00:00Z"));
+  cleanup.defer(() => now.mockRestore());
+  const { deps, change } = pluginData();
+  const item = SEED[0]!;
+  change([{ ...item, fields }]);
+  deps.useLedger = {
+    get: () =>
+      kind
+        ? { kind, instant: Temporal.Instant.from("2025-01-01T00:00:00Z") }
+        : undefined,
+  };
+  const view = await openTab(deps);
+  return view.contentEl.querySelector(`[data-query-papers-row="${item.key}"]`)!;
+}
 
 it("opens on the document plugin data holds, once it has loaded", async () => {
   const { deps, run } = pluginData({
@@ -1151,18 +1256,13 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   // tree's line stays at the top of the tree.
   expect(notFound("list").closest("[data-pane-state]")).not.toBeNull();
   expect(notFound("tree").closest("[data-pane-state]")).toBeNull();
-  // The facet chips under the tree hide with it.
-  expect(
-    view.contentEl
-      .querySelector("[data-library-facets]")
-      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
-  ).toBeInstanceOf(HTMLElement);
-  // On a narrow pane the toggle still opens the tree and its not-found part.
-  expect(
-    view.contentEl
-      .querySelector("[data-library-tree-toggle]")
-      ?.closest(".zt\\:group-data-zotero-missing\\:hidden"),
-  ).toBeNull();
+  // The toggle still opens the tree and its not-found part.
+  const toggle = view.contentEl.querySelector<HTMLElement>(
+    "[data-library-tree-toggle]",
+  )!;
+  await press(view, toggle);
+  expect(shell.hasAttribute("data-tree-open")).toBe(true);
+  expect(notFound("tree").textContent).toBe("Zotero not found");
   const button = (part: "tree" | "list", text: string) =>
     [...notFound(part).querySelectorAll("button")].find(
       (el) => el.textContent === text,
@@ -1248,7 +1348,7 @@ it("reads the saved Library Scope on Recent where the database holds none of its
   });
 });
 
-it("keeps Recent selected through a sort change, and selecting it again sorts newest change first", async () => {
+it("keeps Recent selected through a sort change, and selecting it again sorts newest activity first", async () => {
   const { deps, run, settings } = pluginData();
   const view = await openTab(deps);
   await act(async () => {
@@ -1270,13 +1370,13 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
   await press(view, row(view, RECENT));
   expect(listRuns(run).at(-1)).toMatchObject({
     libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
-    sort: [{ field: "dateModified", direction: "desc" }],
+    sort: [{ field: "lastActivity", direction: "desc" }],
   });
   expect(header(view)).toBe("Recent | 7 papers");
   await settings.flush();
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
-    sort: [{ property: "dateModified", direction: "DESC" }],
+    sort: [{ property: "lastActivity", direction: "DESC" }],
   });
 });
 
@@ -1293,7 +1393,7 @@ it("marks the Sort button as set only for a sort other than the one the selected
       text: button.textContent,
     };
   };
-  // Recent writes newest change first itself.
+  // Recent writes newest activity first itself.
   expect(sort()).toEqual({ set: false, text: "Sort" });
   await act(async () => {
     view.query.document.editView({
@@ -1343,8 +1443,11 @@ it("keeps a sort the researcher changed on Recent once they leave it", async () 
 });
 
 it("marks the Sort button again on a switch between Recent and My Library that leaves the query text as it was", async () => {
-  // On My Library, newest change first is the researcher's sort.
-  const { deps, rescope } = pluginData(ON_MY_LIBRARY);
+  // On My Library, newest activity first is the researcher's sort.
+  const { deps, rescope } = pluginData({
+    ...ON_MY_LIBRARY,
+    sort: [{ property: "lastActivity", direction: "DESC" }],
+  });
   const view = await openTab(deps);
   await act(async () => {
     rescope([LIBRARIES[0]!]);
@@ -1383,12 +1486,12 @@ it("selects Recent with its own sort after two quick sorts, on screen and in plu
     await view.query.settled;
   });
   expect(listRuns(run).at(-1)!.sort).toEqual([
-    { field: "dateModified", direction: "desc" },
+    { field: "lastActivity", direction: "desc" },
   ]);
   await settings.flush();
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
-    sort: [{ property: "dateModified", direction: "DESC" }],
+    sort: [{ property: "lastActivity", direction: "DESC" }],
   });
 });
 

@@ -1,11 +1,13 @@
 // Reads Zotero's data live, from the local API a running Zotero serves on loopback.
 
+import * as v from "valibot";
+
 import { parseIndexedKey } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { AbortError } from "@/lib/abort-error";
 import { getLogger } from "@/lib/log";
-import { zoteroOrigin } from "@/lib/zotero-http";
+import { parseJson, zoteroOrigin } from "@/lib/zotero-http";
 import type { ZoteroTransport } from "@/lib/zotero-http";
 import type { LocalServerService } from "@/services/local-server/service";
 import { Service } from "@/services/service-base";
@@ -218,6 +220,9 @@ export class ZoteroLocalApiClient extends Service<void> {
   readonly #readOnlyLibraries = new Set<string>();
   /** When Zotero's authorization-dialog rate limit lifts. */
   #cooldownUntil: Temporal.Instant | null = null;
+  /** In-flight read writes only; completed and failed Uses are never replayed. */
+  readonly #readWrites = new Map<string, Promise<void>>();
+  readonly #readLifetime = new AbortController();
 
   ready: Promise<void>;
 
@@ -360,6 +365,10 @@ export class ZoteroLocalApiClient extends Service<void> {
     path: string,
     options: {
       library: string;
+      /** Hold the database identity across asynchronous credential reads. */
+      expectedServerID?: string;
+      /** Background read Uses update state without edit notices. */
+      silent?: boolean;
       method: string;
       body?: string;
       headers?: Readonly<Record<string, string>>;
@@ -375,7 +384,16 @@ export class ZoteroLocalApiClient extends Service<void> {
       return { failure: { kind: "library-read-only" } };
     }
     const { serverID } = state.source;
+    if (
+      options.expectedServerID !== undefined &&
+      options.expectedServerID !== serverID
+    ) {
+      return { failure: { kind: "server-changed" } };
+    }
     const key = await this.#credentials.read(serverID);
+    if (options.expectedServerID !== undefined && this.#serverID !== serverID) {
+      return { failure: { kind: "server-changed" } };
+    }
     if (key === null) {
       this.#setAuthorized(false);
       return { failure: { kind: "unauthorized" } };
@@ -388,8 +406,181 @@ export class ZoteroLocalApiClient extends Service<void> {
       body,
       headers: { ...headers, "Zotero-API-Key": key },
     });
-    if ("failure" in reply) await this.#writeRefused(reply.failure, library);
+    if (
+      "failure" in reply &&
+      (options.expectedServerID === undefined || this.#serverID === serverID)
+    ) {
+      await this.#writeRefused(reply.failure, library, options.silent);
+    }
     return reply;
+  }
+
+  /** A live, best-effort read Use. The caller supplies its database identity. */
+  async writeLastRead(
+    attachmentKey: string,
+    serverID: string,
+    instant: Temporal.Instant,
+  ): Promise<void> {
+    const state = this.#state;
+    if (
+      state.kind !== "available" ||
+      !state.authorized ||
+      state.source.serverID !== serverID
+    ) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason:
+          state.kind !== "available"
+            ? "unavailable"
+            : !state.authorized
+              ? "unauthorized"
+              : "source changed",
+      });
+      return;
+    }
+    const target = `${serverID}/${attachmentKey}`;
+    const previous = this.#readWrites.get(target) ?? Promise.resolve();
+    const signal = AbortSignal.any([
+      this.#deadline(),
+      this.#readLifetime.signal,
+    ]);
+    const writing = previous
+      .catch(() => {})
+      .then(async () => {
+        if (!signal.aborted)
+          await this.#writeLastRead(attachmentKey, serverID, {
+            instant,
+            signal,
+          });
+        else
+          logger.trace("Read write-back skipped", {
+            attachmentKey,
+            reason: "cancelled",
+          });
+      });
+    this.#readWrites.set(target, writing);
+    try {
+      await writing;
+    } finally {
+      if (this.#readWrites.get(target) === writing)
+        this.#readWrites.delete(target);
+    }
+  }
+
+  async #writeLastRead(
+    attachmentKey: string,
+    serverID: string,
+    { instant, signal }: { instant: Temporal.Instant; signal: AbortSignal },
+  ): Promise<void> {
+    const parsed = parseIndexedKey(attachmentKey);
+    if (!parsed || parsed.groupID !== null) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "not a personal attachment",
+      });
+      return;
+    }
+    const state = this.#state;
+    if (
+      state.kind !== "available" ||
+      !state.authorized ||
+      state.source.serverID !== serverID
+    ) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason:
+          state.kind !== "available"
+            ? "unavailable"
+            : !state.authorized
+              ? "unauthorized"
+              : "source changed",
+      });
+      return;
+    }
+    if (this.#readOnlyLibraries.has("users/0")) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "read-only library",
+      });
+      return;
+    }
+    if (!(await this.#hasKey(serverID))) {
+      if (this.#serverID === serverID) this.#setAuthorized(false);
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "missing authorization",
+      });
+      return;
+    }
+    if (this.#serverID !== serverID) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "source changed",
+      });
+      return;
+    }
+    const path = `/api/users/0/items/${parsed.key}`;
+    const reply = await this.#send(path, { serverID, signal });
+    if (this.#serverID !== serverID) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "source changed",
+      });
+      return;
+    }
+    if ("failure" in reply) {
+      logger.trace("Read write-back refused", {
+        attachmentKey,
+        reason: reply.failure.kind,
+      });
+      if (reply.failure.kind === "server-changed") {
+        await this.#writeRefused(reply.failure, "users/0", true);
+      } else {
+        this.#report(reply);
+      }
+      return;
+    }
+    const item = v.safeParse(
+      v.object({
+        key: v.literal(parsed.key),
+        version: v.pipe(v.number(), v.integer(), v.minValue(0)),
+        library: v.object({ type: v.literal("user") }),
+        data: v.object({
+          itemType: v.literal("attachment"),
+          lastRead: v.optional(v.nullable(v.number())),
+        }),
+      }),
+      parseJson(reply.value.text),
+    );
+    if (!item.success) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "malformed attachment",
+      });
+      return;
+    }
+    const lastRead = Math.floor(instant.epochMilliseconds / 1000);
+    if ((item.output.data.lastRead ?? 0) >= lastRead) {
+      logger.trace("Read write-back skipped", {
+        attachmentKey,
+        reason: "stored read is newer or equal",
+      });
+      return;
+    }
+    const written = await this.authorizedSend(path, {
+      library: "users/0",
+      expectedServerID: serverID,
+      silent: true,
+      signal,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: item.output.version, lastRead }),
+    });
+    logger.trace("Read write-back outcome", {
+      attachmentKey,
+      outcome: "failure" in written ? "refused" : "sent",
+      reason: "failure" in written ? written.failure.kind : "accepted",
+    });
   }
 
   /**
@@ -520,6 +711,10 @@ export class ZoteroLocalApiClient extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
+    stack.defer(async () => {
+      this.#readLifetime.abort();
+      await Promise.allSettled(this.#readWrites.values());
+    });
     stack.defer(
       this.#localServer.on("db/updated", () => {
         void this.#reprobe("freshness signal", true);
@@ -549,12 +744,12 @@ export class ZoteroLocalApiClient extends Service<void> {
    * @param moved whether the trigger itself says this source's records changed,
    *   which is only ever true of the source that is standing.
    */
-  async #reprobe(reason: string, moved = false): Promise<void> {
+  async #reprobe(reason: string, moved = false, silent = false): Promise<void> {
     this.#moved ||= moved;
     const running = this.#probing;
     if (running) return await running;
     const before = this.#serverID;
-    const probing = this.#probe(reason).finally(() => {
+    const probing = this.#probe(reason, silent).finally(() => {
       this.#probing = null;
     });
     this.#probing = probing;
@@ -573,7 +768,7 @@ export class ZoteroLocalApiClient extends Service<void> {
       : null;
   }
 
-  async #probe(reason: string): Promise<void> {
+  async #probe(reason: string, silent = false): Promise<void> {
     const previous = this.#state;
     const heldServerID = this.#serverID;
     // A re-probe keeps what the last one answered until this one lands, so the
@@ -612,7 +807,7 @@ export class ZoteroLocalApiClient extends Service<void> {
         was: heldServerID,
         serverID: adopted,
       });
-      this.#emitter.emit("server-changed", adopted);
+      if (!silent) this.#emitter.emit("server-changed", adopted);
     }
   }
 
@@ -750,14 +945,15 @@ export class ZoteroLocalApiClient extends Service<void> {
    * library that refuses writes is remembered until the next Capability Probe;
    * a `501` says this is not the Zotero the session probed, so it probes again.
    *
-   * Every refusal is announced as `write-refused` whatever it left behind, so
+   * An edit refusal is announced as `write-refused` whatever it left behind, so
    * one surface owns both the rollback and the notice.
    */
   async #writeRefused(
     failure: LocalApiFailure,
     library: string,
+    silent = false,
   ): Promise<void> {
-    this.#emitter.emit("write-refused", failure, library);
+    if (!silent) this.#emitter.emit("write-refused", failure, library);
     // Both say the session's reading of this Zotero is out of date: a `501`
     // that it is the wrong version, a `412` that it is another database. The
     // probe re-reads it, adopts what it finds, and every surface settles on the
@@ -766,7 +962,12 @@ export class ZoteroLocalApiClient extends Service<void> {
       failure.kind === "incompatible-zotero" ||
       failure.kind === "server-changed"
     ) {
-      void this.#reprobe(`a write met ${failure.kind}`);
+      const probing = this.#reprobe(
+        `a write met ${failure.kind}`,
+        false,
+        silent,
+      );
+      if (silent) await probing;
     }
     if (failure.kind === "unauthorized") {
       logger.debug("Zotero no longer honours this write authorization");

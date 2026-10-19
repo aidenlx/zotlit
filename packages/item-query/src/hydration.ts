@@ -1,6 +1,7 @@
 // The Item loading descriptor: stored fields and its child Relation Lists.
 import { Effect } from "effect";
 
+import { formatIndexedKey } from "@zotlit/db";
 import { readHydrateChunk } from "@zotlit/db/item-query";
 import type {
   CollectionPaths,
@@ -25,6 +26,7 @@ import {
 } from "./relation-hydration";
 
 interface ItemOwn {
+  readonly lastUse?: number;
   readonly hydrated: HydratedItem;
   readonly customFieldNames: readonly string[];
 }
@@ -41,7 +43,7 @@ export const ITEM_LOADING: LoadingDescriptor<
   ItemLinks,
   QueryItem
 > = {
-  own: Effect.fnUntraced(function* (needs, { sources, libraries }) {
+  own: Effect.fnUntraced(function* (needs, { sources, libraries, uses }) {
     const hydrates = needs.some(
       (need) =>
         need.builtIn?.length || need.custom?.length || need.relations?.length,
@@ -73,7 +75,7 @@ export const ITEM_LOADING: LoadingDescriptor<
     }
     return {
       hydrates,
-      load: Effect.fnUntraced(function* (chunk) {
+      load: Effect.fnUntraced(function* (chunk, libraryAt) {
         const loaded = vocabulary
           ? yield* readHydrateChunk({
               vocabulary,
@@ -83,7 +85,8 @@ export const ITEM_LOADING: LoadingDescriptor<
               collectionPaths,
             })
           : null;
-        return chunk.map((row) => ({
+        return chunk.map((row, index) => ({
+          lastUse: uses?.[formatIndexedKey(row.key, libraryAt(index).groupID)],
           hydrated: loaded?.get(row.itemID) ?? NOTHING_HYDRATED,
           customFieldNames: vocabulary?.customFieldNames ?? [],
         }));

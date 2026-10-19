@@ -110,7 +110,7 @@ async function openLibrary() {
     app: { ...host.app, scope: undefined },
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run: () => Promise.resolve(EMPTY) },
+    query: { run: () => Promise.resolve(EMPTY), on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     literatureNotes: noLiteratureNotes(),
@@ -150,6 +150,7 @@ it("reads the document that plugin data holds", async () => {
   const { storage, query } = await openLibrary();
   expect(storage.document()).toEqual<LibraryViewDocument>({
     ...DEFAULT_LIBRARY_VIEW_DOCUMENT,
+    sort: [{ property: "dateModified", direction: "DESC" }],
     node: {
       kind: "collection",
       library: { type: "personal" },
@@ -229,7 +230,7 @@ it("keeps Recent as the tree selection with its sort, newest change first", asyn
     expanded: [JSON.stringify(["personal", "Thesis"])],
     selected: null,
     node: { kind: "recent" },
-    sort: [{ property: "dateModified", direction: "DESC" }],
+    sort: [{ property: "lastActivity", direction: "DESC" }],
   });
 });
 

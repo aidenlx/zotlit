@@ -1307,6 +1307,7 @@ describe("the generated Zotero database", () => {
     const spec = new Set([
       BUILD_TIMESTAMP,
       ...ITEMS.map((item) => item.dateModified),
+      ...ITEMS.map((item) => item.dateAdded ?? item.dateModified),
       ...NOTES.map((note) => note.dateModified),
       ...ATTACHMENTS.map((attachment) => attachment.dateModified),
       ...ANNOTATIONS.map((annotation) => annotation.dateAdded),

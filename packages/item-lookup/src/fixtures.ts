@@ -35,6 +35,7 @@ export interface ItemFixtureOptions {
   date?: string | null;
   /** ISO 8601 instant (e.g. `2024-01-01T00:00:00Z`); defaults to epoch. */
   dateModified?: string;
+  lastActivity?: number | null;
   creators?: Creator[];
   primaryCreatorType?: string | null;
   language?: string | null;
@@ -73,6 +74,7 @@ export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
     dateModified: Temporal.Instant.from(
       options.dateModified ?? "1970-01-01T00:00:00Z",
     ),
+    lastActivity: options.lastActivity ?? null,
     itemType: options.itemType ?? "book",
     primaryCreator: creators[0] ?? null,
     creators,

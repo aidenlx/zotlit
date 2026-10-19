@@ -23,6 +23,8 @@ import type {
   CapabilityGestures,
   CommentNotes,
 } from "./binding";
+import { PdfReads } from "./reads";
+import type { PdfRead } from "./reads";
 import { openFileOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import { toolColorStore } from "./tools";
@@ -61,6 +63,8 @@ export interface PdfAnnotationEditorDeps {
   libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
   settings: Pick<SettingsService, "current" | "update">;
+  /** Records an accepted read locally; also retains its Attachment for live write-back. */
+  recordRead?: (read: PdfRead) => void;
   /** The clock each binding's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -89,6 +93,9 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #noteIndex;
   readonly #libraryTagNames;
   readonly #now;
+  readonly #reads;
+  #trackOpens = false;
+  readonly #restoredViews = new WeakSet<PDFFileView>();
   readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
@@ -105,6 +112,7 @@ export class PdfAnnotationEditor extends Service<void> {
     libraryTagNames,
     settings,
     now = () => Temporal.Now.instant(),
+    recordRead = () => {},
   }: PdfAnnotationEditorDeps) {
     super();
     this.#app = app;
@@ -116,6 +124,7 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#noteIndex = noteIndex;
     this.#libraryTagNames = libraryTagNames;
     this.#now = now;
+    this.#reads = new PdfReads({ now, record: recordRead });
     this.ready = this.#load();
   }
 
@@ -204,7 +213,10 @@ export class PdfAnnotationEditor extends Service<void> {
       this.#bindings.clear();
     });
 
-    workspace.onLayoutReady(() => this.#reconcileViews());
+    workspace.onLayoutReady(() => {
+      this.#reconcileViews();
+      this.#trackOpens = true;
+    });
     this.commit(stack.move());
   }
 
@@ -229,6 +241,9 @@ export class PdfAnnotationEditor extends Service<void> {
         binding.filePath === (openFileOf(view)?.path ?? null)
       )
         continue;
+      if (this.#trackOpens) binding.close();
+      if (!open.has(view) || binding.filePath !== null)
+        this.#restoredViews.delete(view);
       binding[Symbol.dispose]();
       this.#bindings.delete(view);
     }
@@ -237,6 +252,7 @@ export class PdfAnnotationEditor extends Service<void> {
     const adapter = this.#app.vault.adapter as FileSystemAdapter;
     for (const view of views) {
       if (this.#bindings.has(view)) continue;
+      if (!this.#trackOpens) this.#restoredViews.add(view);
       const binding = new PdfViewBinding({
         view,
         adapter,
@@ -248,6 +264,8 @@ export class PdfAnnotationEditor extends Service<void> {
         noteIndex: this.#noteIndex,
         libraryTagNames: this.#libraryTagNames,
         now: this.#now,
+        reads: this.#reads,
+        openedAt: this.#restoredViews.has(view) ? null : this.#now(),
       });
       this.#bindings.set(view, binding);
       binding.load();

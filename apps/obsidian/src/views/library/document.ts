@@ -214,14 +214,12 @@ export type StoredLibraryViewDocument = {
 };
 
 /**
- * The sort Recent writes: last activity, newest first. Until ZotLit Query
- * reads `lastRead` and the Obsidian usage ledger (#1532, #1533), last
- * activity is the Item's last change in Zotero.
+ * The sort Recent writes: Last Activity, newest first.
  *
  * @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
  */
 export const RECENT_SORT: readonly QueryFileSort[] = Object.freeze([
-  { property: "dateModified", direction: "DESC" },
+  { property: "lastActivity", direction: "DESC" },
 ]);
 
 /** What a new Library View shows: Recent as Papers. */
@@ -542,8 +540,10 @@ export const LIBRARY_VIEW_ROW_LIMIT = 1000;
 const FACETS: Readonly<
   Record<ReadingStateFacet, { filter?: string; vault?: VaultCondition }>
 > = {
-  // `lastRead` joins this once ZotLit Query reads it (#1532, #1533).
-  unread: { filter: "annotations.isEmpty()", vault: "no-literature-note" },
+  unread: {
+    filter: "annotations.isEmpty() && lastRead == null",
+    vault: "no-literature-note",
+  },
   annotated: { filter: "annotations.length > 0" },
   "has-note": { vault: "has-literature-note" },
   pdf: {

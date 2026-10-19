@@ -69,6 +69,7 @@ import {
   zoteroFetch,
 } from "./paired-zotero.ts";
 import type { ZoteroRdp } from "./paired-zotero.ts";
+import { verifyPdfReadSource } from "./pdf-read-source.ts";
 import {
   armToolOnFirstPage,
   capabilityOf,
@@ -157,6 +158,74 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
   afterAll(() => {
     authorizationFixture?.rdp[Symbol.dispose]();
+  });
+
+  it("writes a PDF read back to Zotero without modifying its parent", async () => {
+    const readItem = async (key: string) => {
+      const reply = await zoteroFetch(api, `users/0/items/${key}`);
+      expect(reply.status).toBe(200);
+      return (await reply.json()) as {
+        version: number;
+        data: { lastRead?: number; dateModified: string };
+      };
+    };
+    const before = await readItem("RUGIER24");
+    const attachmentBefore = await readItem(attachment.key);
+    const saved = await obEval(
+      vaultId!,
+      `JSON.stringify({layout:app.workspace.getLayout(),ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId!,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(saved)}).layout);app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();await oldServices.useLedger[Symbol.asyncDispose]();await oldServices.zoteroLocalApi[Symbol.asyncDispose]();return true;})()`,
+      );
+      try {
+        await authorizationFixture!.rdp.json(
+          `(async()=>{const item=Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID,${JSON.stringify(attachment.key)});item.attachmentLastRead=${JSON.stringify(attachmentBefore.data.lastRead ?? null)};await item.saveTx({skipDateModifiedUpdate:true});return true;})()`,
+        );
+      } finally {
+        await obEval(
+          vaultId!,
+          `(async()=>{app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');await app.plugins.plugins.zotlit.services.useLedger.ready;return true;})()`,
+        );
+      }
+    });
+    await obEval(
+      vaultId!,
+      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await app.plugins.plugins.zotlit.services.zoteroLocalApi.probe();return true;})()`,
+    );
+    await clearNotices(vaultId!);
+    await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
+    let recorded: { instant: string } | undefined;
+    expect(
+      await waitFor(async () => {
+        recorded = await obJson<{ instant: string } | undefined>(
+          vaultId!,
+          "JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current.RUGIER24??null)",
+        );
+        if (!recorded) return false;
+        const item = await readItem(attachment.key);
+        return (
+          item.data.lastRead ===
+          Math.floor(
+            Temporal.Instant.from(recorded.instant).epochMilliseconds / 1000,
+          )
+        );
+      }),
+    ).toBe(true);
+    expect((await readItem("RUGIER24")).data.dateModified).toBe(
+      before.data.dateModified,
+    );
+    expect((await readItem(attachment.key)).version).toBeGreaterThan(
+      attachmentBefore.version,
+    );
+    await verifyPdfReadSource(vaultId!, {
+      vaultPath: environment!.vaultPath,
+      api,
+      cleanup,
+    });
   });
 
   // ── Tier 1 ────────────────────────────────────────────────────────────────
@@ -7645,7 +7714,7 @@ async function installLostWriteProbe(vaultId: string): Promise<void> {
   );
 }
 
-/** Hold the reply after a real write commits, until both owning panes close. */
+/** Hold the Annotation reply after its write commits; PDF read writes proceed. */
 async function installClosingPaneProbe(
   vaultId: string,
   annotationKey: string,
@@ -7668,6 +7737,7 @@ async function installClosingPaneProbe(
       };
       window.__zotlitWriteOutcomeProbe = probe;
       api.authorizedSend = async (...args) => {
+        if (!args[0].endsWith('/'+${JSON.stringify(annotationKey)})) return await probe.authorizedSend(...args);
         probe.calls += 1;
         const reply = await probe.authorizedSend(...args);
         probe.reached = true;

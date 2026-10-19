@@ -2,7 +2,7 @@
 // List of an Item. Child Notes are not a Query Dataset.
 import type { NoteScanRow } from "@zotlit/db/item-query";
 
-import { BUILT_IN_NAMES } from "./fields";
+import { ACTIVITY_FIELDS, BUILT_IN_NAMES } from "./fields";
 import type {
   FieldDefinition as ItemFieldDefinition,
   FieldNeeds,
@@ -77,7 +77,7 @@ const itemParent = liftParentRecord({
   needs: (item: readonly FieldNeeds[]): NoteNeeds => ({ item }),
   candidates: [],
   sortable: [],
-  listed: () => BUILT_IN_NAMES,
+  listed: () => BUILT_IN_NAMES.filter((name) => !ACTIVITY_FIELDS.has(name)),
   syntax: "fields",
 });
 export const NOTE_PARENTS = [itemParent];

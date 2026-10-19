@@ -237,6 +237,8 @@ export interface FixtureItem {
   relatedKeys?: readonly string[];
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
+  /** Addition time when a later metadata edit must be distinct. */
+  dateAdded?: string;
   collectionIDs: readonly number[];
 }
 
@@ -305,7 +307,8 @@ export const DEMO_PAPERS_DIR = "Papers";
 /**
  * The item set every discovery, Citation Key, and batch tracer reads.
  *
- * Modification times descend with item id apart from two deliberate ties:
+ * Item 2 has the newest metadata edit and an older addition time. Other
+ * modification times descend with item id apart from two deliberate ties:
  * items 7 and 9 tie across Libraries (canonical Library order decides), and
  * items 11 and 12 tie inside My Library (ascending item id decides).
  */
@@ -359,7 +362,8 @@ export const ITEMS: readonly FixtureItem[] = [
     venue: "Journal of Personal Records",
     date: "2020",
     creators: [author("Bo", "Duplicate")],
-    dateModified: "2025-03-09 12:00:00",
+    dateAdded: "2025-03-09 12:00:00",
+    dateModified: "2026-10-10 12:00:00",
     collectionIDs: [1],
   },
   {
@@ -1167,7 +1171,7 @@ export const NOTES: readonly FixtureNote[] = [
     note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the personal alpha</h1>\n<p><img data-attachment-key="SNAP2345" data-annotation="%7B%22attachmentURI%22%3A%22http%3A%2F%2Fzotero.org%2Fusers%2Flocal%2FLOCAL%2Fitems%2FRGRPDF24%22%2C%22annotationKey%22%3A%22FDRFQ7C2%22%7D"></p>\n<p><img data-attachment-key="SNAP3456" data-annotation="%7B%22attachmentURI%22%3A%22http%3A%2F%2Fzotero.org%2Fusers%2Flocal%2FLOCAL%2Fitems%2FRGRPDF24%22%2C%22annotationKey%22%3A%22TYY6Z6ZF%22%7D"></p>\n<p>Saved snapshot <img data-attachment-key="FRZN2345"></p>\n<p>A child note of an item filed in two collections.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the personal alpha\n\nA child note of an item filed in two collections.\n",
-    dateModified: "2025-02-28 12:00:00",
+    dateModified: "2026-10-02 12:00:00",
     collectionIDs: [],
   },
   {
@@ -1497,6 +1501,8 @@ export const EXCERPT_RENDERING_CASES: readonly FixtureExcerptCase[] = [
 ];
 
 interface FixtureAttachmentBase {
+  /** Last read in Zotero, in Unix seconds; absent means never read. */
+  lastRead?: number;
   /** Manual or automatic Zotero Tags on the Attachment. */
   tags?: readonly { name: string; type: 0 | 1 }[];
   itemID: number;
@@ -1603,6 +1609,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     itemID: 21,
     libraryID: 1,
     key: "PDFSTR22",
+    lastRead: 1790812800,
     parentItemID: 20,
     linkMode: "imported_file",
     contentType: "application/pdf",
@@ -1682,6 +1689,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     itemID: 29,
     libraryID: 1,
     key: "IANPDF25",
+    lastRead: 1735689600,
     parentItemID: 28,
     linkMode: "imported_file",
     contentType: "application/pdf",

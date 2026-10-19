@@ -75,12 +75,13 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   rootName: fieldRoot,
   readScanPage,
   readUniverseRows,
-  open: (plan, { libraries }, { clock, sources }) =>
+  open: (plan, { libraries, uses }, { clock, sources }) =>
     Effect.gen(function* () {
       const { filter, columns } = plan;
       const hydration = yield* openRecordLoader(ITEM_LOADING, plan, {
         libraries,
         sources,
+        uses,
       });
       const run: DatasetRun<QueryItem> = {
         scan: hydration.scan,

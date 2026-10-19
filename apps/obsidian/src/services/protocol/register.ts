@@ -66,6 +66,7 @@ import { openTemplateWorkbench } from "@/views/template-workbench/register";
 const logger = getLogger("protocol");
 
 export interface ProtocolDeps extends SingleUpdateDeps {
+  useLedger: CompanionNoteDeps["useLedger"];
   webWorkbenchEnabled: boolean;
   createProfile: CompanionNoteDeps["createProfile"];
   importProfile: CompanionNoteDeps["importProfile"];

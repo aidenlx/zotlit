@@ -24,6 +24,8 @@ export interface IndexedItem {
   key: string;
   indexedKey: string;
   dateModified: Temporal.Instant;
+  /** Zotero Last Activity as epoch milliseconds, before request Uses. */
+  lastActivity: number | null;
   itemType: string;
   primaryCreator: IndexedCreator | null;
   creators: readonly IndexedCreator[];
@@ -140,6 +142,36 @@ const indexedItemsByIdsQuery = defineKeyedQuery<number>()(
   { keyOf: (row) => row.itemID },
 );
 
+// Each subquery starts from a parent-indexed relation, keeping a build chunk bounded.
+// Match Item Query's live relations: readable Attachments, Child Notes, and
+// Annotations whose Attachment and Annotation are both outside the trash.
+const zoteroActivity = sql<number | null>`(select max(activity) from (
+  select unixepoch(${items}."dateAdded") * 1000 as activity
+  union all
+  select a.lastRead * 1000 from itemAttachments a
+    where a.parentItemID = ${items}."itemID" and a.linkMode in (0, 1, 2, 3)
+      and not exists (select 1 from deletedItems d where d.itemID = a.itemID)
+  union all
+  select unixepoch(n.dateModified) * 1000 from itemNotes r join items n on n.itemID = r.itemID
+    where r.parentItemID = ${items}."itemID"
+      and not exists (select 1 from deletedItems d where d.itemID = n.itemID)
+  union all
+  select unixepoch(n.dateModified) * 1000 from itemAttachments a
+    join itemAnnotations r on r.parentItemID = a.itemID join items n on n.itemID = r.itemID
+    where a.parentItemID = ${items}."itemID"
+      and not exists (select 1 from deletedItems d where d.itemID = a.itemID)
+      and not exists (select 1 from deletedItems d where d.itemID = n.itemID)
+))`;
+
+const activityByIDs = defineKeyedQuery<number>()(
+  (db, { contains }) =>
+    db
+      .select({ itemID: items.itemID, lastActivity: zoteroActivity })
+      .from(items)
+      .where(contains(items.itemID)),
+  { keyOf: (row) => row.itemID },
+);
+
 type IndexedItemRow = QueryRow<typeof indexedItemsQuery>;
 
 export function getIndexedItemsByLibrary(
@@ -151,7 +183,19 @@ export function getIndexedItemsByLibrary(
     .prepared(db, { indexedFieldIDs: table.fieldIDs })
     .all({ libraryID });
   const groupID = groupIDForLibrary(db, libraryID);
-  return rows.map((row) => toIndexedItem(row, groupID, table));
+  const activity = new Map(
+    activityByIDs(
+      db,
+      rows.map((row) => row.itemID),
+    ).map((row) => [row.itemID, row.lastActivity]),
+  );
+  return rows.map((row) =>
+    toIndexedItem(
+      { ...row, lastActivity: activity.get(row.itemID) ?? null },
+      groupID,
+      table,
+    ),
+  );
 }
 
 /**
@@ -181,10 +225,17 @@ export function getIndexedItemsByID(
   if (itemIDs.length === 0) return [];
   const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
   const memo = opts?.memo ?? new Map();
+  const activity = new Map(
+    activityByIDs(db, itemIDs).map((row) => [row.itemID, row.lastActivity]),
+  );
   return indexedItemsByIdsQuery(db, itemIDs, {
     args: { indexedFieldIDs: table.fieldIDs },
   }).map((row) =>
-    toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table),
+    toIndexedItem(
+      { ...row, lastActivity: activity.get(row.itemID) ?? null },
+      resolveGroupID(db, row.libraryID, memo),
+      table,
+    ),
   );
 }
 
@@ -192,18 +243,11 @@ export function getIndexedItemsByID(
 export interface IndexSignature {
   count: number;
   /**
-   * Order-insensitive checksum over each indexed row's `(unixepoch(dateModified)
-   * + itemID)`. It moves whenever a row is added, removed, or its `dateModified`
-   * changes to a different second — including a non-max edit that lands in the
-   * current library's max second, which a bare `max(dateModified)` cannot see.
-   * Zotero stamps `dateModified` (second resolution) on every item save, so under
-   * normal forward writes any indexed change shifts the checksum.
-   *
-   * Residual blind spots, both off Zotero's normal save path: two same-window
-   * edits whose second-deltas exactly cancel (one row's `dateModified` moved
-   * earlier by the seconds another moved later), and a same-second re-edit of one
-   * row (the stored second does not change). Exact integer arithmetic, within JS
-   * safe-integer range for realistic library sizes.
+   * Sum of parent modification seconds, Item IDs, and an ID-weighted activity
+   * hash. Weighting ties activity to its parent, so moving a child invalidates
+   * the index even when the sum of parent activities stays equal. The modulus
+   * bounds each contribution below 2^31 and the library sum stays a safe integer.
+   * Like any checksum, collisions and same-second edits remain possible.
    */
   checksum: number;
 }
@@ -219,7 +263,7 @@ const indexSignatureQuery = defineQuery<{ libraryID: number }>()(
     db
       .select({
         count: count(),
-        checksum: sql<number>`coalesce(sum(unixepoch(${items.dateModified}) + ${items.itemID}), 0)`,
+        checksum: sql<number>`coalesce(sum(unixepoch(${items.dateModified}) + ${items.itemID} + (coalesce(${zoteroActivity} / 1000, 0) * ((${items.itemID} % 997) + 1) % 2147483647)), 0)`,
       })
       .from(items)
       .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
@@ -249,7 +293,7 @@ export function getIndexSignature(
 }
 
 function toIndexedItem(
-  row: IndexedItemRow,
+  row: IndexedItemRow & { lastActivity: number | null },
   groupID: number | null,
   table: BaseFieldTable<IndexedFieldName>,
 ): IndexedItem {
@@ -259,6 +303,7 @@ function toIndexedItem(
     key: row.key,
     indexedKey: formatIndexedKey(row.key, groupID),
     dateModified: row.dateModified,
+    lastActivity: row.lastActivity,
     itemType: row.itemType.typeName ?? "",
     primaryCreator: null,
     creators: [],

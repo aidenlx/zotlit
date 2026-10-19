@@ -76,6 +76,7 @@ import {
   selectTextDraft,
 } from "./reader-surface-state";
 import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
+import type { PdfReads } from "./reads";
 import {
   groupAnnotationsByPage,
   interfaceFont,
@@ -90,6 +91,7 @@ import type { PdfPageAnnotation } from "./render";
 import {
   loadedPageOf,
   onPageRendered,
+  onPageChanged,
   openFileOf,
   pageViewOf,
   pdfDocumentOf,
@@ -208,6 +210,9 @@ export interface PdfViewBindingDeps {
   noteIndex: CommentNotes;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
   libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
+  reads?: PdfReads;
+  /** Null for a view restored at startup or already open at plugin reload. */
+  openedAt?: Temporal.Instant | null;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -238,6 +243,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #noteIndex;
   readonly #libraryTagNames;
   readonly #now;
+  readonly #reads;
+  readonly #openedAt;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /**
    * This view as a reader: what it holds and what is selected in it. ZotLit
@@ -347,6 +354,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     noteIndex,
     libraryTagNames,
     now = () => Temporal.Now.instant(),
+    reads,
+    openedAt = null,
   }: PdfViewBindingDeps) {
     this.#view = view;
     this.#adapter = adapter;
@@ -358,6 +367,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#noteIndex = noteIndex;
     this.#libraryTagNames = libraryTagNames;
     this.#now = now;
+    this.#reads = reads;
+    this.#openedAt = openedAt;
   }
 
   /**
@@ -554,6 +565,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     );
   }
 
+  /** A workspace close or file replacement, distinct from plugin teardown. */
+  close(): void {
+    if (this.#attachment.kind === "resolved")
+      this.#reads?.record(this.#attachment, "close");
+  }
+
   [Symbol.dispose](): void {
     this.#session[Symbol.dispose]();
     this.#surfaces.dispose();
@@ -572,6 +589,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       path: this.#filePath,
       attachment: this.#attachment,
     });
+    if (this.#attachment.kind === "resolved" && this.#openedAt)
+      this.#reads?.record(this.#attachment, "open", this.#openedAt);
     // The session names the Attachment even when a probe failed: a probe miss
     // costs this view its own surfaces, and leaves every consumer that only
     // follows what the view holds — the Annotation View — reading as before.
@@ -674,6 +693,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       this.#popupHost?.sync();
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
+    this.#surfaces.use(
+      onPageChanged(controller, () => {
+        if (this.#attachment.kind === "resolved" && this.#pageProbed)
+          this.#reads?.record(this.#attachment, "page");
+      }),
+    );
     this.#probePage(loadedPageOf(controller));
     if (!this.supported) {
       this[Symbol.dispose]();

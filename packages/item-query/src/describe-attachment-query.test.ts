@@ -35,6 +35,12 @@ async function schema(): Promise<ItemQuerySchema> {
 it("publishes Attachment fields and parent paths in the single catalog, and defaults in the live schema", async () => {
   const { fields, defaults } = await schema();
   const entry = (path: string) => fields.find((field) => field.path === path);
+  expect(entry("lastRead")).toMatchObject({
+    type: "string",
+    filter: "date",
+    projection: true,
+    sort: true,
+  });
 
   expect(defaults).toEqual({
     fields: ATTACHMENTS.defaultFields,

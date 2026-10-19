@@ -5,6 +5,12 @@ export const ATTACHMENT_SCENARIO_QUERIES: readonly Omit<
   "libraries"
 >[] = [
   {},
+  {
+    fields: ["lastRead"],
+    filter: "lastRead == null",
+    sort: [{ field: "lastRead", direction: "asc" }],
+    limit: 2,
+  },
   { fields: ["indexedKey", "key", "item.key", "fileType"], group: "fileType" },
   { fields: [], group: "tags[]", limit: 1 },
   { fields: [], group: "item.collections[]", limit: 2 },
