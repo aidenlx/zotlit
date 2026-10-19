@@ -513,6 +513,25 @@ const byAccessDate = (direction: SortSpec["direction"]): SortSpec[] => [
 /** The scenario requests that the filter list does not give. */
 const REQUESTS: readonly ScenarioQuery[] = [
   {
+    name: "lastActivitySource projection with Uses",
+    libraries: ["personal", "group"],
+    request: {
+      fields: ["lastActivity", "lastActivitySource"],
+      sort: [{ field: "lastActivity", direction: "desc" }],
+      uses: { ART2FULL: 4102444800000 },
+      limit: 4,
+    },
+  },
+  {
+    name: "lastActivitySource filter",
+    libraries: ["personal", "group"],
+    request: {
+      fields: ["lastActivitySource"],
+      filter: 'lastActivitySource == "added" || lastActivitySource == null',
+      sort: [{ field: "lastActivity", direction: "asc" }],
+    },
+  },
+  {
     name: "lastRead filter, projection and sort",
     libraries: ["personal", "group"],
     request: {
