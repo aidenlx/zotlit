@@ -2355,14 +2355,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     await wideWindow(cleanup);
-    const shots = "/tmp/lv-card-close-shots";
-    /** Save a picture of the window as `<name>.png` in {@link shots}. */
+    /** Save a picture of the window as `library-card-close-<name>.png`. */
     const screenshot = async (name: string) => {
-      await mkdir(shots, { recursive: true });
+      const folder = join(workspaceRoot, ".scratch/e2e-screenshots");
+      await mkdir(folder, { recursive: true });
       await cli([
         `vault=${vaultId}`,
         "dev:screenshot",
-        `path=${join(shots, `${name}.png`)}`,
+        `path=${join(folder, `library-card-close-${name}.png`)}`,
       ]);
     };
     /** Whether the card shows, its width, the list's, and what plugin data keeps. */
