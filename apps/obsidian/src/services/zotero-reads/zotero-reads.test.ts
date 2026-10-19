@@ -1695,12 +1695,19 @@ describe("ZoteroReads SearchItems", () => {
         const first = yield* cost(reads.SearchItems(everything));
         const second = yield* cost(reads.SearchItems(everything));
         const third = yield* cost(reads.SearchItems(everything));
-        return { first, second, third };
+        const used = yield* cost(
+          reads.SearchItems({
+            ...everything,
+            limit: 1,
+            uses: { RELB2345: 2208988800000 },
+          }),
+        );
+        return { first, second, third, used };
       }),
     );
     expect(result.first.value.map((hit) => hit.item.indexedKey)).toEqual([
-      "MAIN2345",
       "GRPITEMSg900",
+      "MAIN2345",
       "RELA2345",
       "RELB2345",
     ]);
@@ -1711,6 +1718,10 @@ describe("ZoteroReads SearchItems", () => {
     // The build reads ids and rows; a later search only hydrates.
     expect(result.first.cost).toBeGreaterThan(result.second.cost);
     expect(result.third.cost).toBe(result.second.cost);
+    expect(result.used.value.map((hit) => hit.item.indexedKey)).toEqual([
+      "RELB2345",
+    ]);
+    expect(result.used.cost).toBeLessThanOrEqual(result.second.cost);
   });
 
   it("two parallel first searches share one build", async () => {

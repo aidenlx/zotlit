@@ -60,7 +60,9 @@ describe("search cost over 100,000 Items", () => {
     async (query) => {
       const lookups = vi.spyOn(MiniSearch.prototype, "search");
       const t0 = performance.now();
-      const hits = await Effect.runPromise(searchEngineIndex(index, query, 50));
+      const hits = await Effect.runPromise(
+        searchEngineIndex(index, query, { limit: 50 }),
+      );
       const elapsed = performance.now() - t0;
 
       console.info(`${JSON.stringify(query)}: ${elapsed.toFixed(1)} ms`);

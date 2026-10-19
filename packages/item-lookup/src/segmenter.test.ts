@@ -42,7 +42,7 @@ describe("segmenter layers", () => {
         const index = yield* buildEngineIndex(Stream.make([target]), {
           libraries: [USER_LIBRARY_ID],
         });
-        return yield* searchEngineIndex(index, "华人", 50);
+        return yield* searchEngineIndex(index, "华人", { limit: 50 });
       }).pipe(Effect.provide(layer), Effect.runPromise);
 
     expect(await search(layerSegmenterNone)).toEqual([]);

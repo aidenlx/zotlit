@@ -732,9 +732,9 @@ export function handlersLayer(options?: HandlersOptions) {
             ).map(({ path }) => path),
           ),
 
-        SearchItems: ({ libraryIDs, query, limit }) =>
+        SearchItems: ({ libraryIDs, query, limit, uses }) =>
           itemIndex
-            .search(libraryIDs, query, limit)
+            .search(libraryIDs, query, { limit, uses })
             .pipe(
               Effect.mapError(
                 (error) => new DbUnavailable({ message: error.message }),

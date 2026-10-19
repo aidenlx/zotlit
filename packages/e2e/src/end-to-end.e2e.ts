@@ -1618,6 +1618,57 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
+  it("refreshes the empty quick switcher after a lastRead-only write without restarting Obsidian", async () => {
+    const readItem = ITEMS.find((item) => item.itemID === 20)!;
+    const attachment = ATTACHMENTS.find(
+      (entry) => entry.parentItemID === readItem.itemID,
+    )!;
+    using sqlite = new DatabaseSync(e2eFixture.databasePath);
+    const saved = sqlite
+      .prepare("SELECT lastRead FROM itemAttachments WHERE itemID = ?")
+      .get(attachment.itemID) as { lastRead: number | null };
+    const modified = sqlite
+      .prepare("SELECT dateModified FROM items WHERE itemID = ?")
+      .get(readItem.itemID);
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      sqlite
+        .prepare("UPDATE itemAttachments SET lastRead = ? WHERE itemID = ?")
+        .run(saved.lastRead, attachment.itemID);
+      await obEval(
+        vaultId,
+        "(async()=>{activeDocument.querySelector('.prompt input')?.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await app.plugins.plugins.zotlit.services.zoteroReads.refresh();return true;})()",
+      );
+    });
+    const recent =
+      "(async()=>JSON.stringify((await app.plugins.plugins.zotlit.services.itemLookup.search('',{limit:1})).map(hit=>hit.item.indexedKey)))()";
+    await obEval(vaultId, recent);
+    sqlite
+      .prepare("UPDATE itemAttachments SET lastRead = ? WHERE itemID = ?")
+      .run(2208988800, attachment.itemID);
+    expect(
+      sqlite
+        .prepare("SELECT dateModified FROM items WHERE itemID = ?")
+        .get(readItem.itemID),
+    ).toEqual(modified);
+    await obReadUntil<string[]>(vaultId, recent, {
+      ready: (keys) => keys[0] === readItem.key,
+      what: "empty search to reflect the Zotero read",
+      tries: 160,
+    });
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:note-quick-switcher');true",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(activeDocument.querySelector('.prompt .suggestion-item')?.textContent.includes(${JSON.stringify(readItem.title)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  });
+
   it("opens a new Library View on Recent, lists the Library Scope newest activity first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
@@ -1733,6 +1784,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       header: `${m.library_view_recent()} | ${m.library_view_heading_papers({ count: size([personal, shared]) })}`,
     });
     expectRecent(opened, [personal, shared], -1);
+    const emptySearch = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>JSON.stringify((await ${services}.itemLookup.search('',{limit:500})).map(hit=>hit.item.indexedKey)))()`,
+      ),
+    );
+    expect(emptySearch).toEqual(opened.rows);
+
     // On a pane too narrow for the tree beside the list, Recent's tree
     // toggle sits beside the search box, not on a row of its own.
     const narrowRow = JSON.parse(

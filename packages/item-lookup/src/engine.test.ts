@@ -1,8 +1,13 @@
 import { Effect, Exit, Fiber, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
+import {
+  getIndexedItemIDsByLibrary,
+  getIndexedItemsByID,
+  USER_LIBRARY_ID,
+} from "@zotlit/db";
 import type { IndexedItem } from "@zotlit/db";
+import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { buildEngineIndex, cleanQuery, searchEngineIndex } from "./engine";
 import type { ItemHit } from "./engine";
@@ -10,6 +15,95 @@ import { makeCreator as creator, makeIndexedItem as item } from "./fixtures";
 import { layerSegmenterNone } from "./segmenter";
 
 describe("item search engine", () => {
+  it("ranks empty searches by Last Activity and request Uses before the limit", async () => {
+    const items = [
+      {
+        ...item({
+          key: "A",
+          title: "Paper",
+          dateModified: "2026-01-01T00:00:00Z",
+        }),
+        lastActivity: 10,
+      },
+      { ...item({ key: "B", title: "Paper" }), lastActivity: 30 },
+      { ...item({ key: "C", title: "Paper" }), lastActivity: 20 },
+    ];
+    const index = await buildEngineIndex(Stream.make(items), {
+      libraries: LIBRARIES,
+    }).pipe(Effect.provide(layerSegmenterNone), Effect.runPromise);
+    expect(
+      keys(await Effect.runPromise(searchEngineIndex(index, "", { limit: 2 }))),
+    ).toEqual(["B", "C"]);
+    expect(
+      keys(
+        await Effect.runPromise(
+          searchEngineIndex(index, "Paper", {
+            limit: 2,
+            uses: { C: 50 },
+          }),
+        ),
+      ),
+    ).toEqual(["A", "B"]);
+
+    expect(
+      keys(
+        await Effect.runPromise(
+          searchEngineIndex(index, " ", {
+            limit: 2,
+            uses: { A: 40, OUTSIDE: 50 },
+          }),
+        ),
+      ),
+    ).toEqual(["A", "B"]);
+    expect(
+      keys(await Effect.runPromise(searchEngineIndex(index, "", { limit: 2 }))),
+    ).toEqual(["B", "C"]);
+  });
+
+  it("orders a seeded Zotero library by reads, child notes and Annotations", async () => {
+    using scenario = openScenarioDatabase({ annotations: true });
+    scenario.sqlite
+      .exec(`UPDATE items SET dateAdded = '2024-01-01 00:00:00', dateModified = '2030-01-01 00:00:00';
+      UPDATE itemAttachments SET lastRead = NULL;
+      UPDATE items SET dateModified = '2024-01-01 00:00:00' WHERE itemID IN (SELECT itemID FROM itemNotes) OR itemID IN (SELECT itemID FROM itemAnnotations);
+      UPDATE items SET dateAdded = '2024-01-02 00:00:00' WHERE key = 'GRP2BK22';
+      UPDATE items SET dateModified = '2040-01-01 00:00:00' WHERE key = 'NTE2TRSH';`);
+    const recent = async () =>
+      keys(
+        await search(
+          [1, 2].flatMap((id) =>
+            getIndexedItemsByID(
+              scenario.db,
+              getIndexedItemIDsByLibrary(scenario.db, id),
+            ),
+          ),
+          "",
+          { limit: 1 },
+        ),
+      );
+    expect(await recent()).toEqual(["GRP2BK22g4815"]);
+    scenario.sqlite.exec(
+      "UPDATE itemAttachments SET lastRead = 1704240000 WHERE itemID = (SELECT itemID FROM items WHERE key = 'PDF2GRUP')",
+    );
+    expect(await recent()).toEqual(["ART2FULLg4815"]);
+    scenario.sqlite.exec(
+      "UPDATE items SET dateModified = '2024-01-04 00:00:00' WHERE key = 'NTE2CHLD'",
+    );
+    expect(await recent()).toEqual(["ART2FULL"]);
+    scenario.sqlite.exec(
+      "UPDATE itemAttachments SET lastRead = 1704412800 WHERE itemID = (SELECT itemID FROM items WHERE key = 'PDF2GRUP')",
+    );
+    expect(await recent()).toEqual(["ART2FULLg4815"]);
+    scenario.sqlite.exec(
+      "UPDATE items SET dateModified = '2024-01-06 00:00:00' WHERE key = 'ANN2HGHT'",
+    );
+    expect(await recent()).toEqual(["ART2FULL"]);
+    scenario.sqlite.exec(
+      "INSERT INTO deletedItems (itemID) SELECT itemID FROM items WHERE key = 'ANN2HGHT'",
+    );
+    expect(await recent()).toEqual(["ART2FULLg4815"]);
+  });
+
   it("matches query terms across every indexed field", async () => {
     const target = item({
       key: "A",
@@ -55,8 +149,16 @@ describe("item search engine", () => {
   });
 
   it("answers a whitespace-only query with the empty-query order", async () => {
-    const older = item({ key: "A", dateModified: "2024-01-01T00:00:00Z" });
-    const newer = item({ key: "B", dateModified: "2025-01-01T00:00:00Z" });
+    const older = item({
+      key: "A",
+      lastActivity: 10,
+      dateModified: "2024-01-01T00:00:00Z",
+    });
+    const newer = item({
+      key: "B",
+      lastActivity: 20,
+      dateModified: "2025-01-01T00:00:00Z",
+    });
 
     expect(keys(await search([older, newer], "   "))).toEqual(["B", "A"]);
   });
@@ -173,9 +275,24 @@ describe("composite index over several libraries", () => {
 
   it("answers the empty query in global order, truncated to the limit", async () => {
     const items = [
-      item({ key: "A", libraryID: 3, dateModified: "2024-01-01T00:00:00Z" }),
-      item({ key: "B", libraryID: 1, dateModified: "2026-01-01T00:00:00Z" }),
-      item({ key: "C", libraryID: 7, dateModified: "2025-01-01T00:00:00Z" }),
+      item({
+        key: "A",
+        libraryID: 3,
+        lastActivity: 10,
+        dateModified: "2024-01-01T00:00:00Z",
+      }),
+      item({
+        key: "B",
+        libraryID: 1,
+        lastActivity: 30,
+        dateModified: "2026-01-01T00:00:00Z",
+      }),
+      item({
+        key: "C",
+        libraryID: 7,
+        lastActivity: 20,
+        dateModified: "2025-01-01T00:00:00Z",
+      }),
     ];
 
     expect(keys(await search(items, "", { libraries }))).toEqual([
@@ -189,7 +306,7 @@ describe("composite index over several libraries", () => {
     ]);
   });
 
-  it("breaks equal timestamps by canonical library order, then item id", async () => {
+  it("breaks equal or absent activity by Indexed Key text order", async () => {
     const items = [
       item({ key: "A", itemID: 20, libraryID: 3, dateModified: sameInstant }),
       item({ key: "B", itemID: 30, libraryID: 1, dateModified: sameInstant }),
@@ -198,10 +315,10 @@ describe("composite index over several libraries", () => {
     ];
 
     expect(keys(await search(items, "", { libraries }))).toEqual([
-      "C",
-      "B",
-      "D",
       "A",
+      "B",
+      "C",
+      "D",
     ]);
   });
 
@@ -266,7 +383,7 @@ describe("interruption", () => {
       // Started inline, the fiber runs until the search's first interruption
       // point; a search with none would finish before the interrupt lands.
       const fiber = yield* Effect.forkChild(
-        searchEngineIndex(index, "senior", 50),
+        searchEngineIndex(index, "senior", { limit: 50 }),
         { startImmediately: true },
       );
       yield* Fiber.interrupt(fiber);
@@ -302,7 +419,9 @@ function search(
     const index = yield* buildEngineIndex(Stream.make(items), {
       libraries: options.libraries ?? LIBRARIES,
     });
-    return yield* searchEngineIndex(index, query, options.limit ?? 50);
+    return yield* searchEngineIndex(index, query, {
+      limit: options.limit ?? 50,
+    });
   }).pipe(Effect.provide(layerSegmenterNone), Effect.runPromise);
 }
 
