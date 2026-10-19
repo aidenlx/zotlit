@@ -2,8 +2,8 @@ import * as v from "valibot";
 
 // The Library View Document: what the Library View shows, as one plain value
 // that plugin data keeps per vault, and the one module that reads, changes
-// and derives it. Its transitions take a tree selection, the facets, the
-// search and a toolbar change; its derivations give the list's query (the
+// and derives it. Its transitions take a tree selection, the tree nodes
+// left open, the selected paper, the facets, the search and a toolbar change; its derivations give the list's query (the
 // tree node, the facets and the selected tags become the filters for all views, Recent adds none
 // and reads the whole Library Scope, a search becomes its ranked key set, and
 // the sort passes through to the one Items view, always in the Papers
@@ -89,6 +89,14 @@ export interface LibraryViewDocument {
   readonly sort: readonly QueryFileSort[];
   /** Which disclosures of the Reading Card are open, for every Item it shows. */
   readonly card: ReadingCardDisclosures;
+  /**
+   * The Library Tree nodes left open, each once: the {@link nodeKey} of an
+   * open Collection, and `closed:` before the {@link nodeKey} of a Library,
+   * which shows its Collections until the researcher closes it.
+   */
+  readonly expanded: readonly string[];
+  /** The Indexed Key of the paper the Reading Card shows; `null` for none. */
+  readonly selected: string | null;
 }
 
 /** The Reading Card's disclosures, open or closed. */
@@ -130,6 +138,8 @@ export type StoredLibraryViewDocument = {
   search: string;
   sort: v.InferOutput<typeof sortSchema>;
   card: { allFields: boolean; annotations: boolean };
+  expanded: string[];
+  selected: string | null;
 };
 
 /**
@@ -152,16 +162,46 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
     search: "",
     sort: RECENT_SORT,
     card: CLOSED_CARD,
+    expanded: [],
+    selected: null,
   } satisfies LibraryViewDocument,
 );
+
+/** One identity for a node, whatever its names hold. */
+export function nodeKey(node: LibraryNode): string {
+  if (node.kind === "recent") return JSON.stringify(["recent"]);
+  return JSON.stringify([
+    selectorKey(node.library),
+    ...(node.kind === "collection" ? node.path : []),
+  ]);
+}
+
+/** The Collections above a Collection: what stays open to show it. */
+function ancestors(node: LibraryNode): string[] {
+  if (node.kind !== "collection") return [];
+  return node.path.slice(0, -1).map((_, index) =>
+    nodeKey({
+      kind: "collection",
+      library: node.library,
+      path: node.path.slice(0, index + 1),
+    }),
+  );
+}
+
+/** `expanded` with the Collections above `node` open, each once. */
+function openTo(expanded: readonly string[], node: LibraryNode): string[] {
+  return [...new Set([...expanded, ...ancestors(node)])];
+}
 
 /**
  * Read the document that plugin data holds: the one check of its shape. A
  * value that is not an object takes the default document; a field this
  * build cannot read takes its default and the other fields stay; a facet it
  * does not know drops out, and so does a tag that is not a name. A document
- * of an earlier build has no tags, and selects none. A field it no longer reads, such as the `layout`
- * and `order` of an earlier build, is ignored.
+ * of an earlier build has no tags, and selects none; nor does it hold open
+ * nodes or a selected paper. The Collections above the selected node open
+ * on read, as the tree shows a selection. A field it no longer reads, such
+ * as the `layout` and `order` of an earlier build, is ignored.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -177,8 +217,10 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const defaults = DEFAULT_LIBRARY_VIEW_DOCUMENT;
   const facets = field(v.array(v.unknown()), "facets", []);
   const tags = field(v.array(v.unknown()), "tags", []);
+  const expanded = field(v.array(v.unknown()), "expanded", []);
+  const node = field(nodeSchema, "node", defaults.node);
   return {
-    node: field(nodeSchema, "node", defaults.node),
+    node,
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
     tags: sortTags(
       tags.filter(
@@ -188,6 +230,17 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     search: field(v.string(), "search", defaults.search),
     sort: field(sortSchema, "sort", defaults.sort),
     card: field(cardSchema, "card", defaults.card),
+    expanded: openTo(
+      expanded.filter(
+        (key): key is string => typeof key === "string" && key !== "",
+      ),
+      node,
+    ),
+    selected: field(
+      v.pipe(v.string(), v.nonEmpty()),
+      "selected",
+      defaults.selected,
+    ),
   };
 }
 
@@ -219,9 +272,11 @@ function nodeSort(node: LibraryNode): readonly QueryFileSort[] | null {
 }
 
 /**
- * `doc` with `node` selected in the tree. Recent writes its sort, and
- * leaving it clears that sort, so the next node opens unsorted; a sort the
- * researcher changed while on Recent is theirs and stays.
+ * `doc` with `node` selected in the tree, the Collections above it open and
+ * no paper selected, since the selected row leaves the list with its node.
+ * Recent writes its sort, and leaving it clears that sort, so the next node
+ * opens unsorted; a sort the researcher changed while on Recent is theirs
+ * and stays.
  */
 export function withNode(
   doc: LibraryViewDocument,
@@ -230,7 +285,41 @@ export function withNode(
   const left = nodeSort(doc.node);
   const sort =
     nodeSort(node) ?? (left && sameSort(doc.sort, left) ? [] : doc.sort);
-  return { ...doc, node, sort };
+  return {
+    ...doc,
+    node,
+    sort,
+    expanded: openTo(doc.expanded, node),
+    selected: null,
+  };
+}
+
+/** `doc` with `expanded` as the Library Tree nodes left open, each once. */
+export function withExpanded(
+  doc: LibraryViewDocument,
+  expanded: Iterable<string>,
+): LibraryViewDocument {
+  return { ...doc, expanded: [...new Set(expanded)] };
+}
+
+/** `doc` with the paper `selected`, by its Indexed Key, or none. */
+export function withSelected(
+  doc: LibraryViewDocument,
+  selected: string | null,
+): LibraryViewDocument {
+  return { ...doc, selected };
+}
+
+/**
+ * `doc` without the open nodes the tree does not `know`, such as a
+ * Collection renamed or removed in Zotero; `doc` itself where it knows each.
+ */
+export function pruneExpanded(
+  doc: LibraryViewDocument,
+  know: (key: string) => boolean,
+): LibraryViewDocument {
+  const expanded = doc.expanded.filter(know);
+  return expanded.length === doc.expanded.length ? doc : { ...doc, expanded };
 }
 
 /**
@@ -300,6 +389,8 @@ export function serializeLibraryViewDocument(
     search: doc.search,
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),
     card: { ...doc.card },
+    expanded: [...doc.expanded],
+    selected: doc.selected,
   };
 }
 

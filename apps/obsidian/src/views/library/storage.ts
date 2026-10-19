@@ -22,6 +22,8 @@ export class LibraryViewStorage {
   #held: LibraryViewDocument = DEFAULT_LIBRARY_VIEW_DOCUMENT;
   /** The toolbar's text that {@link #held} has taken in. */
   #taken: string | null = null;
+  /** The write to disk that the saves of this task wait for. */
+  #write: Promise<void> | null = null;
 
   /**
    * @param toolbar the Query View's text as it stands: a toolbar change
@@ -61,11 +63,30 @@ export class LibraryViewStorage {
    * holds it; rejects where the write failed, so the toolbar says the
    * change is not saved.
    */
-  async save(): Promise<void> {
+  save(): Promise<void> {
+    // Plugin data takes the document at once, so the write that unloading
+    // the plugin starts holds it; changes made in one task, such as a tree
+    // selection and the paper it lets go of, share one write to disk.
     this.#settings.update({
       [KEY]: serializeLibraryViewDocument(this.document()),
     });
-    await this.#settings.flush();
+    this.#write ??= Promise.resolve().then(() => {
+      this.#write = null;
+      return this.#settings.flush();
+    });
+    return this.#write;
+  }
+
+  /**
+   * {@link set}, and hand the document to plugin data, which writes it to
+   * disk once changes pause, or as the plugin unloads: for a change that
+   * comes many to a second, such as the arrow keys moving the selection.
+   */
+  keep(change: (doc: LibraryViewDocument) => LibraryViewDocument): void {
+    this.set(change);
+    this.#settings.update({
+      [KEY]: serializeLibraryViewDocument(this.document()),
+    });
   }
 
   /** {@link set}, then {@link save}. */

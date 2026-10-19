@@ -29,7 +29,10 @@ import {
   serializeLibraryViewDocument,
   tagListRequest,
   tagNames,
+  pruneExpanded,
+  withExpanded,
   withNode,
+  withSelected,
   withTags,
   withText,
 } from "./document";
@@ -55,6 +58,11 @@ const CHAPTER: LibraryViewDocument = {
     { property: "dateAdded", direction: "DESC" },
   ],
   card: { allFields: true, annotations: true },
+  expanded: [
+    JSON.stringify(["group:4200309", "Thesis"]),
+    `closed:${JSON.stringify(["personal"])}`,
+  ],
+  selected: "4200309:ABCD2345",
 };
 
 describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
@@ -114,6 +122,65 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       sort: [{ property: "dateModified", direction: "DESC" }],
       // The Reading Card opens with All fields and Annotations closed.
       card: { allFields: false, annotations: false },
+      // No Collection open, and no paper selected.
+      expanded: [],
+      selected: null,
+    });
+  });
+
+  it("reads the open tree nodes each once, and drops what is not a key", () => {
+    const thesis = JSON.stringify(["personal", "Reading"]);
+    expect(
+      parseLibraryViewDocument({ expanded: [thesis, "", 3, thesis, null] })
+        .expanded,
+    ).toEqual([thesis]);
+  });
+
+  it("opens the Collections above the selected node on read, beside the nodes left open", () => {
+    const thesis = JSON.stringify(["personal", "Thesis"]);
+    const chapter = JSON.stringify(["personal", "Thesis", "Chapter 2"]);
+    const other = JSON.stringify(["personal", "Reading"]);
+    expect(
+      parseLibraryViewDocument({
+        node: {
+          kind: "collection",
+          library: { type: "personal" },
+          path: ["Thesis", "Chapter 2", "Figures"],
+        },
+        expanded: [other],
+      }).expanded,
+    ).toEqual([other, thesis, chapter]);
+  });
+
+  it("takes no selected paper and no open node where either cannot be read, and keeps the rest", () => {
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    expect(parseLibraryViewDocument({ ...stored, selected: 42 })).toEqual({
+      ...CHAPTER,
+      selected: null,
+    });
+    expect(parseLibraryViewDocument({ ...stored, selected: "" })).toEqual({
+      ...CHAPTER,
+      selected: null,
+    });
+    expect(parseLibraryViewDocument({ ...stored, expanded: "Thesis" })).toEqual(
+      {
+        ...CHAPTER,
+        // The Collection above the selected one still opens.
+        expanded: [JSON.stringify(["group:4200309", "Thesis"])],
+      },
+    );
+  });
+
+  it("reads a document an earlier build stored, with no open nodes and no selected paper", () => {
+    const {
+      expanded: _expanded,
+      selected: _selected,
+      ...earlier
+    } = serializeLibraryViewDocument(CHAPTER);
+    expect(parseLibraryViewDocument(earlier)).toEqual({
+      ...CHAPTER,
+      expanded: [JSON.stringify(["group:4200309", "Thesis"])],
+      selected: null,
     });
   });
 
@@ -192,9 +259,13 @@ describe("withTags", () => {
 });
 
 describe("withNode", () => {
-  it("selects a Library or a Collection and keeps the sort", () => {
+  it("selects a Library or a Collection and keeps the sort, with no paper selected", () => {
     const node = { kind: "library", library: { type: "personal" } } as const;
-    expect(withNode(CHAPTER, node)).toEqual({ ...CHAPTER, node });
+    expect(withNode(CHAPTER, node)).toEqual({
+      ...CHAPTER,
+      node,
+      selected: null,
+    });
   });
 
   it("selects Recent with its sort, newest change first, and keeps the rest", () => {
@@ -202,12 +273,17 @@ describe("withNode", () => {
       ...CHAPTER,
       node: { kind: "recent" },
       sort: [{ property: "dateModified", direction: "DESC" }],
+      selected: null,
     });
   });
 
   it("leaves Recent for a Collection with no sort where the sort is still Recent's own", () => {
     const recent = withNode(CHAPTER, { kind: "recent" });
-    expect(withNode(recent, CHAPTER.node)).toEqual({ ...CHAPTER, sort: [] });
+    expect(withNode(recent, CHAPTER.node)).toEqual({
+      ...CHAPTER,
+      sort: [],
+      selected: null,
+    });
   });
 
   it("leaves Recent with the sort the researcher set there", () => {
@@ -217,6 +293,7 @@ describe("withNode", () => {
       ...CHAPTER,
       node: MY_LIBRARY,
       sort,
+      selected: null,
     });
   });
 
@@ -226,7 +303,51 @@ describe("withNode", () => {
       ...CHAPTER,
       node: MY_LIBRARY,
       sort,
+      selected: null,
     });
+  });
+
+  it("opens the Collections above the node it selects, and keeps the nodes left open", () => {
+    const figures: LibraryNode = {
+      kind: "collection",
+      library: { type: "personal" },
+      path: ["Thesis", "Chapter 2", "Figures"],
+    };
+    expect(withNode(CHAPTER, figures).expanded).toEqual([
+      ...CHAPTER.expanded,
+      JSON.stringify(["personal", "Thesis"]),
+      JSON.stringify(["personal", "Thesis", "Chapter 2"]),
+    ]);
+  });
+});
+
+describe("withExpanded, withSelected and pruneExpanded", () => {
+  const reading = JSON.stringify(["personal", "Reading"]);
+  const gone = JSON.stringify(["personal", "Gone"]);
+
+  it("keeps the tree nodes left open, each once, and the rest", () => {
+    expect(withExpanded(CHAPTER, [reading, reading])).toEqual({
+      ...CHAPTER,
+      expanded: [reading],
+    });
+  });
+
+  it("selects a paper, and lets go of it", () => {
+    const selected = withSelected(CHAPTER, "1:QRST6789");
+    expect(selected).toEqual({ ...CHAPTER, selected: "1:QRST6789" });
+    expect(withSelected(selected, null)).toEqual({
+      ...CHAPTER,
+      selected: null,
+    });
+  });
+
+  it("drops the open nodes the tree does not know, and leaves the document as it was where it knows them all", () => {
+    const doc = withExpanded(CHAPTER, [reading, gone]);
+    expect(pruneExpanded(doc, (key) => key !== gone)).toEqual({
+      ...CHAPTER,
+      expanded: [reading],
+    });
+    expect(pruneExpanded(CHAPTER, () => true)).toBe(CHAPTER);
   });
 });
 

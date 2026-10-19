@@ -28,7 +28,6 @@ import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryService } from "@/services/item-query/service";
 import { libraryLabel } from "@/services/library-scope/label";
-import { selectorKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
   LibraryScope,
@@ -38,7 +37,7 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
 import { FILTER_CHIP_CLASS } from "./chip";
-import { READING_STATE_FACETS, sortTags } from "./document";
+import { nodeKey, READING_STATE_FACETS, sortTags } from "./document";
 import type { LibraryNode, ReadingStateFacet } from "./document";
 import {
   paperCountRequest,
@@ -48,7 +47,13 @@ import {
 } from "./document";
 import { TagSelector } from "./tag-selector";
 import { TextAction } from "./text-action";
-import { collectionTree, findNode, sameLibrary } from "./tree";
+import {
+  CLOSED_PREFIX,
+  collectionTree,
+  findNode,
+  knowsNode,
+  sameLibrary,
+} from "./tree";
 import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 
 const logger = getLogger(["library-view", "tree"]);
@@ -70,6 +75,10 @@ export interface LibraryTreeHost {
   tag: (tags: readonly string[]) => void;
   /** The Library Scope in force, which Recent reads. */
   scope: () => LibraryScope;
+  /** The researcher opened or closed a node: `expanded` are the nodes open now. */
+  expand: (expanded: readonly string[]) => void;
+  /** A read of the tree landed: the open nodes it does not `know` are gone. */
+  prune: (know: (key: string) => boolean) => void;
 }
 
 interface TreeState {
@@ -83,7 +92,10 @@ interface TreeState {
   readonly listed: boolean;
   /** Whether the tree shows every Library, not only those in the Library Scope. */
   readonly all: boolean;
-  /** The nodes open to their children, by {@link nodeKey}. */
+  /**
+   * The nodes open to their children, by {@link nodeKey}, as the Library
+   * View Document holds them; a Library is open unless it is marked closed.
+   */
   readonly expanded: ReadonlySet<string>;
   /** Whether a narrow pane shows the tree over the list. */
   readonly open: boolean;
@@ -100,27 +112,6 @@ interface TreeState {
   readonly tagList: readonly string[] | null;
   /** The text in the "Filter tags" box, which narrows the names shown. */
   readonly tagFilter: string;
-}
-
-/** One identity for a node, whatever its names hold. */
-export function nodeKey(node: LibraryNode): string {
-  if (node.kind === "recent") return JSON.stringify(["recent"]);
-  return JSON.stringify([
-    selectorKey(node.library),
-    ...(node.kind === "collection" ? node.path : []),
-  ]);
-}
-
-/** The node and the Libraries above a Collection: what stays open to show it. */
-function ancestors(node: LibraryNode): string[] {
-  if (node.kind !== "collection") return [];
-  return node.path.slice(0, -1).map((_, index) =>
-    nodeKey({
-      kind: "collection",
-      library: node.library,
-      path: node.path.slice(0, index + 1),
-    }),
-  );
 }
 
 export class LibraryTree extends Component {
@@ -204,14 +195,10 @@ export class LibraryTree extends Component {
     this.#roots = [];
   }
 
-  /** Show `node` as the selection, with the Collections above it open. */
+  /** Show `node` as the selection. */
   show(node: LibraryNode): void {
-    const { expanded, node: shown } = this.store.getState();
-    this.store.setState({
-      node,
-      open: false,
-      expanded: new Set([...expanded, ...ancestors(node)]),
-    });
+    const { node: shown } = this.store.getState();
+    this.store.setState({ node, open: false });
     if (nodeKey(node) !== nodeKey(shown)) {
       this.#countUnread();
       this.#listTags();
@@ -279,11 +266,17 @@ export class LibraryTree extends Component {
     this.refresh();
   }
 
+  /** Show `expanded` as the nodes open to their children. */
+  showExpanded(expanded: readonly string[]): void {
+    this.store.setState({ expanded: new Set(expanded) });
+  }
+
+  /** The researcher opened or closed the node `key`. */
   toggle(key: string, open: boolean): void {
     const expanded = new Set(this.store.getState().expanded);
     if (open) expanded.add(key);
     else expanded.delete(key);
-    this.store.setState({ expanded });
+    this.#host.expand([...expanded]);
   }
 
   /** Show the tree over the list on a narrow pane, or hide it. */
@@ -336,6 +329,8 @@ export class LibraryTree extends Component {
         this.#run = null;
         this.store.setState({ libraries: libraries.map(({ tree }) => tree) });
         this.#first.resolve();
+        // A Collection renamed or removed in Zotero leaves no node to open.
+        this.#host.prune(knowsNode(libraries));
         // A Collection renamed or removed in Zotero leaves its saved path
         // with nothing to list: the selection moves up to its Library.
         const { node } = this.store.getState();
@@ -594,7 +589,7 @@ function rows(
     const node: LibraryNode = { kind: "library", library: library.selector };
     const key = nodeKey(node);
     // A Library shows its Collections until the researcher closes it.
-    const open = !expanded.has(`closed:${key}`);
+    const open = !expanded.has(`${CLOSED_PREFIX}${key}`);
     out.push({
       key,
       node,
@@ -629,7 +624,7 @@ function TreePane({ tree }: { tree: LibraryTree }) {
 
   const open = (row: Row, value: boolean) =>
     row.level === 1
-      ? tree.toggle(`closed:${row.key}`, !value)
+      ? tree.toggle(`${CLOSED_PREFIX}${row.key}`, !value)
       : tree.toggle(row.key, value);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, index: number) => {
     const row = shown[index]!;
