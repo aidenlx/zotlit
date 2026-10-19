@@ -93,7 +93,7 @@ export interface ReadingCardHost {
   menu: (item: MenuItem, button: HTMLElement) => void;
   /** Show the Item's Annotations in the sidebar Annotation View. */
   openInSidebar: (indexedKey: string) => void;
-  /** Put away the card that shows over the list on a narrow pane. */
+  /** Close the card, at any pane width, until a row asks for it again. */
   close: () => void;
   /** Keep a disclosure open or closed for the Library View. */
   keepDisclosure: (name: keyof ReadingCardDisclosures, open: boolean) => void;
@@ -853,10 +853,10 @@ function CardBody({ card }: { card: ReadingCard }) {
               <span className="zt:truncate">{item.type}</span>
             </div>
           )}
-          {/* On a narrow pane the card shows over the list, and puts itself
-              away here. Obsidian's own rule shows a clickable icon, so the
-              wide pane hides a wrapper. */}
-          <span className="zt:ms-auto zt:flex zt:@4xl:hidden">
+          {/* The card puts itself away here at every pane width: over a
+              narrow list it uncovers the list, and beside a wide one the
+              list takes its room until a row is asked for again. */}
+          <span className="zt:ms-auto zt:flex">
             <IconButton
               icon="x"
               data-library-card-close=""

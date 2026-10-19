@@ -2699,8 +2699,8 @@ describe("Reading Card", () => {
     expect(actions()).toEqual(["pdf (primary)", "note", "more", "sidebar"]);
   });
 
-  it("puts itself away from its close button, which a narrow pane shows, and gives the focus back to the row", async () => {
-    const { deps } = pluginData();
+  it("closes from its close button, gives the focus back to the row, and keeps it closed", async () => {
+    const { deps, settings } = pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -2713,6 +2713,50 @@ describe("Reading Card", () => {
     await act(() => close.click());
     expect(view.selection.getState()).toEqual({ key: B, card: false });
     expect(document.activeElement).toBe(itemRow(view, B));
+    // A pane wide enough for the card beside the list hides it too.
+    expect(shownCard(view)).toBeNull();
+    await act(() => settings.flush());
+    expect(settings.current?.["library.document"]?.cardClosed).toBe(true);
+  });
+
+  it("stays closed while the arrow keys move the selection, and opens again on a row click", async () => {
+    const { deps, settings } = pluginData();
+    const view = await openTab(deps);
+    await act(async () => {
+      itemRow(view, B).click();
+      await view.card.settled;
+    });
+    await act(() =>
+      card(view)
+        .querySelector<HTMLElement>("[data-library-card-close]")!
+        .click(),
+    );
+    expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
+    expect(view.selection.getState()).toEqual({ key: C, card: false });
+    expect(shownCard(view)).toBeNull();
+    await act(async () => {
+      itemRow(view, C).click();
+      await view.card.settled;
+    });
+    expect(shownCard(view)).not.toBeNull();
+    await act(() => settings.flush());
+    expect(settings.current?.["library.document"]).not.toHaveProperty(
+      "cardClosed",
+    );
+    // Opened again, it follows the arrow keys beside the list once more.
+    expect(await pressKey(view, itemRow(view, C), ["ArrowUp"])).toBe(true);
+    expect(shownCard(view)).not.toBeNull();
+  });
+
+  it("opens again on Space on the selected row", async () => {
+    const { deps } = pluginData({ node: { kind: "recent" }, cardClosed: true });
+    const view = await openTab(deps);
+    expect(await pressKey(view, itemRow(view, A), ["ArrowDown"])).toBe(true);
+    expect(view.selection.getState().key).not.toBeNull();
+    expect(shownCard(view)).toBeNull();
+    const key = view.selection.getState().key!;
+    expect(await pressKey(view, itemRow(view, key), [" "])).toBe(true);
+    expect(shownCard(view)).not.toBeNull();
   });
 
   it("opens on a click or on Space on the selected row, and stays closed while the arrow keys move the selection", async () => {

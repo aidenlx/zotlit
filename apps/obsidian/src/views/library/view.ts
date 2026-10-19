@@ -39,6 +39,7 @@ import {
   libraryViewQueryFileText,
   pruneExpanded,
   vaultPass,
+  withCardClosed,
   withCardDisclosure,
   withCardWidth,
   withExpanded,
@@ -138,13 +139,16 @@ export class LibraryView extends ItemView {
    * asked for its Reading Card: a click on the row or Space on it does, the
    * arrow keys do not. A narrow pane shows the card over the list only
    * while it is asked for; a wide pane shows it beside the list for every
-   * selected row.
+   * selected row, unless the researcher closed it (the document's
+   * `cardClosed`), when it too waits to be asked for.
    */
   readonly selection = createStore<{ key: string | null; card: boolean }>(
     () => ({ key: null, card: false }),
   );
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
+  /** The box of the tree, the list and the card, once the tab has opened. */
+  #shell: HTMLElement | null = null;
   /** The Reading Card's resizable inner edge, once the tab has opened. */
   #cardWidth: CardWidth | null = null;
   /** The click that waits out a double click before it opens the card. */
@@ -267,7 +271,7 @@ export class LibraryView extends ItemView {
     this.card = new ReadingCard(deps, {
       menu: (item, button) => showMenuAtButton(menuOf(item), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
-      close: () => this.#closeCard(),
+      close: () => this.#closeCard({ keep: true }),
       // A disclosure is a view state the document keeps; a failed write
       // leaves it open on screen and says nothing in the toolbar.
       keepDisclosure: (name, open) => {
@@ -398,12 +402,14 @@ export class LibraryView extends ItemView {
     const hidden = "zt:group-data-zotero-missing:hidden";
     // The Reading Card shows while a row is selected: beside the list on a
     // wide pane, and over it on a narrow one, as the tree does, once the
-    // researcher asks for it.
+    // researcher asks for it. A card the researcher closed is hidden, so a
+    // wide pane too waits for it to be asked for.
     const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
       cls: "zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
+    this.#shell = shell;
     // The card's inner edge sets its width; the card itself renders beside
     // it, in a box of its own.
     this.#cardWidth = new CardWidth(cardEl, main, {
@@ -500,9 +506,10 @@ export class LibraryView extends ItemView {
     this.card.register(
       this.selection.subscribe(({ key, card }) => {
         this.card.show(key);
-        cardEl.hidden = key === null;
-        shell.toggleAttribute("data-card-open", card);
-        this.#cardWidth?.apply();
+        // Asking for the card opens a card the researcher closed.
+        if (card && this.#storage.document().cardClosed)
+          this.#keepClosed(false);
+        this.#showCard();
       }),
     );
     // A selected row that leaves the list takes its selection with it, so
@@ -527,7 +534,7 @@ export class LibraryView extends ItemView {
     this.#storage.load();
     const doc = this.#storage.document();
     this.#cardWidth?.load(shell);
-    this.#cardWidth?.apply();
+    this.#showCard();
     this.card.showDisclosures(doc.card);
     this.tree.show(doc.node);
     this.tree.showExpanded(doc.expanded);
@@ -562,7 +569,8 @@ export class LibraryView extends ItemView {
         return;
       }
       // As the arrow keys select a row: the card shows beside a wide list
-      // and stays off a narrow one until the researcher asks for it.
+      // and stays off a narrow one until the researcher asks for it, as it
+      // does off a wide one the researcher closed it on.
       this.selection.setState({ key: selected, card: false });
       // The list draws its rows a frame or more after they land.
       void this.#drawn(selected).then((row) => {
@@ -617,6 +625,31 @@ export class LibraryView extends ItemView {
     );
   }
 
+  /**
+   * Show the Reading Card as the selection and the document have it: hidden
+   * while no row is selected or the researcher closed it, and over a narrow
+   * pane only while it is asked for.
+   */
+  #showCard(): void {
+    const el = this.#cardEl;
+    if (!el) return;
+    const { key, card } = this.selection.getState();
+    el.hidden = key === null || this.#storage.document().cardClosed === true;
+    this.#shell?.toggleAttribute("data-card-open", card);
+    this.#cardWidth?.apply();
+  }
+
+  /** Keep the Reading Card closed, or open again. */
+  #keepClosed(closed: boolean): void {
+    this.#storage
+      .change((doc) => withCardClosed(doc, closed))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the card closed", {
+          error,
+        });
+      });
+  }
+
   /** Whether the Reading Card shows over the list, as on a narrow pane. */
   #cardOverList(): boolean {
     return !!this.#cardEl && !this.#cardEl.hidden && this.#cardIsOverlay();
@@ -659,11 +692,17 @@ export class LibraryView extends ItemView {
 
   /**
    * Put the Reading Card away; the row stays selected and takes the focus
-   * back.
+   * back. Escape over a narrow list puts it away alone; the close button and
+   * a drag of its edge past the minimum also keep it closed, so a wide pane
+   * stops showing it as the selection moves.
    */
-  #closeCard(): void {
+  #closeCard({ keep = false }: { keep?: boolean } = {}): void {
     this.#cancelCard();
+    if (keep) this.#keepClosed(true);
     this.selection.setState({ card: false });
+    // A wide pane shows the card for a selection it was not asked for, so
+    // the store may not change; the closed state hides it all the same.
+    this.#showCard();
     this.#selectedRow()?.focus();
   }
 
