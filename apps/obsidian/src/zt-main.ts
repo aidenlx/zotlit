@@ -417,6 +417,7 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       settings: services.settings,
       citationLookup: services.citationLookup,
+      useLedger: services.useLedger,
     });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
@@ -527,6 +528,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         settings: services.settings,
         citationLookup: services.citationLookup,
+        useLedger: services.useLedger,
         notify: (message) => new BaseNotice(message),
       }),
       lookup: services.itemLookup,

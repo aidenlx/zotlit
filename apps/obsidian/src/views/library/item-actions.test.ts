@@ -101,6 +101,7 @@ function setup(
   before(fixture);
   const app = { workspace: fixture.workspace } as unknown as App;
   const notify = vi.fn();
+  const record = vi.fn();
   const actions = itemActions({
     app,
     notify,
@@ -126,8 +127,9 @@ function setup(
       renderCitation: (cites: { citationKey: string }[]) =>
         cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
     },
+    useLedger: { record },
   } as unknown as ItemActionsDeps);
-  return { ...fixture, actions, notify };
+  return { ...fixture, actions, notify, record };
 }
 
 it("inserts a row's citation into the note active last before the Library View, and into the one before once that closes", async () => {
@@ -141,10 +143,12 @@ it("inserts a row's citation into the note active last before the Library View, 
   await env.actions.insertCitation(KEY);
   expect(second.text()).toBe("[@vaswani2017]LEFT RIGHT");
   expect(first.text()).toBe("LEFT RIGHT");
+  expect(env.record).toHaveBeenCalledExactlyOnceWith(KEY, "cited");
 
   env.close(second);
   await env.actions.insertCitation(KEY);
   expect(first.text()).toBe("[@vaswani2017]LEFT RIGHT");
+  expect(env.record).toHaveBeenCalledTimes(2);
 });
 
 it("inserts into the note that was active last before the plugin loaded", async () => {
@@ -218,4 +222,38 @@ it("parts a dropped or inserted citation from the word before it with a space, a
   expect(draft.text()).toBe(
     "[@vaswani2017]LEFT [@vaswani2017] RIGHT [@vaswani2017]",
   );
+  expect(env.record).toHaveBeenCalledTimes(3);
+  expect(env.record).toHaveBeenLastCalledWith(KEY, "cited");
+});
+
+it("records no citation when the destination changes under an asynchronous row insert", async () => {
+  const env = setup();
+  const draft = env.note("Draft.md");
+  env.activate(draft);
+  env.activate(env.library);
+
+  const insert = env.actions.insertCitation(KEY);
+  (draft.leaf.view as MarkdownView).editor.cm.dispatch({
+    changes: { from: 0, to: 0, insert: "changed " },
+  });
+  await insert;
+
+  expect(draft.text()).toBe("changed LEFT RIGHT");
+  expect(env.record).not.toHaveBeenCalled();
+});
+
+it("records a copied citation key only after the clipboard accepts it", async () => {
+  const env = setup();
+  const write = vi.spyOn(navigator.clipboard, "writeText");
+  write.mockResolvedValueOnce();
+
+  await env.actions.copyCitationKey(KEY);
+
+  expect(write).toHaveBeenCalledExactlyOnceWith("vaswani2017");
+  expect(env.record).toHaveBeenCalledExactlyOnceWith(KEY, "cited");
+
+  write.mockRejectedValueOnce(new Error("Clipboard unavailable"));
+  await env.actions.copyCitationKey(KEY);
+
+  expect(env.record).toHaveBeenCalledTimes(1);
 });

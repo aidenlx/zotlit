@@ -6,7 +6,11 @@ import { BaseNotice } from "@/lib/notice";
 import { ItemSearchModal } from "@/services/item-lookup/search-modal";
 import type { SearchHit } from "@/services/item-lookup/service";
 
-import { padCitationInsert, resolveCitationInsert } from "./editor-suggest";
+import {
+  commitCitationInsert,
+  padCitationInsert,
+  resolveCitationInsert,
+} from "./editor-suggest";
 import type { CitationSuggestDeps } from "./register";
 
 /**
@@ -60,9 +64,16 @@ export class InsertCitationModal extends ItemSearchModal {
         from.ch === 0 ? "" : editor.getLine(from.line).charAt(from.ch - 1),
       next: editor.getLine(to.line).charAt(to.ch),
     });
-    editor.replaceRange(padded.text, from, to);
-    editor.setCursor(
-      editor.offsetToPos(editor.posToOffset(from) + padded.cursor),
-    );
+    commitCitationInsert(this.#deps, {
+      indexedKey: hit.item.indexedKey,
+      text: outcome.text,
+      insert: () => {
+        editor.replaceRange(padded.text, from, to);
+        editor.setCursor(
+          editor.offsetToPos(editor.posToOffset(from) + padded.cursor),
+        );
+        return true;
+      },
+    });
   }
 }

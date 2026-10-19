@@ -18,9 +18,21 @@ function makeModal(
     noteFeature: { renderCitation: vi.fn() },
     settings: { current: {} },
     citationLookup: {
-      read: async () => lookupAnswer(),
-      resolution: "fresh",
+      read: async () =>
+        lookupAnswer({
+          doe2024: {
+            kind: "unique",
+            item: {
+              itemID: 1,
+              libraryID: 1,
+              key: "ABC123",
+              indexedKey: "ABC123",
+            },
+          },
+        }),
+      status: "ready",
     },
+    useLedger: { record: vi.fn() },
     ...overrides,
   } as unknown as CitationSuggestDeps;
   return new InsertCitationModal(deps, editor);
@@ -78,6 +90,7 @@ describe("InsertCitationModal ambiguity", () => {
       ],
     };
     const renderCitation = vi.fn();
+    const record = vi.fn();
     const replaceRange = vi.fn();
     const editor = {
       getValue: () => "",
@@ -93,13 +106,18 @@ describe("InsertCitationModal ambiguity", () => {
         noteFeature: { renderCitation },
         citationLookup: {
           read: async () => lookupAnswer({ doe2024: ambiguous }),
-          resolution: "fresh",
+          status: "ready",
         },
+        useLedger: { record },
       } as unknown as Partial<CitationSuggestDeps>,
       editor,
     );
     const hit = {
-      item: { key: "ABC123", fields: { citationKey: "doe2024" } },
+      item: {
+        key: "ABC123",
+        indexedKey: "ABC123",
+        fields: { citationKey: "doe2024" },
+      },
       matches: [],
     } as unknown as SearchHit;
 
@@ -107,5 +125,96 @@ describe("InsertCitationModal ambiguity", () => {
 
     expect(renderCitation).not.toHaveBeenCalled();
     expect(replaceRange).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe("InsertCitationModal Uses", () => {
+  function editor(value = "") {
+    let text = value;
+    return {
+      editor: {
+        getValue: () => text,
+        getCursor: () => ({ line: 0, ch: text.length }),
+        getLine: () => text,
+        replaceRange: (insert: string) => {
+          text += insert;
+        },
+        setCursor: vi.fn(),
+        offsetToPos: (offset: number) => ({ line: 0, ch: offset }),
+        posToOffset: () => text.length,
+      } as unknown as Editor,
+      text: () => text,
+      change: (next: string) => {
+        text = next;
+      },
+    };
+  }
+
+  const hit = {
+    item: {
+      key: "ABC123",
+      indexedKey: "ABC123",
+      fields: { citationKey: "doe2024" },
+    },
+    matches: [],
+  } as unknown as SearchHit;
+
+  it("records the chosen Item after its citation is inserted", async () => {
+    const draft = editor();
+    const record = vi.fn();
+    const modal = makeModal(
+      {
+        noteFeature: { renderCitation: () => "[@doe2024]" },
+        useLedger: { record },
+      } as unknown as Partial<CitationSuggestDeps>,
+      draft.editor,
+    );
+
+    await modal.onChooseSuggestion(hit, {} as MouseEvent);
+
+    expect(draft.text()).toBe("[@doe2024]");
+    expect(record).toHaveBeenCalledExactlyOnceWith("ABC123", "cited");
+  });
+
+  it("records nothing when the editor changes while citation lookup is pending", async () => {
+    const draft = editor();
+    const record = vi.fn();
+    const answer = Promise.withResolvers<ReturnType<typeof lookupAnswer>>();
+    const modal = makeModal(
+      {
+        noteFeature: { renderCitation: () => "[@doe2024]" },
+        citationLookup: { status: "ready", read: () => answer.promise },
+        useLedger: { record },
+      } as unknown as Partial<CitationSuggestDeps>,
+      draft.editor,
+    );
+
+    const choose = modal.onChooseSuggestion(hit, {} as MouseEvent);
+    draft.change("new text");
+    answer.resolve(
+      lookupAnswer({ doe2024: { kind: "unique", item: hit.item } }),
+    );
+    await choose;
+
+    expect(draft.text()).toBe("new text");
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("records nothing for an empty rendered citation", async () => {
+    const draft = editor();
+    const record = vi.fn();
+    const modal = makeModal(
+      {
+        noteFeature: { renderCitation: () => "" },
+        useLedger: { record },
+      } as unknown as Partial<CitationSuggestDeps>,
+      draft.editor,
+    );
+
+    await modal.onChooseSuggestion(hit, {} as MouseEvent);
+
+    expect(draft.text()).toBe("");
+    expect(record).not.toHaveBeenCalled();
   });
 });
