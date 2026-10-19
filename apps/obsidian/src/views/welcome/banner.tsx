@@ -87,11 +87,11 @@ export class WelcomeBanner extends Component {
    * Library View's "Welcome & help" ask.
    */
   request(): void {
-    this.#deps.settings.update({ "welcome.dismissed": false });
-    this.#store.setState((s) => ({
-      requested: true,
-      requests: s.requests + 1,
-    }));
+    this.#deps.settings.update({
+      "welcome.dismissed": false,
+      "welcome.requested": true,
+    });
+    this.#store.setState((s) => ({ requests: s.requests + 1 }));
   }
 
   /**
@@ -101,8 +101,12 @@ export class WelcomeBanner extends Component {
    */
   dismiss(): void {
     const { settings, release } = this.#deps;
-    this.#store.setState({ requested: false, converted: false });
-    settings.update({ "welcome.dismissed": true });
+    this.#store.setState({ converted: false });
+    settings.update({
+      "welcome.dismissed": true,
+      "welcome.requested": false,
+      "welcome.steps-shown": false,
+    });
     release.acknowledgeMigration();
     release.acknowledgeUpdate();
   }
@@ -148,6 +152,8 @@ export class WelcomeBanner extends Component {
           this.#store.setState({
             migrationPending: s["release.migration-pending"],
             dismissed: s["welcome.dismissed"],
+            requested: s["welcome.requested"],
+            stepsShown: s["welcome.steps-shown"],
             literatureFolder,
             literatureFolderExists: folderExists(literatureFolder),
             templateConversionPending: s["note.template-conversion-pending"],
@@ -189,6 +195,7 @@ export class WelcomeBanner extends Component {
       },
       openExternal: (url) => window.open(url),
       dismiss: () => this.dismiss(),
+      showSteps: (shown) => settings.update({ "welcome.steps-shown": shown }),
       openReleaseNote: () => {
         void release.openReleaseNote();
         release.acknowledgeUpdate();

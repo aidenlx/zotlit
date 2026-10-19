@@ -573,6 +573,8 @@ async function render(
     openSettings: vi.fn(),
     pickFolder: vi.fn(),
     searchLibrary: vi.fn(),
+    // The banner saves it in plugin data, which seeds the store.
+    showSteps: vi.fn((shown: boolean) => store.setState({ stepsShown: shown })),
   };
   const container = document.createElement("div");
   document.body.append(container);

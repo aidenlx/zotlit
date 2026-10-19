@@ -40,8 +40,27 @@ async function setup(data: Record<string, unknown> = {}) {
   // No Web Viewer: the Release Note opens in the browser.
   Object.assign(app, { internalPlugins: { getEnabledPluginById: () => null } });
   const plugin = new PluginStub(app, { __VERSION__: 10, ...data });
+  const settings = loadSettings(plugin);
+  await settings.loaded;
+  const deps = bannerDeps(app, settings);
+  /**
+   * Obsidian reloads: plugin data, written to disk, is read again by a new
+   * instance of the plugin.
+   */
+  let latest = settings;
+  const reload = async () => {
+    await latest.flush();
+    latest = loadSettings(plugin);
+    await latest.loaded;
+    return bannerDeps(app, latest);
+  };
+  return { deps, host, settings, reload };
+}
+
+/** The settings of plugin data that `plugin` holds. */
+function loadSettings(plugin: PluginStub): SettingsService {
   const identity = (raw: unknown) => raw;
-  const settings = cleanup.use(
+  return cleanup.use(
     new SettingsService({
       plugin,
       migrateLegacy: identity,
@@ -56,7 +75,10 @@ async function setup(data: Record<string, unknown> = {}) {
       migrateV9: identity,
     }),
   );
-  await settings.loaded;
+}
+
+/** What the banner reads, over `settings`, beside a Zotero database of 3 Items. */
+function bannerDeps(app: App, settings: SettingsService): WelcomeBannerDeps {
   const events = createNanoEvents<Record<string, () => void>>();
   const deps: WelcomeBannerDeps = {
     app,
@@ -81,11 +103,16 @@ async function setup(data: Record<string, unknown> = {}) {
       new ReleaseService({ app, version: "2.2.0", settings }),
     ),
   };
-  return { deps, host, settings };
+  return deps;
 }
 
 /** The banner, loaded into the page and settled on its connection readout. */
 async function open(deps: WelcomeBannerDeps) {
+  return (await openBanner(deps)).el;
+}
+
+/** {@link open}, with the banner itself. */
+async function openBanner(deps: WelcomeBannerDeps) {
   const el = document.body.createDiv();
   const banner = new WelcomeBanner(deps, { searchLibrary: vi.fn() }, el);
   await act(async () => {
@@ -93,7 +120,7 @@ async function open(deps: WelcomeBannerDeps) {
     await banner.settled;
   });
   cleanup.defer(() => banner.unload());
-  return el;
+  return { el, banner };
 }
 
 const heading = (el: HTMLElement, text: string) =>
@@ -246,5 +273,64 @@ it("announces no update while release notices are off", async () => {
     "release.notices-enabled": false,
   });
   host.vault.addFile("literatures/Paper.md", "");
+  expect((await open(deps)).textContent).toBe("");
+});
+
+/** The "Show steps" control of the folded "Setup done" line. */
+function stepsToggle(el: HTMLElement): HTMLElement {
+  const button = el.querySelector<HTMLElement>(
+    "[data-welcome-setup-done] button[aria-expanded]",
+  );
+  if (!button) throw new Error("No Show steps control");
+  return button;
+}
+
+it("shows the banner it was asked for again after Obsidian reloads, and keeps it away once dismissed", async () => {
+  const { deps, host, settings, reload } = await setup();
+  host.vault.addFile("literatures/Paper.md", "");
+  const { el, banner } = await openBanner(deps);
+  expect(el.textContent).toBe("");
+  await act(() => banner.request());
+  expect(heading(el, m.welcome_step_folder_title())).toBe(true);
+  expect(settings.current?.["welcome.requested"]).toBe(true);
+
+  const again = await openBanner(await reload());
+  expect(again.banner.shown).toBe(true);
+  expect(heading(again.el, m.welcome_step_folder_title())).toBe(true);
+  await act(() => dismissButton(again.el).click());
+  expect(again.el.textContent).toBe("");
+
+  const last = await openBanner(await reload());
+  expect(last.banner.shown).toBe(false);
+  expect(last.el.textContent).toBe("");
+});
+
+it("keeps Show steps open after Obsidian reloads, until the banner is dismissed", async () => {
+  const { deps, host, reload } = await setup({
+    // A notice beside a complete setup folds the steps.
+    "note.template-conversion-pending": true,
+  });
+  host.vault.addFile("literatures/Paper.md", "");
+  const el = await open(deps);
+  expect(stepsToggle(el).getAttribute("aria-expanded")).toBe("false");
+  await act(() => stepsToggle(el).click());
+  expect(stepsToggle(el).getAttribute("aria-expanded")).toBe("true");
+
+  const again = await open(await reload());
+  expect(stepsToggle(again).getAttribute("aria-expanded")).toBe("true");
+  await act(() => dismissButton(again).click());
+
+  const after = await reload();
+  // The conversion offer shows again, as a request would show it.
+  after.settings.update({ "welcome.dismissed": false });
+  const last = await open(after);
+  expect(stepsToggle(last).getAttribute("aria-expanded")).toBe("false");
+});
+
+it("reads plugin data of an earlier build, which kept no request, as no request and steps folded", async () => {
+  const { deps, host, settings } = await setup({ "welcome.dismissed": false });
+  host.vault.addFile("literatures/Paper.md", "");
+  expect(settings.current?.["welcome.requested"]).toBe(false);
+  expect(settings.current?.["welcome.steps-shown"]).toBe(false);
   expect((await open(deps)).textContent).toBe("");
 });

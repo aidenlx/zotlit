@@ -224,6 +224,17 @@ export const schema = v.object({
    * the open-welcome command shows it again. ADR 0077.
    */
   "welcome.dismissed": v.boolean(),
+  /**
+   * The researcher asked for the Welcome View banner ("Open welcome view",
+   * "Welcome & help", "Review conversion"), so it shows with its setup steps
+   * until they dismiss it, across reloads. ADR 0077.
+   */
+  "welcome.requested": v.boolean(),
+  /**
+   * "Show steps" on the banner's folded "Setup done" line is open, until the
+   * banner is dismissed. ADR 0077.
+   */
+  "welcome.steps-shown": v.boolean(),
 
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
@@ -287,6 +298,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.text-font-size": DEFAULT_TEXT_FONT_SIZE,
   "library.document": null,
   "welcome.dismissed": false,
+  "welcome.requested": false,
+  "welcome.steps-shown": false,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,
