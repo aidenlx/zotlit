@@ -4702,6 +4702,171 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ banner: false, dismissed: true, update: false }));
   });
 
+  it("lays the Welcome View banner out on one start edge, in a column centered beside Help Links pinned to the pane's end, with the first section and the Help Links on one top line, at a wide, a medium and a narrow pane, for an incomplete setup and for an update beside the folded Setup done line", async () => {
+    const services = "app.plugins.plugins.zotlit.services";
+    const keys = [
+      "welcome.dismissed",
+      "welcome.requested",
+      "welcome.steps-shown",
+      "release.update-pending",
+      "release.notices-enabled",
+      "note.template-conversion-pending",
+    ];
+    const snapshot = await obEval(
+      vaultId,
+      `JSON.stringify({layout:app.workspace.getLayout(),size:require('@electron/remote').getCurrentWindow().getSize(),folder:${services}.settings.current['note.default-profile'].bindings['note.literature-folder'],settings:Object.fromEntries(${JSON.stringify(keys)}.map(k=>[k,${services}.settings.current[k]]))})`,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});const settings=${services}.settings;settings.update(saved.settings);settings.updateDefaultLiteratureNoteProfileBindings({'note.literature-folder':saved.folder});await settings.flush();require('@electron/remote').getCurrentWindow().setSize(...saved.size);await app.workspace.changeLayout(saved.layout);return true;})()`,
+      );
+    });
+    const { folder } = JSON.parse(snapshot) as { folder: string };
+    const created = await obEval(
+      vaultId,
+      `(async()=>{if(app.vault.getFolderByPath(${JSON.stringify(folder)}))return 'false';await app.vault.createFolder(${JSON.stringify(folder)});return 'true';})()`,
+    );
+    if (created === "true")
+      cleanup.defer(async () => {
+        await obEval(
+          vaultId,
+          `(async()=>{const f=app.vault.getFolderByPath(${JSON.stringify(folder)});if(f)await app.vault.delete(f,true);return true;})()`,
+        );
+      });
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());await app.commands.executeCommandById('zotlit:open-library-view');const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+    );
+
+    /** The rects that carry the banner's edges, in CSS pixels. */
+    interface Box {
+      l: number;
+      r: number;
+      t: number;
+      b: number;
+    }
+    interface Layout {
+      banner: Box;
+      contentStart: number;
+      contentEnd: number;
+      gap: number;
+      lockup: Box;
+      marks: Box[];
+      notices: Box[];
+      surfaces: Box[];
+      header: Box;
+      column: Box;
+      first: Box;
+      help: Box;
+      tiles: Box[];
+      dismiss: Box;
+      glyph: Box;
+    }
+    const measure = `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl;const b=await until('banner',()=>el?.querySelector('[data-welcome-banner]'),5000);await new Promise(r=>setTimeout(r,300));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const R=n=>{const r=n.getBoundingClientRect();return{l:r.left,r:r.right,t:r.top,b:r.bottom};};const all=(...s)=>{for(const q of s){const n=[...b.querySelectorAll(q)];if(n.length)return n;}return [];};const cs=getComputedStyle(b);const help=b.querySelector('[data-welcome-help]');const column=b.querySelector('[data-welcome-column]')??help.parentElement.firstElementChild;const grid=help.parentElement;const notices=[...b.querySelectorAll('[role=heading][aria-level="3"]')].filter(n=>!n.closest('[data-welcome-step]'));const banner=R(b);return JSON.stringify({banner,contentStart:banner.l+parseFloat(cs.paddingLeft),contentEnd:banner.r-parseFloat(cs.paddingRight),gap:parseFloat(getComputedStyle(grid).columnGap)||0,lockup:R(b.querySelector('[data-welcome-lockup]')??b.querySelector('[role=heading][aria-level="2"]')),marks:all('[data-welcome-mark]','[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child').map(R),notices:notices.map(R),surfaces:[...b.querySelectorAll('[data-welcome-step][data-open]'),...notices.map(n=>n.closest('[data-welcome-callout]')??n.parentElement.parentElement)].map(R),header:R(b.querySelector('header')),column:R(column),first:R(column.firstElementChild),help:R(help),tiles:all('[data-welcome-help-tile]','[data-welcome-help] > div > a').map(R),dismiss:R(b.querySelector('[data-welcome-dismiss]')),glyph:R(b.querySelector('[data-welcome-dismiss] svg'))});})()`;
+    const shots = join(workspaceRoot, ".scratch/e2e-screenshots");
+    await mkdir(shots, { recursive: true });
+    const cases = {
+      // Setup is incomplete: the literature-notes folder is missing, so its
+      // step opens on the accent surface.
+      setup: `{'welcome.dismissed':false,'welcome.requested':true,'welcome.steps-shown':false,'release.update-pending':false,'note.template-conversion-pending':false}`,
+      // An update beside the template conversion, with the done steps
+      // folded into Setup done.
+      update: `{'welcome.dismissed':false,'welcome.requested':false,'welcome.steps-shown':false,'release.update-pending':true,'release.notices-enabled':true,'note.template-conversion-pending':true}`,
+    };
+    const widths = { wide: 1750, medium: 1050, narrow: 740 };
+    const results: Record<string, Layout> = {};
+    for (const [name, settings] of Object.entries(cases)) {
+      await obEval(
+        vaultId,
+        `(async()=>{const settings=${services}.settings;settings.updateDefaultLiteratureNoteProfileBindings({'note.literature-folder':${JSON.stringify(name === "setup" ? "Banner alignment, not yet created" : folder)}});settings.update(${settings});await settings.flush();return true;})()`,
+      );
+      for (const [size, width] of Object.entries(widths)) {
+        await obEval(
+          vaultId,
+          `require('@electron/remote').getCurrentWindow().setSize(${width},900);true`,
+        );
+        const label = `${name}-${size}`;
+        results[label] = JSON.parse(await obEval(vaultId, measure)) as Layout;
+        await cli([
+          `vault=${vaultId}`,
+          "dev:screenshot",
+          `path=${join(shots, `banner-${label}.png`)}`,
+        ]);
+      }
+    }
+    console.log(`banner layout: ${JSON.stringify(results)}`);
+
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1;
+    const overlaps = (a: Box, b: Box) =>
+      a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    for (const [label, at] of Object.entries(results)) {
+      const stacked = at.help.t >= at.column.b;
+      const edges = [at.lockup, ...at.marks, ...at.notices].map((n) => n.l);
+      const check = {
+        label,
+        // The banner keeps one inline margin at both of the pane's edges.
+        margins: near(
+          at.contentStart - at.banner.l,
+          at.banner.r - at.contentEnd,
+        ),
+        // The lockup, the step marks and the notices' text share one start
+        // edge, the centered column's.
+        edge: edges.every((x) => near(x, at.column.l)),
+        // Each tinted surface hangs outside that edge, inside the banner and
+        // clear of the Help Links.
+        hang: at.surfaces.every(
+          (s) =>
+            s.l < at.column.l &&
+            s.l >= at.banner.l &&
+            (stacked ? s.r <= at.banner.r : s.r <= at.help.l),
+        ),
+        // The Help Links end at the banner's content end.
+        helpEnd: near(at.help.r, at.contentEnd),
+        // Beside each other, the column is centered in the space before the
+        // Help Links, and the first section starts on their top line;
+        // stacked, the column takes the full width.
+        column: stacked
+          ? near(at.column.l, at.contentStart) &&
+            near(at.column.r, at.contentEnd)
+          : near(
+              at.column.l - at.contentStart,
+              at.help.l - at.gap - at.column.r,
+            ),
+        top: stacked || near(at.first.t, at.help.t),
+        // The dismiss button sits on the title's line, its glyph ending on
+        // the banner's content end, clear of every tile.
+        dismiss:
+          near(
+            (at.glyph.t + at.glyph.b) / 2,
+            (at.lockup.t + at.lockup.b) / 2,
+          ) &&
+          near(at.glyph.r, at.contentEnd) &&
+          at.tiles.every((tile) => !overlaps(at.dismiss, tile)),
+      };
+      expect(check).toEqual({
+        label,
+        margins: true,
+        edge: true,
+        hang: true,
+        helpEnd: true,
+        column: true,
+        top: true,
+        dismiss: true,
+      });
+    }
+    // The narrow pane stacks the column, and the wide ones do not.
+    expect(
+      Object.entries(results).map(([label, at]) => [
+        label,
+        at.help.t >= at.column.b,
+      ]),
+    ).toEqual(
+      Object.keys(results).map((label) => [label, label.endsWith("narrow")]),
+    );
+  });
+
   it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
