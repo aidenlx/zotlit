@@ -513,38 +513,39 @@ export class LibraryView extends ItemView {
     // The document keeps the selected paper, whatever selects it.
     this.card.register(
       this.selection.subscribe(({ key }) => {
-        if (key !== this.#storage.document().selected)
-          this.#storage.keep((now) => withSelected(now, key));
+        if (key !== this.#storage.document().selected) this.#keepSelected(key);
       }),
     );
+    this.#restoreSelection();
     await this.search.open(doc.search);
-    await this.#restoreSelection();
   }
 
   /**
    * Select the paper the document kept, with its Reading Card, and scroll
-   * its row into view, once the list shows it. A paper the list no longer
-   * holds is let go of.
+   * its row into view, once the list first lands its rows. A paper the list
+   * no longer holds is let go of. A list that fails, as before Zotero's
+   * database is read, waits for one that lands; a selection the researcher
+   * made first stays.
    */
-  async #restoreSelection(): Promise<void> {
+  #restoreSelection(): void {
     const { selected } = this.#storage.document();
     if (selected === null) return;
-    await this.searched;
-    await this.query.settled;
-    if (this.selection.getState().key !== null) return;
-    const listed = this.query.state
-      .getState()
-      .results?.rows.some((row) => row.indexedKey === selected);
-    if (!listed) {
-      this.#storage.keep((doc) => withSelected(doc, null));
-      return;
-    }
-    this.selection.setState({ key: selected, card: true });
-    // The list draws its rows a frame or more after they land.
-    void this.#drawn(selected).then((row) => {
-      if (this.selection.getState().key === selected)
-        row?.scrollIntoView({ block: "nearest" });
+    const off = this.query.state.subscribe(({ phase, results }) => {
+      if (phase !== "ready" || !results) return;
+      off();
+      if (this.selection.getState().key !== null) return;
+      if (!results.rows.some((row) => row.indexedKey === selected)) {
+        this.#keepSelected(null);
+        return;
+      }
+      this.selection.setState({ key: selected, card: true });
+      // The list draws its rows a frame or more after they land.
+      void this.#drawn(selected).then((row) => {
+        if (this.selection.getState().key === selected)
+          row?.scrollIntoView({ block: "nearest" });
+      });
     });
+    this.query.register(off);
   }
 
   /**
@@ -559,6 +560,17 @@ export class LibraryView extends ItemView {
       await new Promise((resolve) => win.requestAnimationFrame(resolve));
     }
     return undefined;
+  }
+
+  /** Keep the paper `key` as the selected one, or none. */
+  #keepSelected(key: string | null): void {
+    this.#storage
+      .change((doc) => withSelected(doc, key))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the selected paper", {
+          error,
+        });
+      });
   }
 
   /** The researcher opened or closed tree nodes: show them, and keep them. */

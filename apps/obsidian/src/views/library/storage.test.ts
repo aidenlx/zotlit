@@ -246,3 +246,23 @@ it("writes the changes of one task to disk once, holding the last of them", asyn
     selected: "1:ABCD2345",
   });
 });
+
+it("writes once more after a write that runs, holding the last change asked for meanwhile", async () => {
+  const { plugin, saveData, storage } = await openLibrary();
+  saveData.mockClear();
+  const disk = Promise.withResolvers<void>();
+  saveData.mockImplementationOnce(async (data) => {
+    await disk.promise;
+    plugin.data = data;
+  });
+  const first = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+  const rest = [
+    storage.change((doc) => withSelected(doc, "1:BBBB2222")),
+    storage.change((doc) => withSelected(doc, "1:CCCC3333")),
+  ];
+  disk.resolve();
+  await Promise.all([first, ...rest]);
+  expect(saveData).toHaveBeenCalledTimes(2);
+  expect(saved(plugin)).toMatchObject({ selected: "1:CCCC3333" });
+});
