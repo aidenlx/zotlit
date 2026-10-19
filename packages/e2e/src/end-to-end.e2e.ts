@@ -72,6 +72,7 @@ import {
 } from "./obsidian-cli.ts";
 import { MENU_READY, PAGE, pickQueryView } from "./page-gestures.ts";
 import { raiseWindow } from "./reader-gestures.ts";
+import { verifyRecentUses } from "./recent-uses.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -1712,8 +1713,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       )!;
       return groupID === null ? item.key : `${item.key}g${groupID}`;
     };
+    const uses = await obJson<Record<string, number>>(
+      vaultId,
+      `JSON.stringify(${services}.useLedger.uses)`,
+    );
     const activity = new Map(
-      ITEMS.map((item) => [indexedKey(item), fixtureActivity(item)]),
+      ITEMS.map((item) => [
+        indexedKey(item),
+        Math.max(
+          Temporal.Instant.from(`${fixtureActivity(item).replace(" ", "T")  }Z`)
+            .epochMilliseconds,
+          uses[indexedKey(item)] ?? 0,
+        ),
+      ]),
     );
     const expectRecent = (
       shown: Shown,
@@ -1726,8 +1738,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(shown.rows.toSorted()).toEqual(items.map(indexedKey).toSorted());
       expect(shown.rows.map((key) => activity.get(key))).toEqual(
         items
-          .map(fixtureActivity)
-          .toSorted((a, b) => direction * a.localeCompare(b)),
+          .map((item) => activity.get(indexedKey(item))!)
+          .toSorted((a, b) => direction * (a - b)),
       );
       // A row holds two lines at most: the title, then creators, year and
       // Venue. It has no reading-state line.
@@ -1842,8 +1854,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     ).toBe(true);
 
-    expect(again.rows[0]).toBe("AAAAAAAA");
-    expect(again.rows[0]).not.toBe("BBBB2222");
     const modified = new Map(
       ITEMS.map((item) => [indexedKey(item), item.dateModified]),
     );
@@ -1907,7 +1917,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(kept.sort).toEqual({ set: true, text: "Sort1" });
     expect(kept.rows.map((key) => activity.get(key))).toEqual(
-      filed.map(fixtureActivity).toSorted(),
+      filed
+        .map((item) => activity.get(indexedKey(item))!)
+        .toSorted((a, b) => a - b),
     );
     expect(
       await saved({
@@ -1916,6 +1928,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     ).toBe(true);
   });
+
+  it("ranks Literature Note opens from every route and tab returns in Recent and empty search, keeps Uses through reloads, and excludes browsing and Companion updates", async () => {
+    await verifyRecentUses(vaultId, e2eVaultPath, reloadWindow);
+  }, 180000);
 
   it("picks a sort property in the Library View's Sort popover from the property Select's options, and the row keeps one property Select", async () => {
     const services = "app.plugins.plugins.zotlit.services";
@@ -9895,6 +9911,10 @@ views:
   // an oversight: update-all-notes is itself a batch write of Literature
   // Notes, so exercising it also exercises rendering one.
   it("renders a Literature Note via the update-all-notes batch operation", async () => {
+    const usesBefore = await obEval(
+      vaultId,
+      "JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current)",
+    );
     const noteName = targetItem.literatureNoteName ?? targetItem.key;
     const notePath = join(e2eVaultPath, "literatures", `${noteName}.md`);
     if (booksNotePath === "") {
@@ -9943,6 +9963,12 @@ views:
         { expected: "true" },
       ),
     ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        "JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current)",
+      ),
+    ).toBe(usesBefore);
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
     // remaining group items (8, 9, 10, 79) are created under Default, the batch's

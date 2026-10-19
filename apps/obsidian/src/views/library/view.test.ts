@@ -560,7 +560,7 @@ function pluginData(stored?: unknown) {
         }),
     },
     libraryScope,
-    query: { run },
+    query: { run, on: () => () => {} },
     lookup: {
       openSession: () => ({
         search,

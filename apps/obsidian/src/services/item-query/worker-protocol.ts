@@ -37,6 +37,7 @@ export type QueryJob = (QueryCommand | QueryViewCommand) & {
   source: WorkbenchIdentity["source"];
   vault: WorkbenchIdentity["vault"];
   scope: LibraryScope;
+  uses?: Readonly<Record<string, number>>;
   attachmentPaths: AttachmentPathContext;
   stagePath?: string;
   measure?: boolean;

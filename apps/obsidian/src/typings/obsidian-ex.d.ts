@@ -134,6 +134,8 @@ declare module "obsidian" {
     getConfig(key: "readableLineLength"): boolean;
   }
   interface Workspace {
+    /** Flushes deferred file-open/active-leaf events. Verified in Obsidian 1.14.4. */
+    requestActiveLeafEvents: { run(): void };
     on(
       name: "zotlit:workbench-selection",
       callback: (

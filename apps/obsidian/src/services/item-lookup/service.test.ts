@@ -255,7 +255,9 @@ describe("ItemLookup", () => {
 
     await expect
       .poll(() => reads.searches)
-      .toEqual([{ libraryIDs: [USER_LIBRARY_ID], query: "", limit: 1 }]);
+      .toEqual([
+        { libraryIDs: [USER_LIBRARY_ID], query: "", uses: {}, limit: 1 },
+      ]);
   });
 
   it("prewarms the new list on a Library Scope change", async () => {
@@ -269,7 +271,12 @@ describe("ItemLookup", () => {
 
     await expect
       .poll(() => reads.searches.at(-1))
-      .toEqual({ libraryIDs: [USER_LIBRARY_ID, 2], query: "", limit: 1 });
+      .toEqual({
+        libraryIDs: [USER_LIBRARY_ID, 2],
+        query: "",
+        uses: {},
+        limit: 1,
+      });
   });
 
   it("keeps a pending search running through a rename and its prewarm", async () => {
@@ -364,6 +371,7 @@ function itemLookup(
   libraryScope: FakeLibraryScope = new FakeLibraryScope(),
 ): ItemLookup {
   return new ItemLookup({
+    useLedger: { ready: Promise.resolve(), uses: {} },
     reads: reads.service,
     libraryScope: libraryScope as unknown as LibraryScopeService,
   });

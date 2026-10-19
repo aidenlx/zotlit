@@ -52,6 +52,9 @@ function creationHarness(selection: CreationProfileSelection) {
     },
   ]);
   const deps = {
+    useLedger: {
+      withoutNoteUse: (_file: TFile, open: () => Promise<void>) => open(),
+    },
     app: { workspace: { openLinkText } },
     zoteroReads: {
       ready: Promise.resolve({ reads: { ItemsByIndexedKeys: readItems } }),
@@ -360,6 +363,9 @@ it.each(["open", "update"] as const)(
     const createNote = vi.fn();
     const resolveCompanionNote = vi.fn(async () => target);
     const deps = {
+      useLedger: {
+        withoutNoteUse: (_file: TFile, open: () => Promise<void>) => open(),
+      },
       app: { workspace: { openLinkText } } as unknown as App,
       noteFeature: { resolveCompanionNote, updateNote, createNote },
     } as unknown as CompanionNoteDeps;

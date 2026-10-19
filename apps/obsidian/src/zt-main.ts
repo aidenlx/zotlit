@@ -433,6 +433,7 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack.use(
       registerProtocolHandlers(this, {
+        useLedger: services.useLedger,
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         createProfile: services.createProfile,
         importProfile: services.importProfile,

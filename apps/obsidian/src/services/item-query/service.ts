@@ -8,6 +8,7 @@ import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
+import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -33,6 +34,7 @@ import type {
 
 interface QueryServiceDeps {
   pluginVersion: string;
+  useLedger: Pick<UseLedger, "ready" | "uses" | "on">;
   reads: ZoteroReadsService;
   zoteroPref: Pick<
     ZoteroPrefService,
@@ -77,6 +79,11 @@ export class QueryService extends Service {
     this.ready = this.#load();
   }
 
+  /** Changes to device Uses invalidate every open Query View. */
+  on(...args: Parameters<UseLedger["on"]>): () => void {
+    return this.#deps.useLedger.on(...args);
+  }
+
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     // Before the first await: `answer` claims ids from the constructor on.
@@ -87,6 +94,7 @@ export class QueryService extends Service {
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
     try {
+      await this.#deps.useLedger.ready;
       await this.#deps.reads.ready;
       await this.#deps.libraryScope.ready;
     } catch (error) {
@@ -351,6 +359,7 @@ export class QueryService extends Service {
                 path: (deps.vault.adapter as FileSystemAdapter).getBasePath(),
               },
               scope: deps.libraryScope.effective,
+              uses: deps.useLedger.uses,
               attachmentPaths: {
                 dataDir: deps.zoteroPref.dataDir,
                 baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,

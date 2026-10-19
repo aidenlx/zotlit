@@ -74,6 +74,7 @@ import {
   loadLiteratureNoteTemplateMigrationData,
 } from "./template/migration";
 import { TemplateService } from "./template/service";
+import { UseLedger } from "./use-ledger/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
@@ -128,6 +129,9 @@ export function buildServices(
     })
     .use({
       log: ({ settings }) => new LoggingService({ plugin, settings }),
+    })
+    .use({
+      useLedger: () => new UseLedger({ app: plugin.app }),
     })
     .use({
       queryClient: () => new QueryClientService(),
@@ -305,13 +309,14 @@ export function buildServices(
         }),
     })
     .use({
-      query: ({ zoteroReads, libraryScope, zoteroPref }) =>
+      query: ({ zoteroReads, libraryScope, zoteroPref, useLedger }) =>
         new QueryService({
           pluginVersion: plugin.manifest.version,
           reads: zoteroReads,
           libraryScope,
           zoteroPref,
           vault: plugin.app.vault,
+          useLedger,
         }),
     })
     .use({
@@ -403,8 +408,8 @@ export function buildServices(
         }),
     })
     .use({
-      itemLookup: ({ zoteroReads, libraryScope }) =>
-        new ItemLookup({ reads: zoteroReads, libraryScope }),
+      itemLookup: ({ zoteroReads, libraryScope, useLedger }) =>
+        new ItemLookup({ reads: zoteroReads, libraryScope, useLedger }),
     })
     .useValue({
       noteFeature: ({

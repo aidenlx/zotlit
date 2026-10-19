@@ -80,7 +80,7 @@ function setup() {
     app,
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run },
+    query: { run, on: () => () => {} },
     cardFocus: new QueryCardFocus(app),
     annotations: {
       on: off,

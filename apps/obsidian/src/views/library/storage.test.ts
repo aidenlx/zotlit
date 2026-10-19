@@ -110,7 +110,7 @@ async function openLibrary() {
     app: { ...host.app, scope: undefined },
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run: () => Promise.resolve(EMPTY) },
+    query: { run: () => Promise.resolve(EMPTY), on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     literatureNotes: noLiteratureNotes(),
