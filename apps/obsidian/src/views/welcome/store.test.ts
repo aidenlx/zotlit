@@ -10,6 +10,7 @@ const SET_UP: WelcomeState = {
   dismissed: false,
   requested: false,
   requests: 0,
+  stepsShown: false,
   converted: false,
   connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
   literatureFolder: "literatures",
