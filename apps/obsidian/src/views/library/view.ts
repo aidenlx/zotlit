@@ -130,6 +130,8 @@ export class LibraryView extends ItemView {
   readonly #storage: LibraryViewStorage;
   /** The not-found state and the Welcome View banner, while the tab is open. */
   readonly #parts: Component[] = [];
+  #arrival = 0;
+  #arrived: Promise<void> = Promise.resolve();
   /** What the tab runs: the query of the document as it opened. */
   #shown: LibraryViewQuery | null = null;
   /** What the search last found, which a facet change lists again. */
@@ -321,9 +323,31 @@ export class LibraryView extends ItemView {
    * cursor waits in the box, except under the Welcome View banner, whose
    * focus ring would wrap the box right under it; the banner's "Search your
    * library" puts the cursor there on purpose.
+   *
+   * Whether the banner shows can wait on its connection readout, as on a
+   * first launch, while Zotero's database loads: the box then takes the
+   * cursor once that is known, unless the researcher moved it meanwhile or
+   * brought the tab forward again.
    */
   arrive(): void {
-    if (!this.welcome.shown) this.search.focus();
+    const arrival = ++this.#arrival;
+    if (this.welcome.known) {
+      this.#arrived = Promise.resolve();
+      if (!this.welcome.shown) this.search.focus();
+      return;
+    }
+    const { doc } = this.contentEl;
+    const before = doc.activeElement;
+    this.#arrived = this.welcome.decided.then((shown) => {
+      if (shown || arrival !== this.#arrival) return;
+      if (!this.contentEl.isConnected || doc.activeElement !== before) return;
+      this.search.focus();
+    });
+  }
+
+  /** Settles once the last arrival placed the cursor, or left it. Never rejects. */
+  get arrived(): Promise<void> {
+    return this.#arrived;
   }
 
   /** Settles once the list shows the newest search. Never rejects. */

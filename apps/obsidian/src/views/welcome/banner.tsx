@@ -75,6 +75,7 @@ export class WelcomeBanner extends Component {
   #connectionGen = 0;
   #checkingTimer: number | null = null;
   #connection: Promise<void> = Promise.resolve();
+  #decided: PromiseWithResolvers<boolean> | null = null;
 
   constructor(
     deps: WelcomeBannerDeps,
@@ -131,6 +132,34 @@ export class WelcomeBanner extends Component {
   /** Whether the banner shows anything now. */
   get shown(): boolean {
     return bannerSections(this.#store.getState()) !== null;
+  }
+
+  /**
+   * Whether {@link shown} is final. While the connection readout is still
+   * checking, a banner that shows nothing yet may come to show: its setup
+   * steps open once the readout lands, where setup is incomplete. A banner
+   * that shows already keeps showing.
+   */
+  get known(): boolean {
+    return (
+      this.shown || this.#store.getState().connection.status !== "checking"
+    );
+  }
+
+  /**
+   * Settles with whether the banner shows, once that is {@link known}, and at
+   * the latest when the banner unloads. Never rejects.
+   */
+  get decided(): Promise<boolean> {
+    if (this.known) return Promise.resolve(this.shown);
+    this.#decided ??= Promise.withResolvers();
+    return this.#decided.promise;
+  }
+
+  #decide(): void {
+    if (this.#decided === null) return;
+    this.#decided.resolve(this.shown);
+    this.#decided = null;
   }
 
   /**
@@ -237,6 +266,12 @@ export class WelcomeBanner extends Component {
       </WelcomeStoreProvider>,
     );
 
+    stack.defer(
+      this.#store.subscribe(() => {
+        if (this.known) this.#decide();
+      }),
+    );
+
     const { reads } = this.#deps;
     const reload = (): void => this.#loadConnection();
     stack.defer(reads.on("changed", reload));
@@ -265,6 +300,7 @@ export class WelcomeBanner extends Component {
     this.#stack = undefined;
     this.#root?.unmount();
     this.#root = null;
+    this.#decide();
   }
 
   #loadConnection(): void {
