@@ -507,7 +507,7 @@ A main-area tab that shows the Zotero library read-only, with a Library Tree, a 
 _Avoid_: library tab, browser, library pane
 
 **Library View Document**:
-What the Library View shows, as one value: the selected Library Tree node, the tree nodes left open, the active Reading State facets, the selected tags of the Tag Selector, the search text, the sort, the paper the Reading Card shows, its open disclosures and its width. The text of its Query View follows from it, always in the Papers Layout.
+What the Library View shows, as one value: the selected Library Tree node, the tree nodes left open, the active Reading State facets, the selected tags of the Tag Selector, the search text, the sort, the paper the Reading Card shows, its open disclosures, its width and whether it is closed. The text of its Query View follows from it, always in the Papers Layout.
 _Avoid_: library state, view state
 
 **Library Tree**:
