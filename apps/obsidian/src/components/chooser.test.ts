@@ -99,6 +99,15 @@ it("leaves the press of a trigger that is not blocked to the popover", () => {
   expect(press.defaultPrevented).toBe(false);
 });
 
+it("names its list box with no tooltip over the rows", async () => {
+  const { popup, toggle } = mount(editorApp());
+  await toggle("open");
+  const list = popup.querySelector<HTMLElement>('[role="listbox"]')!;
+  expect(list.hasAttribute("aria-label")).toBe(false);
+  const name = list.getAttribute("aria-labelledby")!;
+  expect(popup.ownerDocument.getElementById(name)?.textContent).toBe("Tags");
+});
+
 it("draws its rows only while the popup is open", async () => {
   const app = editorApp();
   const { toggle, field, options } = mount(app);

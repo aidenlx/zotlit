@@ -67,6 +67,12 @@ export interface ZotLitMenuEvents {
     /** What the citekey names; `null` while the resolution snapshot is cold. */
     resolution: CitekeyResolution | null;
   };
+  /** A row's menu in the Library View: the Item the row lists. */
+  "zotlit:item-menu": {
+    source: "library-view";
+    /** The Item's Indexed Key. */
+    indexedKey: string;
+  };
 }
 
 export type ZotLitMenuEvent = keyof ZotLitMenuEvents;
@@ -89,6 +95,7 @@ export const MENU_EVENT_SECTIONS = {
   "zotlit:attachments-menu": ["open", ""],
   "zotlit:cited-works-menu": ["open", ""],
   "zotlit:graph-cited-work-menu": ["open", "clipboard", ""],
+  "zotlit:item-menu": ["open", "insert", "clipboard", "zotero", ""],
 } as const satisfies Record<ZotLitMenuEvent, readonly string[]>;
 
 /** The named sections of `E`'s menu: everything but the unnamed `""`. */

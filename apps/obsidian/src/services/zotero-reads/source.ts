@@ -148,6 +148,8 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       let lastError: DbUnavailable | null = null;
       let hasClient = false;
       let sourcePath: string | null = null;
+      /** The last refresh failed for another database than `sourcePath`. */
+      let moved = false;
       let readMode: EffectiveReadMode | null = null;
       let fingerprint: SourceFingerprint | null = null;
       let schemaVersions: ZoteroSchemaVersions | null = null;
@@ -177,6 +179,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
         state,
         error: lastError,
         readMode,
+        moved,
         missing: missingDbSignalled,
       }));
       const databaseGenerations = makeDatabaseGenerations();
@@ -372,6 +375,7 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
                 fingerprint = nextFingerprint;
                 state = "ready";
                 lastError = null;
+                moved = false;
               }),
             ),
           );
@@ -380,7 +384,8 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
           if (torndown) return;
           if (result._tag === "Failure") {
             const error = result.failure;
-            yield* publish({ _tag: "refresh-failed", error });
+            moved = hasClient && sourcePath !== databasePath;
+            yield* publish({ _tag: "refresh-failed", error, moved });
             logger.warn("Failed to refresh Zotero database", { error });
             yield* maybeSignalMissingDatabase(databasePath);
             laneFailure = error;

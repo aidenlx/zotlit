@@ -1,6 +1,7 @@
 // "Save as query file…" in the sidebar's More options menu: a dialog asks the
 // name, the folder, and which records the file shows, then writes the
-// sidebar's view as a new Query File and opens it in a tab.
+// sidebar's view as a new Query File and opens it in a tab. The Library View
+// saves through the same dialog, which there asks the name and the folder.
 //
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
 import {
@@ -66,13 +67,32 @@ function filePath(folder: string, name: string): string {
 
 class SaveQueryFileModal extends Modal {
   readonly #folder: string;
+  readonly #askRecords: boolean;
+  readonly #leftOut: readonly string[];
+  readonly #name: string;
   readonly #decision = Promise.withResolvers<SaveChoice | null>();
   readonly result = this.#decision.promise;
   #saved = false;
 
-  constructor(app: App, folder: string) {
+  constructor(
+    app: App,
+    {
+      folder,
+      askRecords,
+      leftOut,
+      name,
+    }: {
+      folder: string;
+      askRecords: boolean;
+      leftOut: readonly string[];
+      name: string;
+    },
+  ) {
     super(app);
     this.#folder = folder;
+    this.#askRecords = askRecords;
+    this.#leftOut = leftOut;
+    this.#name = name;
   }
 
   override onOpen(): void {
@@ -82,9 +102,10 @@ class SaveQueryFileModal extends Modal {
     const body = this.contentEl.createDiv({
       cls: "zt:flex zt:flex-col zt:gap-4",
     });
-    // The first `Untitled`, `Untitled 1`, … free in the folder.
+    // The first `<name>`, `<name> 1`, … free in the folder.
     let name = untitledName(
-      m.query_file_untitled(),
+      this.#name.replaceAll(new RegExp(FORBIDDEN, "g"), " ").trim() ||
+        m.query_file_untitled(),
       (candidate) =>
         this.app.vault.getAbstractFileByPath(
           filePath(this.#folder, candidate),
@@ -107,39 +128,50 @@ class SaveQueryFileModal extends Modal {
       update();
     });
 
-    const group = body.createEl("fieldset", {
-      cls: "zt:flex zt:flex-col zt:gap-2",
-    });
-    group.createEl("legend", {
-      text: m.annot_view_save_records_label(),
-      cls: "zt:mb-2 zt:text-sm zt:leading-(--line-height-tight)",
-    });
-    const choices: [SavedRecords, string, string?][] = [
-      ["this-item", m.annot_view_save_records_this_item()],
-      [
-        "note-item",
-        m.annot_view_save_records_note_item(),
-        m.annot_view_save_records_note_item_hint(),
-      ],
-    ];
-    for (const [value, label, hint] of choices) {
-      const row = group.createEl("label", {
-        cls: "zt:flex zt:items-start zt:gap-2",
+    if (this.#askRecords) {
+      const group = body.createEl("fieldset", {
+        cls: "zt:flex zt:flex-col zt:gap-2",
       });
-      const radio = row.createEl("input", {
-        type: "radio",
-        value,
-        attr: { name: "zotlit-save-query-records", "data-save-records": value },
+      group.createEl("legend", {
+        text: m.annot_view_save_records_label(),
+        cls: "zt:mb-2 zt:text-sm zt:leading-(--line-height-tight)",
       });
-      radio.checked = value === records;
-      radio.addEventListener("change", () => {
-        if (radio.checked) records = value;
-      });
-      const text = row.createDiv({ cls: "zt:min-w-0 zt:flex zt:flex-col" });
-      text.createSpan({ text: label, cls: "zt:text-sm" });
-      if (hint) text.createSpan({ text: hint, cls: NOTE_CLASS });
+      const choices: [SavedRecords, string, string?][] = [
+        ["this-item", m.annot_view_save_records_this_item()],
+        [
+          "note-item",
+          m.annot_view_save_records_note_item(),
+          m.annot_view_save_records_note_item_hint(),
+        ],
+      ];
+      for (const [value, label, hint] of choices) {
+        const row = group.createEl("label", {
+          cls: "zt:flex zt:items-start zt:gap-2",
+        });
+        const radio = row.createEl("input", {
+          type: "radio",
+          value,
+          attr: {
+            name: "zotlit-save-query-records",
+            "data-save-records": value,
+          },
+        });
+        radio.checked = value === records;
+        radio.addEventListener("change", () => {
+          if (radio.checked) records = value;
+        });
+        const text = row.createDiv({ cls: "zt:min-w-0 zt:flex zt:flex-col" });
+        text.createSpan({ text: label, cls: "zt:text-sm" });
+        if (hint) text.createSpan({ text: hint, cls: NOTE_CLASS });
+      }
     }
 
+    for (const text of this.#leftOut)
+      body.createEl("p", {
+        cls: NOTE_CLASS,
+        text,
+        attr: { "data-save-left-out": "" },
+      });
     const status = note(body, { status: true });
     const refusal = (): string | null => {
       if (name.trim() === "") return "";
@@ -198,17 +230,65 @@ class SaveQueryFileModal extends Modal {
  * Ask where to save the sidebar's view and which records it shows, write the
  * Query File, and open it in a tab.
  */
-export async function saveSidebarAsQueryFile(
+export function saveSidebarAsQueryFile(
   app: App,
   input: Omit<SaveQueryFileInput, "records">,
+): Promise<void> {
+  return saveQueryFile(app, {
+    askRecords: true,
+    text: (records) => savedQueryFileText({ ...input, records }),
+  });
+}
+
+/** Ask where to save `text`, write it as a new Query File, and open it in a tab. */
+export function saveAsQueryFile(
+  app: App,
+  text: string,
+  {
+    leftOut = [],
+    name,
+  }: {
+    /**
+     * What the view shows that `text` cannot hold, one sentence each, for
+     * the dialog to say before the file is written.
+     */
+    leftOut?: readonly string[];
+    /** The name the dialog offers first, in place of "Untitled". */
+    name?: string;
+  } = {},
+): Promise<void> {
+  return saveQueryFile(app, {
+    askRecords: false,
+    leftOut,
+    name,
+    text: () => text,
+  });
+}
+
+async function saveQueryFile(
+  app: App,
+  {
+    askRecords,
+    leftOut = [],
+    name = m.query_file_untitled(),
+    text,
+  }: {
+    /** Whether the dialog asks which records the file shows. */
+    askRecords: boolean;
+    leftOut?: readonly string[];
+    name?: string;
+    text: (records: SavedRecords) => string;
+  },
 ): Promise<void> {
   const parent = app.fileManager.getNewFileParent(
     app.workspace.getActiveFile()?.path ?? "",
   );
-  const modal = new SaveQueryFileModal(
-    app,
-    parent.isRoot() ? "/" : parent.path,
-  );
+  const modal = new SaveQueryFileModal(app, {
+    folder: parent.isRoot() ? "/" : parent.path,
+    askRecords,
+    leftOut,
+    name,
+  });
   modal.open();
   const choice = await modal.result;
   if (!choice) return;
@@ -218,13 +298,10 @@ export async function saveSidebarAsQueryFile(
       : "";
     if (folder && !app.vault.getFolderByPath(folder))
       await app.vault.createFolder(folder);
-    const file = await app.vault.create(
-      choice.path,
-      savedQueryFileText({ ...input, records: choice.records }),
-    );
+    const file = await app.vault.create(choice.path, text(choice.records));
     await app.workspace.getLeaf("tab").openFile(file, { active: true });
   } catch (error) {
-    logger.error("Failed to save the sidebar as a Query File", {
+    logger.error("Failed to save a Query File", {
       path: choice.path,
       error,
     });

@@ -1,7 +1,6 @@
 // Web Worker entry: serves the ZoteroReads handler layer over the worker-runner protocol.
 // Obsidian runs workers with Node integration, so `node:sqlite` and `node:fs`
 // load here through the worker's `require`.
-import * as BrowserWorkerRunner from "@effect/platform-browser/BrowserWorkerRunner";
 import { configureSync, getConsoleSink } from "@logtape/logtape";
 import type { LogLevel } from "@logtape/logtape";
 import { RpcServer, RpcWorker } from "effect/rpc";
@@ -13,7 +12,7 @@ import { handlersLayer } from "./handlers";
 import { WorkerInitSchema, ZoteroReads } from "./rpc";
 import { readSegmenterFromOpfs } from "./segmenter";
 import { layerSource } from "./source";
-import { WORKER_CLOSED } from "./worker-signal";
+import { launchWorker } from "./worker-launch";
 
 /**
  * Forward the worker's log records at `level` and above to the renderer
@@ -42,10 +41,6 @@ const forwardLogs = (port: MessagePort, level: LogLevel | null) =>
       },
     ],
   });
-
-const ProtocolLive = RpcServer.layerProtocolWorkerRunner.pipe(
-  Layer.provide(BrowserWorkerRunner.layer),
-);
 
 /**
  * The handlers and the source start from the settings the renderer sent with
@@ -78,12 +73,7 @@ const HandlersLive = Layer.unwrap(
   ),
 );
 
-const main = RpcServer.layer(ZoteroReads).pipe(
-  Layer.provide(HandlersLive),
-  Layer.provide(ProtocolLive),
-  Layer.launch,
-  Effect.runFork,
+launchWorker(
+  self,
+  RpcServer.layer(ZoteroReads).pipe(Layer.provide(HandlersLive)),
 );
-// The renderer's close message ends the launch; its finalizers have closed
-// every client and removed every snapshot by the time this observer runs.
-main.addObserver(() => self.postMessage(WORKER_CLOSED));

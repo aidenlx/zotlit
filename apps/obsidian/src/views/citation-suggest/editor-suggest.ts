@@ -135,7 +135,9 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       return;
     }
     const line = context.editor.getLine(context.end.line);
-    const padded = padCitationInsert(outcome.text, line.charAt(context.end.ch));
+    const padded = padCitationInsert(outcome.text, {
+      next: line.charAt(context.end.ch),
+    });
     context.editor.replaceRange(padded.text, context.start, context.end);
     context.editor.setCursor(
       context.editor.offsetToPos(
@@ -163,19 +165,52 @@ export interface PaddedCitationInsert {
  * A bracketed citation ends at its closing bracket instead, which no trigger
  * matches, so punctuation typed next follows it directly: `[@key].`
  *
- * @param nextChar - the document character at the insert position (`""` at
- *   line end).
+ * Where the insert lands at a place the researcher did not type a trigger,
+ * as a drop or an insert at the cursor does, the caller names the character
+ * before it too: a citation never sticks to the word or punctuation before
+ * it (`source. [@key]`). A line start, a space, or an opening bracket or
+ * quote needs no space.
+ *
+ * @param around.next - the document character at the insert position (`""`
+ *   at line end).
+ * @param around.previous - the document character before the insert
+ *   position (`""` at line start); absent where the researcher typed the
+ *   trigger there, which adds no space before.
  */
 export function padCitationInsert(
   citation: string,
-  nextChar: string,
+  around: { next: string; previous?: string },
 ): PaddedCitationInsert {
+  const lead = needsLeadingSpace(around.previous) ? " " : "";
   if (closingBracketAt(citation, citation.length - 1))
-    return { text: citation, cursor: citation.length };
+    return {
+      text: `${lead}${citation}`,
+      cursor: lead.length + citation.length,
+    };
   return {
-    text: nextChar === " " ? citation : `${citation} `,
-    cursor: citation.length + 1,
+    text: `${lead}${citation}${around.next === " " ? "" : " "}`,
+    cursor: lead.length + citation.length + 1,
   };
+}
+
+/** The characters a citation may follow directly: it opens what it is in. */
+const OPENERS = new Set([
+  "(",
+  "[",
+  "{",
+  "“",
+  "‘",
+  '"',
+  "'",
+  "「",
+  "『",
+  "（",
+  "【",
+]);
+
+function needsLeadingSpace(previous: string | undefined): boolean {
+  if (previous === undefined || previous === "") return false;
+  return previous.trim() !== "" && !OPENERS.has(previous);
 }
 
 /** What selecting a suggestion does: insert `text`, or show `message`. */
@@ -200,7 +235,7 @@ export type CitationInsertOutcome =
  */
 export async function resolveCitationInsert(
   deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup">,
-  hit: SearchHit,
+  hit: Pick<SearchHit, "item">,
   variant: CitationVariant,
 ): Promise<CitationInsertOutcome> {
   const citationKey =

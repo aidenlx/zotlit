@@ -15,6 +15,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
+import { PaneState } from "@/components/pane-state";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -188,21 +189,28 @@ export function AnnotView() {
       )}
       {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
-      ) : body.kind === "problem" ? (
-        <div
-          className="pane-empty zt:p-2"
-          role="alert"
-          data-annot-view-problem=""
-        >
-          <p className="zt:m-0">{body.message}</p>
-          {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
-        </div>
       ) : body.kind === "loading" ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
-      ) : body.kind === "no-attachments" ? (
-        <div className="pane-empty zt:p-2">{body.message}</div>
+        // Loading gives way to the cards at the top, so it waits there.
+        <div className="pane-empty zt:p-2" data-annot-view-loading="">
+          {m.annot_view_loading()}
+        </div>
       ) : (
-        <EmptyPane message={body.message} action={body.action} />
+        <PaneState>
+          {body.kind === "problem" ? (
+            <div
+              className="pane-empty zt:p-2"
+              role="alert"
+              data-annot-view-problem=""
+            >
+              <p className="zt:m-0">{body.message}</p>
+              {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
+            </div>
+          ) : body.kind === "no-attachments" ? (
+            <div className="pane-empty zt:p-2">{body.message}</div>
+          ) : (
+            <EmptyPane message={body.message} action={body.action} />
+          )}
+        </PaneState>
       )}
     </div>
   );
@@ -277,7 +285,10 @@ function Masthead({
     <>
       <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1">
         <ChromeIcon name={shape.modeIcon} />
-        <span className="zt:min-w-0 zt:text-sm zt:font-semibold zt:text-balance">
+        <span
+          className="zt:min-w-0 zt:text-sm zt:font-semibold zt:text-balance"
+          data-annot-header-title=""
+        >
           {shape.title}
         </span>
       </span>
@@ -309,7 +320,7 @@ function ChromeIcon({ name }: { name: IconName }) {
   return (
     <Icon
       name={name}
-      size="var(--icon-xs)"
+      size="xs"
       className="zt:shrink-0 zt:text-muted-foreground"
     />
   );
@@ -460,10 +471,12 @@ export function AnnotList({
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
-      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
-        <div>{m.annot_view_filter_no_match()}</div>
-        <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
-      </div>
+      <PaneState>
+        <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
+          <div>{m.annot_view_filter_no_match()}</div>
+          <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
+        </div>
+      </PaneState>
     );
   }
 
@@ -625,7 +638,7 @@ function GroupHeading({
         >
           <Icon
             name={expanded ? "chevron-down" : "chevron-right"}
-            size="var(--icon-xs)"
+            size="xs"
             className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
           />
           <span className="zt:truncate zt:text-sm zt:font-(weight:--font-semibold) zt:text-foreground">

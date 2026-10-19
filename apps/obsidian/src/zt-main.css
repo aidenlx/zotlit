@@ -152,3 +152,16 @@
     all: revert-layer;
   }
 }
+
+/* A scroll container whose content reaches its trailing edge keeps that edge
+   clear of the scrollbar. Off macOS, Obsidian styles a scrollbar that takes
+   room of its own, and `stable` keeps that room whether or not the content
+   overflows, so it never shifts. On macOS the scrollbar is native, and as the
+   system sets it by default an overlay that takes no room and draws over the
+   content, so the container pads its end by Obsidian's scrollbar width. */
+@utility scroll-gutter {
+  scrollbar-gutter: stable;
+  body:not(.styled-scrollbars) & {
+    padding-inline-end: var(--scrollbar-width);
+  }
+}

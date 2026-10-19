@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { Menu, setMockPlatform } from "@mock/obsidian";
+import { delay } from "@std/async";
 import { Effect } from "effect";
 import type { Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -181,7 +182,16 @@ async function openSidebar(
   {
     readsState = "ready",
     query,
-  }: { readsState?: "ready" | "degraded"; query?: string } = {},
+    attachmentsOf,
+    listOf,
+  }: {
+    readsState?: "ready" | "degraded";
+    query?: string;
+    /** Each Item's attachments, by its key; `attachments` for every Item otherwise. */
+    attachmentsOf?: (key: string) => AnnotViewAttachment[];
+    /** Each Attachment's list, by its key; the one list otherwise. */
+    listOf?: (attachmentKey: string) => AnnotationList;
+  } = {},
 ) {
   setMockPlatform({ isMacOS: true });
   let list = LIST;
@@ -211,7 +221,8 @@ async function openSidebar(
       ready: Promise.resolve({
         reads: {
           ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-          AnnotViewAttachments: () => Effect.succeed(attachments),
+          AnnotViewAttachments: ({ key }: { key: string }) =>
+            Effect.succeed(attachmentsOf?.(key) ?? attachments),
         },
       }),
     },
@@ -227,7 +238,8 @@ async function openSidebar(
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
       capability: { kind: "writable" },
-      read: () => Promise.resolve(list),
+      read: (attachmentKey: string) =>
+        Promise.resolve(listOf?.(attachmentKey) ?? list),
       peek: () => ({ value: list }),
       refresh: () => Promise.resolve(),
       capabilityFor: (): EditingCapability => ({ kind: "writable" }),
@@ -575,4 +587,119 @@ it("keeps the last cards under a note when a filter condition has an error", asy
   expect(
     view.contentEl.querySelector("[data-annot-view-filter-error]")?.textContent,
   ).toBe("The filter has an error. The sidebar shows the last results.");
+});
+
+// A switch to another Item keeps the last one on screen, its name,
+// attachments and cards, until the next one's cards are read.
+
+const PDF_B: AnnotViewAttachment = {
+  itemID: 3,
+  indexedKey: "PDFBBBBB",
+  path: "storage:other.pdf",
+  annotCount: 1,
+};
+const LIST_B: AnnotationList = {
+  ...LIST,
+  annotations: [{ ...record("ANNOTCCC", "#ffd400"), parentKey: "PDFBBBBB" }],
+};
+const ROWS_B: QueryViewRow[] = [
+  {
+    ...row("ANNOTCCC", "yellow", "#ffd400"),
+    attachmentIndexedKey: "PDFBBBBB",
+    itemIndexedKey: "ITEMBBBB",
+  },
+];
+
+/** A sidebar pinned to ITEMAAAA, whose run for ITEMBBBB waits on `next`. */
+async function twoItems(first: () => QueryViewOutcome = () => rows(ROWS)) {
+  const next = Promise.withResolvers<QueryViewOutcome>();
+  const sidebar = await openSidebar([PDF], first, {
+    attachmentsOf: (key) => (key === "ITEMBBBB" ? [PDF_B] : [PDF]),
+    listOf: (key) => (key === "PDFBBBBB" ? LIST_B : LIST),
+  });
+  sidebar.run.mockImplementation((request) =>
+    request.context?.attachment === "PDFBBBBB"
+      ? next.promise.then((outcome) => requested(outcome, request))
+      : Promise.resolve(requested(first(), request)),
+  );
+  return { ...sidebar, next };
+}
+
+it("keeps the last Item's cards and attachments until the next Item's cards are read, then shows the next Item whole", async () => {
+  const { view, next, settle } = await twoItems();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+
+  await act(async () => {
+    view.pinItem("ITEMBBBB");
+    await delay(20);
+  });
+  // The query reads the next Item; the last one stays whole.
+  expect(cards(view.contentEl)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
+  expect(view.snapshot).toMatchObject({
+    itemKey: "ITEMAAAA",
+    selectedAttachmentKey: "PDFAAAAA",
+  });
+
+  next.resolve(rows(ROWS_B));
+  await settle();
+  expect(cards(view.contentEl)).toEqual(["ANNOTCCC"]);
+  expect(view.snapshot).toMatchObject({
+    itemKey: "ITEMBBBB",
+    selectedAttachmentKey: "PDFBBBBB",
+  });
+});
+
+it("shows the next Item over its cards loading, and none of the last Item's, once its read takes 150 ms", async () => {
+  const { view, next, settle } = await twoItems();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  await act(async () => {
+    view.pinItem("ITEMBBBB");
+    await delay(200);
+  });
+  expect(cards(view.contentEl)).toEqual([]);
+  expect(
+    view.contentEl.querySelector("[data-annot-view-loading]"),
+  ).not.toBeNull();
+  expect(view.snapshot).toMatchObject({
+    itemKey: "ITEMBBBB",
+    selectedAttachmentKey: "PDFBBBBB",
+  });
+
+  next.resolve(rows(ROWS_B));
+  await settle();
+  expect(cards(view.contentEl)).toEqual(["ANNOTCCC"]);
+});
+
+it("waits for the next Item's own run where the last Item's run had failed", async () => {
+  const { view, next, settle } = await twoItems(() => ({
+    kind: "failed",
+    diagnostic: {
+      code: "database-error",
+      message: "The database is busy",
+      hint: "",
+      severity: "error",
+      report: [],
+      found: "",
+      expected: [],
+      suggestions: [],
+    },
+  }));
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  await act(async () => {
+    view.pinItem("ITEMBBBB");
+    await delay(20);
+  });
+  // The last run's failure says nothing of the next Item.
+  expect(view.snapshot.itemKey).toBe("ITEMAAAA");
+
+  next.resolve(rows(ROWS_B));
+  await settle();
+  expect(cards(view.contentEl)).toEqual(["ANNOTCCC"]);
+  expect(view.snapshot.itemKey).toBe("ITEMBBBB");
 });

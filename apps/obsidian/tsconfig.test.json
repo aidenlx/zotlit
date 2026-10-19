@@ -10,6 +10,7 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
+      "@brand/*": ["../../assets/logo/*"],
       "@mock/*": ["./__mocks__/*"]
     }
   },

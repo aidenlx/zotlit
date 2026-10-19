@@ -14,7 +14,7 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { useStore } from "zustand";
 
-import { isPageNumber } from "@zotlit/db";
+import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -27,6 +27,8 @@ import type {
 import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import { useItemRow } from "./item-rows";
+import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
@@ -151,7 +153,9 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
         return [{ kind: "note", key: text(values.indexedKey), values }];
       });
     },
-    render: ({ key, values }) => text(values.title) || key,
+    render: ({ key, values }) => (
+      <ZoteroNoteLink noteKey={key}>{text(values.title) || key}</ZoteroNoteLink>
+    ),
   },
   {
     parent: "attachment",
@@ -224,24 +228,61 @@ export function markers(kind: TableRowKind): string[] {
  */
 export const TABLE_FIELDS: readonly string[] = markers("item");
 
-function expandable(record: TableRecord): boolean {
-  return TABLE_CHILD_SOURCES.some((source) => {
-    if (source.parent !== record.kind) return false;
-    const keys = record.values[source.marker];
-    return Array.isArray(keys) && keys.length > 0;
+/** The keys a marker list names: an Indexed Key, or a record that carries one. */
+function markerKeys(value: QueryViewValue | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) =>
+    entry !== null && typeof entry === "object" && !Array.isArray(entry)
+      ? text(entry.indexedKey)
+      : text(entry),
+  );
+}
+
+/**
+ * The sources a row has rows of, each with the keys of those rows as the
+ * row's marker lists them, before any is read.
+ */
+function childSources(record: TableRecord) {
+  return TABLE_CHILD_SOURCES.flatMap((source) => {
+    if (source.parent !== record.kind) return [];
+    const keys = markerKeys(record.values[source.marker]);
+    return keys.length > 0 ? [{ source, keys }] : [];
   });
 }
 
-type ChildState =
-  | { readonly phase: "loading" }
+function expandable(record: TableRecord): boolean {
+  return childSources(record).length > 0;
+}
+
+/** The source of the rows of `kind`. */
+export const childSource = (kind: TableRowKind) =>
+  TABLE_CHILD_SOURCES.find((source) => source.kind === kind)!;
+
+/** A row under an expanded row, known by its marker while it is read. */
+export type PendingChild = Pick<TableRecord, "kind" | "key">;
+
+export type ChildState =
+  /**
+   * The rows are read. `pending` holds one entry per row the markers list,
+   * so the expansion takes the room its rows take from its first frame.
+   */
+  | { readonly phase: "loading"; readonly pending: readonly PendingChild[] }
   | { readonly phase: "ready"; readonly rows: readonly TableRecord[] }
   | { readonly phase: "failed" };
 
-const id = (record: Pick<TableRecord, "kind" | "key">) =>
+export const id = (record: Pick<TableRecord, "kind" | "key">) =>
   `${record.kind}:${record.key}`;
 
+/**
+ * The text a row being read shows. It fades in after a short wait, so a
+ * read that answers at once never shows it; the row's room is there
+ * either way.
+ */
+export const LOADING_TEXT =
+  "zt:truncate zt:animate-in zt:fade-in zt:fill-mode-backwards zt:delay-150";
+
 /** The expanded rows and the rows under them, read when a row expands. */
-function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryService, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
@@ -269,14 +310,23 @@ function useChildren(query: Pick<QueryService, "run">) {
       set(key, null);
       return;
     }
+    // Only the sources the row's markers list rows of are read: a row with
+    // none, as a Papers row with a Literature Note alone, opens at once.
+    const reads = childSources(record);
+    if (reads.length === 0) {
+      set(key, { phase: "ready", rows: [] });
+      return;
+    }
     const controller = new AbortController();
     runs.current.set(key, controller);
-    set(key, { phase: "loading" });
-    const sources = TABLE_CHILD_SOURCES.filter(
-      (source) => source.parent === record.kind,
-    );
+    set(key, {
+      phase: "loading",
+      pending: reads.flatMap(({ source, keys }) =>
+        keys.map((childKey) => ({ kind: source.kind, key: childKey })),
+      ),
+    });
     void Promise.all(
-      sources.map((source) => source.load(record, query, controller.signal)),
+      reads.map(({ source }) => source.load(record, query, controller.signal)),
     ).then(
       (lists) => {
         if (controller.signal.aborted) return;
@@ -293,28 +343,33 @@ function useChildren(query: Pick<QueryService, "run">) {
   return { children, toggle };
 }
 
-function Expander({
+/** The room of a chevron, in a row with nothing under it. */
+export function ExpanderSpace() {
+  return (
+    <span className="clickable-icon zt:invisible zt:shrink-0">
+      <Icon name="chevron-right" size="xs" />
+    </span>
+  );
+}
+
+export function Expander({
   record,
   open,
   onToggle,
+  holdsMore = false,
 }: {
   record: TableRecord;
   open: boolean;
   onToggle: () => void;
+  /** Whether the row holds a child that Zotero does not, as Papers' Literature Note. */
+  holdsMore?: boolean;
 }) {
   // The chevron takes the icon button's own padding, and a row with nothing
   // under it holds a hidden one, so every row's text starts at one edge.
   const chevron = (
-    <Icon
-      name={open ? "chevron-down" : "chevron-right"}
-      size="var(--icon-xs)"
-      strokeWidth="var(--icon-xs-stroke-width)"
-    />
+    <Icon name={open ? "chevron-down" : "chevron-right"} size="xs" />
   );
-  if (!expandable(record))
-    return (
-      <span className="clickable-icon zt:invisible zt:shrink-0">{chevron}</span>
-    );
+  if (!holdsMore && !expandable(record)) return <ExpanderSpace />;
   return (
     <button
       type="button"
@@ -371,9 +426,40 @@ function NoteCell({
         void notes.create(itemKey).finally(() => setCreating(false));
       }}
     >
-      <Icon name="file-plus" size="var(--icon-xs)" />
+      <Icon name="file-plus" size="xs" />
       {m.query_view_table_create_note()}
     </button>
+  );
+}
+
+/**
+ * A link that shows a Child Note in Zotero, which holds it: Obsidian has no
+ * view of a Zotero note. The system starts Zotero from the link where it is
+ * closed.
+ */
+export function ZoteroNoteLink({
+  noteKey,
+  children,
+}: {
+  noteKey: string;
+  children: ReactNode;
+}) {
+  const parsed = parseIndexedKey(noteKey);
+  if (!parsed) return children;
+  const uri = itemSelectUri(parsed.key, parsed.groupID);
+  return (
+    <a
+      className="external-link zt:truncate zt:bg-none zt:pe-0"
+      href={uri}
+      data-query-open="note"
+      onClick={(event) => {
+        event.preventDefault();
+        // The window of the link, which may be a pop-out.
+        event.currentTarget.win.open(uri);
+      }}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -383,7 +469,7 @@ function NoteCell({
  * a new tab, and Cmd/Ctrl+Alt a split. Its address is the Zotero link of the
  * target, which a drag carries out.
  */
-function ReaderLink({
+export function ReaderLink({
   readers,
   target,
   children,
@@ -483,7 +569,34 @@ function ChildRows({
 }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
-  if (state.phase !== "ready")
+  if (state.phase === "loading")
+    return state.pending.map((child, at) => (
+      <tr key={id(child)} className={ROW} data-query-table-status="loading">
+        <td className={GUTTER} />
+        <td
+          colSpan={childSpan(columns)}
+          className={cn(CELL, "zt:ps-1 zt:text-(--text-muted)")}
+        >
+          <span
+            className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
+            style={indent(depth)}
+          >
+            <ExpanderSpace />
+            <Icon
+              name={childSource(child.kind).icon}
+              size="xs"
+              className="zt:shrink-0"
+            />
+            {at === 0 && (
+              <span className={LOADING_TEXT} data-query-loading="">
+                {m.query_view_table_loading()}
+              </span>
+            )}
+          </span>
+        </td>
+      </tr>
+    ));
+  if (state.phase === "failed")
     return (
       <tr data-query-table-status={state.phase}>
         <td className={GUTTER} />
@@ -492,18 +605,14 @@ function ChildRows({
           style={indent(depth)}
           className={cn(CELL, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
         >
-          {state.phase === "loading"
-            ? m.query_view_table_loading()
-            : m.query_view_table_children_failed()}
+          {m.query_view_table_children_failed()}
         </td>
       </tr>
     );
   return (
     <>
       {state.rows.map((record) => {
-        const source = TABLE_CHILD_SOURCES.find(
-          (candidate) => candidate.kind === record.kind,
-        )!;
+        const source = childSource(record.kind);
         return (
           <ChildRow
             key={id(record)}
@@ -564,12 +673,7 @@ function ChildRow({
               open={expanded.has(id(record))}
               onToggle={() => toggle(record)}
             />
-            <Icon
-              name={source.icon}
-              size="var(--icon-xs)"
-              strokeWidth="var(--icon-xs-stroke-width)"
-              className="zt:shrink-0"
-            />
+            <Icon name={source.icon} size="xs" className="zt:shrink-0" />
             {source.render(record, { parent, link })}
           </span>
         </td>
@@ -673,6 +777,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 expanded={expanded}
                 toggle={toggle}
                 readers={readers}
+                gestures={view.rows}
               />
             );
           })}
@@ -692,6 +797,7 @@ function ItemRow({
   expanded,
   toggle,
   readers,
+  gestures,
 }: {
   heading: ReactNode;
   record: TableRecord;
@@ -704,12 +810,19 @@ function ItemRow({
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
   readers: TableReaders;
+  gestures: ItemRowGestures | undefined;
 }) {
+  const row = useItemRow(gestures, record.key);
   return (
     <>
       {heading}
       <tr
-        className={ROW}
+        {...row}
+        className={cn(
+          ROW,
+          "zt:data-selected:bg-(--nav-item-background-selected)",
+          "zt:outline-hidden zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
+        )}
         data-query-table-row="item"
         data-query-key={record.key}
       >
