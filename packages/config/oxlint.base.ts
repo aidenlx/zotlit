@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { defineConfig } from "oxlint";
 
 export const parentImportPattern = {
@@ -107,6 +108,14 @@ export default defineConfig({
     "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
   },
   overrides: [
+    {
+      // A test asserts what an element does, not the zt: classes that draw it
+      // (policies/ui-testing.md).
+      files: ["**/*.{test,spec}.{ts,tsx}", "**/*.e2e.ts"],
+      // Absolute: a config that extends this one cannot resolve a relative path.
+      jsPlugins: [join(import.meta.dirname, "oxlint-plugin-tests.ts")],
+      rules: { "zotlit-tests/no-class-assertion": "error" },
+    },
     {
       // Tests and build scripts can inspect the generated schema.
       files: [

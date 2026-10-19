@@ -4,7 +4,8 @@ description: |
   Extract and format Obsidian's runtime source (app.js and siblings) from an Obsidian
   `.asar` archive into `node_modules/.ob-rev-<version>/` so it can be grepped and read for
   reverse engineering. Use this whenever you need to inspect Obsidian internals, look up a
-  minified export, hook an undocumented API, read Obsidian's own `app.css` stylesheet, or
+  minified export, hook an undocumented API, read Obsidian's own `app.css` stylesheet
+  (a theme variable's value, such as `--text-faint`, for a contrast check), or
   before running the obsidian-reverse-engineer agent — anytime the analysis needs a readable
   `app.js` or `app.css` and it isn't extracted yet.
 ---
