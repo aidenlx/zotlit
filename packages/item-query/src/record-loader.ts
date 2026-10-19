@@ -68,6 +68,7 @@ export type LoadRequest<Needs> = Pick<ItemQueryPlan, "dataset" | "query"> & {
 };
 
 export interface LoadContext {
+  readonly uses?: Readonly<Record<string, number>>;
   readonly sources: QuerySources;
   readonly libraries: readonly TargetLibrary[];
 }

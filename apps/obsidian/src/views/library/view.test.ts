@@ -783,7 +783,7 @@ async function openTab(deps: LibraryViewDeps) {
 const RECENT: LibraryNode = { kind: "recent" };
 const MY_LIBRARY: LibraryNode = { kind: "library", library: PERSONAL };
 
-it("opens on Recent, every Library in the Library Scope newest change first, where plugin data holds no document", async () => {
+it("opens on Recent, every Library in the Library Scope newest activity first, where plugin data holds no document", async () => {
   const { deps, run } = pluginData();
   const view = await openTab(deps);
   expect(listRuns(run)).toHaveLength(1);
@@ -791,7 +791,7 @@ it("opens on Recent, every Library in the Library Scope newest change first, whe
   expect(request).toMatchObject({
     from: "items",
     libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
-    sort: [{ field: "dateModified", direction: "desc" }],
+    sort: [{ field: "lastActivity", direction: "desc" }],
   });
   expect(row(view, RECENT).getAttribute("aria-selected")).toBe("true");
   // Recent names itself, with the papers it lists and no unread count.
@@ -1249,7 +1249,7 @@ it("reads the saved Library Scope on Recent where the database holds none of its
   });
 });
 
-it("keeps Recent selected through a sort change, and selecting it again sorts newest change first", async () => {
+it("keeps Recent selected through a sort change, and selecting it again sorts newest activity first", async () => {
   const { deps, run, settings } = pluginData();
   const view = await openTab(deps);
   await act(async () => {
@@ -1271,13 +1271,13 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
   await press(view, row(view, RECENT));
   expect(listRuns(run).at(-1)).toMatchObject({
     libraries: { mode: "selected", libraries: [PERSONAL, LAB] },
-    sort: [{ field: "dateModified", direction: "desc" }],
+    sort: [{ field: "lastActivity", direction: "desc" }],
   });
   expect(header(view)).toBe("Recent | 7 papers");
   await settings.flush();
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
-    sort: [{ property: "dateModified", direction: "DESC" }],
+    sort: [{ property: "lastActivity", direction: "DESC" }],
   });
 });
 
@@ -1294,7 +1294,7 @@ it("marks the Sort button as set only for a sort other than the one the selected
       text: button.textContent,
     };
   };
-  // Recent writes newest change first itself.
+  // Recent writes newest activity first itself.
   expect(sort()).toEqual({ set: false, text: "Sort" });
   await act(async () => {
     view.query.document.editView({
@@ -1344,8 +1344,11 @@ it("keeps a sort the researcher changed on Recent once they leave it", async () 
 });
 
 it("marks the Sort button again on a switch between Recent and My Library that leaves the query text as it was", async () => {
-  // On My Library, newest change first is the researcher's sort.
-  const { deps, rescope } = pluginData(ON_MY_LIBRARY);
+  // On My Library, newest activity first is the researcher's sort.
+  const { deps, rescope } = pluginData({
+    ...ON_MY_LIBRARY,
+    sort: [{ property: "lastActivity", direction: "DESC" }],
+  });
   const view = await openTab(deps);
   await act(async () => {
     rescope([LIBRARIES[0]!]);
@@ -1384,12 +1387,12 @@ it("selects Recent with its own sort after two quick sorts, on screen and in plu
     await view.query.settled;
   });
   expect(listRuns(run).at(-1)!.sort).toEqual([
-    { field: "dateModified", direction: "desc" },
+    { field: "lastActivity", direction: "desc" },
   ]);
   await settings.flush();
   expect(settings.current?.["library.document"]).toMatchObject({
     node: RECENT,
-    sort: [{ property: "dateModified", direction: "DESC" }],
+    sort: [{ property: "lastActivity", direction: "DESC" }],
   });
 });
 

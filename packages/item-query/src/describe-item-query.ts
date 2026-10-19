@@ -55,6 +55,7 @@ export interface SchemaCapabilities {
 
 /** A built-in field or a Projection Path below one. */
 export interface SchemaField extends SchemaCapabilities {
+  readonly description?: string;
   /** The record vocabulary reached by this parent or Relation List. */
   readonly relation?: "items" | "attachments" | "annotations" | "notes";
   /** The Projection Path; a field is the path without `.` or `[`. */
@@ -277,6 +278,7 @@ function describeFields(dataset: QueryDataset): SchemaField[] {
       sort: false,
       ...(definition.relation && { relation: definition.relation().id }),
       ...(definition.valueForms && { valueForms: definition.valueForms }),
+      ...(definition.description && { description: definition.description }),
     });
     for (const field of pathsBelow(name, definition.shape, capability)) {
       fields.set(field.path, field);

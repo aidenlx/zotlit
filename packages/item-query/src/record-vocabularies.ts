@@ -46,10 +46,12 @@ export const itemVocabulary = (): RecordVocabulary<QueryItem, FieldNeeds> => ({
   id: "items",
   summary: ITEM_SUMMARY,
   projectionFields: [...ITEM_SUMMARY, "key"],
-  field: fieldDefinition,
+  field: (name) =>
+    name === "lastActivity" ? undefined : fieldDefinition(name),
   filter: {
     ...itemFilterRegistry,
     field: (name) => {
+      if (name === "lastActivity") return undefined;
       if (name === "custom")
         return {
           filterable: true,

@@ -187,6 +187,36 @@ const readingState = {
     ),
 };
 
+/** Expected activity from the committed Fixture facts, independent of Query output. */
+function fixtureActivity(item: FixtureItem): string {
+  const attachments = ATTACHMENTS.filter(
+    (entry) => entry.parentItemID === item.itemID,
+  );
+  return [
+    item.dateAdded ?? item.dateModified,
+    ...attachments.flatMap((entry) =>
+      entry.lastRead === undefined
+        ? []
+        : [
+            Temporal.Instant.fromEpochMilliseconds(entry.lastRead * 1000)
+              .toString()
+              .slice(0, 19)
+              .replace("T", " "),
+          ],
+    ),
+    ...NOTES.filter(
+      (entry) => entry.parentItemID === item.itemID && !entry.trashed,
+    ).map((entry) => entry.dateModified),
+    ...ANNOTATIONS.filter((entry) =>
+      attachments.some(
+        (attachment) => attachment.itemID === entry.parentItemID,
+      ),
+    ).map((entry) => entry.dateModified),
+  ]
+    .toSorted()
+    .at(-1)!;
+}
+
 /** The Items with no Zotero read, Annotation, or Literature Note. */
 function unreadOf(
   items: readonly FixtureItem[],
@@ -1588,7 +1618,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectSeedOrder(reloaded, 1);
   });
 
-  it("opens a new Library View on Recent, lists the Library Scope newest change first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
+  it("opens a new Library View on Recent, lists the Library Scope newest activity first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -1631,8 +1661,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       )!;
       return groupID === null ? item.key : `${item.key}g${groupID}`;
     };
-    const modified = new Map(
-      ITEMS.map((item) => [indexedKey(item), item.dateModified]),
+    const activity = new Map(
+      ITEMS.map((item) => [indexedKey(item), fixtureActivity(item)]),
     );
     const expectRecent = (
       shown: Shown,
@@ -1643,9 +1673,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         libraries.some(({ libraryID }) => libraryID === item.libraryID),
       );
       expect(shown.rows.toSorted()).toEqual(items.map(indexedKey).toSorted());
-      expect(shown.rows.map((key) => modified.get(key))).toEqual(
+      expect(shown.rows.map((key) => activity.get(key))).toEqual(
         items
-          .map(({ dateModified }) => dateModified)
+          .map(fixtureActivity)
           .toSorted((a, b) => direction * a.localeCompare(b)),
       );
       // A row holds two lines at most: the title, then creators, year and
@@ -1722,7 +1752,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectRecent(narrowed, [personal], -1);
 
     // A sort change keeps Recent selected; selecting Recent again after a
-    // Library sorts newest change first again.
+    // Library sorts newest activity first again.
     await inLibrary(
       "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort');await pick(await until('sort direction',()=>el.querySelector('[data-query-popover=\"sort\"] [data-sort-direction]')),'ASC','sort direction')",
     );
@@ -1749,9 +1779,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await saved({
         node: { kind: "recent" },
-        sort: [{ property: "dateModified", direction: "DESC" }],
+        sort: [{ property: "lastActivity", direction: "DESC" }],
       }),
     ).toBe(true);
+
+    expect(again.rows[0]).toBe("AAAAAAAA");
+    expect(again.rows[0]).not.toBe("BBBB2222");
+    const modified = new Map(
+      ITEMS.map((item) => [indexedKey(item), item.dateModified]),
+    );
 
     // Leaving Recent clears its own sort: the seed's "Shared key" Collection
     // of My Library lists in the default order, newest change first, and the
@@ -1811,11 +1847,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) => !shown.recent && listing(filed.length)(shown),
     );
     expect(kept.sort).toEqual({ set: true, text: "Sort1" });
-    expectFiled(kept, 1);
+    expect(kept.rows.map((key) => activity.get(key))).toEqual(
+      filed.map(fixtureActivity).toSorted(),
+    );
     expect(
       await saved({
         node: sharedKeyPath,
-        sort: [{ property: "dateModified", direction: "ASC" }],
+        sort: [{ property: "lastActivity", direction: "ASC" }],
       }),
     ).toBe(true);
   });

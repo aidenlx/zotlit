@@ -77,7 +77,7 @@ const itemParent = liftParentRecord({
   needs: (item: readonly FieldNeeds[]): NoteNeeds => ({ item }),
   candidates: [],
   sortable: [],
-  listed: () => BUILT_IN_NAMES,
+  listed: () => BUILT_IN_NAMES.filter((name) => name !== "lastActivity"),
   syntax: "fields",
 });
 export const NOTE_PARENTS = [itemParent];

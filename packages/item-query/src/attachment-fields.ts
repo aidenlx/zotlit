@@ -183,7 +183,7 @@ const itemParent = liftParentRecord({
     "dateModified",
     "firstAuthor",
   ],
-  listed: () => BUILT_IN_NAMES,
+  listed: () => BUILT_IN_NAMES.filter((name) => name !== "lastActivity"),
   syntax: "fields",
 });
 export const ATTACHMENT_PARENTS = [itemParent];

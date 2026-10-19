@@ -51,6 +51,7 @@ import type { ProjectionJson } from "./value-text";
  */
 export interface QueryItem {
   readonly scan: ScanRow;
+  readonly lastUse?: number;
   readonly groupID: number | null;
   readonly hydrated: HydratedItem;
   /** The custom fields of the source, for the complete `custom` object. */
@@ -106,6 +107,7 @@ export type SortKey = string | number | boolean | null;
  * Schema read the same entries, so a field exists only here.
  */
 export interface FieldDefinition<Item = QueryItem, Needs = FieldNeeds> {
+  readonly description?: string;
   readonly relation?: () => RecordVocabulary<any, any>;
   readonly project?: (
     item: Item,
@@ -545,6 +547,41 @@ const lastReadField: FieldDefinition = {
   },
 };
 
+/** The newest work on the paper, across Zotero and this request's Uses. */
+function lastActivity(item: QueryItem): number | null {
+  const values = [item.scan.dateAdded, lastRead(item), item.lastUse ?? null];
+  for (const note of item.notes ?? []) values.push(note.scan.dateModified);
+  for (const annotation of item.annotations ?? [])
+    values.push(annotation.scan.dateModified);
+  let latest: number | null = null;
+  for (const value of values)
+    if (value !== null && (latest === null || value > latest)) latest = value;
+  return latest;
+}
+
+const lastActivityField: FieldDefinition = {
+  description:
+    "Newest addition, Attachment read, child note or Annotation edit, or Use. Includes this device's Uses when the plugin supplies them.",
+  shape: STRING,
+  needs: () => ({ attachments: [{}], notes: [{}], annotations: [{}] }),
+  read: (item) => {
+    const value = lastActivity(item);
+    return value === null
+      ? null
+      : Temporal.Instant.fromEpochMilliseconds(value);
+  },
+  sortKey: lastActivity,
+  filter: {
+    type: "date",
+    read: (item) => {
+      const value = lastActivity(item);
+      return value === null
+        ? null
+        : timestamp(Temporal.Instant.fromEpochMilliseconds(value));
+    },
+  },
+};
+
 const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   string,
   FieldDefinition
@@ -564,6 +601,7 @@ const FIELDS: ReadonlyMap<string, FieldDefinition> = new Map<
   ["dateAdded", scanTimestamp("dateAdded")],
   ["dateModified", scanTimestamp("dateModified")],
   ["lastRead", lastReadField],
+  ["lastActivity", lastActivityField],
   ["library", libraryField],
   ["key", keyField],
   ["indexedKey", indexedKeyField],
