@@ -1585,6 +1585,7 @@ export function SortButton({ view }: { view: QueryView }) {
           }),
         ]}
         unused={properties.unused.sort}
+        labelOf={labelOf}
         onChange={(next) =>
           view.document.editView({ sort: next.length > 0 ? next : undefined })
         }
@@ -1615,6 +1616,7 @@ function GroupButton({ view }: { view: QueryView }) {
           (path) => properties.entry(path).label,
         )}
         unused={properties.unused.groupBy !== null}
+        labelOf={(path) => properties.entry(path).label}
         groups={groups}
         onChange={(next) =>
           view.document.editView({

@@ -2518,6 +2518,7 @@
   "query_view_layout_annotations": "标注",
   "query_view_layout_table": "表格",
   "query_view_table_literature_note": "文献笔记",
+  "query_view_vault_property_label": "{name}（笔记）",
   "query_view_table_create_note": "创建",
   "query_view_vault_no_note": "无笔记",
   "query_view_vault_filter_nested": "库属性的条件不能放在“或”或“非”分组中。",

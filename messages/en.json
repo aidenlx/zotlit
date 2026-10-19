@@ -2682,6 +2682,7 @@
   "query_view_layout_annotations": "Annotations",
   "query_view_layout_table": "Table",
   "query_view_table_literature_note": "Literature note",
+  "query_view_vault_property_label": "{name} (note)",
   "query_view_table_create_note": "Create",
   "query_view_vault_no_note": "No note",
   "query_view_vault_filter_nested": "A condition on a vault property cannot sit inside an \"or\" or \"not\" group.",
