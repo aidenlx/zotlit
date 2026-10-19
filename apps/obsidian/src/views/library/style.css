@@ -9,8 +9,9 @@
   --zt-query-toolbar-inset-end: var(--size-4-2);
 }
 
-/* The serif face of the list heading's title and the Reading Card's title,
-   a custom property a snippet or theme can set to its own display face. */
+/* The serif face of the Reading Card's title, the one place it shows: the
+   list heading's title is chrome and keeps the interface face. A custom
+   property a snippet or theme can set to its own display face. */
 .zt-library-view {
   --zt-font-display:
     ui-serif, "Iowan Old Style", "Charter", Georgia, "Noto Serif", "Songti SC",
