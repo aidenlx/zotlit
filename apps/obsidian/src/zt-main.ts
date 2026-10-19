@@ -498,6 +498,7 @@ export default class ZotLitPlugin extends Plugin {
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
+      useLedger: services.useLedger,
       ...queryViewDeps,
       libraryScope: services.libraryScope,
       settings: services.settings,

@@ -1721,7 +1721,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ITEMS.map((item) => [
         indexedKey(item),
         Math.max(
-          Temporal.Instant.from(`${fixtureActivity(item).replace(" ", "T")  }Z`)
+          Temporal.Instant.from(`${fixtureActivity(item).replace(" ", "T")}Z`)
             .epochMilliseconds,
           uses[indexedKey(item)] ?? 0,
         ),
@@ -1796,6 +1796,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       header: `${m.library_view_recent()} | ${m.library_view_heading_papers({ count: size([personal, shared]) })}`,
     });
     expectRecent(opened, [personal, shared], -1);
+    const reasons = await obJson<Record<string, string>>(
+      vaultId,
+      `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0].view;return JSON.stringify(Object.fromEntries([...view.contentEl.querySelectorAll('[data-query-papers-row]')].map(row=>[row.getAttribute('data-query-papers-row'),row.querySelector('[data-query-papers-title]').parentElement.lastElementChild.textContent])));})()`,
+    );
+    // These seed signals are newer than their parent Item's addition.
+    for (const [key, reason] of [
+      ["SAKIMA22", "in Zotero"],
+      ["AAAAAAAA", "notes edited in Zotero"],
+      ["BBBB2222", "added to Zotero"],
+    ]) {
+      // A preceding case can have used a paper in the shared Fixture vault.
+      expect(reasons[key!]).toContain(
+        uses[key!] === activity.get(key!) ? "in Obsidian" : reason,
+      );
+    }
+
     const emptySearch = JSON.parse(
       await obEval(
         vaultId,
