@@ -422,7 +422,7 @@ describe("viewProperties vault properties", () => {
       });
       expect(paths(properties)).toEqual(["title", "vault.reading-status"]);
       expect(properties.entry("vault.reading-status")).toMatchObject({
-        label: "reading-status (note)",
+        label: m.query_view_vault_property_label({ name: "reading-status" }),
         formula: null,
         fits: true,
         place: 1,

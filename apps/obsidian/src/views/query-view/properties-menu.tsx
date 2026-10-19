@@ -29,7 +29,7 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { propertyIcon } from "./property-icon";
 import { NewFormulaPage, PropertyPage } from "./property-page";
-import { vaultName, vaultProperty } from "./query-file";
+import { LITERATURE_NOTE, vaultName, vaultProperty } from "./query-file";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
 import { useVaultPropertyNames } from "./vault-cell";
@@ -366,9 +366,13 @@ function PropertyList({
             }
           >
             <span data-query-property-name="">{entry.label}</span>
-            {sharedLabels.has(entry.label) && entry.label !== entry.path && (
-              <span className="zt:text-(--text-faint)"> {entry.path}</span>
-            )}
+            {/* A Vault Property also shows its path, so `citekey (note)` reads
+                as the note's `vault.citekey`, as the Sort select shows it. */}
+            {(sharedLabels.has(entry.label) ||
+              (entry.kind === "vault" && entry.path !== LITERATURE_NOTE)) &&
+              entry.label !== entry.path && (
+                <span className="zt:text-(--text-faint)"> {entry.path}</span>
+              )}
           </Chooser.Item>
         );
       }}

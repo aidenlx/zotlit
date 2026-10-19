@@ -1476,7 +1476,10 @@ it("offers the vault properties in the Filter popover of an Items view, in brack
   const kind = status!.querySelector(
     `[aria-label="${m.workbench_match_condition_kind()}"]`,
   )!;
-  expect(kind.textContent).toContain("reading-status");
+  // Named as the note's, so it never reads as a database field.
+  expect(kind.textContent).toContain(
+    m.query_view_vault_property_label({ name: "reading-status" }),
+  );
   const input = status!.querySelector<HTMLInputElement>(
     'input[aria-label="Value"]',
   )!;
@@ -2237,7 +2240,12 @@ views:
     '(itemType == "book")\n&& ([].contains(indexedKey))',
   );
   expect(tableText(el)).toEqual([
-    ["", "Title", "reading-status (note)", "Literature note"],
+    [
+      "",
+      "Title",
+      m.query_view_vault_property_label({ name: "reading-status" }),
+      "Literature note",
+    ],
     ["", "Ten simple rules", m.query_view_vault_no_note(), "Create"],
   ]);
 });
@@ -4139,7 +4147,9 @@ describe("vault properties", () => {
         ?.querySelector("[data-query-icon]")
         ?.getAttribute("data-query-icon");
 
-    expect(header("vault.status")?.textContent).toBe("status (note)");
+    expect(header("vault.status")?.textContent).toBe(
+      m.query_view_vault_property_label({ name: "status" }),
+    );
     expect(icon("vault.tags")).toBe("tags");
     expect(icon("vault.aliases")).toBe("forward");
   });
@@ -4164,7 +4174,7 @@ describe("vault properties", () => {
     await settle();
 
     expect(view.table()).toEqual({
-      header: ["Title", "status (note)"],
+      header: ["Title", m.query_view_vault_property_label({ name: "status" })],
       body: [
         ["Ten simple rules", "reading, to cite"],
         ["Deep learning", ""],
@@ -5974,6 +5984,25 @@ ${sort}`;
       "Deep learning",
       "Ten simple rules",
     ]);
+  });
+
+  it("names a saved sort on a vault property no note holds as the note's, not by its path", async () => {
+    const { view, el, settle } = await mount([FOUR()], undefined, {
+      ...VAULT,
+      propertyNames: ["pages"],
+    });
+    await act(() => view.setText(sortedFile(BY_STATUS)));
+    await settle();
+    await act(() =>
+      el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!.click(),
+    );
+
+    const select = document.body.querySelector(
+      '[data-sort-row="vault.status"] [data-sort-property]',
+    )!;
+    expect(select.textContent).toContain(
+      m.query_view_vault_property_label({ name: "status" }),
+    );
   });
 
   it("offers the vault properties in the Sort control of an Items view", async () => {
