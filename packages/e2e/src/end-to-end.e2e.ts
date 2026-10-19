@@ -4296,7 +4296,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         m.library_view_menu_open_pdf(),
         m.library_view_menu_open_note(),
         m.library_view_card_more(),
-        m.library_view_card_open_in_sidebar(),
+        m.library_view_card_open_in_annot_view(),
       ],
     });
     expect(
@@ -4358,10 +4358,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(await pdfOpened(vaultId, annotationAttachment.path!)).toBe(true);
 
-    // "Open in sidebar" pins the paper in the sidebar Annotation View, which
+    // "Open in the annotation view" pins the paper in the sidebar Annotation View, which
     // lists its cards.
     await inLibrary(
-      `press(card.querySelector('[data-library-card-action="sidebar"]'),'Open in sidebar');return true`,
+      `press(card.querySelector('[data-library-card-action="sidebar"]'),'Open in the annotation view');return true`,
     );
     expect(
       await obEvalUntil(

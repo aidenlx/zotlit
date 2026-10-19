@@ -18,4 +18,4 @@ An Annotation View instance shows the Attachment its Follow Mode selects: Active
 
 ## Amendment (#1552)
 
-The Reading Card's "Open in sidebar" is a user gesture that pins the sidebar to the card's Item. The sidebar stays pinned until the researcher unpins it.
+The Reading Card's "Open in the annotation view" is a user gesture that pins the sidebar to the card's Item. The sidebar stays pinned until the researcher unpins it.

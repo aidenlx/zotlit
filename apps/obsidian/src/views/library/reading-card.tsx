@@ -969,10 +969,12 @@ function CardBody({ card }: { card: ReadingCard }) {
               )
             }
           />
+          {/* The annotation view's own icon, so the button names where it
+              leads. */}
           <IconButton
-            icon="panel-right"
+            icon="highlighter"
             data-library-card-action="sidebar"
-            {...tooltipAttrs(m.library_view_card_open_in_sidebar())}
+            {...tooltipAttrs(m.library_view_card_open_in_annot_view())}
             onClick={() => host.openInSidebar(key)}
           />
         </div>
