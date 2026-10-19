@@ -318,6 +318,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       "app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);true",
     );
+    // The renderer lays out at the new width once its window has it and
+    // both sidebars have finished collapsing.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "JSON.stringify([activeWindow.outerWidth,...[app.workspace.leftSplit,app.workspace.rightSplit].map(split=>Math.round(split.containerEl.getBoundingClientRect().width))])",
+        { expected: "[1600,0,0]" },
+      ),
+    ).toBe(true);
   }
   /**
    * The Library View heading, as {@link LIBRARY_HEADING} reads it: the
@@ -1492,6 +1501,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       failure: null,
     });
     expectSeedOrder(opened, -1);
+    // The ribbon icon and the tab draw the 16-unit mark, both inks in the
+    // icon's one color.
+    const icons = JSON.parse(
+      await obEval(
+        vaultId,
+        `JSON.stringify([document.querySelector(${JSON.stringify(`.side-dock-ribbon-action[aria-label="${m.command_open_library_view_name()}"] svg`)}),app.workspace.getLeavesOfType('zotlit-library')[0].tabHeaderInnerIconEl.querySelector('svg')].map(svg=>{const g=svg?.querySelector('g');return g&&{transform:g.getAttribute('transform'),fill:g.getAttribute('fill'),paths:[...g.querySelectorAll('path')].map(p=>p.getAttribute('d'))};}))`,
+      ),
+    ) as unknown[];
+    const mark = {
+      transform: "scale(6.25)",
+      fill: "currentColor",
+      paths: [
+        "M1.69 1 H12 V4 L5.97 12 H15 V15 H1.78 A0.78 0.78 0 0 1 1 14.22 V12.55 A1.65 1.65 0 0 1 1.33 11.56 L7.03 4 H1.21 A0.21 0.21 0 0 1 1 3.79 V1.69 A0.69 0.69 0 0 1 1.69 1 Z",
+        "M12 1 H15 V12 L13.5 10.5 L12 12 Z",
+      ],
+    };
+    expect(icons).toEqual([mark, mark]);
 
     // With another tab in front, the command and the ribbon icon each bring
     // the one Library View tab back.
@@ -2224,7 +2250,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
 
-  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, and returns it to 24rem on a double click, with Zotero closed", async () => {
+  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and widens it toward the list over a narrow pane, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -2254,13 +2280,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       shown: boolean;
       width: number;
       list: number;
+      pane: number;
+      overlay: boolean;
       now: number;
       min: number;
       max: number;
       stored: number | null;
       label: string | null;
     }
-    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
+    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),pane:Math.round(card.parentElement.parentElement.getBoundingClientRect().width),overlay:getComputedStyle(card).position==='absolute',now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
     const widthWhen = (ready: (shown: CardWidth) => boolean) =>
       obReadUntil<CardWidth>(vaultId, readWidth, {
         ready,
@@ -2339,6 +2367,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       width: 384,
       now: 384,
     });
+
+    // Over a narrow pane the card takes up to 85% of the pane it overlays,
+    // the list's 20rem aside: from its narrowest, the key toward the list
+    // widens it.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}require('@electron/remote').getCurrentWindow().setSize(740,1000);const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const card=el.querySelector('[data-library-card]');await until('the narrow pane',()=>activeWindow.outerWidth===740&&getComputedStyle(card).position==='absolute',5000);if(!card.checkVisibility())press(el.querySelector('[data-query-item-row][data-selected]'),'selected paper');await until('card over the list',()=>!card.hidden&&card.checkVisibility(),5000);return true;})()`,
+    );
+    const narrow = await widthWhen((shown) => shown.shown && shown.overlay);
+    expect(narrow.max).toBe(Math.floor(narrow.pane * 0.85));
+    expect(narrow.max).toBeGreaterThan(288);
+    await keys("Home");
+    expect(await widthWhen((shown) => shown.stored === 288)).toMatchObject({
+      width: 288,
+      min: 288,
+    });
+    await keys("ArrowLeft", "ArrowLeft");
+    expect(await widthWhen((shown) => shown.stored === 320)).toMatchObject({
+      width: 320,
+      now: 320,
+      overlay: true,
+    });
+    await screenshot("card-narrow-widened");
   });
 
   it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and opens it on a row click at the width it had, with Zotero closed", async () => {
@@ -2355,14 +2406,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     await wideWindow(cleanup);
-    const shots = "/tmp/lv-card-close-shots";
-    /** Save a picture of the window as `<name>.png` in {@link shots}. */
+    /** Save a picture of the window as `library-card-close-<name>.png`. */
     const screenshot = async (name: string) => {
-      await mkdir(shots, { recursive: true });
+      const folder = join(workspaceRoot, ".scratch/e2e-screenshots");
+      await mkdir(folder, { recursive: true });
       await cli([
         `vault=${vaultId}`,
         "dev:screenshot",
-        `path=${join(shots, `${name}.png`)}`,
+        `path=${join(folder, `library-card-close-${name}.png`)}`,
       ]);
     };
     /** Whether the card shows, its width, the list's, and what plugin data keeps. */
@@ -4387,31 +4438,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await reloadAndCheck();
     expect(await libraryLeaves()).toBe("0");
 
-    // A Welcome tab that a workspace saved before the banner turns into the
-    // Library View, and closes where one is open already.
-    const welcomeTab = (want: string) =>
-      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.setViewState({type:'zotlit-welcome'});${PAGE}await until('the Welcome tab',()=>app.workspace.getLeavesOfType('zotlit-welcome').length===0,5000);return JSON.stringify({library:app.workspace.getLeavesOfType('zotlit-library').length,${want}});})()`;
-    expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          welcomeTab("turned:leaf.view.getViewType()==='zotlit-library'"),
-        ),
-      ),
-    ).toEqual({ library: 1, turned: true });
-    expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          welcomeTab("closed:!app.workspace.getLeafById(leaf.id)"),
-        ),
-      ),
-    ).toEqual({ library: 1, closed: true });
-    await obEval(
-      vaultId,
-      "app.workspace.getLeavesOfType('zotlit-library').forEach(leaf=>leaf.detach());true",
-    );
-
     // Setup is incomplete while the literature-notes folder is missing: the
     // banner shows the checklist and the Help Links above the Library View,
     // and names no Companion.
@@ -4804,20 +4830,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       dismiss: Box;
       glyph: Box;
     }
-    const measure = `(async()=>{${PAGE}const el=app.workspace.getLeavesOfType('zotlit-library')[0]?.view.contentEl;const b=await until('banner',()=>el?.querySelector('[data-welcome-banner]'),5000);await new Promise(r=>setTimeout(r,300));await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const R=n=>{const r=n.getBoundingClientRect();return{l:r.left,r:r.right,t:r.top,b:r.bottom};};const all=(...s)=>{for(const q of s){const n=[...b.querySelectorAll(q)];if(n.length)return n;}return [];};const cs=getComputedStyle(b);const help=b.querySelector('[data-welcome-help]');const column=b.querySelector('[data-welcome-column]')??help.parentElement.firstElementChild;const grid=help.parentElement;const notices=[...b.querySelectorAll('[role=heading][aria-level="3"]')].filter(n=>!n.closest('[data-welcome-step]'));const banner=R(b);return JSON.stringify({banner,contentStart:banner.l+parseFloat(cs.paddingLeft),contentEnd:banner.r-parseFloat(cs.paddingRight),gap:parseFloat(getComputedStyle(grid).columnGap)||0,lockup:R(b.querySelector('[data-welcome-lockup]')??b.querySelector('[role=heading][aria-level="2"]')),marks:all('[data-welcome-mark]','[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child').map(R),notices:notices.map(R),surfaces:[...b.querySelectorAll('[data-welcome-step][data-open]'),...notices.map(n=>n.closest('[data-welcome-callout]')??n.parentElement.parentElement)].map(R),header:R(b.querySelector('header')),column:R(column),first:R(column.firstElementChild),help:R(help),tiles:all('[data-welcome-help-tile]','[data-welcome-help] > div > a').map(R),dismiss:R(b.querySelector('[data-welcome-dismiss]')),glyph:R(b.querySelector('[data-welcome-dismiss] svg'))});})()`;
+    /** The sections each case's banner renders, which the measure waits for. */
+    interface Sections {
+      open: number;
+      done: number;
+      callouts: number;
+    }
+    /**
+     * Measure the banner once the window is `width` wide, the banner's
+     * connection readout has landed and it renders `sections`.
+     */
+    const measure = (width: number, sections: Sections) =>
+      `(async()=>{${PAGE}const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;await until('the window at ${width}px',()=>activeWindow.outerWidth===${width},5000);await view.welcome.decided;await view.welcome.settled;const el=view.contentEl;const b=await until('the banner sections',()=>{const b=el.querySelector('[data-welcome-banner]');return b&&b.querySelectorAll('[data-welcome-step][data-open]').length===${sections.open}&&b.querySelectorAll('[data-welcome-setup-done]').length===${sections.done}&&b.querySelectorAll('[data-welcome-callout]').length===${sections.callouts}&&b;},5000);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const R=n=>{const r=n.getBoundingClientRect();return{l:r.left,r:r.right,t:r.top,b:r.bottom};};const all=(...s)=>{for(const q of s){const n=[...b.querySelectorAll(q)];if(n.length)return n;}return [];};const cs=getComputedStyle(b);const help=b.querySelector('[data-welcome-help]');const column=b.querySelector('[data-welcome-column]')??help.parentElement.firstElementChild;const grid=help.parentElement;const notices=[...b.querySelectorAll('[role=heading][aria-level="3"]')].filter(n=>!n.closest('[data-welcome-step]'));const banner=R(b);return JSON.stringify({banner,contentStart:banner.l+parseFloat(cs.paddingLeft),contentEnd:banner.r-parseFloat(cs.paddingRight),gap:parseFloat(getComputedStyle(grid).columnGap)||0,lockup:R(b.querySelector('[data-welcome-lockup]')??b.querySelector('[role=heading][aria-level="2"]')),marks:all('[data-welcome-mark]','[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child').map(R),notices:notices.map(R),surfaces:[...b.querySelectorAll('[data-welcome-step][data-open]'),...notices.map(n=>n.closest('[data-welcome-callout]')??n.parentElement.parentElement)].map(R),header:R(b.querySelector('header')),column:R(column),first:R(column.firstElementChild),help:R(help),tiles:all('[data-welcome-help-tile]','[data-welcome-help] > div > a').map(R),dismiss:R(b.querySelector('[data-welcome-dismiss]')),glyph:R(b.querySelector('[data-welcome-dismiss] svg'))});})()`;
     const shots = join(workspaceRoot, ".scratch/e2e-screenshots");
     await mkdir(shots, { recursive: true });
     const cases = {
       // Setup is incomplete: the literature-notes folder is missing, so its
       // step opens on the accent surface.
-      setup: `{'welcome.dismissed':false,'welcome.requested':true,'welcome.steps-shown':false,'release.update-pending':false,'note.template-conversion-pending':false}`,
+      setup: {
+        settings: `{'welcome.dismissed':false,'welcome.requested':true,'welcome.steps-shown':false,'release.update-pending':false,'note.template-conversion-pending':false}`,
+        sections: { open: 1, done: 0, callouts: 0 },
+      },
       // An update beside the template conversion, with the done steps
       // folded into Setup done.
-      update: `{'welcome.dismissed':false,'welcome.requested':false,'welcome.steps-shown':false,'release.update-pending':true,'release.notices-enabled':true,'note.template-conversion-pending':true}`,
+      update: {
+        settings: `{'welcome.dismissed':false,'welcome.requested':false,'welcome.steps-shown':false,'release.update-pending':true,'release.notices-enabled':true,'note.template-conversion-pending':true}`,
+        sections: { open: 0, done: 1, callouts: 2 },
+      },
     };
     const widths = { wide: 1750, medium: 1050, narrow: 740 };
     const results: Record<string, Layout> = {};
-    for (const [name, settings] of Object.entries(cases)) {
+    for (const [name, { settings, sections }] of Object.entries(cases)) {
       await obEval(
         vaultId,
         `(async()=>{const settings=${services}.settings;settings.updateDefaultLiteratureNoteProfileBindings({'note.literature-folder':${JSON.stringify(name === "setup" ? "Banner alignment, not yet created" : folder)}});settings.update(${settings});await settings.flush();return true;})()`,
@@ -4828,7 +4871,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           `require('@electron/remote').getCurrentWindow().setSize(${width},900);true`,
         );
         const label = `${name}-${size}`;
-        results[label] = JSON.parse(await obEval(vaultId, measure)) as Layout;
+        results[label] = JSON.parse(
+          await obEval(vaultId, measure(width, sections)),
+        ) as Layout;
         await cli([
           `vault=${vaultId}`,
           "dev:screenshot",

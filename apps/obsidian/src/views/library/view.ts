@@ -436,25 +436,29 @@ export class LibraryView extends ItemView {
     this.#shell = shell;
     // The card's inner edge sets its width; the card itself renders beside
     // it, in a box of its own.
-    this.#cardWidth = new CardWidth(cardEl, main, {
-      stored: () => this.#storage.document().cardWidth,
-      // A drag past the minimum hides the card while the pointer stays
-      // there, and closes it on release.
-      collapse: (collapsed) => {
-        if (collapsed) cardEl.hidden = true;
-        else this.#showCard();
-      },
-      close: () => this.#closeCard({ keep: true }),
-      keep: (width) => {
-        this.#storage
-          .change((doc) => withCardWidth(doc, width))
-          .catch((error: unknown) => {
-            logger.warn("The Library View could not keep the card's width", {
-              error,
+    this.#cardWidth = new CardWidth(
+      cardEl,
+      { list: main, pane: shell },
+      {
+        stored: () => this.#storage.document().cardWidth,
+        // A drag past the minimum hides the card while the pointer stays
+        // there, and closes it on release.
+        collapse: (collapsed) => {
+          if (collapsed) cardEl.hidden = true;
+          else this.#showCard();
+        },
+        close: () => this.#closeCard({ keep: true }),
+        keep: (width) => {
+          this.#storage
+            .change((doc) => withCardWidth(doc, width))
+            .catch((error: unknown) => {
+              logger.warn("The Library View could not keep the card's width", {
+                error,
+              });
             });
-          });
+        },
       },
-    });
+    );
     const cardBody = cardEl.createDiv({
       cls: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
     });
@@ -564,7 +568,7 @@ export class LibraryView extends ItemView {
     await this.#deps.settings.loaded;
     this.#storage.load();
     const doc = this.#storage.document();
-    this.#cardWidth?.load(shell);
+    this.#cardWidth?.load();
     this.#showCard();
     this.card.showDisclosures(doc.card);
     this.tree.show(doc.node);

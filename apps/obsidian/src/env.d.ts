@@ -5,6 +5,12 @@ declare module "@zotlit/templates/defaults/*?raw" {
   export default source;
 }
 
+/** The canonical logo SVGs of `assets/logo/`, as text. */
+declare module "*.svg?raw" {
+  const source: string;
+  export default source;
+}
+
 declare module "*.yaml?raw" {
   const source: string;
   export default source;

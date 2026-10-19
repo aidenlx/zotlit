@@ -408,6 +408,24 @@ describe("the Reading Card's width", () => {
     expect(clampCardWidth(400, 500)).toBe(288);
     expect(clampCardWidth(5000)).toBe(5000);
   });
+
+  it("takes at most 85% of a narrow pane the card shows over, and keeps 18rem where that fits", () => {
+    // The card overlays the whole 740px pane, tree and list, so the list's
+    // 20rem does not count.
+    expect(cardWidthBounds(740, { overlay: true })).toEqual({
+      min: 288,
+      max: 629,
+    });
+    expect(clampCardWidth(500, 740, { overlay: true })).toBe(500);
+    expect(clampCardWidth(2000, 740, { overlay: true })).toBe(629);
+    expect(clampCardWidth(100, 740, { overlay: true })).toBe(288);
+    // On a tiny pane the floor gives way to the cap.
+    expect(cardWidthBounds(300, { overlay: true })).toEqual({
+      min: 255,
+      max: 255,
+    });
+    expect(clampCardWidth(400, 300, { overlay: true })).toBe(255);
+  });
 });
 
 describe("the Reading Card closed", () => {

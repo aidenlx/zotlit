@@ -9,6 +9,7 @@
 import { setTooltip } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { pointerDrag } from "@/lib/pointer-drag";
 
 import {
   CARD_WIDTH_DEFAULT,
@@ -56,14 +57,24 @@ export interface CardWidthHost {
   close(): void;
 }
 
+/** Where the Reading Card shows. */
+export interface CardWidthPanes {
+  /** The list the card shows beside on a wide pane. */
+  list: HTMLElement;
+  /** The pane that holds the list and the card, which a narrow card overlays. */
+  pane: HTMLElement;
+}
+
 /**
  * Put the resize edge on `card` and size it from `host`'s width, clamped so
- * `list` keeps 20rem beside it. Call {@link CardWidth.apply} when the card
- * shows or the kept width changes; the pane's own resizes apply themselves.
+ * the list keeps 20rem beside it, or, over a narrow pane, so the card takes
+ * at most 85% of it. Call {@link CardWidth.apply} when the card shows or the
+ * kept width changes; the pane's own resizes apply themselves.
  */
 export class CardWidth {
   readonly #card: HTMLElement;
   readonly #list: HTMLElement;
+  readonly #pane: HTMLElement;
   readonly #host: CardWidthHost;
   readonly #handle: HTMLElement;
   /** The width on screen, in pixels. */
@@ -71,9 +82,14 @@ export class CardWidth {
   #observer: ResizeObserver | null = null;
   #drag: AbortController | null = null;
 
-  constructor(card: HTMLElement, list: HTMLElement, host: CardWidthHost) {
+  constructor(
+    card: HTMLElement,
+    { list, pane }: CardWidthPanes,
+    host: CardWidthHost,
+  ) {
     this.#card = card;
     this.#list = list;
+    this.#pane = pane;
     this.#host = host;
     const handle = card.createDiv({
       cls: HANDLE,
@@ -98,10 +114,10 @@ export class CardWidth {
   }
 
   /** Follow the pane's size, which sets the most the card can take. */
-  load(pane: HTMLElement): void {
+  load(): void {
     if (typeof ResizeObserver === "undefined") return;
     this.#observer = new ResizeObserver(() => this.apply());
-    this.#observer.observe(pane);
+    this.#observer.observe(this.#pane);
   }
 
   unload(): void {
@@ -120,18 +136,15 @@ export class CardWidth {
   #bounds(): { min: number; max: number } {
     const card = this.#card;
     const overlay = card.win.getComputedStyle(card).position === "absolute";
-    // Beside the list the card and the list share the room; over it, the
-    // card takes from the list's own width, and at most 85% of it.
-    const pane =
-      this.#list.getBoundingClientRect().width +
-      (overlay || card.hidden ? 0 : card.getBoundingClientRect().width);
-    if (pane === 0) return cardWidthBounds(Number.POSITIVE_INFINITY);
-    const bounds = cardWidthBounds(pane);
-    if (!overlay) return bounds;
-    return {
-      min: bounds.min,
-      max: Math.max(bounds.min, Math.min(bounds.max, Math.floor(pane * 0.85))),
-    };
+    // Beside the list the card and the list share the room; over a narrow
+    // pane, the card takes from the whole pane it overlays.
+    const pane = overlay
+      ? this.#pane.getBoundingClientRect().width
+      : this.#list.getBoundingClientRect().width +
+        (card.hidden ? 0 : card.getBoundingClientRect().width);
+    return cardWidthBounds(pane === 0 ? Number.POSITIVE_INFINITY : pane, {
+      overlay,
+    });
   }
 
   /** Show `width`, within the pane's bounds, and say it on the edge. */
@@ -186,101 +199,47 @@ export class CardWidth {
     if (event.button !== 0) return;
     event.preventDefault();
     this.#drag?.abort();
-    const handle = this.#handle;
-    const { doc, win } = handle;
     const controller = new AbortController();
     this.#drag = controller;
-    const { signal } = controller;
     const start = this.#width;
-    const origin = event.clientX;
     // The edge is on the card's start side: toward the list widens it.
     const sign = this.#rtl() ? 1 : -1;
-    const { pointerId } = event;
-    let width = start;
-    let changed = false;
+    const widthAt = (delta: number) => start + sign * delta;
+    const closes = (width: number) =>
+      width < CARD_WIDTH_MIN - CARD_CLOSE_PAST_MIN;
     let kept = false;
     let collapsed = false;
-    let frame = 0;
     const collapse = (now: boolean) => {
       if (now === collapsed) return;
       collapsed = now;
       this.#host.collapse(now);
     };
-    try {
-      handle.setPointerCapture(pointerId);
-    } catch {
-      // A pointer the browser does not track, as a test sends, has no capture.
-    }
-    handle.classList.add("is-active");
-    doc.body.classList.add(RESIZING);
-    signal.addEventListener(
-      "abort",
-      () => {
-        win.cancelAnimationFrame(frame);
-        handle.classList.remove("is-active");
-        doc.body.classList.remove(RESIZING);
-        if (handle.hasPointerCapture?.(pointerId))
-          handle.releasePointerCapture(pointerId);
+    pointerDrag({
+      press: event,
+      handle: this.#handle,
+      cursor: RESIZING,
+      controller,
+      move: (delta) => {
+        const width = widthAt(delta);
+        collapse(closes(width));
+        // A collapsed card keeps the width it would come back at.
+        if (!collapsed) this.#show(width);
+      },
+      drop: (delta) => {
+        const width = widthAt(delta);
+        if (closes(width)) {
+          // The card closes before it shows again, at the width it had.
+          this.#host.close();
+        } else {
+          kept = true;
+          this.#host.keep(this.#show(width));
+        }
+      },
+      end: () => {
         if (this.#drag === controller) this.#drag = null;
         collapse(false);
         if (!kept) this.apply();
       },
-      { once: true },
-    );
-    const options = { capture: true, signal };
-    const mine = (pointer: PointerEvent) => pointer.pointerId === pointerId;
-    win.addEventListener(
-      "pointermove",
-      (move) => {
-        if (!mine(move)) return;
-        if (move.clientX !== origin) changed = true;
-        if (!changed) return;
-        width = start + sign * (move.clientX - origin);
-        if (frame) return;
-        frame = win.requestAnimationFrame(() => {
-          frame = 0;
-          collapse(width < CARD_WIDTH_MIN - CARD_CLOSE_PAST_MIN);
-          // A collapsed card keeps the width it would come back at.
-          if (!collapsed) width = this.#show(width);
-        });
-      },
-      options,
-    );
-    win.addEventListener(
-      "pointerup",
-      (up) => {
-        if (!mine(up)) return;
-        // A press that does not move, as half of a double click, sets nothing.
-        if (changed) {
-          win.cancelAnimationFrame(frame);
-          if (width < CARD_WIDTH_MIN - CARD_CLOSE_PAST_MIN) {
-            // The card closes before it shows again, at the width it had.
-            this.#host.close();
-          } else {
-            kept = true;
-            this.#host.keep(this.#show(width));
-          }
-        }
-        controller.abort();
-      },
-      options,
-    );
-    win.addEventListener(
-      "pointercancel",
-      (cancel) => {
-        if (mine(cancel)) controller.abort();
-      },
-      options,
-    );
-    win.addEventListener(
-      "keydown",
-      (key) => {
-        if (key.key !== "Escape") return;
-        key.preventDefault();
-        key.stopPropagation();
-        controller.abort();
-      },
-      options,
-    );
+    });
   }
 }
