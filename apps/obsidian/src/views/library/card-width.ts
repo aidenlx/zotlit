@@ -56,14 +56,24 @@ export interface CardWidthHost {
   close(): void;
 }
 
+/** Where the Reading Card shows. */
+export interface CardWidthPanes {
+  /** The list the card shows beside on a wide pane. */
+  list: HTMLElement;
+  /** The pane that holds the list and the card, which a narrow card overlays. */
+  pane: HTMLElement;
+}
+
 /**
  * Put the resize edge on `card` and size it from `host`'s width, clamped so
- * `list` keeps 20rem beside it. Call {@link CardWidth.apply} when the card
- * shows or the kept width changes; the pane's own resizes apply themselves.
+ * the list keeps 20rem beside it, or, over a narrow pane, so the card takes
+ * at most 85% of it. Call {@link CardWidth.apply} when the card shows or the
+ * kept width changes; the pane's own resizes apply themselves.
  */
 export class CardWidth {
   readonly #card: HTMLElement;
   readonly #list: HTMLElement;
+  readonly #pane: HTMLElement;
   readonly #host: CardWidthHost;
   readonly #handle: HTMLElement;
   /** The width on screen, in pixels. */
@@ -71,9 +81,14 @@ export class CardWidth {
   #observer: ResizeObserver | null = null;
   #drag: AbortController | null = null;
 
-  constructor(card: HTMLElement, list: HTMLElement, host: CardWidthHost) {
+  constructor(
+    card: HTMLElement,
+    { list, pane }: CardWidthPanes,
+    host: CardWidthHost,
+  ) {
     this.#card = card;
     this.#list = list;
+    this.#pane = pane;
     this.#host = host;
     const handle = card.createDiv({
       cls: HANDLE,
@@ -98,10 +113,10 @@ export class CardWidth {
   }
 
   /** Follow the pane's size, which sets the most the card can take. */
-  load(pane: HTMLElement): void {
+  load(): void {
     if (typeof ResizeObserver === "undefined") return;
     this.#observer = new ResizeObserver(() => this.apply());
-    this.#observer.observe(pane);
+    this.#observer.observe(this.#pane);
   }
 
   unload(): void {
@@ -120,18 +135,15 @@ export class CardWidth {
   #bounds(): { min: number; max: number } {
     const card = this.#card;
     const overlay = card.win.getComputedStyle(card).position === "absolute";
-    // Beside the list the card and the list share the room; over it, the
-    // card takes from the list's own width, and at most 85% of it.
-    const pane =
-      this.#list.getBoundingClientRect().width +
-      (overlay || card.hidden ? 0 : card.getBoundingClientRect().width);
-    if (pane === 0) return cardWidthBounds(Number.POSITIVE_INFINITY);
-    const bounds = cardWidthBounds(pane);
-    if (!overlay) return bounds;
-    return {
-      min: bounds.min,
-      max: Math.max(bounds.min, Math.min(bounds.max, Math.floor(pane * 0.85))),
-    };
+    // Beside the list the card and the list share the room; over a narrow
+    // pane, the card takes from the whole pane it overlays.
+    const pane = overlay
+      ? this.#pane.getBoundingClientRect().width
+      : this.#list.getBoundingClientRect().width +
+        (card.hidden ? 0 : card.getBoundingClientRect().width);
+    return cardWidthBounds(pane === 0 ? Number.POSITIVE_INFINITY : pane, {
+      overlay,
+    });
   }
 
   /** Show `width`, within the pane's bounds, and say it on the edge. */

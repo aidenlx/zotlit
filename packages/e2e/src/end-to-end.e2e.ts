@@ -2224,7 +2224,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
 
-  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, and returns it to 24rem on a double click, with Zotero closed", async () => {
+  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and widens it toward the list over a narrow pane, with Zotero closed", async () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       vaultId,
@@ -2254,13 +2254,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       shown: boolean;
       width: number;
       list: number;
+      pane: number;
+      overlay: boolean;
       now: number;
       min: number;
       max: number;
       stored: number | null;
       label: string | null;
     }
-    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
+    const readWidth = `(async()=>{const view=app.workspace.getLeavesOfType('zotlit-library')[0]?.view;if(!view?.query)return 'null';await view.query.settled;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const el=view.contentEl;const card=el.querySelector('[data-library-card]');const edge=card.querySelector('[data-library-card-resizer]');const num=n=>Number(edge.getAttribute(n));return JSON.stringify({phase:view.query.state.getState().phase,shown:!card.hidden&&card.checkVisibility(),width:Math.round(card.getBoundingClientRect().width),list:Math.round(el.querySelector('[data-library-search-row]').parentElement.getBoundingClientRect().width),pane:Math.round(card.parentElement.parentElement.getBoundingClientRect().width),overlay:getComputedStyle(card).position==='absolute',now:num('aria-valuenow'),min:num('aria-valuemin'),max:num('aria-valuemax'),stored:${services}.settings.current['library.document']?.cardWidth??null,label:edge.getAttribute('aria-label')});})()`;
     const widthWhen = (ready: (shown: CardWidth) => boolean) =>
       obReadUntil<CardWidth>(vaultId, readWidth, {
         ready,
@@ -2339,6 +2341,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       width: 384,
       now: 384,
     });
+
+    // Over a narrow pane the card takes up to 85% of the pane it overlays,
+    // the list's 20rem aside: from its narrowest, the key toward the list
+    // widens it.
+    await obEval(
+      vaultId,
+      `(async()=>{${PAGE}require('@electron/remote').getCurrentWindow().setSize(740,1000);const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const card=el.querySelector('[data-library-card]');await until('the narrow pane',()=>activeWindow.outerWidth===740&&getComputedStyle(card).position==='absolute',5000);if(!card.checkVisibility())press(el.querySelector('[data-query-item-row][data-selected]'),'selected paper');await until('card over the list',()=>!card.hidden&&card.checkVisibility(),5000);return true;})()`,
+    );
+    const narrow = await widthWhen((shown) => shown.shown && shown.overlay);
+    expect(narrow.max).toBe(Math.floor(narrow.pane * 0.85));
+    expect(narrow.max).toBeGreaterThan(288);
+    await keys("Home");
+    expect(await widthWhen((shown) => shown.stored === 288)).toMatchObject({
+      width: 288,
+      min: 288,
+    });
+    await keys("ArrowLeft", "ArrowLeft");
+    expect(await widthWhen((shown) => shown.stored === 320)).toMatchObject({
+      width: 320,
+      now: 320,
+      overlay: true,
+    });
+    await screenshot("card-narrow-widened");
   });
 
   it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and opens it on a row click at the width it had, with Zotero closed", async () => {
