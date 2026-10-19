@@ -80,6 +80,12 @@ jobs:
       - name: Lint
         run: pnpm lint -- -f github
 
+      # tsc over each package's own tsconfigs, test configs included; turbo
+      # generates the message modules each check reads first. @zotlit/e2e
+      # stays out, with the rest of the End-to-end Run.
+      - name: Typecheck
+        run: pnpm turbo run typecheck typecheck:test --filter='!@zotlit/e2e'
+
       # oxlint's jest/no-large-snapshots reads inline snapshots only; this
       # checks the entries of every tracked .snap file.
       - name: Snapshot size check

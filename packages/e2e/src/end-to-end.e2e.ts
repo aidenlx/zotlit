@@ -78,6 +78,7 @@ import {
   isObsidianReachable,
   vaultScript,
 } from "./vault-script.ts";
+import { reloadWindow } from "./window-reload.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 // Distinct from the per-worktree dev vault (`getDevVaultDir`) and the raw
@@ -13963,6 +13964,74 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       path: first.path,
     });
   }, 180000);
+});
+
+describe.skipIf(!reachable)("Window reload", () => {
+  const vaultPath = e2eVaultDir(workspaceRoot, "window-reload-vault");
+  let vaultId = "";
+
+  beforeAll(async () => {
+    await clearVault(runVaultScript, vaultPath);
+    const created = await runVaultScript(["create", vaultPath]);
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await keepRendering(vaultId);
+  }, 180000);
+
+  afterAll(async () => {
+    await runVaultScript(["remove", vaultPath, "--purge"]);
+  }, 120000);
+
+  it("loads ZotLit in startup order, where its rename handlers run before the metadata cache moves the path", async () => {
+    // Records, for each vault `rename` handler, whether `getFileCache`
+    // already answered for the new path when the handler ran. ZotLit's
+    // handlers are the entries its load adds to the vault's listener list.
+    const recorder = `const until=async(what,ok)=>{const end=Date.now()+10000;while(!ok()){if(Date.now()>end)throw new Error('Timed out: '+what);await new Promise(r=>setTimeout(r,20));}};
+      const listed=()=>[...(app.vault._.rename??[])];
+      const rename=async(from,to)=>{
+        const file=app.vault.getFileByPath(from);
+        await until('cache of '+from,()=>app.metadataCache.getFileCache(file));
+        const entries=listed();const fns=entries.map(e=>e.fn);const cached=new Map();
+        entries.forEach((entry,i)=>{entry.fn=function(target,...rest){cached.set(entry,app.metadataCache.getFileCache(target)!==null);return fns[i].call(this,target,...rest);};});
+        try{await app.vault.rename(file,to);await until('rename dispatch',()=>cached.size===entries.length);}
+        finally{entries.forEach((entry,i)=>{entry.fn=fns[i];});}
+        return cached;
+      };`;
+    // The plugin toggle loads ZotLit after the metadata cache subscribed, so
+    // every ZotLit handler hears the rename with the new path cached.
+    const toggled = await obJson<{ sources: string[]; cached: boolean[] }>(
+      vaultId,
+      `(async()=>{${recorder}
+        await app.vault.create('startup-order.md','# Startup order\\n');
+        await app.plugins.disablePlugin('zotlit');
+        const unloaded=new Set(listed());
+        await app.plugins.enablePlugin('zotlit');
+        const added=listed().filter(e=>!unloaded.has(e));
+        const cached=await rename('startup-order.md','startup-order-moved.md');
+        // Handlers listed now must not count after the reload: a disabled
+        // ZotLit leaves some of its startup handlers listed, and they would
+        // pass the check below if the window did not reload.
+        window.__ztListenersBeforeReload=new Set(listed());
+        return JSON.stringify({sources:added.map(e=>String(e.fn)),cached:added.map(e=>cached.get(e))});
+      })()`,
+    );
+    expect(toggled.cached.length).toBeGreaterThan(0);
+    expect(toggled.cached).not.toContain(false);
+
+    await reloadWindow(vaultId);
+    // After the window reload, ZotLit's handlers (found by their function
+    // source among the new window's entries) include one that runs before
+    // the metadata cache moves the path.
+    const startup = await obJson<boolean[]>(
+      vaultId,
+      `(async()=>{${recorder}
+        const sources=new Set(${JSON.stringify(toggled.sources)});
+        const cached=await rename('startup-order-moved.md','startup-order.md');
+        const before=window.__ztListenersBeforeReload??new Set();
+        return JSON.stringify(listed().filter(e=>!before.has(e)&&sources.has(String(e.fn))).map(e=>cached.get(e)));
+      })()`,
+    );
+    expect(startup).toContain(false);
+  }, 120000);
 });
 
 interface ManagedFrontmatterReport {

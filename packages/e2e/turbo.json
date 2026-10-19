@@ -2,6 +2,14 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
+    // tsconfig.json maps `@obsidian-messages` to the plugin's generated
+    // message module, so the type check needs those messages first.
+    "typecheck": {
+      "dependsOn": [
+        "$TURBO_EXTENDS$",
+        "@zotlit/obsidian#generate:language-packs"
+      ]
+    },
     "e2e": {
       "env": ["WEB_WORKBENCH_ENABLED"],
       "passThroughEnv": ["ZOTLIT_DESKTOP_LOCK", "ZOTLIT_E2E_RESULTS"]

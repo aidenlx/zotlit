@@ -40,6 +40,7 @@ Each suite builds its own Fixture and new purged vaults under `.scratch/e2e-*`. 
 
 - Files run serially (`fileParallelism: false`): both drive the one desktop Obsidian.
 - The OS focus stays with the developer and with runs in other worktrees. `keepRendering` makes a vault's windows render, and one of them act focused, behind other apps.
+- `reloadWindow` (`src/window-reload.ts`) reloads a vault's whole window, so ZotLit loads in Obsidian startup order; use it for bugs a plugin reload hides.
 - A Paired Zotero that fails to start or to serve its Local API fails the file.
 - `src/paired-zotero.ts` holds the Local API client and the RDP levers. The [Fixture guide](../../docs/fixture.md) has the paths.
 

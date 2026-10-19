@@ -31,6 +31,17 @@ export default defineConfig({
       },
     },
     {
+      // The rule's own test cases hold the code it reports.
+      files: ["packages/config/oxlint-plugin-tests.test.ts"],
+      rules: { "zotlit-tests/no-class-assertion": "off" },
+    },
+    {
+      // Written before the rule; the file moves off this list when its
+      // assertions move to behavior.
+      files: ["packages/e2e/src/walkthrough.e2e.ts"],
+      rules: { "zotlit-tests/no-class-assertion": "off" },
+    },
+    {
       // Root release script reaches across apps to reuse their manifest helpers.
       files: ["scripts/**"],
       rules: {
