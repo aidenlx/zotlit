@@ -159,6 +159,49 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     authorizationFixture?.rdp[Symbol.dispose]();
   });
 
+  it("writes a PDF read back to Zotero without modifying its parent", async () => {
+    const readItem = async (key: string) => {
+      const reply = await zoteroFetch(api, `users/0/items/${key}`);
+      expect(reply.status).toBe(200);
+      return (await reply.json()) as {
+        version: number;
+        data: { lastRead?: number; dateModified: string };
+      };
+    };
+    const before = await readItem("RUGIER24");
+    const attachmentBefore = await readItem(attachment.key);
+    await obEval(
+      vaultId!,
+      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await app.plugins.plugins.zotlit.services.zoteroLocalApi.probe();return true;})()`,
+    );
+    await clearNotices(vaultId!);
+    await using cleanup = new AsyncDisposableStack();
+    await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
+    let recorded: { instant: string } | undefined;
+    expect(
+      await waitFor(async () => {
+        recorded = await obJson<{ instant: string } | undefined>(
+          vaultId!,
+          "JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current.RUGIER24)",
+        );
+        if (!recorded) return false;
+        const item = await readItem(attachment.key);
+        return (
+          item.data.lastRead ===
+          Math.floor(
+            Temporal.Instant.from(recorded.instant).epochMilliseconds / 1000,
+          )
+        );
+      }),
+    ).toBe(true);
+    expect((await readItem("RUGIER24")).data.dateModified).toBe(
+      before.data.dateModified,
+    );
+    expect((await readItem(attachment.key)).version).toBeGreaterThan(
+      attachmentBefore.version,
+    );
+  });
+
   // ── Tier 1 ────────────────────────────────────────────────────────────────
   // The Local API alone, no dialog and no debugging port: the read contract
   // every other tier stands on.

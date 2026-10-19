@@ -77,6 +77,7 @@ import { TemplateService } from "./template/service";
 import { UseLedger } from "./use-ledger/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
+import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
@@ -262,6 +263,7 @@ export function buildServices(
     .use({
       pdfAnnotationEditor: ({
         useLedger,
+        zoteroLocalApi,
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
@@ -270,8 +272,13 @@ export function buildServices(
         settings,
       }) => {
         reader = new PdfAnnotationEditor({
-          recordRead: ({ itemKey, instant }) => {
+          recordRead: ({ attachmentKey, itemKey, instant }) => {
             useLedger.record(itemKey, "read", instant);
+            void writeReadUse(
+              { reads: zoteroReads, api: zoteroLocalApi },
+              attachmentKey,
+              instant,
+            );
           },
           app: plugin.app,
           attachments: attachmentResolver,
