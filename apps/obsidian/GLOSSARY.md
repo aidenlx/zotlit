@@ -535,8 +535,22 @@ The quick switcher action, Alt+Enter, that opens the Library View on an Item's f
 _Avoid_: reveal in library, locate
 
 **Recent**:
-The node at the top of the Library Tree that lists Items by last activity, newest first. Once last activity is defined (#1532), each row gives the reason it is there, such as "read 2 h ago in Obsidian"; until then Recent sorts by when Zotero last edited the Item and gives no reason. It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
+The node at the top of the Library Tree that lists Items by Last Activity, newest first, each row giving the reason it is there, such as "read 2 h ago in Obsidian". It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
 _Avoid_: history, recently read (Zotero's name for its own list)
+
+### Recency
+
+**Last Activity**:
+The newest instant at which the researcher worked on an Item, on one timeline from both sides: its last Use in Obsidian, its last read in Zotero (`lastRead` of any of its Attachments), when it was added to Zotero, and the last edit of one of its child notes or Annotations. An edit of the Item's own fields in Zotero is not activity: bulk edits and tools change those without the researcher working on the paper.
+_Avoid_: last modified, last used, recency (alone)
+
+**Use**:
+An action in Obsidian that puts an Item in front of the researcher or into their writing: opening its Literature Note by any route, coming back to that note's tab, reading its PDF (opening, closing, or turning pages at most once in five minutes, as Zotero's reader records a read), inserting a citation of it, or copying its citation key. Each Use has a kind (opened, read, cited) that the reason of a Recent row names. Writing or updating notes in a batch, a view following the active note, selecting a row, a hover preview and Show in Library are not Uses.
+_Avoid_: touch, visit, access
+
+**Use Ledger**:
+The record of the last Use of each Item, kept per vault on each device and never synced. Reading crosses devices through Zotero's own `lastRead` instead.
+_Avoid_: history, usage log, recents
 
 ### Note content
 

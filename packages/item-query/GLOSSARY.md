@@ -60,12 +60,16 @@ A documented template-style accessor that selects data from a Query Row, such as
 _Avoid_: column expression, property expression
 
 **Sortable Field**:
-A scalar field of the Query Dataset, or a scalar field of a parent record such as `item.title`, that can order a Query Result. A value derived from a Relation List, such as its length, is not a Sortable Field; the First Author is the one exception. Null values sort last, and Indexed Key is the stable final tie-breaker, also between records of two Target Libraries: Indexed Keys compare as text, so the same Zotero Key in the groups 10 and 9 gives the order `g10`, `g9`.
+A scalar field of the Query Dataset, or a scalar field of a parent record such as `item.title`, that can order a Query Result. A value derived from a Relation List, such as its length, is not a Sortable Field; the First Author and the Last Activity are the exceptions. Null values sort last, and Indexed Key is the stable final tie-breaker, also between records of two Target Libraries: Indexed Keys compare as text, so the same Zotero Key in the groups 10 and 9 gives the order `g10`, `g9`.
 _Avoid_: sort expression, sort path
 
 **First Author**:
 The first of the Primary Creators of an Item: the creators of the first role that the Item has in the chain of its item type's primary creator type, then `editor`, `director`, and `contributor`. It is the template `authors[0]`, and the field `firstAuthor` of Item Query (`item.firstAuthor` on Attachments and Annotations). An Item with no creator in the chain has no First Author. It can differ from `creators[0]`, the first creator of any role.
 _Avoid_: first creator (that is `creators[0]`), lead author
+
+**Last Activity**:
+The newest instant at which the researcher worked on an Item: the newest `lastRead` of its Attachments, its `dateAdded`, the newest edit of its child notes and Annotations, and its last Use, which the request supplies because the engine cannot see the vault. It is the field `lastActivity` of Item Query. An edit of the Item's own fields is not activity.
+_Avoid_: last modified, dateModified (that is the Item's own last edit)
 
 **Query Group**:
 One group of a grouped Query Result: a value of the group path, the number of matched records with that value, and their Query Rows up to the limit. A scalar group path puts each record in one group. A group path with one `[]`, such as `tags[].name` or `collections[]`, puts each record in one group for each distinct element value; a record with no element value is in the `null` group. Groups can overlap, so their counts can add up to more than the number of matched records.
