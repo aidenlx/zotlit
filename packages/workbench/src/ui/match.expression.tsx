@@ -152,8 +152,8 @@ export function MatchExpressionInput({
           filterExpressionLanguage,
           filterExpressionHighlighting,
           signatureHint({
-            receiverType: (text) =>
-              props.current.vocabulary?.receiverType?.(text),
+            receiver: (source, at) =>
+              props.current.vocabulary?.receiver?.(source, at),
           }),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),

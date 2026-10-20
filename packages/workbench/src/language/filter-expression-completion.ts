@@ -2,97 +2,51 @@
 // Query View filter condition or a Match condition offers at the caret. The
 // fields, the namespaces and the functions come from the vocabulary the host
 // passes and from the function registry of `@zotlit/item-query`, so the list
-// cannot disagree with evaluation.
-import { autocompletion } from "@codemirror/autocomplete";
+// cannot disagree with evaluation. Members after a `.` are in
+// `expression-members.ts`, quoted keys in `expression-keys.ts`, and the names
+// a list method binds in `list-scope.ts`.
+import { autocompletion, startCompletion } from "@codemirror/autocomplete";
 import type { Completion, CompletionContext } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
+import type { SyntaxNode } from "@lezer/common";
 
 import { parser } from "@zotlit/filter-expression";
 import { GLOBAL_FUNCTIONS, IF_FUNCTION } from "@zotlit/item-query";
-import type { FunctionDefinition, QueryDataset } from "@zotlit/item-query";
+import type { QueryDataset } from "@zotlit/item-query";
 
 import type { CompletionPresentation } from "./completion";
-import { matchScore } from "./matching";
-import type { SignatureHintOptions } from "./signature-hint";
+import { keyCompletions } from "./expression-keys";
+import { memberCompletions } from "./expression-members";
+import {
+  fieldOption,
+  noteOf,
+  optionTexts,
+  ranked,
+  signature,
+} from "./expression-options";
+import type {
+  ExpressionCompletionResult,
+  ExpressionField,
+  ExpressionName,
+  ExpressionOption,
+  ExpressionVocabulary,
+} from "./expression-options";
+import { bindsNames, boundNameOptions } from "./list-scope";
 
-/** A field of the Query Dataset, read by its name. */
-export interface ExpressionField {
-  /** The name a Filter Expression reads it by. */
-  readonly path: string;
-  /** The label the Properties popover gives it. */
-  readonly label?: string;
-  /** The type a Filter Expression reads; absent where it varies. */
-  readonly type?: string;
-}
-
-/** A name read under a namespace, `formula.<name>` or `vault.<name>`. */
-export interface ExpressionName {
-  readonly name: string;
-  /** The label the Properties popover gives its Property. */
-  readonly label?: string;
-}
-
-/**
- * What one expression editor can read, as its host knows it. Expression
- * Completion offers its names, and the Signature Hint types a method call's
- * receiver by it.
- */
-export interface ExpressionVocabulary {
-  readonly fields: readonly ExpressionField[];
-  /** Whether the view binds a Query Context, which `this` reads. */
-  readonly context: boolean;
-  /** The Formula Properties of the Query File. */
-  readonly formulas: readonly ExpressionName[];
-  /** The vault properties a filter condition reads; absent in a Formula. */
-  readonly vault?: readonly ExpressionName[];
-  /**
-   * The static type of a method call's receiver, given its text; undefined
-   * where it is not known.
-   */
-  readonly receiverType?: SignatureHintOptions["receiverType"];
-}
-
-/** One entry of the list. */
-export interface ExpressionOption {
-  /** What the entry names and the typed text matches. */
-  readonly label: string;
-  /** The text accepting it writes. */
-  readonly insert: string;
-  /** Where the caret lands, as an offset into `insert`; its end by default. */
-  readonly caret?: number;
-  readonly kind: "field" | "namespace" | "function";
-  /** A field's type, or a function's signature. */
-  readonly type?: string;
-  /** A field's label, or a function's description. */
-  readonly note?: string;
-}
-
-export interface ExpressionCompletionResult {
-  /** The range accepting an entry replaces. */
-  readonly from: number;
-  readonly to: number;
-  readonly options: readonly ExpressionOption[];
-}
+export type {
+  ExpressionCompletionResult,
+  ExpressionField,
+  ExpressionName,
+  ExpressionOption,
+  ExpressionReceiver,
+  ExpressionVocabulary,
+} from "./expression-options";
 
 const IDENTIFIER = /^[A-Za-z_$¡-￿][\w$¡-￿]*$/;
 const NAME_CHAR = /[\w$¡-￿]/;
 /** Tokens whose text a completion must not interrupt. */
 const LITERALS = new Set(["String", "RegExp", "RealNumber", "Escape"]);
 const NAMESPACES = new Set(["this", "formula", "vault"]);
-
-/** The compact signature an entry shows: `min(…) → number`. */
-function signature(
-  name: string,
-  definition: Pick<FunctionDefinition, "parameters" | "optional" | "rest"> & {
-    returns?: FunctionDefinition["returns"];
-  },
-): string {
-  const takes =
-    definition.parameters.length > 0 ||
-    (definition.optional?.length ?? 0) > 0 ||
-    definition.rest !== undefined;
-  return `${name}(${takes ? "…" : ""}) → ${definition.returns ?? "any"}`;
-}
 
 const FUNCTIONS: readonly ExpressionOption[] = [
   ["if", IF_FUNCTION] as const,
@@ -122,23 +76,10 @@ function namespaced(
   };
 }
 
-/** A label that says more than the name it labels. */
-function noteOf(name: string, label: string | undefined) {
-  return label === undefined || label === name ? {} : { note: label };
-}
-
 /** Every entry of the vocabulary, in the order the list shows ties. */
 function entries(vocabulary: ExpressionVocabulary): ExpressionOption[] {
   return [
-    ...vocabulary.fields.map(
-      ({ path, label, type }): ExpressionOption => ({
-        label: path,
-        insert: path,
-        kind: "field",
-        ...(type === undefined ? {} : { type }),
-        ...noteOf(path, label),
-      }),
-    ),
+    ...vocabulary.fields.map(fieldOption),
     ...(vocabulary.context
       ? ["item", "attachment"].map((name) => namespaced("this", { name }))
       : []),
@@ -149,11 +90,12 @@ function entries(vocabulary: ExpressionVocabulary): ExpressionOption[] {
 }
 
 /**
- * What the list offers with the caret at `pos` of `source`: fields,
- * namespaces and functions at an expression position, matched by the name
- * or the label against the typed word or namespace path. `null` where the
- * caret stands in a literal, after the `.` of a value other than a
- * namespace, or on no typed word unless `explicit`.
+ * What the list offers with the caret at `pos` of `source`: quoted keys in
+ * `vault[...]` and `custom[...]`; after the `.` of a value, its members;
+ * elsewhere the names a list method binds there, fields, namespaces and
+ * functions, matched by the name or the label against the typed word or
+ * namespace path. `null` where the caret stands in a literal, or on no typed
+ * word unless `explicit`, after a `.` or in an element expression.
  */
 export function expressionCompletions(
   source: string,
@@ -163,14 +105,14 @@ export function expressionCompletions(
     explicit = false,
   }: { vocabulary: ExpressionVocabulary; explicit?: boolean },
 ): ExpressionCompletionResult | null {
-  for (
-    let node: ReturnType<
-      ReturnType<typeof parser.parse>["resolveInner"]
-    > | null = parser.parse(source).resolveInner(pos, -1);
-    node;
-    node = node.parent
-  )
+  const inner = parser.parse(source).resolveInner(pos, -1);
+  const caret = { inner, pos, source };
+  const keys = keyCompletions(caret, vocabulary);
+  if (keys !== undefined) return keys;
+  for (let node: SyntaxNode | null = inner; node; node = node.parent)
     if (LITERALS.has(node.name)) return null;
+  const members = memberCompletions(caret, vocabulary);
+  if (members !== undefined) return members;
   let from = pos;
   while (from > 0 && NAME_CHAR.test(source[from - 1]!)) from--;
   let to = pos;
@@ -186,25 +128,15 @@ export function expressionCompletions(
   if (/^\d/.test(query)) return null;
   if (query.includes(".")) {
     const root = query.slice(0, query.indexOf("."));
-    // The members of a value are the member completion's.
     if (!NAMESPACES.has(root) || source[from - 1] === ".") return null;
-  } else if (query === "" && !explicit) return null;
-  const options = entries(vocabulary)
-    .map((option, order) => ({
-      option,
-      order,
-      score: query
-        ? Math.min(
-            matchScore(option.label, query),
-            option.kind === "function" || option.note === undefined
-              ? Infinity
-              : matchScore(option.note, query),
-          )
-        : 0,
-    }))
-    .filter(({ score }) => Number.isFinite(score))
-    .sort((a, b) => a.score - b.score || a.order - b.order)
-    .map(({ option }) => option);
+  }
+  const bound = query.includes(".") ? [] : boundNameOptions(inner, pos, source);
+  if (query === "" && !explicit && bound.length === 0) return null;
+  const options = ranked(
+    [...bound, ...entries(vocabulary)],
+    query,
+    optionTexts,
+  );
   return options.length === 0 ? null : { from, to, options };
 }
 
@@ -232,22 +164,6 @@ export function datasetExpressionFields(
     const named = label(field.path);
     return named === undefined ? field : { ...field, label: named };
   });
-}
-
-/**
- * The type of a receiver as the planner of `dataset` types it. A receiver
- * that does not plan, or plans to a type known only at execution, is untyped.
- */
-export function datasetReceiverType(
-  dataset: Pick<QueryDataset, "planFilter">,
-): NonNullable<ExpressionVocabulary["receiverType"]> {
-  return (text) => {
-    const plan = dataset.planFilter(text);
-    const root = "root" in plan ? plan.root : undefined;
-    return root && "valueType" in root && root.valueType !== "unknown"
-      ? root.valueType
-      : undefined;
-  };
 }
 
 /** The planned fields of each dataset, which a descriptor never changes. */
@@ -293,6 +209,9 @@ function completionAt(
             },
             userEvent: "input.complete",
           });
+          // The caret now stands where the method binds its names.
+          if (option.kind === "method" && bindsNames(option.label))
+            startCompletion(view);
         },
       };
       optionOf.set(completion, option);

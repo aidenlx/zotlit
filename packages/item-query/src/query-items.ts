@@ -23,7 +23,7 @@ import {
 } from "./fields";
 import type { QueryItem } from "./fields";
 import { matches as isMatch } from "./filter-evaluate";
-import { planFilter } from "./filter-plan";
+import { planFilter, planSubexpression } from "./filter-plan";
 import { projectColumns } from "./formulas";
 import { ITEM_LOADING } from "./hydration";
 import { resolveItemPath } from "./projection";
@@ -65,6 +65,8 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
         readRelationCandidateSet({ ...chunk, relation: "item-annotations" }),
     },
   },
+  planSubexpression: (text, at, options) =>
+    planSubexpression(text, at, { ...options }),
   sortableFields: BUILT_IN_NAMES.filter((name) => sortable(name)),
   definition: fieldDefinition,
   filterField,

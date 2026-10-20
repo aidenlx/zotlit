@@ -92,7 +92,8 @@ it("shows the Signature Hint of the method at the caret, typed as the host types
         fields: [],
         context: false,
         formulas: [],
-        receiverType: (text) => (text === "title" ? "string" : undefined),
+        receiver: (source, { from, to }) =>
+          source.slice(from, to) === "title" ? { type: "string" } : undefined,
       }}
     />,
   );

@@ -66,6 +66,12 @@ export {
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export { planPath } from "./projection";
 export {
+  subexpressionTypes,
+  type PlannedMember,
+  type SubexpressionType,
+} from "./subexpression-types";
+export type { StaticType } from "./filter-plan";
+export {
   projectedSortKey,
   type LastActivitySource,
   type SortKey,

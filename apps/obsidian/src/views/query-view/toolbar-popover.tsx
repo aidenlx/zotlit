@@ -76,6 +76,8 @@ export interface ToolbarPopoverProps {
   hook: string;
   /** Called each time the popover opens. */
   onOpen?: () => void;
+  /** Called each time the popover closes. */
+  onClose?: () => void;
   /**
    * Why the control does nothing now: the button stays in place, off, with
    * this as its tooltip, and opens no popover.
@@ -93,6 +95,7 @@ export function ToolbarPopover({
   count,
   hook,
   onOpen,
+  onClose,
   off,
   className,
   children,
@@ -123,6 +126,7 @@ export function ToolbarPopover({
         onToggle={(event) => {
           setOpen(event.newState === "open");
           if (event.newState === "open") onOpen?.();
+          else onClose?.();
         }}
         // The root does not clip, so an editor's tooltip drawn in it, such
         // as the Filter popover's, reaches past its edge; the contents scroll

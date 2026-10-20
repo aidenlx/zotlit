@@ -107,7 +107,7 @@ const logger = getLogger(["views", "query-view"]);
 
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
-  query: Pick<QueryService, "run" | "on">;
+  query: Pick<QueryService, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<ZoteroReadsService, "on" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
@@ -608,6 +608,7 @@ export class QueryView extends Component implements HistorySurface {
             signal,
           );
         },
+        customFieldNames: (signal) => query.customFieldNames(signal),
       },
       literatureNotes,
       readers,
@@ -808,6 +809,11 @@ export class QueryView extends Component implements HistorySurface {
         name,
       })),
     };
+  }
+
+  /** The custom fields of the Zotero source, which `custom[...]` offers. */
+  customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
+    return this.#deps.query.customFieldNames(signal);
   }
 
   /** The surface the host is, by what it binds to `this`. */

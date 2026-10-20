@@ -1,5 +1,8 @@
 import { expect, it } from "vitest";
 
+import { ITEMS } from "@zotlit/item-query";
+
+import { datasetReceiver } from "./expression-receiver";
 import { signatureAt } from "./signature-hint";
 
 /** The hint at the `|` in `text`. */
@@ -11,7 +14,7 @@ function hintAt(
   return signatureAt(text.replace("|", ""), pos, options);
 }
 
-const typed = { receiverType: () => "string" as const };
+const typed = { receiver: () => ({ type: "string" as const }) };
 
 it("names the string slice with its second parameter marked inside title.slice(1, )", () => {
   expect(hintAt("title.slice(1, |)", typed)).toEqual({
@@ -102,7 +105,9 @@ it("closes for a name the registry does not hold", () => {
 
 it("closes for a method the receiver's type does not have", () => {
   expect(
-    hintAt("dateAdded.slice(|", { receiverType: () => "date" }),
+    hintAt("dateAdded.slice(|", {
+      receiver: () => ({ type: "date" as const }),
+    }),
   ).toBeNull();
 });
 
@@ -111,9 +116,10 @@ it("names every definition of a method whose receiver's type is unknown", () => 
     callee: "slice",
     marked: ["string:end", "list:end"],
   });
-  expect(marked("title.slice(1, |", { receiverType: () => undefined })).toEqual(
-    { callee: "slice", marked: ["string:end", "list:end"] },
-  );
+  expect(marked("title.slice(1, |", { receiver: () => undefined })).toEqual({
+    callee: "slice",
+    marked: ["string:end", "list:end"],
+  });
 });
 
 it("names a method of every value for a typed receiver", () => {
@@ -123,13 +129,28 @@ it("names a method of every value for a typed receiver", () => {
   });
 });
 
-it("types the receiver from its own text", () => {
-  const seen: string[] = [];
+it("asks for the receiver where it stands in the text", () => {
+  const seen: [string, number, number][] = [];
   hintAt("tags.filter(value.contains(|", {
-    receiverType: (text) => {
-      seen.push(text);
+    receiver: (source, { from, to }) => {
+      seen.push([source, from, to]);
       return undefined;
     },
   });
-  expect(seen).toEqual(["value"]);
+  expect(seen).toEqual([["tags.filter(value.contains(", 12, 17]]);
+});
+
+it("types a Formula and a bound name as the dataset's planner reads them", () => {
+  const receiver = datasetReceiver(ITEMS, {
+    formulas: { short: "title.slice(0, 10)" },
+  });
+  expect(marked("formula.short.slice(1, |", { receiver })).toEqual({
+    callee: "slice",
+    marked: ["string:end"],
+  });
+  // `value` is an element of `tags` there, whose type is known per Item.
+  expect(marked("tags.filter(value.slice(1, |", { receiver })).toEqual({
+    callee: "slice",
+    marked: ["string:end", "list:end"],
+  });
 });
