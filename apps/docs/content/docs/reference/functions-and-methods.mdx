@@ -14,17 +14,17 @@ Each signature shows the parameters and the type of the result. A parameter mark
 
 A global function is called by its name, such as `today()`.
 
-| Signature                                         | Description                                                                                                                                                                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `if(condition: any, then: any, else?: any) → any` | The `then` value when the condition is truthy, otherwise the `else` value or null; only the selected branch is evaluated.                                                                                                      |
-| `number(value: any) → number`                     | The value as a number: a text by the decimal number it starts with, a boolean as 1 or 0, and a date as its Unix time in milliseconds; an empty or blank text gives null, and a text that starts with no number an Error Value. |
-| `min(...values: number \| null) → number`         | The smallest number among the arguments, or null when no argument is a number.                                                                                                                                                 |
-| `max(...values: number \| null) → number`         | The largest number among the arguments, or null when no argument is a number.                                                                                                                                                  |
-| `now() → date`                                    | The instant of the Query Clock as a date with a time, the same for every call in one query.                                                                                                                                    |
-| `today() → date`                                  | The calendar day of the Query Clock in the query time zone, as a date.                                                                                                                                                         |
-| `date(text: string \| date) → date`               | The text read as a date, or a date unchanged; an empty or blank text gives null, and a text that is not a date an Error Value.                                                                                                 |
-| `duration(text: string) → duration`               | The text read as a duration, such as `"7d"` or `"PT1H30M"`; an empty or blank text gives null, and a text that is not a duration an Error Value.                                                                               |
-| `list(value: any) → list`                         | The value as a list: a list unchanged, null as the empty list, and any other value as a list of that one element.                                                                                                              |
+| Signature                                         | Description                                                                                                                                                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `if(condition: any, then: any, else?: any) → any` | The `then` value when the condition is truthy, otherwise the `else` value or null; only the selected branch is evaluated.                                                                                        |
+| `number(value: any) → number`                     | The value as a number: a text by the decimal number it starts with, a boolean as 1 or 0, and a date as its `timestamp`; an empty or blank text gives null, and a text that starts with no number an Error Value. |
+| `min(...values: number \| null) → number`         | The smallest number among the arguments, or null when no argument is a number.                                                                                                                                   |
+| `max(...values: number \| null) → number`         | The largest number among the arguments, or null when no argument is a number.                                                                                                                                    |
+| `now() → date`                                    | The instant of the Query Clock as a date with a time, the same for every call in one query.                                                                                                                      |
+| `today() → date`                                  | The calendar day of the Query Clock in the query time zone, as a date.                                                                                                                                           |
+| `date(text: string \| date) → date`               | The text read as a date, or a date unchanged; an empty or blank text gives null, and a text that is not a date an Error Value.                                                                                   |
+| `duration(text: string) → duration`               | The text read as a duration, such as `"7d"` or `"PT1H30M"`; an empty or blank text gives null, and a text that is not a duration an Error Value.                                                                 |
+| `list(value: any) → list`                         | The value as a list: a list unchanged, null as the empty list, and any other value as a list of that one element.                                                                                                |
 
 ## Methods [#methods]
 
@@ -68,37 +68,37 @@ A method is called on a value, such as `title.lower()`. Each group lists the met
 | `string.containsAll(...texts: string) → boolean`                          | Whether the text contains every one of `texts`.                                                                                                                                                                          |
 | `string.trim() → string`                                                  | The text without its leading and trailing whitespace.                                                                                                                                                                    |
 | `string.title() → string`                                                 | The text with its first code point and each code point after whitespace in upper case.                                                                                                                                   |
-| `string.repeat(count: number) → string`                                   | The text repeated `count` times, a count from 0 to 10000.                                                                                                                                                                |
-| `string.reverse() → string`                                               | The text with its characters in reverse order.                                                                                                                                                                           |
-| `string.slice(start: number, end?: number) → string`                      | The part of the text from index `start` up to, not including, `end`, counted in UTF-16 code units.                                                                                                                       |
+| `string.repeat(count: number) → string`                                   | The text repeated `count` times, for a count from 0 to 10000 and a result of at most 1000000 UTF-16 code units.                                                                                                          |
+| `string.reverse() → string`                                               | The text with its code points in reverse order.                                                                                                                                                                          |
+| `string.slice(start: number, end?: number) → string`                      | The part of the text from index `start` up to, not including, `end`, counted in UTF-16 code units; a negative index counts from the end.                                                                                 |
 | `string.replace(pattern: string \| regexp, replacement: string) → string` | The text with every occurrence of a text pattern replaced, or with the matches of a regexp pattern replaced as JavaScript does.                                                                                          |
 | `string.split(separator: string \| regexp, n?: number) → list`            | The list of the parts of the text between occurrences of `separator`, with the captures of a regexp separator between them (null for a group that does not take part), keeping the first `n` elements when `n` is given. |
 
 ### List methods [#list-methods]
 
-| Signature                                          | Description                                                                                                                                                                        |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list.isEmpty() → boolean`                         | Whether the list has no elements.                                                                                                                                                  |
-| `list.contains(value: any) → boolean`              | Whether the list has an element equal to `value`.                                                                                                                                  |
-| `list.containsAny(...values: any) → boolean`       | Whether the list has an element equal to at least one of the values, or of the elements of a single list argument.                                                                 |
-| `list.containsAll(...values: any) → boolean`       | Whether the list has an element equal to each of the values, or to each element of a single list argument.                                                                         |
-| `list.flat() → list`                               | The list with each element that is a list replaced by its elements, one level deep.                                                                                                |
-| `list.join(separator: string) → string`            | The elements of the list as text joined by `separator`, with null as the empty text.                                                                                               |
-| `list.reverse() → list`                            | The list with its elements in reverse order.                                                                                                                                       |
-| `list.slice(start: number, end?: number) → list`   | The elements of the list from index `start` up to, not including, `end`; a negative index counts from the end.                                                                     |
-| `list.sort() → list`                               | The list in ascending order: numbers by value, texts in the ZotLit Query collation, dates by their start, false before true, and elements of different types grouped by type.      |
-| `list.unique() → list`                             | The list with only the first of each group of equal elements.                                                                                                                      |
-| `list.filter(expression: any) → list`              | The elements of the list for which the expression, with `value` and `index` bound, is truthy. The expression can use `value` and `index`.                                          |
-| `list.map(expression: any) → list`                 | The list of the results of the expression for each element, with `value` and `index` bound. The expression can use `value` and `index`.                                            |
-| `list.reduce(expression: any, initial: any) → any` | The result of the expression run on each element in turn, with `acc` bound to the previous result and starting from `initial`. The expression can use `value`, `index`, and `acc`. |
-| `list.within(path: string) → boolean`              | Whether the list of Collection paths holds the Collection at `path` or a Collection below it.                                                                                      |
+| Signature                                          | Description                                                                                                                                                                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list.isEmpty() → boolean`                         | Whether the list has no elements.                                                                                                                                                                                  |
+| `list.contains(value: any) → boolean`              | Whether the list has an element equal to `value`.                                                                                                                                                                  |
+| `list.containsAny(...values: any) → boolean`       | Whether the list has an element equal to at least one of the values, or of the elements of a single list argument.                                                                                                 |
+| `list.containsAll(...values: any) → boolean`       | Whether the list has an element equal to each of the values, or to each element of a single list argument.                                                                                                         |
+| `list.flat() → list`                               | The list with each element that is a list replaced by its elements, one level deep.                                                                                                                                |
+| `list.join(separator: string) → string`            | The elements of the list as text joined by `separator`, with null as the empty text.                                                                                                                               |
+| `list.reverse() → list`                            | The list with its elements in reverse order.                                                                                                                                                                       |
+| `list.slice(start: number, end?: number) → list`   | The elements of the list from index `start` up to, not including, `end`; a negative index counts from the end.                                                                                                     |
+| `list.sort() → list`                               | The list in ascending order: numbers by value, texts in the ZotLit Query collation, dates by their start, false before true, and elements of different types grouped by type.                                      |
+| `list.unique() → list`                             | The list with only the first of each group of equal elements.                                                                                                                                                      |
+| `list.filter(expression: any) → list`              | The elements of the list for which the expression, with `value` and `index` bound, is truthy. The expression can use `value` and `index`.                                                                          |
+| `list.map(expression: any) → list`                 | The list of the results of the expression for each element, with `value` and `index` bound. The expression can use `value` and `index`.                                                                            |
+| `list.reduce(expression: any, initial: any) → any` | The result of the expression run on each element in turn, with `value`, `index`, and `acc` bound, where `acc` is the previous result, starting from `initial`. The expression can use `value`, `index`, and `acc`. |
+| `list.within(path: string) → boolean`              | Whether the list of Collection paths holds the Collection at `path` or a Collection below it.                                                                                                                      |
 
 ### Date methods [#date-methods]
 
 | Signature                               | Description                                                                                                                           |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `date.isEmpty() → boolean`              | False: a date is never empty.                                                                                                         |
-| `date.date() → date`                    | The calendar day of the date in the query time zone, without its time.                                                                |
+| `date.date() → date`                    | The calendar day of a timestamp in the query time zone, or a calendar date unchanged.                                                 |
 | `date.time() → string`                  | The time of day of the date in the query time zone, as `HH:MM:SS` text.                                                               |
 | `date.format(pattern: string) → string` | The date as text, with the tokens `YYYY`, `MM`, `DD`, `HH`, `mm`, and `ss` of `pattern` replaced by its parts in the query time zone. |
 | `date.relative() → string`              | The date as text relative to the Query Clock, such as `3 days ago` or `in 2 hours`.                                                   |
@@ -127,13 +127,13 @@ A property is read from a value without a call, such as `title.length`.
 
 ### Date properties [#date-properties]
 
-| Signature                   | Description                                                                      |
-| --------------------------- | -------------------------------------------------------------------------------- |
-| `date.year → number`        | The year of the date in the query time zone.                                     |
-| `date.month → number`       | The month of the date from 1 to 12, or null for a date of only a year.           |
-| `date.day → number`         | The day of the month of the date, or null for a date without a day.              |
-| `date.hour → number`        | The hour of the date from 0 to 23 in the query time zone, 0 for a calendar date. |
-| `date.minute → number`      | The minute of the date in the query time zone, 0 for a calendar date.            |
-| `date.second → number`      | The second of the date in the query time zone, 0 for a calendar date.            |
-| `date.millisecond → number` | The millisecond of the date in the query time zone, 0 for a calendar date.       |
-| `date.timestamp → number`   | The Unix time of the start of the date in milliseconds.                          |
+| Signature                   | Description                                                                                                    |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `date.year → number`        | The year of the date, in the query time zone for a timestamp.                                                  |
+| `date.month → number`       | The month of the date from 1 to 12, in the query time zone for a timestamp, or null for a date of only a year. |
+| `date.day → number`         | The day of the month of the date, in the query time zone for a timestamp, or null for a date without a day.    |
+| `date.hour → number`        | The hour of the date from 0 to 23 in the query time zone, 0 for a calendar date.                               |
+| `date.minute → number`      | The minute of the date in the query time zone, 0 for a calendar date.                                          |
+| `date.second → number`      | The second of the date in the query time zone, 0 for a calendar date.                                          |
+| `date.millisecond → number` | The millisecond of the date in the query time zone, 0 for a calendar date.                                     |
+| `date.timestamp → number`   | The Unix time in milliseconds of a timestamp, or of the start of a calendar date in the query time zone.       |
