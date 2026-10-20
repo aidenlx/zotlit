@@ -225,7 +225,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // What one field of a surface offers as it is typed in: the list
       // drawn in the surface's root, in Obsidian's suggestion skin, its
       // middle on top past the surface's edge where it reaches past it.
-      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;content.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null}};};const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();return {key:async(keyCode)=>{await new Promise(r=>setTimeout(r,150));contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await new Promise(r=>setTimeout(r,150));},click:async(el)=>{await new Promise(r=>setTimeout(r,150));const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await new Promise(r=>setTimeout(r,150));}};};`;
+      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;content.cmTile.root.view.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null}};};const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();return {key:async(keyCode)=>{await new Promise(r=>setTimeout(r,150));contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await new Promise(r=>setTimeout(r,150));},click:async(el)=>{await new Promise(r=>setTimeout(r,150));const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await new Promise(r=>setTimeout(r,150));}};};`;
 
       // A new Formula: `mi` offers `min()`, which Enter writes with the
       // caret between its parentheses. Escape closes the list and keeps the
@@ -247,12 +247,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         second: { page: false, open: true },
       });
 
-      // The view's filter condition: `tit` offers `title`, which a click on
-      // its row writes while the Filter popover stays open.
+      // The view's filter condition: `tit` in a call offers `title`, the
+      // list below the caret and the call's Signature Hint above it, apart.
+      // A click on the row writes it while the Filter popover stays open.
       const filter = JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{${PAGE}${LIST}const el=window.zotlitE2ECompletion.view.contentEl;const input=trusted(el.win);press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;editor.dispatch({selection:{anchor:editor.state.doc.length}});const offered=await listOf(popup,content,' && tit');const row=[...offered.list.querySelectorAll('li')].find(li=>li.querySelector('.cm-completionLabel')?.textContent==='title');await input.click(row);const after={doc:editor.state.doc.toString(),open:popup.matches(':popover-open')};popup.hidePopover();return JSON.stringify({offered:{...offered,list:undefined},after});})()`,
+          `(async()=>{${PAGE}${LIST}const el=window.zotlitE2ECompletion.view.contentEl;const input=trusted(el.win);press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;editor.dispatch({selection:{anchor:editor.state.doc.length}});const offered=await listOf(popup,content,' && max(tit');const hint=await until('Signature Hint',()=>popup.querySelector('.zt-signature-hint'));const caret=editor.coordsAtPos(editor.state.selection.main.head);const h=hint.getBoundingClientRect();const l=offered.list.getBoundingClientRect();const apart={hintAbove:h.bottom<=caret.top+1,listBelow:l.top>=caret.bottom-1};const row=[...offered.list.querySelectorAll('li')].find(li=>li.querySelector('.cm-completionLabel')?.textContent==='title');await input.click(row);const after={doc:editor.state.doc.toString(),open:popup.matches(':popover-open')};popup.hidePopover();return JSON.stringify({offered:{...offered,list:undefined},apart,after});})()`,
         ),
       );
       expect(filter).toEqual({
@@ -261,7 +262,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           shown: true,
           first: { label: "title", type: "string" },
         },
-        after: { doc: "title.length > 0 && title", open: true },
+        apart: { hintAbove: true, listBelow: true },
+        after: { doc: "title.length > 0 && max(title", open: true },
       });
     },
     120000,
