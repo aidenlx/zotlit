@@ -48,6 +48,20 @@ describe("filter expression highlighting", () => {
     ]);
   });
 
+  it("colors each method of a chain as a function, in document order", () => {
+    expect(hooks("a.b().c()")).toEqual([
+      ["a", "zt-template-property"],
+      [".", "zt-template-punctuation"],
+      ["b", "zt-template-filter"],
+      ["(", "zt-template-punctuation"],
+      [")", "zt-template-punctuation"],
+      [".", "zt-template-punctuation"],
+      ["c", "zt-template-filter"],
+      ["(", "zt-template-punctuation"],
+      [")", "zt-template-punctuation"],
+    ]);
+  });
+
   it("keeps `this` and `formula` plain names, colored as properties", () => {
     expect(hooks("this.file.name")).toEqual([
       ["this", "zt-template-property"],

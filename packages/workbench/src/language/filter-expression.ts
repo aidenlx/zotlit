@@ -5,13 +5,14 @@
 // values.
 import { LRLanguage, syntaxTree } from "@codemirror/language";
 import type { Range } from "@codemirror/state";
-import { Decoration, ViewPlugin } from "@codemirror/view";
-import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
+import { Decoration } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
 import { highlightTree, styleTags, tags } from "@lezer/highlight";
 
 import { parser } from "@zotlit/filter-expression";
 
+import { decorationLayer, gapsAround } from "./decorations";
+import type { Span } from "./decorations";
 import { templateHighlighter, templateToken } from "./highlight";
 
 export const filterExpressionLanguage = LRLanguage.define({
@@ -37,8 +38,8 @@ export const filterExpressionLanguage = LRLanguage.define({
  * call's arguments sit beside its callee in the tree, so a tag rule cannot
  * single the callee out; this walk takes each call's first child.
  */
-function callees(tree: Tree): { from: number; to: number }[] {
-  const names: { from: number; to: number }[] = [];
+function callees(tree: Tree): Span[] {
+  const names: Span[] = [];
   tree.iterate({
     enter(node) {
       if (node.name !== "Call") return;
@@ -48,56 +49,46 @@ function callees(tree: Tree): { from: number; to: number }[] {
         names.push({ from: name.from, to: name.to });
     },
   });
-  return names;
+  // A method call's receiver can itself be a call, entered after it.
+  return names.sort((a, b) => a.from - b.from);
 }
 
 /**
  * Highlights a Filter Expression tree with the template token hooks, the
  * callee of each call taking the function hook.
+ * @param put Receives each highlighted token once, in document order; the
+ *   ranges do not overlap.
  */
 export function highlightFilterExpression(
   tree: Tree,
   put: (from: number, to: number, classes: string) => void,
 ): void {
   const names = callees(tree);
-  highlightTree(tree, templateHighlighter, (from, to, classes) => {
-    let start = from;
-    for (const name of names) {
-      if (name.to <= start || name.from >= to) continue;
-      if (start < name.from) put(start, name.from, classes);
-      put(
-        Math.max(start, name.from),
-        Math.min(to, name.to),
-        templateToken.filter,
-      );
-      start = Math.min(to, name.to);
-    }
-    if (start < to) put(start, to, classes);
-  });
+  const tokens: (Span & { classes: string })[] = names.map((name) => ({
+    ...name,
+    classes: templateToken.filter,
+  }));
+  highlightTree(tree, templateHighlighter, (from, to, classes) =>
+    gapsAround({ from, to }, names, (start, end) =>
+      tokens.push({ from: start, to: end, classes }),
+    ),
+  );
+  for (const token of tokens.sort((a, b) => a.from - b.from))
+    put(token.from, token.to, token.classes);
 }
 
-function decorations(view: EditorView): DecorationSet {
-  const marks: Range<Decoration>[] = [];
-  highlightFilterExpression(syntaxTree(view.state), (from, to, classes) => {
-    marks.push(Decoration.mark({ class: classes }).range(from, to));
-  });
-  return Decoration.set(marks, true);
-}
-
-/** Colors the Filter Expression in an editor with the template token hooks. */
-export const filterExpressionHighlighting = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-    constructor(view: EditorView) {
-      this.decorations = decorations(view);
-    }
-    update(update: ViewUpdate) {
-      if (
-        update.docChanged ||
-        syntaxTree(update.state) !== syntaxTree(update.startState)
-      )
-        this.decorations = decorations(update.view);
-    }
+export const filterExpressionHighlighting = decorationLayer(
+  (view) => {
+    const marks: Range<Decoration>[] = [];
+    highlightFilterExpression(syntaxTree(view.state), (from, to, classes) => {
+      marks.push(Decoration.mark({ class: classes }).range(from, to));
+    });
+    return Decoration.set(marks);
   },
-  { decorations: (plugin) => plugin.decorations },
+  {
+    // The parse can finish after the edit that started it.
+    rebuild: (update) =>
+      update.docChanged ||
+      syntaxTree(update.state) !== syntaxTree(update.startState),
+  },
 );
