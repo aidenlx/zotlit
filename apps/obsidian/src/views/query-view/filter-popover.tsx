@@ -37,7 +37,10 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
 import { conditionFaults } from "./expression-faults";
-import { expressionVocabulary } from "./expression-vocabulary";
+import {
+  expressionVocabulary,
+  useCustomFieldNames,
+} from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -410,6 +413,7 @@ export function FilterButton({ view }: { view: QueryView }) {
     [names, literatureNotes, properties, vaultVersion],
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
+  const custom = useCustomFieldNames(view);
   if (!file || !shown) return null;
   return (
     <ToolbarPopover
@@ -439,8 +443,9 @@ export function FilterButton({ view }: { view: QueryView }) {
           expressionVocabulary({
             dataset,
             properties,
-            formulas: Object.keys(file.formulas ?? {}),
+            formulas: file.formulas ?? {},
             context: view.contextSource !== undefined,
+            custom,
             // Only a view of Items reads vault properties.
             ...(dataset === "items" && { vaultNames: names }),
           })

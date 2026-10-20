@@ -24,7 +24,7 @@ function editor(doc: string, extra: Extension = []) {
       doc,
       extensions: [
         filterExpressionLanguage,
-        signatureHint({ receiverType: () => "string" }),
+        signatureHint({ receiver: () => ({ type: "string" }) }),
         EditorView.updateListener.of((update) => {
           if (!update.focusChanged) return;
           focusChanged.resolve();

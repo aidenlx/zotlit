@@ -18,6 +18,8 @@ import type {
   FunctionParameter,
 } from "@zotlit/item-query";
 
+import type { Span } from "./span";
+
 /** One parameter as the hint names it. */
 export interface HintParameter {
   readonly name: string;
@@ -49,11 +51,14 @@ export interface SignatureHintResult {
 
 export interface SignatureHintOptions {
   /**
-   * The static type of a method call's receiver, given the receiver's text,
-   * or undefined when it is not known. Without it, a method names every
-   * definition of its name.
+   * What a method call's receiver at `at` of `source` is, as the planner
+   * reads it where it stands; undefined, or no type, when it is not known.
+   * Without it, a method names every definition of its name.
    */
-  readonly receiverType?: (text: string) => FilterValueType | undefined;
+  readonly receiver?: (
+    source: string,
+    at: Span,
+  ) => { readonly type: FilterValueType | undefined } | undefined;
 }
 
 type Definition = Pick<
@@ -117,7 +122,7 @@ function callAround(inner: SyntaxNode, pos: number): SyntaxNode | null {
 export function signatureAt(
   text: string,
   pos: number,
-  { receiverType }: SignatureHintOptions = {},
+  { receiver: receiverOf }: SignatureHintOptions = {},
 ): SignatureHintResult | null {
   const tree = parser.parse(text);
   const call = callAround(tree.resolveInner(pos, -1), pos);
@@ -139,7 +144,10 @@ export function signatureAt(
   if (!name || !receiver) return null;
   const method = text.slice(name.from, name.to);
   const named = METHOD_ENTRIES.filter(([, entryName]) => entryName === method);
-  const type = receiverType?.(text.slice(receiver.from, receiver.to));
+  const type = receiverOf?.(text, {
+    from: receiver.from,
+    to: receiver.to,
+  })?.type;
   // A type's own method comes before the method of every value, as the
   // evaluator looks them up.
   const own =

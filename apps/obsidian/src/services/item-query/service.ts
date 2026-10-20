@@ -237,6 +237,32 @@ export class QueryService extends Service {
   }
 
   /**
+   * The custom fields of the active Zotero source, by name, as the schema
+   * command answers them; none when the source cannot answer.
+   * @throws The startup failure of the service, or an internal error.
+   */
+  async customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
+    const answer: unknown = JSON.parse(
+      await this.schema({ from: "items" }, signal),
+    );
+    if (
+      typeof answer !== "object" ||
+      answer === null ||
+      !("customFields" in answer) ||
+      !Array.isArray(answer.customFields)
+    )
+      return [];
+    return answer.customFields.flatMap((field: unknown) =>
+      typeof field === "object" &&
+      field !== null &&
+      "name" in field &&
+      typeof field.name === "string"
+        ? [field.name]
+        : [],
+    );
+  }
+
+  /**
    * Run `job` as a fiber of the map under `id`, or under an unnamed key
    * without one; `signal` interrupts it. The fiber is uninterruptible outside
    * the waits of the job, so an answer that arrives wins a later cancel. The

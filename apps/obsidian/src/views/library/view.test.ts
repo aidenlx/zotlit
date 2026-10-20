@@ -562,7 +562,7 @@ function pluginData(stored?: unknown) {
         }),
     },
     libraryScope,
-    query: { run, on: () => () => {} },
+    query: { run, on: () => () => {}, customFieldNames: async () => [] },
     lookup: {
       openSession: () => ({
         search,

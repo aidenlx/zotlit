@@ -50,10 +50,8 @@ import { MatchSelect } from "./match.rows";
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
-import {
-  datasetExpressionFields,
-  datasetReceiverType,
-} from "#/language/filter-expression-completion";
+import { datasetReceiver } from "#/language/expression-receiver";
+import { datasetExpressionFields } from "#/language/filter-expression-completion";
 
 export type {
   ConditionControlProps,
@@ -69,7 +67,7 @@ export type {
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
 /** How the Items dataset types a receiver; one function for every Profile. */
-const itemReceiverType = datasetReceiverType(ITEMS);
+const itemReceiver = datasetReceiver(ITEMS);
 
 /**
  * What a Profile Match condition reads: the fields of an Item, labelled as
@@ -82,7 +80,7 @@ function profileExpressions(locale: string): ExpressionVocabulary {
     fields: datasetExpressionFields(ITEMS, (path) => labels[path]),
     context: false,
     formulas: [],
-    receiverType: itemReceiverType,
+    receiver: itemReceiver,
   };
 }
 

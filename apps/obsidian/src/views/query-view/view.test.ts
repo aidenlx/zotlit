@@ -327,7 +327,7 @@ async function mount(
         ],
       },
     },
-    query: { run, on: () => () => {} },
+    query: { run, on: () => () => {}, customFieldNames: async () => [] },
     annotations: {
       read: () => Promise.resolve(list),
       peek: () => ({ value: list }),

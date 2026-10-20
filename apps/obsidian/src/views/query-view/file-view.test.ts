@@ -59,7 +59,11 @@ async function openTab() {
     },
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run: () => Promise.resolve(EMPTY), on: () => () => {} },
+    query: {
+      run: () => Promise.resolve(EMPTY),
+      on: () => () => {},
+      customFieldNames: async () => [],
+    },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     literatureNotes: noLiteratureNotes(),

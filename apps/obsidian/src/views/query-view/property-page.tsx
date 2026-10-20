@@ -32,7 +32,10 @@ import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
 import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
-import { expressionVocabulary } from "./expression-vocabulary";
+import {
+  expressionVocabulary,
+  useCustomFieldNames,
+} from "./expression-vocabulary";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import type { FormulaIssue } from "./results";
@@ -187,18 +190,20 @@ function ExpressionField({
   const properties = useViewProperties(view);
   const dataset = useStore(view.state, (s) => s.view?.from);
   const formulas = useStore(view.state, (s) => s.file?.formulas);
+  const custom = useCustomFieldNames(view);
   // A Formula reads no vault property, and naming itself is a cycle.
   const vocabulary = useMemo(
     () =>
       expressionVocabulary({
         dataset,
         properties,
-        formulas: Object.keys(formulas ?? {}).filter(
-          (name) => name !== formula,
+        formulas: Object.fromEntries(
+          Object.entries(formulas ?? {}).filter(([name]) => name !== formula),
         ),
         context: view.contextSource !== undefined,
+        custom,
       }),
-    [dataset, properties, formulas, formula, view],
+    [dataset, properties, formulas, formula, view, custom],
   );
   return (
     <WorkbenchThemeProvider theme={matchTheme}>
