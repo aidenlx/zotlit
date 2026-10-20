@@ -21,6 +21,8 @@ export const themeHook = {
   templateFilter: "zt-template-filter",
   templateString: "zt-template-string",
   templateValue: "zt-template-value",
+  /** A regular expression; it also carries {@link themeHook.templateValue}. */
+  templateRegexp: "zt-template-regexp",
   templateOperator: "zt-template-operator",
   templatePunctuation: "zt-template-punctuation",
   templateComment: "zt-template-comment",

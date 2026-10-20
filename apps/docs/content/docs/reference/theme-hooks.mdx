@@ -243,6 +243,7 @@ Liquid tokens keep their own colors inside YAML values and Markdown code spans a
 | `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                 |
 | `zt-template-string`               | A string literal.                                                        |
 | `zt-template-value`                | A number, boolean, or null.                                              |
+| `zt-template-regexp`               | An additional class on a regular expression, which is also a value.      |
 | `zt-template-operator`             | An operator: `.`, `>`, `\|`.                                             |
 | `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets.                                   |
 | `zt-template-comment`              | Template comment text.                                                   |
@@ -254,7 +255,7 @@ Liquid tokens keep their own colors inside YAML values and Markdown code spans a
 
 ### Default appearance [#template-defaults]
 
-The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
+The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. A regular expression takes `--zt-template-regexp`, which is the value color by default. The hover popover is Obsidian's own `hover-popover`, sized to its text.
 
 Frontmatter takes `--text-muted`. Template tokens keep their colors inside frontmatter. Heading and quote markers take `--text-faint`; list markers take `--list-marker-color`. These roles change color only. All Template Workbench View panes keep their existing monospace font, code size, spacing, and background.
 
@@ -270,6 +271,10 @@ Set a custom property on the editor hook to recolor one kind of token in every p
   font-style: normal;
 }
 ```
+
+### Expression Colors [#expression-colors]
+
+A Filter Expression field uses Obsidian's code colors, as a formula in a `.base` file does: a Formula, a Query View filter condition, and a Match condition in the Template Workbench View. Names and property paths take `--code-property`. The function or method a call names takes `--code-function`. Numbers, `true`, `false`, and `null` take `--code-value`. Strings take `--code-string`, operators `--code-operator`, punctuation `--code-punctuation`, and regular expressions `--code-important`. Other text takes `--code-normal`. A theme that sets these code colors recolors the expression fields too.
 
 ## CSS examples [#examples]
 

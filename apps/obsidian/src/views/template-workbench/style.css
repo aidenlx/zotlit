@@ -91,12 +91,27 @@
   --zt-template-property: var(--text-normal);
   --zt-template-string: var(--text-muted);
   --zt-template-value: var(--text-muted);
+  --zt-template-regexp: var(--zt-template-value);
   --zt-template-punctuation: var(--text-muted);
   --zt-template-comment: var(--text-faint);
   --zt-template-invalid: var(--text-error);
   --zt-template-frontmatter: var(--text-muted);
   --zt-template-markdown-marker: var(--text-faint);
   --zt-template-markdown-list-marker: var(--list-marker-color);
+}
+/* Expression Colors: a Filter Expression field — a Formula, a Query View
+   filter condition, a Match condition — takes the code colors Obsidian gives
+   the same tokens in a `.base` file, so a theme's code palette applies. */
+.zt-template-editor[data-part="expression"] {
+  color: var(--code-normal);
+  --zt-template-variable: var(--code-property);
+  --zt-template-property: var(--code-property);
+  --zt-template-filter: var(--code-function);
+  --zt-template-value: var(--code-value);
+  --zt-template-string: var(--code-string);
+  --zt-template-operator: var(--code-operator);
+  --zt-template-punctuation: var(--code-punctuation);
+  --zt-template-regexp: var(--code-important);
 }
 .zt-template-delimiter {
   color: var(--zt-template-delimiter);
@@ -121,6 +136,9 @@
 }
 .zt-template-value {
   color: var(--zt-template-value);
+}
+.zt-template-regexp {
+  color: var(--zt-template-regexp);
 }
 .zt-template-punctuation {
   color: var(--zt-template-punctuation);
