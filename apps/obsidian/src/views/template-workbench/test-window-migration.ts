@@ -8,20 +8,22 @@ export function windowMigration() {
     HTMLElement.prototype,
     "onWindowMigrated",
   );
-  let migrate: ((win: Window) => void) | null = null;
-  /** Called when the element releases its listener. */
+  const listeners: ((win: Window) => void)[] = [];
+  /** Called when an element releases its listener. */
   const release = vi.fn();
   Object.defineProperty(HTMLElement.prototype, "onWindowMigrated", {
     configurable: true,
     value: (listener: (win: Window) => void) => {
-      migrate = listener;
+      listeners.push(listener);
       return release;
     },
   });
   return {
     release,
-    /** Moves the element that listened last to `win`. */
-    move: (win: Window) => migrate?.(win),
+    /** Tells every listener that its element moved to `win`. */
+    move: (win: Window) => {
+      for (const listener of listeners) listener(win);
+    },
     [Symbol.dispose]() {
       if (original) {
         Object.defineProperty(

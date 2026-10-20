@@ -710,6 +710,10 @@ export interface ChooserPopupProps extends Omit<
  * painting after it closes, dropping out of the top layer so the view behind
  * draws over it. It reads as a popup that will not close and has lost its
  * background.
+ *
+ * The root does not clip: the popover user-agent rule makes it a scroll box,
+ * which would cut off an editor's tooltip drawn in it, such as a Formula
+ * page's. Its rows and its pages scroll in boxes of their own.
  */
 function Popup({
   className,
@@ -793,7 +797,7 @@ function Popup({
       {...rest}
       className={cn(
         themeHook.chooser,
-        "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
+        "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:overflow-visible zt:[&:popover-open]:flex",
         // No padding of its own: the search field runs edge to edge over its
         // rule, and the list carries the inset — `--menu-padding` — as
         // Obsidian's Bases toolbar menus are built.

@@ -1,7 +1,9 @@
 // The CodeMirror side of the Obsidian look: code panes carry a class the
-// stylesheet keys monospace typography on.
+// stylesheet keys monospace typography on, and expression editors draw their
+// tooltips in the top-layer surface they sit in.
+import { Compartment } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, ViewPlugin } from "@codemirror/view";
+import { EditorView, ViewPlugin, tooltips } from "@codemirror/view";
 
 /** The class the stylesheet keys monospace typography on. */
 export const CODE_PANE_CLASS = "zt-template-workbench-code";
@@ -42,6 +44,44 @@ export const hostedEditor: Extension = [
       view.requestMeasure();
     });
     return { destroy: dispose };
+  }),
+];
+
+const tooltipPlacement = new Compartment();
+
+/**
+ * Draws an expression editor's tooltips in the popover it sits in, such as
+ * the Filter popover or the chooser page of a Formula, and in the page's body
+ * outside one. A popover is in the top layer, so a tooltip in the body would
+ * draw under it, and a click on that tooltip would light-dismiss the popover.
+ * The popover's root does not clip — its contents scroll in an inner box — so
+ * a tooltip drawn there reaches past the popover's edge.
+ *
+ * The editor stands in the page only once it is made, so the place is chosen
+ * a microtask later, and again when the view moves to another window, whose
+ * body then holds the tooltips of an editor outside a popover.
+ */
+export const popoverTooltips: Extension = [
+  tooltipPlacement.of([]),
+  ViewPlugin.define((view) => {
+    let live = true;
+    const place = () => {
+      if (!live) return;
+      const parent =
+        view.dom.closest<HTMLElement>("[popover]") ??
+        view.dom.ownerDocument.body;
+      view.dispatch({
+        effects: tooltipPlacement.reconfigure(tooltips({ parent })),
+      });
+    };
+    queueMicrotask(place);
+    const stopMigration = view.dom.onWindowMigrated(place);
+    return {
+      destroy() {
+        live = false;
+        stopMigration();
+      },
+    };
   }),
 ];
 
