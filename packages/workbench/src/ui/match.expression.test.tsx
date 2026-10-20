@@ -1,8 +1,10 @@
+import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { MatchExpressionInput } from "./match.expression";
+import type { ExpressionFault } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
 
 afterEach(cleanup);
@@ -24,4 +26,33 @@ it("mounts the extension the theme supplies for expression editors", () => {
       .querySelector(".cm-editor")
       ?.classList.contains("host-expression"),
   ).toBe(true);
+});
+
+it("underlines the faults it is given, with no lint tooltip, and clears them", async () => {
+  const text = "lower(title) == 'book";
+  const field = (faults: readonly ExpressionFault[]) => (
+    <MatchExpressionInput value={text} onChange={() => {}} faults={faults} />
+  );
+  const mounted = render(
+    field([{ from: 16, to: 21, message: "The string has no closing quote." }]),
+  );
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const marked: string[] = [];
+  forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
+    marked.push(editor.state.sliceDoc(from, to));
+  });
+  expect(marked).toEqual(["'book"]);
+  const mark = mounted.container.querySelector(".cm-lintRange-error")!;
+  expect(mark.textContent).toBe("'book");
+  fireEvent.mouseMove(mark);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const tooltip = mounted.container.querySelector(".cm-tooltip-lint");
+  expect(tooltip === null || getComputedStyle(tooltip).display === "none").toBe(
+    true,
+  );
+  expect(mounted.container.querySelector(".cm-gutters")).toBeNull();
+  act(() => mounted.rerender(field([])));
+  expect(mounted.container.querySelector(".cm-lintRange-error")).toBeNull();
 });

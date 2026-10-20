@@ -3,6 +3,7 @@
 // color theirs.
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting } from "@codemirror/language";
+import { linter, setDiagnostics } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView,
@@ -32,8 +33,22 @@ const contentAttributes = ({
 /** Marks the edit that brings in a new `value`, which is not the user's. */
 const fromValue = Annotation.define<true>();
 
+/** A Fault of the field's text: the span it names, which the field underlines. */
+export interface ExpressionFault {
+  readonly from: number;
+  readonly to: number;
+  readonly message: string;
+}
+
+const NO_FAULTS: readonly ExpressionFault[] = [];
+
 export interface MatchExpressionInputProps {
   value: string;
+  /**
+   * The Faults of `value` to underline. The owner passes them, as its status
+   * line reports them; the field shows no tooltip over them.
+   */
+  faults?: readonly ExpressionFault[];
   /** Each edit, with the window the field is in. */
   onChange: (text: string, win: Window) => void;
   onBlur?: () => void;
@@ -53,6 +68,7 @@ export interface MatchExpressionInputProps {
  */
 export function MatchExpressionInput({
   value,
+  faults = NO_FAULTS,
   onChange,
   onBlur,
   "aria-label": label,
@@ -101,12 +117,15 @@ export function MatchExpressionInput({
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
+          linter(null, { tooltipFilter: () => [] }),
           // CodeMirror's base theme is unlayered CSS, so it outranks a
           // host's layered utilities on these parts.
           EditorView.theme({
             "&.cm-focused": { outline: "none" },
             ".cm-content": { minHeight: `${lines * 1.5}em`, padding: "0" },
             ".cm-line": { padding: "0" },
+            // CodeMirror still mounts an empty filtered tooltip.
+            ".cm-tooltip-lint": { display: "none" },
           }),
           placeholder ? placeholderText(placeholder) : [],
           EditorView.contentAttributes.of({ spellcheck: "false" }),
@@ -144,6 +163,24 @@ export function MatchExpressionInput({
       annotations: fromValue.of(true),
     });
   }, [value]);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    const length = editor.state.doc.length;
+    editor.dispatch(
+      setDiagnostics(
+        editor.state,
+        faults
+          .filter(({ from, to }) => from <= to && to <= length)
+          .map(({ from, to, message }) => ({
+            from,
+            to,
+            message,
+            severity: "error",
+          })),
+      ),
+    );
+  }, [faults, value]);
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
