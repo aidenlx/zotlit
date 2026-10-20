@@ -79,13 +79,13 @@ To list the annotations as text in the note, put the loop below in your own Prof
 {% endfor %}
 ```
 
-## Annotation template
+## Annotation template [#annotation-template]
 
 In a Profile document: the Annotation Section, the final section after the standalone line `--- zotlit:annotation ---`.
 
 ```liquid
 {% bq %}
-[!note] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}
+[!note] {% if zt.pageLabel %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
 
 {{ zt.imgLink | embed }}{{ zt.text }}
 {% if zt.comment %}
@@ -98,20 +98,20 @@ In a Profile document: the Annotation Section, the final section after the stand
 Rendered output for an annotation on page 42 with an image excerpt, highlighted text, and a comment:
 
 ```markdown
-> [!note] Page [42](file:///Users/me/Zotero/storage/ABCD2345/paper.pdf#page=42&zt-annotation=ANNX2345)
+> [!note] Page [42](zotero://open/library/items/ABCD2345?annotation=ANNX2345&page=42)
 >
 > ![[excerpt.png]]The highlighted passage
 >
 > My thoughts on this
 ```
 
-| Element      | Source                                                                                                                                                                                                                              |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                                                                 |
-| Page label   | `{{ zt \| file_link: zt.pageLabel }}` in the callout title: the page label, linked to the attachment file. Click it and the PDF opens on that page with this annotation selected. A label with no resolvable file stays plain text. |
-| Image        | `{{ zt.imgLink \| embed }}`: embeds a prepared image or ink excerpt. A failed refresh keeps a verified previous image, or returns an unavailable-image explanation and source link. Collapses to `""` for other annotation types.   |
-| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                                                           |
-| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                                                           |
+| Element      | Source                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                                                                                                                                                                                                                                                                                          |
+| Page label   | `Page [{{ zt.pageLabel }}]({{ zt.backlink }})` in the callout title: the page label, linked to the annotation's durable Zotero link, [`zt.backlink`](/docs/reference/templates/data#annotation-template). Click it and the PDF opens on this annotation, in Obsidian's reader when this computer holds the PDF. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links). An annotation with no page label shows `Zotero` as the link text. |
+| Image        | `{{ zt.imgLink \| embed }}`: embeds a prepared image or ink excerpt. A failed refresh keeps a verified previous image, or returns an unavailable-image explanation and source link. Collapses to `""` for other annotation types.                                                                                                                                                                                                                            |
+| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                                                                                                                                                                                                                                                                                    |
 
 The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.
 
