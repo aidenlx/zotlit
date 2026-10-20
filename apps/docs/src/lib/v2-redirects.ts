@@ -13,8 +13,9 @@
 //   - No chains: a destination is never another entry's source, nor a v1 source.
 //     When a page moves twice, point the first entry straight at the final URL.
 //   - A v1 `PAGE_MAP` destination is never a source here. When a page a v1
-//     permalink lands on moves, edit that `PAGE_MAP` value in v1-routes.ts to the
-//     new URL instead, so a v1 link takes one hop rather than two.
+//     permalink lands on moves, change that `PAGE_MAP` value in v1-routes.ts to
+//     the new URL too, then add the entry here; the entry fails the tests until
+//     `PAGE_MAP` no longer names the old URL, so a v1 link takes one hop.
 //
 // Anchors do not travel with a redirect: the server never sees the `#fragment`,
 // and the browser reapplies it to the destination. A section that moves to

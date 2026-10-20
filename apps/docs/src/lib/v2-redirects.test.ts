@@ -32,7 +32,7 @@ function problems(moves: Record<string, string>): string[] {
     if (to in moves) found.push(`${from} → ${to} chains into another move`);
     if (v1Sources.has(to)) found.push(`${from} → ${to} chains into a v1 rule`);
     if (v1Destinations.has(from)) {
-      found.push(`${from} is a PAGE_MAP destination; update PAGE_MAP instead`);
+      found.push(`${from} is a PAGE_MAP destination; point PAGE_MAP at ${to}`);
     }
     if (!docsPages.has(to)) found.push(`${from} → ${to} is no docs page`);
   }
@@ -62,7 +62,7 @@ describe("the moves table's rules", () => {
   it("rejects a v1 permalink table destination as a source", () => {
     const [v1Target] = v1Destinations;
     expect(problems({ [v1Target!]: LIVE })).toEqual([
-      `${v1Target} is a PAGE_MAP destination; update PAGE_MAP instead`,
+      `${v1Target} is a PAGE_MAP destination; point PAGE_MAP at ${LIVE}`,
     ]);
   });
 
