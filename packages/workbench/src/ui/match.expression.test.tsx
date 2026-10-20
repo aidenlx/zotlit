@@ -4,9 +4,14 @@ import { EditorView } from "@codemirror/view";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { MatchExpressionInput } from "./match.expression";
+import {
+  ExpressionTypesProvider,
+  MatchExpressionInput,
+} from "./match.expression";
 import type { FaultSpan } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
+
+import { documentFocus } from "#/language/test-utils";
 
 afterEach(cleanup);
 
@@ -78,6 +83,26 @@ it("offers no completion without a vocabulary", () => {
   startCompletion(view);
   // A list that would open stands pending from the request on.
   expect(completionStatus(view.state)).toBeNull();
+});
+
+it("shows the Signature Hint of the method at the caret, typed as the host types it", () => {
+  using _focus = documentFocus();
+  const { container } = render(
+    <ExpressionTypesProvider
+      types={{
+        receiverType: (text) => (text === "title" ? "string" : undefined),
+      }}
+    >
+      <MatchExpressionInput value="title.slice(1, )" onChange={() => {}} />
+    </ExpressionTypesProvider>,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.focus();
+  view.dispatch({ selection: { anchor: "title.slice(1, ".length } });
+  const hint = container.querySelector(".zt-signature-hint")!;
+  expect(hint.querySelector("mark")?.textContent).toBe("end?: number");
+  expect(hint.textContent).toContain("The part of the text");
+  expect(hint.textContent).not.toContain("The elements of the list");
 });
 
 // The look of the underline, and that no tooltip shows over it, are proved

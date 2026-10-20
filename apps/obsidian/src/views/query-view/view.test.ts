@@ -43,7 +43,7 @@ import type { ContextSource } from "./context-hint";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
-import { formulaIssuesOf, formulaSpansOf } from "./results";
+import { formulaIssuesOf } from "./results";
 import { inferType } from "./table-notes";
 import type {
   VaultEdit,
@@ -1661,6 +1661,30 @@ it("underlines the query's Fault in an expression condition, and a Syntax Fault 
   expect(underlined()).toEqual(['"yellow']);
 });
 
+it("underlines the Fault of a vault condition at its span in the condition", async () => {
+  const { view, el, settle } = await mount([], () => {}, {
+    propertyNames: ["status"],
+  });
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'title != null && vault["status"].nope()'
+`),
+  );
+  await settle();
+
+  const editor = EditorView.findFromDOM(
+    section(el, "view").querySelector("[data-condition-row] .cm-editor")!,
+  )!;
+  const marked: string[] = [];
+  forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
+    marked.push(editor.state.sliceDoc(from, to));
+  });
+  expect(marked).toEqual(["nope"]);
+});
+
 it("offers the Tags and Collections of the Libraries the view reads", async () => {
   const { view } = await mount([]);
   await expect(view.filterValues()).resolves.toEqual({
@@ -2928,14 +2952,20 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
     phase: "ready",
     results: {
       formulaIssues: {
-        short: "In formula.short: nope is not a method of string. Use slice.",
+        short: {
+          message:
+            "In formula.short: nope is not a method of string. Use slice.",
+        },
       },
     },
   });
   // The formula page underlines the Fault at its place in the text the run
   // planned.
-  expect(formulaSpansOf(view.state.getState())).toEqual({
-    short: { text: "title.nope()", span: { from: 6, to: 10 } },
+  expect(formulaIssuesOf(view.state.getState())).toEqual({
+    short: {
+      message: "In formula.short: nope is not a method of string. Use slice.",
+      place: { text: "title.nope()", span: { from: 6, to: 10 } },
+    },
   });
   expect(tableText(el)).toEqual([
     ["", "Title", "formula.year", "formula.short"],
@@ -3010,7 +3040,10 @@ it("keeps the count, the Formula marks and the Error Values with the last result
     results: {
       count: 1,
       formulaIssues: {
-        short: "In formula.short: nope is not a method of string. Use slice.",
+        short: {
+          message:
+            "In formula.short: nope is not a method of string. Use slice.",
+        },
       },
     },
   });
@@ -3105,7 +3138,7 @@ it("keeps the Formula marks of the cards on screen when it keeps back a run", as
 
   expect(run).toHaveBeenCalledTimes(2);
   expect(formulaIssuesOf(view.state.getState())).toEqual({
-    short: "First run.",
+    short: { message: "First run." },
   });
 });
 
@@ -3164,10 +3197,17 @@ it("marks a wrong Formula and each Formula that reads it with its own reason", a
     phase: "ready",
     results: {
       formulaIssues: {
-        year: "In formula.year: dat is not a field of Items. Use date.",
-        next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
-        after:
-          "formula.after reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+        year: {
+          message: "In formula.year: dat is not a field of Items. Use date.",
+        },
+        next: {
+          message:
+            "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+        },
+        after: {
+          message:
+            "formula.after reads formula.next, which has a mistake. Correct the mistake in formula.year.",
+        },
       },
     },
   });
@@ -3229,8 +3269,13 @@ it("marks the condition that reads a wrong Formula, and shows no rows until it i
           "The filter reads formula.next, which has a mistake. Correct the mistake in formula.year.",
       },
       formulaIssues: {
-        year: "In formula.year: dat is not a field of Items. Use date.",
-        next: "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+        year: {
+          message: "In formula.year: dat is not a field of Items. Use date.",
+        },
+        next: {
+          message:
+            "formula.next reads formula.year, which has a mistake. Correct the mistake in formula.year.",
+        },
       },
     },
   });
@@ -3337,7 +3382,10 @@ views:
     ["constructor", "title"],
   ]);
   expect(Object.entries(formulaIssuesOf(view.state.getState()))).toEqual([
-    ["__proto__", "In formula.__proto__: dat is not a field of Items."],
+    [
+      "__proto__",
+      { message: "In formula.__proto__: dat is not a field of Items." },
+    ],
   ]);
   expect(
     el

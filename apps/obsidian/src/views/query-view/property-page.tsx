@@ -13,6 +13,7 @@ import { useStore } from "zustand";
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
 import {
+  ExpressionTypesProvider,
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
@@ -29,13 +30,15 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
+import { expressionTypes } from "@/views/template-workbench/expression-types";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
+import { datasetSpec } from "./datasets";
 import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
-import type { PlacedFault } from "./expression-faults";
 import { expressionVocabulary } from "./expression-vocabulary";
 import { displayName, formulaProperty } from "./query-file";
-import { formulaIssuesOf, formulaSpansOf } from "./results";
+import { formulaIssuesOf } from "./results";
+import type { FormulaIssue } from "./results";
 import type { QueryView } from "./view";
 import { fieldLabel, useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -55,12 +58,9 @@ export function formulaNameIssue(
 }
 
 /** What the last run found in a Formula. */
-export interface FormulaRunFault {
+export interface FormulaRunFault extends FormulaIssue {
   /** The Formula's saved text. */
   readonly saved: string;
-  readonly message: string;
-  /** Where the Fault is in the text the run planned, where it names a place. */
-  readonly place?: PlacedFault | undefined;
 }
 
 /** What the Formula field reports and underlines. */
@@ -88,14 +88,14 @@ export function formulaCheck(
       syntax: "invalid",
       faults: [],
     };
-  const { error } = parseExpression(text);
+  const { tree, error } = parseExpression(text);
   if (error) {
     const expected = error.expected.join(", ");
     const issue =
       error.found === null
         ? m.query_view_formula_syntax_end({ expected })
         : m.query_view_formula_syntax({ found: error.found, expected });
-    const span = syntaxFaultSpan(text, error);
+    const span = syntaxFaultSpan(tree, error);
     return { issue, syntax: "invalid", faults: span ? [span] : [] };
   }
   if (run === null || run.saved !== text)
@@ -176,6 +176,7 @@ function ExpressionField({
   onBlur,
   check: { issue, syntax, faults },
 }: {
+  /** The view whose Query Dataset the Formula reads. */
   view: QueryView;
   /** The Formula the text defines, which its completion leaves out; `null` for a new one. */
   formula: string | null;
@@ -244,6 +245,19 @@ function ExpressionField({
           onChange={onChange}
           onBlur={onBlur}
         />
+        <ExpressionTypesProvider
+          types={expressionTypes(datasetSpec(dataset).engine)}
+        >
+          <MatchExpressionInput
+            lines={3}
+            aria-invalid={value !== "" && issue !== null}
+            value={value}
+            faults={faults}
+            data-query-formula-expression=""
+            onChange={onChange}
+            onBlur={onBlur}
+          />
+        </ExpressionTypesProvider>
       </Chooser.PageField>
     </WorkbenchThemeProvider>
   );
@@ -302,7 +316,6 @@ const ownEntry = <T,>(
 function FormulaText({ view, name }: { view: QueryView; name: string }) {
   const saved = useStore(view.state, (s) => s.file?.formulas?.[name] ?? "");
   const issue = useStore(view.state, (s) => ownEntry(formulaIssuesOf(s), name));
-  const place = useStore(view.state, (s) => ownEntry(formulaSpansOf(s), name));
   const [text, setText, typed] = useChooserPageText(saved);
   // The pending save, on the timers of the window the field stands in.
   const pending = useRef<{ win: Window; timer: number } | null>(null);
@@ -318,12 +331,8 @@ function FormulaText({ view, name }: { view: QueryView; name: string }) {
   useChooserPageSave(() => save(typed.current));
   // What ZotLit Query found in the saved text, while it stays as saved.
   const check = useMemo(
-    () =>
-      formulaCheck(
-        text,
-        issue === undefined ? null : { saved, message: issue, place },
-      ),
-    [text, saved, issue, place],
+    () => formulaCheck(text, issue === undefined ? null : { ...issue, saved }),
+    [text, saved, issue],
   );
   return (
     <ExpressionField

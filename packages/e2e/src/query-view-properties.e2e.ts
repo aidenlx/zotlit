@@ -328,15 +328,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         `(async()=>{${PAGE}const popup=${propertiesPopup};const save=popup.querySelector('[data-chooser-page] [data-query-formula-save]');if(save){press(save,'Save');await until('page of the Formula',()=>popup.querySelector('[data-query-property-page]'));}press(popup.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
       );
     /**
-     * The text the Formula field underlines, once it is `expected` or the
-     * wait ends, as the editor draws its marks after a frame; and how: the
-     * line style of each underline, and whether the field draws a gutter.
+     * The text the Formula field underlines, once the field shows
+     * `expected`, and how: the line style of each underline, and whether
+     * the field draws a gutter. The editor sets its underlines a frame
+     * after the page draws the text, and then, from the same draw, its
+     * `aria-invalid`; so where `expected` is empty, the field that was
+     * invalid is settled once `aria-invalid` reads false, and no underline
+     * of the text can come after that.
      */
     const formulaUnderlines = async (expected: string[]) =>
       JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{${PAGE}const field=()=>${propertiesPage}?.querySelector('[data-query-formula-expression]');const marks=()=>[...(field()?.querySelectorAll('.cm-lintRange-error')??[])];await until('underlines',()=>JSON.stringify(marks().map(n=>n.textContent))===${JSON.stringify(JSON.stringify(expected))}).catch(()=>{});return JSON.stringify({marks:marks().map(n=>n.textContent),styles:marks().map(n=>getComputedStyle(n).textDecorationStyle),gutter:field()?.querySelector('.cm-gutters')!=null});})()`,
+          `(async()=>{${PAGE}const field=${propertiesPage}?.querySelector('[data-query-formula-expression]');const content=field?.querySelector('.cm-content');if(!content)throw new Error('Missing: the Formula field');const marks=()=>[...field.querySelectorAll('.cm-lintRange-error')];const texts=()=>JSON.stringify(marks().map(n=>n.textContent));const expected=${JSON.stringify(JSON.stringify(expected))};await until('underlines',()=>expected==='[]'?content.getAttribute('aria-invalid')==='false':texts()===expected).catch((error)=>{throw new Error(error.message+': '+texts()+', aria-invalid '+content.getAttribute('aria-invalid'));});return JSON.stringify({marks:marks().map(n=>n.textContent),styles:marks().map(n=>getComputedStyle(n).textDecorationStyle),gutter:field.querySelector('.cm-gutters')!=null});})()`,
         ),
       ) as { marks: string[]; styles: string[]; gutter: boolean };
     expect(

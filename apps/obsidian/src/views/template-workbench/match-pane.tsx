@@ -2,13 +2,22 @@
 // independently of preview rendering mode.
 import { useEffect, useState } from "react";
 
+import { ITEMS } from "@zotlit/item-query";
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
-import { MatchPane, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
+import {
+  ExpressionTypesProvider,
+  MatchPane,
+  WorkbenchThemeProvider,
+} from "@zotlit/workbench/ui";
 
 import { Select } from "@/components/select";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
+import { expressionTypes } from "./expression-types";
 import { templateWorkbenchTheme } from "./theme";
+
+/** A Profile's Match condition tests an Item. */
+const itemExpressions = expressionTypes(ITEMS);
 
 /**
  * The Workbench theme with the plugin's own Select for the Match editor's
@@ -45,11 +54,13 @@ export function NativeMatchPane({
   );
   return (
     <WorkbenchThemeProvider theme={matchTheme}>
-      <MatchPane
-        onChooseItem={onChooseItem}
-        controller={controller}
-        vocabularyRevision={vocabularyRevision}
-      />
+      <ExpressionTypesProvider types={itemExpressions}>
+        <MatchPane
+          onChooseItem={onChooseItem}
+          controller={controller}
+          vocabularyRevision={vocabularyRevision}
+        />
+      </ExpressionTypesProvider>
     </WorkbenchThemeProvider>
   );
 }
