@@ -8,7 +8,7 @@ import type { EditorView } from "@codemirror/view";
 import { highlightTree } from "@lezer/highlight";
 
 import { decorationLayer, gapsAround } from "./decorations";
-import { templateHighlighter, templateToken } from "./highlight";
+import { templateHighlighter } from "./highlight";
 import { jsonSyntaxTokens } from "./json-e";
 
 export const jsonRule = [json(), closeBrackets()];
@@ -39,7 +39,7 @@ export function embeddedJsonE(
         );
       for (const token of tokens)
         marks.push(
-          Decoration.mark({ class: templateToken[token.kind] }).range(
+          Decoration.mark({ class: token.classes }).range(
             region.from + token.from,
             region.from + token.to,
           ),
