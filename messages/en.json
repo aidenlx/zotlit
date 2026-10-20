@@ -637,7 +637,6 @@
   "annot_view_drag_unavailable": "Cannot insert the annotation: the template is not ready.",
   "annot_view_insert_failed": "The annotation was not inserted.",
   "annotation_suggest_unavailable": "Cannot insert the annotation: Zotero no longer has it.",
-  "annotation_suggest_page": "Page {page}",
   "annot_view_collapse_tooltip": "Collapse previews",
   "annot_view_expand_tooltip": "Expand previews",
   "annot_view_search_tooltip": "Search annotations",

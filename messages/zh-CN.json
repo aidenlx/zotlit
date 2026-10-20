@@ -659,7 +659,6 @@
   "annot_view_drag_unavailable": "无法插入标注：模板尚未就绪。",
   "annot_view_insert_failed": "未插入标注。",
   "annotation_suggest_unavailable": "无法插入标注：Zotero 中已没有这条标注。",
-  "annotation_suggest_page": "第 {page} 页",
   "annot_view_collapse_tooltip": "折叠预览",
   "annot_view_expand_tooltip": "展开预览",
   "annot_view_search_tooltip": "搜索标注",

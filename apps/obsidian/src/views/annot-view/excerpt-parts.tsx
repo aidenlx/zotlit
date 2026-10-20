@@ -1,7 +1,9 @@
 // What every surface that shows an Annotation draws the same way: its quoted
 // text, its Excerpt Image, and its page locator. The Annotation View's card and
-// the Annotation Popover both render through these.
+// the Annotation Popover both render through these, and the Annotation
+// Suggester's rows draw their text through the same sanitizer.
 
+import { sanitizeHTMLToDom } from "obsidian";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { isPageNumber } from "@zotlit/db";
@@ -52,7 +54,24 @@ export function ExcerptText({
   className?: string;
 }) {
   const ref = useSanitizedHtml<HTMLParagraphElement>(text);
-  return <p ref={ref} className={cn("zt:select-text", className)} />;
+  return <p ref={ref} className={cn(EXCERPT_TEXT_CLASS, className)} />;
+}
+
+const EXCERPT_TEXT_CLASS = "zt:select-text";
+
+/**
+ * {@link ExcerptText} on a surface built with Obsidian's DOM helpers rather
+ * than React, such as a suggestion row: the same sanitized rich text,
+ * appended to `parent`.
+ */
+export function appendExcerptText(
+  parent: HTMLElement,
+  text: string,
+  className?: string,
+): HTMLParagraphElement {
+  const el = parent.createEl("p", { cls: cn(EXCERPT_TEXT_CLASS, className) });
+  el.replaceChildren(sanitizeHTMLToDom(text));
+  return el;
 }
 
 /**

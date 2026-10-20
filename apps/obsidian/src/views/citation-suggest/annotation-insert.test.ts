@@ -1,10 +1,10 @@
+import type { EditorView } from "@codemirror/view";
 // @vitest-environment happy-dom
 // Choosing an Annotation Suggester result: the trigger text gives way to the
 // annotation rendered through the user's template.
 import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import * as m from "@/lib/i18n/generated/messages";
 import type {
   AnnotationList,
   AnnotationRecord,
@@ -60,7 +60,13 @@ function setup(
   {
     rendered,
     annotations = list,
-  }: { rendered: string; annotations?: AnnotationList | null },
+    whileRendering,
+  }: {
+    rendered: string;
+    annotations?: AnnotationList | null;
+    /** An edit the researcher makes while the template renders. */
+    whileRendering?: (cm: EditorView) => void;
+  },
 ) {
   const cm = stateEditor({ doc });
   const editor = {
@@ -71,26 +77,28 @@ function setup(
     editor,
     file: { path: "Draft.md" } as TFile,
   } as MarkdownFileInfo;
-  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(async () => ({
-    text: rendered,
-    summary: {
-      zotero: 0,
-      unchecked: 0,
-      unavailable: 0,
-      written: 0,
-      reused: 0,
-    } as never,
-  }));
+  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(async () => {
+    whileRendering?.(cm);
+    return {
+      text: rendered,
+      summary: {
+        zotero: 0,
+        unchecked: 0,
+        unavailable: 0,
+        written: 0,
+        reused: 0,
+      } as never,
+    };
+  });
   const read = vi.fn(async (_key: string) => annotations);
   const record = vi.fn();
-  const notices: (string | DocumentFragment)[] = [];
   const deps = {
     app: {} as App,
     annotations: { read },
     noteFeature: { prepareAnnotationInsert: prepare },
     zoteroPref: { dataDir: "/zotero" },
     useLedger: { record },
-    notify: (message: string | DocumentFragment) => void notices.push(message),
+    notify: () => {},
   };
   const insert = (from: number, to: number) =>
     insertAnnotation(deps, {
@@ -104,7 +112,6 @@ function setup(
     prepare,
     read,
     record,
-    notices,
     text: () => cm.state.doc.toString(),
     [Symbol.dispose]: () => cm.destroy(),
   };
@@ -123,6 +130,17 @@ describe("insertAnnotation", () => {
     using h = setup("As shown [>exact]", { rendered: inline });
     await h.insert(9, 17);
     expect(h.text()).toBe(`As shown ${inline} `);
+  });
+
+  it("reads the space after the trigger text as the insert lands, not as it starts", async () => {
+    const inline = `“an exact match” [Zotero](${LINK})`;
+    using h = setup("As shown [>exact] here", {
+      rendered: inline,
+      // The space after the trigger text goes while the template renders.
+      whileRendering: (cm) => cm.dispatch({ changes: { from: 17, to: 18 } }),
+    });
+    await h.insert(9, 17);
+    expect(h.text()).toBe(`As shown ${inline} here`);
   });
 
   it("renders from the database list it reads, in the scope of the Zotero data folder", async () => {
@@ -154,14 +172,13 @@ describe("insertAnnotation", () => {
     expect(h.record).toHaveBeenCalledWith("ART2FULL", "cited");
   });
 
-  it("leaves the trigger text and tells the researcher when the annotation is gone", async () => {
+  it("answers unavailable and leaves the trigger text when the annotation is gone", async () => {
     using h = setup("[>exact]", {
       rendered: "quote",
       annotations: { ...list, annotations: [] },
     });
-    await h.insert(0, 8);
+    expect(await h.insert(0, 8)).toEqual({ kind: "unavailable" });
     expect(h.text()).toBe("[>exact]");
-    expect(h.notices).toEqual([m.annotation_suggest_unavailable()]);
     expect(h.record).not.toHaveBeenCalled();
     expect(h.prepare).not.toHaveBeenCalled();
   });

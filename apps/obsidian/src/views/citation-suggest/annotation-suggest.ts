@@ -14,6 +14,10 @@ import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import {
+  appendExcerptText,
+  pageLocator,
+} from "@/views/annot-view/excerpt-parts";
 
 import { insertAnnotation } from "./annotation-insert";
 import type { AnnotationInsertDeps } from "./annotation-insert";
@@ -99,31 +103,38 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
       info,
       isCurrent: () => this.#deps.app.workspace.activeEditor?.editor === editor,
       range: { from: editor.posToOffset(start), to: editor.posToOffset(end) },
+    }).then((outcome) => {
+      if (outcome.kind === "unavailable")
+        this.#deps.notify(m.annotation_suggest_unavailable());
     });
   }
 }
 
-/** One result: the quote with its color, the comment, the page and paper. */
+/**
+ * One result: the quote with its color, the comment, the page and paper. The
+ * quote and the comment are Zotero's stored rich text, drawn as the
+ * Annotation View and the Annotation Popover draw an excerpt.
+ */
 export function renderAnnotationHit(hit: AnnotationHit, el: HTMLElement): void {
   el.addClass("zt:flex", "zt:gap-2");
   const swatch = el.createDiv({
-    cls: "zt:mt-1 zt:w-1 zt:shrink-0 zt:self-stretch zt:rounded-sm",
+    cls: "zt:mt-1 zt:w-1 zt:shrink-0 zt:self-stretch zt:rounded-sm zt:bg-(--zt-annot-color)",
   });
-  if (hit.color) swatch.setCssProps({ "background-color": hit.color });
+  if (hit.color) swatch.style.setProperty("--zt-annot-color", hit.color);
   const body = el.createDiv({ cls: "zt:min-w-0 zt:flex-1" });
-  body.createDiv({
-    cls: "zt:line-clamp-3",
-    text: hit.text ?? hit.comment ?? hit.type ?? "",
-  });
+  const quote = hit.text ?? hit.comment;
+  if (quote) appendExcerptText(body, quote, "zt:m-0 zt:line-clamp-3");
+  else body.createDiv({ text: hit.type ?? "" });
   if (hit.text && hit.comment)
-    body.createDiv({
-      cls: "zt:line-clamp-2 zt:text-sm zt:text-muted-foreground",
-      text: hit.comment,
-    });
+    appendExcerptText(
+      body,
+      hit.comment,
+      "zt:m-0 zt:line-clamp-2 zt:text-sm zt:text-muted-foreground",
+    );
   const meta = [
     hit.pageLabel === null || hit.pageLabel === ""
       ? null
-      : m.annotation_suggest_page({ page: hit.pageLabel }),
+      : pageLocator(hit.pageLabel),
     hit.title,
   ].filter((part): part is string => !!part);
   if (meta.length > 0)

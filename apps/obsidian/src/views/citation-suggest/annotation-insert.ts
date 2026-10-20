@@ -2,7 +2,6 @@
 // annotation rendered through the user's template.
 import type { App, MarkdownFileInfo } from "obsidian";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { NoteFeature } from "@/services/note-feature";
@@ -36,6 +35,15 @@ function padInline(rendered: string, next: string): string {
 }
 
 /**
+ * How an insert ended: `unavailable` where the repository no longer holds the
+ * annotation, which the caller tells the researcher; `settled` where the
+ * render ran, whether its text landed or a later edit dropped it.
+ */
+export type AnnotationInsertOutcome =
+  | { kind: "unavailable" }
+  | { kind: "settled" };
+
+/**
  * Replace `range` of the note with `hit`, read from the annotation repository
  * (the Local API while Zotero runs, the database while it is closed) and
  * rendered through the template of the note's Literature Note Profile. The
@@ -55,14 +63,13 @@ export async function insertAnnotation(
     isCurrent: () => boolean;
     range: { from: number; to: number };
   },
-): Promise<void> {
+): Promise<AnnotationInsertOutcome> {
   const { editor, file } = info;
-  if (!editor || !file) return;
-  const next = editor.cm.state.doc.sliceString(range.to, range.to + 1);
+  if (!editor || !file) return { kind: "settled" };
   using held = captureInsertion({ editor, info, isCurrent, range });
   const sourceScope = deps.zoteroPref.dataDir;
   const list = await deps.annotations.read(hit.attachmentKey);
-  if (!held.valid()) return;
+  if (!held.valid()) return { kind: "settled" };
   const annotation = list?.annotations.find(({ key }) => key === hit.key);
   if (!list || !annotation) {
     logger.debug("Annotation Suggester hit not in the repository", {
@@ -70,12 +77,16 @@ export async function insertAnnotation(
       attachmentKey: hit.attachmentKey,
       listed: list !== null,
     });
-    deps.notify(m.annotation_suggest_unavailable());
-    return;
+    return { kind: "unavailable" };
   }
   const target: InsertionTarget = {
     ...held,
     commit(text) {
+      // The text after the range as it stands now, which edits made during
+      // the read and the render may have changed.
+      const at = held.range();
+      const next =
+        at === null ? "" : editor.cm.state.doc.sliceString(at.to, at.to + 1);
       if (!held.commit(padInline(text, next))) return false;
       deps.useLedger.record(hit.itemKey, "cited");
       return true;
@@ -87,4 +98,5 @@ export async function insertAnnotation(
     target,
     notePath: file.path,
   });
+  return { kind: "settled" };
 }
