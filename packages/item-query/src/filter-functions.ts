@@ -63,7 +63,7 @@ export interface FunctionParameter {
 export interface FunctionDefinition {
   /**
    * One English sentence, in the Query Schema vocabulary, that says what the
-   * call yields. The Item Query Schema publishes it.
+   * call yields. The Query Schema publishes it.
    */
   readonly description: string;
   /** Semantic eligibility for a diagnostic correction, checked with the signature. */
@@ -212,7 +212,7 @@ function extreme(
 export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
   number: {
     description:
-      "The value as a number: a text read as a decimal number, a boolean as 1 or 0, and a date as its Unix time in milliseconds; a text that is not a number gives an Error Value.",
+      "The value as a number: a text by the decimal number it starts with, a boolean as 1 or 0, and a date as its Unix time in milliseconds; an empty or blank text gives null, and a text that starts with no number an Error Value.",
     parameters: [any("value")],
     returns: "number",
     call: (_subject, [value = null], clock) => {
@@ -260,7 +260,7 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
   },
   date: {
     description:
-      "The text read as a date, or a date unchanged; a text that is not a date gives an Error Value.",
+      "The text read as a date, or a date unchanged; an empty or blank text gives null, and a text that is not a date an Error Value.",
     diagnosticCorrection: "conversion",
     parameters: [{ name: "text", type: ["string", "date"] }],
     returns: "date",
@@ -273,7 +273,7 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
   },
   duration: {
     description:
-      'The text read as a duration, such as `"7d"` or `"PT1H30M"`; a text that is not a duration gives an Error Value.',
+      'The text read as a duration, such as `"7d"` or `"PT1H30M"`; an empty or blank text gives null, and a text that is not a duration an Error Value.',
     diagnosticCorrection: "conversion",
     parameters: [string("text")],
     returns: "duration",
@@ -423,8 +423,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       floor: rounding(Math.floor, "The number rounded down to an integer."),
       abs: rounding(Math.abs, "The absolute value of the number."),
       toFixed: {
-        description:
-          "The number as text with `precision` decimal places, from 0 to 100.",
+        description: `The number as text with \`precision\` decimal places, from 0 to ${MAX_PRECISION}.`,
         parameters: [number("precision")],
         returns: "string",
         call: (subject, [precision]) =>
@@ -486,11 +485,9 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         returns: "string",
         call: (subject) => (subject as string).trim(),
       },
-      // A word starts the text or follows whitespace; only its first code
-      // point changes.
       title: {
         description:
-          "The text with the first letter of each word in upper case.",
+          "The text with its first code point and each code point after whitespace in upper case.",
         parameters: NONE,
         returns: "string",
         call: (subject) =>
@@ -502,8 +499,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       // A result above 1 000 000 code units is out of range too.
       repeat: {
-        description:
-          "The text repeated `count` times, a count from 0 to 10 000.",
+        description: `The text repeated \`count\` times, a count from 0 to ${MAX_REPEAT}.`,
         parameters: [number("count")],
         returns: "string",
         call: (subject, [count]) =>
@@ -556,11 +552,9 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           );
         },
       },
-      // A group of a regexp separator that does not take part in the match
-      // is null.
       split: {
         description:
-          "The list of the parts of the text between occurrences of `separator`, at most `n` parts when `n` is given.",
+          "The list of the parts of the text between occurrences of `separator`, with the captures of a regexp separator between them (null for a group that does not take part), keeping the first `n` elements when `n` is given.",
         parameters: [{ name: "separator", type: ["string", "regexp"] }],
         optional: [number("n")],
         returns: "list",
@@ -653,7 +647,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       sort: {
         description:
-          "The list in ascending order: numbers by value, texts in the Item Query collation, dates by their start, false before true, and elements of different types grouped by type.",
+          "The list in ascending order: numbers by value, texts in the ZotLit Query collation, dates by their start, false before true, and elements of different types grouped by type.",
         parameters: NONE,
         returns: "list",
         call: (subject, _args, clock) =>
@@ -745,7 +739,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       // The match position is reset before each test, so g and y stay
       // deterministic.
       matches: {
-        description: "Whether the regexp matches somewhere in `text`.",
+        description:
+          "Whether the regexp matches somewhere in `text`, or at its start for a regexp with the `y` flag.",
         parameters: [string("text")],
         returns: "boolean",
         call: (subject, [text]) => {
