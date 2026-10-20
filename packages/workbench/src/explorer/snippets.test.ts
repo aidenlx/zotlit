@@ -70,7 +70,7 @@ describe("snippetKindsFor", () => {
   });
 
   it("offers output + if-present for helpers and placeholders", () => {
-    expect(snippetKindsFor(helper(["fileLink"]))).toEqual([
+    expect(snippetKindsFor(helper(["noteLink"]))).toEqual([
       "output",
       "if-present",
     ]);
@@ -113,9 +113,28 @@ describe("renderSnippet — output", () => {
   });
 
   it("uses Liquid auto-invoke but explicit Eta call for helpers", () => {
-    const node = helper(["fileLink"]);
-    expect(renderSnippet(node, "liquid", "output")).toBe("{{ zt.fileLink }}");
-    expect(renderSnippet(node, "eta", "output")).toBe("<%= zt.fileLink() %>");
+    const node = helper(["noteLink"]);
+    expect(renderSnippet(node, "liquid", "output")).toBe("{{ zt.noteLink }}");
+    expect(renderSnippet(node, "eta", "output")).toBe("<%= zt.noteLink() %>");
+  });
+
+  // `backlink` is a bare URL; the snippet teaches the durable link as a
+  // Markdown link a note can follow.
+  it("wraps a backlink in a Markdown link", () => {
+    const node = value(
+      ["backlink"],
+      "string",
+      "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4",
+    );
+    expect(renderSnippet(node, "liquid", "output")).toBe(
+      "[Zotero]({{ zt.backlink }})",
+    );
+    expect(renderSnippet(node, "eta", "output")).toBe(
+      "[Zotero](<%= zt.backlink %>)",
+    );
+    expect(renderSnippet(node, "liquid", "if-present")).toBe(
+      "{% if zt.backlink %}[Zotero]({{ zt.backlink }}){% endif %}",
+    );
   });
 
   it("treats placeholders like helpers for the call form", () => {
@@ -143,8 +162,8 @@ describe("renderSnippet — if-present", () => {
   });
 
   it("guards on the call form for an Eta helper", () => {
-    expect(renderSnippet(helper(["fileLink"]), "eta", "if-present")).toBe(
-      "<% if (zt.fileLink()) { %><%= zt.fileLink() %><% } %>",
+    expect(renderSnippet(helper(["noteLink"]), "eta", "if-present")).toBe(
+      "<% if (zt.noteLink()) { %><%= zt.noteLink() %><% } %>",
     );
   });
 });
