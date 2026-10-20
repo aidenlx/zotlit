@@ -13,6 +13,7 @@ import { useStore } from "zustand";
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
 import {
+  ExpressionVocabularyProvider,
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
@@ -28,8 +29,10 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
+import { expressionVocabulary } from "@/views/template-workbench/expression-vocabulary";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
+import { datasetSpec } from "./datasets";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import type { QueryView } from "./view";
@@ -121,11 +124,14 @@ function DisplayNameField({
  * colour. An empty field shows what to type instead.
  */
 function ExpressionField({
+  view,
   value,
   onChange,
   onBlur,
   issue,
 }: {
+  /** The view whose Query Dataset the Formula reads. */
+  view: QueryView;
   value: string;
   /** Called with the typed text and the window the field stands in. */
   onChange: (value: string, win: Window) => void;
@@ -133,6 +139,7 @@ function ExpressionField({
   /** What is wrong with the text, or `null` when nothing is. */
   issue: string | null;
 }) {
+  const dataset = useStore(view.state, (s) => s.view?.from);
   return (
     <WorkbenchThemeProvider theme={matchTheme}>
       <Chooser.PageField
@@ -168,14 +175,18 @@ function ExpressionField({
           )
         }
       >
-        <MatchExpressionInput
-          lines={3}
-          aria-invalid={value !== "" && issue !== null}
-          value={value}
-          data-query-formula-expression=""
-          onChange={onChange}
-          onBlur={onBlur}
-        />
+        <ExpressionVocabularyProvider
+          vocabulary={expressionVocabulary(datasetSpec(dataset).engine)}
+        >
+          <MatchExpressionInput
+            lines={3}
+            aria-invalid={value !== "" && issue !== null}
+            value={value}
+            data-query-formula-expression=""
+            onChange={onChange}
+            onBlur={onBlur}
+          />
+        </ExpressionVocabularyProvider>
       </Chooser.PageField>
     </WorkbenchThemeProvider>
   );
@@ -246,6 +257,7 @@ function FormulaText({ view, name }: { view: QueryView; name: string }) {
     text === saved && Object.hasOwn(issues, name) ? issues[name]! : null;
   return (
     <ExpressionField
+      view={view}
       value={text}
       issue={formulaSyntaxIssue(text) ?? runIssue}
       onChange={(next, win) => {
@@ -378,6 +390,7 @@ export function NewFormulaPage({ view }: { view: QueryView }) {
             />
           </Chooser.PageField>
           <ExpressionField
+            view={view}
             value={text}
             onChange={setText}
             issue={syntaxIssue}

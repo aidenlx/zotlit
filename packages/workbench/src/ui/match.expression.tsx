@@ -1,3 +1,4 @@
+import type { SignatureHintOptions } from "#/language/signature-hint";
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
@@ -8,7 +9,8 @@ import {
   keymap,
   placeholder as placeholderText,
 } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 import { useExpressionExtension, useParts } from "./theme";
 
@@ -16,6 +18,33 @@ import {
   filterExpressionHighlighting,
   filterExpressionLanguage,
 } from "#/language/filter-expression";
+import { signatureHint } from "#/language/signature-hint";
+
+/**
+ * What a host knows of the expressions its fields hold, such as the type of
+ * a method call's receiver in its Query Dataset. A field without one still
+ * shows the Signature Hint, naming every definition of a method.
+ */
+export interface ExpressionVocabulary {
+  readonly receiverType?: SignatureHintOptions["receiverType"];
+}
+
+const ExpressionVocabularyContext = createContext<ExpressionVocabulary>({});
+
+/** Gives the expression fields under it the host's vocabulary. */
+export function ExpressionVocabularyProvider({
+  vocabulary,
+  children,
+}: {
+  vocabulary: ExpressionVocabulary;
+  children: ReactNode;
+}) {
+  return (
+    <ExpressionVocabularyContext.Provider value={vocabulary}>
+      {children}
+    </ExpressionVocabularyContext.Provider>
+  );
+}
 
 /** The label and validity of the field, on its editable content. */
 const contentAttributes = ({
@@ -64,6 +93,7 @@ export function MatchExpressionInput({
 }: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
   const part = useParts("match");
   const hostExtension = useExpressionExtension();
+  const vocabulary = useContext(ExpressionVocabularyContext);
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   // The editor is made once; it reads what it needs then, and later props,
@@ -77,6 +107,7 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
+    vocabulary,
   });
   props.current = {
     value,
@@ -87,6 +118,7 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
+    vocabulary,
   };
   const attributes = useRef(new Compartment());
   useEffect(() => {
@@ -99,6 +131,10 @@ export function MatchExpressionInput({
         extensions: [
           filterExpressionLanguage,
           filterExpressionHighlighting,
+          signatureHint({
+            receiverType: (text) =>
+              props.current.vocabulary.receiverType?.(text),
+          }),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,

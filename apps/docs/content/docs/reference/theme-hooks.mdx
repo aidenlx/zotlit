@@ -276,6 +276,16 @@ Set a custom property on the editor hook to recolor one kind of token in every p
 
 A Filter Expression field uses Obsidian's code colors, as a formula in a `.base` file does: a Formula, a Query View filter condition, and a Match condition in the Template Workbench View. Names and property paths take `--code-property`. The function or method a call names takes `--code-function`. Numbers, `true`, `false`, and `null` take `--code-value`. Strings take `--code-string`, operators `--code-operator`, punctuation `--code-punctuation`, and regular expressions `--code-important`. Other text takes `--code-normal`. A theme that sets these code colors recolors the expression fields too. A `--zt-template-<token>` override on `zt-template-editor` also reaches these fields, as it reaches the other panes.
 
+### Signature Hint [#signature-hint]
+
+While the caret is inside the parentheses of a function or method call in a Filter Expression field, a tooltip names the signature of the call, such as `slice(start: number, end?: number) → string`, with the parameter at the caret marked, and the description of the call beneath.
+
+| Class               | Meaning                                                            |
+| ------------------- | ------------------------------------------------------------------ |
+| `zt-signature-hint` | The tooltip that names the signature of the call around the caret. |
+
+In Obsidian, the tooltip takes the message background, `--background-modifier-message`, as the hint of a formula in a `.base` file does. The Template Workbench on this site emits the same class and keeps the editor's own tooltip look.
+
 ## CSS examples [#examples]
 
 Use a direct class selector to override ZotLit's low-specificity defaults. `!important` is not required.

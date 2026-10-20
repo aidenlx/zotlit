@@ -196,6 +196,42 @@
   font-size: var(--font-ui-small);
   white-space: normal;
 }
+/* The Signature Hint is a message surface, as the hint of a formula in a
+   `.base` file is: the signature in code type, the parameter at the caret
+   heavier, the description beneath in the interface type. */
+.cm-tooltip.zt-signature-hint {
+  max-inline-size: min(28rem, calc(100vw - 20px));
+  padding: var(--size-4-1) var(--size-4-2);
+  border: none;
+  border-radius: var(--radius-s);
+  background-color: var(--background-modifier-message);
+  box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
+  color: #fafafa;
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.zt-signature-hint > div + div {
+  margin-block-start: var(--size-4-1);
+}
+.zt-signature-hint code {
+  font-family: var(--font-monospace);
+  font-weight: var(--font-medium);
+}
+.zt-signature-hint > div > code:first-child {
+  display: block;
+}
+.zt-signature-hint mark {
+  background: none;
+  color: inherit;
+  font-weight: var(--font-semibold);
+  text-decoration: underline;
+}
+.cm-tooltip.zt-signature-hint .cm-tooltip-arrow:before,
+.cm-tooltip.zt-signature-hint .cm-tooltip-arrow:after {
+  border-top-color: var(--background-modifier-message);
+}
 /* Obsidian sizes a popover's content for a note page; a hover card fits its text. */
 .popover.hover-popover > .zt-template-hover {
   width: auto;
