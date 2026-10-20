@@ -3,7 +3,7 @@
 // Annotation View does, never as literal markup.
 import { describe, expect, it } from "vitest";
 
-import { pageLocator } from "@/views/annot-view/excerpt-parts";
+import * as m from "@/lib/i18n/generated/messages";
 
 import type { AnnotationHit } from "./annotation-search";
 import { renderAnnotationHit } from "./annotation-suggest";
@@ -34,7 +34,19 @@ describe("renderAnnotationHit", () => {
     const el = document.createElement("div");
     renderAnnotationHit(hit, el);
     expect(el.textContent).toContain(
-      `${pageLocator("4")} · Exact Matching in Literature Review`,
+      `${m.annot_view_page({ page: "4" })} · Exact Matching in Literature Review`,
     );
+  });
+
+  it("names the type of an annotation with no text, from the message catalog", () => {
+    const el = document.createElement("div");
+    renderAnnotationHit(
+      { ...hit, type: "image", text: null, comment: null },
+      el,
+    );
+    expect(el.textContent).toContain(
+      m.workbench_annotation_type({ type: "image" }),
+    );
+    expect(el.textContent).not.toContain("image");
   });
 });

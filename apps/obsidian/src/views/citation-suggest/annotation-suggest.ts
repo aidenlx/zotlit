@@ -38,6 +38,8 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     super(deps.app);
     this.#deps = deps;
     this.limit = DEFAULT_LIMIT;
+    // The popup is a plugin UI root: its rows draw with `zt:` utilities.
+    this.suggestEl.addClass("zt-root");
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_annotation() },
@@ -124,7 +126,10 @@ export function renderAnnotationHit(hit: AnnotationHit, el: HTMLElement): void {
   const body = el.createDiv({ cls: "zt:min-w-0 zt:flex-1" });
   const quote = hit.text ?? hit.comment;
   if (quote) appendExcerptText(body, quote, "zt:m-0 zt:line-clamp-3");
-  else body.createDiv({ text: hit.type ?? "" });
+  else
+    body.createDiv({
+      text: m.workbench_annotation_type({ type: hit.type ?? "" }),
+    });
   if (hit.text && hit.comment)
     appendExcerptText(
       body,
