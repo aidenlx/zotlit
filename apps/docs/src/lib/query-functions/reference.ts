@@ -2,11 +2,11 @@
 // half of the published Query Schema, so the page cannot drift from the
 // registry that validates and runs a Filter Expression.
 
+import { signatureText } from "@zotlit/item-query";
 import type {
   ItemQuerySchema,
   SchemaFunction,
   SchemaMethod,
-  SchemaParameter,
   SchemaProperty,
 } from "@zotlit/item-query";
 
@@ -92,31 +92,9 @@ function propertyRow(entry: SchemaProperty): readonly [string, string] {
   return [`\`${name} → ${entry.returns}\``, description(name, entry)];
 }
 
-/** `name(param: type, optional?: type, ...rest: type) → type` as a code span. */
-function functionSignature(name: string, entry: SchemaFunction): string {
-  const parameters = [
-    ...entry.parameters.map((parameter) =>
-      parameterSignature(parameter.name, parameter),
-    ),
-    ...entry.optional.map((parameter) =>
-      parameterSignature(`${parameter.name}?`, parameter),
-    ),
-    ...(entry.rest
-      ? [parameterSignature(`...${entry.rest.name}`, entry.rest)]
-      : []),
-  ];
-  // A null result type means the type of the result varies.
-  return `\`${name}(${parameters.join(", ")}) → ${entry.returns ?? "any"}\``;
-}
-
-function parameterSignature(name: string, parameter: SchemaParameter): string {
-  const types = parameter.values
-    ? parameter.values.map((value) => JSON.stringify(value))
-    : typeof parameter.type === "string"
-      ? [parameter.type]
-      : parameter.type;
-  return `${name}: ${[...types, ...(parameter.nullable ? ["null"] : [])].join(" | ")}`;
-}
+/** The entry's signature as a code span. */
+const functionSignature = (name: string, entry: SchemaFunction): string =>
+  `\`${signatureText(name, entry)}\``;
 
 /** The entry's description, checked to be present and plain MDX text. */
 function description(

@@ -534,14 +534,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ) as string[];
     // The row underlines the name the query found wrong.
     expect(await underlines(["nosuchfield"])).toEqual(["nosuchfield"]);
-    // The condition shows no tooltip over the underline: CodeMirror mounts
-    // the filtered lint tooltip on hover, and the field keeps it hidden.
+    // The condition shows no tooltip over the underline, not even an empty
+    // one, well past CodeMirror's hover delay.
     const hovered = JSON.parse(
       await inPopover(
-        `const mark=section('view').querySelector('[data-condition-row] .cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));const tip=await until('lint tooltip',()=>mark.ownerDocument.querySelector('.cm-tooltip-lint'));const box=tip.getBoundingClientRect();return JSON.stringify({display:getComputedStyle(tip).display,area:box.width*box.height});`,
+        `const mark=section('view').querySelector('[data-condition-row] .cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));await new Promise(r=>setTimeout(r,800));return JSON.stringify([...mark.ownerDocument.querySelectorAll('.cm-tooltip-hover, .cm-tooltip-lint')].map(n=>n.className));`,
       ),
-    ) as { display: string; area: number };
-    expect(hovered).toEqual({ display: "none", area: 0 });
+    ) as string[];
+    expect(hovered).toEqual([]);
 
     // The expression field colors each kind of token with Obsidian's code
     // color for it, in the light and in the dark theme.

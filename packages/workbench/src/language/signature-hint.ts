@@ -11,12 +11,11 @@ import {
   IF_FUNCTION,
   METHOD_ENTRIES,
   parameterAt,
+  parameterTexts,
+  parameterTypeText,
+  resultText,
 } from "@zotlit/item-query";
-import type {
-  FilterValueType,
-  FunctionDefinition,
-  FunctionParameter,
-} from "@zotlit/item-query";
+import type { FilterValueType, FunctionDefinition } from "@zotlit/item-query";
 
 import type { ExpressionReceiver } from "./expression-options";
 import type { Span } from "./span";
@@ -24,12 +23,14 @@ import type { Span } from "./span";
 /** One parameter as the hint names it. */
 export interface HintParameter {
   readonly name: string;
-  /** The type it takes, each type of a union joined by ` | `. */
+  /** The types it takes, its texts quoted and null, joined by ` | `. */
   readonly type: string;
   /** Whether a call can omit it. */
   readonly optional: boolean;
   /** Whether it takes every further argument. */
   readonly rest: boolean;
+  /** `name: type`, `name?: type` or `...name: type`, as the reference writes it. */
+  readonly text: string;
 }
 
 /** One definition the callee can name. */
@@ -39,8 +40,8 @@ export interface HintSignature {
   readonly parameters: readonly HintParameter[];
   /** The index in `parameters` of the one at the caret, or -1 past the last. */
   readonly active: number;
-  /** The type of the result, or null when it varies. */
-  readonly returns: FilterValueType | null;
+  /** The type of the result, `any` when it varies. */
+  readonly returns: string;
   readonly description: string;
 }
 
@@ -67,36 +68,24 @@ type Definition = Pick<
   "description" | "parameters" | "optional" | "rest"
 > & { readonly returns?: FunctionDefinition["returns"] };
 
-const typeText = ({ type }: FunctionParameter): string =>
-  typeof type === "string" ? type : type.join(" | ");
-
 function signature(
   receiver: HintSignature["receiver"],
   definition: Definition,
   argument: number,
 ): HintSignature {
   const at = parameterAt(definition, argument);
-  const parameters = [
-    ...definition.parameters.map((p) => ({ p, optional: false, rest: false })),
-    ...(definition.optional ?? []).map((p) => ({
-      p,
-      optional: true,
-      rest: false,
-    })),
-    ...(definition.rest
-      ? [{ p: definition.rest, optional: true, rest: true }]
-      : []),
-  ];
+  const parameters = parameterTexts(definition);
   return {
     receiver,
-    parameters: parameters.map(({ p, optional, rest }) => ({
-      name: p.name,
-      type: typeText(p),
+    parameters: parameters.map(({ parameter, optional, rest, text }) => ({
+      name: parameter.name,
+      type: parameterTypeText(parameter),
       optional,
       rest,
+      text,
     })),
-    active: parameters.findIndex(({ p }) => p === at),
-    returns: definition.returns ?? null,
+    active: parameters.findIndex(({ parameter }) => parameter === at),
+    returns: resultText(definition.returns),
     description: definition.description,
   };
 }

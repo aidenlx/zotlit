@@ -498,17 +498,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(rowIssue).toBe(wrong.headerIssue);
 
     // The Formula's page underlines the name the run found wrong, and shows
-    // no tooltip over it: CodeMirror mounts the filtered lint tooltip on
-    // hover, and the field keeps it hidden.
+    // no tooltip over it, not even an empty one, well past CodeMirror's
+    // hover delay.
     await editFormula();
     expect((await formulaUnderlines(["nope"])).marks).toEqual(["nope"]);
     const hovered = JSON.parse(
       await obEval(
         run.vaultId,
-        `(async()=>{${PAGE}const field=${propertiesPage}.querySelector('[data-query-formula-expression]');const mark=field.querySelector('.cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));const tip=await until('lint tooltip',()=>field.ownerDocument.querySelector('.cm-tooltip-lint'));const box=tip.getBoundingClientRect();return JSON.stringify({display:getComputedStyle(tip).display,area:box.width*box.height});})()`,
+        `(async()=>{${PAGE}const field=${propertiesPage}.querySelector('[data-query-formula-expression]');const mark=field.querySelector('.cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));await new Promise(r=>setTimeout(r,800));return JSON.stringify([...mark.ownerDocument.querySelectorAll('.cm-tooltip-hover, .cm-tooltip-lint')].map(n=>n.className));})()`,
       ),
-    ) as { display: string; area: number };
-    expect(hovered).toEqual({ display: "none", area: 0 });
+    ) as string[];
+    expect(hovered).toEqual([]);
     // A text other than the saved one shows no underline of the run's Fault.
     await typeFormula({ expression: "title.nope( )" });
     expect((await formulaUnderlines([])).marks).toEqual([]);

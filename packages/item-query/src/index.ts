@@ -11,6 +11,14 @@ export {
   type SchemaProperty,
 } from "./describe-item-query";
 export { describeQueryCustomFields } from "./describe-query-custom-fields";
+export {
+  parameterTexts,
+  parameterTypeText,
+  resultText,
+  signatureText,
+  type ParameterText,
+  type SignatureShape,
+} from "./signature-text";
 // The function registry of the Filter Expression language, for in-process
 // editors. The Query Schema stays the agent contract.
 export {
