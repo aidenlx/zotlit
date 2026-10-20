@@ -408,6 +408,49 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ]);
   });
 
+  it("keeps citation suggestions when a word reaches eight letters", async () => {
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(async()=>String((await app.plugins.plugins.zotlit.services.itemLookup.search('researc',{limit:5})).some(hit=>hit.item.key==='DMIANART')))()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const results = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+          ${browserWaits}
+          await using cleanup=new AsyncDisposableStack();
+          const previousLeaf=app.workspace.activeLeaf;
+          cleanup.defer(()=>{if(previousLeaf)app.workspace.setActiveLeaf(previousLeaf,{focus:true});});
+          const file=cleanup.adopt(await app.vault.create('Citation full words.md',''),file=>app.vault.delete(file));
+          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf,{focus:true});leaf.view.editor.focus();
+          const suggest=app.workspace.editorSuggest.suggests.find(s=>s.constructor.name==='CitationEditorSuggest');
+          cleanup.defer(()=>suggest.close());
+          const editor=leaf.view.editor,results=[];
+          for(const query of ['researc','research','finding','findings']){
+            const hits=await app.plugins.plugins.zotlit.services.itemLookup.search(query,{limit:5});
+            const text='[@'+query;
+            editor.cm.dispatch({changes:{from:0,to:editor.cm.state.doc.length,insert:text},selection:{anchor:text.length},userEvent:'input.type'});
+            await waitFor(()=>suggest.isOpen&&suggest.context?.query===query&&suggest.suggestEl.textContent.includes('Why Most Published Research Findings Are False'),true,'Citation suggestions for '+query);
+            results.push({query,found:hits.some(hit=>hit.item.key==='DMIANART')});
+          }
+          await leaf.view.save();
+          return JSON.stringify(results);
+        })()`,
+      ),
+    );
+    expect(results).toEqual(
+      ["researc", "research", "finding", "findings"].map((query) => ({
+        query,
+        found: true,
+      })),
+    );
+  });
+
   it("keeps the citation suggester closed while entering a page locator", async () => {
     await obEval(
       vaultId,
