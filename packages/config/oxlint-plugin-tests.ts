@@ -89,7 +89,177 @@ export const noClassAssertion: Rule = {
   },
 };
 
+/** Static fragments of a path, including join/resolve and URL expressions. */
+function pathFragments(
+  node: NonNullable<CallNode["parent"]> | undefined,
+): string[] {
+  if (!node) return [];
+  switch (node.type) {
+    case "Literal":
+      return typeof node.value === "string" ? [node.value] : [];
+    case "TemplateLiteral":
+      return [
+        ...node.quasis.map((part) => part.value.cooked ?? part.value.raw),
+        ...node.expressions.flatMap(pathFragments),
+      ];
+    case "CallExpression":
+    case "NewExpression":
+      return node.arguments.flatMap(pathFragments);
+    case "BinaryExpression":
+      return [...pathFragments(node.left), ...pathFragments(node.right)];
+    case "ConditionalExpression":
+      return [
+        ...pathFragments(node.consequent),
+        ...pathFragments(node.alternate),
+      ];
+    case "ArrayExpression":
+      return node.elements.flatMap((element) =>
+        pathFragments(element ?? undefined),
+      );
+    default:
+      return [];
+  }
+}
+
+const sourceExtensions = new Set([
+  "ts",
+  "tsx",
+  "mts",
+  "cts",
+  "js",
+  "mjs",
+  "cjs",
+  "yml",
+  "yaml",
+  "md",
+  "mdx",
+  "css",
+]);
+const fixtureDirectories = new Set([
+  "fixtures",
+  "__fixtures__",
+  "test-fixtures",
+  "__snapshots__",
+]);
+
+function isSourceFile(path: string): boolean {
+  const name = path.split("/").at(-1) ?? "";
+  return (
+    [...sourceExtensions].some((extension) => name.endsWith(`.${extension}`)) ||
+    name === "package.json" ||
+    name === "turbo.json" ||
+    (name.startsWith("tsconfig") && name.endsWith(".json"))
+  );
+}
+
+export const noSourceText: Rule = {
+  meta: {
+    type: "problem",
+    schema: [],
+    messages: {
+      sourceText:
+        "Test the behavior a file produces, or enforce its static rules with lint or types; use fixtures for test data (policies/testing-strategy.md).",
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        const name =
+          callee.type === "Identifier"
+            ? callee.name
+            : callee.type === "MemberExpression"
+              ? staticName(callee)
+              : undefined;
+        if (name !== "readFile" && name !== "readFileSync") return;
+        const fragments = pathFragments(node.arguments[0]).map((part) =>
+          part.replaceAll("\\", "/"),
+        );
+        if (
+          fragments.some((part) =>
+            part
+              .split("/")
+              .some((directory) => fixtureDirectories.has(directory)),
+          )
+        )
+          return;
+        if (fragments.some((part) => isSourceFile(part)))
+          context.report({ node, messageId: "sourceText" });
+      },
+      ImportDeclaration(node) {
+        if (node.source.value.endsWith("?raw"))
+          context.report({ node, messageId: "sourceText" });
+      },
+    };
+  },
+};
+
+/** The static property name, including a quoted bracket key. */
+function staticName(
+  node: Extract<CallNode["callee"], { type: "MemberExpression" }>,
+): string | undefined {
+  if (!node.computed && node.property.type === "Identifier")
+    return node.property.name;
+  if (
+    node.computed &&
+    node.property.type === "Literal" &&
+    typeof node.property.value === "string"
+  )
+    return node.property.value;
+  return undefined;
+}
+
+export const noInternalMock: Rule = {
+  meta: {
+    type: "problem",
+    schema: [],
+    messages: {
+      internalMock:
+        "Run repository modules for real; mock process, network and OS boundaries and assert outputs and effects (policies/testing-strategy.md).",
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        if (
+          callee.type !== "MemberExpression" ||
+          callee.object.type !== "Identifier" ||
+          callee.object.name !== "vi"
+        )
+          return;
+        const name = staticName(callee);
+        if (name !== "mock" && name !== "doMock") return;
+        const argument = node.arguments[0];
+        const specifier =
+          argument?.type === "ImportExpression" ? argument.source : argument;
+        const parts =
+          specifier?.type === "Literal" && typeof specifier.value === "string"
+            ? [specifier.value]
+            : specifier?.type === "TemplateLiteral" &&
+                specifier.expressions.length === 0
+              ? pathFragments(specifier)
+              : [];
+        if (
+          parts.some(
+            (part) =>
+              part.startsWith(".") ||
+              part.startsWith("#") ||
+              part.startsWith("@/") ||
+              part.startsWith("@zotlit/"),
+          )
+        )
+          context.report({ node, messageId: "internalMock" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-tests" },
-  rules: { "no-class-assertion": noClassAssertion },
+  rules: {
+    "no-class-assertion": noClassAssertion,
+    "no-source-text": noSourceText,
+    "no-internal-mock": noInternalMock,
+  },
 };

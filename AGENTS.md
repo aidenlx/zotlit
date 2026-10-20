@@ -45,8 +45,10 @@ oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.
 - **E2E-first:** A test in `packages/e2e` is the primary proof that a feature works. During development, iterate on typecheck and single test files, and walk the change through the running app (`/obsidian-debug`). When the walkthrough passes, encode it as an e2e test — the repeatable artifact of that proof.
 - **Final gate:** Run the affected End-to-end Run cases when the work is complete. Use the full suite for releases, changes to shared startup or lifecycle behavior across features, or an explicit full-run request. ZotLit Query CLI changes use `pnpm e2e:query`; other focused selections are described in `packages/e2e/AGENTS.md`. Prevent system sleep during desktop tests. The End-to-end Run tools take the desktop lock themselves; for a manual app session, run it under `pnpm desktop-lock -- <command>` (see `packages/e2e/AGENTS.md`).
 - **Consumer suites:** A production change runs its package's full suite and the suites of the packages that consume it, not only the tests named for the change. A test elsewhere can read what the change touched, such as statement parameters.
+- **Unit-test scope:** Use unit tests for syntax, queries, and dense pure logic. Follow [Testing strategy](policies/testing-strategy.md).
+- **Enforcement:** `zotlit-tests/no-internal-mock` checks mock boundaries; `zotlit-tests/no-source-text` checks file-text reads. `packages/scripts/scripts/check-test-gates.ts` checks that each test runs in a gate during `pnpm lint`. Remove a file from `packages/config/oxlint-tests-baseline.json` when it meets both rules; baseline entries may be deleted, never added.
 - **Failure-mode-first:** When an isolated test is justified, list every failure mode before writing the code; the test list drives the implementation.
-- **Earned regression tests:** A bug fix earns a regression test only for a real gap in the behavior tests. When an E2E path already reaches the failure, extend that path.
+- **Earned regression tests:** Cite the issue in each regression test. A bug fix earns a regression test only for a real gap in the behavior tests. When an E2E path already reaches the failure, extend that path.
 
 ## Truth-first
 

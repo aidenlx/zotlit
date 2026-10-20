@@ -877,12 +877,21 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
+      arkregex:
+        specifier: 'catalog:'
+        version: 0.0.5
+      oxc-parser:
+        specifier: ^0.129.0
+        version: 0.129.0
       oxfmt:
         specifier: 'catalog:'
         version: 0.55.0
       oxlint:
         specifier: 'catalog:'
         version: 1.70.0(oxlint-tsgolint@0.23.0)
+      postcss:
+        specifier: ^8.5.23
+        version: 8.5.23
       tsdown:
         specifier: 'catalog:'
         version: 0.22.5(typescript@7.0.2)
