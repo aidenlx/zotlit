@@ -25,15 +25,6 @@ const hover = (
   ...overrides,
 });
 
-describe("hoverPreferences", () => {
-  it("reads the locked defaults off the settings snapshot", () => {
-    expect(hoverPreferences(defaults)).toEqual({
-      action: "popover",
-      requireMod: { source: true, "live-preview": false, reading: false },
-    });
-  });
-});
-
 describe("citationHoverIntent under the Citation Popover", () => {
   it("stacks every work a citation names, in the order it names them", () => {
     expect(

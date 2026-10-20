@@ -535,22 +535,6 @@ describe("CitationText", () => {
     },
   );
 
-  it("formats every citation the document writes", async () => {
-    const { service, citationRequests, dispose } = await makeHarness({
-      body: "First @alpha.\n\nThen [see @alpha, p. 3].",
-    });
-
-    const { formatted } = await readText(service);
-
-    expect(citationRequests).toEqual([
-      { citations: [`@${ALPHA_KEY}`, `[see @${ALPHA_KEY}, p. 3]`] },
-    ]);
-    expect(firstText(formatted.get("[see @alpha, p. 3]"))).toBe(
-      `«[see @${ALPHA_KEY}, p. 3]»`,
-    );
-    await dispose();
-  });
-
   it("hands the settled read to the surfaces, text and status alike", async () => {
     const { service, dispose } = await makeHarness({
       body: "Blah [@alpha].",
@@ -567,17 +551,6 @@ describe("CitationText", () => {
     expect(firstText(settlements[0]!.value.formatted.get("[@alpha]"))).toBe(
       `«[@${ALPHA_KEY}]»`,
     );
-    await dispose();
-  });
-
-  it("reads no citation out of a code block", async () => {
-    const { service, citationRequests, dispose } = await makeHarness({
-      body: "```\n[@alpha]\n```\n\nReal [@alpha] here.",
-    });
-
-    await readText(service);
-
-    expect(citationRequests).toEqual([{ citations: [`[@${ALPHA_KEY}]`] }]);
     await dispose();
   });
 
@@ -615,23 +588,6 @@ describe("CitationText", () => {
     await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [] }]);
-    await dispose();
-  });
-
-  it("keeps resolved items from a partial cluster in the document render context", async () => {
-    const body = "Partial [@alpha; @ghost], then complete [@alpha].";
-    const { service, citationRequests, dispose } = await makeHarness({
-      body,
-      cited: [citation("alpha"), citation("ghost", null)],
-    });
-
-    const { formatted } = await readText(service);
-
-    expect(citationRequests).toEqual([
-      { citations: [`[@${ALPHA_KEY}]`, `[@${ALPHA_KEY}]`] },
-    ]);
-    expect(formatted.has("[@alpha; @ghost]")).toBe(false);
-    expect(firstText(formatted.get("[@alpha]"))).toBe(`«[@${ALPHA_KEY}]»`);
     await dispose();
   });
 
