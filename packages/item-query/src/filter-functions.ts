@@ -1,5 +1,5 @@
 // The function registry of the Filter Expression evaluator. Validation,
-// execution, and the Item Query Schema read the same entries, so a function,
+// execution, and the Query Schema read the same entries, so a function,
 // a method, or a property exists only here.
 import { compareStrings } from "./collation";
 import {
@@ -212,7 +212,7 @@ function extreme(
 export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
   number: {
     description:
-      "The value as a number: a text by the decimal number it starts with, a boolean as 1 or 0, and a date as its Unix time in milliseconds; an empty or blank text gives null, and a text that starts with no number an Error Value.",
+      "The value as a number: a text by the decimal number it starts with, a boolean as 1 or 0, and a date as its `timestamp`; an empty or blank text gives null, and a text that starts with no number an Error Value.",
     parameters: [any("value")],
     returns: "number",
     call: (_subject, [value = null], clock) => {
@@ -497,9 +497,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
               before + first.toUpperCase(),
           ),
       },
-      // A result above 1 000 000 code units is out of range too.
       repeat: {
-        description: `The text repeated \`count\` times, a count from 0 to ${MAX_REPEAT}.`,
+        description: `The text repeated \`count\` times, for a count from 0 to ${MAX_REPEAT} and a result of at most ${MAX_REPEAT_LENGTH} UTF-16 code units.`,
         parameters: [number("count")],
         returns: "string",
         call: (subject, [count]) =>
@@ -508,9 +507,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             ? (subject as string).repeat(count)
             : outOfRange("repeat", 0, count),
       },
-      // By code point, so an emoji survives.
       reverse: {
-        description: "The text with its characters in reverse order.",
+        description: "The text with its code points in reverse order.",
         parameters: NONE,
         returns: "string",
         call: (subject) =>
@@ -520,7 +518,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       slice: {
         description:
-          "The part of the text from index `start` up to, not including, `end`, counted in UTF-16 code units.",
+          "The part of the text from index `start` up to, not including, `end`, counted in UTF-16 code units; a negative index counts from the end.",
         parameters: [number("start")],
         optional: [number("end")],
         returns: "string",
@@ -682,7 +680,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       }),
       reduce: elementMethod({
         description:
-          "The result of the expression run on each element in turn, with `acc` bound to the previous result and starting from `initial`.",
+          "The result of the expression run on each element in turn, with `value`, `index`, and `acc` bound, where `acc` is the previous result, starting from `initial`.",
         returns: null,
         scope: ["value", "index", "acc"],
         after: [any("initial")],
@@ -705,7 +703,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       isEmpty: isEmpty(() => false, "False: a date is never empty."),
       date: {
         description:
-          "The calendar day of the date in the query time zone, without its time.",
+          "The calendar day of a timestamp in the query time zone, or a calendar date unchanged.",
         parameters: NONE,
         returns: "date",
         call: (subject, _args, clock) => dateOnly(subject as DateValue, clock),
@@ -823,15 +821,15 @@ const PROPERTIES: Readonly<
   date: properties({
     year: datePartProperty(
       "year",
-      "The year of the date in the query time zone.",
+      "The year of the date, in the query time zone for a timestamp.",
     ),
     month: datePartProperty(
       "month",
-      "The month of the date from 1 to 12, or null for a date of only a year.",
+      "The month of the date from 1 to 12, in the query time zone for a timestamp, or null for a date of only a year.",
     ),
     day: datePartProperty(
       "day",
-      "The day of the month of the date, or null for a date without a day.",
+      "The day of the month of the date, in the query time zone for a timestamp, or null for a date without a day.",
     ),
     hour: datePartProperty(
       "hour",
@@ -851,7 +849,7 @@ const PROPERTIES: Readonly<
     ),
     timestamp: datePartProperty(
       "timestamp",
-      "The Unix time of the start of the date in milliseconds.",
+      "The Unix time in milliseconds of a timestamp, or of the start of a calendar date in the query time zone.",
     ),
   }),
   duration: properties({}),
@@ -959,7 +957,7 @@ export const PROPERTY_NAMES: readonly string[] = [
 ];
 
 /**
- * Every method with the value type it belongs to, for the Item Query Schema.
+ * Every method with the value type it belongs to, for the Query Schema.
  * `any`: a method of every value, null included.
  */
 export const METHOD_ENTRIES: readonly (readonly [
@@ -973,7 +971,7 @@ export const METHOD_ENTRIES: readonly (readonly [
   ),
 ];
 
-/** Every property with the value type it belongs to, for the Item Query Schema. */
+/** Every property with the value type it belongs to, for the Query Schema. */
 export const PROPERTY_ENTRIES: readonly (readonly [
   FilterValueType,
   string,
