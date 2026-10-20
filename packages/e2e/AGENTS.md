@@ -24,7 +24,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | File | Area |
 | --- | --- |
 | `annotations.e2e.ts` | Annotation View, sidebar grouping, early Query File embeds |
-| `annotation-links.e2e.ts` | Durable Annotation Links in a note: click-to-land and pass-through to Zotero (spec #1621 adds hover and the annotation suggester here) |
+| `annotation-links.e2e.ts` | Durable Annotation Links in a note: click-to-land and pass-through to Zotero, and the Annotation Suggester's search-and-insert (spec #1621 adds hover here) |
 | `annotations-excerpts.e2e.ts` | PDF excerpts, rendering, worker reads |
 | `query-file.e2e.ts` | Query File tabs, new-query hotkey |
 | `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts` | Query View UI, formulas, table and Items layout |
