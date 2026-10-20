@@ -11,6 +11,20 @@ export {
   type SchemaProperty,
 } from "./describe-item-query";
 export { describeQueryCustomFields } from "./describe-query-custom-fields";
+// The function registry of the Filter Expression language, for in-process
+// editors. The Query Schema stays the agent contract.
+export {
+  GLOBAL_FUNCTIONS,
+  IF_FUNCTION,
+  METHOD_ENTRIES,
+  PROPERTY_ENTRIES,
+  parameterAt,
+  type FunctionDefinition,
+  type FunctionParameter,
+  type ParameterType,
+  type PropertyDefinition,
+} from "./filter-functions";
+export type { FilterValueType } from "./filter-values";
 export { cellProperties } from "./cell-properties";
 export {
   AttachmentFileResolver,

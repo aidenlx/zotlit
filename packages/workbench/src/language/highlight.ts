@@ -19,6 +19,8 @@ export const templateToken = {
   string: "zt-template-string",
   /** A number, boolean, or null. */
   value: "zt-template-value",
+  /** A regular expression, which also carries the value hook. */
+  regexp: "zt-template-regexp",
   operator: "zt-template-operator",
   punctuation: "zt-template-punctuation",
   comment: "zt-template-comment",
@@ -37,6 +39,10 @@ export const templateHighlighter = tagHighlighter([
   { tag: tags.function(tags.propertyName), class: templateToken.filter },
   { tag: tags.string, class: templateToken.string },
   { tag: tags.literal, class: templateToken.value },
+  {
+    tag: tags.regexp,
+    class: `${templateToken.value} ${templateToken.regexp}`,
+  },
   { tag: tags.operator, class: templateToken.operator },
   { tag: tags.punctuation, class: templateToken.punctuation },
   { tag: [tags.comment, tags.meta], class: templateToken.comment },

@@ -33,7 +33,6 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 
 import { syntaxFaultSpan } from "./expression-faults";
 import type { FaultSpan } from "./expression-faults";
-import "./property-page.css";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf, formulaSpansOf } from "./results";
 import type { QueryView } from "./view";

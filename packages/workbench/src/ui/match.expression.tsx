@@ -2,7 +2,6 @@
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting } from "@codemirror/language";
 import { linter, setDiagnostics } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import {
@@ -14,8 +13,10 @@ import { useEffect, useRef } from "react";
 
 import { useExpressionExtension, useParts } from "./theme";
 
-import { filterExpressionLanguage } from "#/language/filter-expression";
-import { templateHighlighter } from "#/language/highlight";
+import {
+  filterExpressionHighlighting,
+  filterExpressionLanguage,
+} from "#/language/filter-expression";
 
 /** The label and validity of the field, on its editable content. */
 const contentAttributes = ({
@@ -114,7 +115,7 @@ export function MatchExpressionInput({
         doc: value,
         extensions: [
           filterExpressionLanguage,
-          syntaxHighlighting(templateHighlighter),
+          filterExpressionHighlighting,
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
