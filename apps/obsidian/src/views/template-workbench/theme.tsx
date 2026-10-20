@@ -189,6 +189,9 @@ const previewNotice =
 export const templateWorkbenchTheme: WorkbenchTheme = {
   icon: (name) => <Icon name={templateWorkbenchIcons[name]} />,
   editorExtension: () => [templateHighlighting, codePane],
+  // The Match editor, the Filter popover and the Formula page all draw their
+  // expression editors under this theme, so each keeps working in a popout.
+  expressionExtension: () => codePane,
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",

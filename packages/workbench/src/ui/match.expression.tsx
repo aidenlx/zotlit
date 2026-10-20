@@ -11,7 +11,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
-import { useParts } from "./theme";
+import { useExpressionExtension, useParts } from "./theme";
 
 import { filterExpressionLanguage } from "#/language/filter-expression";
 import { templateHighlighter } from "#/language/highlight";
@@ -62,6 +62,7 @@ export function MatchExpressionInput({
   ...data
 }: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
   const part = useParts("match");
+  const hostExtension = useExpressionExtension();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   // The editor is made once; it reads what it needs then, and later props,
@@ -74,6 +75,7 @@ export function MatchExpressionInput({
     invalid,
     placeholder,
     lines,
+    hostExtension,
   });
   props.current = {
     value,
@@ -83,10 +85,11 @@ export function MatchExpressionInput({
     invalid,
     placeholder,
     lines,
+    hostExtension,
   };
   const attributes = useRef(new Compartment());
   useEffect(() => {
-    const { value, placeholder, lines } = props.current;
+    const { value, placeholder, lines, hostExtension } = props.current;
     const parent = host.current!;
     const editor = new EditorView({
       parent,
@@ -108,6 +111,7 @@ export function MatchExpressionInput({
           placeholder ? placeholderText(placeholder) : [],
           EditorView.contentAttributes.of({ spellcheck: "false" }),
           attributes.current.of(contentAttributes(props.current)),
+          hostExtension?.() ?? [],
           EditorView.updateListener.of((update) => {
             if (
               update.docChanged &&

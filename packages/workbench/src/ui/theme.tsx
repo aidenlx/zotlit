@@ -326,6 +326,12 @@ export interface WorkbenchTheme {
     slice: WorkbenchSliceId,
     language: SliceLanguage,
   ) => Extension;
+  /**
+   * The host's CodeMirror extensions over every Filter Expression editor: a
+   * Match condition's expression and a Formula. A host without one mounts
+   * the editor's own extensions alone.
+   */
+  readonly expressionExtension?: () => Extension;
   /** Draws a named icon; a host without one draws none. */
   readonly icon?: (name: WorkbenchIcon) => ReactNode;
   /**
@@ -424,4 +430,9 @@ export function useIcon(): (name: WorkbenchIcon) => ReactNode {
 /** The CodeMirror presentation supplied by the host theme. */
 export function useEditorExtension() {
   return useContext(ThemeContext).editorExtension;
+}
+
+/** The host's CodeMirror extensions for Filter Expression editors. */
+export function useExpressionExtension() {
+  return useContext(ThemeContext).expressionExtension;
 }
