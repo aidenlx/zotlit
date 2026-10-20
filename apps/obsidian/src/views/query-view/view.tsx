@@ -473,10 +473,14 @@ const NO_FORMULA_MARKS: FormulaMarks = {
 };
 
 /**
- * The reason of each Formula that the run left out, by name, and where in
- * the Formula's own text its Fault is, where it names a place there.
+ * The reason of each Formula that the run left out, by name, and where its
+ * Fault is in `formulas[name]`, the text the run planned, where it names a
+ * place there.
  */
-function formulaMarks(outcome: QueryViewOutcome): FormulaMarks {
+function formulaMarks(
+  outcome: QueryViewOutcome,
+  formulas: Readonly<Record<string, string>> = {},
+): FormulaMarks {
   const faults = Object.entries(
     (outcome.kind === "result"
       ? outcome.result.formulaDiagnostics
@@ -492,8 +496,9 @@ function formulaMarks(outcome: QueryViewOutcome): FormulaMarks {
       faults.flatMap(([name, { location }]) =>
         location?.argument === "formulas" &&
         location.path === name &&
-        location.span
-          ? [[name, location.span] as const]
+        location.span &&
+        Object.hasOwn(formulas, name)
+          ? [[name, { text: formulas[name]!, span: location.span }] as const]
           : [],
       ),
     ),
@@ -1104,7 +1109,11 @@ export class QueryView extends Component implements HistorySurface {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(run, outcome.diagnostic, formulaMarks(outcome));
+        this.#fail(
+          run,
+          outcome.diagnostic,
+          formulaMarks(outcome, plan.request.formulas),
+        );
         return;
       case "result": {
         const result = outcome.result;
@@ -1147,7 +1156,7 @@ export class QueryView extends Component implements HistorySurface {
                 ]),
               ).values(),
             ],
-            ...formulaMarks(outcome),
+            ...formulaMarks(outcome, plan.request.formulas),
           },
           failure: null,
         });

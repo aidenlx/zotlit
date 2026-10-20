@@ -2930,9 +2930,10 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
       },
     },
   });
-  // The formula page underlines the Fault at its place in the Formula's text.
+  // The formula page underlines the Fault at its place in the text the run
+  // planned.
   expect(formulaSpansOf(view.state.getState())).toEqual({
-    short: { from: 6, to: 10 },
+    short: { text: "title.nope()", span: { from: 6, to: 10 } },
   });
   expect(tableText(el)).toEqual([
     ["", "Title", "formula.year", "formula.short"],

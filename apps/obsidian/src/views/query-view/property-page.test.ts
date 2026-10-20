@@ -42,13 +42,27 @@ describe("the faults the formula page underlines", () => {
     const fault = {
       saved: text,
       message: "nope is not a method of string.",
-      span: { from: 6, to: 10 },
+      span: { text, span: { from: 6, to: 10 } },
     };
     const check = formulaCheck(text, fault);
     expect(check.issue).toBe("nope is not a method of string.");
     expect(underlined(text, check)).toEqual(["nope"]);
     expect(formulaCheck("title.nop()", fault)).toEqual({
       issue: null,
+      faults: [],
+    });
+  });
+
+  it("underlines nothing from a run of other text, while the next run is pending", () => {
+    // The text was saved again, but the Fault is from the run of the text before.
+    const text = "title.slice(0, 3)";
+    const check = formulaCheck(text, {
+      saved: text,
+      message: "nope is not a method of string.",
+      span: { text: "title.nope()", span: { from: 6, to: 10 } },
+    });
+    expect(check).toEqual({
+      issue: "nope is not a method of string.",
       faults: [],
     });
   });

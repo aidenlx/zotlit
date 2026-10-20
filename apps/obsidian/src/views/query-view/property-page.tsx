@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
 import { syntaxFaultSpan } from "./expression-faults";
-import type { FaultSpan } from "./expression-faults";
+import type { PlacedFault } from "./expression-faults";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf, formulaSpansOf } from "./results";
 import type { QueryView } from "./view";
@@ -53,13 +53,16 @@ export function formulaNameIssue(
   return null;
 }
 
-/** What the last run found in a Formula, with the text it ran. */
+/** What the last run found in a Formula. */
 export interface FormulaRunFault {
-  /** The saved text the run planned. */
+  /** The Formula's saved text. */
   readonly saved: string;
   readonly message: string;
-  /** The part of `saved` the Fault names, where it names one. */
-  readonly span?: FaultSpan | undefined;
+  /**
+   * Where the Fault is in the text the run planned, where it names a place;
+   * the field underlines it while that text is the saved text.
+   */
+  readonly span?: PlacedFault | undefined;
 }
 
 /** What the Formula field reports and underlines. */
@@ -93,7 +96,10 @@ export function formulaCheck(
   if (run === null || run.saved !== text) return { issue: null, faults: [] };
   return {
     issue: run.message,
-    faults: run.span ? [{ ...run.span, message: run.message }] : [],
+    faults:
+      run.span?.text === text
+        ? [{ ...run.span.span, message: run.message }]
+        : [],
   };
 }
 

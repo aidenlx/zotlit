@@ -9,7 +9,7 @@ import type {
   QueryViewRow,
 } from "@/services/item-query/query-view";
 
-import type { FaultSpan } from "./expression-faults";
+import type { PlacedFault } from "./expression-faults";
 import type { ConditionIssue } from "./query-file";
 import type { ReaderDiagnosticSource } from "./reader-diagnostic";
 import type { ShownRecord } from "./record-rows";
@@ -44,8 +44,8 @@ export interface ResultSnapshot {
    * them: each name with the message. Their columns show no values.
    */
   formulaIssues: NameDictionary<string>;
-  /** Where in its text each Formula of `formulaIssues` has its Fault, where it names a place. */
-  formulaSpans: NameDictionary<FaultSpan>;
+  /** Where each Formula of `formulaIssues` has its Fault in the text the run planned, where it names a place. */
+  formulaSpans: NameDictionary<PlacedFault>;
 }
 
 /** Why a run gave no rows. */
@@ -55,8 +55,8 @@ export interface QueryViewFailure {
   filterIssue: ConditionIssue | null;
   /** The Formulas the run left out, by name, with the message of each. */
   formulaIssues: NameDictionary<string>;
-  /** Where in its text each Formula of `formulaIssues` has its Fault, where it names a place. */
-  formulaSpans: NameDictionary<FaultSpan>;
+  /** Where each Formula of `formulaIssues` has its Fault in the text the run planned, where it names a place. */
+  formulaSpans: NameDictionary<PlacedFault>;
 }
 
 /** No rows: what a reader of the results sees while none are on screen. */
@@ -92,7 +92,7 @@ export function formulaIssuesOf(state: {
 export function formulaSpansOf(state: {
   results: ResultSnapshot | null;
   failure: QueryViewFailure | null;
-}): NameDictionary<FaultSpan> {
+}): NameDictionary<PlacedFault> {
   return (
     state.results?.formulaSpans ??
     state.failure?.formulaSpans ??

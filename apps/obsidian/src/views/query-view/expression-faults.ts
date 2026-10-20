@@ -13,6 +13,12 @@ export interface FaultSpan {
   readonly to: number;
 }
 
+/** Where a run found a Fault: the text it planned, and the span in that text. */
+export interface PlacedFault {
+  readonly text: string;
+  readonly span: FaultSpan;
+}
+
 /**
  * The span to underline for a Syntax Fault of `text`. A fault at the end of
  * the text names no character, so it takes the unclosed string or bracket
