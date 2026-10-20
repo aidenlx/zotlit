@@ -25,6 +25,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/docs deploy:beta` — the same for Pre-release Docs. `CLOUDFLARE_ENV` picks the environment at **build** time, so the beta line needs its own build; without it the bundle carries production's variables whatever `wrangler deploy --env` says.
 - `pnpm --filter @zotlit/docs cf-typegen` — regenerate the committed `worker-configuration.d.ts` after any `wrangler.jsonc` binding, variable, secret, or compatibility change. The typecheck fails when it is stale.
 - `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
+- `pnpm exec turbo run generate:query-functions --filter=@zotlit/docs` — regenerate the Functions and methods reference page. The build runs it too.
 
 ## Content pipeline
 
@@ -82,7 +83,7 @@ The page's Markdown edition renders each `<ContractTable>` as a GFM table throug
 
 ## Generated Functions and methods reference
 
-`content/docs/reference/functions-and-methods.mdx` is generated from the published Query Schema of `@zotlit/item-query`, so its descriptions come from the function registry in `packages/item-query/src/filter-functions.ts`. Edit them there, then run `pnpm exec turbo run generate:query-functions --filter=@zotlit/docs`. The build runs the generator, and an entry without a description fails it. [`src/lib/query-functions/reference.ts`](src/lib/query-functions/reference.ts) owns the page structure; the framing prose sits in the script.
+`content/docs/reference/functions-and-methods.mdx` is generated from the published Query Schema of `@zotlit/item-query`, so its descriptions come from the function registry in `packages/item-query/src/filter-functions.ts`. Edit them there, then run the Turbo task above. The build runs the generator, and an entry without a description fails it. [`src/lib/query-functions/reference.ts`](src/lib/query-functions/reference.ts) owns the page structure; the framing prose sits in the script.
 
 ## Content and writing docs
 

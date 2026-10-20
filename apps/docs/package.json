@@ -5,6 +5,7 @@
   "type": "module",
   "imports": {
     "#content-config": "./content.config.ts",
+    "#mdx-text": "./src/lib/mdx-text.ts",
     "#paraglide/messages.js": "./src/paraglide/messages.js"
   },
   "scripts": {

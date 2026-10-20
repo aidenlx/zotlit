@@ -10,6 +10,9 @@ import type {
   SchemaProperty,
 } from "@zotlit/item-query";
 
+// A subpath import, so `node scripts/*.ts` resolves it as the bundler does.
+import { plainMdxText } from "#mdx-text";
+
 /** The language definitions of the Query Schema that the page lists. */
 export type LanguageVocabulary = Pick<
   ItemQuerySchema,
@@ -18,14 +21,15 @@ export type LanguageVocabulary = Pick<
 
 /**
  * The page body: global functions, then methods and properties grouped by
- * receiver type in the schema's type order. Throws on an entry without a
- * description, or with one that MDX would read as markup.
+ * receiver type in the schema's type order.
+ * @returns The MDX of the page's sections, without frontmatter.
+ * @throws When an entry has no description, or one that MDX would read as
+ *   markup.
  */
 export function renderFunctionsReference(
   vocabulary: LanguageVocabulary,
 ): string {
-  const receivers = ["any", ...vocabulary.types] as const;
-  const blocks = [
+  return [
     "## Global functions [#functions]",
     "A global function is called by its name, such as `today()`.",
     table(
@@ -36,28 +40,40 @@ export function renderFunctionsReference(
     ),
     "## Methods [#methods]",
     "A method is called on a value, such as `title.lower()`. Each group lists the methods of one value type.",
-    ...receivers.flatMap((type) => {
-      const methods = vocabulary.methods.filter((entry) => entry.on === type);
-      if (methods.length === 0) return [];
-      return [
-        `### ${type === "any" ? "Methods of every value" : `${label(type)} methods`} [#${type}-methods]`,
-        table(methods.map(methodRow)),
-      ];
+    ...receiverGroups("methods", ["any", ...vocabulary.types], {
+      entries: vocabulary.methods,
+      row: methodRow,
     }),
     "## Properties [#properties]",
     "A property is read from a value without a call, such as `title.length`.",
-    ...vocabulary.types.flatMap((type) => {
-      const properties = vocabulary.properties.filter(
-        (entry) => entry.on === type,
-      );
-      if (properties.length === 0) return [];
-      return [
-        `### ${label(type)} properties [#${type}-properties]`,
-        table(properties.map(propertyRow)),
-      ];
+    ...receiverGroups("properties", vocabulary.types, {
+      entries: vocabulary.properties,
+      row: propertyRow,
     }),
-  ];
-  return blocks.join("\n\n");
+  ].join("\n\n");
+}
+
+/** One anchored heading and table per receiver type that has entries. */
+function receiverGroups<Entry extends { readonly on: string }>(
+  kind: "methods" | "properties",
+  receivers: readonly string[],
+  {
+    entries,
+    row,
+  }: {
+    readonly entries: readonly Entry[];
+    readonly row: (entry: Entry) => readonly [string, string];
+  },
+): string[] {
+  return receivers.flatMap((type) => {
+    const members = entries.filter((entry) => entry.on === type);
+    if (members.length === 0) return [];
+    const title =
+      type === "any"
+        ? `${capitalize(kind)} of every value`
+        : `${capitalize(type)} ${kind}`;
+    return [`### ${title} [#${type}-${kind}]`, table(members.map(row))];
+  });
 }
 
 function methodRow(entry: SchemaMethod): readonly [string, string] {
@@ -79,22 +95,26 @@ function propertyRow(entry: SchemaProperty): readonly [string, string] {
 /** `name(param: type, optional?: type, ...rest: type) → type` as a code span. */
 function functionSignature(name: string, entry: SchemaFunction): string {
   const parameters = [
-    ...entry.parameters.map((parameter) => typed(parameter.name, parameter)),
-    ...entry.optional.map((parameter) =>
-      typed(`${parameter.name}?`, parameter),
+    ...entry.parameters.map((parameter) =>
+      parameterSignature(parameter.name, parameter),
     ),
-    ...(entry.rest ? [typed(`...${entry.rest.name}`, entry.rest)] : []),
+    ...entry.optional.map((parameter) =>
+      parameterSignature(`${parameter.name}?`, parameter),
+    ),
+    ...(entry.rest
+      ? [parameterSignature(`...${entry.rest.name}`, entry.rest)]
+      : []),
   ];
   // A null result type means the type of the result varies.
   return `\`${name}(${parameters.join(", ")}) → ${entry.returns ?? "any"}\``;
 }
 
-function typed(name: string, parameter: SchemaParameter): string {
+function parameterSignature(name: string, parameter: SchemaParameter): string {
   const types = parameter.values
     ? parameter.values.map((value) => JSON.stringify(value))
     : typeof parameter.type === "string"
       ? [parameter.type]
-      : [...parameter.type];
+      : parameter.type;
   return `${name}: ${[...types, ...(parameter.nullable ? ["null"] : [])].join(" | ")}`;
 }
 
@@ -109,28 +129,21 @@ function description(
       `${name} has no description: add one to its entry in packages/item-query/src/filter-functions.ts.`,
     );
   }
-  // MDX reads `{` and `<` as expression and element openers outside code spans.
-  const opener = /[{}<]/.exec(text.replaceAll(/`[^`]*`/g, ""));
-  if (opener) {
-    throw new Error(
-      `The description of ${name} carries the MDX opener ${opener[0]} outside a code span: ${text}`,
-    );
-  }
-  return text;
+  return plainMdxText(text, `The description of ${name}`);
 }
 
 function table(rows: readonly (readonly [string, string])[]): string {
   return [
     "| Signature | Description |",
     "| --- | --- |",
-    ...rows.map((cells) => `| ${cells.map(cell).join(" | ")} |`),
+    ...rows.map((cells) => `| ${cells.map(escapeCellPipes).join(" | ")} |`),
   ].join("\n");
 }
 
 /** A pipe ends a GFM table cell, even inside a code span, unless escaped. */
-const cell = (text: string): string => text.replaceAll("|", "\\|");
+const escapeCellPipes = (text: string): string => text.replaceAll("|", "\\|");
 
-const label = (type: string): string =>
+const capitalize = (type: string): string =>
   `${type.charAt(0).toUpperCase()}${type.slice(1)}`;
 
 function conjoin(terms: readonly string[]): string {

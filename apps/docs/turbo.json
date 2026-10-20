@@ -53,6 +53,7 @@
       "inputs": [
         "scripts/generate-query-functions.ts",
         "src/lib/query-functions/reference.ts",
+        "src/lib/mdx-text.ts",
         "oxfmt.config.ts"
       ],
       "outputs": ["content/docs/reference/functions-and-methods.mdx"],

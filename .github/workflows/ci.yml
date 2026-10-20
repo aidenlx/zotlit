@@ -53,44 +53,34 @@ jobs:
             exit 1
           fi
 
-      # The template-data reference page is generated from the contract IR the
-      # previous step just regenerated, so a contract change without a
-      # regenerated page must fail here. Call the generator script directly,
-      # not the turbo task, because a freshness check must always regenerate
-      # rather than restore a cached output. `mise run init` above builds the
-      # packages the script imports.
-      - name: Template data page check
+      # Generated docs pages. The template-data page comes from the contract IR
+      # the previous step just regenerated; the Functions and methods page
+      # comes from the Query Schema of @zotlit/item-query. A source change
+      # without a regenerated page must fail here. Call the generator scripts
+      # directly, not the turbo tasks, because a freshness check must always
+      # regenerate rather than restore a cached output. `mise run init` above
+      # builds the packages the scripts import.
+      - name: Generated docs pages check
         run: |
-          pnpm --filter @zotlit/docs generate:template-data
-          stale=$(git status --porcelain -- apps/docs/content/docs/reference/templates/data.mdx)
-          if [ -n "$stale" ]; then
-            {
-              echo "### Stale template data page"
-              echo 'Run `pnpm --filter @zotlit/docs generate:template-data` and commit the result.'
-              echo '```'
-              echo "$stale"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-      # The Functions and methods page is generated from the Query Schema of
-      # @zotlit/item-query, which `mise run init` above builds. Like the step
-      # above, it calls the script so the check always regenerates.
-      - name: Functions and methods page check
-        run: |
-          pnpm --filter @zotlit/docs generate:query-functions
-          stale=$(git status --porcelain -- apps/docs/content/docs/reference/functions-and-methods.mdx)
-          if [ -n "$stale" ]; then
-            {
-              echo "### Stale Functions and methods page"
-              echo 'Run `pnpm exec turbo run generate:query-functions --filter=@zotlit/docs` and commit the result.'
-              echo '```'
-              echo "$stale"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
+          failed=0
+          for pair in \
+            "generate:template-data apps/docs/content/docs/reference/templates/data.mdx" \
+            "generate:query-functions apps/docs/content/docs/reference/functions-and-methods.mdx"; do
+            set -- $pair
+            pnpm --filter @zotlit/docs "$1"
+            stale=$(git status --porcelain -- "$2")
+            if [ -n "$stale" ]; then
+              {
+                echo "### Stale generated docs page"
+                echo "Run \`pnpm --filter @zotlit/docs $1\` and commit the result."
+                echo '```'
+                echo "$stale"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          done
+          exit $failed
 
       # oxlint.base.ts sets typeAware + typeCheck, so `-f github` emits ::error
       # workflow commands → inline annotations on the diff, type errors included.
