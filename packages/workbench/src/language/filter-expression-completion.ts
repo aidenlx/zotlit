@@ -10,7 +10,11 @@ import type { Completion, CompletionContext } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
 
-import { parser } from "@zotlit/filter-expression";
+import {
+  isIdentifierName,
+  isMemberName,
+  parser,
+} from "@zotlit/filter-expression";
 import { GLOBAL_FUNCTIONS, IF_FUNCTION } from "@zotlit/item-query";
 import type { QueryDataset } from "@zotlit/item-query";
 
@@ -42,8 +46,6 @@ export type {
   ExpressionVocabulary,
 } from "./expression-options";
 
-const IDENTIFIER = /^[A-Za-z_$¡-￿][\w$¡-￿]*$/;
-const NAME_CHAR = /[\w$¡-￿]/;
 /** Tokens whose text a completion must not interrupt. */
 const LITERALS = new Set(["String", "RegExp", "RealNumber", "Escape"]);
 
@@ -67,9 +69,7 @@ function namespaced(
   return {
     label: path,
     // A name the dot cannot reach takes bracket access.
-    insert: IDENTIFIER.test(name)
-      ? path
-      : `${namespace}[${JSON.stringify(name)}]`,
+    insert: isMemberName(name) ? path : `${namespace}[${JSON.stringify(name)}]`,
     kind: "namespace",
     ...noteOf(path, label),
   };
@@ -125,13 +125,13 @@ export function expressionCompletions(
       ? null
       : { from: path.from, to: path.to, options };
   }
-  let from = pos;
-  while (from > 0 && NAME_CHAR.test(source[from - 1]!)) from--;
-  let to = pos;
-  while (to < source.length && NAME_CHAR.test(source[to]!)) to++;
+  // The word typed is the identifier the caret is in or at the end of.
+  const word =
+    inner.name === "Identifier" && inner.from < pos ? inner : undefined;
+  const from = word?.from ?? pos;
+  const to = word?.to ?? pos;
   const query = source.slice(from, pos);
-  if (/^\d/.test(query) || source[from - 1] === ".") return null;
-  const bound = boundNameOptions(inner, pos, source);
+  const bound = boundNameOptions(caret);
   if (query === "" && !explicit && bound.length === 0) return null;
   const options = ranked(
     [...bound, ...entries(vocabulary)],
@@ -152,7 +152,7 @@ export function datasetExpressionFields(
   let typed = typedFields.get(dataset);
   if (!typed) {
     typed = dataset.names.flatMap((path): ExpressionField[] => {
-      if (!IDENTIFIER.test(path)) return [];
+      if (!isIdentifierName(path)) return [];
       const plan = dataset.planFilter(path);
       if ("kind" in plan) return [];
       const type = plan.root.valueType;

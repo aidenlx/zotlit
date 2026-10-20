@@ -40,7 +40,13 @@ function hasError(tree: Tree): boolean {
   return false;
 }
 
-export { parseExpressionAst, toAst } from "./ast.js";
+export {
+  isIdentifierName,
+  isMemberName,
+  parseExpressionAst,
+  parsePartialExpressionAst,
+  toAst,
+} from "./ast.js";
 export type {
   BinaryOperator,
   ExpressionNode,

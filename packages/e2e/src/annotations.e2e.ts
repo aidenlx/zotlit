@@ -325,6 +325,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }),
       }),
     ).toBe(true);
+    // In an expression condition of the dialog, Escape closes the completion
+    // list, then the Signature Hint, and leaves the dialog open each time; a
+    // list the typing opens over the hint closes first.
+    // The condition goes again before the eval answers.
+    const escapes = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}await using cleanup=new AsyncDisposableStack();const contents=require('@electron/remote').getCurrentWebContents();const key=async(keyCode)=>{const up=new Promise(r=>window.addEventListener('keyup',r,{once:true,capture:true}));contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;};const modal=()=>document.querySelector('.modal.zt-annot-filter-modal');const section=modal().querySelector('[data-filter-section="view"]');const before=section.querySelectorAll('[data-condition-row]').length;press([...section.querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');const row=await until('new row',()=>section.querySelectorAll('[data-condition-row]')[before]);cleanup.defer(()=>{const remove=modal()?.querySelectorAll('[data-filter-section="view"] [data-condition-row]')[before]?.querySelector('button[aria-label="${run.m.workbench_match_remove_condition()}"]');if(remove)press(remove,'Remove condition');});press(row.querySelector('button[aria-label="${run.m.workbench_match_edit_as_expression()}"]'),'Edit as expression');const content=await until('expression field',()=>section.querySelectorAll('[data-condition-row]')[before]?.querySelector('.cm-content'));const editor=content.cmTile.root.view;window.focus();editor.focus();await until('focus in the field',()=>document.activeElement===content&&document.hasFocus(),5000);const type=(text)=>{editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});document.execCommand('insertText',false,text);};type('te');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete'));await key('Escape');await until('Escape closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const list={dialog:!!modal()};if(!modal())return JSON.stringify({list});type('text.slice(1, ');await until('Signature Hint',()=>document.querySelector('.zt-signature-hint'));await new Promise(r=>setTimeout(r,200));if(document.querySelector('.cm-tooltip-autocomplete')){await key('Escape');await until('Escape closes the list over the hint',()=>!document.querySelector('.cm-tooltip-autocomplete'));}await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));const hint={dialog:!!modal()};return JSON.stringify({list,hint});})()`,
+      ),
+    );
+    expect(escapes).toEqual({ list: { dialog: true }, hint: { dialog: true } });
     await obEval(
       run.vaultId,
       "(function(){const target=document.activeElement??document.body;target.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));return true;})()",

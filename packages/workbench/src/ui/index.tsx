@@ -1,3 +1,4 @@
+export { useCustomFieldNames } from "./custom-fields";
 export { MatchEditor, MatchPane } from "./match";
 export { MatchExpressionInput } from "./match.expression";
 export type { ExpressionVocabulary } from "#/language/filter-expression-completion";

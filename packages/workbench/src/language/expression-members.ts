@@ -105,11 +105,11 @@ function memberEntries(
 }
 
 /** The `.` access whose member name the caret is on, or right after its dot. */
-function memberAccessAt(
-  inner: SyntaxNode,
-  pos: number,
-  source: string,
-): { receiver: SyntaxNode; from: number; to: number } | null {
+function memberAccessAt({
+  inner,
+  pos,
+  source,
+}: Caret): { receiver: SyntaxNode; from: number; to: number } | null {
   for (let node: SyntaxNode | null = inner; node; node = node.parent) {
     if (node.name !== "ObjectAccess") continue;
     const dot = node.getChild(".");
@@ -131,15 +131,16 @@ function memberAccessAt(
  * The namespace path the caret is in, `formula.<name>` or `this.<name>`,
  * read from the parse tree, so spaces may stand around its dot.
  */
-export function namespaceAccessAt({ inner, pos, source }: Caret): {
+export function namespaceAccessAt(caret: Caret): {
   namespace: string;
   typed: string;
   from: number;
   to: number;
 } | null {
-  const access = memberAccessAt(inner, pos, source);
+  const access = memberAccessAt(caret);
   if (!access) return null;
   const { receiver } = access;
+  const { pos, source } = caret;
   const namespace = source.slice(receiver.from, receiver.to);
   if (!isNamespace(receiver, namespace)) return null;
   return {
@@ -159,10 +160,11 @@ const isNamespace = (receiver: SyntaxNode, text: string) =>
  *   namespace path is the expression completion's.
  */
 export function memberCompletions(
-  { inner, pos, source }: Caret,
+  caret: Caret,
   vocabulary: ExpressionVocabulary,
 ): ExpressionCompletionResult | null | undefined {
-  const access = memberAccessAt(inner, pos, source);
+  const access = memberAccessAt(caret);
+  const { pos, source } = caret;
   if (!access) return undefined;
   const { receiver } = access;
   const text = source.slice(receiver.from, receiver.to);

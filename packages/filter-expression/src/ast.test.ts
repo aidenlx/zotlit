@@ -1,7 +1,12 @@
 // The typed tree consumers validate a vocabulary over.
 import { describe, expect, it } from "vitest";
 
-import { parseExpressionAst } from "./index";
+import {
+  isIdentifierName,
+  isMemberName,
+  parseExpressionAst,
+  parsePartialExpressionAst,
+} from "./index";
 import type { ExpressionNode } from "./index";
 
 /** The tree without source ranges, so a case reads as the structure alone. */
@@ -133,5 +138,70 @@ describe("parseExpressionAst", () => {
       ast: null,
       error: { from: 11, to: 11 },
     });
+  });
+});
+
+describe("parsePartialExpressionAst", () => {
+  const partial = (input: string) => {
+    const tree = parsePartialExpressionAst(input);
+    return tree && strip(tree);
+  };
+
+  it("reads an unfinished member access as its object, in a call left open", () => {
+    expect(partial("tags.filter(index.")).toEqual(ast("tags.filter(index)"));
+    expect(partial("tags.filter(if(index., true, false))")).toEqual(
+      ast("tags.filter(if(index, true, false))"),
+    );
+    expect(partial("title.slice(1, ")).toEqual(ast("title.slice(1)"));
+  });
+
+  it("keeps the ranges of the text as typed", () => {
+    expect(parsePartialExpressionAst("tags.reduce(index., 0)")).toMatchObject({
+      type: "call",
+      args: [
+        { type: "identifier", name: "index", from: 12, to: 17 },
+        { type: "number", from: 20, to: 21 },
+      ],
+    });
+  });
+
+  it("reads the member being typed off a value as the value, unless it is called", () => {
+    const typing = { from: 0, to: 4 };
+    expect(strip(parsePartialExpressionAst("item.tit", { typing })!)).toEqual(
+      ast("item"),
+    );
+    expect(
+      strip(parsePartialExpressionAst("item.title.slice(1)", { typing })!),
+    ).toEqual(ast("item.slice(1)"));
+    expect(
+      strip(parsePartialExpressionAst("item.slice(1)", { typing })!),
+    ).toEqual(ast("item.slice(1)"));
+  });
+
+  it("reads a clean expression as the clean parse does", () => {
+    expect(partial('title.replace("a", "b")')).toEqual(
+      ast('title.replace("a", "b")'),
+    );
+  });
+
+  it("gives no tree for a missing operand or for text it skipped", () => {
+    expect(partial("(title +.")).toBeNull();
+    expect(partial("title ) +")).toBeNull();
+  });
+});
+
+describe("names the grammar reads", () => {
+  it("reads a name alone as an identifier, a keyword or a number not", () => {
+    expect(isIdentifierName("title")).toBe(true);
+    expect(isIdentifierName("année")).toBe(true);
+    for (const name of ["true", "null", "2nd", "reading-status", ""])
+      expect(isIdentifierName(name), name).toBe(false);
+  });
+
+  it("reads a name after a dot as a member, a keyword literal not", () => {
+    expect(isMemberName("score")).toBe(true);
+    expect(isMemberName("if")).toBe(true);
+    for (const name of ["true", "null", "reading-status", "a b", ""])
+      expect(isMemberName(name), name).toBe(false);
   });
 });

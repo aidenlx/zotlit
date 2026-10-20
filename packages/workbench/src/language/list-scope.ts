@@ -6,7 +6,7 @@ import type { SyntaxNode } from "@lezer/common";
 
 import { METHOD_ENTRIES } from "@zotlit/item-query";
 
-import type { ExpressionOption } from "./expression-options";
+import type { Caret, ExpressionOption } from "./expression-options";
 
 const BINDS: ReadonlyMap<string, readonly string[]> = new Map(
   METHOD_ENTRIES.flatMap(([, name, method]) =>
@@ -15,13 +15,6 @@ const BINDS: ReadonlyMap<string, readonly string[]> = new Map(
 );
 
 export const bindsNames = (method: string): boolean => BINDS.has(method);
-
-/** The binding methods that take an initial value after the element expression. */
-export const TAKES_INITIAL: ReadonlySet<string> = new Set(
-  METHOD_ENTRIES.flatMap(([, name, method]) =>
-    method.scope && method.parameters.length > 1 ? [name] : [],
-  ),
-);
 
 /** @returns The binding method `call` calls, or null. */
 export function bindingMethod(call: SyntaxNode, source: string): string | null {
@@ -49,11 +42,11 @@ export function inFirstArgument(call: SyntaxNode, pos: number): boolean {
  * The names bound at `pos` as entries, innermost call first, each once: the
  * names of each list method whose element expression holds `pos`.
  */
-export function boundNameOptions(
-  inner: SyntaxNode,
-  pos: number,
-  source: string,
-): ExpressionOption[] {
+export function boundNameOptions({
+  inner,
+  pos,
+  source,
+}: Caret): ExpressionOption[] {
   const names = new Set<string>();
   for (let node: SyntaxNode | null = inner; node; node = node.parent) {
     const method = bindingMethod(node, source);

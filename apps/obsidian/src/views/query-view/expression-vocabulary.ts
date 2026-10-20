@@ -4,15 +4,17 @@
 // the member list and the Signature Hint read, as the dataset's planner reads
 // them with the view's Formulas and Query Context.
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useStore } from "zustand";
 
 import type { ContextRecord } from "@zotlit/item-query";
 import {
+  datasetCustomFields,
   datasetExpressionFields,
   datasetReceiver,
 } from "@zotlit/workbench/language";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
+import { useCustomFieldNames } from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
 
@@ -31,25 +33,19 @@ const logger = getLogger(["views", "query-view", "expression-vocabulary"]);
  * true; the read stops when it turns false or the editor unmounts. None
  * until the first read arrives.
  */
-export function useCustomFieldNames(
+export function useViewCustomFields(
   view: QueryView,
   reading = true,
 ): readonly string[] {
-  const [names, setNames] = useState<readonly string[]>([]);
-  useEffect(() => {
-    if (!reading) return;
-    const controller = new AbortController();
-    view.customFieldNames(controller.signal).then(
-      (read) => {
-        if (!controller.signal.aborted) setNames(read);
-      },
-      (error: unknown) => {
+  const read = useCallback(
+    (signal: AbortSignal) =>
+      view.customFieldNames(signal).catch((error: unknown) => {
         logger.warn("The custom fields could not be read", { error });
-      },
-    );
-    return () => controller.abort();
-  }, [view, reading]);
-  return names;
+        return [];
+      }),
+    [view],
+  );
+  return useCustomFieldNames(read, { reading });
 }
 
 export function expressionVocabulary({
@@ -96,10 +92,7 @@ export function expressionVocabulary({
         label: label(vaultProperty(name)),
       })),
     }),
-    // A dataset of an Item's children reads its Item's custom fields.
-    ...(custom && {
-      custom: { path: `${engine.customPrefix}custom`, names: custom },
-    }),
+    ...(custom && { custom: datasetCustomFields(engine, custom) }),
   };
 }
 
@@ -116,7 +109,7 @@ export function useFilterExpressions(
   { reading, vaultNames }: { reading: boolean; vaultNames?: readonly string[] },
 ): (dataset: QueryFileDataset) => ExpressionVocabulary {
   const formulas = useStore(view.state, (s) => s.file?.formulas);
-  const custom = useCustomFieldNames(view, reading);
+  const custom = useViewCustomFields(view, reading);
   const context = boundRecords(view.contextSource);
   return useMemo(() => {
     const made = new Map<QueryFileDataset, ExpressionVocabulary>();

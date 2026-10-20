@@ -44,12 +44,12 @@ import type {
 } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
-import { FIELD_POPUP_ATTRIBUTE } from "@zotlit/workbench/language";
 
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
+import { fieldPopupStands } from "@/lib/field-popup";
 import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -505,15 +505,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
       if (composing(event) || latest.current.page === null) return;
       const popup = popupRef.current;
       if (popup?.querySelector("[data-chooser-page] :popover-open")) return;
-      const field = popup?.doc.activeElement;
-      if (
-        field &&
-        popup.contains(field) &&
-        ((field.getAttribute("aria-haspopup") === "listbox" &&
-          field.hasAttribute("aria-controls")) ||
-          field.hasAttribute(FIELD_POPUP_ATTRIBUTE))
-      )
-        return;
+      if (popup && fieldPopupStands(popup)) return;
       back();
       return false;
     };
