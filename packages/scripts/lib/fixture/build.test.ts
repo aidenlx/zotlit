@@ -2970,8 +2970,8 @@ describe("a Vault Case", () => {
 
     // The bare name is the partial's own; the shipped source is the annotation
     // slot's, so the file reads as a factored-out callout.
-    expect(source).toContain("[!tip] Page");
-    expect(source).not.toContain("[!note] Page");
+    expect(source).toContain("[!tip] ");
+    expect(source).not.toContain("[!note]");
     expect(source).toContain("{% bq %}");
   });
 
