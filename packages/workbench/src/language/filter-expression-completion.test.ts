@@ -104,6 +104,11 @@ describe("namespaces", () => {
     ).toEqual(["this.item"]);
   });
 
+  it("offers this.<record> after this.", () => {
+    expect(labels("this.it|")).toEqual(["this.item"]);
+    expect(offered("this.it|")).toMatchObject({ from: 0 });
+  });
+
   it("offers each Formula Property as formula.<name>, before and after the dot", () => {
     expect(offered("fo|")!.options.slice(0, 2)).toEqual([
       {

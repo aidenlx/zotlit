@@ -34,11 +34,14 @@ const RECORDS: Record<ContextSource, readonly ContextMember[]> = {
   note: Object.keys(BOUND.note) as ContextMember[],
   sidebar: Object.keys(BOUND.sidebar) as ContextMember[],
 };
+// One list, so a memo keyed on it holds across renders.
+const UNBOUND: readonly ContextMember[] = [];
 
 /** The records a host that is `source` binds to `this`; none in a Query File's own tab. */
 export const boundRecords = (
   source: ContextSource | undefined,
-): readonly ContextMember[] => (source === undefined ? [] : RECORDS[source]);
+): readonly ContextMember[] =>
+  source === undefined ? UNBOUND : RECORDS[source];
 
 /** Where a member gets its record, for a surface that cannot bind it. */
 const ELSEWHERE: Record<ContextMember, () => string> = {
