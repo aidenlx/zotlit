@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defaults } from "@/services/settings/schema";
 
 import {
+  annotationHoverIntent,
   citationHoverIntent,
   hoverEditingMode,
   hoverPreferences,
@@ -159,5 +160,46 @@ describe("hoverEditingMode", () => {
     expect(hoverEditingMode({ surface: "editor", editorMode: "source" })).toBe(
       "source",
     );
+  });
+});
+
+describe("annotationHoverIntent", () => {
+  it("shows the annotation popover under the Citation Popover", () => {
+    expect(annotationHoverIntent(gesture(), hover())).toEqual({
+      kind: "popover",
+    });
+  });
+
+  it("treats Page Preview as the popover, since a link names no note to preview", () => {
+    expect(
+      annotationHoverIntent(gesture(), hover({ action: "page-preview" })),
+    ).toEqual({ kind: "popover" });
+  });
+
+  it("shows nothing while the Hover action is off", () => {
+    expect(annotationHoverIntent(gesture(), hover({ action: "off" }))).toEqual({
+      kind: "nothing",
+      reason: "hover-off",
+    });
+  });
+
+  it("holds a mode whose Require Mod is on back until Mod is held", () => {
+    for (const action of ["popover", "page-preview"] as const) {
+      expect(
+        annotationHoverIntent(gesture({ mode: "source" }), hover({ action })),
+      ).toEqual({ kind: "nothing", reason: "needs-mod" });
+      expect(
+        annotationHoverIntent(
+          gesture({ mode: "source", mod: true }),
+          hover({ action }),
+        ),
+      ).toEqual({ kind: "popover" });
+    }
+  });
+
+  it("ignores a pen or a finger", () => {
+    expect(
+      annotationHoverIntent(gesture({ pointerType: "pen" }), hover()),
+    ).toEqual({ kind: "nothing", reason: "not-a-mouse" });
   });
 });

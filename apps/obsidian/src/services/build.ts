@@ -8,6 +8,7 @@ import {
   createProfileImporter,
 } from "@/setting-tab/profiles";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
+import { createCommentRenderer } from "@/views/annot-view/comment-render";
 import {
   annotationCardShown,
   revealAnnotationInView,
@@ -16,6 +17,8 @@ import { openLibraryView } from "@/views/library/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
+import { AnnotationLinkReading } from "./annotation-popover/reading";
+import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
@@ -617,6 +620,32 @@ export function buildServices(
         }),
     })
     .use({
+      annotationPopover: ({
+        annotationRepository,
+        excerptDisplay,
+        zoteroReads,
+        zoteroPref,
+      }) =>
+        new AnnotationPopover({
+          annotations: annotationRepository,
+          excerptDisplay,
+          excerptRequest: ({ annotation, source }) =>
+            savedExcerptRequest({
+              annotation,
+              source,
+              sourceScope: zoteroPref.dataDir,
+              zoteroReads,
+              paths: zoteroPref,
+            }),
+          commentRenderer: (owner, sourcePath) =>
+            createCommentRenderer({
+              app: plugin.app,
+              component: owner,
+              getSourcePath: () => sourcePath,
+            }),
+        }),
+    })
+    .use({
       citekeyEditor: ({
         noteIndex,
         noteFeature,
@@ -626,6 +655,7 @@ export function buildServices(
         zoteroReads,
         citationText,
         citationPopover,
+        annotationPopover,
         settings,
         citationLookup,
         libraryScope,
@@ -641,9 +671,19 @@ export function buildServices(
           db: zoteroReads,
           citationText,
           citationPopover,
+          annotationPopover,
           settings,
           citationLookup,
           libraryScope,
+        }),
+    })
+    .use({
+      annotationLinkReading: ({ annotationPopover, settings }) =>
+        new AnnotationLinkReading({
+          app: plugin.app,
+          plugin,
+          settings,
+          annotationPopover,
         }),
     })
     .use({

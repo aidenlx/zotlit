@@ -1904,6 +1904,7 @@
   "settings_citation_pandoc_tutorial_open": "打开教程",
   "citation_popover_database_unavailable": "无法读取 Zotero 数据库。",
   "citation_popover_item_unavailable": "未找到 Zotero 条目。",
+  "annotation_popover_unavailable": "未找到该批注。",
   "references_document_profile_failed_title": "此导入笔记的配置方案不可用",
   "references_profile_style_failed_title": "此导入笔记的配置方案所用样式不可用",
   "references_profile_style_failed_body": "参考文献侧边栏显示纯列表。请在 Zotero 中安装 {style}，或为此配置方案选择其他引用与参考文献样式。",

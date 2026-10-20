@@ -1,22 +1,13 @@
 import { Keymap } from "obsidian";
-import {
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useContext, useEffect, useMemo, useRef } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
-import { isPageNumber } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
 import {
   activatable,
@@ -34,7 +25,6 @@ import type {
   WriteConflict,
 } from "@/services/annotation-repository/service";
 import { isTextField } from "@/services/annotation-repository/write";
-import type { ExcerptImage } from "@/services/excerpt-image/format";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 
 import { AnnotActionsContext } from "./actions";
@@ -76,14 +66,14 @@ import type {
   HeldDraftActions,
   TextDraftActions,
 } from "./editor-sheet";
+import { excerptImageTarget } from "./excerpt-image-state";
+import type { ExcerptImageTarget } from "./excerpt-image-state";
 import {
-  excerptImageOwnership,
-  excerptImageTarget,
-} from "./excerpt-image-state";
-import type {
-  ExcerptImageOwnership,
-  ExcerptImageTarget,
-} from "./excerpt-image-state";
+  ExcerptPicture,
+  ExcerptText,
+  excerptImageAlt,
+  pageLocator,
+} from "./excerpt-parts";
 import { CARD_SELECTOR } from "./history";
 import {
   capabilityOf,
@@ -947,17 +937,6 @@ function FieldEditor({
   );
 }
 
-/**
- * Zotero stores the excerpt as text carrying its reader's inline rich-text tags
- * (`i`/`b`/`sub`/`sup`), so it goes through Obsidian's sanitizer rather than
- * rendering as a plain string — formulas and emphasis survive, and untrusted DB
- * HTML can never inject markup.
- */
-function ExcerptText({ text }: { text: string }) {
-  const ref = useSanitizedHtml<HTMLParagraphElement>(text);
-  return <p ref={ref} className="zt:select-text" />;
-}
-
 function ExcerptBlock({
   annot,
   collapsed,
@@ -1113,41 +1092,11 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
     };
   }, [actions, demand, target]);
   useEffect(() => () => demand.release(), [demand]);
-  const display = useSyncExternalStore(demand.subscribe, demand.snapshot);
-  const owned = useRef<ExcerptImageOwnership | null>(null);
-  const [url, setUrl] = useState<string | null>(null);
-  /** The image the card could not decode, which paints unavailable until another replaces it. */
-  const [undecodable, setUndecodable] = useState<ExcerptImage | null>(null);
-  useEffect(() => {
-    const next = excerptImageOwnership({
-      held: owned.current,
-      display,
-      identity: target.identity,
-      create: (image) =>
-        URL.createObjectURL(
-          new Blob([new Uint8Array(image.bytes)], {
-            type: image.format.mimeType,
-          }),
-        ),
-    });
-    owned.current = next.owned;
-    for (const stale of next.release) URL.revokeObjectURL(stale);
-    setUrl(next.owned?.url ?? null);
-  }, [display, target.identity]);
-  useEffect(
-    () => () => {
-      const last = owned.current;
-      owned.current = null;
-      if (last) URL.revokeObjectURL(last.url);
-    },
-    [],
-  );
-  if (url === null && display.status === "reading")
-    return <span aria-busy="true">{m.annot_view_image_loading()}</span>;
-  if (url === null || undecodable === display.image)
-    return <span>{m.annot_view_image_unavailable()}</span>;
   return (
-    <img
+    <ExcerptPicture
+      demand={demand}
+      identity={target.identity}
+      alt={excerptImageAlt(annot)}
       className={cn(
         // The edge is the excerpt's own: a rendered page is white on a white
         // card in the light scheme, and the hairline is what tells where the
@@ -1156,18 +1105,6 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
         "zt:max-w-full zt:ring-1 zt:ring-foreground/10 zt:ring-inset",
         collapsed ? "zt:max-h-20" : "zt:w-full",
       )}
-      src={url}
-      onError={() => {
-        setUndecodable(display.image);
-      }}
-      alt={
-        annot.text ??
-        (annot.pageLabel === null
-          ? m.annot_view_card_image_alt_no_page()
-          : isPageNumber(annot.pageLabel)
-            ? m.annot_view_card_image_alt({ page: annot.pageLabel })
-            : m.annot_view_card_image_alt_label({ label: annot.pageLabel }))
-      }
     />
   );
 }
@@ -1224,9 +1161,7 @@ function PageChip({
         className={cn("zt:shrink-0", color && "zt:text-(--zt-annot-color)")}
       />
       {page && display.page && (
-        <span className="zt:truncate">
-          {isPageNumber(page) ? m.annot_view_page({ page }) : page}
-        </span>
+        <span className="zt:truncate">{pageLocator(page)}</span>
       )}
     </>
   );

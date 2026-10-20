@@ -754,12 +754,16 @@ The per-vault choice of what a plain click on a Rendered Citation does, for lite
 _Avoid_: Open Pandoc Citations as Links (the retired Pandoc-only scope), citation click toggle
 
 **Hover Action** _(Obsidian)_:
-The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover.
+The per-vault choice of what hovering a recognized citation, Literature Note wikilink, or Durable Annotation Link shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover. A Durable Annotation Link names no note to preview, so under Page Preview it shows the Annotation Popover too.
 _Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
 
 **Citation Popover** _(Obsidian)_:
 The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — or one work under the vault Citation Presentation when there is no source document, with the available Item actions in a cursor-proximal row. The source-less form shows the bibliography body or Item summary, with no Reference Number, Entry Marker, or Entry Serial; it is the same Hover Action choice as the document-backed form, and hover shows one result.
 _Avoid_: concise popover (the working name), hover tooltip, hover card
+
+**Annotation Popover** _(Obsidian)_:
+The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open. It wears the Citation Popover's chrome and follows the Hover Action; a link whose Annotation no longer exists shows a short unavailable state.
+_Avoid_: annotation hover card, annotation preview (a page preview shows a note)
 
 **Citekey Reading Rendering** _(Obsidian)_:
 The reading-mode surface of In-text Citation Rendering for literal Pandoc citations: a Markdown post-processor replaces each complete Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text. When any item in one Citation is unresolved, or the Pandoc Engine cannot supply its formatted text, that whole Citation stays unchanged. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.

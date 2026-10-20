@@ -1,7 +1,8 @@
 // Annotation links in a note: a Durable Annotation Link clicked in any
 // Obsidian surface lands on its Annotation in Obsidian's reader, or reaches
-// Zotero when this computer cannot open the PDF. The Annotation Suggester
-// writes the same link from a search at the cursor. Hover joins this file.
+// Zotero when this computer cannot open the PDF; a hovered one shows the
+// Annotation it names. The Annotation Suggester writes the same link from a
+// search at the cursor.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -29,6 +30,10 @@ const FIRST_PAGE = attachmentAnnotations.find(({ key }) => key === "PUPR5FG5")!;
 const ALSO_FIRST_PAGE = attachmentAnnotations.find(
   ({ key }) => key === "Q8ZR4TDH",
 )!;
+/** The Fixture's note Annotation, which carries a comment and no text. */
+const COMMENTED = attachmentAnnotations.find(({ key }) => key === "HRK7BG32")!;
+/** The Fixture's ink Annotation. */
+const INK = attachmentAnnotations.find(({ key }) => key === "TYY6Z6ZF")!;
 /** A PDF the Fixture's Zotero holds a row for, and never a file. */
 const MISSING_PDF = ATTACHMENTS.find(({ key }) => key === "MISSNG22")!;
 
@@ -75,6 +80,45 @@ const LINK_IN = {
   properties: `[...(view.metadataEditor?.containerEl.querySelectorAll('.metadata-link-inner.external-link')??[])].find((link)=>link.dataset.href===url)`,
   "live-preview": `[...view.editor.cm.contentDOM.querySelectorAll('.cm-link .cm-underline')].find((el)=>el.textContent===${JSON.stringify(LINK_TEXT)})`,
 } as const;
+
+/**
+ * Eval code that writes {@link NOTE} holding `content`, a JavaScript
+ * expression, and shows it where `gesture` reaches its link, binding `file`,
+ * `leaf` and `view`. Each step is undone on the evaluation's `cleanup` stack,
+ * registered before the next step that can fail. An editor's cursor rests on
+ * the note's last line, which holds no link, so Live Preview draws the link.
+ */
+function showNote(content: string, gesture: keyof typeof LINK_IN): string {
+  const state =
+    gesture === "reading" ? "{mode:'preview'}" : "{mode:'source',source:false}";
+  return `const file=await app.vault.create(${JSON.stringify(NOTE)},${content});
+    cleanup.defer(()=>app.vault.delete(file));
+    const leaf=app.workspace.getLeaf('tab');
+    cleanup.adopt(leaf,(leaf)=>leaf.detach());
+    await leaf.setViewState({type:'markdown',state:{file:file.path,...${state}},active:true});
+    app.workspace.setActiveLeaf(leaf,{focus:true});
+    const view=leaf.view;
+    ${gesture === "reading" ? "" : "view.editor.setCursor({line:view.editor.lastLine(),ch:0});"}`;
+}
+
+/**
+ * Eval code that finds the rendered link to `url` where `gesture` reaches it,
+ * brings it into view, and binds `link` with a point `x`, `y` on it that
+ * nothing covers.
+ *
+ * Gestures are synthetic: the End-to-end Run's window stays behind other apps,
+ * where Chromium delivers no trusted input. Live Preview finds the link under
+ * the pointer from the event's coordinates, so they name a point near the
+ * start of the link's first line box: a wrapped link has none at the middle of
+ * its bounding box, and a long Properties value runs on under the sidebar.
+ */
+function linkTarget(gesture: keyof typeof LINK_IN): string {
+  return `const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
+    link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+    const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
+    const hit=link.ownerDocument.elementFromPoint(x,y);
+    if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));`;
+}
 
 /**
  * The bounded waits an evaluation declares first. Every wait ends by
@@ -221,13 +265,8 @@ interface Scenario {
  * One scenario in one evaluation: write the note, show it, follow its link,
  * wait for the reader to land or the link to pass, and read the outcome. Every
  * change is undone on the evaluation's own stack, registered before the step
- * that can fail, so the outcome comes back from a vault already restored.
- *
- * The click is synthetic: the End-to-end Run's window stays behind other apps,
- * where Chromium delivers no trusted input. Live Preview finds the link under
- * the pointer from the event's coordinates, so they name a point near the
- * start of the link's first line box: a wrapped link has none at the middle of
- * its bounding box, and a long Properties value runs on under the sidebar.
+ * that can fail, so the outcome comes back from a vault already restored. The
+ * click lands on {@link linkTarget}'s point.
  */
 async function follow({
   note,
@@ -236,16 +275,10 @@ async function follow({
   captureOff = false,
   lands,
 }: Scenario): Promise<Outcome> {
-  const state =
-    gesture === "reading" ? "{mode:'preview'}" : "{mode:'source',source:false}";
   const follow =
     gesture === "external"
       ? `window.open(url,'_external');`
-      : `const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
-        link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
-        const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
-        const hit=link.ownerDocument.elementFromPoint(x,y);
-        if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));
+      : `${linkTarget(gesture)}
         const init={clientX:x,clientY:y,bubbles:true,cancelable:true,button:0,view:link.ownerDocument.defaultView};
         link.dispatchEvent(new MouseEvent('mousedown',{...init,buttons:1}));link.dispatchEvent(new MouseEvent('mouseup',init));link.dispatchEvent(new MouseEvent('click',init));`;
   const reply = await obEval(
@@ -273,15 +306,8 @@ async function follow({
         for(const doc of ${WINDOW_DOCUMENTS})for(const notice of doc.querySelectorAll('.notice'))notice.remove();
         const fileUrl=require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href;
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
-        const file=await app.vault.create(${JSON.stringify(NOTE)},${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl));
-        cleanup.defer(()=>app.vault.delete(file));
         if(${captureOff})s.settings.update({'reader.open-file-links':false});
-        const leaf=app.workspace.getLeaf('tab');
-        cleanup.adopt(leaf,(leaf)=>leaf.detach());
-        await leaf.setViewState({type:'markdown',state:{file:file.path,...${state}},active:true});
-        app.workspace.setActiveLeaf(leaf,{focus:true});
-        const view=leaf.view;
-        if(${gesture === "live-preview" || gesture === "properties"})view.editor.setCursor({line:view.editor.lastLine(),ch:0});
+        ${showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
         if(lands===null){
@@ -307,6 +333,94 @@ async function follow({
     60000,
   );
   return JSON.parse(reply) as Outcome;
+}
+
+/** What a hover over one link left on screen, read before its cleanup ran. */
+interface HoverOutcome {
+  /** Whether the hover hung a popover off the note's view. */
+  popover: boolean;
+  /** The popover's text once filled, or null with no popover. */
+  text: string | null;
+  /** The Annotation colour the popover carries, or null with none. */
+  color: string | null;
+  /** Whether the popover painted a decoded Excerpt Image. */
+  image: boolean;
+}
+
+interface HoverScenario {
+  /** The link the note quotes, and the pointer hovers. */
+  url: string;
+  gesture: "live-preview" | "reading";
+  /** The Hover Action for this scenario; the vault's own when omitted. */
+  hoverAction?: "off" | "popover" | "page-preview";
+  /** Wait for a decoded Excerpt Image as well as the text. */
+  image?: boolean;
+}
+
+/**
+ * One hover in one evaluation: write the note, show it, move the pointer onto
+ * its link, and read what the popover the hover hung off the view shows. As in
+ * {@link follow}, every change is undone on the evaluation's own stack before
+ * the outcome comes back.
+ *
+ * The hover is a synthetic `mouseover` at {@link linkTarget}'s point. Obsidian
+ * hangs a hover popover off the view once its opening delay has run, so a
+ * hover that shows nothing is read against a later hover that does.
+ */
+async function hover({
+  url,
+  gesture,
+  hoverAction,
+  image = false,
+}: HoverScenario): Promise<HoverOutcome> {
+  const reply = await obEval(
+    run.vaultId,
+    `(async()=>{
+      ${WAITS}
+      const s=app.plugins.plugins.zotlit.services;
+      let outcome;
+      {
+        await using cleanup=new AsyncDisposableStack();
+        const layout=app.workspace.getLayout();
+        cleanup.defer(async()=>{await app.workspace.changeLayout(layout);});
+        const hoverAction=s.settings.current['citation.hover-action'];
+        cleanup.defer(()=>s.settings.update({'citation.hover-action':hoverAction}));
+        const url=${JSON.stringify(url)};
+        ${hoverAction === undefined ? "" : `s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}});`}
+        ${showNote(JSON.stringify(noteWith(url)), gesture)}
+        ${linkTarget(gesture)}
+        cleanup.defer(()=>view.hoverPopover?.hide());
+        link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,view:link.ownerDocument.defaultView}));
+        const opened=(view)=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
+        if(${hoverAction === "off"}){
+          // Absence is read off a control: the same link hovered later, in a
+          // split under the Citation Popover. Every hover popover waits the
+          // same opening delay, so once the control's has opened, one the
+          // first hover had started would have opened too.
+          s.settings.update({'citation.hover-action':'popover'});
+          const control=app.workspace.getLeaf('split','vertical');
+          cleanup.adopt(control,(leaf)=>leaf.detach());
+          await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});
+          cleanup.defer(()=>control.view.hoverPopover?.hide());
+          const controlLink=await until(()=>[...control.view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===url),()=>'The control link did not render');
+          controlLink.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:controlLink.ownerDocument.defaultView}));
+          await until(()=>opened(control.view),()=>'The control hover opened no popover');
+          outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false};
+        }else{
+          const popover=await until(()=>opened(view),()=>'No popover opened over the link');
+          const content=()=>popover.hoverEl.isConnected?popover.hoverEl.querySelector('.zt-citation-popover-content'):null;
+          await until(()=>content()?.textContent,()=>'The popover never filled: '+(popover.hoverEl.outerHTML.slice(0,300)));
+          const painted=()=>[...content().querySelectorAll('img')].find((img)=>img.src.startsWith('blob:')&&img.complete&&img.naturalWidth>0);
+          if(${image})await until(painted,()=>'The popover painted no Excerpt Image: '+content().outerHTML.slice(0,300));
+          const colored=content().querySelector('[style*="--zt-annot-color"]');
+          outcome={popover:true,text:content().textContent,color:colored?colored.style.getPropertyValue('--zt-annot-color'):null,image:!!painted()};
+        }
+      }
+      return JSON.stringify(outcome);
+    })()`,
+    90000,
+  );
+  return JSON.parse(reply) as HoverOutcome;
 }
 
 describe.skipIf(!reachable)("Annotation links", () => {
@@ -521,5 +635,92 @@ describe.skipIf(!reachable)("Annotation links", () => {
         passed: [{ url, target: "_external" }],
       });
     }, 120000);
+  });
+
+  describe("shows the Annotation a hovered link names", () => {
+    it.each(["live-preview", "reading"] as const)(
+      "with its text, page label and colour in %s",
+      async (gesture) => {
+        const outcome = await hover({
+          url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+          gesture,
+        });
+
+        expect(outcome).toMatchObject({
+          popover: true,
+          color: FIRST_PAGE.color,
+          image: false,
+        });
+        expect(outcome.text).toContain(FIRST_PAGE.text);
+        expect(outcome.text).toContain(
+          run.m.annot_view_page({ page: FIRST_PAGE.pageLabel }),
+        );
+      },
+      120000,
+    );
+
+    it("with its comment", async () => {
+      const outcome = await hover({
+        url: durableLink(COMMENTED.key, COMMENTED.pageLabel),
+        gesture: "reading",
+      });
+
+      expect(outcome.text).toContain(COMMENTED.comment);
+    }, 120000);
+
+    // Rendered from the PDF by ZotLit with no reader open: the scenario opens
+    // the note alone.
+    it.each([
+      ["an image", "live-preview", SECOND_PAGE],
+      ["an ink", "reading", INK],
+    ] as const)(
+      "with the Excerpt Image of %s Annotation",
+      async (_, gesture, annotation) => {
+        const outcome = await hover({
+          url: durableLink(annotation.key, annotation.pageLabel),
+          gesture,
+          image: true,
+        });
+
+        expect(outcome).toMatchObject({ popover: true, image: true });
+      },
+      120000,
+    );
+
+    it("as the popover under Page Preview", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "reading",
+        hoverAction: "page-preview",
+      });
+
+      expect(outcome.text).toContain(FIRST_PAGE.text);
+    }, 120000);
+
+    it("as unavailable for an Annotation Zotero no longer has", async () => {
+      const outcome = await hover({
+        url: durableLink("ZZZZZZZ2", "1"),
+        gesture: "live-preview",
+      });
+
+      expect(outcome).toMatchObject({
+        popover: true,
+        text: run.m.annotation_popover_unavailable(),
+      });
+    }, 120000);
+
+    it.each(["live-preview", "reading"] as const)(
+      "with nothing while the Hover Action is off, in %s",
+      async (gesture) => {
+        const outcome = await hover({
+          url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+          gesture,
+          hoverAction: "off",
+        });
+
+        expect(outcome.popover).toBe(false);
+      },
+      120000,
+    );
   });
 });
