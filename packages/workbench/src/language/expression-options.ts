@@ -2,6 +2,7 @@
 // Completion offers from it, and the ranking every part of the list shares.
 import type { SyntaxNode } from "@lezer/common";
 
+import { resultText } from "@zotlit/item-query";
 import type {
   ContextRecord,
   FilterValueType,
@@ -127,7 +128,7 @@ export function signature(
     returns?: FunctionDefinition["returns"];
   },
 ): string {
-  return `${name}(${takesArguments(definition) ? "…" : ""}) → ${definition.returns ?? "any"}`;
+  return `${name}(${takesArguments(definition) ? "…" : ""}) → ${resultText(definition.returns)}`;
 }
 
 export const takesArguments = (

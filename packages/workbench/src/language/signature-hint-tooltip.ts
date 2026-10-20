@@ -6,12 +6,9 @@ import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, keymap, showTooltip } from "@codemirror/view";
 import type { Tooltip, ViewUpdate } from "@codemirror/view";
 
+import { appendProse } from "./prose";
 import { signatureAt } from "./signature-hint";
-import type {
-  HintParameter,
-  HintSignature,
-  SignatureHintOptions,
-} from "./signature-hint";
+import type { HintSignature, SignatureHintOptions } from "./signature-hint";
 
 /**
  * The public theme hook of the Signature Hint tooltip. A host styles it; the
@@ -29,19 +26,6 @@ export const FIELD_POPUP_ATTRIBUTE = "data-field-popup";
 /** Closes the hint until the text or the caret changes. */
 const dismiss = StateEffect.define<null>();
 
-/** Appends `text` with each span in backticks as a `<code>`. */
-function appendProse(parent: HTMLElement, text: string) {
-  const doc = parent.ownerDocument;
-  text.split("`").forEach((part, at) => {
-    if (part === "") return;
-    if (at % 2 === 0) parent.append(part);
-    else parent.appendChild(doc.createElement("code")).textContent = part;
-  });
-}
-
-const parameterText = ({ name, type, optional, rest }: HintParameter) =>
-  `${rest ? "..." : ""}${name}${optional && !rest ? "?" : ""}: ${type}`;
-
 function renderHint(
   doc: Document,
   callee: string,
@@ -55,12 +39,12 @@ function renderHint(
     label.append(`${callee}(`);
     parameters.forEach((parameter, at) => {
       if (at > 0) label.append(", ");
-      const text = parameterText(parameter);
+      const { text } = parameter;
       if (at === active)
         label.appendChild(doc.createElement("mark")).textContent = text;
       else label.append(text);
     });
-    label.append(returns ? `) → ${returns}` : ")");
+    label.append(`) → ${returns}`);
     appendProse(block.appendChild(doc.createElement("div")), description);
   }
   return dom;

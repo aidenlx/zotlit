@@ -23,8 +23,20 @@ it("names the string slice with its second parameter marked inside title.slice(1
       {
         receiver: "string",
         parameters: [
-          { name: "start", type: "number", optional: false, rest: false },
-          { name: "end", type: "number", optional: true, rest: false },
+          {
+            name: "start",
+            type: "number",
+            optional: false,
+            rest: false,
+            text: "start: number",
+          },
+          {
+            name: "end",
+            type: "number",
+            optional: true,
+            rest: false,
+            text: "end?: number",
+          },
         ],
         active: 1,
         returns: "string",
@@ -48,6 +60,18 @@ function marked(text: string, options?: Parameters<typeof signatureAt>[2]) {
     }
   );
 }
+
+it("names any as the result of a call whose result type varies", () => {
+  expect(hintAt("if(|")?.signatures.map(({ returns }) => returns)).toEqual([
+    "any",
+  ]);
+});
+
+it("writes a parameter's texts and null as the reference does", () => {
+  expect(
+    hintAt("max(|")?.signatures[0]?.parameters.map(({ type }) => type),
+  ).toEqual(["number | null"]);
+});
 
 it("follows the caret through a global function's arguments", () => {
   expect(marked("date(|")).toEqual({ callee: "date", marked: ["global:text"] });

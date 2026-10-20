@@ -1,5 +1,6 @@
 // The typing popup of every editor the plugin hosts, Template Completion and
 // Expression Completion alike, in Obsidian's own suggestion skin.
+import { appendProse } from "@zotlit/workbench/language";
 import type { CompletionPresentation } from "@zotlit/workbench/language";
 
 /** One entry of CodeMirror's list, as the presentation receives it. */
@@ -11,7 +12,7 @@ type Completion = Parameters<
 export interface CompletionCells {
   /** A type or a call signature, on a line of its own. */
   readonly type?: string;
-  /** A description, as Obsidian's suggestion note. */
+  /** A description, as Obsidian's suggestion note, its code spans as code. */
   readonly note?: string;
 }
 
@@ -41,9 +42,10 @@ export function nativeCompletion(
         position: 70,
         render(completion) {
           const note = cells(completion)?.note;
-          return note
-            ? createDiv({ cls: "suggestion-note", text: note })
-            : null;
+          if (!note) return null;
+          const cell = createDiv({ cls: "suggestion-note" });
+          appendProse(cell, note);
+          return cell;
         },
       },
     ],

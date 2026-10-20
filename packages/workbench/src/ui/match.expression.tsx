@@ -6,7 +6,7 @@ import type { CompletionPresentation } from "#/language/completion";
 import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import type { Span } from "#/language/span";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { linter, setDiagnostics } from "@codemirror/lint";
+import { setDiagnostics } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView,
@@ -20,6 +20,7 @@ import {
   useExpressionExtension,
   useParts,
 } from "./theme";
+import { underlineOnlyLint } from "./underline-lint";
 
 import {
   filterExpressionHighlighting,
@@ -158,15 +159,13 @@ export function MatchExpressionInput({
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
-          linter(null, { tooltipFilter: () => [] }),
+          underlineOnlyLint,
           // CodeMirror's base theme is unlayered CSS, so it outranks a
           // host's layered utilities on these parts.
           EditorView.theme({
             "&.cm-focused": { outline: "none" },
             ".cm-content": { minHeight: `${lines * 1.5}em`, padding: "0" },
             ".cm-line": { padding: "0" },
-            // CodeMirror still mounts an empty filtered tooltip.
-            ".cm-tooltip-lint": { display: "none" },
           }),
           placeholder ? placeholderText(placeholder) : [],
           EditorView.contentAttributes.of({ spellcheck: "false" }),
