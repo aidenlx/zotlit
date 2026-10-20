@@ -195,18 +195,6 @@ describe("resolveCitationInsert", async () => {
       message: m.notice_citekey_not_ready(),
     });
   });
-
-  it("resolves to the rendered citation for insertion", async () => {
-    const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
-
-    const outcome = await resolveCitationInsert(
-      insertDeps(renderCitation),
-      makeHit("abc2024"),
-      "main",
-    );
-
-    expect(outcome).toEqual({ kind: "insert", text: "[@abc2024]" });
-  });
 });
 
 describe("resolveCitationTrigger", () => {

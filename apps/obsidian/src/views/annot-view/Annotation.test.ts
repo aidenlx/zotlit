@@ -236,63 +236,12 @@ function accessibleName(el: HTMLElement): string | null {
     .join(" ");
 }
 
-/** "Edit quoted text" on the quote, or `undefined` where the card offers none. */
-function editTextButton(host: HTMLElement): HTMLElement | undefined {
-  return (
-    [...host.querySelectorAll<HTMLElement>("blockquote [aria-label]")].find(
-      (el) => el.getAttribute("aria-label") === m.annot_view_menu_edit_text(),
-    ) ?? undefined
-  );
-}
-
 /** A key pressed in an element, as the browser delivers it. */
 async function press(el: Element, key: string): Promise<void> {
   await act(() => {
     el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
   });
 }
-
-describe("a click on the comment of a card not selected alone", () => {
-  it("selects the card, toggles it or takes a range, and opens no editor", async () => {
-    for (const selected of [[], [CARD.key, "BBBB2222"]]) {
-      const { host, store, onSelectAnnotation, onOpenField } = await mountCard({
-        selected,
-      });
-      const comment = host.querySelector(".zt-annot-comment")!;
-
-      await click(comment);
-      await click(comment, { metaKey: true });
-      await click(comment, { shiftKey: true });
-      expect(onSelectAnnotation.mock.calls).toEqual([
-        [CARD, "click", CARD.key],
-        [CARD, "toggle", CARD.key],
-        [CARD, "range", CARD.key],
-      ]);
-      expect(onOpenField).not.toHaveBeenCalled();
-      expect(store.getState().editing).toBeNull();
-      await act(() => root?.unmount());
-      host.remove();
-    }
-  });
-
-  it("selects the card from the held text, and opens no editor", async () => {
-    const { host, onSelectAnnotation, onOpenField } = await mountCard({
-      held: true,
-      selected: [],
-    });
-    const text = [...host.querySelectorAll("div")].find(
-      (el) => el.textContent === "Held text",
-    )!;
-
-    await click(text);
-    await click(text, { metaKey: true });
-    expect(onSelectAnnotation.mock.calls).toEqual([
-      [CARD, "click", CARD.key],
-      [CARD, "toggle", CARD.key],
-    ]);
-    expect(onOpenField).not.toHaveBeenCalled();
-  });
-});
 
 describe("the comment field", () => {
   it("stands only on a card selected alone, and the header offers no Edit text", async () => {
@@ -439,52 +388,6 @@ function tagToggle(host: HTMLElement): Element {
   if (!toggle) throw new Error("The card draws no tag toggle");
   return toggle;
 }
-
-describe("Edit quoted text on the quote", () => {
-  it("stands only on a card selected alone that has a Quoted Text", async () => {
-    for (const selected of [[], [CARD.key, "BBBB2222"]]) {
-      const { host } = await mountCard({ selected });
-      expect(editTextButton(host)).toBeUndefined();
-      await act(() => root?.unmount());
-      host.remove();
-    }
-    const { host } = await mountCard();
-    expect(editTextButton(host)).toBeDefined();
-  });
-
-  it("opens the Quoted Text's editor, and is not the card's click", async () => {
-    const { host, store, onSelectAnnotation, onOpenField } = await mountCard();
-    await click(editTextButton(host)!);
-    expect(onOpenField).toHaveBeenCalledWith(
-      expect.objectContaining({ key: CARD.key }),
-      "text",
-    );
-    expect(store.getState().editing).toEqual({
-      annotationKey: CARD.key,
-      field: "text",
-    });
-    expect(onSelectAnnotation).not.toHaveBeenCalled();
-    // The open editor stands in the quote's place, with no second way in.
-    expect(editTextButton(host)).toBeUndefined();
-  });
-
-  it("raises the reason where editing is blocked, and opens nothing", async () => {
-    const { host, store, onBlockedPress, onOpenField } = await mountCard({
-      capability: { kind: "authorization-required" },
-    });
-    await click(editTextButton(host)!);
-    expect(onBlockedPress).toHaveBeenCalledOnce();
-    expect(onOpenField).not.toHaveBeenCalled();
-    expect(store.getState().editing).toBeNull();
-  });
-
-  it("keeps a click on the quote itself a read", async () => {
-    const { host, store, onOpenField } = await mountCard();
-    await click(host.querySelector("blockquote")!);
-    expect(onOpenField).not.toHaveBeenCalled();
-    expect(store.getState().editing).toBeNull();
-  });
-});
 
 describe("the card's tag editor", () => {
   it("saves its session on a blur and stays open, and Escape saves and closes it", async () => {

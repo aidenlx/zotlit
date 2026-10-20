@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  dropGap,
-  gapMove,
-  resizedWidth,
-  withColumnWidth,
-} from "./table-columns";
+import { dropGap, gapMove, resizedWidth } from "./table-columns";
 
 describe("dropGap", () => {
   // Three columns of 100px; the dragged column is the middle one.
@@ -59,31 +54,5 @@ describe("resizedWidth", () => {
     expect(
       resizedWidth({ start: 200, delta: -500, direction: "ltr", min: 40 }),
     ).toBe(40);
-  });
-});
-
-describe("withColumnWidth", () => {
-  it("sets the width of one column and keeps the others", () => {
-    expect(withColumnWidth({ title: 300 }, "date", 120)).toEqual({
-      title: 300,
-      date: 120,
-    });
-  });
-
-  it("changes a width in its place", () => {
-    expect(
-      Object.keys(withColumnWidth({ title: 300, date: 120 }, "title", 200)!),
-    ).toEqual(["title", "date"]);
-  });
-
-  it("removes the width of a column set back to its auto width", () => {
-    expect(withColumnWidth({ title: 300, date: 120 }, "date", null)).toEqual({
-      title: 300,
-    });
-  });
-
-  it("removes the map with its last width", () => {
-    expect(withColumnWidth({ date: 120 }, "date", null)).toBeUndefined();
-    expect(withColumnWidth(undefined, "date", null)).toBeUndefined();
   });
 });

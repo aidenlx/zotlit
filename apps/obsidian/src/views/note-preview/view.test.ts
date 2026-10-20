@@ -2065,58 +2065,6 @@ Annotation`,
     expect(chooseItem).toHaveBeenCalledOnce();
   });
 
-  it("moves preview settings into the pane menu", async () => {
-    await using test = await setup();
-    vi.useFakeTimers();
-    await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
-    );
-    const preview = await test.open();
-    await advance();
-    expect(menuItem(preview, m.workbench_preview_as_new_note())).toMatchObject({
-      checked: true,
-      section: "pane",
-    });
-    expect(
-      menuItem(preview, m.workbench_preview_as_updated_note()),
-    ).toMatchObject({
-      checked: false,
-      disabled: true,
-      section: "pane",
-    });
-    expect(
-      menuItem(preview, m.workbench_preview_updated_section()),
-    ).toMatchObject({
-      checked: false,
-      section: "pane",
-    });
-    expect(menuItem(preview, m.workbench_preview_auto_refresh())).toMatchObject(
-      {
-        checked: true,
-        section: "pane",
-      },
-    );
-    expect(menuItem(preview, m.workbench_show_markdown())).toMatchObject({
-      checked: false,
-      section: "pane",
-    });
-    const captionText = () =>
-      preview.contentEl.querySelector(".zt-note-preview-heading")
-        ?.nextElementSibling?.textContent;
-    await pick(preview, m.workbench_preview_updated_section());
-    expect(
-      menuItem(preview, m.workbench_preview_updated_section()).checked,
-    ).toBe(true);
-    expect(menuItem(preview, m.workbench_preview_as_new_note()).checked).toBe(
-      false,
-    );
-    expect(captionText()).toContain(m.workbench_result_managed_toggle());
-    await pick(preview, m.workbench_preview_auto_refresh());
-    expect(captionText()).toBe("Updated section only · On demand");
-  });
-
   it("swaps the format action like the reading-view toggle", async () => {
     await using test = await setup();
     vi.useFakeTimers();

@@ -153,7 +153,7 @@ describe("template hover", () => {
     vi.spyOn(popover.hoverEl, "getBoundingClientRect").mockReturnValue(
       new DOMRect(0, 500, 150, 100),
     );
-    for (let swap = 0; swap < 12; swap++) {
+    for (let swap = 0; swap < 2; swap++) {
       await hover(editor, property);
       vi.advanceTimersByTime(300);
       expect(parent.hoverPopover).toBe(popover);

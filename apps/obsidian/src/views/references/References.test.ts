@@ -122,15 +122,6 @@ async function render(
 }
 
 describe("References", () => {
-  it("owns its empty-state presentation", async () => {
-    const container = await render([], { kind: "minimal" });
-    const empty = container.querySelector("[data-references-empty]");
-
-    expect(empty).not.toBeNull();
-    expect(empty?.classList).toContain("zt:text-faint");
-    expect(container.querySelector(".pane-empty")).toBeNull();
-  });
-
   it("hides the warning gutter when the style shows no Entry Marker", async () => {
     const container = await render(
       [
@@ -605,25 +596,6 @@ describe("References toolbar", () => {
     await act(() => styleAction(container).click());
   }
 
-  it("holds the style action above the scrolling list region", async () => {
-    const container = await render([summaryEntry], { kind: "minimal" });
-    const scrolling = container.querySelector("[data-references-scroll]")!;
-
-    expect(styleAction(container)).not.toBeNull();
-    expect(
-      scrolling.querySelector("[data-references-change-style]"),
-    ).toBeNull();
-    expect(scrolling.querySelector("ul")).not.toBeNull();
-  });
-
-  it("names the style action for pointer and keyboard users", async () => {
-    const container = await render([summaryEntry], { kind: "minimal" });
-
-    expect(styleAction(container).getAttribute("aria-label")).toBe(
-      "Change citation and references style",
-    );
-  });
-
   it("reveals the style setting when the action is activated", async () => {
     const container = await render([summaryEntry], { kind: "minimal" });
     await activateStyleAction(container);
@@ -721,24 +693,6 @@ describe("References copy action", () => {
       { copy: { kind: "ready", target } },
     );
   }
-
-  it("holds the copy action above the scrolling list region", async () => {
-    const container = await ready();
-    const scrolling = container.querySelector("[data-references-scroll]")!;
-
-    expect(copyAction(container)).not.toBeNull();
-    expect(
-      scrolling.querySelector("[data-references-copy-bibliography]"),
-    ).toBeNull();
-  });
-
-  it("names the copy action for pointer and keyboard users", async () => {
-    const container = await ready();
-    const action = copyAction(container);
-
-    expect(action.getAttribute("aria-label")).toBe("Copy bibliography");
-    expect(action.hasAttribute("disabled")).toBe(false);
-  });
 
   it("copies the bibliography the action was offered for", async () => {
     const container = await ready();

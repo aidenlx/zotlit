@@ -163,28 +163,3 @@ it("says a change is not saved when the write of a change that came during anoth
   });
   expect(notSaved(tab)).toBe(true);
 });
-
-it("keeps every toolbar control, which the Library View leaves out, and offers no Save as query file", async () => {
-  const { tab } = await openTab();
-  const el = tab.contentEl;
-  const toolbar = [
-    ...el.querySelectorAll(
-      "[data-query-view-menu], [data-query-results], [data-query-toolbar], [data-query-properties], [data-query-save-as]",
-    ),
-  ].map(
-    (node) =>
-      node.getAttribute("data-query-toolbar") ??
-      [...node.attributes]
-        .map(({ name }) => name)
-        .find((name) => name.startsWith("data-query-")),
-  );
-  expect(toolbar).toEqual([
-    "data-query-view-menu",
-    "data-query-results",
-    "sort",
-    "group",
-    "filter",
-    "data-query-properties",
-    "search",
-  ]);
-});

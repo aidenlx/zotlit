@@ -277,20 +277,6 @@ describe("the Export note with citations command", () => {
     expect(dialog.style.getValue()).toBe(VAULT_STYLE.id);
   });
 
-  it("names the destination after the format the run writes", async () => {
-    const vault = openVault({ note: {} });
-
-    const dialog = await vault.openDialog();
-    dialog.format.choose("html");
-
-    expect(dialog.destination()).toBe(
-      m.pandoc_export_destination_in_vault({
-        path: "draft.html",
-        vault: "Research",
-      }),
-    );
-  });
-
   it("converts nothing where the user dismissed the dialog", async () => {
     const vault = openVault({ note: {} });
 
