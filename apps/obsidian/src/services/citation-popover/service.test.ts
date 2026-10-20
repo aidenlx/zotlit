@@ -42,6 +42,7 @@ const popovers = vi.hoisted(
 vi.mock("./popover", () => ({
   CitationHoverPopover: class {
     readonly render = vi.fn(() => true);
+    readonly retarget = vi.fn();
     readonly #cleanup: (() => void)[] = [];
     readonly hide = vi.fn(() => {
       for (const cleanup of this.#cleanup.splice(0).reverse()) cleanup();
@@ -347,6 +348,7 @@ function workHarness() {
   } as never);
   const element = document.createElement("div");
   const root = createRoot(element);
+  const parent = { hoverPopover: null };
   return {
     db,
     citationLookup,
@@ -362,6 +364,16 @@ function workHarness() {
         event: new MouseEvent("mouseover"),
         hoverParent: { hoverPopover: null },
         targetEl: element,
+        work,
+        open,
+      });
+    },
+    /** Hovers `work` under one parent the harness keeps, on a target of its own. */
+    showUnder(work: WorkHoverRequest["work"]) {
+      service.showWork({
+        event: new MouseEvent("mouseover"),
+        hoverParent: parent,
+        targetEl: document.createElement("span"),
         work,
         open,
       });
@@ -582,6 +594,30 @@ describe("source-less presentation updates", () => {
     expect(
       element.querySelector("[data-citation-popover-actions]"),
     ).not.toBeNull();
+  });
+
+  it("keeps the newer work when the pointer moved on before the first was read", async () => {
+    await using run = workHarness();
+    run.db.holds([
+      { itemID: 1, key: "ABCD2345", title: "First work" },
+      { itemID: 2, key: "EFGH2345", title: "Second work" },
+    ]);
+    const first = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography.mockReturnValueOnce(first.promise);
+    run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
+
+    run.showUnder({ kind: "item", indexedKey: "EFGH2345" });
+    await vi.waitFor(async () =>
+      expect((await run.shown()).textContent).toContain("Second work"),
+    );
+    first.resolve(null);
+    await first.promise;
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    const shown = await run.shown();
+    expect(shown.textContent).toContain("Second work");
+    expect(shown.textContent).not.toContain("First work");
   });
 
   it("retains the new Item data when an older render finishes later", async () => {

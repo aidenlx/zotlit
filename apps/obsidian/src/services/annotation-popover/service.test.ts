@@ -237,6 +237,66 @@ describe("AnnotationPopover", () => {
     );
   });
 
+  it("keeps the newer link when the first hover's read lands after it", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { repository } = await setup(stack);
+    const list = await repository.read("RGRPDF24");
+    const reads: PromiseWithResolvers<typeof list>[] = [];
+    const service = stack.use(
+      new AnnotationPopover({
+        annotations: {
+          read: () => {
+            const read = Promise.withResolvers<typeof list>();
+            reads.push(read);
+            return read.promise;
+          },
+          hold: () => ({ [Symbol.dispose]: () => {} }),
+          on: () => () => {},
+        },
+        excerptDisplay: { open: () => excerptDemand(null).demand },
+        excerptRequest: async () => null,
+        commentRenderer: () => (el, html) => {
+          el.textContent = html;
+          return () => {};
+        },
+      }),
+    );
+    const hoverParent = { hoverPopover: null };
+    const show = (annotationKey: string): void => {
+      service.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent,
+        targetEl: document.createElement("span"),
+        sourcePath: "note.md",
+        link: {
+          attachmentKey: "RGRPDF24",
+          annotationKey,
+          pageLabel: null,
+          groupID: null,
+        },
+      });
+    };
+    const element = document.createElement("div");
+    const root = createRoot(element);
+    stack.defer(() => root.unmount());
+
+    // The pointer moves on before the first link's read answers.
+    show("PUPR5FG5");
+    show("HRK7BG32");
+    reads[1]!.resolve(list);
+    await vi.waitFor(() =>
+      expect(popovers.at(-1)!.render).toHaveBeenCalledTimes(2),
+    );
+    reads[0]!.resolve(list);
+    await reads[0]!.promise;
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    const content = popovers.at(-1)!.render.mock.calls.at(-1)![0];
+    await act(() => root.render(content as ReactElement));
+    expect(element.textContent).toContain("Making figures is hard :(");
+    expect(element.textContent).not.toContain("Identify Your Message");
+  });
+
   it("reads the annotation again on the next hover", async () => {
     await using stack = new AsyncDisposableStack();
     const run = await harness(stack);

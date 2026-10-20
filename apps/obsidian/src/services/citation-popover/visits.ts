@@ -61,7 +61,7 @@ export class HoverVisits<T> {
           this.#visits.delete(hoverParent);
         }
       });
-      return opened;
+      return targetVisit(opened);
     }
     visit.subscriptions.dispose();
     visit.subscriptions = new DisposableStack();
@@ -69,7 +69,7 @@ export class HoverVisits<T> {
     // Clear the previous target's content before moving the card.
     visit.popover.render(null);
     visit.popover.retarget(targetEl);
-    return { ...visit };
+    return targetVisit(visit);
   }
 
   /** Closes the parent's popover, or only while it shows over `targetEl`. */
@@ -78,7 +78,21 @@ export class HoverVisits<T> {
     if (popover && (!targetEl || popover.targetEl === targetEl)) popover.hide();
   }
 
+  /** Hides every popover these visits own. */
   hideAll(): void {
     for (const { popover } of this.#visits.values()) popover.hide();
   }
+}
+
+/**
+ * What one target holds, fixed when the visit reached it. The entry the map
+ * keeps moves on with the pointer, so a read the previous target started must
+ * not reach the next target's state through it.
+ */
+function targetVisit<T>({
+  popover,
+  subscriptions,
+  state,
+}: Visit<T>): HoverVisit<T> {
+  return { popover, subscriptions, state };
 }
