@@ -68,6 +68,7 @@
   "devDependencies": {
     "@codemirror/commands": "catalog:",
     "@codemirror/language": "catalog:",
+    "@codemirror/lint": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
     "@electron/remote": "^2.1.3",

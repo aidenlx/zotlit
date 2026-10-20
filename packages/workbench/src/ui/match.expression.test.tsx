@@ -1,8 +1,10 @@
+import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { MatchExpressionInput } from "./match.expression";
+import type { FaultSpan } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
 
 afterEach(cleanup);
@@ -34,4 +36,27 @@ it("mounts the extension the theme supplies for expression editors", () => {
       .querySelector(".cm-editor")
       ?.classList.contains("host-expression"),
   ).toBe(true);
+});
+
+// The look of the underline, and that no tooltip shows over it, are proved
+// in the running app (query-view e2e).
+it("holds the faults it is given as error ranges, and clears them", () => {
+  const text = "lower(title) == 'book";
+  const field = (faults: readonly FaultSpan[]) => (
+    <MatchExpressionInput value={text} onChange={() => {}} faults={faults} />
+  );
+  const mounted = render(field([{ from: 16, to: 21 }]));
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const marked = () => {
+    const found: { text: string; severity: string }[] = [];
+    forEachDiagnostic(editor.state, ({ severity }, from, to) => {
+      found.push({ text: editor.state.sliceDoc(from, to), severity });
+    });
+    return found;
+  };
+  expect(marked()).toEqual([{ text: "'book", severity: "error" }]);
+  act(() => mounted.rerender(field([])));
+  expect(marked()).toEqual([]);
 });

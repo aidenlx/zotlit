@@ -7,7 +7,7 @@
 // is the Match editor's expression input, with a parse-only check: the engine
 // plans the Formula when the view runs, and marks a mistake it finds at the
 // Formula's row.
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
@@ -16,6 +16,7 @@ import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
+import type { FaultSpan } from "@zotlit/workbench/ui";
 
 import {
   Chooser,
@@ -30,8 +31,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
+import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
+import type { PlacedFault } from "./expression-faults";
 import { displayName, formulaProperty } from "./query-file";
-import { formulaIssuesOf } from "./results";
+import { formulaIssuesOf, formulaSpansOf } from "./results";
 import type { QueryView } from "./view";
 import { fieldLabel } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
@@ -50,15 +53,59 @@ export function formulaNameIssue(
   return null;
 }
 
+/** What the last run found in a Formula. */
+export interface FormulaRunFault {
+  /** The Formula's saved text. */
+  readonly saved: string;
+  readonly message: string;
+  /** Where the Fault is in the text the run planned, where it names a place. */
+  readonly place?: PlacedFault | undefined;
+}
+
+/** What the Formula field reports and underlines. */
+export interface FormulaCheck {
+  /** What is wrong with the text, or `null` when nothing is. */
+  readonly issue: string | null;
+  /** Whether the text parses, apart from what the run found. */
+  readonly syntax: "valid" | "invalid";
+  readonly faults: readonly FaultSpan[];
+}
+
+/**
+ * @param run What the last run found in the Formula, or `null`.
+ * @returns the text's Syntax Fault, else the run's Fault while the text is
+ * the saved text, each underlined at its span; the span of the run's Fault
+ * only while the text is also the one the run planned.
+ */
+export function formulaCheck(
+  text: string,
+  run: FormulaRunFault | null,
+): FormulaCheck {
+  if (text.trim() === "")
+    return {
+      issue: m.query_view_formula_expression_empty(),
+      syntax: "invalid",
+      faults: [],
+    };
+  const { error } = parseExpression(text);
+  if (error) {
+    const expected = error.expected.join(", ");
+    const issue =
+      error.found === null
+        ? m.query_view_formula_syntax_end({ expected })
+        : m.query_view_formula_syntax({ found: error.found, expected });
+    const span = syntaxFaultSpan(text, error);
+    return { issue, syntax: "invalid", faults: span ? [span] : [] };
+  }
+  if (run === null || run.saved !== text)
+    return { issue: null, syntax: "valid", faults: [] };
+  const span = ranFaultSpan(text, run.place);
+  return { issue: run.message, syntax: "valid", faults: span ? [span] : [] };
+}
+
 /** The Syntax Fault of a Formula's text, or `null` when it parses. */
 export function formulaSyntaxIssue(text: string): string | null {
-  if (text.trim() === "") return m.query_view_formula_expression_empty();
-  const { error } = parseExpression(text);
-  if (!error) return null;
-  const expected = error.expected.join(", ");
-  return error.found === null
-    ? m.query_view_formula_syntax_end({ expected })
-    : m.query_view_formula_syntax({ found: error.found, expected });
+  return formulaCheck(text, null).issue;
 }
 
 /** The header every page of the Properties popover wears. */
@@ -124,14 +171,14 @@ function ExpressionField({
   value,
   onChange,
   onBlur,
-  issue,
+  check: { issue, syntax, faults },
 }: {
   value: string;
   /** Called with the typed text and the window the field stands in. */
   onChange: (value: string, win: Window) => void;
   onBlur?: () => void;
-  /** What is wrong with the text, or `null` when nothing is. */
-  issue: string | null;
+  /** What the validity line reports and the field underlines. */
+  check: FormulaCheck;
 }) {
   return (
     <WorkbenchThemeProvider theme={matchTheme}>
@@ -147,10 +194,7 @@ function ExpressionField({
                   ? "zt:text-(--text-success)"
                   : "zt:text-(--text-error)",
               )}
-              // Whether the text parses, apart from what the run found.
-              data-query-formula-syntax={
-                formulaSyntaxIssue(value) === null ? "valid" : "invalid"
-              }
+              data-query-formula-syntax={syntax}
             >
               {/* The icon keeps to the first line of a long message. */}
               <span className="zt:flex zt:h-lh zt:shrink-0 zt:items-center">
@@ -172,6 +216,7 @@ function ExpressionField({
           lines={3}
           aria-invalid={value !== "" && issue !== null}
           value={value}
+          faults={faults}
           data-query-formula-expression=""
           onChange={onChange}
           onBlur={onBlur}
@@ -221,13 +266,20 @@ function PropertyDisplayName({
   );
 }
 
+const ownEntry = <T,>(
+  dictionary: Readonly<Record<string, T>>,
+  name: string,
+): T | undefined =>
+  Object.hasOwn(dictionary, name) ? dictionary[name] : undefined;
+
 /**
  * A Formula's text, saved while it parses: a moment after the user stops
  * typing, and when the field loses focus.
  */
 function FormulaText({ view, name }: { view: QueryView; name: string }) {
   const saved = useStore(view.state, (s) => s.file?.formulas?.[name] ?? "");
-  const issues = useStore(view.state, formulaIssuesOf);
+  const issue = useStore(view.state, (s) => ownEntry(formulaIssuesOf(s), name));
+  const place = useStore(view.state, (s) => ownEntry(formulaSpansOf(s), name));
   const [text, setText, typed] = useChooserPageText(saved);
   // The pending save, on the timers of the window the field stands in.
   const pending = useRef<{ win: Window; timer: number } | null>(null);
@@ -242,12 +294,18 @@ function FormulaText({ view, name }: { view: QueryView; name: string }) {
   };
   useChooserPageSave(() => save(typed.current));
   // What ZotLit Query found in the saved text, while it stays as saved.
-  const runIssue =
-    text === saved && Object.hasOwn(issues, name) ? issues[name]! : null;
+  const check = useMemo(
+    () =>
+      formulaCheck(
+        text,
+        issue === undefined ? null : { saved, message: issue, place },
+      ),
+    [text, saved, issue, place],
+  );
   return (
     <ExpressionField
       value={text}
-      issue={formulaSyntaxIssue(text) ?? runIssue}
+      check={check}
       onChange={(next, win) => {
         setText(next);
         if (pending.current)
@@ -341,7 +399,8 @@ export function NewFormulaPage({ view }: { view: QueryView }) {
   const [text, setText] = useState("");
   const [label, setLabel] = useState("");
   const nameIssue = formulaNameIssue(name, formulas);
-  const syntaxIssue = formulaSyntaxIssue(text);
+  const syntax = useMemo(() => formulaCheck(text, null), [text]);
+  const syntaxIssue = syntax.issue;
   const save = () => {
     if (nameIssue !== null || syntaxIssue !== null) return;
     if (view.document.saveFormula(name, text, label))
@@ -377,11 +436,7 @@ export function NewFormulaPage({ view }: { view: QueryView }) {
               onInput={(event) => setName(event.currentTarget.value.trim())}
             />
           </Chooser.PageField>
-          <ExpressionField
-            value={text}
-            onChange={setText}
-            issue={syntaxIssue}
-          />
+          <ExpressionField value={text} onChange={setText} check={syntax} />
           <DisplayNameField
             property={formulaProperty(name || "…")}
             value={label}

@@ -327,6 +327,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         `(async()=>{${PAGE}const popup=${propertiesPopup};const save=popup.querySelector('[data-chooser-page] [data-query-formula-save]');if(save){press(save,'Save');await until('page of the Formula',()=>popup.querySelector('[data-query-property-page]'));}press(popup.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
       );
+    /**
+     * The text the Formula field underlines, once it is `expected` or the
+     * wait ends, as the editor draws its marks after a frame; and how: the
+     * line style of each underline, and whether the field draws a gutter.
+     */
+    const formulaUnderlines = async (expected: string[]) =>
+      JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}const field=()=>${propertiesPage}?.querySelector('[data-query-formula-expression]');const marks=()=>[...(field()?.querySelectorAll('.cm-lintRange-error')??[])];await until('underlines',()=>JSON.stringify(marks().map(n=>n.textContent))===${JSON.stringify(JSON.stringify(expected))}).catch(()=>{});return JSON.stringify({marks:marks().map(n=>n.textContent),styles:marks().map(n=>getComputedStyle(n).textDecorationStyle),gutter:field()?.querySelector('.cm-gutters')!=null});})()`,
+        ),
+      ) as { marks: string[]; styles: string[]; gutter: boolean };
     expect(
       await obEvalUntil(run.vaultId, `String(!!${propertiesPage})`, {
         expected: "true",
@@ -388,10 +400,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       syntax: "invalid",
       save: false,
     });
+    // The Syntax Fault is underlined as it is typed, in a wavy line and with
+    // no gutter beside the text.
+    expect(await formulaUnderlines(["+"])).toEqual({
+      marks: ["+"],
+      styles: ["wavy"],
+      gutter: false,
+    });
     expect(await typeFormula({ expression: "date.year" })).toEqual({
       syntax: "valid",
       save: true,
     });
+    expect((await formulaUnderlines([])).marks).toEqual([]);
     await saveFormula();
 
     // The Formula saves under formulas, shows after the view's properties,
@@ -472,6 +492,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(()=>{const popup=${propertiesPopup};const issue=popup.querySelector('[data-query-property="formula.year"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null;popup.hidePopover();return String(issue);})()`,
     );
     expect(rowIssue).toBe(wrong.headerIssue);
+
+    // The Formula's page underlines the name the run found wrong, and shows
+    // no tooltip over it: CodeMirror mounts the filtered lint tooltip on
+    // hover, and the field keeps it hidden.
+    await editFormula();
+    expect((await formulaUnderlines(["nope"])).marks).toEqual(["nope"]);
+    const hovered = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}const field=${propertiesPage}.querySelector('[data-query-formula-expression]');const mark=field.querySelector('.cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));const tip=await until('lint tooltip',()=>field.ownerDocument.querySelector('.cm-tooltip-lint'));const box=tip.getBoundingClientRect();return JSON.stringify({display:getComputedStyle(tip).display,area:box.width*box.height});})()`,
+      ),
+    ) as { display: string; area: number };
+    expect(hovered).toEqual({ display: "none", area: 0 });
+    // A text other than the saved one shows no underline of the run's Fault.
+    await typeFormula({ expression: "title.nope( )" });
+    expect((await formulaUnderlines([])).marks).toEqual([]);
+    await saveFormula();
+    await tabWhen((tab) => tab.text.includes("  year: title.nope( )\n"));
 
     // Remove, in the page's menu, leaves the file without the Formula and
     // its property, and steps back to the rows.

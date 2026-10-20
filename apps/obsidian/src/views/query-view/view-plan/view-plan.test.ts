@@ -122,9 +122,11 @@ describe("the condition a fault in the request's filter marks", () => {
   const text = planned.request.filter!;
 
   it("finds the condition of the filters for all views", () => {
+    const condition = 'item.itemType == "journalArticle"';
     expect(planned.locate(span(text, "journalArticle"))).toEqual({
       section: "all",
       path: [0],
+      fault: { text: condition, span: span(condition, "journalArticle") },
     });
   });
 
@@ -132,8 +134,12 @@ describe("the condition a fault in the request's filter marks", () => {
     expect(planned.locate(span(text, "comment"))).toEqual({
       section: "view",
       path: [1, 1],
+      fault: {
+        text: "comment != null",
+        span: span("comment != null", "comment"),
+      },
     });
-    expect(planned.locate(span(text, "colorName"))).toEqual({
+    expect(planned.locate(span(text, "colorName"))).toMatchObject({
       section: "view",
       path: [0],
     });
@@ -181,10 +187,15 @@ views:
     expect(planned.locate(span(text, "dat"))).toEqual({
       section: "view",
       path: [1, 0],
+      fault: { text: "dat == 1", span: span("dat == 1", "dat") },
     });
     expect(planned.locate(span(text, "abstract"))).toEqual({
       section: "view",
       path: [2],
+      fault: {
+        text: "abstract != null",
+        span: span("abstract != null", "abstract"),
+      },
     });
     expect(planned.locate(span(text, "ITEMAAAA"))).toBeNull();
   });
@@ -205,13 +216,18 @@ views:
     expect(text).toBe(
       '((itemType == "book") && (dat == 1))\n&& (["ITEMAAAA"].contains(indexedKey))',
     );
+    // A fault in a kept conjunct falls at its place in the whole condition.
+    const condition =
+      'vault["status"] == "read" && itemType == "book" && (vault.rating > 3)';
     expect(planned.locate(span(text, "itemType"))).toEqual({
       section: "view",
       path: [0],
+      fault: { text: condition, span: span(condition, "itemType") },
     });
     expect(planned.locate(span(text, "dat"))).toEqual({
       section: "view",
       path: [1],
+      fault: { text: "dat == 1", span: span("dat == 1", "dat") },
     });
   });
 
