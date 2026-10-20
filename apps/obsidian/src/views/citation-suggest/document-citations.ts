@@ -2,7 +2,10 @@
 import { abortable } from "@std/async/abortable";
 import type { TFile } from "obsidian";
 
+import { getLogger } from "@/lib/log";
 import type { CitationIndex } from "@/services/citation-index/service";
+
+const logger = getLogger(["views", "citation-suggest"]);
 
 export async function readDocumentCitedKeys(
   index: Pick<CitationIndex, "getDocumentCitationSet">,
@@ -25,7 +28,19 @@ export async function readDocumentCitedKeys(
     return set.citations.flatMap(({ indexedKey }) =>
       indexedKey === null ? [] : [indexedKey],
     );
-  } catch {
+  } catch (error) {
+    const reason = signal.aborted
+      ? "aborted"
+      : timeout.signal.aborted
+        ? "timeout"
+        : "failed";
+    logger.debug(
+      "Document citations unavailable; searching without cited Items",
+      {
+        reason,
+        ...(reason === "failed" ? { error } : {}),
+      },
+    );
     return [];
   }
 }

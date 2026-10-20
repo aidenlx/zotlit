@@ -113,9 +113,10 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
         this.#documentController.signal,
       );
     }
+    const session = this.#session;
     const cited = await this.#cited;
-    if (controller.signal.aborted) return [];
-    return this.#session.search(context.query, { limit: this.limit, cited });
+    if (session !== this.#session) return [];
+    return session.search(context.query, { limit: this.limit, cited });
   }
 
   override close(): void {
