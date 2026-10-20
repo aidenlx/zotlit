@@ -21,19 +21,36 @@
 // and the browser reapplies it to the destination. A section that moves to
 // another page keeps its heading id there, so `old#slug` lands on `new#slug`.
 //
-// Every move is a permanent 308. This table redirects the HTML path only, not
-// the page's Markdown editions (`<page>.md`, `/llms.mdx/docs/…/content.md`).
+// Every move is a permanent 308, and each entry also moves the page's two
+// Markdown editions (`<page>.md` and `/llms.mdx/docs/…/content.md`), spelled by
+// lib/markdown-routes.ts. OG card URLs are not redirected: only a live page
+// ever links its card.
 
+import { contentRouteUrl, suffixEditionUrl } from "./markdown-routes.js";
+import type { MarkdownPage } from "./markdown-routes.js";
 import type { RedirectRule } from "./v1-redirects.js";
 
 /** Moved v2 docs page: old `/docs/...` path → new `/docs/...` path. */
 export const V2_MOVES: Record<string, string> = {};
 
-/** One permanent redirect per moved page, in the table's order. */
+/** The docs page a `/docs/...` path addresses. */
+function docsPage(path: string): MarkdownPage {
+  const [section, ...slugs] = path.split("/").filter(Boolean);
+  if (section !== "docs") throw new Error(`${path} is not a /docs path`);
+  return { section, slugs };
+}
+
+/**
+ * Three permanent redirects per moved page, in the table's order: the page,
+ * then its suffix edition, then its content route.
+ */
 export function buildV2Redirects(moves = V2_MOVES): RedirectRule[] {
-  return Object.entries(moves).map(([source, destination]) => ({
-    source,
-    destination,
-    status: 308,
-  }));
+  return Object.entries(moves).flatMap(([from, to]) => {
+    const [old, moved] = [docsPage(from), docsPage(to)];
+    return [
+      { source: from, destination: to },
+      { source: suffixEditionUrl(old), destination: suffixEditionUrl(moved) },
+      { source: contentRouteUrl(old), destination: contentRouteUrl(moved) },
+    ].map((rule): RedirectRule => ({ ...rule, status: 308 }));
+  });
 }

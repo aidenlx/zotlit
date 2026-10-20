@@ -1,7 +1,10 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { scanContent } from "./content-scan";
 import { zotlitLegacyUrl } from "./shared";
 import { buildV1Redirects, renderRedirectsFile } from "./v1-redirects";
+import { PAGE_MAP } from "./v1-routes";
 
 const redirects = buildV1Redirects();
 const find = (source: string) => redirects.find((r) => r.source === source);
@@ -86,6 +89,20 @@ describe("buildV1Redirects", () => {
         : 307;
       expect(redirect.status).toBe(expected);
     }
+  });
+});
+
+describe("PAGE_MAP", () => {
+  it("lands every v1 permalink on a docs page the content tree publishes", () => {
+    const packageRoot = resolve(import.meta.dirname, "../..");
+    const docsPages = new Set(
+      scanContent(packageRoot).docs.map(
+        (entry) => `/${["docs", ...entry.slugs].join("/")}`,
+      ),
+    );
+    const missing = Object.values(PAGE_MAP).filter((to) => !docsPages.has(to));
+
+    expect(missing).toEqual([]);
   });
 });
 

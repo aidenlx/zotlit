@@ -29,12 +29,24 @@ function problems(moves: Record<string, string>): string[] {
         found.push(`${path} is not a bare /docs path`);
       }
     }
-    if (to in moves) found.push(`${from} → ${to} chains into another move`);
-    if (v1Sources.has(to)) found.push(`${from} → ${to} chains into a v1 rule`);
     if (v1Destinations.has(from)) {
       found.push(`${from} is a PAGE_MAP destination; point PAGE_MAP at ${to}`);
     }
+    // The Markdown editions' destinations follow from the page's, by the same
+    // scheme the prerender list publishes them under.
     if (!docsPages.has(to)) found.push(`${from} → ${to} is no docs page`);
+  }
+
+  // Chains, over every emitted rule: the pages and their Markdown editions.
+  const rules = buildV2Redirects(moves);
+  const sources = new Set(rules.map((rule) => rule.source));
+  for (const { source, destination } of rules) {
+    if (sources.has(destination)) {
+      found.push(`${source} → ${destination} chains into another move`);
+    }
+    if (v1Sources.has(destination)) {
+      found.push(`${source} → ${destination} chains into a v1 rule`);
+    }
   }
   return found;
 }
@@ -51,12 +63,16 @@ describe("the moves table's rules", () => {
     expect(docsPages.has(LIVE)).toBe(true);
   });
 
-  it("rejects a destination that is itself a moved page", () => {
+  it("rejects a destination that is itself a moved page, editions too", () => {
     expect(
-      problems({ "/docs/a": "/docs/b", "/docs/b": LIVE }).some((p) =>
+      problems({ "/docs/a": "/docs/b", "/docs/b": LIVE }).filter((p) =>
         p.includes("chains into another move"),
       ),
-    ).toBe(true);
+    ).toEqual([
+      "/docs/a → /docs/b chains into another move",
+      "/docs/a.md → /docs/b.md chains into another move",
+      "/llms.mdx/docs/a/content.md → /llms.mdx/docs/b/content.md chains into another move",
+    ]);
   });
 
   it("rejects a v1 permalink table destination as a source", () => {
@@ -78,9 +94,19 @@ describe("the moves table's rules", () => {
 });
 
 describe("buildV2Redirects", () => {
-  it("sends each moved page to its new path permanently", () => {
-    expect(buildV2Redirects({ "/docs/old": LIVE })).toEqual([
-      { source: "/docs/old", destination: LIVE, status: 308 },
+  it("sends each moved page and its two Markdown editions to the new path", () => {
+    expect(buildV2Redirects({ "/docs/old/page": LIVE })).toEqual([
+      { source: "/docs/old/page", destination: LIVE, status: 308 },
+      {
+        source: "/docs/old/page.md",
+        destination: "/docs/how-to/insert-citations.md",
+        status: 308,
+      },
+      {
+        source: "/llms.mdx/docs/old/page/content.md",
+        destination: "/llms.mdx/docs/how-to/insert-citations/content.md",
+        status: 308,
+      },
     ]);
   });
 });
@@ -91,9 +117,10 @@ describe("renderSiteRedirectsFile", () => {
   it("writes the v2 moves into the same file as the v1 table", () => {
     const file = renderSiteRedirectsFile(moves);
     expect(file).toContain(`/docs/old ${LIVE} 308\n`);
+    expect(file).toContain(`/docs/old.md ${LIVE}.md 308\n`);
     expect(file).toContain("/zh-CN/* /:splat?lang=zh-CN 307\n");
     expect(file.trimEnd().split("\n")).toHaveLength(
-      buildV1Redirects().length + 1,
+      buildV1Redirects().length + 3,
     );
   });
 
