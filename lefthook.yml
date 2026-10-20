@@ -34,3 +34,16 @@ pre-commit:
         - "pnpm-lock.yaml"
         - "lefthook.yml"
       run: mise exec -- pnpm e2e:worker
+
+# Commits and pushes carry no AI-agent attribution, and claude/*, codex/* and
+# cursor/* branches stay local. See packages/scripts/lib/ai-attribution.ts.
+commit-msg:
+  commands:
+    ai-attribution:
+      run: mise exec -- node packages/scripts/scripts/ai-attribution.ts message {1}
+
+pre-push:
+  commands:
+    ai-attribution:
+      use_stdin: true
+      run: mise exec -- node packages/scripts/scripts/ai-attribution.ts push {1}
