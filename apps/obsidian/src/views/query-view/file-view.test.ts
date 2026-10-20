@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
+import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryFileView } from "./file-view";
@@ -59,11 +60,7 @@ async function openTab() {
     },
     reads: { on: off },
     libraryScope: { on: off },
-    query: {
-      run: () => Promise.resolve(EMPTY),
-      on: () => () => {},
-      customFieldNames: async () => [],
-    },
+    query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     literatureNotes: noLiteratureNotes(),

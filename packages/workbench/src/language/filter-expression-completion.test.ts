@@ -419,6 +419,9 @@ describe("the members a Query Dataset's planner reads", () => {
       type: "string",
     });
     expect(fields.map((field) => field.label)).toContain("creators");
+    // An Annotation's own field and the custom fields are no members of its Item.
+    expect(fields.map((field) => field.label)).not.toContain("comment");
+    expect(fields.map((field) => field.label)).not.toContain("custom");
     for (const { label } of fields)
       expect(ANNOTATIONS.planFilter(`item.${label}`)).toHaveProperty("root");
   });

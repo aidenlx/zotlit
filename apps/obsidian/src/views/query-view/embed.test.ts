@@ -13,6 +13,7 @@ import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
+import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryCardFocus } from "./card-focus";
@@ -80,7 +81,7 @@ function setup() {
     app,
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run, on: () => () => {}, customFieldNames: async () => [] },
+    query: fakeQuery(run),
     cardFocus: new QueryCardFocus(app),
     annotations: {
       on: off,

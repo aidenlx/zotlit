@@ -67,7 +67,9 @@ import type {
   QueryViewRow,
 } from "./query-view";
 import type {
+  QueryAnswer,
   QueryCommand,
+  QueryCustomFieldsCommand,
   QueryReply,
   QueryViewCommand,
   QueryViewReply,
@@ -260,6 +262,24 @@ function answerQuery(
   });
   return (env.instrument?.(operation) ?? operation).pipe(
     answerFailure(command, named?.parameter),
+  );
+}
+
+/**
+ * The names of the custom fields of the active source, as data in
+ * `customFields`. A typed failure is the envelope of the schema command.
+ */
+export function answerCustomFields(
+  command: QueryCustomFieldsCommand["command"],
+): Effect.Effect<QueryAnswer, never, ItemQueryDatabase> {
+  return describeQueryCustomFields(ITEMS).pipe(
+    Effect.map(
+      (fields): QueryAnswer => ({
+        ...inline(command, ""),
+        customFields: fields.map(({ name }) => name),
+      }),
+    ),
+    answerFailure(command),
   );
 }
 

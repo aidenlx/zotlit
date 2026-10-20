@@ -21,6 +21,7 @@ import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
+import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { registerQueryBlock } from "./block";
@@ -103,7 +104,7 @@ function setup(kind: HostKind) {
     app,
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run, on: () => () => {}, customFieldNames: async () => [] },
+    query: fakeQuery(run),
     cardFocus,
     annotations: {
       on: off,

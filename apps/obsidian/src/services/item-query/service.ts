@@ -29,6 +29,7 @@ import type { CancellationEvent, QueryObserver } from "./trace";
 import type {
   QueryAnswer,
   QueryCommand,
+  QueryCustomFieldsCommand,
   QueryViewCommand,
 } from "./worker-protocol";
 
@@ -237,29 +238,22 @@ export class QueryService extends Service {
   }
 
   /**
-   * The custom fields of the active Zotero source, by name, as the schema
-   * command answers them; none when the source cannot answer.
+   * The custom fields of the active Zotero source, by name; none when the
+   * source cannot answer or `signal` aborts first.
    * @throws The startup failure of the service, or an internal error.
    */
   async customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
-    const answer: unknown = JSON.parse(
-      await this.schema({ from: "items" }, signal),
+    const settled = await this.#settle(
+      this.#send({
+        command: QUERY_SCHEMA_COMMAND,
+        schema: false,
+        customFields: true,
+      }).pipe(Effect.map((answer) => answer.customFields ?? [])),
+      signal,
     );
-    if (
-      typeof answer !== "object" ||
-      answer === null ||
-      !("customFields" in answer) ||
-      !Array.isArray(answer.customFields)
-    )
-      return [];
-    return answer.customFields.flatMap((field: unknown) =>
-      typeof field === "object" &&
-      field !== null &&
-      "name" in field &&
-      typeof field.name === "string"
-        ? [field.name]
-        : [],
-    );
+    if (settled.done) return settled.value;
+    if (this.#startup) throw this.#startup.error;
+    return [];
   }
 
   /**
@@ -347,7 +341,7 @@ export class QueryService extends Service {
    * job ends; a job that the worker cancelled interrupts.
    */
   #send(
-    command: QueryCommand | QueryViewCommand,
+    command: QueryCommand | QueryViewCommand | QueryCustomFieldsCommand,
     {
       id = randomUUID(),
       stagePath,

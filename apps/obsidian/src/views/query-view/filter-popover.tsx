@@ -37,7 +37,10 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
 import { conditionFaults } from "./expression-faults";
-import { expressionVocabulary } from "./expression-vocabulary";
+import {
+  expressionVocabulary,
+  useCustomFieldNames,
+} from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -410,7 +413,31 @@ export function FilterButton({ view }: { view: QueryView }) {
     [names, literatureNotes, properties, vaultVersion],
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
-  const [custom, setCustom] = useState<readonly string[]>([]);
+  const [open, setOpen] = useState(false);
+  const custom = useCustomFieldNames(view, open);
+  const formulas = file?.formulas;
+  const context = view.contextSource !== undefined;
+  // One vocabulary per dataset while its inputs hold, so a receiver's
+  // planned members outlive a keystroke.
+  const expressions = useMemo(() => {
+    const made = new Map<QueryFileDataset, ExpressionVocabulary>();
+    return (dataset: QueryFileDataset) => {
+      let vocabulary = made.get(dataset);
+      if (!vocabulary) {
+        vocabulary = expressionVocabulary({
+          dataset,
+          properties,
+          formulas: formulas ?? {},
+          context,
+          custom,
+          // Only a view of Items reads vault properties.
+          ...(dataset === "items" && { vaultNames: names }),
+        });
+        made.set(dataset, vocabulary);
+      }
+      return vocabulary;
+    };
+  }, [properties, formulas, context, custom, names]);
   if (!file || !shown) return null;
   return (
     <ToolbarPopover
@@ -421,13 +448,12 @@ export function FilterButton({ view }: { view: QueryView }) {
       hook="filter"
       className="zt:w-[min(--spacing(130),calc(100vw_-_var(--size-4-8)))] zt:max-w-none"
       onOpen={() => {
+        setOpen(true);
         view.filterValues().then(setValues, (error: unknown) => {
           logger.warn("The filter values could not be read", { error });
         });
-        view.customFieldNames().then(setCustom, (error: unknown) => {
-          logger.warn("The custom fields could not be read", { error });
-        });
       }}
+      onClose={() => setOpen(false)}
     >
       <FilterEditor
         dataset={shown.from ?? "annotations"}
@@ -439,17 +465,7 @@ export function FilterButton({ view }: { view: QueryView }) {
         properties={properties}
         vaultFields={vaultFields}
         vaultType={(name) => literatureNotes.propertyType(name)}
-        expressions={(dataset) =>
-          expressionVocabulary({
-            dataset,
-            properties,
-            formulas: file.formulas ?? {},
-            context: view.contextSource !== undefined,
-            custom,
-            // Only a view of Items reads vault properties.
-            ...(dataset === "items" && { vaultNames: names }),
-          })
-        }
+        expressions={expressions}
         onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>

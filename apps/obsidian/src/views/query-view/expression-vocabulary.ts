@@ -24,25 +24,28 @@ import type { ViewProperties } from "./view-properties";
 const logger = getLogger(["views", "query-view", "expression-vocabulary"]);
 
 /**
- * The custom fields of the Zotero source, read once the editor mounts; none
- * until they arrive or when the source cannot answer.
+ * The custom fields of the Zotero source, read each time `reading` turns
+ * true; the read stops when it turns false or the editor unmounts. None
+ * until the first read arrives.
  */
-export function useCustomFieldNames(view: QueryView): readonly string[] {
+export function useCustomFieldNames(
+  view: QueryView,
+  reading = true,
+): readonly string[] {
   const [names, setNames] = useState<readonly string[]>([]);
   useEffect(() => {
-    let current = true;
-    view.customFieldNames().then(
+    if (!reading) return;
+    const controller = new AbortController();
+    view.customFieldNames(controller.signal).then(
       (read) => {
-        if (current) setNames(read);
+        if (!controller.signal.aborted) setNames(read);
       },
       (error: unknown) => {
         logger.warn("The custom fields could not be read", { error });
       },
     );
-    return () => {
-      current = false;
-    };
-  }, [view]);
+    return () => controller.abort();
+  }, [view, reading]);
   return names;
 }
 

@@ -18,6 +18,7 @@ import type {
   FunctionParameter,
 } from "@zotlit/item-query";
 
+import type { ExpressionReceiver } from "./expression-options";
 import type { Span } from "./span";
 
 /** One parameter as the hint names it. */
@@ -58,7 +59,7 @@ export interface SignatureHintOptions {
   readonly receiver?: (
     source: string,
     at: Span,
-  ) => { readonly type: FilterValueType | undefined } | undefined;
+  ) => Pick<ExpressionReceiver, "type"> | undefined;
 }
 
 type Definition = Pick<

@@ -38,7 +38,7 @@ import type {
 import type { LibraryScope } from "@/services/library-scope/scope";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
-import { requested } from "./__fixtures__/query-run";
+import { fakeQuery, requested } from "./__fixtures__/query-run";
 import type { ContextSource } from "./context-hint";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
@@ -327,7 +327,7 @@ async function mount(
         ],
       },
     },
-    query: { run, on: () => () => {}, customFieldNames: async () => [] },
+    query: fakeQuery(run),
     annotations: {
       read: () => Promise.resolve(list),
       peek: () => ({ value: list }),

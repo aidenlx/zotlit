@@ -287,6 +287,119 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   }
 }
 
+/** The subexpression of a planned Filter Expression at one span. */
+export interface PlannedSubexpression {
+  readonly valueType: StaticType;
+  /**
+   * The type of a member a filter reads on the record it gives, by name;
+   * undefined for a name that is not one. Absent for a value that is not a
+   * record, or a record whose members are known only at execution.
+   */
+  readonly member?: (name: string) => StaticType | undefined;
+}
+
+/** What a filter reads on a record of the Query Context. */
+export const CONTEXT_RECORD_MEMBERS: readonly string[] = ["indexedKey", "key"];
+
+/**
+ * Plan `text` as {@link planFilter} does and read the subexpression at
+ * exactly `at`, the outermost of several. A custom field is not a member:
+ * it is read by bracket access.
+ * @returns Undefined where `text` does not plan or no subexpression spans `at`.
+ */
+export function planSubexpression<Item, Needs>(
+  text: string,
+  at: Span,
+  {
+    registry = itemFilterRegistry as FilterRegistry<any, any>,
+    context,
+    formula,
+  }: PlanFilterOptions<Item, Needs>,
+): PlannedSubexpression | undefined {
+  const { ast } = parseExpressionAst(text);
+  if (!ast) return undefined;
+  const validator = new Validator<Item, Needs>(
+    { needs: [], customFields: [], warnings: [] },
+    registry,
+    { context, formula },
+  );
+  let root: FilterNode<Item>;
+  try {
+    root = validator.node(ast);
+  } catch (thrown) {
+    if (thrown instanceof Invalid) return undefined;
+    throw thrown;
+  }
+  const node = nodeAt(root, at);
+  if (!node) return undefined;
+  const members = validator.navigation(node)?.member;
+  if (members)
+    return {
+      valueType: node.valueType,
+      member: (name) => {
+        // `custom` is read only by bracket access, on a record as alone.
+        if (name === "custom") return undefined;
+        const field = members(name);
+        return field?.filterable && !field.customField
+          ? field.value.type
+          : undefined;
+      },
+    };
+  // The record `this` binds is a literal; its members are its keys.
+  if (node.kind === "literal" && node.recordDataset)
+    return {
+      valueType: node.valueType,
+      member: (name) =>
+        CONTEXT_RECORD_MEMBERS.includes(name) ? "string" : undefined,
+    };
+  return { valueType: node.valueType };
+}
+
+/** The nodes a node is planned from; a Formula's own text is not among them. */
+function childrenOf<Item>(node: FilterNode<Item>): readonly FilterNode<Item>[] {
+  switch (node.kind) {
+    case "literal":
+    case "field":
+    case "custom-field":
+    case "binding":
+    case "formula":
+      return [];
+    case "list":
+      return node.elements;
+    case "element":
+      return [node.subject, node.expression, ...node.args];
+    case "unary":
+      return [node.operand];
+    case "binary":
+      return [node.left, node.right];
+    case "if":
+      return node.whenFalse
+        ? [node.condition, node.whenTrue, node.whenFalse]
+        : [node.condition, node.whenTrue];
+    case "function":
+      return node.args;
+    case "method":
+      return [node.subject, ...node.args];
+    case "property":
+      return [node.subject];
+    case "index":
+      return [node.subject, node.index];
+  }
+}
+
+function nodeAt<Item>(
+  node: FilterNode<Item>,
+  at: Span,
+): FilterNode<Item> | undefined {
+  if (node.from > at.from || node.to < at.to) return undefined;
+  if (node.from === at.from && node.to === at.to) return node;
+  for (const child of childrenOf(node)) {
+    const found = nodeAt(child, at);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /**
  * Whether a custom field has a bare form in a Filter Expression: its name is
  * one identifier of the grammar and no built-in field, function, or keyword
@@ -496,6 +609,11 @@ class Validator<Item, Needs> {
     FilterNode<Item>,
     FilterNavigation<Needs>
   >();
+
+  /** The members and elements a planned node gives, where it tracks them. */
+  navigation(node: FilterNode<Item>): FilterNavigation<Needs> | undefined {
+    return this.#navigation.get(node);
+  }
 
   #track(
     node: FilterNode<Item>,
@@ -985,7 +1103,7 @@ class Validator<Item, Needs> {
     span: Span,
   ): FilterNode<Item> {
     const subject = (record as { value: RecordValue }).value;
-    if (name !== "indexedKey" && name !== "key") {
+    if (!CONTEXT_RECORD_MEMBERS.includes(name)) {
       const at = { from: span.to - name.length, to: span.to };
       return fail({
         kind: "plain",

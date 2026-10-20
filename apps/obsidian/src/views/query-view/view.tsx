@@ -812,8 +812,8 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /** The custom fields of the Zotero source, which `custom[...]` offers. */
-  customFieldNames(): Promise<readonly string[]> {
-    return this.#deps.query.customFieldNames(new AbortController().signal);
+  customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
+    return this.#deps.query.customFieldNames(signal);
   }
 
   /** The surface the host is, by what it binds to `this`. */
