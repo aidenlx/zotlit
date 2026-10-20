@@ -144,6 +144,22 @@ const WAITS = `
   };`;
 
 /**
+ * Opens an empty draft `leaf` in Live Preview, as eval code that runs inside
+ * an `await using cleanup` block: the layout, the note, and the leaf are
+ * each restored on that stack, registered before the step that can fail.
+ */
+const DRAFT = `
+  const layout=app.workspace.getLayout();
+  cleanup.defer(()=>app.workspace.changeLayout(layout));
+  const file=await app.vault.create(${JSON.stringify(NOTE)},'# Draft\\n\\n');
+  cleanup.defer(()=>app.vault.delete(file));
+  const leaf=app.workspace.getLeaf('tab');
+  // An insertion is an edit the view saves later; saving it first keeps
+  // that save from writing the note back after its deletion.
+  cleanup.adopt(leaf,async(leaf)=>{await leaf.view.save?.();leaf.detach();});
+  await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});`;
+
+/**
  * Inserts the Annotation `annotationKey` of the Rougier Item into an empty
  * draft the way a reader does: its card's "More options" menu in the
  * Annotation View, then "Insert into note". Answers the draft's text once the
@@ -158,15 +174,7 @@ async function insertFromCard(annotationKey: string): Promise<string> {
       let text;
       {
         await using cleanup=new AsyncDisposableStack();
-        const layout=app.workspace.getLayout();
-        cleanup.defer(()=>app.workspace.changeLayout(layout));
-        const file=await app.vault.create(${JSON.stringify(NOTE)},'# Draft\\n\\n');
-        cleanup.defer(()=>app.vault.delete(file));
-        const leaf=app.workspace.getLeaf('tab');
-        // The insertion is an edit the view saves later; saving it first
-        // keeps that save from writing the note back after its deletion.
-        cleanup.adopt(leaf,async(leaf)=>{await leaf.view.save?.();leaf.detach();});
-        await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});
+        ${DRAFT}
         const sidebar=app.workspace.getRightLeaf(false);
         cleanup.adopt(sidebar,(leaf)=>leaf.detach());
         await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
@@ -217,15 +225,8 @@ async function searchAndInsert(
       let outcome;
       {
         await using cleanup=new AsyncDisposableStack();
-        const layout=app.workspace.getLayout();
-        cleanup.defer(()=>app.workspace.changeLayout(layout));
-        const file=await app.vault.create(${JSON.stringify(NOTE)},'# Draft\\n\\n');
-        cleanup.defer(()=>app.vault.delete(file));
-        const leaf=app.workspace.getLeaf('tab');
-        // The insertion is an edit the view saves later; saving it first
-        // keeps that save from writing the note back after its deletion.
-        cleanup.adopt(leaf,async(leaf)=>{annotations.close();await leaf.view.save?.();leaf.detach();});
-        await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});
+        ${DRAFT}
+        cleanup.defer(()=>annotations.close());
         app.workspace.setActiveLeaf(leaf,{focus:true});
         const editor=leaf.view.editor;
         editor.setCursor({line:editor.lastLine(),ch:0});
