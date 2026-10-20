@@ -8,6 +8,10 @@
     "template-workbench-cli",
     "protocol-links",
     "theme-hooks",
-    "templates"
+    "templates",
+    "---Browse by page type---",
+    "../tutorial/index",
+    "../how-to/index",
+    "../concepts/index"
   ]
 }

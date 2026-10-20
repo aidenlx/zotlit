@@ -1,0 +1,18 @@
+{
+  "title": "Customize your notes",
+  "pages": [
+    "../tutorial/customize-template",
+    "../how-to/customize-a-template",
+    "../how-to/use-different-templates",
+    "../how-to/configure-frontmatter-properties",
+    "../how-to/explore-template-data",
+    "../how-to/edit-a-profile-as-markdown",
+    "../how-to/enable-javascript-templates",
+    "---How it works---",
+    "../concepts/how-templates-work",
+    "../concepts/profiles",
+    "../concepts/template-workbench-view",
+    "../concepts/template-workbench",
+    "../concepts/javascript-templates"
+  ]
+}
