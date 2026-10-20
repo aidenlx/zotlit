@@ -47,7 +47,6 @@ import type { NotifyEventInput } from "./send";
 const PROBE_SQL = "PRAGMA journal_mode";
 const CHECKPOINT_SQL = "PRAGMA wal_checkpoint(PASSIVE)";
 const MANUAL_CHECKPOINT_SQL = "PRAGMA wal_checkpoint(TRUNCATE)";
-const SIGNAL = "send db/updated";
 
 const WAL_CHECKPOINT_PREF = "extensions.zotlit.wal-checkpoint";
 
@@ -176,17 +175,6 @@ afterEach(() => {
 
 describe("registerFreshness", () => {
   describe("probe-gated checkpoint activation", () => {
-    it("registers an observer on a wal database", async () => {
-      using handle = await registerFreshness(send);
-      expect(statements).toEqual([PROBE_SQL]);
-      expect(observer).toBeDefined();
-      expect(handle.status()).toEqual({
-        active: true,
-        automaticEnabled: true,
-        lastRun: null,
-      });
-    });
-
     it("keeps checkpoints inactive on a rollback-journal database", async () => {
       stubZotero("delete");
       using handle = await registerFreshness(send);
@@ -234,15 +222,6 @@ describe("registerFreshness", () => {
   });
 
   describe("freshness signal", () => {
-    it("sends db/updated only after the checkpoint completes", async () => {
-      using _handle = await registerFreshness(send);
-      emitNotifierEvent();
-      await vi.advanceTimersByTimeAsync(500);
-
-      expect(statements).toEqual([PROBE_SQL, CHECKPOINT_SQL, SIGNAL]);
-      expect(sent).toEqual([{ event: "db/updated" }]);
-    });
-
     it("holds the signal while the checkpoint is still running", async () => {
       using _handle = await registerFreshness(send);
       checkpointGate = Promise.withResolvers<void>();

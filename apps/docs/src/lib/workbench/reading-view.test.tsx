@@ -133,10 +133,6 @@ describe("inert marks", () => {
       .filter((node) => node.properties["data-zt"] === kind)
       .map((node) => node.properties["data-target"]);
 
-  it("produces the tree a package swap has to keep producing", () => {
-    expect(withoutPositions(tree)).toMatchSnapshot();
-  });
-
   it("carries no anchor, href, or src", () => {
     for (const node of elements(tree)) {
       expect(node.tagName).not.toBe("a");

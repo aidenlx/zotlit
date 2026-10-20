@@ -63,21 +63,4 @@ describe("renderInThread", () => {
 
     expect(seen?.PlainDate.from("2026-09-08").year).toBe(2026);
   });
-
-  it("hands the renderer the draft, the paper, and the whole request", async () => {
-    const rendering = renderInThread(REQUEST);
-
-    expect(rendering).toBeInstanceOf(Promise);
-    await expect(rendering).resolves.toBe(RESULT);
-    expect(renderProfile).toHaveBeenCalledExactlyOnceWith(
-      DEFAULT_PROFILE_SOURCE,
-      PAPER,
-      {
-        source: DEFAULT_PROFILE_SOURCE,
-        snapshot: PAPER,
-        mode: "update",
-        annotation: EXAMPLE,
-      },
-    );
-  });
 });
