@@ -144,6 +144,43 @@ describe("expression editors in Obsidian", () => {
     await vi.waitFor(() => expect(notices).toEqual([true]));
   });
 
+  it("place their tooltips before the field takes focus, so focus dispatches nothing of theirs", async () => {
+    // A dispatch as the field takes focus ends CodeMirror's window to put
+    // back the caret that the browser moves to the start on a Tab focus.
+    using _migration = windowMigration();
+    using surface = popoverSurface();
+    await using editor = await mountExpression(surface.scroller);
+    const tooltip = document.createElement("div");
+    const noticed = StateEffect.define<boolean>();
+    const after: { reconfigured: boolean; noticed: boolean }[] = [];
+    let focused = false;
+    editor.view.dispatch({
+      effects: StateEffect.appendConfig.of([
+        showTooltip.of({ pos: 0, create: () => ({ dom: tooltip }) }),
+        EditorView.focusChangeEffect.of((_state, focus) => noticed.of(focus)),
+        EditorView.updateListener.of((update) => {
+          if (!focused) return;
+          for (const tr of update.transactions)
+            after.push({
+              reconfigured: tr.reconfigured,
+              noticed: tr.effects.some((effect) => effect.is(noticed)),
+            });
+        }),
+      ]),
+    });
+    // Placed: in the popover's root, outside its scrolling.
+    await vi.waitFor(() => {
+      expect(tooltip.closest("[popover]")).toBe(surface.root);
+      expect(surface.scroller.contains(tooltip)).toBe(false);
+    });
+    focused = true;
+    editor.view.contentDOM.focus();
+    await vi.waitFor(() => expect(after.some((tr) => tr.noticed)).toBe(true));
+    // Whatever follows the notice in the same task has run.
+    await Promise.resolve();
+    expect(after.filter((tr) => tr.reconfigured)).toEqual([]);
+  });
+
   it("draw their tooltips in the popout window the view moves to", async () => {
     using migration = windowMigration();
     await using editor = await mountExpression();

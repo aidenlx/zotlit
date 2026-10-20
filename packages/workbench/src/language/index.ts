@@ -56,3 +56,4 @@ export type {
 
 export { templatePairing } from "./pairing";
 export type { PairingSource } from "./pairing";
+export type { Span } from "./span";

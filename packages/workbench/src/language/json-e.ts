@@ -289,34 +289,44 @@ export function jsonExpressions(
   return result;
 }
 
+/** The role of each JSON-e token that its text alone names. */
+const EXPRESSION_ROLES: Readonly<Record<string, ExpressionRole>> = {
+  true: "literal",
+  false: "literal",
+  null: "literal",
+  "(": "bracket",
+  ")": "bracket",
+  "[": "bracket",
+  "]": "bracket",
+  ",": "punctuation",
+  ".": "punctuation",
+};
+
+/** The role of the other tokens, by how they start; an operator otherwise. */
+const EXPRESSION_STARTS: readonly (readonly [RegExp, ExpressionRole])[] = [
+  [regex("^['\"]"), "string"],
+  [regex("^[0-9]"), "number"],
+  [regex("^[A-Za-z_]"), "name"],
+];
+
 /**
- * The role a token of a JSON-e expression takes, as the Filter Expression
- * assigns it; `in`, a word operator, reads as a keyword.
+ * The theme hooks of a token of a JSON-e expression, by the role the Filter
+ * Expression gives it; `in`, a word operator, reads as a keyword, and a
+ * name before `(` is a callee.
  */
 function expressionToken(
   tokens: readonly { text: string }[],
   index: number,
 ): string {
   const { text } = tokens[index]!;
-  const role: ExpressionRole | null =
-    text.startsWith("'") || text.startsWith('"')
-      ? "string"
-      : ["true", "false", "null"].includes(text)
-        ? "literal"
-        : text === "in"
-          ? null
-          : regex("^[0-9]").test(text)
-            ? "number"
-            : regex("^[A-Za-z_]").test(text)
-              ? tokens[index + 1]?.text === "("
-                ? "callee"
-                : "name"
-              : ["(", ")", "[", "]"].includes(text)
-                ? "bracket"
-                : [",", "."].includes(text)
-                  ? "punctuation"
-                  : "operator";
-  return role === null ? templateToken.keyword : expressionClasses(role);
+  if (text === "in") return templateToken.keyword;
+  const role = Object.hasOwn(EXPRESSION_ROLES, text)
+    ? EXPRESSION_ROLES[text]!
+    : (EXPRESSION_STARTS.find(([start]) => start.test(text))?.[1] ??
+      "operator");
+  return expressionClasses(
+    role === "name" && tokens[index + 1]?.text === "(" ? "callee" : role,
+  );
 }
 
 /**

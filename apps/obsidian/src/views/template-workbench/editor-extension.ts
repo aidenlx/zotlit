@@ -41,27 +41,31 @@ export const hostedEditor: Extension = [
   popoutCopy,
   ViewPlugin.define(
     (view) => {
-      const dispose = view.dom.onWindowMigrated((win) => {
-        view.setRoot(win.document);
-        view.requestMeasure();
-      });
+      const dispose = view.dom.onWindowMigrated((win) =>
+        follow(view, win.document),
+      );
       return { destroy: dispose };
     },
     {
+      // Obsidian tells of a move once the element shows, so an editor that
+      // moved inside a closed popover hears nothing; it takes the window it
+      // stands in when it takes focus, before CodeMirror reads its focus and
+      // caret there.
       eventHandlers: {
-        // Obsidian sees a move to another window when the moved node first
-        // draws, a frame after it shows. A closed popover draws nothing, so
-        // an editor in it, such as a Filter popover's, hears of the move only
-        // a frame after the popover opens, and a focus before that would read
-        // the old window's document: no focus, no selection, no tooltips.
         focus(_event, view) {
-          const doc = view.dom.ownerDocument;
-          if (view.root !== doc) view.setRoot(doc);
+          follow(view, view.dom.ownerDocument);
         },
       },
     },
   ),
 ];
+
+/** Moves the editor's root and styles to `doc` when it is a new document. */
+function follow(view: EditorView, doc: Document) {
+  if (view.root === doc) return;
+  view.setRoot(doc);
+  view.requestMeasure();
+}
 
 const tooltipPlacement = new Compartment();
 
@@ -73,31 +77,36 @@ const tooltipPlacement = new Compartment();
  * The popover's root does not clip — its contents scroll in an inner box — so
  * a tooltip drawn there reaches past the popover's edge.
  *
- * An editor's tooltips open as the user types in it, so the place is chosen
- * each time the editor takes focus. By then the editor stands in the page,
- * which it does not while its plugins are made, and it stands in the window
- * it is typed in: a view moved to a popout window loses focus on the way, so
- * its next focus moves the tooltips of an editor outside a popover to the
- * popout's body.
- *
- * The place is chosen once CodeMirror has told the editor of the focus, after
- * that update. A dispatch from the focus event itself would come first, and
- * CodeMirror drops its own notice of the focus when the next dispatch, such
- * as the caret a click puts down, comes before that notice.
+ * The place is chosen once the editor stands in the page, which it does not
+ * while its plugins are made, and again when the view moves to a popout
+ * window, whose body then holds the tooltips of an editor outside a popover.
+ * Both come before the user types, and neither waits for focus: a dispatch
+ * as the editor takes focus drops CodeMirror's notice of the focus when the
+ * caret a click puts down comes first, and ends the moment in which
+ * CodeMirror puts back the caret that a Tab focus moves to the start.
  */
 export const popoverTooltips: Extension = ViewPlugin.fromClass(
   class {
     #parent: HTMLElement | null = null;
     #destroyed = false;
-    constructor(readonly view: EditorView) {}
-    update(update: ViewUpdate) {
-      if (!update.focusChanged || !update.view.hasFocus) return;
-      // An update cannot dispatch; the place follows it.
+    readonly #released: () => void;
+    constructor(readonly view: EditorView) {
+      // A plugin cannot dispatch while the view makes it or updates.
       queueMicrotask(() => this.place());
+      this.#released = view.dom.onWindowMigrated(() =>
+        queueMicrotask(() => this.place()),
+      );
+    }
+    update(update: ViewUpdate) {
+      // An editor that was not in the page yet is placed once it is, and one
+      // that moved unheard, inside a closed popover, once it updates there.
+      const { dom } = update.view;
+      if (dom.isConnected && this.#parent?.ownerDocument !== dom.ownerDocument)
+        queueMicrotask(() => this.place());
     }
     place() {
-      if (this.#destroyed) return;
       const { dom } = this.view;
+      if (this.#destroyed || !dom.isConnected) return;
       const parent =
         dom.closest<HTMLElement>("[popover]") ?? dom.ownerDocument.body;
       if (parent === this.#parent) return;
@@ -108,6 +117,7 @@ export const popoverTooltips: Extension = ViewPlugin.fromClass(
     }
     destroy() {
       this.#destroyed = true;
+      this.#released();
     }
   },
   { provide: () => tooltipPlacement.of([]) },

@@ -6,12 +6,12 @@ import type {
   ExpressionSyntaxError,
   ParseExpressionResult,
 } from "@zotlit/filter-expression";
-import type { FaultSpan } from "@zotlit/workbench/ui";
+import type { Span } from "@zotlit/workbench/language";
 
 /** Where a run found a Fault: the text it planned, and the span in that text. */
 export interface PlacedFault {
   readonly text: string;
-  readonly span: FaultSpan;
+  readonly span: Span;
 }
 
 /**
@@ -25,10 +25,10 @@ export interface PlacedFault {
 export function syntaxFaultSpan(
   tree: ParseExpressionResult["tree"],
   { from, to, opened }: ExpressionSyntaxError,
-): FaultSpan | null {
+): Span | null {
   if (from < to) return { from, to };
   if (opened) return { from: opened.from, to: Math.max(from, opened.to) };
-  let last: FaultSpan | null = null;
+  let last: Span | null = null;
   // Nodes come in order of where they start, so none after this one starts
   // before the fault.
   const cursor = tree.cursor();
@@ -51,7 +51,7 @@ export function syntaxFaultSpan(
 export function ranFaultSpan(
   text: string,
   ran: PlacedFault | undefined,
-): FaultSpan | null {
+): Span | null {
   return ran?.text === text ? ran.span : null;
 }
 
@@ -63,7 +63,7 @@ export function ranFaultSpan(
 export function conditionFaults(
   text: string,
   ran: PlacedFault | undefined,
-): readonly FaultSpan[] {
+): readonly Span[] {
   const { tree, error } = parseExpression(text);
   const span = error ? syntaxFaultSpan(tree, error) : ranFaultSpan(text, ran);
   return span ? [span] : [];

@@ -1,3 +1,4 @@
+import type { Span } from "#/language/span";
 import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
@@ -5,7 +6,6 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { MatchExpressionInput } from "./match.expression";
-import type { FaultSpan } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
 
 import { documentFocus } from "#/language/test-utils";
@@ -109,7 +109,7 @@ it("shows the Signature Hint of the method at the caret, typed as the host types
 // in the running app (query-view e2e).
 it("holds the faults it is given as error ranges, and clears them", () => {
   const text = "lower(title) == 'book";
-  const field = (faults: readonly FaultSpan[]) => (
+  const field = (faults: readonly Span[]) => (
     <MatchExpressionInput value={text} onChange={() => {}} faults={faults} />
   );
   const mounted = render(field([{ from: 16, to: 21 }]));

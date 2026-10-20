@@ -3,11 +3,7 @@ import type { Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 
-/** A range of document offsets, `from` inclusive and `to` exclusive. */
-export interface Span {
-  from: number;
-  to: number;
-}
+import type { Span } from "./span";
 
 /**
  * Calls `put` for each part of `span` that no hole covers, in document order.

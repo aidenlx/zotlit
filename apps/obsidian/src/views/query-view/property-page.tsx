@@ -12,11 +12,11 @@ import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
+import type { Span } from "@zotlit/workbench/language";
 import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
-import type { FaultSpan } from "@zotlit/workbench/ui";
 
 import {
   Chooser,
@@ -66,7 +66,7 @@ export interface FormulaCheck {
   readonly issue: string | null;
   /** Whether the text parses, apart from what the run found. */
   readonly syntax: "valid" | "invalid";
-  readonly faults: readonly FaultSpan[];
+  readonly faults: readonly Span[];
 }
 
 /**

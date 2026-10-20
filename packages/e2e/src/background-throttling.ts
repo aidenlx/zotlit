@@ -12,7 +12,10 @@
 // app. Only that window answers `document.hasFocus()` with true, whichever
 // window holds the OS focus, and it gets the `focus` event that moves
 // Obsidian's `activeWindow` to it. Focus moves apply one at a time, in the
-// order they are asked for, so the last one asked wins. A popout opens with
+// order they are asked for, so the last one asked wins. A window answers true
+// once its move has applied, not when it is asked for: until then Chromium
+// holds back the focus events of the elements focused in it, and CodeMirror
+// takes the caret the browser puts at the start of a field for the user's. A popout opens with
 // `showInactive` in place of Obsidian's `show`, and `window.focus()` and
 // `electronWindow.focus()` move only the emulation: each would take the OS
 // focus and put the window in front. A walk that needs a new popout active calls
@@ -47,6 +50,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
       const apply=()=>{for(const contents of vaultContents())contents.setBackgroundThrottling(false);};
       let focused;
       let focusedWin;
+      let appliedWin;
       let switching=Promise.resolve();
       const emulateFocus=(win)=>{
         focusedWin=win;
@@ -55,11 +59,13 @@ export async function keepRendering(vaultId: string): Promise<void> {
           const next=win.require('@electron/remote').getCurrentWebContents();
           if(focused!==next){
             const last=focused;focused=next;
+            appliedWin=undefined;
             if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});
             if(!next.debugger.isAttached())next.debugger.attach('1.3');
             await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
           }
           if(activeWindow!==win)win.dispatchEvent(new win.FocusEvent('focus'));
+          if(win===focusedWin)appliedWin=win;
         });
         switching=run.catch(()=>{});
         return run;
@@ -70,7 +76,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
         const focus=win.focus;const shown=win.electronWindow;raised.set(win,{focus,shown,osFocus:shown?.focus});
         win.focus=()=>void emulateFocus(win);
         if(shown)shown.focus=()=>void emulateFocus(win);
-        win.document.hasFocus=()=>win===focusedWin;
+        win.document.hasFocus=()=>win===appliedWin;
       };
       const refs=[
         app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>shown.showInactive();}),
