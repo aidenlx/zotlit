@@ -260,6 +260,7 @@
   "citekey_ambiguous_placeholder": "Select the item to open for @{citekey}",
   "instruction_navigate": "to navigate",
   "instruction_dismiss": "to dismiss",
+  "citation_suggester_cited_in_note": "Cited in this note",
   "instruction_insert_citation": "to insert citation",
   "instruction_insert_alternate_citation": "to insert alternate citation",
   "instruction_open_lit_note": "to open literature note",

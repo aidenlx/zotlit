@@ -15,9 +15,13 @@ Use the Citation Suggester or command palette to insert a Markdown citation from
 
 Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
 
-Before you enter a search, both lists show papers by Last Activity, newest
-first. This is the same order as
+Before you enter a search, both lists place papers already cited in the current
+note first. Those papers show the <UiLabel name={m.citation_suggester_cited_in_note()} /> label.
+
+Each group is ordered by Last Activity, newest first. This is the same order as
 [<UiLabel name={m.library_view_recent()} /> in the Library View](/docs/how-to/use-library-view#recent).
+
+When you type a search, both lists rank all results by relevance.
 
 Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with <UiLabel name={m.settings_citation_show_formatted_name()} /> off.
 

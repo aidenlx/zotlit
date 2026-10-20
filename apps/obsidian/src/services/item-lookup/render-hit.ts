@@ -4,6 +4,7 @@ import type { SearchMatches } from "obsidian";
 import { isChildItemFields } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { libraryLabel } from "@/services/library-scope/label";
 import type { SettingsService } from "@/services/settings/service";
@@ -101,12 +102,16 @@ export function renderSuggestion(
     hit.library && hit.library.selector.type !== "personal"
       ? libraryLabel(hit.library)
       : null;
+  const flairs = [
+    ...(hit.cited ? [m.citation_suggester_cited_in_note()] : []),
+    ...(library ? [library] : []),
+  ];
   appendMeta(contentEl, {
     subtitle: summary.subtitle,
     item: hit.item,
-    library,
+    flairs,
   });
-  if (library) appendTrailingFlair(el, library);
+  for (const flair of flairs) appendTrailingFlair(el, flair);
 }
 
 /**
@@ -114,8 +119,8 @@ export function renderSuggestion(
  * Venue, and whichever locator fields the type records, as one comma-joined
  * line. The Venue keeps the `publication` class the journal-article
  * publication had, so theme CSS written against this row still matches.
- * On a narrow row a Library badge ends the line, set apart from the
- * bibliographic text because it is a source, not a part of it.
+ * On a narrow row cited and Library badges end the line, set apart from
+ * the bibliographic text.
  *
  * @see docs/adr/0026-venue-resolves-the-container-role-before-the-publisher-role.md
  */
@@ -124,13 +129,14 @@ function appendMeta(
   {
     subtitle,
     item,
-    library,
-  }: { subtitle: string; item: Item; library: string | null },
+    flairs,
+  }: { subtitle: string; item: Item; flairs: readonly string[] },
 ): void {
   const { venue } = item;
   const { volume, issue, pages } = item.baseFields;
 
-  if (!subtitle && !venue && !volume && !issue && !pages && !library) return;
+  if (!subtitle && !venue && !volume && !issue && !pages && flairs.length === 0)
+    return;
 
   const metaEl = contentEl.createDiv({
     cls: "meta zt:text-xs zt:leading-tight zt:text-muted-foreground",
@@ -162,7 +168,10 @@ function appendMeta(
     separate();
     metaEl.createSpan({ cls: "pages", text: pages });
   }
-  if (library) appendInlineFlair(metaEl, library, parts > 0 ? "zt:ms-1.5" : "");
+  for (const flair of flairs) {
+    appendInlineFlair(metaEl, flair, parts > 0 ? "zt:ms-1.5" : "");
+    parts += 1;
+  }
 }
 
 /**

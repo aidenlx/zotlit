@@ -1,0 +1,31 @@
+// Bound the document citation read shared by both citation pickers.
+import { abortable } from "@std/async/abortable";
+import type { TFile } from "obsidian";
+
+import type { CitationIndex } from "@/services/citation-index/service";
+
+export async function readDocumentCitedKeys(
+  index: Pick<CitationIndex, "getDocumentCitationSet">,
+  file: TFile | null,
+  signal: AbortSignal,
+): Promise<readonly string[]> {
+  if (!file) return [];
+  using stack = new DisposableStack();
+  const timeout = new AbortController();
+  // Allow 150 ms for a warm index; startup indexing must not hold the picker.
+  const win = activeWindow;
+  const timer = win.setTimeout(() => timeout.abort(), 150);
+  stack.defer(() => win.clearTimeout(timer));
+  const lifetime = AbortSignal.any([signal, timeout.signal]);
+  try {
+    const set = await abortable(
+      index.getDocumentCitationSet(file, { signal: lifetime }),
+      lifetime,
+    );
+    return set.citations.flatMap(({ indexedKey }) =>
+      indexedKey === null ? [] : [indexedKey],
+    );
+  } catch {
+    return [];
+  }
+}

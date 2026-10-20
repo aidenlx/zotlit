@@ -417,6 +417,7 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       settings: services.settings,
       citationLookup: services.citationLookup,
+      citationIndex: services.citationIndex,
       useLedger: services.useLedger,
     });
     registerQuickSwitch(this, {

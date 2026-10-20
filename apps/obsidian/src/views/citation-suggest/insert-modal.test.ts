@@ -1,4 +1,5 @@
-import type { App, Editor, Modifier } from "obsidian";
+// @vitest-environment happy-dom
+import type { App, Editor, Modifier, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -11,6 +12,7 @@ import type { CitationSuggestDeps } from "./register";
 function makeModal(
   overrides: Partial<CitationSuggestDeps> = {},
   editor: Editor = {} as Editor,
+  file: TFile | null = null,
 ): InsertCitationModal {
   const deps = {
     app: {} as App,
@@ -35,7 +37,7 @@ function makeModal(
     useLedger: { record: vi.fn() },
     ...overrides,
   } as unknown as CitationSuggestDeps;
-  return new InsertCitationModal(deps, editor);
+  return new InsertCitationModal(deps, editor, file);
 }
 
 /**
@@ -216,5 +218,70 @@ describe("InsertCitationModal Uses", () => {
 
     expect(draft.text()).toBe("");
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe("Insert Citation document citations", () => {
+  const file = { path: "Draft.md" } as TFile;
+  function setup(read: unknown) {
+    const search = vi.fn().mockResolvedValue([]);
+    const modal = makeModal(
+      {
+        lookup: { openSession: () => ({ search, close() {} }) },
+        citationIndex: { getDocumentCitationSet: read },
+      } as unknown as Partial<CitationSuggestDeps>,
+      {} as Editor,
+      file,
+    );
+    return { modal, search, [Symbol.dispose]: () => modal.onClose() };
+  }
+
+  it("reads once per open, skipping unresolved keys, and aborts on close", async () => {
+    const read = vi.fn().mockResolvedValue({
+      citations: [{ indexedKey: "AAAA2222" }, { indexedKey: null }],
+    });
+    using h = setup(read);
+    h.modal.onOpen();
+    await h.modal.getSuggestions("");
+    await h.modal.getSuggestions("Paper");
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(file, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(h.search).toHaveBeenLastCalledWith("Paper", {
+      limit: 50,
+      cited: ["AAAA2222"],
+    });
+    h.modal.onClose();
+    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
+    h.modal.onOpen();
+    await h.modal.getSuggestions("");
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues searching after a document read fails", async () => {
+    using h = setup(vi.fn().mockRejectedValue(new Error("Index unavailable")));
+    h.modal.onOpen();
+    await h.modal.getSuggestions("");
+    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
+  });
+
+  it("drops a pending answer on close and reads the reopened note afresh", async () => {
+    const read = vi
+      .fn()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValue({ citations: [{ indexedKey: "BBBB3333" }] });
+    using h = setup(read);
+    h.modal.onOpen();
+    const pending = h.modal.getSuggestions("");
+    h.modal.onClose();
+    h.modal.onOpen();
+    await expect(pending).resolves.toEqual([]);
+    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
+    await h.modal.getSuggestions("");
+    expect(h.search).toHaveBeenCalledExactlyOnceWith("", {
+      limit: 50,
+      cited: ["BBBB3333"],
+    });
   });
 });

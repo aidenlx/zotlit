@@ -689,6 +689,7 @@ export function getFrontMatterInfo(source: string): FrontMatterInfo {
 }
 
 export abstract class EditorSuggest<T> {
+  readonly scope = new Scope();
   context: EditorSuggestContext | null = null;
   limit = 0;
   readonly app: App;
@@ -926,6 +927,9 @@ export abstract class FuzzySuggestModal<T> {
 }
 
 export abstract class SuggestModal<T> {
+  readonly containerEl = { addClass() {}, removeClass() {} };
+  readonly resultContainerEl = { createDiv() {} };
+  onOpen(): void {}
   limit = 0;
   readonly contentEl = { addClass: (_className: string) => {} };
   emptyStateText = "";

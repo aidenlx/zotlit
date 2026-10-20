@@ -37,6 +37,29 @@ describe("ItemLookup", () => {
     });
   });
 
+  it("prioritizes and labels cited Items, forwarding them only for empty queries", async () => {
+    await using reads = readsOver(() => seed(perLibraryRows()));
+    await using lookup = itemLookup(
+      reads,
+      new FakeLibraryScope([library(USER_LIBRARY_ID), library(2)]),
+    );
+    using session = lookup.openSession();
+    const cited = ["LIBRARY3g2"];
+    const empty = await session.search(" ", { cited });
+    expect(empty.map((hit) => [hit.item.indexedKey, hit.cited])).toEqual([
+      ["LIBRARY3g2", true],
+      ["LIBRARY2", false],
+    ]);
+    expect(reads.searches.at(-1)).toMatchObject({ cited });
+    const typed = await session.search("Alpha", { cited });
+    expect(typed.map((hit) => [hit.item.indexedKey, hit.cited])).toEqual([
+      ["LIBRARY2", false],
+      ["LIBRARY3g2", true],
+    ]);
+    expect(reads.searches.at(-1)).not.toHaveProperty("cited");
+    expect((await session.search("")).every((hit) => !hit.cited)).toBe(true);
+  });
+
   it("searches the Libraries a search names in place of the Library Scope, a session's too", async () => {
     await using reads = readsOver(() => seed(perLibraryRows()));
     await using lookup = itemLookup(

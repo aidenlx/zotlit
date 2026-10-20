@@ -11,7 +11,12 @@ import type { SettingsService } from "@/services/settings/service";
 import { FirstAnswerGate } from "./first-answer";
 import { renderSuggestion as renderSearchHit } from "./render-hit";
 import { DEFAULT_LIMIT } from "./service";
-import type { ItemLookup, SearchHit, SearchSession } from "./service";
+import type {
+  ItemLookup,
+  SearchHit,
+  SearchOptions,
+  SearchSession,
+} from "./service";
 
 export interface ItemSearchDeps {
   app: App;
@@ -56,9 +61,12 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     super.onClose();
   }
 
-  override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
+  override getSuggestions(
+    query: string,
+    options?: Pick<SearchOptions, "cited">,
+  ): SearchHit[] | Promise<SearchHit[]> {
     return this.#firstAnswer.track(
-      this.#session?.search(query, { limit: this.limit }) ??
+      this.#session?.search(query, { ...options, limit: this.limit }) ??
         Promise.resolve([]),
     );
   }

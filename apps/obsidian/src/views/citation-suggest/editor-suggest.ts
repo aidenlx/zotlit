@@ -18,6 +18,7 @@ import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit, SearchSession } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
 
+import { readDocumentCitedKeys } from "./document-citations";
 import type { CitationSuggestDeps } from "./register";
 
 const TRIGGER = regex("[\\[【]@([^\\]】]*)$");
@@ -33,6 +34,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   /** The searches of the open dropdown: its first search opens it, and {@link close} ends it. */
   #session: SearchSession | null = null;
   #lookupController?: AbortController;
+  #documentController?: AbortController;
+  #cited: Promise<readonly string[]> = Promise.resolve([]);
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -101,11 +104,22 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
         return [];
       }
     }
-    this.#session ??= this.#deps.lookup.openSession();
-    return this.#session.search(context.query, { limit: this.limit });
+    if (!this.#session) {
+      this.#session = this.#deps.lookup.openSession();
+      this.#documentController = new AbortController();
+      this.#cited = readDocumentCitedKeys(
+        this.#deps.citationIndex,
+        context.file,
+        this.#documentController.signal,
+      );
+    }
+    const cited = await this.#cited;
+    if (controller.signal.aborted) return [];
+    return this.#session.search(context.query, { limit: this.limit, cited });
   }
 
   override close(): void {
+    this.#documentController?.abort();
     this.#lookupController?.abort();
     this.#session?.close();
     this.#session = null;

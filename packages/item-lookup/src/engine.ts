@@ -29,6 +29,8 @@ export interface SearchOptions {
   limit: number;
   /** Last Uses by Indexed Key, as epoch milliseconds; applies to empty queries. */
   uses?: Readonly<Record<string, number>>;
+  /** Indexed Keys to put first in empty queries. */
+  cited?: readonly string[];
 }
 
 export interface EngineIndexOptions {
@@ -158,8 +160,9 @@ export const buildEngineIndex = <E, R>(
  * - Items whose citation key starts with the whole query come first, shortest
  *   key first.
  * - A bare Zotero key answers every Item holding that key.
- * - The empty query answers Last Activity order, including request Uses, with
- *   Indexed Key text order for ties. Nonempty ties retain modification order.
+ * - The empty query puts cited Items first, then the rest, each in Last Activity
+ *   order with request Uses and Indexed Key ties. Nonempty ties retain
+ *   modification order.
  *
  * The lookup and the ranking are separate steps with a yield between them, so
  * an interrupt can end a search mid-query.
@@ -167,15 +170,15 @@ export const buildEngineIndex = <E, R>(
 export const searchEngineIndex = (
   index: EngineIndex,
   query: string,
-  { limit, uses }: SearchOptions,
+  { limit, uses, cited }: SearchOptions,
 ): Effect.Effect<readonly ItemHit[]> =>
   Effect.gen(function* () {
     if (limit <= 0) return [];
     const lookup = lookupQuery(index, query, index.words);
     if (lookup.kind !== "ranked")
-      return finishLookup(index, lookup, { limit, uses });
+      return finishLookup(index, lookup, { limit, uses, cited });
     yield* Effect.yieldNow;
-    return finishLookup(index, lookup, { limit, uses });
+    return finishLookup(index, lookup, { limit, uses, cited });
   });
 
 // ---------------------------------------------------------------------------
@@ -356,11 +359,11 @@ function lookupQuery(
 function finishLookup(
   index: EngineIndex,
   lookup: Lookup,
-  { limit, uses }: SearchOptions,
+  { limit, uses, cited }: SearchOptions,
 ): ItemHit[] {
   switch (lookup.kind) {
     case "all":
-      return recentRecords(index, { limit, uses }).map((record) =>
+      return recentRecords(index, { limit, uses, cited }).map((record) =>
         hitOf(record, []),
       );
     case "none":
@@ -384,12 +387,17 @@ function compareRecent(a: IndexedRecord, b: IndexedRecord): number {
 
 function recentRecords(
   index: EngineIndex,
-  { limit, uses }: SearchOptions,
+  { limit, uses, cited }: SearchOptions,
 ): readonly IndexedRecord[] {
   const candidates = new Map(
     index.recent.slice(0, limit).map((record) => [record.indexedKey, record]),
   );
-  // A Use can only raise activity, so only used Items can displace the baseline top results.
+  const citedKeys = new Set(cited);
+  for (const key of citedKeys) {
+    const record = index.byKey.get(key);
+    if (record) candidates.set(key, record);
+  }
+  // A Use can only raise activity; add used Items before sorting the candidates.
   for (const [key, use] of Object.entries(uses ?? {})) {
     const record = index.byKey.get(key);
     if (
@@ -400,7 +408,13 @@ function recentRecords(
       candidates.set(key, { ...record, lastActivity: use });
     }
   }
-  return [...candidates.values()].sort(compareRecent).slice(0, limit);
+  return [...candidates.values()]
+    .sort(
+      (a, b) =>
+        Number(citedKeys.has(b.indexedKey)) -
+          Number(citedKeys.has(a.indexedKey)) || compareRecent(a, b),
+    )
+    .slice(0, limit);
 }
 
 interface RankedResult {

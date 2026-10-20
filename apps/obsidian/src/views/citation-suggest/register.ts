@@ -3,6 +3,7 @@ import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { SettingsService } from "@/services/settings/service";
@@ -19,6 +20,7 @@ export interface CitationSuggestDeps {
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
   citationLookup: Pick<CitationLookup, "read" | "status">;
+  citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
   useLedger: Pick<UseLedger, "record">;
 }
 
@@ -30,8 +32,8 @@ export function registerCitationSuggest(
   plugin.addCommand({
     id: "insert-citation",
     name: m.command_insert_citation_name(),
-    editorCallback: (editor) => {
-      new InsertCitationModal(deps, editor).open();
+    editorCallback: (editor, ctx) => {
+      new InsertCitationModal(deps, editor, ctx.file).open();
     },
   });
 }

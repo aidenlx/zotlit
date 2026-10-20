@@ -426,6 +426,7 @@ describe("independent native Note Preview", () => {
         })[0]!,
         matches: [],
         library: null,
+        cited: false,
       };
       vi.mocked(pickItem).mockResolvedValueOnce(hit);
       await act(async () => choose().click());
@@ -461,6 +462,7 @@ describe("independent native Note Preview", () => {
       })[0]!,
       matches: [],
       library: null,
+      cited: false,
     };
     const changed =
       Promise.withResolvers<Awaited<ReturnType<typeof pickItem>>>();

@@ -26,6 +26,7 @@ export async function verifyRecentUses(
   vaultPath: string,
   reloadWindow: () => Promise<void>,
 ) {
+  const m = await import("@obsidian-messages");
   const run = (body: string) =>
     obEval(vaultId, `(async()=>{${PAGE}const s=${services};${body}})()`);
   const originalNote = await readFile(join(vaultPath, targetPath), "utf8");
@@ -97,9 +98,9 @@ export async function verifyRecentUses(
     );
   };
   /** Open an empty Citation Suggester and assert its first paper. */
-  const emptyCitationFirst = () =>
+  const emptyCitationFirst = (cited = false) =>
     run(
-      `const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(sourcePath)});await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const editor=leaf.view.editor;editor.setValue('');editor.focus();const cm=editor.cm;cm.dispatch(cm.state.replaceSelection('[@'),{userEvent:'input.type'});const popup=await until('Citation Suggester',()=>[...activeDocument.querySelectorAll('.suggestion-container')].at(-1));const row=await until('first citation',()=>popup.querySelector('.suggestion-item'));if(!row.textContent.includes(${JSON.stringify(targetTitle)}))throw Error('Empty Citation Suggester did not put Alpha first: '+row.textContent);activeWindow.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await until('Citation Suggester closes',()=>!popup.isConnected);return true;`,
+      `const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(sourcePath)});await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const editor=leaf.view.editor;editor.setValue(${JSON.stringify(cited ? `[@${targetCitekey}]\n\n` : "")});await leaf.view.save();${cited ? `await until('document citations',async()=>(await s.citationIndex.getDocumentCitationSet(leaf.view.file)).citations.some(c=>c.indexedKey==='${target}'));` : ""}editor.setCursor(editor.offsetToPos(editor.getValue().length));editor.focus();const cm=editor.cm;cm.dispatch(cm.state.replaceSelection('[@'),{userEvent:'input.type'});const popup=await until('Citation Suggester',()=>[...activeDocument.querySelectorAll('.suggestion-container')].at(-1));const row=await until('first citation',()=>popup.querySelector('.suggestion-item'));if(!row.textContent.includes(${JSON.stringify(targetTitle)}))throw Error('Empty Citation Suggester did not put Alpha first: '+row.textContent);${cited ? `if(![...row.querySelectorAll('.zt-suggestion-flair-inline,.zt-suggestion-flair-text')].some(el=>el.checkVisibility()&&el.textContent===${JSON.stringify(m.citation_suggester_cited_in_note())}))throw Error('Cited paper has no visible label');` : ""}activeWindow.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await until('Citation Suggester closes',()=>!popup.isConnected);return true;`,
     );
 
   for (const route of [
@@ -185,6 +186,13 @@ export async function verifyRecentUses(
   );
   await first(target, "cited");
   await emptyCitationFirst();
+  await run(
+    `await app.workspace.openLinkText('literatures/CCCC3333.md','');app.workspace.requestActiveLeafEvents.run();return true;`,
+  );
+  await first("CCCC3333");
+  // A paper the note cites leads the empty suggester over a newer paper.
+  await source();
+  await emptyCitationFirst(true);
 
   // Dragging a Library row into the note runs the same successful insert
   // decision. The Use is visible through Recent and an empty suggester.
