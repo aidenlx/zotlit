@@ -13,6 +13,10 @@ import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 
 const wrapContent = managedRegionTransform("content");
 
+/** The Durable Annotation Link of an Annotation on page label 5. */
+const PAGE_FIVE =
+  "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=5";
+
 /** The Annotations section of the default content template. */
 const QUERY_BLOCK_SECTION = [
   "## Annotations",
@@ -51,7 +55,8 @@ describe("Liquid default templates via the facade", () => {
       notes: [],
       annotations: [
         {
-          pageLabel: "4",
+          pageLabel: "5",
+          backlink: PAGE_FIVE,
           imgLink: null,
           text: "Highlighted text",
           comment: null,
@@ -59,43 +64,70 @@ describe("Liquid default templates via the facade", () => {
       ],
     });
 
-    expect(rendered).toContain("Page 4");
+    expect(rendered).toContain(`Page [5](${PAGE_FIVE})`);
     expect(rendered).toContain("Highlighted text");
   });
 
-  // The page label is the only clickable thing the default profile renders per
-  // Annotation, and the Anchor is what makes the click land on its own Mark.
-  it("links the page label to the annotation when the attachment resolves", () => {
+  // The Durable Annotation Link names the Annotation by its Zotero keys, so
+  // the note opens its passage on any computer, and in Zotero without ZotLit.
+  const DURABLE =
+    "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=iv";
+
+  it("renders the annotation section with the durable link on the page label", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotationLiquid, "liquid");
 
     expect(
       facade.render("annotation", {
-        pageLabel: "4",
+        pageLabel: "iv",
+        backlink: DURABLE,
         fileLink: (alias?: string) =>
           `[${alias ?? "paper.pdf"}](file:///abs/paper.pdf#page=4&zt-annotation=ANNX2345)`,
         imgLink: null,
         text: "Highlighted text",
-        comment: null,
+        comment: "My comment",
       }),
-    ).toContain(
-      "Page [4](file:///abs/paper.pdf#page=4&zt-annotation=ANNX2345)",
+    ).toBe(
+      [
+        `> [!note] Page [iv](${DURABLE})`,
+        ">",
+        "> Highlighted text",
+        ">",
+        "> My comment",
+        "",
+      ].join("\n"),
     );
   });
 
-  it("keeps the plain page label when the attachment file is unresolvable", () => {
+  it("keeps the durable link when the attachment file is unresolvable", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotationLiquid, "liquid");
 
     expect(
       facade.render("annotation", {
-        pageLabel: "4",
+        pageLabel: "iv",
+        backlink: DURABLE,
         fileLink: () => null,
         imgLink: null,
         text: "Highlighted text",
         comment: null,
       }),
-    ).toContain("Page 4");
+    ).toContain(`Page [iv](${DURABLE})`);
+  });
+
+  it("links an annotation that has no page label", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", annotationLiquid, "liquid");
+
+    expect(
+      facade.render("annotation", {
+        pageLabel: null,
+        backlink: DURABLE,
+        imgLink: null,
+        text: "Highlighted text",
+        comment: null,
+      }),
+    ).toContain(`> [!note] [Zotero](${DURABLE})\n`);
   });
 
   it("renders a tight notes list under a heading", () => {
@@ -148,6 +180,7 @@ describe("Liquid default templates via the facade", () => {
 
     const rendered = facade.render("annotation", {
       pageLabel: "5",
+      backlink: PAGE_FIVE,
       imgLink: null,
       text: "first line\nsecond line",
       comment: "comment A\ncomment B",
@@ -155,7 +188,7 @@ describe("Liquid default templates via the facade", () => {
 
     expect(rendered).toBe(
       [
-        "> [!note] Page 5",
+        `> [!note] Page [5](${PAGE_FIVE})`,
         ">",
         "> first line",
         "> second line",
@@ -173,13 +206,14 @@ describe("Liquid default templates via the facade", () => {
 
     const rendered = facade.render("annotation", {
       pageLabel: "5",
+      backlink: PAGE_FIVE,
       imgLink: null,
       text: "only text",
       comment: null,
     });
 
     expect(rendered).toBe(
-      ["> [!note] Page 5", ">", "> only text", ""].join("\n"),
+      [`> [!note] Page [5](${PAGE_FIVE})`, ">", "> only text", ""].join("\n"),
     );
   });
 
@@ -283,12 +317,19 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
   const annotationFixtures = [
     [
       "no comment",
-      { pageLabel: "5", imgLink: null, text: "only text", comment: null },
+      {
+        pageLabel: "5",
+        backlink: PAGE_FIVE,
+        imgLink: null,
+        text: "only text",
+        comment: null,
+      },
     ],
     [
       "multi-line text and comment",
       {
         pageLabel: "5",
+        backlink: PAGE_FIVE,
         imgLink: null,
         text: "first line\nsecond line",
         comment: "comment A\ncomment B",
@@ -298,6 +339,7 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
       "with image",
       {
         pageLabel: "5",
+        backlink: PAGE_FIVE,
         imgLink: () => "[[ANNOT.png]]",
         text: "with image",
         comment: null,
@@ -307,6 +349,7 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
       "different pageLabel with single-line comment",
       {
         pageLabel: "12",
+        backlink: PAGE_FIVE,
         imgLink: null,
         text: "text",
         comment: "single comment",
@@ -316,6 +359,7 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
       "page label carrying an annotation-anchored file link",
       {
         pageLabel: "5",
+        backlink: PAGE_FIVE,
         fileLink: (alias?: string) =>
           `[${alias ?? "paper.pdf"}](file:///abs/paper.pdf#page=5&zt-annotation=ANNX2345)`,
         imgLink: null,
@@ -327,9 +371,20 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
       "page label whose attachment file is unresolvable",
       {
         pageLabel: "5",
+        backlink: PAGE_FIVE,
         fileLink: () => null,
         imgLink: null,
         text: "plain",
+        comment: null,
+      },
+    ],
+    [
+      "no page label",
+      {
+        pageLabel: null,
+        backlink: "zotero://open/groups/7/items/ATTX2345?annotation=ANNX2345",
+        imgLink: null,
+        text: "unpaged",
         comment: null,
       },
     ],

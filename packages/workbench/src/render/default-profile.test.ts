@@ -14,3 +14,18 @@ it("holds the default content template in its managed block", async () => {
   );
   expect(managed?.[1]).toBe(content);
 });
+
+// An Annotation the web Workbench previews carries the same durable link as
+// one Obsidian writes into a note.
+it("holds the default annotation template as its annotation section", async () => {
+  const annotation = await readFile(
+    new URL(
+      import.meta.resolve("@zotlit/templates/defaults/annotation.liquid"),
+    ),
+    "utf8",
+  );
+  const [, section] = DEFAULT_PROFILE_SOURCE.split(
+    "--- zotlit:annotation ---\n",
+  );
+  expect(section).toBe(annotation);
+});

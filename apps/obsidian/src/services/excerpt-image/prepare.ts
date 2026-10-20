@@ -9,7 +9,6 @@ import type { Annotation, AnnotationResolvers, TemplateLink } from "@zotlit/db";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
-import { attachmentFileLink } from "@/lib/annotation-render";
 // Prepares excerpt helpers once, then counts only helpers used by the final render.
 import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
@@ -152,11 +151,6 @@ export function createExcerptPreparation(deps: {
               a.position,
               attachment.contentType ?? "application/pdf",
             );
-            candidate.sourceLink =
-              attachmentFileLink(attachment, deps.paths, {
-                annotation: a.indexedKey,
-                page: "pageIndex" in position ? position.pageIndex + 1 : null,
-              })() ?? candidate.sourceLink;
             const request: ExcerptRequest = {
               annotation: annotationRecordOf(a, attachment, position),
               source: {

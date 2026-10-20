@@ -205,6 +205,8 @@ filename: "{{ zt.title }}"
     ];
     const data = {
       pageLabel: "4",
+      backlink:
+        "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4",
       imgLink: null,
       text: "Excerpt",
       comment: null,
@@ -233,7 +235,9 @@ filename: "{{ zt.title }}"
       service.renderProfileAnnotation(data, {
         profile: resolveProfile(converted, profiles[2]!.id)!,
       }),
-    ).toContain("[!note] Page 4");
+    ).toContain(
+      "[!note] Page [4](zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4)",
+    );
     expect(
       service.renderProfileAnnotation(data, {
         profile: resolveProfile(

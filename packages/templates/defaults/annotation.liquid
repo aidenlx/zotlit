@@ -1,5 +1,5 @@
 {% bq %}
-[!note] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}
+[!note] {% if zt.pageLabel %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
 
 {{ zt.imgLink | embed }}{{ zt.text }}
 {% if zt.comment %}

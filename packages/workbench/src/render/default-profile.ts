@@ -55,7 +55,7 @@ views:
 
 --- zotlit:annotation ---
 {% bq %}
-[!note] Page {{ zt.pageLabel }}
+[!note] {% if zt.pageLabel %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
 
 {{ zt.imgLink | embed }}{{ zt.text }}
 {% if zt.comment %}
