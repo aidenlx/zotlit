@@ -6,6 +6,8 @@
  */
 import type { ZoteroUserIdentity } from "@/queries/account";
 
+import { isItemKey } from "./zt-item-key";
+
 function libraryPath(groupID: number | null): string {
   return groupID == null ? "library" : `groups/${groupID}`;
 }
@@ -100,4 +102,58 @@ export function annotationOpenUri({
   if (pageLabel) params.set("page", pageLabel);
   params.sort();
   return `${attachmentOpenUri(attachmentKey, groupID)}?${params.toString()}`;
+}
+
+/** A positive decimal group id, the only kind Zotero writes in a link. */
+const GROUP_ID_RE = /^[1-9]\d*$/;
+
+/**
+ * The inverse of {@link annotationOpenUri}: what a `zotero://open` link to an
+ * annotation names. Both keys come back bare, beside the group id, so a caller
+ * that needs an Indexed Key formats one itself.
+ *
+ * @returns `null` for anything that is not an open link carrying a valid
+ *   annotation key — an attachment link with no annotation is not one.
+ */
+export function parseAnnotationOpenUri(
+  url: string,
+): AnnotationOpenUriOptions | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "zotero:" || parsed.host !== "open") return null;
+
+  const segments = parsed.pathname.split("/").slice(1);
+  let groupID: number | null;
+  let rest: string[];
+  if (segments[0] === "library") {
+    groupID = null;
+    rest = segments.slice(1);
+  } else if (segments[0] === "groups" && GROUP_ID_RE.test(segments[1] ?? "")) {
+    groupID = Number(segments[1]);
+    rest = segments.slice(2);
+  } else {
+    return null;
+  }
+  const [items, attachmentKey, ...extra] = rest;
+  if (items !== "items" || attachmentKey === undefined || extra.length > 0)
+    return null;
+
+  const annotationKey = parsed.searchParams.get("annotation");
+  if (
+    !isItemKey(attachmentKey) ||
+    annotationKey === null ||
+    !isItemKey(annotationKey)
+  )
+    return null;
+
+  return {
+    attachmentKey,
+    annotationKey,
+    pageLabel: parsed.searchParams.get("page") || null,
+    groupID,
+  };
 }

@@ -76,6 +76,7 @@ export {
   annotationOpenUri,
   attachmentOpenUri,
   itemSelectUri,
+  parseAnnotationOpenUri,
 } from "./lib/zt-uri";
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
