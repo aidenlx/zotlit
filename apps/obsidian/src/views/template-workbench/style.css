@@ -100,11 +100,13 @@
   --zt-template-markdown-list-marker: var(--list-marker-color);
 }
 /* Expression Colors: a Filter Expression field — a Formula, a Query View
-   filter condition, a Match condition — takes the code colors Obsidian gives
-   the same tokens in a `.base` file, so a theme's code palette applies. The
-   block earns its stylesheet as the custom properties exposed for user
-   snippets, rebound on that field. `:where()` keeps it at the editor hook's
-   own specificity, so a theme's later `.zt-template-editor` rule wins. */
+   filter condition, a Match condition — uses the code color variables
+   Obsidian defines for `.base` files (and Prism), one per token kind, so a
+   theme's code palette applies: compatible with Bases, not identical to its
+   rendering. The block earns its stylesheet as the custom properties
+   exposed for user snippets, rebound on that field. `:where()` keeps it at
+   the editor hook's own specificity, so a theme's later
+   `.zt-template-editor` rule wins. */
 .zt-template-editor:where([data-part="expression"]) {
   color: var(--code-normal);
   --zt-template-variable: var(--code-property);

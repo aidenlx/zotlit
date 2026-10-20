@@ -438,12 +438,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ) as string[];
     // The row underlines the name the query found wrong.
     expect(await underlines(["nosuchfield"])).toEqual(["nosuchfield"]);
-    // The expression field colors the parts of its Filter Expression.
-    expect(
+    // The condition shows no tooltip over the underline: CodeMirror mounts
+    // the filtered lint tooltip on hover, and the field keeps it hidden.
+    const hovered = JSON.parse(
       await inPopover(
-        `return section('view').querySelectorAll('[data-condition-row] .cm-line span[class]').length>0;`,
+        `const mark=section('view').querySelector('[data-condition-row] .cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));const tip=await until('lint tooltip',()=>mark.ownerDocument.querySelector('.cm-tooltip-lint'));const box=tip.getBoundingClientRect();return JSON.stringify({display:getComputedStyle(tip).display,area:box.width*box.height});`,
       ),
-    ).toBe("true");
+    ) as { display: string; area: number };
+    expect(hovered).toEqual({ display: "none", area: 0 });
+
+    // The expression field colors each kind of token with Obsidian's code
+    // color for it, in the light and in the dark theme.
+    const tokens = {
+      property: "title",
+      function: "lower",
+      value: "true",
+      string: '"fig"',
+      operator: "==",
+      punctuation: ".",
+    };
+    const colors = JSON.parse(
+      await inPopover(
+        `const row=section('view').querySelector('[data-condition-row]');write(row,'title.lower().contains("fig") == true');const tokens=${JSON.stringify(tokens)};const hook=kind=>'.zt-template-'+(kind==='function'?'filter':kind);const token=(kind,text)=>[...row.querySelectorAll('.cm-line '+hook(kind))].find(n=>n.textContent===text);await until('token hooks',()=>Object.entries(tokens).every(([kind,text])=>token(kind,text)));const doc=row.ownerDocument;const read=()=>Object.fromEntries(Object.entries(tokens).map(([kind,text])=>{const probe=doc.createElement('span');probe.style.color='var(--code-'+kind+')';popover.append(probe);const code=getComputedStyle(probe).color;probe.remove();return [kind,{token:getComputedStyle(token(kind,text)).color,code}];}));const body=doc.body;const wasDark=body.classList.contains('theme-dark');const theme=dark=>{body.classList.toggle('theme-dark',dark);body.classList.toggle('theme-light',!dark);};try{theme(false);const light=read();theme(true);return JSON.stringify({light,dark:read()});}finally{theme(wasDark);}`,
+      ),
+    ) as Record<
+      "light" | "dark",
+      Record<keyof typeof tokens, { token: string; code: string }>
+    >;
+    for (const scheme of ["light", "dark"] as const)
+      for (const [kind, { token, code }] of Object.entries(colors[scheme]))
+        expect({ scheme, kind, token }).toEqual({ scheme, kind, token: code });
+    // The two themes give the code colors different values.
+    expect(colors.light.property.code).not.toBe(colors.dark.property.code);
 
     // A syntax error names the tokens the filter lacks once, with the place
     // in the filter: the hint that lists them again stays out. The fault sits
@@ -622,6 +648,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("1");
   }, 180000);
+
+  it("underlines a condition's Fault in the Filter popover of a Query File tab in a popout window", async () => {
+    const layout = await obEval(
+      run.vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const path = "query-files/Popout faults.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        run.vaultId,
+        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))if(leaf.view.file?.path===${JSON.stringify(path)})leaf.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    await obEval(
+      run.vaultId,
+      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
+        [
+          "views:",
+          "  - type: annotations",
+          "    name: Faults",
+          "    from: annotations",
+          "    filters: nosuchfield == 1",
+          "",
+        ].join("\n"),
+      )});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.moveLeafToPopout(leaf);return true;})()`,
+    );
+    const shown = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}const view=await until('the tab in a popout',()=>app.workspace.getLeavesOfType('zotlit-query-file').map(leaf=>leaf.view).find(view=>view.file?.path===${JSON.stringify(path)}&&view.containerEl.win!==window),20000);await view.query.settled;const el=view.contentEl;const doc=el.ownerDocument;const popover=el.querySelector('[data-query-popover="filter"]');press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]'),20000),'Filter');const mark=await until('underline',()=>popover.querySelector('[data-filter-section="view"] [data-condition-row] .cm-lintRange-error'),20000);const probe=doc.createElement('span');probe.style.color='var(--text-error)';popover.append(probe);const error=getComputedStyle(probe).color;probe.remove();const style=getComputedStyle(mark);return JSON.stringify({popout:doc!==document,text:mark.textContent,line:style.textDecorationStyle,color:style.textDecorationColor===error});})()`,
+      ),
+    ) as { popout: boolean; text: string; line: string; color: boolean };
+    expect(shown).toEqual({
+      popout: true,
+      text: "nosuchfield",
+      line: "wavy",
+      color: true,
+    });
+  }, 120000);
 
   // The Fixture's Literature Note of SAKIMA22 ends with a Query Block of
   // `item == this.item`. A change in the view rewrites the block text only,

@@ -18,7 +18,7 @@ import type {
   FilterLeaf,
   FilterTree,
 } from "@zotlit/filter-expression";
-import type { FaultSpan } from "@zotlit/workbench/ui";
+import type { Span } from "@zotlit/workbench/language";
 
 import type { PlacedFault } from "@/views/query-view/expression-faults";
 import { allViewsDataset } from "@/views/query-view/query-file";
@@ -62,7 +62,7 @@ export interface ConditionFault extends FilterLocation {
 export interface EngineFilter {
   readonly text: string;
   /** The condition a fault at `span` marks; `null` where the span falls inside no one condition. */
-  locate(span: FaultSpan): ConditionFault | null;
+  locate(span: Span): ConditionFault | null;
 }
 
 /** One view's filters, split between the vault and ZotLit Query. */

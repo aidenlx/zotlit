@@ -10,9 +10,9 @@ import { highlightTree, styleTags } from "@lezer/highlight";
 import { parser } from "@zotlit/filter-expression";
 
 import { decorationLayer, gapsAround } from "./decorations";
-import type { Span } from "./decorations";
 import { expressionClasses, expressionTag } from "./expression-tokens";
 import { templateHighlighter } from "./highlight";
+import type { Span } from "./span";
 
 export const filterExpressionLanguage = LRLanguage.define({
   name: "filter-expression",

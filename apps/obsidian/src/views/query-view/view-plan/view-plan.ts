@@ -7,6 +7,7 @@
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import type { QueryContext } from "@zotlit/item-query";
+import type { Span } from "@zotlit/workbench/language";
 
 import type {
   QueryViewRequest,
@@ -101,10 +102,7 @@ export interface ViewPlan {
    * the fault's place in the condition's text, or `null` when the span falls
    * inside no one condition.
    */
-  locate(span: {
-    readonly from: number;
-    readonly to: number;
-  }): ConditionFault | null;
+  locate(span: Span): ConditionFault | null;
 }
 
 /**

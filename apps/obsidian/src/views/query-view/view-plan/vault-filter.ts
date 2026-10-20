@@ -10,7 +10,7 @@
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { planItemFilter } from "@zotlit/item-query";
-import type { FaultSpan } from "@zotlit/workbench/ui";
+import type { Span } from "@zotlit/workbench/language";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { FilterLocation } from "@/views/query-view/query-file";
@@ -167,7 +167,7 @@ function substitute(
   text: string,
   reads: readonly VaultRead[],
   value: (name: string) => unknown,
-): { text: string; source(span: FaultSpan): FaultSpan } {
+): { text: string; source(span: Span): Span } {
   let out = "";
   let last = 0;
   // Each value put in, by where it stands in `out` and in `text`.
