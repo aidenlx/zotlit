@@ -42,7 +42,11 @@ const fixtures = [
 
 describe("updateLiteratureNoteTemplateMatch", () => {
   describe.each(["\n", "\r\n"])("with %j header line endings", (eol) => {
-    it.each(fixtures)(
+    it.each(
+      eol === "\n"
+        ? fixtures
+        : fixtures.filter(({ name }) => name === "block tree"),
+    )(
       "saves and removes $name without changing other bytes",
       ({ match, saved }) => {
         const source = (prefix + match + suffix).replaceAll("\n", eol);

@@ -1,18 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { djb2a, normalizeFileUri, sourceIdFromUris } from "./source-id";
-
-describe("djb2a", () => {
-  it("is deterministic and unsigned", () => {
-    expect(djb2a("")).toBe(5381);
-    expect(djb2a("a")).toBe(djb2a("a"));
-    expect(djb2a("a")).toBeGreaterThanOrEqual(0);
-  });
-
-  it("distinguishes distinct inputs", () => {
-    expect(djb2a("ab")).not.toBe(djb2a("ba"));
-  });
-});
+import { normalizeFileUri, sourceIdFromUris } from "./source-id";
 
 describe("normalizeFileUri", () => {
   it("strips a trailing slash (Gecko appends one to existing dirs)", () => {

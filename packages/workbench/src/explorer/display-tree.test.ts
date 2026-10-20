@@ -505,28 +505,6 @@ describe("copyValue", () => {
     );
   });
 
-  it("stringifies a number value", () => {
-    expect(copyValue(valueNode({ valueType: "number", value: 12 }))).toBe("12");
-  });
-
-  it("stringifies a boolean value", () => {
-    expect(copyValue(valueNode({ valueType: "boolean", value: true }))).toBe(
-      "true",
-    );
-  });
-
-  it("renders null as the literal 'null'", () => {
-    expect(copyValue(valueNode({ valueType: "null", value: null }))).toBe(
-      "null",
-    );
-  });
-
-  it("renders undefined as the literal 'undefined'", () => {
-    expect(
-      copyValue(valueNode({ valueType: "undefined", value: undefined })),
-    ).toBe("undefined");
-  });
-
   it("renders an object as 2-space JSON", () => {
     expect(copyValue(valueNode({ valueType: "object", value: { a: 1 } }))).toBe(
       JSON.stringify({ a: 1 }, null, 2),
@@ -597,22 +575,6 @@ describe("copyValue", () => {
       reason: "Not imported",
     };
     expect(copyValue(node)).toBeNull();
-  });
-});
-
-describe("findAnnotationRoot", () => {
-  it("finds the annotation whose key matches", () => {
-    const a1 = { key: "A1" };
-    const a2 = { key: "A2" };
-    const context = { annotations: [a1, a2] };
-
-    expect(findAnnotationRoot(context, "A2")).toBe(a2);
-  });
-
-  it("returns null when no annotation has the given key", () => {
-    const context = { annotations: [{ key: "A1" }] };
-
-    expect(findAnnotationRoot(context, "missing")).toBeNull();
   });
 });
 

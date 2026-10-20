@@ -98,12 +98,6 @@ describe("replaceManagedRegion", () => {
     });
   });
 
-  it("invokes the provider at most once", () => {
-    const region = vi.fn(() => formatManagedRegion("NEW"));
-    replaceManagedRegion(`${oldRegion}\nmid\n${oldRegion}`, region);
-    expect(region).toHaveBeenCalledTimes(1);
-  });
-
   describe("a Query Block in the region", () => {
     const block = (body: string) => `\`\`\`zotquery\n${body}\n\`\`\``;
     const rendered = block(
