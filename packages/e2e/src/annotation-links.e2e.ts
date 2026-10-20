@@ -111,7 +111,7 @@ async function follow({
   const follow =
     gesture === "external"
       ? `window.open(url,'_external');`
-      : `let link=null;for(let i=0;i<100&&!(link=(${LINK_IN[gesture]}));i++)await sleep(100);
+      : `let link=null;for(const end=deadline();!(link=(${LINK_IN[gesture]}))&&!past(end);)await sleep(100);
         if(!link)throw new Error('The link did not render in ${gesture}');
         link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
         const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
@@ -123,6 +123,15 @@ async function follow({
     run.vaultId,
     `(async()=>{
       const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+      // Every wait below ends by throwing, inside this evaluation, so its
+      // cleanup stack still runs.
+      const deadline=()=>Temporal.Now.instant().add({seconds:15});
+      const past=(end)=>Temporal.Instant.compare(Temporal.Now.instant(),end)>0;
+      const within=(promise,end,what)=>{
+        let timer;
+        const late=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(what)),Math.max(0,Temporal.Now.instant().until(end).total('milliseconds')));});
+        return Promise.race([promise,late]).finally(()=>clearTimeout(timer));
+      };
       const s=app.plugins.plugins.zotlit.services;
       const observe=()=>{
         const pdf=app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(PDF_PATH)});
@@ -158,18 +167,21 @@ async function follow({
         if(lands===null){
           // A passed link is recorded as the open hands it on, which is the
           // whole of the gesture's work.
-          for(const end=Date.now()+15000;window.__ztLinks.passed.length===0;await sleep(100))
-            if(Date.now()>end)throw new Error('No link reached the system handler');
+          for(const end=deadline();window.__ztLinks.passed.length===0;await sleep(100))
+            if(past(end))throw new Error('No link reached the system handler');
         }else{
           // The reader's binding decides the Landing as it draws the read it
           // starts once it names the Attachment; a later read replaces the
           // promise, so the wait runs until the one awaited is the last.
           let binding=null;
-          for(const end=Date.now()+15000;!(binding=s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'));await sleep(100))
-            if(Date.now()>end)throw new Error('No reader named the PDF\\'s Attachment');
-          for(let read=binding.refreshed;;read=binding.refreshed){await read;if(read===binding.refreshed)break;}
+          for(const end=deadline();!(binding=s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'));await sleep(100))
+            if(past(end))throw new Error('No reader named the PDF\\'s Attachment');
+          for(let read=binding.refreshed,end=deadline();;read=binding.refreshed){
+            await within(read,end,'The reader never drew its last read');
+            if(read===binding.refreshed)break;
+          }
           // Obsidian's own page jump and the Landing's scroll frame follow.
-          for(const end=Date.now()+15000;JSON.stringify(observe().reader)!==lands&&Date.now()<end;)await sleep(100);
+          for(const end=deadline();JSON.stringify(observe().reader)!==lands&&!past(end);)await sleep(100);
         }
         outcome=observe();
       }
