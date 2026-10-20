@@ -233,7 +233,7 @@ interface HoverScenario {
  * box, for the reason {@link follow}'s click is: Live Preview finds the link
  * under the pointer from the event's coordinates. Obsidian hangs a hover
  * popover off the view once its opening delay has run, so a hover that shows
- * nothing is read once, past that deadline.
+ * nothing is read against a later hover that does.
  */
 async function hover({
   url,
@@ -280,16 +280,24 @@ async function hover({
         const hit=link.ownerDocument.elementFromPoint(x,y);
         if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));
         cleanup.defer(()=>view.hoverPopover?.hide());
-        const hovered=Temporal.Now.instant();
         link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,view:link.ownerDocument.defaultView}));
-        const opened=()=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
+        const opened=(view)=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
         if(${hoverAction === "off"}){
-          // Obsidian opens a hover popover 300 ms after the hover; read once,
-          // well past that deadline.
-          await sleep(Math.max(0,hovered.add({milliseconds:1000}).since(Temporal.Now.instant()).total('milliseconds')));
-          outcome={popover:!!opened()||!!link.ownerDocument.querySelector('.hover-popover'),text:null,color:null,image:false};
+          // Absence is read off a control: the same link hovered later, in a
+          // split under the Citation Popover. Every hover popover waits the
+          // same opening delay, so once the control's has opened, one the
+          // first hover had started would have opened too.
+          s.settings.update({'citation.hover-action':'popover'});
+          const control=app.workspace.getLeaf('split','vertical');
+          cleanup.adopt(control,(leaf)=>leaf.detach());
+          await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});
+          cleanup.defer(()=>control.view.hoverPopover?.hide());
+          const controlLink=await until(()=>[...control.view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===url),()=>'The control link did not render');
+          controlLink.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:controlLink.ownerDocument.defaultView}));
+          await until(()=>opened(control.view),()=>'The control hover opened no popover');
+          outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false};
         }else{
-          const popover=await until(opened,()=>'No popover opened over the link');
+          const popover=await until(()=>opened(view),()=>'No popover opened over the link');
           const content=()=>popover.hoverEl.isConnected?popover.hoverEl.querySelector('.zt-citation-popover-content'):null;
           await until(()=>content()?.textContent,()=>'The popover never filled: '+(popover.hoverEl.outerHTML.slice(0,300)));
           const painted=()=>[...content().querySelectorAll('img')].find((img)=>img.src.startsWith('blob:')&&img.complete&&img.naturalWidth>0);
