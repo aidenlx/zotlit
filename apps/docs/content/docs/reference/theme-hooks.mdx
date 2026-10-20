@@ -274,7 +274,7 @@ Set a custom property on the editor hook to recolor one kind of token in every p
 
 ### Expression Colors [#expression-colors]
 
-A Filter Expression field uses Obsidian's code colors, as a formula in a `.base` file does: a Formula, a Query View filter condition, and a Match condition in the Template Workbench View. Names and property paths take `--code-property`. The function or method a call names takes `--code-function`. Numbers, `true`, `false`, and `null` take `--code-value`. Strings take `--code-string`, operators `--code-operator`, punctuation `--code-punctuation`, and regular expressions `--code-important`. Other text takes `--code-normal`. A theme that sets these code colors recolors the expression fields too.
+A Filter Expression field uses Obsidian's code colors, as a formula in a `.base` file does: a Formula, a Query View filter condition, and a Match condition in the Template Workbench View. Names and property paths take `--code-property`. The function or method a call names takes `--code-function`. Numbers, `true`, `false`, and `null` take `--code-value`. Strings take `--code-string`, operators `--code-operator`, punctuation `--code-punctuation`, and regular expressions `--code-important`. Other text takes `--code-normal`. A theme that sets these code colors recolors the expression fields too. A `--zt-template-<token>` override on `zt-template-editor` also reaches these fields, as it reaches the other panes.
 
 ## CSS examples [#examples]
 

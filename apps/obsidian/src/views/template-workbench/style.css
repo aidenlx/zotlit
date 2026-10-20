@@ -101,8 +101,11 @@
 }
 /* Expression Colors: a Filter Expression field — a Formula, a Query View
    filter condition, a Match condition — takes the code colors Obsidian gives
-   the same tokens in a `.base` file, so a theme's code palette applies. */
-.zt-template-editor[data-part="expression"] {
+   the same tokens in a `.base` file, so a theme's code palette applies. The
+   block earns its stylesheet as the custom properties exposed for user
+   snippets, rebound on that field. `:where()` keeps it at the editor hook's
+   own specificity, so a theme's later `.zt-template-editor` rule wins. */
+.zt-template-editor:where([data-part="expression"]) {
   color: var(--code-normal);
   --zt-template-variable: var(--code-property);
   --zt-template-property: var(--code-property);
@@ -137,6 +140,8 @@
 .zt-template-value {
   color: var(--zt-template-value);
 }
+/* A regular expression also carries the value class. This rule has the same
+   specificity, so it must stay after `.zt-template-value` to win. */
 .zt-template-regexp {
   color: var(--zt-template-regexp);
 }
