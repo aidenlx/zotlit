@@ -36,6 +36,7 @@ import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
+import { conditionFaults } from "./expression-faults";
 import { expressionVocabulary } from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
@@ -236,15 +237,25 @@ export function FilterEditor({
     return { ...created, inputSuggestions: undefined };
   }, [app]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
+  // Per section, and kept while the issue stays, so a row underlines again
+  // only when its text or the issue changes.
+  const faultsOf = useMemo(() => {
+    const issueAt = (section: FilterSection, path: readonly number[]) =>
+      issue && issue.section === section && samePath(issue.path, path)
+        ? issue
+        : null;
+    const of =
+      (section: FilterSection) => (text: string, path: readonly number[]) =>
+        conditionFaults(text, issueAt(section, path)?.fault);
+    return { issueAt, all: of("all"), view: of("view") };
+  }, [issue]);
   const vocabulary = (section: FilterSection) => {
     const of = section === "all" ? shared : dataset;
     const conditions = filterVocabulary(of, {
       m: host.messages,
       values,
-      issue: (_, path) =>
-        issue && issue.section === section && samePath(issue.path, path)
-          ? issue.message
-          : null,
+      issue: (_, path) => faultsOf.issueAt(section, path)?.message ?? null,
+      faults: faultsOf[section],
       // A condition shows the Display Name of its field in the view's
       // Properties, and the icon the view's property list shows.
       label: (field) =>

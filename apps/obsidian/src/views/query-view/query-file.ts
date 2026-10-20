@@ -13,6 +13,8 @@ import type { FilterTree } from "@zotlit/filter-expression";
 import { FORMULA_SEGMENT, nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
 
+import type { PlacedFault } from "./expression-faults";
+
 /** The file extension of a Query File, and the language of a Query Block. */
 export const QUERY_FILE_EXTENSION = "zotquery";
 
@@ -666,6 +668,8 @@ export interface FilterLocation {
 /** A condition of the filters, with the message the Match editor marks it with. */
 export interface ConditionIssue extends FilterLocation {
   readonly message: string;
+  /** Where in the condition's text the fault is, where it has a place there. */
+  readonly fault?: PlacedFault;
 }
 
 /**

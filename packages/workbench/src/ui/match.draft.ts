@@ -8,6 +8,8 @@ import type {
   FilterTree,
 } from "@zotlit/filter-expression";
 
+import type { FaultSpan } from "./match.expression";
+
 // Preserve nested Match trees and expression rows through labelled edits.
 
 /** A leaf the visual rows cannot show: its Filter Expression, as written. */
@@ -95,6 +97,14 @@ export interface MatchVocabulary<Row extends LabelledRow> {
   issue?: (condition: RowCondition<Row>, path: FilterPath) => string | null;
   /** What an expression row's Expression Completion offers; none without one. */
   completion?: ExpressionVocabulary;
+  /**
+   * The Faults an expression row underlines in `text`, its Filter
+   * Expression as typed. A row asks again only when this function, the text
+   * or the place changes, so a host keeps one function while its Faults stay
+   * the same.
+   * @param path The row's place in the stored filter.
+   */
+  faults?: (text: string, path: FilterPath) => readonly FaultSpan[];
 }
 
 export function isGroup<Row extends LabelledRow>(
