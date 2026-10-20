@@ -22,6 +22,14 @@ describe("the faults the formula page underlines", () => {
     expect(underlined(text, formulaCheck(text, null))).toEqual(["=="]);
   });
 
+  it("underlines only the operator a formula ends on without spaces", () => {
+    expect(underlined("title==", formulaCheck("title==", null))).toEqual([
+      "==",
+    ]);
+    const call = "title.lower()+";
+    expect(underlined(call, formulaCheck(call, null))).toEqual(["+"]);
+  });
+
   it("underlines the token where parsing stopped", () => {
     const text = "title == )";
     expect(underlined(text, formulaCheck(text, null))).toEqual([")"]);

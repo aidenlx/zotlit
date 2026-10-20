@@ -87,14 +87,14 @@ export function formulaCheck(
       syntax: "invalid",
       faults: [],
     };
-  const { error } = parseExpression(text);
+  const { tree, error } = parseExpression(text);
   if (error) {
     const expected = error.expected.join(", ");
     const issue =
       error.found === null
         ? m.query_view_formula_syntax_end({ expected })
         : m.query_view_formula_syntax({ found: error.found, expected });
-    const span = syntaxFaultSpan(text, error);
+    const span = syntaxFaultSpan(tree, error);
     return { issue, syntax: "invalid", faults: span ? [span] : [] };
   }
   if (run === null || run.saved !== text)
