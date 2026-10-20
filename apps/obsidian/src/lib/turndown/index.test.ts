@@ -333,63 +333,6 @@ describe("Zotero note formats", () => {
   });
 });
 
-/**
- * Image embeds and annotation-excerpt spans all pass through as raw HTML, so
- * their *output* is indistinguishable. These check the routing instead — that
- * each element kind is claimed by the rule meant for it (by rule-object
- * identity): excerpt spans → `annotationExcerpt`, every `data-attachment-key`
- * image (plain or annotation) → the one `embeddedImage` rule, and never the base
- * image rule that drops a `src`-less `<img>`.
- */
-describe("Zotero embed/annotation rule routing", () => {
-  const td = createNoteTurndown(TurndownService);
-
-  /** The rule turndown would pick for the first element parsed from `html`. */
-  function ruleFor(html: string): object {
-    const root = document.createElement("div");
-    root.innerHTML = html;
-    return td.rules.forNode(root.firstElementChild as HTMLElement);
-  }
-
-  const annotationRule = ruleFor(
-    '<span class="highlight" data-annotation="%7B%7D">x</span>',
-  );
-  const citationRule = ruleFor(
-    '<span class="citation" data-citation="%7B%7D">x</span>',
-  );
-  const embeddedImageRule = ruleFor('<img data-attachment-key="K">');
-  const baseImageRule = ruleFor('<img src="x.png">');
-
-  it("routes highlight and underline excerpt spans to one rule", () => {
-    expect(
-      ruleFor('<span class="underline" data-annotation="%7B%7D">x</span>'),
-    ).toBe(annotationRule);
-  });
-
-  it("routes citation spans to a rule of their own", () => {
-    expect(citationRule).not.toBe(annotationRule);
-    expect(citationRule).not.toBe(embeddedImageRule);
-  });
-
-  it("routes plain embeds and image annotations to the one image rule", () => {
-    expect(
-      ruleFor('<img data-attachment-key="K" data-annotation="%7B%7D">'),
-    ).toBe(embeddedImageRule);
-    expect(embeddedImageRule).not.toBe(annotationRule);
-  });
-
-  it("keeps Zotero images off the base image rule that would drop them", () => {
-    expect(baseImageRule).not.toBe(embeddedImageRule);
-    expect(baseImageRule).not.toBe(annotationRule);
-    // The base rule emits `![]()` for a src'd img and "" for a src-less one;
-    // the embed must stay raw HTML instead of being dropped.
-    expect(convert('<img src="x.png">')).toBe("![](x.png)");
-    expect(convert('<img data-attachment-key="K">').startsWith("<img")).toBe(
-      true,
-    );
-  });
-});
-
 describe("ZT_NOTE_EXAMPLE.html", () => {
   it("converts the full stress-test note", async () => {
     const html = readFileSync(

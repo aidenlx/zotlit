@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { sweepTempDirectory } from "./temp-sweep";
 
@@ -39,21 +39,11 @@ describe("sweepTempDirectory", () => {
     await mkdir(join(directory, "drop-dir"));
     await writeFile(join(directory, "drop-dir", "nested"), "x");
 
-    await sweep((name) => name.startsWith("drop"));
+    await sweep(
+      (name, path) => name.startsWith("drop") && path === join(directory, name),
+    );
 
     expect(await names()).toEqual(["keep"]);
-  });
-
-  it("hands the rule both the entry name and its full path", async () => {
-    await writeFile(join(directory, "entry"), "x");
-    const isResidue = vi.fn(() => false);
-
-    await sweep(isResidue);
-
-    expect(isResidue).toHaveBeenCalledExactlyOnceWith(
-      "entry",
-      join(directory, "entry"),
-    );
   });
 
   it("stops at an already-aborted signal without removing anything", async () => {

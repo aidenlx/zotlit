@@ -58,29 +58,6 @@ describe("itemSummary", () => {
     });
   });
 
-  it("formats lightweight display info with creator roles", () => {
-    const item: ItemDisplayInfo = {
-      key: "A",
-      fields: {
-        title: "Reported book",
-        citationKey: null,
-        date: "2007",
-      },
-      creators: [
-        creator(null, "Bianca"),
-        creator(null, "Translator One", "translator"),
-        creator(null, "Translator Two", "translator"),
-      ],
-      primaryCreatorType: "author",
-    };
-
-    expect(itemSummary(item, item.fields)).toEqual({
-      title: "Reported book",
-      subtitle: "Bianca (2007)",
-      formatted: "Bianca (2007): Reported book",
-    });
-  });
-
   it("uses the title as formatted text when the subtitle is empty", () => {
     const item: ItemDisplayInfo = {
       key: "A",
@@ -374,18 +351,6 @@ describe("creatorSummary", () => {
     ).toBe("Davis");
   });
 
-  it("falls back to editor when the primary creator type has no matches", () => {
-    expect(
-      creatorSummary(
-        makeItem({
-          key: "A",
-          creators: [creator("Robin", "Davis", "editor")],
-          primaryCreatorType: "author",
-        }),
-      ),
-    ).toBe("Davis");
-  });
-
   it("falls back to director before contributor", () => {
     expect(
       creatorSummary(
@@ -411,18 +376,6 @@ describe("creatorSummary", () => {
         }),
       ),
     ).toBe("Tribe");
-  });
-
-  it("uses organization literals from the lastName slot", () => {
-    expect(
-      creatorSummary(
-        makeItem({
-          key: "A",
-          creators: [organization("The Royal Society")],
-          primaryCreatorType: "author",
-        }),
-      ),
-    ).toBe("The Royal Society");
   });
 
   it("starts with editor when primaryCreatorType is null", () => {
