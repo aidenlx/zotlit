@@ -30,7 +30,7 @@ const FILTER: ExpressionVocabulary = {
     { name: "status", label: "status (note)" },
     { name: "reading-status", label: "reading-status (note)" },
   ],
-  custom: ["Reading status", "Shelf"],
+  custom: { path: "custom", names: ["Reading status", "Shelf"] },
 };
 
 /** The labels offered with the caret at the `|` of `marked`. */
@@ -233,8 +233,15 @@ describe("bracket keys", () => {
     ]);
   });
 
-  it("offers custom keys under the custom field prefix of a dataset", () => {
-    expect(labels("item.custom[|", FILTER)).toContain('"Shelf"');
+  it("offers custom keys only at the path the dataset reads custom fields by", () => {
+    // An Annotation reads its Item's custom fields.
+    const annotations = {
+      ...FILTER,
+      custom: { path: "item.custom", names: ["Shelf"] },
+    };
+    expect(labels("item.custom[|", annotations)).toEqual(['"Shelf"']);
+    expect(offered("custom[|", annotations)).toBeNull();
+    expect(offered("item.custom[|", FILTER)).toBeNull();
   });
 
   it("offers vault names quoted inside vault[, in filter conditions only", () => {

@@ -57,8 +57,15 @@ export interface ExpressionVocabulary {
   readonly formulas: readonly ExpressionName[];
   /** The vault properties a filter condition reads; absent in a Formula. */
   readonly vault?: readonly ExpressionName[];
-  /** The custom fields of the Zotero source, offered quoted in `custom[...]`. */
-  readonly custom?: readonly string[];
+  /**
+   * The custom fields of the Zotero source, offered quoted inside
+   * `<path>[...]`: `custom`, or `item.custom` where the dataset reads its
+   * Item's custom fields.
+   */
+  readonly custom?: {
+    readonly path: string;
+    readonly names: readonly string[];
+  };
   /**
    * What the value before a `.` at `at` of `source` is, as the planner reads
    * it where it stands; undefined where it does not plan. Without it, every
@@ -298,16 +305,16 @@ function memberAccessAt(
 }
 
 /**
- * The key of `custom[...]` or `vault[...]` the caret is in or right after
- * the `[` of: the range the quoted key fills, what is typed of it, and
- * whether the `]` is still to write.
+ * The key of a bracket access the caret is in or right after the `[` of:
+ * the path before the `[`, the range the quoted key fills, what is typed of
+ * it, and whether the `]` is still to write.
  */
 function bracketKeyAt(
   inner: SyntaxNode,
   pos: number,
   source: string,
 ): {
-  namespace: "custom" | "vault";
+  path: string;
   from: number;
   to: number;
   query: string;
@@ -320,22 +327,13 @@ function bracketKeyAt(
     const object = node.firstChild;
     if (!open || !object || open.to > pos || (close && close.from < pos))
       return null;
-    const text = (of: SyntaxNode) => source.slice(of.from, of.to);
-    const root =
-      object.name === "Identifier"
-        ? text(object)
-        : object.name === "ObjectAccess" &&
-            object.getChild("PropertyName") &&
-            text(object.getChild("PropertyName")!) === "custom"
-          ? "custom"
-          : null;
-    if (root !== "custom" && root !== "vault") return null;
+    const path = source.slice(object.from, object.to).replaceAll(/\s+/g, "");
     const key = open.nextSibling;
     if (key?.name === "String" && key.from < pos) {
       const quote = source[key.from]!;
       const quoted = key.to - key.from > 1 && source[key.to - 1] === quote;
       return {
-        namespace: root,
+        path,
         from: key.from,
         to: quoted && pos < key.to ? key.to : Math.max(pos, key.to),
         query: source.slice(key.from + 1, Math.min(pos, key.to)),
@@ -344,7 +342,7 @@ function bracketKeyAt(
     }
     return source.slice(open.to, pos).trim() === ""
       ? {
-          namespace: root,
+          path,
           from: pos,
           to: pos,
           query: "",
@@ -396,12 +394,15 @@ export function expressionCompletions(
 ): ExpressionCompletionResult | null {
   const inner = parser.parse(source).resolveInner(pos, -1);
   const key = bracketKeyAt(inner, pos, source);
-  if (key) {
-    const names =
-      key.namespace === "custom"
-        ? vocabulary.custom
-        : vocabulary.vault?.map(({ name }) => name);
-    const options = (names ?? [])
+  // Another bracket access takes an expression.
+  const names =
+    key?.path === "vault"
+      ? vocabulary.vault?.map(({ name }) => name)
+      : key && key.path === vocabulary.custom?.path
+        ? vocabulary.custom.names
+        : undefined;
+  if (key && names) {
+    const options = names
       .map((name, order) => ({
         name,
         order,

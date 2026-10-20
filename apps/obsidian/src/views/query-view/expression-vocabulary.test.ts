@@ -32,10 +32,13 @@ it("types another Formula by its planned result, and this by the Query Context",
   ).toBeUndefined();
 });
 
-it("offers the custom fields it is given", () => {
+it("offers the custom fields it is given at the path its dataset reads them by", () => {
   expect(
     expressionVocabulary({ dataset: "items", custom: ["Shelf"] }).custom,
-  ).toEqual(["Shelf"]);
+  ).toEqual({ path: "custom", names: ["Shelf"] });
+  expect(
+    expressionVocabulary({ dataset: "annotations", custom: ["Shelf"] }).custom,
+  ).toEqual({ path: "item.custom", names: ["Shelf"] });
 });
 
 it("offers a field of the dataset, and no Formula, Query Context or vault property unless given", () => {

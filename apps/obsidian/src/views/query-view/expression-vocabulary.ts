@@ -90,6 +90,9 @@ export function expressionVocabulary({
         label: label(vaultProperty(name)),
       })),
     }),
-    ...(custom && { custom }),
+    // A dataset of an Item's children reads its Item's custom fields.
+    ...(custom && {
+      custom: { path: `${engine.customPrefix}custom`, names: custom },
+    }),
   };
 }
