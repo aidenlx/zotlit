@@ -1,10 +1,11 @@
+// The expression input of a Match condition and of a Formula: a small
+// CodeMirror editor that colors its Filter Expression as the template panes
+// color theirs.
+
 import type {
   ExpressionCompletionPresentation,
   ExpressionVocabulary,
 } from "#/language/filter-expression-completion";
-// The expression input of a Match condition and of a Formula: a small
-// CodeMirror editor that colors its Filter Expression as the template panes
-// color theirs.
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { linter, setDiagnostics } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
@@ -26,6 +27,24 @@ import {
   filterExpressionLanguage,
 } from "#/language/filter-expression";
 import { filterExpressionCompletion } from "#/language/filter-expression-completion";
+
+/**
+ * Keeps the editor on the document it stands in. An editor made before its
+ * view moved to a popout window still reads the main window's document,
+ * where it finds neither its focus nor its selection: typed text lands at
+ * the start and no completion opens. The move takes focus away, so the next
+ * focus finds the new document.
+ */
+const followDocument = EditorView.domEventHandlers({
+  focus(_event, view) {
+    const root = view.dom.getRootNode() as Document | ShadowRoot;
+    // A node of another window is no instance of this window's classes.
+    const isRoot =
+      root.nodeType === Node.DOCUMENT_NODE ||
+      root.nodeType === Node.DOCUMENT_FRAGMENT_NODE;
+    if (isRoot && root !== view.root) view.setRoot(root);
+  },
+});
 
 /** The label and validity of the field, on its editable content. */
 const contentAttributes = ({
@@ -160,6 +179,7 @@ export function MatchExpressionInput({
         extensions: [
           filterExpressionLanguage,
           filterExpressionHighlighting,
+          followDocument,
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
