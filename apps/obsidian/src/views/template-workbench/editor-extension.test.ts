@@ -168,6 +168,18 @@ describe("code panes", () => {
     expect(host.release).toHaveBeenCalledOnce();
   });
 
+  it("takes the document it stands in as its root when it takes focus, though no move was told", () => {
+    // Obsidian tells of a move when the element shows, which an editor in a
+    // closed popover does not.
+    using _host = windowMigration();
+    using pane = codePaneEditor("{{ zt.title }}");
+    const { editor } = pane;
+    const destination = document.implementation.createHTMLDocument();
+    destination.body.append(editor.dom);
+    editor.contentDOM.dispatchEvent(new FocusEvent("focus"));
+    expect(editor.root).toBe(destination);
+  });
+
   it("copies in a popout without moving focus through a fallback textarea", () => {
     using host = windowMigration();
     const frame = document.createElement("iframe");
