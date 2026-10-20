@@ -602,6 +602,7 @@ describe("text helpers", () => {
     ['"a\\tb\\nc".title()', "A\tB\nC"],
     ['"éclair ßtraße 🧪x".title()', "Éclair SStraße 🧪x"],
     ['"pre-print of-things".title()', "Pre-print Of-things"],
+    ['"(hello) world".title()', "(hello) World"],
     ['"".title()', ""],
     ["title.title()", "Ecology Of Éclairs"],
     ["publisher.title()", null],
@@ -662,6 +663,9 @@ describe("text helpers", () => {
     ['"abc".split("")', ["a", "b", "c"]],
     ['"".split(":")', [""]],
     ['"a::b".split("::")', ["a", "b"]],
+    // The captures of a regexp separator are elements, and count toward n.
+    ['"a-b".split(/(-)|(,)/)', ["a", "-", null, "b"]],
+    ['"a-b-c".split(/(-)/, 2)', ["a", "-"]],
     ['"a:b:c".split(":", -1)', error("argument-out-of-range")],
     ['"a:b:c".split(":", 1.5)', error("argument-out-of-range")],
     ['"a:b".split(":", null)', null],
@@ -691,6 +695,9 @@ describe("regular expressions", () => {
       [true, true, true],
     ],
     ["/Eco/y.matches(title) && /Eco/y.matches(title)", true],
+    // A sticky regexp matches only at the start of the text.
+    ['/a/y.matches("ba")', false],
+    ['/a/.matches("ba")', true],
     // One literal, tested once for each element.
     ['["a", "a"].map(/a/g.matches(value))', [true, true]],
     ['["a", "a"].map(/a/y.matches(value))', [true, true]],
