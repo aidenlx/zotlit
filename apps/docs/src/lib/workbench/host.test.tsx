@@ -16,11 +16,13 @@ const notices: string[] = [];
 
 function Page({
   insertTarget = () => ({ slice: "note", range: { from: 3, to: 3 } }),
+  snapshot = SAMPLE_ITEMS[0]!,
 }: {
   insertTarget?: WorkbenchHost["insertTarget"];
+  snapshot?: (typeof SAMPLE_ITEMS)[number];
 }) {
   const bound = useWebHost({
-    snapshot: SAMPLE_ITEMS[0]!,
+    snapshot,
     notice: (text) => void notices.push(text),
     insertTarget,
   });
@@ -213,6 +215,26 @@ describe("the web host", () => {
     });
     act(() => root.render(<Page insertTarget={() => null} />));
     expect(existing.insertTarget()).toBeNull();
+  });
+
+  it("names the sample's custom fields, which custom[...] reads", async () => {
+    const sample = SAMPLE_ITEMS[0]!;
+    act(() =>
+      root.render(
+        <Page
+          snapshot={{
+            ...sample,
+            seed: sample.seed && {
+              ...sample.seed,
+              customFieldNames: ["Shelf"],
+            },
+          }}
+        />,
+      ),
+    );
+    await expect(
+      host.matchData.customFields(new AbortController().signal),
+    ).resolves.toEqual(["Shelf"]);
   });
 
   it("binds what needs no popup: tooltip, notice, names, storage", async () => {

@@ -22,14 +22,10 @@ export interface SubexpressionType {
   readonly members?: readonly PlannedMember[];
 }
 
-/**
- * The Query Context of a view that binds one. Planning reads only whether a
- * record is bound, never its Indexed Key, so an editor types `this` without
- * the record the view will bind.
- */
-const BOUND: QueryContext = { item: "", attachment: "" };
-
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/** A record the Query Context of a view binds. */
+export type ContextRecord = keyof QueryContext;
 
 let memberNames: readonly string[] | undefined;
 
@@ -51,7 +47,7 @@ function recordMemberNames(): readonly string[] {
 /**
  * The types `dataset`'s planner gives the subexpressions of a Filter
  * Expression in a view.
- * @param options.context Whether the view binds a Query Context.
+ * @param options.context The records the view's Query Context binds.
  * @param options.formulas The Formulas `formula.<name>` reads, each name with
  *   its text; a Formula with a mistake leaves its reads untyped.
  * @returns The type of the subexpression of `text` at exactly `at`, or
@@ -60,14 +56,19 @@ function recordMemberNames(): readonly string[] {
 export function subexpressionTypes(
   dataset: QueryDataset<any>,
   {
-    context = false,
+    context = [],
     formulas,
   }: {
-    context?: boolean;
+    context?: readonly ContextRecord[];
     formulas?: Readonly<Record<string, string>>;
   } = {},
 ): (text: string, at: Span) => SubexpressionType | undefined {
-  const bound = context ? BOUND : undefined;
+  // Planning reads only whether a record is bound, never its Indexed Key, so
+  // an editor types `this` without the record the view will bind.
+  const bound: QueryContext | undefined =
+    context.length === 0
+      ? undefined
+      : Object.fromEntries(context.map((record) => [record, ""]));
   // Each Formula is planned on its first read and kept for later reads.
   const planner =
     formulas &&
@@ -85,11 +86,11 @@ export function subexpressionTypes(
       formula: resolve,
     });
     if (!planned) return undefined;
-    const { valueType, member } = planned;
+    const { valueType, member, names } = planned;
     if (!member) return { valueType };
     return {
       valueType,
-      members: recordMemberNames().flatMap((name) => {
+      members: (names ?? recordMemberNames()).flatMap((name) => {
         const type = member(name);
         return type === undefined ? [] : [{ name, valueType: type }];
       }),

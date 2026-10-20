@@ -136,7 +136,21 @@ export interface WorkbenchMatchData {
    * dataset, as Profile selection tests it.
    */
   matches(indexedKey: string, filter: string): Promise<WorkbenchMatchResult>;
+  /**
+   * The names of the source's custom fields, which a condition reads as
+   * `custom["<name>"]`; none where the source cannot answer.
+   */
+  customFields(signal: AbortSignal): Promise<readonly string[]>;
 }
+
+/** The Match data of a host that shows no Match: no names, no Item to test. */
+export const NO_MATCH_DATA: WorkbenchMatchData = {
+  tags: async () => [],
+  collections: async () => [],
+  libraries: async () => [],
+  matches: async () => ({ kind: "missing" }),
+  customFields: async () => [],
+};
 
 /** The slice editor a field is inserted into, and where in it. */
 export interface WorkbenchInsertTarget {

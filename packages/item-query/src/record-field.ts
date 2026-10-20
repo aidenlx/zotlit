@@ -24,6 +24,11 @@ export interface FilterNavigation<Needs> {
   readonly member?: (
     name: string,
   ) => FilterField<FilterValue, Needs> | undefined;
+  /**
+   * Every name `member` answers, for a record of fixed keys; absent where
+   * the record is a Query Dataset's, whose names its dataset lists.
+   */
+  readonly names?: readonly string[];
   readonly element?: FilterNavigation<Needs>;
 }
 
@@ -35,6 +40,7 @@ export function mapNavigation<A, B>(
   return {
     dataset: navigation.dataset,
     equalityField: navigation.equalityField,
+    ...(navigation.names && { names: navigation.names }),
     ...(navigation.element && {
       element: mapNavigation(navigation.element, wrap),
     }),

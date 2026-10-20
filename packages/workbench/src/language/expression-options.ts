@@ -2,7 +2,11 @@
 // Completion offers from it, and the ranking every part of the list shares.
 import type { SyntaxNode } from "@lezer/common";
 
-import type { FilterValueType, FunctionDefinition } from "@zotlit/item-query";
+import type {
+  ContextRecord,
+  FilterValueType,
+  FunctionDefinition,
+} from "@zotlit/item-query";
 
 import { matchScore } from "./matching";
 import type { Span } from "./span";
@@ -31,8 +35,11 @@ export interface ExpressionName {
  */
 export interface ExpressionVocabulary {
   readonly fields: readonly ExpressionField[];
-  /** Whether the view binds a Query Context, which `this` reads. */
-  readonly context: boolean;
+  /**
+   * The records the view's Query Context binds, which `this` reads: none in
+   * a Query File's own tab, the Item in a note.
+   */
+  readonly context: readonly ContextRecord[];
   /** The Formula Properties of the Query File. */
   readonly formulas: readonly ExpressionName[];
   /** The vault properties a filter condition reads; absent in a Formula. */

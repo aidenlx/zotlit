@@ -128,6 +128,32 @@ function memberAccessAt(
 }
 
 /**
+ * The namespace path the caret is in, `formula.<name>` or `this.<name>`,
+ * read from the parse tree, so spaces may stand around its dot.
+ */
+export function namespaceAccessAt({ inner, pos, source }: Caret): {
+  namespace: string;
+  typed: string;
+  from: number;
+  to: number;
+} | null {
+  const access = memberAccessAt(inner, pos, source);
+  if (!access) return null;
+  const { receiver } = access;
+  const namespace = source.slice(receiver.from, receiver.to);
+  if (!isNamespace(receiver, namespace)) return null;
+  return {
+    namespace,
+    typed: source.slice(access.from, pos),
+    from: receiver.from,
+    to: access.to,
+  };
+}
+
+const isNamespace = (receiver: SyntaxNode, text: string) =>
+  receiver.name === "Identifier" && NAMESPACES.has(text);
+
+/**
  * The members offered with the caret after a `.` at `pos`.
  * @returns Undefined where the caret is not after the `.` of a value; a
  *   namespace path is the expression completion's.
@@ -140,7 +166,7 @@ export function memberCompletions(
   if (!access) return undefined;
   const { receiver } = access;
   const text = source.slice(receiver.from, receiver.to);
-  if (receiver.name === "Identifier" && NAMESPACES.has(text)) return undefined;
+  if (isNamespace(receiver, text)) return undefined;
   const options = ranked(
     memberEntries(
       vocabulary.receiver?.(source, { from: receiver.from, to: receiver.to }),

@@ -2,10 +2,12 @@
 // fields' path: the names the host knows, quoted.
 import type { SyntaxNode } from "@lezer/common";
 
-import { ranked } from "./expression-options";
+import { noteOf, ranked } from "./expression-options";
 import type {
   Caret,
   ExpressionCompletionResult,
+  ExpressionName,
+  ExpressionOption,
   ExpressionVocabulary,
 } from "./expression-options";
 
@@ -64,19 +66,22 @@ export function keyCompletions(
 ): ExpressionCompletionResult | null | undefined {
   const key = bracketKeyAt(inner, pos, source);
   if (!key) return undefined;
-  const names =
+  const names: readonly ExpressionName[] | undefined =
     key.path === "vault"
-      ? vocabulary.vault?.map(({ name }) => name)
+      ? vocabulary.vault
       : key.path === vocabulary.custom?.path
-        ? vocabulary.custom.names
+        ? vocabulary.custom.names.map((name) => ({ name }))
         : undefined;
   if (!names) return undefined;
-  const options = ranked(names, key.query, (name) => [name]).map((name) => {
+  const options = ranked(names, key.query, ({ name, label }) =>
+    label === undefined ? [name] : [name, label],
+  ).map(({ name, label }): ExpressionOption => {
     const quoted = JSON.stringify(name);
     return {
       label: quoted,
       insert: key.closed ? quoted : `${quoted}]`,
-      kind: "key" as const,
+      kind: "key",
+      ...noteOf(name, label),
     };
   });
   return options.length === 0 ? null : { from: key.from, to: key.to, options };

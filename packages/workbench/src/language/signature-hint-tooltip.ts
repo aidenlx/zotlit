@@ -1,10 +1,10 @@
 // The Signature Hint tooltip of a Filter Expression editor: above the caret
 // while it stands inside a call's arguments, the signature with the
 // parameter at the caret marked and the description beneath.
-import { StateField } from "@codemirror/state";
+import { StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
-import { showTooltip } from "@codemirror/view";
-import type { EditorView, Tooltip, ViewUpdate } from "@codemirror/view";
+import { EditorView, keymap, showTooltip } from "@codemirror/view";
+import type { Tooltip, ViewUpdate } from "@codemirror/view";
 
 import { signatureAt } from "./signature-hint";
 import type {
@@ -18,6 +18,16 @@ import type {
  * web host leaves CodeMirror's own tooltip look.
  */
 export const SIGNATURE_HINT_CLASS = "zt-signature-hint";
+
+/**
+ * The attribute an editor's field carries while a popup of its own stands,
+ * such as the Signature Hint, which Escape closes first. A host that takes
+ * Escape before the field does leaves it to the field while it is there.
+ */
+export const FIELD_POPUP_ATTRIBUTE = "data-field-popup";
+
+/** Closes the hint until the text or the caret changes. */
+const dismiss = StateEffect.define<null>();
 
 /** Appends `text` with each span in backticks as a `<code>`. */
 function appendProse(parent: HTMLElement, text: string) {
@@ -96,10 +106,34 @@ function hintTooltip(
  * @returns The editor extension.
  */
 export function signatureHint(options: SignatureHintOptions = {}): Extension {
-  return StateField.define<Tooltip | null>({
+  const hint = StateField.define<Tooltip | null>({
     create: (state) => hintTooltip(state, options),
     update: (value, tr) =>
-      tr.docChanged || tr.selection ? hintTooltip(tr.state, options) : value,
-    provide: (field) => showTooltip.from(field),
+      tr.effects.some((effect) => effect.is(dismiss))
+        ? null
+        : tr.docChanged || tr.selection
+          ? hintTooltip(tr.state, options)
+          : value,
+    provide: (field) => [
+      showTooltip.from(field),
+      EditorView.contentAttributes.from(
+        field,
+        (shown): Record<string, string> =>
+          shown ? { [FIELD_POPUP_ATTRIBUTE]: "" } : {},
+      ),
+    ],
   });
+  return [
+    hint,
+    keymap.of([
+      {
+        key: "Escape",
+        run: (view) => {
+          if (!view.state.field(hint)) return false;
+          view.dispatch({ effects: dismiss.of(null) });
+          return true;
+        },
+      },
+    ]),
+  ];
 }

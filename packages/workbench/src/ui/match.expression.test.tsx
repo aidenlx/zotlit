@@ -51,7 +51,7 @@ it("offers the completion of the vocabulary it is given, in the theme's presenta
         onChange={() => {}}
         vocabulary={{
           fields: [{ path: "title", label: "Title" }],
-          context: false,
+          context: [],
           formulas: [],
         }}
       />
@@ -90,7 +90,7 @@ it("shows the Signature Hint of the method at the caret, typed as the host types
       onChange={() => {}}
       vocabulary={{
         fields: [],
-        context: false,
+        context: [],
         formulas: [],
         receiver: (source, { from, to }) =>
           source.slice(from, to) === "title" ? { type: "string" } : undefined,

@@ -47,7 +47,11 @@ export {
 export type { TemplateToken } from "./highlight";
 export { embeddedTemplates } from "./embedded";
 export { signatureAt } from "./signature-hint";
-export { SIGNATURE_HINT_CLASS, signatureHint } from "./signature-hint-tooltip";
+export {
+  FIELD_POPUP_ATTRIBUTE,
+  SIGNATURE_HINT_CLASS,
+  signatureHint,
+} from "./signature-hint-tooltip";
 export type {
   HintParameter,
   HintSignature,

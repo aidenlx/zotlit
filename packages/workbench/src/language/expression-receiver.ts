@@ -17,10 +17,26 @@ import { bindingMethod, inFirstArgument, TAKES_INITIAL } from "./list-scope";
 import type { Span } from "./span";
 
 /**
+ * What closes a list method's call after its element expression: the
+ * arguments written after it, which the method may need, such as the
+ * initial value of `reduce`, or a stand-in for one not written yet.
+ */
+function callCloser(call: SyntaxNode, method: string, source: string): string {
+  const [comma] = call.getChildren(",");
+  if (comma) {
+    const close = call.getChild(")");
+    return close
+      ? source.slice(comma.from, close.to)
+      : `${source.slice(comma.from, call.to)})`;
+  }
+  return TAKES_INITIAL.has(method) ? ", null)" : ")";
+}
+
+/**
  * The text the planner reads the receiver at `at` in: the receiver alone,
  * or, inside the element expression of a list method, the outermost such
- * call up to the receiver, its open brackets closed, so the names the method
- * binds mean what they mean there.
+ * call up to the receiver, its open brackets closed and its later arguments
+ * kept, so the names the method binds mean what they mean there.
  */
 function scopedText(source: string, at: Span): { text: string; span: Span } {
   let node: SyntaxNode | null = parser.parse(source).resolveInner(at.from, 1);
@@ -47,13 +63,11 @@ function scopedText(source: string, at: Span): { text: string; span: Span } {
     const method = bindingMethod(ancestor, source);
     const inFirst = method !== null && inFirstArgument(ancestor, at.from);
     const closer =
-      ancestor.name === "Call" || ancestor.name === "GroupedExpression"
-        ? method &&
-          TAKES_INITIAL.has(method) &&
-          ancestor.getChildren(",").length === 0
-          ? ", null)"
-          : ")"
-        : "]";
+      method && inFirst
+        ? callCloser(ancestor, method, source)
+        : ancestor.name === "Call" || ancestor.name === "GroupedExpression"
+          ? ")"
+          : "]";
     pending.push(closer);
     if (method && inFirst) {
       outermost = ancestor;
@@ -80,7 +94,13 @@ function scopedText(source: string, at: Span): { text: string; span: Span } {
  */
 export function datasetReceiver(
   dataset: QueryDataset<any>,
-  options: Parameters<typeof subexpressionTypes>[1] = {},
+  {
+    label,
+    ...options
+  }: NonNullable<Parameters<typeof subexpressionTypes>[1]> & {
+    /** The label the Properties popover gives a field, by its full path. */
+    label?: (path: string) => string | undefined;
+  } = {},
 ): NonNullable<ExpressionVocabulary["receiver"]> {
   const typeAt = subexpressionTypes(dataset, options);
   const read = (text: string, span: Span): ExpressionReceiver | undefined => {
@@ -89,18 +109,22 @@ export function datasetReceiver(
     const type =
       planned.valueType === "unknown" ? undefined : planned.valueType;
     if (!planned.members) return { type };
+    const receiver = text.slice(span.from, span.to).replaceAll(/\s+/g, "");
     return {
       type,
-      members: planned.members.flatMap(({ name, valueType }) =>
-        valueType === "null"
-          ? []
-          : [
-              {
-                path: name,
-                ...(valueType === "unknown" ? {} : { type: valueType }),
-              },
-            ],
-      ),
+      members: planned.members.flatMap(({ name, valueType }) => {
+        if (valueType === "null") return [];
+        const path = `${receiver}.${name}`;
+        const named = label?.(path);
+        return [
+          {
+            path: name,
+            ...(valueType === "unknown" ? {} : { type: valueType }),
+            // A label that only repeats the path is none.
+            ...(named === undefined || named === path ? {} : { label: named }),
+          },
+        ];
+      }),
     };
   };
   // A list asks again on each keystroke of the member name.

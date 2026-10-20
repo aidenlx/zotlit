@@ -16,7 +16,7 @@ import type { QueryDataset } from "@zotlit/item-query";
 
 import type { CompletionPresentation } from "./completion";
 import { keyCompletions } from "./expression-keys";
-import { memberCompletions } from "./expression-members";
+import { memberCompletions, namespaceAccessAt } from "./expression-members";
 import {
   fieldOption,
   noteOf,
@@ -46,7 +46,6 @@ const IDENTIFIER = /^[A-Za-z_$¡-￿][\w$¡-￿]*$/;
 const NAME_CHAR = /[\w$¡-￿]/;
 /** Tokens whose text a completion must not interrupt. */
 const LITERALS = new Set(["String", "RegExp", "RealNumber", "Escape"]);
-const NAMESPACES = new Set(["this", "formula", "vault"]);
 
 const FUNCTIONS: readonly ExpressionOption[] = [
   ["if", IF_FUNCTION] as const,
@@ -80,9 +79,7 @@ function namespaced(
 function entries(vocabulary: ExpressionVocabulary): ExpressionOption[] {
   return [
     ...vocabulary.fields.map(fieldOption),
-    ...(vocabulary.context
-      ? ["item", "attachment"].map((name) => namespaced("this", { name }))
-      : []),
+    ...vocabulary.context.map((name) => namespaced("this", { name })),
     ...vocabulary.formulas.map((formula) => namespaced("formula", formula)),
     ...(vocabulary.vault ?? []).map((name) => namespaced("vault", name)),
     ...FUNCTIONS,
@@ -113,24 +110,28 @@ export function expressionCompletions(
     if (LITERALS.has(node.name)) return null;
   const members = memberCompletions(caret, vocabulary);
   if (members !== undefined) return members;
+  const path = namespaceAccessAt(caret);
+  if (path) {
+    const prefix = `${path.namespace}.`;
+    const options = ranked(
+      entries(vocabulary).filter(
+        (option) =>
+          option.kind === "namespace" && option.label.startsWith(prefix),
+      ),
+      prefix + path.typed,
+      optionTexts,
+    );
+    return options.length === 0
+      ? null
+      : { from: path.from, to: path.to, options };
+  }
   let from = pos;
   while (from > 0 && NAME_CHAR.test(source[from - 1]!)) from--;
   let to = pos;
   while (to < source.length && NAME_CHAR.test(source[to]!)) to++;
-  // The typed path runs back over `name.` segments to its root.
-  while (source[from - 1] === ".") {
-    let start = from - 1;
-    while (start > 0 && NAME_CHAR.test(source[start - 1]!)) start--;
-    if (start === from - 1) break;
-    from = start;
-  }
   const query = source.slice(from, pos);
-  if (/^\d/.test(query)) return null;
-  if (query.includes(".")) {
-    const root = query.slice(0, query.indexOf("."));
-    if (!NAMESPACES.has(root) || source[from - 1] === ".") return null;
-  }
-  const bound = query.includes(".") ? [] : boundNameOptions(inner, pos, source);
+  if (/^\d/.test(query) || source[from - 1] === ".") return null;
+  const bound = boundNameOptions(inner, pos, source);
   if (query === "" && !explicit && bound.length === 0) return null;
   const options = ranked(
     [...bound, ...entries(vocabulary)],

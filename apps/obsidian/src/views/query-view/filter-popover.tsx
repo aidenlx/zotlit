@@ -20,6 +20,7 @@ import {
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
   filterVocabulary,
+  NO_MATCH_DATA,
 } from "@zotlit/workbench/ui";
 import type {
   FilterField,
@@ -39,7 +40,7 @@ import { matchRows } from "@/views/template-workbench/theme";
 import { conditionFaults } from "./expression-faults";
 import {
   expressionVocabulary,
-  useCustomFieldNames,
+  useFilterExpressions,
 } from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
@@ -228,13 +229,8 @@ export function FilterEditor({
     const created = createTemplateWorkbenchHost(app, {
       render: () =>
         Promise.reject(new Error("The Query View filter renders no template.")),
-      matchData: {
-        tags: async () => [],
-        collections: async () => [],
-        libraries: async () => [],
-        // The Filter offers its own values and tests no Item.
-        matches: async () => ({ kind: "missing" }),
-      },
+      // The Filter offers its own values and tests no Item.
+      matchData: NO_MATCH_DATA,
       insertTarget: () => null,
     });
     // The popover sits in the top layer, over Obsidian's suggestion popups.
@@ -414,30 +410,10 @@ export function FilterButton({ view }: { view: QueryView }) {
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   const [open, setOpen] = useState(false);
-  const custom = useCustomFieldNames(view, open);
-  const formulas = file?.formulas;
-  const context = view.contextSource !== undefined;
-  // One vocabulary per dataset while its inputs hold, so a receiver's
-  // planned members outlive a keystroke.
-  const expressions = useMemo(() => {
-    const made = new Map<QueryFileDataset, ExpressionVocabulary>();
-    return (dataset: QueryFileDataset) => {
-      let vocabulary = made.get(dataset);
-      if (!vocabulary) {
-        vocabulary = expressionVocabulary({
-          dataset,
-          properties,
-          formulas: formulas ?? {},
-          context,
-          custom,
-          // Only a view of Items reads vault properties.
-          ...(dataset === "items" && { vaultNames: names }),
-        });
-        made.set(dataset, vocabulary);
-      }
-      return vocabulary;
-    };
-  }, [properties, formulas, context, custom, names]);
+  const expressions = useFilterExpressions(view, properties, {
+    reading: open,
+    vaultNames: names,
+  });
   if (!file || !shown) return null;
   return (
     <ToolbarPopover

@@ -7,6 +7,7 @@ import type { FilterPath } from "@zotlit/filter-expression";
 import { ITEMS } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
+import type { FieldLabelLocale } from "@zotlit/zotero-types/field-labels";
 
 import { useWorkbenchStore } from "./editor";
 import { ExampleActions } from "./example-state";
@@ -66,21 +67,35 @@ export type {
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
-/** How the Items dataset types a receiver; one function for every Profile. */
-const itemReceiver = datasetReceiver(ITEMS);
+/** How the Items dataset types a receiver, its members labelled in one schema locale. */
+const receivers = new Map<
+  FieldLabelLocale,
+  NonNullable<ExpressionVocabulary["receiver"]>
+>();
 
 /**
  * What a Profile Match condition reads: the fields of an Item, labelled as
- * Zotero labels them. A Profile binds no Query Context, has no Formulas and
- * reads no vault property.
+ * Zotero labels them, and the source's custom fields. A Profile binds no
+ * Query Context, has no Formulas and reads no vault property.
  */
-function profileExpressions(locale: string): ExpressionVocabulary {
-  const labels = FIELD_LABELS[schemaLocale(locale)];
+function profileExpressions(
+  locale: string,
+  custom: readonly string[],
+): ExpressionVocabulary {
+  const schema = schemaLocale(locale);
+  const labels = FIELD_LABELS[schema];
+  const label = (path: string) => labels[path];
+  let receiver = receivers.get(schema);
+  if (!receiver) {
+    receiver = datasetReceiver(ITEMS, { label });
+    receivers.set(schema, receiver);
+  }
   return {
-    fields: datasetExpressionFields(ITEMS, (path) => labels[path]),
-    context: false,
+    fields: datasetExpressionFields(ITEMS, label),
+    context: [],
     formulas: [],
-    receiver: itemReceiver,
+    custom: { path: `${ITEMS.customPrefix}custom`, names: custom },
+    receiver,
   };
 }
 
@@ -173,7 +188,22 @@ export function MatchPane({
     ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
     : undefined;
   const locale = host.getLocale();
-  const expression = useMemo(() => profileExpressions(locale), [locale]);
+  const [custom, setCustom] = useState<readonly string[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    host.matchData.customFields(controller.signal).then(
+      (names) => {
+        if (!controller.signal.aborted) setCustom(names);
+      },
+      // Without the names, `custom[` offers none.
+      () => {},
+    );
+    return () => controller.abort();
+  }, [host.matchData, vocabularyRevision]);
+  const expression = useMemo(
+    () => profileExpressions(locale, custom),
+    [locale, custom],
+  );
   const vocabulary = useMemo(
     () => ({
       ...filterVocabulary("items", {

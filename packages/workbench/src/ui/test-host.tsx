@@ -106,6 +106,7 @@ export function fakeHost(): FakeHost {
       libraries: () =>
         Promise.resolve([{ id: "personal", name: "My Library" }]),
       matches: () => Promise.resolve({ kind: "result", matched: false }),
+      customFields: () => Promise.resolve(["Reading status"]),
     },
     insertTarget: () => null,
     persistence: {

@@ -456,6 +456,7 @@ const firstAuthorField: FieldDefinition = {
     },
   },
   navigation: {
+    names: Object.keys((CREATOR_SHAPE as { keys: object }).keys),
     member: (name) =>
       name in (CREATOR_SHAPE as { keys: object }).keys
         ? {
