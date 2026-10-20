@@ -88,6 +88,47 @@ async function click(target: string): Promise<void> {
   ).toBe("clicked");
 }
 
+/** The query key the Attachment Resolver holds its path index under. */
+const PATH_INDEX_KEY = ["attachment-resolver", "path-index"];
+
+/**
+ * Registers, before the case changes anything, the restore of everything it
+ * may change: the workspace layout (the note's tab, the PDF tab a click opens,
+ * and the Annotation View the reader reveals beside it), the note itself, and
+ * the open-file-links setting.
+ */
+async function scope(cleanup: AsyncDisposableStack): Promise<void> {
+  const saved = await obEval(
+    run.vaultId,
+    "JSON.stringify({layout:app.workspace.getLayout(),openFileLinks:app.plugins.plugins.zotlit.services.settings.current['reader.open-file-links']})",
+  );
+  cleanup.defer(async () => {
+    await obEval(
+      run.vaultId,
+      `(async()=>{const saved=JSON.parse(${JSON.stringify(saved)});for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();await app.workspace.changeLayout(saved.layout);return true;})()`,
+    );
+  });
+  cleanup.defer(async () => {
+    await obEval(
+      run.vaultId,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(NOTE)});if(file)await app.vault.delete(file);return true;})()`,
+    );
+  });
+  cleanup.defer(async () => {
+    await obEval(
+      run.vaultId,
+      `(app.plugins.plugins.zotlit.services.settings.update({'reader.open-file-links':JSON.parse(${JSON.stringify(saved)}).openFileLinks}),true)`,
+    );
+  });
+}
+
+/** The text of every notice on screen, in every window of the vault. */
+const notices = () =>
+  obJson<string[]>(
+    run.vaultId,
+    `JSON.stringify(${WINDOW_DOCUMENTS}.flatMap((doc)=>[...doc.querySelectorAll('.notice')].map((n)=>n.textContent)))`,
+  );
+
 /**
  * Writes the note and shows it in one tab, in Live Preview or Reading view,
  * with no PDF open anywhere and the cursor on the empty last line, away
@@ -145,32 +186,35 @@ describe.skipIf(!reachable)("Annotation links", () => {
     ).toBe("recording");
     // Capture warms the Attachment index as it installs, so it answers before
     // any PDF is open; a lookup that still answered `pending` would hand every
-    // click to Zotero.
+    // click to Zotero. The wait reads the held index without asking for it —
+    // a lookup would start the build itself and hide a missing warm-up.
     expect(
       await obEvalUntil(
         run.vaultId,
-        `app.plugins.plugins.zotlit.services.attachmentResolver.locate(${JSON.stringify(annotationAttachment.key)}).kind`,
-        { expected: "located" },
+        `String(app.plugins.plugins.zotlit.services.queryClient.peek(${JSON.stringify(PATH_INDEX_KEY)})!==null)`,
+        { expected: "true" },
       ),
+      "the Attachment index is built with no lookup asking for it",
     ).toBe(true);
   }, 120000);
 
   afterAll(async () => {
     await obEval(
       run.vaultId,
-      `(async()=>{const s=window.__ztLinks;if(!s)return true;await app.plugins.disablePlugin('zotlit');window.open=s.native;delete window.__ztLinks;await app.plugins.enablePlugin('zotlit');const file=app.vault.getFileByPath(${JSON.stringify(NOTE)});if(file)await app.vault.delete(file);return true;})()`,
+      `(async()=>{const s=window.__ztLinks;if(!s)return true;await app.plugins.disablePlugin('zotlit');window.open=s.native;delete window.__ztLinks;await app.plugins.enablePlugin('zotlit');return true;})()`,
     );
   }, 120000);
 
+  // Observations reset per case; the vault state each case changes is
+  // restored by its own scope.
   beforeEach(async () => {
-    await obEval(
-      run.vaultId,
-      "(function(){window.__ztLinks.passed=[];app.plugins.plugins.zotlit.services.settings.update({'reader.open-file-links':true});return true;})()",
-    );
+    await obEval(run.vaultId, "(window.__ztLinks.passed=[],true)");
     await clearNotices(run.vaultId);
   });
 
   it("opens the reader on the Annotation a link names, clicked in Live Preview", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    await scope(cleanup);
     const url = durableLink(SECOND_PAGE.key, SECOND_PAGE.pageLabel);
     await showNote(noteWith(url), "live-preview");
 
@@ -183,6 +227,8 @@ describe.skipIf(!reachable)("Annotation links", () => {
   }, 120000);
 
   it("opens the reader on the Annotation a link names, clicked in Reading view", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    await scope(cleanup);
     const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
     await showNote(noteWith(url), "reading");
 
@@ -195,6 +241,8 @@ describe.skipIf(!reachable)("Annotation links", () => {
   }, 120000);
 
   it("opens the reader on the Annotation a link names, clicked in a Properties value", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    await scope(cleanup);
     const url = durableLink(ALSO_FIRST_PAGE.key, ALSO_FIRST_PAGE.pageLabel);
     await showNote(
       noteWith(
@@ -215,23 +263,22 @@ describe.skipIf(!reachable)("Annotation links", () => {
   // An Annotation Zotero no longer has still names its Attachment and page,
   // so the click reaches the neighbourhood of the passage, in silence.
   it("lands on the page alone for an Annotation Zotero no longer has", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    await scope(cleanup);
     const url = durableLink("ZZZZZZZ2", SECOND_PAGE.pageLabel);
     await showNote(noteWith(url), "reading");
 
     await click(linkIn("reading", url));
 
     await expect.poll(reader, poll).toEqual({ page: 2, selected: [] });
-    expect(
-      await obJson<string[]>(
-        run.vaultId,
-        `JSON.stringify(${WINDOW_DOCUMENTS}.flatMap((doc)=>[...doc.querySelectorAll('.notice')].map((n)=>n.textContent)))`,
-      ),
-    ).toEqual([]);
+    expect(await notices()).toEqual([]);
   }, 120000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps
   // landing exactly as it did.
   it("still lands an Attachment File Link that carries an Annotation Anchor", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    await scope(cleanup);
     const fileUrl = await obEval(
       run.vaultId,
       `require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href+'#page=2&zt-annotation=${SECOND_PAGE.key}'`,
@@ -247,6 +294,10 @@ describe.skipIf(!reachable)("Annotation links", () => {
 
   describe("hands the click to Zotero", () => {
     it("for a PDF this computer does not hold, and an Attachment Zotero does not know", async () => {
+      await using cleanup = new AsyncDisposableStack();
+      await scope(cleanup);
+      // The missing PDF is located and claimed; the reader finds no file as it
+      // opens and hands the link on, with no missing-file notice of its own.
       for (const url of [
         durableLink("ZZZZZZZ2", "1", MISSING_PDF.key),
         durableLink(FIRST_PAGE.key, "1", "ZZZZZZZ3"),
@@ -257,11 +308,14 @@ describe.skipIf(!reachable)("Annotation links", () => {
           .poll(passed, poll)
           .toEqual([expect.objectContaining({ url })]);
         expect(await reader()).toBeNull();
+        expect(await notices()).toEqual([]);
         await obEval(run.vaultId, "(window.__ztLinks.passed=[],true)");
       }
     }, 120000);
 
     it("while the reader's open-file-links setting is off", async () => {
+      await using cleanup = new AsyncDisposableStack();
+      await scope(cleanup);
       const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
       await obEval(
         run.vaultId,
@@ -280,6 +334,8 @@ describe.skipIf(!reachable)("Annotation links", () => {
     // Obsidian's own "Open in default browser" item calls `window.open` with
     // this target, which is the whole of that gesture as Capture sees it.
     it("for Obsidian's explicit external target", async () => {
+      await using cleanup = new AsyncDisposableStack();
+      await scope(cleanup);
       const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
       await showNote(noteWith(url), "reading");
 

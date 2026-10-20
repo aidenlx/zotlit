@@ -22,12 +22,26 @@ const SECTION = menuSections("zotlit:attachments-menu");
 /** One row a picker offers, whichever reader it opens through. */
 type OpenableRow = ObsidianOpenableAttachment | ZoteroOpenableAttachment;
 
+/** What one call to {@link AttachmentReader.open} asks beyond the Attachment and pane. */
+export interface AttachmentOpenOptions {
+  /** The file was not there to open. Replaces the reader's missing-file notice. */
+  onMissing?: () => void;
+}
+
 /** Where an Attachment opens, and how — the selection policy stays written once and shared by both. */
 export interface AttachmentReader<T extends OpenableRow> {
   /** Icon a picker row gets. */
   icon: string;
-  /** Open one Attachment, honoring a Mod-click/Mod-Enter's new-pane request. */
-  open: (attachment: T, pane: PaneType | boolean) => void | Promise<void>;
+  /**
+   * Open one Attachment, honoring a Mod-click/Mod-Enter's new-pane request.
+   * A reader that finds no file at the open itself runs `onMissing` in place
+   * of its own notice, for a caller with somewhere else to send the link.
+   */
+  open: (
+    attachment: T,
+    pane: PaneType | boolean,
+    options?: AttachmentOpenOptions,
+  ) => void | Promise<void>;
   /**
    * Nothing qualified. Omit to leave the click inert — a reader whose caller
    * already hides its own control over an empty list (the Zotero readers)
@@ -41,7 +55,11 @@ export function withFixedPane<T extends OpenableRow>(
   reader: AttachmentReader<T>,
   pane: PaneType | boolean,
 ): AttachmentReader<T> {
-  return { ...reader, open: (attachment) => reader.open(attachment, pane) };
+  return {
+    ...reader,
+    open: (attachment, _pane, ...options) =>
+      reader.open(attachment, pane, ...options),
+  };
 }
 
 /**
@@ -147,13 +165,14 @@ export function createObsidianAttachmentReader(
   return {
     icon: "file-text",
     onEmpty: () => new BaseNotice(m.notice_no_pdf_attachment()),
-    async open(attachment, pane) {
+    async open(attachment, pane, options) {
       const file = app.vault.getFileByPath(attachment.openPath);
       if (!file) {
         logger.warn("Obsidian did not resolve the Attachment's open path", {
           openPath: attachment.openPath,
         });
-        new BaseNotice(m.notice_pdf_file_missing());
+        if (options?.onMissing) options.onMissing();
+        else new BaseNotice(m.notice_pdf_file_missing());
         return;
       }
       // Obsidian's PDF view reads `#page=N` and the rest of its subpath

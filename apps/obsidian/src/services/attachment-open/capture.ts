@@ -3,7 +3,6 @@
 // names an Obsidian-Openable Attachment.
 
 import { around } from "monkey-around";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { PaneType } from "obsidian";
 
@@ -52,8 +51,6 @@ export interface FileLinkCaptureContext {
   resolve: (absolutePath: string) => AttachmentResolution;
   /** The file an Attachment keeps, by its Indexed Key, for a Durable Annotation Link. */
   locate: (attachmentKey: string) => AttachmentLocation;
-  /** Whether a file is on this computer, for a Durable Annotation Link. */
-  exists: (absolutePath: string) => boolean;
   vaultBasePath: string;
   platform: NodeJS.Platform;
 }
@@ -61,11 +58,16 @@ export interface FileLinkCaptureContext {
 /**
  * Either ZotLit takes the click, naming the Attachment exactly as every other
  * ZotLit reader gesture names one, or the original `window.open` runs
- * untouched.
+ * untouched. `passWhenMissing` marks a link the original can still serve when
+ * the reader finds no file: Zotero opens a Durable Annotation Link anywhere.
  */
 export type FileLinkCapture =
   | { kind: "pass" }
-  | { kind: "capture"; attachment: ObsidianOpenableAttachment };
+  | {
+      kind: "capture";
+      attachment: ObsidianOpenableAttachment;
+      passWhenMissing?: true;
+    };
 
 const PASS: FileLinkCapture = { kind: "pass" };
 
@@ -101,10 +103,11 @@ const PAGE_NUMBER_RE = /^[1-9]\d*$/;
 
 /**
  * Decide a `zotero://open` link that names an Annotation. It names the
- * Attachment by key, so the resolver locates the file first, and a file this
+ * Attachment by key, so the resolver locates the file first. A file this
  * computer does not hold leaves the link to Zotero — the reason the link is
- * durable at all. Anything short of a valid Annotation key is Zotero's alone,
- * `zotero://select` included.
+ * durable at all — and the reader finds that out as it opens, so the capture
+ * says to hand the link back then. Anything short of a valid Annotation key is
+ * Zotero's alone, `zotero://select` included.
  *
  * The link's `page` is a printed label, which Obsidian's own jump reads as a
  * page number. It is carried only when it reads as one; the Annotation's own
@@ -122,14 +125,13 @@ function decideDurableLinkCapture(
   const location = ctx.locate(
     formatIndexedKey(link.attachmentKey, link.groupID),
   );
-  if (location.kind !== "located" || !ctx.exists(location.absolutePath))
-    return PASS;
+  if (location.kind !== "located") return PASS;
 
   const page =
     link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
       ? Number(link.pageLabel)
       : null;
-  return captureAt(
+  const capture = captureAt(
     location.absolutePath,
     formatAnnotationSubpath({
       page,
@@ -137,6 +139,9 @@ function decideDurableLinkCapture(
     }),
     ctx,
   );
+  return capture.kind === "capture"
+    ? { ...capture, passWhenMissing: true }
+    : capture;
 }
 
 /** Claim the file at `absolutePath` when it is an Obsidian-Openable Attachment. */
@@ -169,8 +174,6 @@ export interface FileLinkCaptureDeps {
   reader: AttachmentReader<ObsidianOpenableAttachment>;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
   window?: Window;
-  /** Whether a file is on this computer. Defaults to the filesystem's answer. */
-  exists?: (absolutePath: string) => boolean;
 }
 
 /**
@@ -209,7 +212,6 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           const capture = decideFileLinkCapture(String(url), {
             resolve: (path) => deps.attachments.resolve(path),
             locate: (key) => deps.attachments.locate(key),
-            exists: deps.exists ?? existsSync,
             vaultBasePath: deps.vaultBasePath,
             platform: process.platform,
           });
@@ -220,7 +222,22 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
             openPath: capture.attachment.openPath,
             subpath: capture.attachment.subpath,
           });
-          void deps.reader.open(capture.attachment, paneFromTarget(target));
+          void deps.reader.open(
+            capture.attachment,
+            paneFromTarget(target),
+            capture.passWhenMissing
+              ? {
+                  // Decided at the open, not by a check ahead of it: the file
+                  // can go between the two.
+                  onMissing: () => {
+                    logger.debug("Durable Annotation Link handed to Zotero", {
+                      attachmentKey: capture.attachment.indexedKey,
+                    });
+                    native(url, target, features);
+                  },
+                }
+              : undefined,
+          );
           return null;
         },
     }),
