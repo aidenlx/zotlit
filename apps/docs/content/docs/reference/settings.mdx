@@ -213,16 +213,25 @@ Open this page from <SettingsPath page={m.settings_page_citations()} />.
 
 ### Citation suggestions
 
-| Label                                                      | Key                                  | Control | Default | Dependency                                                    | Storage |
-| ---------------------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_suggester_name()} />    | `citation.editor-suggester`          | Toggle  | On      | None                                                          | Synced  |
-| <UiLabel name={m.settings_citation_at_trigger_name()} />   | `citation.at-trigger`                | Toggle  | Off     | <UiLabel name={m.settings_citation_suggester_name()} /> is on | Synced  |
-| <UiLabel name={m.settings_citation_show_citekey_name()} /> | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                                          | Synced  |
+| Label                                                            | Key                                  | Control | Default | Dependency                                                    | Storage |
+| ---------------------------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_suggester_name()} />          | `citation.editor-suggester`          | Toggle  | On      | None                                                          | Synced  |
+| <UiLabel name={m.settings_citation_at_trigger_name()} />         | `citation.at-trigger`                | Toggle  | Off     | <UiLabel name={m.settings_citation_suggester_name()} /> is on | Synced  |
+| <UiLabel name={m.settings_citation_show_citekey_name()} />       | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                                          | Synced  |
+| <UiLabel name={m.settings_citation_annotation_trigger_name()} /> | `citation.annotation-trigger`        | Text    | `[>`    | None                                                          | Synced  |
 
 <Callout type="info">
   <UiLabel name={m.settings_citation_at_trigger_name()} /> is visible only when
   <UiLabel name={m.settings_citation_suggester_name()} /> is on.
 </Callout>
+
+<UiLabel name={m.settings_citation_annotation_trigger_name()} /> is the text
+that opens the annotation suggester. Leave it empty to turn the suggester off.
+It cannot contain spaces or `@`, and it cannot overlap the citation triggers
+`[@` and `【@` or Obsidian's link trigger `[[`: ZotLit rejects such a trigger
+with <UiLabel name={m.settings_citation_annotation_trigger_citation()} />. See
+[Quote an annotation while
+typing](/docs/how-to/insert-citations#quote-annotations).
 
 ### Citation sources
 
