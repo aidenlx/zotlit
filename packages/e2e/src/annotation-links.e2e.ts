@@ -37,7 +37,7 @@ const FILE_URL = "%FILE_URL%";
 function durableLink(
   annotationKey: string,
   pageLabel: string,
-  attachmentKey = annotationAttachment.key,
+  { attachmentKey = annotationAttachment.key }: { attachmentKey?: string } = {},
 ): string {
   return `zotero://open/library/items/${attachmentKey}?annotation=${annotationKey}&page=${pageLabel}`;
 }
@@ -111,8 +111,7 @@ async function follow({
   const follow =
     gesture === "external"
       ? `window.open(url,'_external');`
-      : `let link=null;for(const end=deadline();!(link=(${LINK_IN[gesture]}))&&!past(end);)await sleep(100);
-        if(!link)throw new Error('The link did not render in ${gesture}');
+      : `const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
         link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
         const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
         const hit=link.ownerDocument.elementFromPoint(x,y);
@@ -131,6 +130,14 @@ async function follow({
         let timer;
         const late=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(what)),Math.max(0,Temporal.Now.instant().until(end).total('milliseconds')));});
         return Promise.race([promise,late]).finally(()=>clearTimeout(timer));
+      };
+      // Polls until found() answers, and answers with it.
+      const until=async(found,what)=>{
+        for(const end=deadline();;await sleep(100)){
+          const value=found();
+          if(value)return value;
+          if(past(end))throw new Error(what());
+        }
       };
       const s=app.plugins.plugins.zotlit.services;
       const observe=()=>{
@@ -167,21 +174,18 @@ async function follow({
         if(lands===null){
           // A passed link is recorded as the open hands it on, which is the
           // whole of the gesture's work.
-          for(const end=deadline();window.__ztLinks.passed.length===0;await sleep(100))
-            if(past(end))throw new Error('No link reached the system handler');
+          await until(()=>window.__ztLinks.passed.length>0,()=>'No link reached the system handler');
         }else{
           // The reader's binding decides the Landing as it draws the read it
           // starts once it names the Attachment; a later read replaces the
           // promise, so the wait runs until the one awaited is the last.
-          let binding=null;
-          for(const end=deadline();!(binding=s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'));await sleep(100))
-            if(past(end))throw new Error('No reader named the PDF\\'s Attachment');
+          const binding=await until(()=>s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'),()=>'No reader named the PDF\\'s Attachment');
           for(let read=binding.refreshed,end=deadline();;read=binding.refreshed){
             await within(read,end,'The reader never drew its last read');
             if(read===binding.refreshed)break;
           }
           // Obsidian's own page jump and the Landing's scroll frame follow.
-          for(const end=deadline();JSON.stringify(observe().reader)!==lands&&!past(end);)await sleep(100);
+          await until(()=>JSON.stringify(observe().reader)===lands,()=>'The reader did not land: '+JSON.stringify(observe()));
         }
         outcome=observe();
       }
@@ -313,7 +317,7 @@ describe.skipIf(!reachable)("Annotation links", () => {
     ])(
       "for %s",
       async (_, attachmentKey, annotationKey) => {
-        const url = durableLink(annotationKey, "1", attachmentKey);
+        const url = durableLink(annotationKey, "1", { attachmentKey });
 
         const outcome = await follow({
           note: noteWith(url),

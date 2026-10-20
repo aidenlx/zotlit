@@ -125,7 +125,14 @@ function decideDurableLinkCapture(
   const location = ctx.locate(
     formatIndexedKey(link.attachmentKey, link.groupID),
   );
-  if (location.kind !== "located") return PASS;
+  if (location.kind !== "located") {
+    logger.debug("Durable Annotation Link left to Zotero", {
+      attachmentKey: link.attachmentKey,
+      groupID: link.groupID,
+      reason: location.kind,
+    });
+    return PASS;
+  }
 
   const page =
     link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
