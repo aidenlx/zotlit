@@ -292,6 +292,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The count of the kept cards stays in the Results menu.
     expect(broken.count).toBe(String(yellow.length));
     expect(broken.rowIssues[0]).toContain("nosuchfield");
+    /**
+     * The text the expression rows of the view's own filters underline,
+     * once it is `expected` or the wait ends: the editor draws its marks
+     * after the frame that shows the row.
+     */
+    const underlines = async (expected: string[]) =>
+      JSON.parse(
+        await inPopover(
+          `const read=()=>JSON.stringify([...section('view').querySelectorAll('[data-condition-row] .cm-lintRange-error')].map(n=>n.textContent));await until('underlines',()=>read()===${JSON.stringify(JSON.stringify(expected))}).catch(()=>{});return read();`,
+        ),
+      ) as string[];
+    // The row underlines the name the query found wrong.
+    expect(await underlines(["nosuchfield"])).toEqual(["nosuchfield"]);
     // The expression field colors the parts of its Filter Expression.
     expect(
       await inPopover(
@@ -305,6 +318,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await inPopover(
       `write(section('view').querySelector('[data-condition-row]'),'place !=');return true;`,
     );
+    // The dangling operator is underlined as it is typed.
+    expect(await underlines(["!="])).toEqual(["!="]);
     const unfinished = await tabWhen(
       (tab) =>
         tab.diagnostic !== null && tab.text.includes("        - place !=\n"),
