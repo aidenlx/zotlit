@@ -30,7 +30,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
-import "./property-page.css";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import type { QueryView } from "./view";
