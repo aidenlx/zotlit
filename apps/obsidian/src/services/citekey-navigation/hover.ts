@@ -101,6 +101,35 @@ export function citationHoverIntent(
   return { kind: "popover", citekeys };
 }
 
+export type AnnotationHoverIntent =
+  | { kind: "popover" }
+  | { kind: "nothing"; reason: HoverSuppression };
+
+/**
+ * What one hovered Durable Annotation Link shows: the annotation popover, or
+ * nothing. The one Hover Action governs it as it governs a citation.
+ *
+ * A link names no Literature Note, so Page Preview has no page to preview and
+ * answers with the popover. Obsidian's Page preview settings gate only its own
+ * previews, so the Require Mod toggles of the mode gate this popover under
+ * either action.
+ */
+export function annotationHoverIntent(
+  gesture: CitationHoverGesture,
+  hover: HoverPreferences,
+): AnnotationHoverIntent {
+  if (hover.action === "off") {
+    return { kind: "nothing", reason: "hover-off" };
+  }
+  if (gesture.pointerType !== undefined && gesture.pointerType !== "mouse") {
+    return { kind: "nothing", reason: "not-a-mouse" };
+  }
+  if (hover.requireMod[gesture.mode] && !gesture.mod) {
+    return { kind: "nothing", reason: "needs-mod" };
+  }
+  return { kind: "popover" };
+}
+
 /** The editing mode one surface's hovers are gated by. */
 export function hoverEditingMode({
   surface,

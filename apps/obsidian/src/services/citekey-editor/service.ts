@@ -9,6 +9,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { AnnotationPopover } from "@/services/annotation-popover/service";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
@@ -41,6 +42,7 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
+import { annotationLinkHoverExtension } from "./annotation-link";
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
 const logger = getLogger("citekey-editor");
@@ -58,6 +60,8 @@ export interface CitekeyEditorDeps {
   citationText: Pick<CitationText, "peek" | "on">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
+  /** What a hovered Durable Annotation Link shows. */
+  annotationPopover: Pick<AnnotationPopover, "show">;
   settings: SettingsService;
   citationLookup: Pick<CitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
@@ -105,6 +109,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #db;
   readonly #citationText;
   readonly #citationPopover;
+  readonly #annotationPopover;
   readonly #settings;
   readonly #citationLookup;
   readonly #libraryScope;
@@ -133,6 +138,7 @@ export class CitekeyEditor extends Service<void> {
     this.#db = deps.db;
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
+    this.#annotationPopover = deps.annotationPopover;
     this.#settings = deps.settings;
     this.#citationLookup = deps.citationLookup;
     this.#libraryScope = deps.libraryScope;
@@ -171,6 +177,14 @@ export class CitekeyEditor extends Service<void> {
       display: m.hover_source_citekey(),
       defaultMod: true,
     });
+    // A Durable Annotation Link is no Pandoc citation, so its hover follows
+    // the Hover Action alone, whatever the citation treatment is set to.
+    this.#plugin.registerEditorExtension(
+      annotationLinkHoverExtension({
+        hoverPreferences: () => this.#hover,
+        showAnnotation: (request) => this.#annotationPopover.show(request),
+      }),
+    );
     this.#plugin.registerEditorExtension(this.#extensions);
     stack.defer(() => {
       this.#extensions.length = 0;

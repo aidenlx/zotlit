@@ -12,10 +12,12 @@ export {
   type CitationNavigation,
 } from "./citation";
 export {
+  annotationHoverIntent,
   citationHoverIntent,
   CITEKEY_HOVER_SOURCE,
   hoverEditingMode,
   hoverPreferences,
+  type AnnotationHoverIntent,
   type CitationHoverGesture,
   type CitationHoverIntent,
   type HoverEditingMode,
