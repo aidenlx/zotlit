@@ -463,23 +463,23 @@ const FORMULA_READ_FAULTS: ReadonlySet<string> = new Set([
   "unknown-formula",
 ]);
 
-/** The Formula marks of one run. */
 type FormulaMarks = Pick<ResultSnapshot, "formulaIssues" | "formulaSpans">;
 
-/** No Formula marks, for a run that planned no Formula. */
+/** For a run that planned no Formula. */
 const NO_FORMULA_MARKS: FormulaMarks = {
   formulaIssues: NO_RESULTS.formulaIssues,
   formulaSpans: NO_RESULTS.formulaSpans,
 };
 
 /**
- * The reason of each Formula that the run left out, by name, and where its
- * Fault is in `formulas[name]`, the text the run planned, where it names a
- * place there.
+ * @param formulas The Formulas the run planned, by name.
+ * @returns the reason of each Formula that the run left out, by name, and
+ * where its Fault is in the text the run planned, where it names a place
+ * there.
  */
 function formulaMarks(
   outcome: QueryViewOutcome,
-  formulas: Readonly<Record<string, string>> = {},
+  formulas: QueryViewRequest["formulas"],
 ): FormulaMarks {
   const faults = Object.entries(
     (outcome.kind === "result"
@@ -493,14 +493,15 @@ function formulaMarks(
       faults.map(([name, diagnostic]) => [name, readerText(diagnostic)]),
     ),
     formulaSpans: nameDictionary(
-      faults.flatMap(([name, { location }]) =>
-        location?.argument === "formulas" &&
-        location.path === name &&
-        location.span &&
-        Object.hasOwn(formulas, name)
-          ? [[name, { text: formulas[name]!, span: location.span }] as const]
-          : [],
-      ),
+      faults.flatMap(([name, { location }]) => {
+        const text = formulas?.[name];
+        return location?.argument === "formulas" &&
+          location.path === name &&
+          location.span &&
+          text !== undefined
+          ? [[name, { text, span: location.span }] as const]
+          : [];
+      }),
     ),
   };
 }

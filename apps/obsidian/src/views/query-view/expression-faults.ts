@@ -3,15 +3,7 @@
 // end of the text, and the span of a Fault the last run found.
 import { parseExpression } from "@zotlit/filter-expression";
 import type { ExpressionSyntaxError } from "@zotlit/filter-expression";
-import type { ExpressionFault } from "@zotlit/workbench/ui";
-
-import type { ConditionIssue } from "./query-file";
-
-/** A part of an expression's text, in UTF-16 offsets; `to` is exclusive. */
-export interface FaultSpan {
-  readonly from: number;
-  readonly to: number;
-}
+import type { FaultSpan } from "@zotlit/workbench/ui";
 
 /** Where a run found a Fault: the text it planned, and the span in that text. */
 export interface PlacedFault {
@@ -20,9 +12,11 @@ export interface PlacedFault {
 }
 
 /**
- * The span to underline for a Syntax Fault of `text`. A fault at the end of
- * the text names no character, so it takes the unclosed string or bracket
- * it is in, else the last token before it, such as a dangling operator.
+ * A fault at the end of the text names no character, so it takes the
+ * unclosed string or bracket it is in, else the last token before it, such
+ * as a dangling operator.
+ * @returns the span to underline for a Syntax Fault of `text`, or `null`
+ * where no character comes before the fault.
  */
 export function syntaxFaultSpan(
   text: string,
@@ -36,21 +30,26 @@ export function syntaxFaultSpan(
 }
 
 /**
- * The Faults an expression condition underlines in `text`, as typed: its
- * Syntax Fault at once, else the Fault the last run found in it while the
- * text is the one that run planned.
+ * @returns the span of a Fault a run found, while `text` is the text that
+ * run planned; `null` once the text differs.
+ */
+export function ranFaultSpan(
+  text: string,
+  ran: PlacedFault | undefined,
+): FaultSpan | null {
+  return ran?.text === text ? ran.span : null;
+}
+
+/**
+ * @param text An expression condition as typed.
+ * @param ran Where the last run found a Fault in this condition.
+ * @returns the condition's Syntax Fault at once, else the run's Fault.
  */
 export function conditionFaults(
   text: string,
-  issue: ConditionIssue | null,
-): readonly ExpressionFault[] {
-  const ran = issue?.text === text ? issue : null;
+  ran: PlacedFault | undefined,
+): readonly FaultSpan[] {
   const { error } = parseExpression(text);
-  const span = error
-    ? syntaxFaultSpan(text, error)
-    : ran?.span && ran.span.from < ran.span.to
-      ? ran.span
-      : null;
-  if (!span) return [];
-  return [ran ? { ...span, message: ran.message } : span];
+  const span = error ? syntaxFaultSpan(text, error) : ranFaultSpan(text, ran);
+  return span ? [span] : [];
 }

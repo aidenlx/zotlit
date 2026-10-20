@@ -16,7 +16,7 @@ import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
-import type { ExpressionFault } from "@zotlit/workbench/ui";
+import type { FaultSpan } from "@zotlit/workbench/ui";
 
 import {
   Chooser,
@@ -31,7 +31,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
-import { syntaxFaultSpan } from "./expression-faults";
+import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
 import type { PlacedFault } from "./expression-faults";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf, formulaSpansOf } from "./results";
@@ -58,31 +58,35 @@ export interface FormulaRunFault {
   /** The Formula's saved text. */
   readonly saved: string;
   readonly message: string;
-  /**
-   * Where the Fault is in the text the run planned, where it names a place;
-   * the field underlines it while that text is the saved text.
-   */
-  readonly span?: PlacedFault | undefined;
+  /** Where the Fault is in the text the run planned, where it names a place. */
+  readonly place?: PlacedFault | undefined;
 }
 
 /** What the Formula field reports and underlines. */
 export interface FormulaCheck {
   /** What is wrong with the text, or `null` when nothing is. */
   readonly issue: string | null;
-  readonly faults: readonly ExpressionFault[];
+  /** Whether the text parses, apart from what the run found. */
+  readonly syntax: "valid" | "invalid";
+  readonly faults: readonly FaultSpan[];
 }
 
 /**
- * What is wrong with a Formula's text: its Syntax Fault, else the run's
- * Fault while the text is the saved text the run planned, each underlined at
- * its span.
+ * @param run What the last run found in the Formula, or `null`.
+ * @returns the text's Syntax Fault, else the run's Fault while the text is
+ * the saved text, each underlined at its span; the span of the run's Fault
+ * only while the text is also the one the run planned.
  */
 export function formulaCheck(
   text: string,
   run: FormulaRunFault | null,
 ): FormulaCheck {
   if (text.trim() === "")
-    return { issue: m.query_view_formula_expression_empty(), faults: [] };
+    return {
+      issue: m.query_view_formula_expression_empty(),
+      syntax: "invalid",
+      faults: [],
+    };
   const { error } = parseExpression(text);
   if (error) {
     const expected = error.expected.join(", ");
@@ -91,16 +95,12 @@ export function formulaCheck(
         ? m.query_view_formula_syntax_end({ expected })
         : m.query_view_formula_syntax({ found: error.found, expected });
     const span = syntaxFaultSpan(text, error);
-    return { issue, faults: span ? [{ ...span, message: issue }] : [] };
+    return { issue, syntax: "invalid", faults: span ? [span] : [] };
   }
-  if (run === null || run.saved !== text) return { issue: null, faults: [] };
-  return {
-    issue: run.message,
-    faults:
-      run.span?.text === text
-        ? [{ ...run.span.span, message: run.message }]
-        : [],
-  };
+  if (run === null || run.saved !== text)
+    return { issue: null, syntax: "valid", faults: [] };
+  const span = ranFaultSpan(text, run.place);
+  return { issue: run.message, syntax: "valid", faults: span ? [span] : [] };
 }
 
 /** The Syntax Fault of a Formula's text, or `null` when it parses. */
@@ -171,7 +171,7 @@ function ExpressionField({
   value,
   onChange,
   onBlur,
-  check: { issue, faults },
+  check: { issue, syntax, faults },
 }: {
   value: string;
   /** Called with the typed text and the window the field stands in. */
@@ -194,10 +194,7 @@ function ExpressionField({
                   ? "zt:text-(--text-success)"
                   : "zt:text-(--text-error)",
               )}
-              // Whether the text parses, apart from what the run found.
-              data-query-formula-syntax={
-                formulaSyntaxIssue(value) === null ? "valid" : "invalid"
-              }
+              data-query-formula-syntax={syntax}
             >
               {/* The icon keeps to the first line of a long message. */}
               <span className="zt:flex zt:h-lh zt:shrink-0 zt:items-center">
@@ -269,7 +266,6 @@ function PropertyDisplayName({
   );
 }
 
-/** The entry of `name` in a dictionary, where it has one. */
 const ownEntry = <T,>(
   dictionary: Readonly<Record<string, T>>,
   name: string,
@@ -283,7 +279,7 @@ const ownEntry = <T,>(
 function FormulaText({ view, name }: { view: QueryView; name: string }) {
   const saved = useStore(view.state, (s) => s.file?.formulas?.[name] ?? "");
   const issue = useStore(view.state, (s) => ownEntry(formulaIssuesOf(s), name));
-  const span = useStore(view.state, (s) => ownEntry(formulaSpansOf(s), name));
+  const place = useStore(view.state, (s) => ownEntry(formulaSpansOf(s), name));
   const [text, setText, typed] = useChooserPageText(saved);
   // The pending save, on the timers of the window the field stands in.
   const pending = useRef<{ win: Window; timer: number } | null>(null);
@@ -302,9 +298,9 @@ function FormulaText({ view, name }: { view: QueryView; name: string }) {
     () =>
       formulaCheck(
         text,
-        issue === undefined ? null : { saved, message: issue, span },
+        issue === undefined ? null : { saved, message: issue, place },
       ),
-    [text, saved, issue, span],
+    [text, saved, issue, place],
   );
   return (
     <ExpressionField

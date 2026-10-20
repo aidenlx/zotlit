@@ -524,6 +524,15 @@ function Row<Row extends LabelledRow>({
   const host = useWorkbenchHost();
   const issue =
     stored === null ? null : (vocabulary.issue?.(condition, stored) ?? null);
+  const text = isExpression(condition) ? condition.text : null;
+  const place = stored === null ? null : placeKey(stored);
+  const findFaults = vocabulary.faults;
+  const faults = useMemo(
+    () =>
+      text === null || stored === null ? undefined : findFaults?.(text, stored),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `place` stands for `stored`, a new array on each render
+    [findFaults, text, place],
+  );
   const labelled = isExpression(condition)
     ? asLabelled(condition, vocabulary)
     : null;
@@ -559,11 +568,7 @@ function Row<Row extends LabelledRow>({
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
                 value={condition.text}
-                faults={
-                  stored === null
-                    ? undefined
-                    : vocabulary.faults?.(condition.text, stored)
-                }
+                faults={faults}
                 onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (

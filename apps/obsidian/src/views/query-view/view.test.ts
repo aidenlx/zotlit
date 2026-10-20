@@ -2,6 +2,7 @@
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
+import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import {
   Menu,
@@ -1312,8 +1313,7 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
     section: "view",
     path: [0],
     message: "colourName is not a field of Annotations. Use colorName.",
-    text: 'colourName == "yellow"',
-    span: { from: 0, to: 10 },
+    fault: { text: 'colourName == "yellow"', span: { from: 0, to: 10 } },
   });
   expect(cards(el)).toEqual(["ANNOTBBB"]);
   expect(el.querySelector("[data-query-filter-error]")?.textContent).toBe(
@@ -1387,8 +1387,7 @@ it("names the tokens a syntax error lacks once, at the row and in the view's dia
     path: [0],
     message:
       "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
-    text: "place !=",
-    span: { from: 8, to: 8 },
+    fault: { text: "place !=", span: { from: 8, to: 8 } },
   });
 
   await act(() => {
@@ -1634,17 +1633,20 @@ it("underlines the query's Fault in an expression condition, and a Syntax Fault 
   });
   await settle();
 
-  const first = () =>
-    section(el, "view").querySelector("[data-condition-row]")!;
-  const underlined = () =>
-    [...first().querySelectorAll(".cm-lintRange-error")].map(
-      (mark) => mark.textContent,
-    );
+  const editor = EditorView.findFromDOM(
+    section(el, "view").querySelector("[data-condition-row] .cm-editor")!,
+  )!;
+  const underlined = () => {
+    const marked: string[] = [];
+    forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
+      marked.push(editor.state.sliceDoc(from, to));
+    });
+    return marked;
+  };
   expect(underlined()).toEqual(["colourName"]);
 
   // The text no longer is the one the query ran: its Fault no longer shows,
   // and the unclosed string shows at once.
-  const editor = EditorView.findFromDOM(first().querySelector(".cm-editor")!)!;
   await act(() => {
     editor.dispatch({
       changes: {

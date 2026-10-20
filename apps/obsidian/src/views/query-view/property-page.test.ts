@@ -13,6 +13,7 @@ describe("the faults the formula page underlines", () => {
     const text = "title == 'book";
     const check = formulaCheck(text, null);
     expect(check.issue).not.toBeNull();
+    expect(check.syntax).toBe("invalid");
     expect(underlined(text, check)).toEqual(["'book"]);
   });
 
@@ -27,8 +28,11 @@ describe("the faults the formula page underlines", () => {
   });
 
   it("underlines nothing in a formula that parses and has no engine Fault", () => {
-    const check = formulaCheck("title.lower()", null);
-    expect(check).toEqual({ issue: null, faults: [] });
+    expect(formulaCheck("title.lower()", null)).toEqual({
+      issue: null,
+      syntax: "valid",
+      faults: [],
+    });
   });
 
   it("underlines nothing in an empty formula, which the status line explains", () => {
@@ -42,13 +46,15 @@ describe("the faults the formula page underlines", () => {
     const fault = {
       saved: text,
       message: "nope is not a method of string.",
-      span: { text, span: { from: 6, to: 10 } },
+      place: { text, span: { from: 6, to: 10 } },
     };
     const check = formulaCheck(text, fault);
     expect(check.issue).toBe("nope is not a method of string.");
+    expect(check.syntax).toBe("valid");
     expect(underlined(text, check)).toEqual(["nope"]);
     expect(formulaCheck("title.nop()", fault)).toEqual({
       issue: null,
+      syntax: "valid",
       faults: [],
     });
   });
@@ -59,10 +65,11 @@ describe("the faults the formula page underlines", () => {
     const check = formulaCheck(text, {
       saved: text,
       message: "nope is not a method of string.",
-      span: { text: "title.nope()", span: { from: 6, to: 10 } },
+      place: { text: "title.nope()", span: { from: 6, to: 10 } },
     });
     expect(check).toEqual({
       issue: "nope is not a method of string.",
+      syntax: "valid",
       faults: [],
     });
   });
@@ -75,6 +82,7 @@ describe("the faults the formula page underlines", () => {
     });
     expect(check).toEqual({
       issue: "The formula gone has no definition.",
+      syntax: "valid",
       faults: [],
     });
   });

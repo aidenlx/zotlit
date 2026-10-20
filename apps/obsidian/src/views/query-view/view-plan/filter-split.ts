@@ -18,8 +18,9 @@ import type {
   FilterLeaf,
   FilterTree,
 } from "@zotlit/filter-expression";
+import type { FaultSpan } from "@zotlit/workbench/ui";
 
-import type { FaultSpan } from "@/views/query-view/expression-faults";
+import type { PlacedFault } from "@/views/query-view/expression-faults";
 import { allViewsDataset } from "@/views/query-view/query-file";
 import type {
   FilterLocation,
@@ -50,20 +51,16 @@ export interface VaultCondition extends FilterLocation {
   readonly reads: readonly VaultRead[] | null;
 }
 
-/** A fault in one condition: the condition, its text, and where the fault is in that text. */
+/** A fault in one condition, with its place in the condition's text. */
 export interface ConditionFault extends FilterLocation {
-  readonly text: string;
-  readonly span: FaultSpan;
+  readonly fault: PlacedFault;
 }
 
 /** The Filter Expression ZotLit Query runs, and the condition a fault in it marks. */
 export interface EngineFilter {
   readonly text: string;
   /** The condition a fault at `span` marks; `null` where the span falls inside no one condition. */
-  locate(span: {
-    readonly from: number;
-    readonly to: number;
-  }): ConditionFault | null;
+  locate(span: FaultSpan): ConditionFault | null;
 }
 
 /** One view's filters, split between the vault and ZotLit Query. */
@@ -96,8 +93,8 @@ interface Conjunct {
 }
 
 /**
- * A leaf of the composed filter: its condition, the condition's text, and
- * where the leaf's text starts in it, as a leaf may hold one conjunct alone.
+ * The text of a leaf's condition, and where the leaf's text starts in it: a
+ * leaf may hold one conjunct of its condition alone.
  */
 interface ConditionLeaf {
   readonly text: string;
@@ -138,8 +135,10 @@ export function splitFilters(
           return {
             section: leaf.section,
             path: leaf.path,
-            text: leaf.text,
-            span: { from: from + by, to: to + by },
+            fault: {
+              text: leaf.text,
+              span: { from: from + by, to: to + by },
+            },
           };
         },
       };

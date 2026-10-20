@@ -34,23 +34,22 @@ const contentAttributes = ({
 /** Marks the edit that brings in a new `value`, which is not the user's. */
 const fromValue = Annotation.define<true>();
 
-/** A Fault of the field's text: the span it names, which the field underlines. */
-export interface ExpressionFault {
+/** The span a Fault names in a text, in UTF-16 offsets; `to` is exclusive. */
+export interface FaultSpan {
   readonly from: number;
   readonly to: number;
-  /** What the owner reports for it, where it reports something. */
-  readonly message?: string;
 }
 
-const NO_FAULTS: readonly ExpressionFault[] = [];
+const NO_FAULTS: readonly FaultSpan[] = [];
 
 export interface MatchExpressionInputProps {
   value: string;
   /**
-   * The Faults of `value` to underline. The owner passes them, as its status
-   * line reports them; the field shows no tooltip over them.
+   * The Faults of `value` to underline, which the owner's status line
+   * reports; the field shows no tooltip over them. A new array sets them
+   * again, so the owner keeps one while they stay the same.
    */
-  faults?: readonly ExpressionFault[];
+  faults?: readonly FaultSpan[];
   /** Each edit, with the window the field is in. */
   onChange: (text: string, win: Window) => void;
   onBlur?: () => void;
@@ -168,21 +167,18 @@ export function MatchExpressionInput({
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
-    const length = editor.state.doc.length;
     editor.dispatch(
       setDiagnostics(
         editor.state,
-        faults
-          .filter(({ from, to }) => from <= to && to <= length)
-          .map(({ from, to, message = "" }) => ({
-            from,
-            to,
-            message,
-            severity: "error",
-          })),
+        faults.map(({ from, to }) => ({
+          from,
+          to,
+          message: "",
+          severity: "error",
+        })),
       ),
     );
-  }, [faults, value]);
+  }, [faults]);
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
