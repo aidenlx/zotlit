@@ -1,6 +1,6 @@
 ---
 title: "Profile Match"
-description: "The Profile Match expression language: fields, operators, list functions, tree form, and the forms ZotLit rejects."
+description: "The Profile Match expression language: fields, operators, list methods, tree form, and the forms ZotLit rejects."
 ---
 
 import { UiLabel } from "@/components/ui-label";
@@ -20,12 +20,12 @@ The built-in Default profile carries no `match`, and a profile without a `match`
 
 A condition tests one of four fields.
 
-| Field         | Values                          | Test            | Example                                |
-| ------------- | ------------------------------- | --------------- | -------------------------------------- |
-| `library`     | `personal` or `group:<groupID>` | `==` or `!=`    | `library == "group:118"`               |
-| `itemType`    | One item type name              | `==` or `!=`    | `itemType == "journalArticle"`         |
-| `tags`        | A list of Tag names             | A list function | `tags.contains("Read")`                |
-| `collections` | A list of Collection paths      | A list function | `collections.within("Project/Drafts")` |
+| Field         | Values                          | Test          | Example                                |
+| ------------- | ------------------------------- | ------------- | -------------------------------------- |
+| `library`     | `personal` or `group:<groupID>` | `==` or `!=`  | `library == "group:118"`               |
+| `itemType`    | One item type name              | `==` or `!=`  | `itemType == "journalArticle"`         |
+| `tags`        | A list of Tag names             | A list method | `tags.contains("Read")`                |
+| `collections` | A list of Collection paths      | A list method | `collections.within("Project/Drafts")` |
 
 ### Library values
 
@@ -58,23 +58,23 @@ The scalar fields `library` and `itemType` take an equality test.
 
 The field name is on the left and a quoted value is on the right. A value may use double or single quotes. ZotLit rejects a test with the two sides reversed, and a quoted value that the field does not accept.
 
-## List functions [#list-functions]
+## List methods [#list-functions]
 
 The list fields `tags` and `collections` take a list method. Every argument is a string literal.
 
-| Method        | Fields                |
-| ------------- | --------------------- |
-| `contains`    | `tags`, `collections` |
-| `containsAny` | `tags`, `collections` |
-| `containsAll` | `tags`, `collections` |
-| `isEmpty`     | `tags`, `collections` |
-| `within`      | `collections`         |
+| Method        | Fields                | Arguments   |
+| ------------- | --------------------- | ----------- |
+| `contains`    | `tags`, `collections` | Exactly one |
+| `containsAny` | `tags`, `collections` | One or more |
+| `containsAll` | `tags`, `collections` | One or more |
+| `isEmpty`     | `tags`, `collections` | None        |
+| `within`      | `collections`         | Exactly one |
 
 [List methods](/docs/reference/functions-and-methods#list-methods) gives the signature and result of each method.
 
 On `collections`, `contains` tests direct filing: `collections.contains("Project/Drafts")` holds only when the item is filed directly in that exact path. `within` accepts any descendant. On `tags`, the value is one Tag name, not a path.
 
-ZotLit rejects `within` on `tags`, a list function on `library` or `itemType`, a call with the wrong number of arguments, and a non-string argument.
+ZotLit rejects `within` on `tags`, a list method on `library` or `itemType`, a call with the wrong number of arguments, and a non-string argument.
 
 ## Operators [#operators]
 
@@ -126,8 +126,8 @@ An entry that is an empty expression string is rejected, because a leaf has to t
 | `inCollection("Project")`             | Legacy name. Use `collections.contains` or `collections.within`.   |
 | `inCollectionDirectly("Project")`     | Legacy name. Use `collections.contains` or `collections.within`.   |
 | `title == "x"`                        | A match tests only the four fields in [Fields](#fields).           |
-| `tags == "Read"`                      | A list field takes a list function, not an equality test.          |
-| `itemType.contains("book")`           | A scalar field takes an equality test, not a list function.        |
+| `tags == "Read"`                      | A list field takes a list method, not an equality test.            |
+| `itemType.contains("book")`           | A scalar field takes an equality test, not a list method.          |
 | `false`                               | Describes no item set. Use `true` to match every item.             |
 | `library == "group:0"`                | A group ID is a positive integer, and the group must be connected. |
 | `itemType == "novel"`                 | An item type outside the closed set.                               |
