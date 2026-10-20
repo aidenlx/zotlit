@@ -1,33 +1,33 @@
 // The Filter Expression language for CodeMirror: the parser of
-// `@zotlit/filter-expression`, tagged so the template highlighter colors it.
-// The token assignment follows Bases: names and paths read as properties, a
-// call's callee as a function, and `true`, `false`, `null` and numbers as
-// values.
+// `@zotlit/filter-expression`, tagged by the expression token roles so the
+// template highlighter colors it.
 import { LRLanguage, syntaxTree } from "@codemirror/language";
 import type { Range } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
-import { highlightTree, styleTags, tags } from "@lezer/highlight";
+import { highlightTree, styleTags } from "@lezer/highlight";
 
 import { parser } from "@zotlit/filter-expression";
 
 import { decorationLayer, gapsAround } from "./decorations";
 import type { Span } from "./decorations";
-import { templateHighlighter, templateToken } from "./highlight";
+import { expressionClasses, expressionTag } from "./expression-tokens";
+import { templateHighlighter } from "./highlight";
 
 export const filterExpressionLanguage = LRLanguage.define({
   name: "filter-expression",
   parser: parser.configure({
     props: [
       styleTags({
-        "Identifier PropertyName": tags.propertyName,
-        "String/...": tags.string,
-        RegExp: tags.regexp,
-        RealNumber: tags.number,
-        "BooleanLiteral NullLiteral": tags.literal,
-        'Equality Relation "||" "&&" "!" "+" "-" "*" "/" "%"': tags.operator,
-        '"(" ")" "[" "]"': tags.paren,
-        '"," "."': tags.punctuation,
+        "Identifier PropertyName": expressionTag.name,
+        "String/...": expressionTag.string,
+        RegExp: expressionTag.regexp,
+        RealNumber: expressionTag.number,
+        "BooleanLiteral NullLiteral": expressionTag.literal,
+        'Equality Relation "||" "&&" "!" "+" "-" "*" "/" "%"':
+          expressionTag.operator,
+        '"(" ")" "[" "]"': expressionTag.bracket,
+        '"," "."': expressionTag.punctuation,
       }),
     ],
   }),
@@ -66,7 +66,7 @@ export function highlightFilterExpression(
   const names = callees(tree);
   const tokens: (Span & { classes: string })[] = names.map((name) => ({
     ...name,
-    classes: templateToken.filter,
+    classes: expressionClasses("callee"),
   }));
   highlightTree(tree, templateHighlighter, (from, to, classes) =>
     gapsAround({ from, to }, names, (start, end) =>

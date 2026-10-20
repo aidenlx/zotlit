@@ -6,7 +6,9 @@ import type { Node } from "jsonc-parser";
 import type { ContractType } from "@zotlit/db/contract/ir";
 
 import { contract, describe, members, resolve, sampleJson } from "./contract";
-import type { TemplateToken } from "./highlight";
+import { expressionClasses } from "./expression-tokens";
+import type { ExpressionRole } from "./expression-tokens";
+import { templateToken } from "./highlight";
 import { jsonOperators, jsonFunctions } from "./json-e-catalog";
 import { rankSuggestions } from "./matching";
 import type {
@@ -287,35 +289,55 @@ export function jsonExpressions(
   return result;
 }
 
-/** Semantic token ranges in source coordinates, reusable by each editor host. */
+/**
+ * The role a token of a JSON-e expression takes, as the Filter Expression
+ * assigns it; `in`, a word operator, reads as a keyword.
+ */
+function expressionToken(
+  tokens: readonly { text: string }[],
+  index: number,
+): string {
+  const { text } = tokens[index]!;
+  const role: ExpressionRole | null =
+    text.startsWith("'") || text.startsWith('"')
+      ? "string"
+      : ["true", "false", "null"].includes(text)
+        ? "literal"
+        : text === "in"
+          ? null
+          : regex("^[0-9]").test(text)
+            ? "number"
+            : regex("^[A-Za-z_]").test(text)
+              ? tokens[index + 1]?.text === "("
+                ? "callee"
+                : "name"
+              : ["(", ")", "[", "]"].includes(text)
+                ? "bracket"
+                : [",", "."].includes(text)
+                  ? "punctuation"
+                  : "operator";
+  return role === null ? templateToken.keyword : expressionClasses(role);
+}
+
+/**
+ * Semantic token ranges in source coordinates, with the theme hooks of each,
+ * reusable by each editor host.
+ */
 export function jsonSyntaxTokens(source: string) {
-  const result: { from: number; to: number; kind: TemplateToken }[] = [];
+  const result: { from: number; to: number; classes: string }[] = [];
   for (const expression of jsonExpressions(source, {
     root: "note",
     partials: [],
   })) {
     for (const range of expression.delimiters ?? [])
-      result.push({ ...range, kind: "operator" });
+      result.push({ ...range, classes: templateToken.operator });
     const tokens = jsonExpressionTokens(expression.text);
-    for (const [index, token] of tokens.entries()) {
-      const kind =
-        token.text.startsWith("'") || token.text.startsWith('"')
-          ? "string"
-          : ["true", "false", "null", "in"].includes(token.text)
-            ? "keyword"
-            : regex("^[0-9]").test(token.text)
-              ? "value"
-              : regex("^[A-Za-z_]").test(token.text)
-                ? tokens[index + 1]?.text === "("
-                  ? "filter"
-                  : "variable"
-                : "operator";
+    for (const [index, token] of tokens.entries())
       result.push({
         from: expression.offsets[token.from]!,
         to: expression.offsets[token.to]!,
-        kind,
+        classes: expressionToken(tokens, index),
       });
-    }
   }
   function visit(node: Node, conditions = false) {
     if (node.type === "object") {
@@ -345,7 +367,7 @@ export function jsonSyntaxTokens(source: string) {
             result.push({
               from: decoded.offsets[0]!,
               to: decoded.offsets.at(-1)!,
-              kind: "keyword",
+              classes: templateToken.keyword,
             });
         }
         if (value) visit(value, name === "$switch" || name === "$match");

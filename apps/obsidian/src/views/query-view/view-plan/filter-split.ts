@@ -49,6 +49,8 @@ export interface VaultCondition extends FilterLocation {
    * vault property it does not spell out.
    */
   readonly reads: readonly VaultRead[] | null;
+  /** The text of the condition it is a conjunct of, and where it starts there. */
+  readonly within: ConditionLeaf;
 }
 
 /** A fault in one condition, with its place in the condition's text. */
@@ -96,7 +98,7 @@ interface Conjunct {
  * The text of a leaf's condition, and where the leaf's text starts in it: a
  * leaf may hold one conjunct of its condition alone.
  */
-interface ConditionLeaf {
+export interface ConditionLeaf {
   readonly text: string;
   readonly offset: number;
 }
@@ -284,7 +286,13 @@ function leafConjuncts(
       from,
       to,
       vault: use.names
-        ? { section, path, text: text.slice(from, to), reads: use.reads }
+        ? {
+            section,
+            path,
+            text: text.slice(from, to),
+            reads: use.reads,
+            within: { text, offset: from },
+          }
         : undefined,
     };
   });

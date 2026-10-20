@@ -128,35 +128,43 @@ describe("template token hooks", () => {
   });
 });
 
+/**
+ * A code pane in `document.body`, closed when its scope ends. Declared after
+ * the window-migration stub, it closes before the stub is restored.
+ */
+function codePaneEditor(doc: string) {
+  const editor = new EditorView({
+    state: EditorState.create({ doc, extensions: [codePane] }),
+    parent: document.body,
+  });
+  let open = true;
+  const close = () => {
+    if (open) editor.destroy();
+    open = false;
+  };
+  return { editor, close, [Symbol.dispose]: close };
+}
+
 describe("code panes", () => {
   it("puts the code class on the editor element", () => {
     using _migration = windowMigration();
-    view = new EditorView({
-      state: EditorState.create({ doc: "", extensions: [codePane] }),
-      parent: document.body,
-    });
-    expect(view.dom.classList.contains(CODE_PANE_CLASS)).toBe(true);
+    using pane = codePaneEditor("");
+    expect(pane.editor.dom.classList.contains(CODE_PANE_CLASS)).toBe(true);
   });
 
   it("moves editor styles to its new document and releases the native listener", () => {
     using host = windowMigration();
-    view = new EditorView({
-      state: EditorState.create({
-        doc: "{{ zt.title }}",
-        extensions: [codePane],
-      }),
-      parent: document.body,
-    });
-    const state = view.state;
+    using pane = codePaneEditor("{{ zt.title }}");
+    const { editor } = pane;
+    const state = editor.state;
     const destination = document.implementation.createHTMLDocument();
-    const setRoot = vi.spyOn(view, "setRoot");
-    const measure = vi.spyOn(view, "requestMeasure");
+    const setRoot = vi.spyOn(editor, "setRoot");
+    const measure = vi.spyOn(editor, "requestMeasure");
     host.move({ document: destination } as Window);
     expect(setRoot).toHaveBeenCalledWith(destination);
     expect(measure).toHaveBeenCalled();
-    expect(view.state).toBe(state);
-    view.destroy();
-    view = null;
+    expect(editor.state).toBe(state);
+    pane.close();
     expect(host.release).toHaveBeenCalledOnce();
   });
 
@@ -169,10 +177,8 @@ describe("code panes", () => {
       configurable: true,
       value: { writeText },
     });
-    view = new EditorView({
-      state: EditorState.create({ doc: "alpha beta", extensions: [codePane] }),
-      parent: document.body,
-    });
+    using pane = codePaneEditor("alpha beta");
+    const view = pane.editor;
     frame.contentDocument!.body.append(view.dom);
     host.move(frame.contentWindow!);
     view.dispatch({ selection: { anchor: 0, head: 5 } });

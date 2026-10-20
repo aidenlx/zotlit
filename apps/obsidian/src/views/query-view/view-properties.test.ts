@@ -70,7 +70,7 @@ describe("viewProperties entries", () => {
   });
 
   it("marks a Formula Property with the message of its fault", () => {
-    const faults = { pages: "numPages is not a field of Items." };
+    const faults = { pages: { message: "numPages is not a field of Items." } };
     expect(entryOf("formula.pages", faults)).toMatchObject({
       formula: "pages",
       issue: "numPages is not a field of Items.",
@@ -85,7 +85,9 @@ describe("viewProperties entries", () => {
   it("marks a Formula in the Visible Properties that the file does not define with its fault", () => {
     const view = { from: "items" as const, order: ["formula.gone"] };
     const properties = viewProperties(FILE, view, {
-      formulaIssues: { gone: "The formula gone has no definition." },
+      formulaIssues: {
+        gone: { message: "The formula gone has no definition." },
+      },
     });
     expect(properties.entries[0]).toMatchObject({
       path: "formula.gone",

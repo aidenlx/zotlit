@@ -36,6 +36,7 @@ import type {
   QueryFileView,
 } from "./query-file";
 import { formulaIssuesOf } from "./results";
+import type { FormulaIssue } from "./results";
 import { groupPaths } from "./rows";
 import type { QueryView } from "./view";
 
@@ -163,8 +164,8 @@ export interface ViewProperties {
 
 /** What a view knows of its Properties beside its file. */
 export interface KnownProperties {
-  /** By Formula name, the message of each Formula the last run left out. */
-  readonly formulaIssues?: Readonly<Record<string, string>>;
+  /** By Formula name, each Formula the last run left out. */
+  readonly formulaIssues?: Readonly<Record<string, FormulaIssue>>;
   /**
    * The names the vault properties of a view of Items take, which it knows
    * after the Literature Note Property.
@@ -220,7 +221,7 @@ export function viewProperties(
         formula,
         issue:
           formula !== null && Object.hasOwn(formulaIssues, formula)
-            ? formulaIssues[formula]!
+            ? formulaIssues[formula]!.message
             : null,
         fits: fits(path),
         place: place === -1 ? null : place,
