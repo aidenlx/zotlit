@@ -159,7 +159,8 @@ export const buildEngineIndex = <E, R>(
  *   longer than three characters; MiniSearch's score orders the matches.
  * - Items whose citation key starts with the whole query come first, shortest
  *   key first.
- * - A bare Zotero key answers every Item holding that key.
+ * - A bare Zotero key answers every Item holding that key. With no key match,
+ *   the query searches all fields as text.
  * - The empty query puts cited Items first, then the rest, each in Last Activity
  *   order with request Uses and Indexed Key ties. Nonempty ties retain
  *   modification order.
@@ -322,7 +323,7 @@ function lookupQuery(
         processTerm: (term) => term,
       })
       .flatMap((result) => recordOf(index, result));
-    return { kind: "key", records };
+    if (records.length > 0) return { kind: "key", records };
   }
 
   const tokens = queryTokens(cleaned, words);

@@ -248,6 +248,32 @@ describe("item search engine", () => {
     expect(keys(await search([titleHit, target], "研究生"))[0]).toBe("A");
   });
 
+  it.each([
+    "thinkin",
+    "thinking",
+    "Thinking",
+    "kahn",
+    "kahneman",
+    "[@thinking]",
+    "NW2CPDTC",
+    "nw2cpdtc",
+  ])(
+    "finds title and creator words that resemble Zotero keys (%s)",
+    async (query) => {
+      const target = item({
+        key: "NW2CPDTC",
+        title: "Thinking, fast and slow",
+        creators: [creator("Daniel", "Kahneman")],
+      });
+
+      const hits = await search([target], query);
+      expect(keys(hits)).toEqual(["NW2CPDTC"]);
+      expect(hits[0]?.matches).toEqual(
+        query.toLowerCase().includes("thinkin") ? [[0, 8]] : [],
+      );
+    },
+  );
+
   it("answers a bare Zotero key after cleanup with that Item alone", async () => {
     const target = item({ key: "ABCD1234", title: "Unrelated" });
     const contentMatch = item({ key: "WXYZ5678", title: "ABCD1234" });
