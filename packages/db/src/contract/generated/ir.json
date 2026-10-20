@@ -1670,7 +1670,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the parent attachment file, anchored to this annotation's\n{@link page} and to the annotation itself\n(`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its\nAnnotation Mark and every other reader lands on the page; `null` when the\nfile is unresolvable. Call it to render — pass `alias`/`subpath` to\noverride the display text or the `#`-fragment. Computed at the app layer.",
+          "description": "Deprecated: use {@link backlink}. The link holds the file path on the\ncomputer that rendered it, so it opens nothing on another computer or\nafter the Zotero storage folder moves. It stays available for the current\nrelease line.\n\nMarkdown link to the parent attachment file, anchored to this annotation's\n{@link page} and to the annotation itself\n(`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its\nAnnotation Mark and every other reader lands on the page; `null` when the\nfile is unresolvable. Call it to render — pass `alias`/`subpath` to\noverride the display text or the `#`-fragment. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -1694,7 +1694,7 @@
         },
         {
           "name": "backlink",
-          "description": "Zotero deep link to this annotation. Computed at the app layer.",
+          "description": "The durable link to this annotation: Zotero's own open link, naming the\nattachment and the annotation by their Zotero keys, with the printed page\nlabel (`zotero://open/library/items/<attachmentKey>?annotation=<key>&page=<pageLabel>`;\n`groups/<groupID>` in place of `library` for a group library). It is a bare\nURL: wrap it in a Markdown link, as the default annotation template does\nwith the page label. Clicked in Obsidian, it opens the PDF in Obsidian's reader on the\nannotation when this computer holds the file, and in Zotero otherwise.\nComputed at the app layer.",
           "optional": false,
           "type": {
             "kind": "primitive",
@@ -3930,7 +3930,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the parent attachment file, anchored to this annotation's\n{@link page} and to the annotation itself\n(`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its\nAnnotation Mark and every other reader lands on the page; `null` when the\nfile is unresolvable. Call it to render — pass `alias`/`subpath` to\noverride the display text or the `#`-fragment. Computed at the app layer.",
+          "description": "Deprecated: use {@link backlink}. The link holds the file path on the\ncomputer that rendered it, so it opens nothing on another computer or\nafter the Zotero storage folder moves. It stays available for the current\nrelease line.\n\nMarkdown link to the parent attachment file, anchored to this annotation's\n{@link page} and to the annotation itself\n(`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its\nAnnotation Mark and every other reader lands on the page; `null` when the\nfile is unresolvable. Call it to render — pass `alias`/`subpath` to\noverride the display text or the `#`-fragment. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -3954,7 +3954,7 @@
         },
         {
           "name": "backlink",
-          "description": "Zotero deep link to this annotation. Computed at the app layer.",
+          "description": "The durable link to this annotation: Zotero's own open link, naming the\nattachment and the annotation by their Zotero keys, with the printed page\nlabel (`zotero://open/library/items/<attachmentKey>?annotation=<key>&page=<pageLabel>`;\n`groups/<groupID>` in place of `library` for a group library). It is a bare\nURL: wrap it in a Markdown link, as the default annotation template does\nwith the page label. Clicked in Obsidian, it opens the PDF in Obsidian's reader on the\nannotation when this computer holds the file, and in Zotero otherwise.\nComputed at the app layer.",
           "optional": false,
           "type": {
             "kind": "primitive",

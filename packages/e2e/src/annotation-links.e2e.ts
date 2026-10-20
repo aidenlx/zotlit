@@ -10,11 +10,13 @@ import { ATTACHMENTS } from "@zotlit/scripts/fixture";
 
 import {
   annotationAttachment,
+  annotationItem,
   attachmentAnnotations,
   reachable,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { obEval, WINDOW_DOCUMENTS } from "./obsidian-cli.ts";
+import { MENU_READY } from "./page-gestures.ts";
 
 const PDF_PATH = annotationAttachment.path!;
 const NOTE = "Annotation links.md";
@@ -79,6 +81,73 @@ const LINK_IN = {
   "live-preview": `[...view.editor.cm.contentDOM.querySelectorAll('.cm-link .cm-underline')].find((el)=>el.textContent===${JSON.stringify(LINK_TEXT)})`,
 } as const;
 
+/**
+ * The bounded waits an evaluation declares first. Every wait ends by
+ * throwing, inside the evaluation, so its cleanup stack still runs.
+ * `until(found, what)` polls until `found()` answers, and answers with it;
+ * `within(promise, end, what)` settles with `promise` or throws at `end`.
+ */
+const WAITS = `
+  const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+  const deadline=()=>Temporal.Now.instant().add({seconds:15});
+  const past=(end)=>Temporal.Instant.compare(Temporal.Now.instant(),end)>0;
+  const within=(promise,end,what)=>{
+    let timer;
+    const late=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(what)),Math.max(0,Temporal.Now.instant().until(end).total('milliseconds')));});
+    return Promise.race([promise,late]).finally(()=>clearTimeout(timer));
+  };
+  const until=async(found,what)=>{
+    for(const end=deadline();;await sleep(100)){
+      const value=found();
+      if(value)return value;
+      if(past(end))throw new Error(what());
+    }
+  };`;
+
+/**
+ * Inserts the Annotation `annotationKey` of the Rougier Item into an empty
+ * draft the way a reader does: its card's "More options" menu in the
+ * Annotation View, then "Insert into note". Answers the draft's text once the
+ * insertion lands, from a vault already restored.
+ */
+async function insertFromCard(annotationKey: string): Promise<string> {
+  const card = `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`;
+  const reply = await obEval(
+    run.vaultId,
+    `(async()=>{
+      ${WAITS}
+      let text;
+      {
+        await using cleanup=new AsyncDisposableStack();
+        const layout=app.workspace.getLayout();
+        cleanup.defer(()=>app.workspace.changeLayout(layout));
+        const file=await app.vault.create(${JSON.stringify(NOTE)},'# Draft\\n\\n');
+        cleanup.defer(()=>app.vault.delete(file));
+        const leaf=app.workspace.getLeaf('tab');
+        // The insertion is an edit the view saves later; saving it first
+        // keeps that save from writing the note back after its deletion.
+        cleanup.adopt(leaf,async(leaf)=>{await leaf.view.save?.();leaf.detach();});
+        await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});
+        const sidebar=app.workspace.getRightLeaf(false);
+        cleanup.adopt(sidebar,(leaf)=>leaf.detach());
+        await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+        await app.workspace.revealLeaf(sidebar);
+        app.workspace.setActiveLeaf(leaf,{focus:true});
+        leaf.view.editor.setCursor({line:leaf.view.editor.lastLine(),ch:0});
+        const more=await until(()=>sidebar.view.contentEl.querySelector(${JSON.stringify(`${card} [aria-label="More options"]`)}),()=>'The Annotation card did not render');
+        more.click();
+        const item=await until(()=>[...activeDocument.querySelectorAll('.menu-item')].find((el)=>el.textContent.trim()==='Insert into note'),()=>'The card menu offers no "Insert into note"');
+        await ${MENU_READY};
+        item.click();
+        text=await until(()=>{const value=leaf.view.editor.getValue();return value.includes(${JSON.stringify(annotationKey)})&&value;},()=>'Nothing was inserted: '+JSON.stringify(leaf.view.editor.getValue()));
+      }
+      return JSON.stringify(text);
+    })()`,
+    60000,
+  );
+  return JSON.parse(reply) as string;
+}
+
 interface Scenario {
   /** The note's Markdown; {@link FILE_URL} becomes the PDF's own `file://` URL. */
   note: string;
@@ -126,24 +195,7 @@ async function follow({
   const reply = await obEval(
     run.vaultId,
     `(async()=>{
-      const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
-      // Every wait below ends by throwing, inside this evaluation, so its
-      // cleanup stack still runs.
-      const deadline=()=>Temporal.Now.instant().add({seconds:15});
-      const past=(end)=>Temporal.Instant.compare(Temporal.Now.instant(),end)>0;
-      const within=(promise,end,what)=>{
-        let timer;
-        const late=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(what)),Math.max(0,Temporal.Now.instant().until(end).total('milliseconds')));});
-        return Promise.race([promise,late]).finally(()=>clearTimeout(timer));
-      };
-      // Polls until found() answers, and answers with it.
-      const until=async(found,what)=>{
-        for(const end=deadline();;await sleep(100)){
-          const value=found();
-          if(value)return value;
-          if(past(end))throw new Error(what());
-        }
-      };
+      ${WAITS}
       const s=app.plugins.plugins.zotlit.services;
       const observe=()=>{
         const pdf=app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(PDF_PATH)});
@@ -407,6 +459,28 @@ describe.skipIf(!reachable)("Annotation links", () => {
       passed: [],
       notices: [],
     });
+  }, 120000);
+
+  // What ZotLit writes is the durable link itself: the inserted passage
+  // carries it, not this computer's file path, and following it lands.
+  it("inserts an Annotation with its durable link, which lands when clicked", async () => {
+    const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+    const lands = { page: 1, selected: [FIRST_PAGE.key] };
+
+    const inserted = await insertFromCard(FIRST_PAGE.key);
+
+    expect(inserted).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
+    expect(inserted).not.toContain("file://");
+    expect(inserted).not.toContain("zt-annotation=");
+
+    const outcome = await follow({
+      note: inserted,
+      url,
+      gesture: "reading",
+      lands,
+    });
+
+    expect(outcome).toMatchObject({ reader: lands, passed: [] });
   }, 120000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps

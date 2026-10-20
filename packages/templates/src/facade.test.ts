@@ -40,6 +40,8 @@ describe("eta suite through the facade", () => {
       annotations: [
         {
           pageLabel: "4",
+          backlink:
+            "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4",
           imgLink: null,
           text: "Highlighted text",
           comment: "",
@@ -47,7 +49,9 @@ describe("eta suite through the facade", () => {
       ],
     });
 
-    expect(rendered).toContain("Page 4");
+    expect(rendered).toContain(
+      "Page [4](zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4)",
+    );
     expect(rendered).toContain("Highlighted text");
   });
 

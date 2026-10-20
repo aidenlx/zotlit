@@ -104,6 +104,11 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   /** {@link commentHtml} converted to Markdown; `null` when there is no comment. Computed at the app layer. */
   comment: string | null;
   /**
+   * Deprecated: use {@link backlink}. The link holds the file path on the
+   * computer that rendered it, so it opens nothing on another computer or
+   * after the Zotero storage folder moves. It stays available for the current
+   * release line.
+   *
    * Markdown link to the parent attachment file, anchored to this annotation's
    * {@link page} and to the annotation itself
    * (`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its
@@ -114,7 +119,16 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
    * @ztFilter file_link
    */
   fileLink: FallibleTemplateLink;
-  /** Zotero deep link to this annotation. Computed at the app layer. */
+  /**
+   * The durable link to this annotation: Zotero's own open link, naming the
+   * attachment and the annotation by their Zotero keys, with the printed page
+   * label (`zotero://open/library/items/<attachmentKey>?annotation=<key>&page=<pageLabel>`;
+   * `groups/<groupID>` in place of `library` for a group library). It is a bare
+   * URL: wrap it in a Markdown link, as the default annotation template does
+   * with the page label. Clicked in Obsidian, it opens the PDF in Obsidian's reader on the
+   * annotation when this computer holds the file, and in Zotero otherwise.
+   * Computed at the app layer.
+   */
   backlink: string;
 
   /**

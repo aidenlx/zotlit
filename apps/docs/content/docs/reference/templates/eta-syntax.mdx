@@ -323,13 +323,13 @@ linkHelper(alias?, subpath?)
 - `alias`: display text for the link. Omit to use the default (filename or note title).
 - `subpath`: a `#`-fragment appended to the target, e.g. `"#heading"` or `"#page=3"`.
 
-| Helper            | Available on                  | Default subpath               | Returns                                                                        |
-| ----------------- | ----------------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
-| `zt.noteLink()`   | item context                  | none                          | Markdown link to the item's literature note, or `null`                         |
-| `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the child note                                                         |
-| `a.fileLink()`    | each `zt.attachments[]` entry | none                          | Attachment file link                                                           |
-| `zt.fileLink()`   | annotation context            | `#page=N&zt-annotation=<key>` | Attachment link anchored to the annotation's page and to the annotation itself |
-| `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, unavailable-image explanation and source link, or `null`   |
+| Helper            | Available on                  | Default subpath               | Returns                                                                                    |
+| ----------------- | ----------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `zt.noteLink()`   | item context                  | none                          | Markdown link to the item's literature note, or `null`                                     |
+| `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the child note                                                                     |
+| `a.fileLink()`    | each `zt.attachments[]` entry | none                          | Attachment file link                                                                       |
+| `zt.fileLink()`   | annotation context            | `#page=N&zt-annotation=<key>` | Deprecated. Attachment link anchored to the annotation's page and to the annotation itself |
+| `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, unavailable-image explanation and source link, or `null`               |
 
 ```eta
 <%= zt.attachments[0].fileLink() %>
@@ -339,7 +339,31 @@ linkHelper(alias?, subpath?)
 
 `zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types other than `image` and `ink`. An unavailable image uses the [excerpt fallback](/docs/concepts/excerpt-images#import-outcomes).
 
-While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> is on, which is the default, a file link to a PDF in your Zotero library [opens in Obsidian](/docs/how-to/open-pdf-in-obsidian). A `zt.fileLink()` link opens on the annotation's page, with the annotation selected.
+### The durable annotation link [#annotation-backlink]
+
+`zt.backlink` on the annotation context is the durable link to the annotation. It is Zotero's own open link, and it names the attachment and the annotation by their Zotero keys:
+
+```
+zotero://open/library/items/<attachmentKey>?annotation=<annotationKey>&page=<pageLabel>
+```
+
+A group library has `groups/<groupID>` in place of `library`. `page` is the printed page label, and the link omits it when the annotation has none.
+
+`zt.backlink` is a plain URL string, not a helper. Do not call it; wrap it in a Markdown link yourself, as the [default annotation template](/docs/reference/templates/defaults#annotation-template) does:
+
+```eta
+<%= zt.pageLabel ? `Page [${zt.pageLabel}](${zt.backlink})` : `[Zotero](${zt.backlink})` %>
+```
+
+<Callout type="warn">
+  The annotation `zt.fileLink()` is deprecated. It holds the file path of the
+  computer that rendered the note, so it opens nothing on another computer or
+  after the Zotero storage folder moves. Use `zt.backlink` instead.
+  `zt.fileLink()` stays available for the current release line. The attachment
+  `a.fileLink()` is not deprecated.
+</Callout>
+
+While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> is on, which is the default, clicking a durable annotation link opens the PDF [in Obsidian](/docs/how-to/open-pdf-in-obsidian), with the annotation selected. When this computer does not hold the PDF, Zotero opens the link instead. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links) for every case. A file link to a PDF in your Zotero library also opens in Obsidian, and an older `zt.fileLink()` link still opens on the annotation's page.
 
 ## Template document naming [#template-document-naming]
 

@@ -285,20 +285,26 @@ const live = [
   "![[Images/SNAP3456-snapshot.png]]",
 ];
 const unavailableReport = [{ zotero: 0, unchecked: 0, unavailable: 2 }];
+// An unavailable excerpt points back to its Annotation by the Durable
+// Annotation Link, never by this computer's file path.
+const sourceLinks = [
+  "[Zotero](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=1)",
+  "[Zotero](zotero://open/library/items/RGRPDF24?annotation=TYY6Z6ZF&page=1)",
+];
 // `expect.any` leaves a count or report unconstrained for that mode.
 it.each([
   {
     mode: "disabled",
-    contains: ["paper.pdf"],
-    excludes: ["zotlit-excerpt-"],
+    contains: sourceLinks,
+    excludes: ["zotlit-excerpt-", "zt-annotation="],
     reports: unavailableReport,
     resolves: 0,
     renders: 2,
   },
   {
     mode: "unavailable",
-    contains: ["paper.pdf"],
-    excludes: ["zotlit-excerpt-"],
+    contains: sourceLinks,
+    excludes: ["zotlit-excerpt-", "zt-annotation="],
     reports: unavailableReport,
     resolves: expect.any(Number),
     renders: 2,

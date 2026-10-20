@@ -252,6 +252,17 @@ Each accepts two optional positional arguments: `alias` and `subpath`.
 {{ zt | img_link: "alt text" }}
 ```
 
+<Callout type="warn">
+  On an annotation, `file_link` is deprecated. It holds the file path of the
+  computer that rendered the note, so it opens nothing on another computer or
+  after the Zotero storage folder moves. Link the annotation with its durable
+  link, `zt.backlink`, as the [default annotation
+  template](/docs/reference/templates/defaults#annotation-template) does.
+  `zt.backlink` is a plain URL, not a filter. `file_link` on an attachment is
+  not deprecated, and the annotation form stays available for the current
+  release line.
+</Callout>
+
 When a file or note link cannot be resolved, the filter returns `null` (which `compact` drops from an array, and output coercion renders as `""`). For image and ink annotations, `img_link` returns the excerpt fallback when an image is unavailable. For other annotation types, it returns `null`.
 
 ### `note_links`: batch note links
