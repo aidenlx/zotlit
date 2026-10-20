@@ -185,7 +185,7 @@ function ExpressionField({
   check: FormulaCheck;
 }) {
   const properties = useViewProperties(view);
-  const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
+  const dataset = useStore(view.state, (s) => s.view?.from);
   const formulas = useStore(view.state, (s) => s.file?.formulas);
   // A Formula reads no vault property, and naming itself is a cycle.
   const vocabulary = useMemo(

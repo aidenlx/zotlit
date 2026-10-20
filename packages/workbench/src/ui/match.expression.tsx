@@ -1,10 +1,9 @@
-import type {
-  ExpressionCompletionPresentation,
-  ExpressionVocabulary,
-} from "#/language/filter-expression-completion";
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
+
+import type { CompletionPresentation } from "#/language/completion";
+import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { linter, setDiagnostics } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
@@ -26,24 +25,6 @@ import {
   filterExpressionLanguage,
 } from "#/language/filter-expression";
 import { filterExpressionCompletion } from "#/language/filter-expression-completion";
-
-/**
- * Keeps the editor on the document it stands in. An editor made before its
- * view moved to a popout window still reads the main window's document,
- * where it finds neither its focus nor its selection: typed text lands at
- * the start and no completion opens. The move takes focus away, so the next
- * focus finds the new document.
- */
-const followDocument = EditorView.domEventHandlers({
-  focus(_event, view) {
-    const root = view.dom.getRootNode() as Document | ShadowRoot;
-    // A node of another window is no instance of this window's classes.
-    const isRoot =
-      root.nodeType === Node.DOCUMENT_NODE ||
-      root.nodeType === Node.DOCUMENT_FRAGMENT_NODE;
-    if (isRoot && root !== view.root) view.setRoot(root);
-  },
-});
 import { signatureHint } from "#/language/signature-hint-tooltip";
 
 /** The label and validity of the field, on its editable content. */
@@ -63,7 +44,7 @@ const contentAttributes = ({
 const completionOf = (props: {
   readonly current: {
     vocabulary?: ExpressionVocabulary;
-    presentation?: ExpressionCompletionPresentation;
+    presentation?: CompletionPresentation;
   };
 }) =>
   filterExpressionCompletion(
@@ -159,18 +140,12 @@ export function MatchExpressionInput({
   };
   const attributes = useRef(new Compartment());
   const completer = useRef(new Compartment());
+  /** The texts the field sent that the owner has not given back yet. */
+  const sent = useRef<string[]>([]);
   // The vocabulary is read per keystroke, so only its arrival or its leaving
-  // changes the editor.
+  // changes the editor; the editor starts with what this holds.
   const completes = vocabulary !== undefined;
-  useEffect(() => {
-    const editor = view.current;
-    if (!editor) return;
-    editor.dispatch({
-      effects: completer.current.reconfigure(
-        completes ? completionOf(props) : [],
-      ),
-    });
-  }, [completes]);
+  const completing = useRef(completes);
   useEffect(() => {
     const { value, placeholder, lines, hostExtension } = props.current;
     const parent = host.current!;
@@ -181,7 +156,6 @@ export function MatchExpressionInput({
         extensions: [
           filterExpressionLanguage,
           filterExpressionHighlighting,
-          followDocument,
           signatureHint({
             receiverType: (text) =>
               props.current.vocabulary?.receiverType?.(text),
@@ -203,18 +177,19 @@ export function MatchExpressionInput({
           EditorView.contentAttributes.of({ spellcheck: "false" }),
           attributes.current.of(contentAttributes(props.current)),
           hostExtension ?? [],
-          completer.current.of(
-            props.current.vocabulary ? completionOf(props) : [],
-          ),
+          completer.current.of(completing.current ? completionOf(props) : []),
           EditorView.updateListener.of((update) => {
             if (
-              update.docChanged &&
-              !update.transactions.some((tr) => tr.annotation(fromValue))
+              !update.docChanged ||
+              update.transactions.some((tr) => tr.annotation(fromValue))
             )
-              props.current.onChange(
-                update.state.doc.toString(),
-                parent.ownerDocument.defaultView ?? window,
-              );
+              return;
+            const text = update.state.doc.toString();
+            sent.current.push(text);
+            props.current.onChange(
+              text,
+              parent.ownerDocument.defaultView ?? window,
+            );
           }),
           EditorView.domEventHandlers({
             blur: () => {
@@ -232,7 +207,26 @@ export function MatchExpressionInput({
   }, []);
   useEffect(() => {
     const editor = view.current;
-    if (!editor || editor.state.doc.toString() === value) return;
+    if (!editor || completing.current === completes) return;
+    completing.current = completes;
+    editor.dispatch({
+      effects: completer.current.reconfigure(
+        completes ? completionOf(props) : [],
+      ),
+    });
+  }, [completes]);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    // The owner's echo of a text the field sent. An effect can run after the
+    // user typed again, so the echo may be of an older text; writing it back
+    // would undo the typing and put the caret at the start.
+    const echoed = sent.current.lastIndexOf(value);
+    if (echoed !== -1) {
+      sent.current = sent.current.slice(echoed + 1);
+      return;
+    }
+    if (editor.state.doc.toString() === value) return;
     editor.dispatch({
       changes: { from: 0, to: editor.state.doc.length, insert: value },
       annotations: fromValue.of(true),

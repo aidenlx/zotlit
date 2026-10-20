@@ -1,10 +1,10 @@
 // The typing popup of every editor the plugin hosts, Template Completion and
 // Expression Completion alike, in Obsidian's own suggestion skin.
-import type { TemplateCompletionPresentation } from "@zotlit/workbench/language";
+import type { CompletionPresentation } from "@zotlit/workbench/language";
 
 /** One entry of CodeMirror's list, as the presentation receives it. */
 type Completion = Parameters<
-  NonNullable<TemplateCompletionPresentation["optionClass"]>
+  NonNullable<CompletionPresentation["optionClass"]>
 >[0];
 
 /** The cells a row adds under its label. */
@@ -24,7 +24,7 @@ export interface CompletionCells {
  */
 export function nativeCompletion(
   cells: (completion: Completion) => CompletionCells | undefined,
-): TemplateCompletionPresentation {
+): CompletionPresentation {
   return {
     tooltipClass: () => "suggestion-container zt-template-completion",
     optionClass: () => "suggestion-item mod-complex",

@@ -11,7 +11,7 @@ import { parser } from "@zotlit/filter-expression";
 import { GLOBAL_FUNCTIONS, IF_FUNCTION } from "@zotlit/item-query";
 import type { FunctionDefinition, QueryDataset } from "@zotlit/item-query";
 
-import type { TemplateCompletionPresentation } from "./completion";
+import type { CompletionPresentation } from "./completion";
 import { matchScore } from "./matching";
 import type { SignatureHintOptions } from "./signature-hint";
 
@@ -262,9 +262,6 @@ export function expressionOption(
   return optionOf.get(completion);
 }
 
-/** How a host draws the list and its rows. */
-export type ExpressionCompletionPresentation = TemplateCompletionPresentation;
-
 type ApplyCompletion = Extract<Completion["apply"], Function>;
 
 function completionAt(
@@ -311,7 +308,7 @@ function completionAt(
  */
 export function filterExpressionCompletion(
   read: () => ExpressionVocabulary | null | undefined,
-  presentation: ExpressionCompletionPresentation = {},
+  presentation: CompletionPresentation = {},
 ): Extension {
   return autocompletion({
     override: [(context) => completionAt(context, read)],

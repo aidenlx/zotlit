@@ -14,10 +14,7 @@ export {
   completionSuggestion,
   templateCompletion,
 } from "./completion";
-export type {
-  SuggestionSource,
-  TemplateCompletionPresentation,
-} from "./completion";
+export type { SuggestionSource, CompletionPresentation } from "./completion";
 export {
   datasetExpressionFields,
   datasetReceiverType,
@@ -26,7 +23,6 @@ export {
   filterExpressionCompletion,
 } from "./filter-expression-completion";
 export type {
-  ExpressionCompletionPresentation,
   ExpressionCompletionResult,
   ExpressionField,
   ExpressionName,

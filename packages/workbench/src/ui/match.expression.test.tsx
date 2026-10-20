@@ -127,3 +127,29 @@ it("holds the faults it is given as error ranges, and clears them", () => {
   act(() => mounted.rerender(field([])));
   expect(marked()).toEqual([]);
 });
+
+it("keeps what the user typed when the owner gives back an older text it sent", () => {
+  const field = (value: string) => (
+    <MatchExpressionInput value={value} onChange={() => {}} />
+  );
+  const mounted = render(field("a"));
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const type = (text: string) =>
+    editor.dispatch({
+      changes: { from: editor.state.doc.length, insert: text },
+      selection: { anchor: editor.state.doc.length + text.length },
+      userEvent: "input.type",
+    });
+  type("b");
+  type("c");
+  // The owner's render of the first edit lands after the second.
+  act(() => mounted.rerender(field("ab")));
+  expect(editor.state.doc.toString()).toBe("abc");
+  expect(editor.state.selection.main.head).toBe(3);
+  act(() => mounted.rerender(field("abc")));
+  // A text of the owner's own replaces the field's.
+  act(() => mounted.rerender(field("x")));
+  expect(editor.state.doc.toString()).toBe("x");
+});

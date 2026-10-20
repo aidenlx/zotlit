@@ -39,13 +39,28 @@ export const hostedEditor: Extension = [
     },
   }),
   popoutCopy,
-  ViewPlugin.define((view) => {
-    const dispose = view.dom.onWindowMigrated((win) => {
-      view.setRoot(win.document);
-      view.requestMeasure();
-    });
-    return { destroy: dispose };
-  }),
+  ViewPlugin.define(
+    (view) => {
+      const dispose = view.dom.onWindowMigrated((win) => {
+        view.setRoot(win.document);
+        view.requestMeasure();
+      });
+      return { destroy: dispose };
+    },
+    {
+      eventHandlers: {
+        // Obsidian sees a move to another window when the moved node first
+        // draws, a frame after it shows. A closed popover draws nothing, so
+        // an editor in it, such as a Filter popover's, hears of the move only
+        // a frame after the popover opens, and a focus before that would read
+        // the old window's document: no focus, no selection, no tooltips.
+        focus(_event, view) {
+          const doc = view.dom.ownerDocument;
+          if (view.root !== doc) view.setRoot(doc);
+        },
+      },
+    },
+  ),
 ];
 
 const tooltipPlacement = new Compartment();

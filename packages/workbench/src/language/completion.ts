@@ -98,8 +98,11 @@ export function applyTemplateCompletion(
  */
 export type SuggestionSource = (position: number) => SuggestionConfig | null;
 
-/** How a host draws the popup and its rows; the classes it adds and the extra cells it renders. */
-export type TemplateCompletionPresentation = Pick<
+/**
+ * How a host draws a completion list and its rows, Template Completion's or
+ * Expression Completion's: the classes it adds and the extra cells it renders.
+ */
+export type CompletionPresentation = Pick<
   NonNullable<Parameters<typeof autocompletion>[0]>,
   "tooltipClass" | "optionClass" | "addToOptions"
 >;
@@ -107,7 +110,7 @@ export type TemplateCompletionPresentation = Pick<
 /** CodeMirror completion over the pane's current contract and source scope. */
 export function templateCompletion(
   read: SuggestionSource,
-  presentation: TemplateCompletionPresentation = {},
+  presentation: CompletionPresentation = {},
 ): Extension {
   return autocompletion({
     override: [(context) => completionAt(context, read)],

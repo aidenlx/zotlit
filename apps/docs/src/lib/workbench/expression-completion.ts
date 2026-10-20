@@ -3,7 +3,7 @@
 import { EditorView } from "@codemirror/view";
 
 import { expressionOption } from "@zotlit/workbench/language";
-import type { ExpressionCompletionPresentation } from "@zotlit/workbench/language";
+import type { CompletionPresentation } from "@zotlit/workbench/language";
 
 function cell(className: string, text: string | undefined) {
   if (!text) return null;
@@ -13,7 +13,7 @@ function cell(className: string, text: string | undefined) {
   return span;
 }
 
-export const webExpressionCompletion: ExpressionCompletionPresentation = {
+export const webExpressionCompletion: CompletionPresentation = {
   tooltipClass: () =>
     "overflow-hidden rounded-md border border-fd-border bg-fd-popover p-1 text-fd-popover-foreground shadow-md",
   optionClass: () =>

@@ -9,7 +9,7 @@ import {
 } from "@zotlit/workbench/language";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 
-import { DATASETS } from "./datasets";
+import { datasetSpec } from "./datasets";
 import { formulaProperty, vaultProperty } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import { fieldLabel } from "./view-properties";
@@ -22,8 +22,8 @@ export function expressionVocabulary({
   context = false,
   vaultNames,
 }: {
-  /** The dataset the expression reads. */
-  dataset: QueryFileDataset;
+  /** The dataset the expression reads; a view without one reads Annotations. */
+  dataset: QueryFileDataset | undefined;
   /**
    * The Properties of the view, whose labels name the entries; without
    * them, a field wears its own label.
@@ -41,7 +41,7 @@ export function expressionVocabulary({
 }): ExpressionVocabulary {
   const label = (path: string) =>
     properties?.entry(path).label ?? fieldLabel(path);
-  const { engine } = DATASETS[dataset];
+  const { engine } = datasetSpec(dataset);
   return {
     fields: datasetExpressionFields(engine, label),
     receiverType: datasetReceiverType(engine),

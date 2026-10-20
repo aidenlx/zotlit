@@ -3,7 +3,7 @@
 // state with `data-state`, and carries no class of its own (ADR 0044).
 
 import type { WorkbenchSliceId } from "#/document/controller";
-import type { ExpressionCompletionPresentation } from "#/language/filter-expression-completion";
+import type { CompletionPresentation } from "#/language/completion";
 import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
@@ -338,7 +338,7 @@ export interface WorkbenchTheme {
    * classes the list and its rows wear and the cells a row adds. A host
    * without one draws CodeMirror's own list.
    */
-  readonly expressionCompletion?: ExpressionCompletionPresentation;
+  readonly expressionCompletion?: CompletionPresentation;
   /** Draws a named icon; a host without one draws none. */
   readonly icon?: (name: WorkbenchIcon) => ReactNode;
   /**

@@ -10,6 +10,7 @@ import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { useWorkbenchStore } from "./editor";
 import { ExampleActions } from "./example-state";
+import { schemaLocale } from "./explorer-sections";
 import { useWorkbenchHost } from "./host";
 import type { WorkbenchMatchResult } from "./host";
 import {
@@ -76,7 +77,7 @@ const itemReceiverType = datasetReceiverType(ITEMS);
  * reads no vault property.
  */
 function profileExpressions(locale: string): ExpressionVocabulary {
-  const labels = FIELD_LABELS[locale.startsWith("zh") ? "zh-CN" : "en-US"];
+  const labels = FIELD_LABELS[schemaLocale(locale)];
   return {
     fields: datasetExpressionFields(ITEMS, (path) => labels[path]),
     context: false,
