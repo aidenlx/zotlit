@@ -12,7 +12,8 @@ import type {
   AnnotationRepository,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { CitationHoverPopover } from "@/services/citation-popover/popover";
+import { HoverVisits } from "@/services/citation-popover/visits";
+import type { HoverVisit } from "@/services/citation-popover/visits";
 import type {
   ExcerptDisplayDemand,
   ExcerptDisplayService,
@@ -55,14 +56,11 @@ export interface AnnotationPopoverDeps {
   commentRenderer: (owner: Component, sourcePath: string) => CommentRenderer;
 }
 
-interface Visit {
-  popover: CitationHoverPopover;
-  window: Window;
-  /** What the shown link holds: its list, its change subscription, its image. */
-  subscriptions: DisposableStack;
+/** One hovered link's popover: what it holds, and its newest read. */
+type Visit = HoverVisit<{
   /** The newest read; an older one draws nothing. */
   generation: number;
-}
+}>;
 
 /**
  * Shows what a hovered Durable Annotation Link names: the Annotation's quoted
@@ -77,7 +75,7 @@ interface Visit {
  */
 export class AnnotationPopover extends Service {
   readonly #deps;
-  readonly #visits = new Map<HoverParent, Visit>();
+  readonly #visits = new HoverVisits(() => ({ generation: 0 }));
   #closed = false;
   ready: Promise<void>;
 
@@ -91,44 +89,18 @@ export class AnnotationPopover extends Service {
     await using stack = new AsyncDisposableStack();
     stack.defer(() => {
       this.#closed = true;
-      for (const { popover } of this.#visits.values()) popover.hide();
+      this.#visits.hideAll();
     });
     this.commit(stack.move());
   }
 
   show(request: AnnotationHoverRequest): void {
     if (this.#closed) return;
-    const { hoverParent, targetEl, link } = request;
-    let visit = this.#visits.get(hoverParent);
-    if (visit && visit.window !== targetEl.win) {
-      visit.popover.hide();
-      visit = undefined;
-    }
-    if (!visit) {
-      const popover = new CitationHoverPopover(hoverParent, targetEl);
-      const opened: Visit = {
-        popover,
-        window: targetEl.win,
-        subscriptions: new DisposableStack(),
-        generation: 0,
-      };
-      this.#visits.set(hoverParent, opened);
-      popover.register(() => {
-        opened.generation++;
-        opened.subscriptions.dispose();
-        if (this.#visits.get(hoverParent) === opened) {
-          this.#visits.delete(hoverParent);
-        }
-      });
-      visit = opened;
-    } else {
-      visit.generation++;
-      visit.subscriptions.dispose();
-      visit.subscriptions = new DisposableStack();
-      visit.popover.render(null);
-      visit.popover.retarget(targetEl);
-    }
-    this.#follow(visit, request.sourcePath, link);
+    const visit = this.#visits.open(request.hoverParent, request.targetEl);
+    // A read still running when the target moves or the popover hides draws
+    // nothing.
+    visit.subscriptions.defer(() => visit.state.generation++);
+    this.#follow(visit, request.sourcePath, request.link);
   }
 
   /** Holds the link's list for the visit and draws it now and on every change. */
@@ -150,8 +122,8 @@ export class AnnotationPopover extends Service {
     // subscription below must no longer answer.
     subscriptions.use(deps.annotations.hold([attachmentKey]));
     const draw = (): void => {
-      const generation = ++visit.generation;
-      const current = (): boolean => visit.generation === generation;
+      const generation = ++visit.state.generation;
+      const current = (): boolean => visit.state.generation === generation;
       void deps.annotations
         .read(attachmentKey)
         .then((list) => {
