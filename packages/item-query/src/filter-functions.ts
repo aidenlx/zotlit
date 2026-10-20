@@ -226,7 +226,6 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
           ? unparseable("number", value)
           : finite(parsed, "number");
       }
-      // A date is its Unix time in milliseconds, as its `timestamp` property.
       if (isDate(value)) return datePart(value, "timestamp", clock);
       return errorValue({
         code: "wrong-argument-type",
@@ -245,7 +244,6 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     Math.max,
     "The largest number among the arguments, or null when no argument is a number.",
   ),
-  // The Query Clock: every call in one query sees the same instant.
   now: {
     description:
       "The instant of the Query Clock as a date with a time, the same for every call in one query.",
@@ -266,7 +264,6 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
     diagnosticCorrection: "conversion",
     parameters: [{ name: "text", type: ["string", "date"] }],
     returns: "date",
-    // A date stays as it is.
     call: (_subject, [text], clock) =>
       typeof text === "string"
         ? blank(text)
@@ -286,8 +283,6 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
         : (parseDuration(text as string) ??
           unparseable("duration", text as string)),
   },
-  // A list stays as it is; null is the empty list; any other value is a
-  // one-element list.
   list: {
     description:
       "The value as a list: a list unchanged, null as the empty list, and any other value as a list of that one element.",
@@ -427,11 +422,9 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       ceil: rounding(Math.ceil, "The number rounded up to an integer."),
       floor: rounding(Math.floor, "The number rounded down to an integer."),
       abs: rounding(Math.abs, "The absolute value of the number."),
-      // A text with `precision` decimals; a precision outside 0 to 100 is
-      // out of range.
       toFixed: {
         description:
-          "The number as a string with `precision` decimal places, from 0 to 100.",
+          "The number as text with `precision` decimal places, from 0 to 100.",
         parameters: [number("precision")],
         returns: "string",
         call: (subject, [precision]) =>
@@ -443,36 +436,36 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
     string: functions({
       isEmpty: isEmpty(
         (subject) => subject === "",
-        "Whether the string is the empty string.",
+        "Whether the text is the empty text.",
       ),
       lower: {
-        description: "The string in lower case.",
+        description: "The text in lower case.",
         parameters: NONE,
         returns: "string",
         call: (subject) => (subject as string).toLowerCase(),
       },
       startsWith: {
-        description: "Whether the string starts with `prefix`.",
+        description: "Whether the text starts with `prefix`.",
         parameters: [string("prefix")],
         returns: "boolean",
         call: (subject, [prefix]) =>
           (subject as string).startsWith(prefix as string),
       },
       endsWith: {
-        description: "Whether the string ends with `suffix`.",
+        description: "Whether the text ends with `suffix`.",
         parameters: [string("suffix")],
         returns: "boolean",
         call: (subject, [suffix]) =>
           (subject as string).endsWith(suffix as string),
       },
       contains: {
-        description: "Whether the string contains `text`.",
+        description: "Whether `text` occurs in the text.",
         parameters: [string("text")],
         returns: "boolean",
         call: (subject, [text]) => (subject as string).includes(text as string),
       },
       containsAny: {
-        description: "Whether the string contains at least one of the texts.",
+        description: "Whether the text contains at least one of `texts`.",
         parameters: NONE,
         rest: string("texts"),
         returns: "boolean",
@@ -480,7 +473,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           texts.some((text) => (subject as string).includes(text as string)),
       },
       containsAll: {
-        description: "Whether the string contains every one of the texts.",
+        description: "Whether the text contains every one of `texts`.",
         parameters: NONE,
         rest: string("texts"),
         returns: "boolean",
@@ -488,16 +481,16 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           texts.every((text) => (subject as string).includes(text as string)),
       },
       trim: {
-        description: "The string without its leading and trailing whitespace.",
+        description: "The text without its leading and trailing whitespace.",
         parameters: NONE,
         returns: "string",
         call: (subject) => (subject as string).trim(),
       },
-      // The first code point of each word that starts the text or follows
-      // whitespace is upper-cased; the rest stays as it is.
+      // A word starts the text or follows whitespace; only its first code
+      // point changes.
       title: {
         description:
-          "The string with the first letter of each word in upper case.",
+          "The text with the first letter of each word in upper case.",
         parameters: NONE,
         returns: "string",
         call: (subject) =>
@@ -507,11 +500,10 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
               before + first.toUpperCase(),
           ),
       },
-      // A count that is negative, not an integer, or above 10 000, or that
-      // gives a result above 1 000 000 code units, is out of range.
+      // A result above 1 000 000 code units is out of range too.
       repeat: {
         description:
-          "The string repeated `count` times, a count from 0 to 10 000.",
+          "The text repeated `count` times, a count from 0 to 10 000.",
         parameters: [number("count")],
         returns: "string",
         call: (subject, [count]) =>
@@ -522,7 +514,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       // By code point, so an emoji survives.
       reverse: {
-        description: "The string with its characters in reverse order.",
+        description: "The text with its characters in reverse order.",
         parameters: NONE,
         returns: "string",
         call: (subject) =>
@@ -530,22 +522,21 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             .reverse()
             .join(""),
       },
-      // In code units, as `length` and index access.
       slice: {
         description:
-          "The part of the string from index `start` up to, not including, `end`, counted in UTF-16 code units.",
+          "The part of the text from index `start` up to, not including, `end`, counted in UTF-16 code units.",
         parameters: [number("start")],
         optional: [number("end")],
         returns: "string",
         call: (subject, [start, end]) =>
           (subject as string).slice(start as number, end as number | undefined),
       },
-      // A text pattern: every occurrence, with the replacement as literal
-      // text. A regexp pattern follows JavaScript: `g` decides whether the
-      // first or every occurrence changes, and `$1` names a group.
+      // The replacement of a text pattern is literal text. Of a regexp
+      // pattern, `g` decides whether the first or every occurrence changes,
+      // and `$1` names a group.
       replace: {
         description:
-          "The string with every occurrence of a text pattern replaced, or with the matches of a regexp pattern replaced as JavaScript does.",
+          "The text with every occurrence of a text pattern replaced, or with the matches of a regexp pattern replaced as JavaScript does.",
         parameters: [
           { name: "pattern", type: ["string", "regexp"] },
           string("replacement"),
@@ -565,11 +556,11 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           );
         },
       },
-      // `n` keeps the first `n` parts. A group of a regexp separator that
-      // does not take part in the match is null.
+      // A group of a regexp separator that does not take part in the match
+      // is null.
       split: {
         description:
-          "The list of the parts of the string between occurrences of `separator`, at most `n` parts when `n` is given.",
+          "The list of the parts of the text between occurrences of `separator`, at most `n` parts when `n` is given.",
         parameters: [{ name: "separator", type: ["string", "regexp"] }],
         optional: [number("n")],
         returns: "list",
@@ -648,7 +639,6 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         returns: "list",
         call: (subject) => (subject as readonly FilterValue[]).toReversed(),
       },
-      // The index rules of JavaScript: a negative index counts from the end.
       slice: {
         description:
           "The elements of the list from index `start` up to, not including, `end`; a negative index counts from the end.",
@@ -663,7 +653,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       sort: {
         description:
-          "The list in ascending order: numbers by value, strings in the Item Query string order, dates by their start, false before true, and elements of different types grouped by type.",
+          "The list in ascending order: numbers by value, texts in the Item Query collation, dates by their start, false before true, and elements of different types grouped by type.",
         parameters: NONE,
         returns: "list",
         call: (subject, _args, clock) =>
@@ -671,7 +661,6 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             sortOrder(a, b, clock),
           ),
       },
-      // The first of the elements that `==` makes equal stays.
       unique: {
         description:
           "The list with only the first of each group of equal elements.",
@@ -684,8 +673,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             [],
           ),
       },
-      // The element expressions of Bases: each one evaluates its expression
-      // once for each element.
+      // The element expressions of Bases.
       filter: elementMethod({
         description:
           "The elements of the list for which the expression, with `value` and `index` bound, is truthy.",
@@ -705,8 +693,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         scope: ["value", "index", "acc"],
         after: [any("initial")],
       }),
-      // A Collection element is its root-first path: `within` matches the
-      // Collection at `path` and every Collection below it.
+      // A Collection element is its root-first path.
       within: {
         description:
           "Whether the list of Collection paths holds the Collection at `path` or a Collection below it.",
@@ -722,7 +709,6 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
     }),
     date: functions({
       isEmpty: isEmpty(() => false, "False: a date is never empty."),
-      // The calendar day of a timestamp in the query time zone.
       date: {
         description:
           "The calendar day of the date in the query time zone, without its time.",
@@ -804,7 +790,7 @@ const ANY_METHODS: Registry<FunctionDefinition> = new Map<
     "isTruthy",
     {
       description:
-        "Whether the value is truthy: false for null, false, 0, the empty string, the empty list, an empty duration, and an Error Value.",
+        "Whether the value is truthy: false for null, false, 0, the empty text, the empty list, an empty duration, and an Error Value.",
       parameters: NONE,
       returns: "boolean",
       call: (subject) => truthy(subject),
@@ -836,7 +822,7 @@ const PROPERTIES: Readonly<
   record: properties({}),
   number: properties({}),
   string: properties({
-    length: length("The number of UTF-16 code units in the string."),
+    length: length("The number of UTF-16 code units in the text."),
   }),
   list: properties({ length: length("The number of elements in the list.") }),
   date: properties({

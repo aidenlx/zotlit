@@ -538,7 +538,10 @@ it("describes every function, method, and property in one sentence the registry 
   const { functions, methods, properties } = describeQueryVocabulary();
   for (const entry of [...functions, ...methods, ...properties]) {
     const label = "on" in entry ? `${entry.on}.${entry.name}` : entry.name;
-    expect(entry.description, label).toMatch(/^[A-Z`].*\.$/su);
+    // One line that ends in one period, with no sentence end before it.
+    expect(entry.description, label).toMatch(
+      /^[A-Z`](?:[^.!?\n]|[.!?](?=\S))*[^.!?\s]\.$/u,
+    );
   }
   const named = <T extends { readonly name: string }>(
     entries: readonly T[],
