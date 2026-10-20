@@ -80,6 +80,10 @@ The site wears the "Manuscript & Machine" design. Its spec — theme, the four-f
 
 The page's Markdown edition renders each `<ContractTable>` as a GFM table through the `stringify` callback on the docs collection's `includeProcessedMarkdown` in [`content.config.ts`](content.config.ts).
 
+## Generated Functions and methods reference
+
+`content/docs/reference/functions-and-methods.mdx` is generated from the published Query Schema of `@zotlit/item-query`, so its descriptions come from the function registry in `packages/item-query/src/filter-functions.ts`. Edit them there, then run `pnpm exec turbo run generate:query-functions --filter=@zotlit/docs`. The build runs the generator, and an entry without a description fails it. [`src/lib/query-functions/reference.ts`](src/lib/query-functions/reference.ts) owns the page structure; the framing prose sits in the script.
+
 ## Content and writing docs
 
 Content lives in `content/`; collections are defined in [`src/lib/collections.ts`](src/lib/collections.ts), with schemas in [`content.config.ts`](content.config.ts). `content/docs/` follows Diataxis.

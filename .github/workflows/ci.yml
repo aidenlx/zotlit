@@ -74,6 +74,24 @@ jobs:
             exit 1
           fi
 
+      # The Functions and methods page is generated from the Query Schema of
+      # @zotlit/item-query, which `mise run init` above builds. Like the step
+      # above, it calls the script so the check always regenerates.
+      - name: Functions and methods page check
+        run: |
+          pnpm --filter @zotlit/docs generate:query-functions
+          stale=$(git status --porcelain -- apps/docs/content/docs/reference/functions-and-methods.mdx)
+          if [ -n "$stale" ]; then
+            {
+              echo "### Stale Functions and methods page"
+              echo 'Run `pnpm exec turbo run generate:query-functions --filter=@zotlit/docs` and commit the result.'
+              echo '```'
+              echo "$stale"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       # oxlint.base.ts sets typeAware + typeCheck, so `-f github` emits ::error
       # workflow commands → inline annotations on the diff, type errors included.
       # turbo's dependsOn handles transitive builds (no explicit build step).
