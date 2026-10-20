@@ -36,6 +36,7 @@ import type {
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { tooltipHostRoot } from "@/components/popover-surface";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { ToolbarButton } from "./toolbar-button";
@@ -123,10 +124,15 @@ export function ToolbarPopover({
           setOpen(event.newState === "open");
           if (event.newState === "open") onOpen?.();
         }}
-        className={cn(toolbarPopoverClass, className)}
+        // The root does not clip, so an editor's tooltip drawn in it, such
+        // as the Filter popover's, reaches past its edge; the contents scroll
+        // in a box of their own instead.
+        className={cn(toolbarPopoverClass, tooltipHostRoot, className)}
         style={anchor}
       >
-        {children}
+        <div className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto zt:rounded-[inherit] zt:[corner-shape:inherit]">
+          {children}
+        </div>
       </div>
     </>
   );

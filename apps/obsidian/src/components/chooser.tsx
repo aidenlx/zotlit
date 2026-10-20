@@ -66,6 +66,7 @@ import type {
   ChooserMove,
   ChooserRow,
 } from "./chooser-logic";
+import { tooltipHostRoot } from "./popover-surface";
 import "./chooser.css";
 
 // `chooser-logic.ts` is a module of its own rather than an implementation
@@ -710,6 +711,10 @@ export interface ChooserPopupProps extends Omit<
  * painting after it closes, dropping out of the top layer so the view behind
  * draws over it. It reads as a popup that will not close and has lost its
  * background.
+ *
+ * The root does not clip, so an editor's tooltip drawn in it, such as a
+ * Formula page's, reaches past its edge; its rows and its pages scroll in
+ * boxes of their own.
  */
 function Popup({
   className,
@@ -794,6 +799,7 @@ function Popup({
       className={cn(
         themeHook.chooser,
         "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
+        tooltipHostRoot,
         // No padding of its own: the search field runs edge to edge over its
         // rule, and the list carries the inset — `--menu-padding` — as
         // Obsidian's Bases toolbar menus are built.
