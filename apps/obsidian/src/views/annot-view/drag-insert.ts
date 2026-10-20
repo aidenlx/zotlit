@@ -33,7 +33,7 @@ interface AsyncInsertDeps {
   notify: (message: string | DocumentFragment) => void;
 }
 
-type InsertionTarget = ReturnType<typeof captureInsertion>;
+export type InsertionTarget = ReturnType<typeof captureInsertion>;
 
 function fallbackText(annotation: AnnotationRecord): string {
   const key = parseIndexedKey(annotation.key);
@@ -44,8 +44,14 @@ function fallbackText(annotation: AnnotationRecord): string {
   );
 }
 
-async function prepareAndCommit(
-  deps: AsyncInsertDeps,
+/**
+ * Render `annotation` through its note's template and commit it to `target`:
+ * the fallback text where the template cannot render, the notices of an
+ * Excerpt Image summary or a profile error. Shared by every asynchronous
+ * annotation insert: the card menu, a drop, and the Annotation Suggester.
+ */
+export async function prepareAndCommit(
+  deps: Pick<AsyncInsertDeps, "app" | "noteFeature" | "notify">,
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;

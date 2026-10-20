@@ -9,6 +9,8 @@ import type { NoteFeature } from "@/services/note-feature";
 import type { SettingsService } from "@/services/settings/service";
 import type { UseLedger } from "@/services/use-ledger/service";
 
+import { AnnotationEditorSuggest } from "./annotation-suggest";
+import type { AnnotationSuggestDeps } from "./annotation-suggest";
 import { CitationEditorSuggest } from "./editor-suggest";
 import { InsertCitationModal } from "./insert-modal";
 
@@ -22,6 +24,17 @@ export interface CitationSuggestDeps {
   citationLookup: Pick<CitationLookup, "read" | "status">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
   useLedger: Pick<UseLedger, "record">;
+}
+
+/**
+ * The Annotation Suggester, registered after the Citation Suggester: their
+ * triggers never overlap, so at most one of them opens on any text.
+ */
+export function registerAnnotationSuggest(
+  plugin: Pick<Plugin, "registerEditorSuggest">,
+  deps: AnnotationSuggestDeps,
+): void {
+  plugin.registerEditorSuggest(new AnnotationEditorSuggest(deps));
 }
 
 export function registerCitationSuggest(
