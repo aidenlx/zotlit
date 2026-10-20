@@ -1,7 +1,7 @@
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import {
   ExpressionTypesProvider,
@@ -9,6 +9,8 @@ import {
 } from "./match.expression";
 import type { FaultSpan } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
+
+import { documentFocus } from "#/language/test-utils";
 
 afterEach(cleanup);
 
@@ -42,10 +44,7 @@ it("mounts the extension the theme supplies for expression editors", () => {
 });
 
 it("shows the Signature Hint of the method at the caret, typed as the host types it", () => {
-  // happy-dom reports a document without focus, which CodeMirror reads as
-  // an editor without focus.
-  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
-  onTestFinished(() => hasFocus.mockRestore());
+  using _focus = documentFocus();
   const { container } = render(
     <ExpressionTypesProvider
       types={{

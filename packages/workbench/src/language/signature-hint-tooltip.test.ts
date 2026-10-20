@@ -2,17 +2,22 @@
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin } from "@codemirror/view";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 
 import { filterExpressionLanguage } from "./filter-expression";
-import { SIGNATURE_HINT_CLASS, signatureHint } from "./signature-hint";
+import { SIGNATURE_HINT_CLASS, signatureHint } from "./signature-hint-tooltip";
+import { documentFocus } from "./test-utils";
 
 /**
- * A focused Filter Expression editor over `doc` with the Signature Hint, and
- * `extra` extensions beside it.
+ * A focused Filter Expression editor with the Signature Hint.
+ * @param doc The editor's text.
+ * @param extra Extensions beside the hint.
  */
 function editor(doc: string, extra: Extension = []) {
   const parent = document.body.appendChild(document.createElement("div"));
+  // CodeMirror tells the editor of a focus change in a later task; each
+  // change settles the wait made before it.
+  let focusChanged = Promise.withResolvers<void>();
   const view = new EditorView({
     parent,
     state: EditorState.create({
@@ -20,23 +25,37 @@ function editor(doc: string, extra: Extension = []) {
       extensions: [
         filterExpressionLanguage,
         signatureHint({ receiverType: () => "string" }),
+        EditorView.updateListener.of((update) => {
+          if (!update.focusChanged) return;
+          focusChanged.resolve();
+          focusChanged = Promise.withResolvers();
+        }),
         extra,
       ],
     }),
   });
-  // happy-dom reports a document without focus, which CodeMirror reads as
-  // an editor without focus.
-  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const focus = documentFocus();
   view.focus();
   return {
     view,
     caret(pos: number) {
       view.dispatch({ selection: EditorSelection.cursor(pos) });
     },
-    hint: () => parent.querySelector<HTMLElement>(`.${SIGNATURE_HINT_CLASS}`),
+    async blur() {
+      const told = focusChanged.promise;
+      view.contentDOM.blur();
+      await told;
+    },
+    /** The hint, while it shows. */
+    hint: () => {
+      const hint = parent.querySelector<HTMLElement>(
+        `.${SIGNATURE_HINT_CLASS}`,
+      );
+      return hint && !hint.hidden ? hint : null;
+    },
     [Symbol.dispose]() {
       view.destroy();
-      hasFocus.mockRestore();
+      focus[Symbol.dispose]();
       parent.remove();
     },
   };
@@ -74,16 +93,16 @@ it("closes when the caret leaves the call", () => {
   expect(field.hint()).toBeNull();
 });
 
-it("closes when the editor loses focus", () => {
+it("hides when the editor loses focus", async () => {
   using field = editor("title.slice(1, 2)");
   field.caret("title.slice(1".length);
   expect(field.hint()).not.toBeNull();
-  field.view.contentDOM.blur();
+  await field.blur();
   expect(field.hint()).toBeNull();
 });
 
 it("shows while another extension reconfigures the editor as it takes focus", () => {
-  // As the host's tooltip placement does: a dispatch from the focus event.
+  // A dispatch from the focus event, before CodeMirror tells of the focus.
   const placement = new Compartment();
   using field = editor(
     "title.slice(1, 2)",

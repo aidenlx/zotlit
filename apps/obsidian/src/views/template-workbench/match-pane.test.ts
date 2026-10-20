@@ -46,8 +46,9 @@ async function mountExpression(within: HTMLElement = document.body) {
 /**
  * Opens a placeholder tooltip under the end of the text, as completion will
  * once the user types in the field, which then holds focus.
+ * @returns The tooltip, once the field has placed it outside its own box.
  */
-function openTooltip(view: EditorView): HTMLElement {
+async function openTooltip(view: EditorView): Promise<HTMLElement> {
   view.focus();
   const tooltip = document.createElement("div");
   tooltip.dataset.placeholderTooltip = "";
@@ -59,6 +60,8 @@ function openTooltip(view: EditorView): HTMLElement {
       }),
     ),
   });
+  // The field places its tooltips once CodeMirror has told it of the focus.
+  await vi.waitFor(() => expect(view.dom.contains(tooltip)).toBe(false));
   return tooltip;
 }
 
@@ -99,7 +102,7 @@ describe("expression editors in Obsidian", () => {
     using _migration = windowMigration();
     using surface = popoverSurface();
     await using editor = await mountExpression(surface.scroller);
-    const tooltip = openTooltip(editor.view);
+    const tooltip = await openTooltip(editor.view);
     expect(tooltip.closest("[popover]")).toBe(surface.root);
     expect(surface.scroller.contains(tooltip)).toBe(false);
   });
@@ -107,10 +110,33 @@ describe("expression editors in Obsidian", () => {
   it("draw their tooltips in the page outside a popover", async () => {
     using _migration = windowMigration();
     await using editor = await mountExpression();
-    const tooltip = openTooltip(editor.view);
+    const tooltip = await openTooltip(editor.view);
     expect(tooltip.isConnected).toBe(true);
     expect(editor.dom.contains(tooltip)).toBe(false);
     expect(tooltip.closest("[popover]")).toBeNull();
+  });
+
+  it("keep CodeMirror's notice of the focus while they place their tooltips", async () => {
+    using _migration = windowMigration();
+    using surface = popoverSurface();
+    await using editor = await mountExpression(surface.scroller);
+    // What reaches the editor's state, not what CodeMirror composes.
+    const noticed = StateEffect.define<boolean>();
+    const notices: boolean[] = [];
+    editor.view.dispatch({
+      effects: StateEffect.appendConfig.of([
+        EditorView.focusChangeEffect.of((_state, focus) => noticed.of(focus)),
+        EditorView.updateListener.of((update) => {
+          for (const tr of update.transactions)
+            for (const effect of tr.effects)
+              if (effect.is(noticed)) notices.push(effect.value);
+        }),
+      ]),
+    });
+    // A click focuses the field and puts the caret in the same task.
+    editor.view.focus();
+    editor.view.dispatch({ selection: { anchor: 1 } });
+    await vi.waitFor(() => expect(notices).toEqual([true]));
   });
 
   it("draw their tooltips in the popout window the view moves to", async () => {
@@ -121,7 +147,7 @@ describe("expression editors in Obsidian", () => {
     const destination = document.implementation.createHTMLDocument();
     destination.body.append(editor.dom.parentElement!);
     migration.move({ document: destination } as Window);
-    const tooltip = openTooltip(editor.view);
+    const tooltip = await openTooltip(editor.view);
     expect(destination.body.contains(tooltip)).toBe(true);
     expect(editor.dom.contains(tooltip)).toBe(false);
   });

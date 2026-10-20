@@ -19,25 +19,21 @@ import {
   filterExpressionHighlighting,
   filterExpressionLanguage,
 } from "#/language/filter-expression";
-import { signatureHint } from "#/language/signature-hint";
+import { signatureHint } from "#/language/signature-hint-tooltip";
+
+const ExpressionTypesContext = createContext<SignatureHintOptions>({});
 
 /**
- * What a host knows of the expressions its fields hold, such as the type of
- * a method call's receiver in its Query Dataset. A field without one still
- * shows the Signature Hint, naming every definition of a method.
+ * Gives the expression fields under it what the host knows of the types in
+ * their expressions, such as a method call's receiver in its Query Dataset.
+ * A field without it still shows the Signature Hint, naming every definition
+ * of a method.
  */
-export interface ExpressionTypes {
-  readonly receiverType?: SignatureHintOptions["receiverType"];
-}
-
-const ExpressionTypesContext = createContext<ExpressionTypes>({});
-
-/** Gives the expression fields under it what the host knows of their expressions. */
 export function ExpressionTypesProvider({
   types,
   children,
 }: {
-  types: ExpressionTypes;
+  types: SignatureHintOptions;
   children: ReactNode;
 }) {
   return (

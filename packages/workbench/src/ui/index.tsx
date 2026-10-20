@@ -3,7 +3,8 @@ export {
   ExpressionTypesProvider,
   MatchExpressionInput,
 } from "./match.expression";
-export type { ExpressionTypes, FaultSpan } from "./match.expression";
+export type { FaultSpan } from "./match.expression";
+export type { SignatureHintOptions } from "#/language/signature-hint";
 export { filterVocabulary } from "./match.fields";
 export type { FilterValues } from "./match.fields";
 export type { FilterField } from "#/match/fields";

@@ -157,13 +157,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }
       /**
        * Puts the caret of the expression field under `surface` at `caret`,
-       * after its text becomes `text` when one is given, and reads the hint:
-       * its marked parameter and text, whether it stands in the surface's
-       * root, inside the window, and on top at each corner; then whether it
-       * closes with the caret at the end, outside the call.
+       * after its text becomes `text` when one is given, and reads the hint
+       * once CodeMirror has placed it (it parks an unmeasured tooltip at a
+       * top of -10000px): its marked parameter and text, whether it stands
+       * in the surface's root, inside the window, and on top at each corner;
+       * then whether it closes with the caret at the end, outside the call.
        */
       const hintIn = (surface: string, caret: number, text?: string) =>
-        `const content=await until('expression field',()=>${surface}?.querySelector('.cm-content'),5000);const root=content.closest('[popover]');const doc=content.ownerDocument;const win=doc.defaultView;const view=content.cmTile.root.view;${text === undefined ? "" : `view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(text)}},userEvent:'input.type'});`}view.focus();view.dispatch({selection:{anchor:${caret}}});const hint=await until('Signature Hint',()=>doc.querySelector('.zt-signature-hint'),5000);const frame=()=>new Promise(r=>win.requestAnimationFrame(()=>r()));await frame();await frame();const r=hint.getBoundingClientRect();const corners=[[r.left+2,r.top+2],[r.right-2,r.top+2],[r.left+2,r.bottom-2],[r.right-2,r.bottom-2]];const out={marked:hint.querySelector('mark')?.textContent??null,text:hint.textContent,inSurface:hint.closest('[popover]')===root,inWindow:r.width>0&&r.left>=0&&r.top>=0&&r.right<=win.innerWidth&&r.bottom<=win.innerHeight,shown:corners.every(([x,y])=>{const hit=doc.elementFromPoint(x,y);return !!hit&&hint.contains(hit);})};view.dispatch({selection:{anchor:view.state.doc.length}});out.closed=await until('hint closes',()=>!doc.querySelector('.zt-signature-hint'),5000);return JSON.stringify(out);`;
+        `const content=await until('expression field',()=>${surface}?.querySelector('.cm-content'),5000);const root=content.closest('[popover]');const doc=content.ownerDocument;const win=doc.defaultView;const view=content.cmTile.root.view;${text === undefined ? "" : `view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(text)}},userEvent:'input.type'});`}view.focus();view.dispatch({selection:{anchor:${caret}}});const hint=await until('Signature Hint',()=>{const shown=doc.querySelector('.zt-signature-hint');return shown&&!shown.hidden&&shown;},5000);await until('hint placed in the surface and measured',()=>hint.closest('[popover]')===root&&hint.style.top!=='-10000px'&&hint.getBoundingClientRect().width>0,5000);const r=hint.getBoundingClientRect();const corners=[[r.left+2,r.top+2],[r.right-2,r.top+2],[r.left+2,r.bottom-2],[r.right-2,r.bottom-2]];const out={marked:hint.querySelector('mark')?.textContent??null,text:hint.textContent,inSurface:hint.closest('[popover]')===root,inWindow:r.width>0&&r.left>=0&&r.top>=0&&r.right<=win.innerWidth&&r.bottom<=win.innerHeight,shown:corners.every(([x,y])=>{const hit=doc.elementFromPoint(x,y);return !!hit&&hint.contains(hit);})};view.dispatch({selection:{anchor:view.state.doc.length}});out.closed=await until('hint closes',()=>!doc.querySelector('.zt-signature-hint'),5000);return JSON.stringify(out);`;
       const expected = {
         marked: "end?: number",
         inSurface: true,

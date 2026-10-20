@@ -198,15 +198,16 @@
 }
 /* The Signature Hint is a message surface, as the hint of a formula in a
    `.base` file is: the signature in code type, the parameter at the caret
-   heavier, the description beneath in the interface type. */
-.cm-tooltip.zt-signature-hint {
+   heavier, the description beneath in the interface type. A stylesheet, as
+   the workbench renders the tooltip and its children, DOM that carries no
+   utilities of this plugin; these are the public hook's defaults, which a
+   theme overrides on `.zt-signature-hint`. */
+.zt-signature-hint {
   max-inline-size: min(28rem, calc(100vw - 20px));
   padding: var(--size-4-1) var(--size-4-2);
-  border: none;
   border-radius: var(--radius-s);
-  background-color: var(--background-modifier-message);
   box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
-  color: #fafafa;
+  color: var(--notice-color);
   font-size: var(--font-ui-smaller);
   line-height: var(--line-height-tight);
   white-space: normal;
@@ -228,9 +229,16 @@
   font-weight: var(--font-semibold);
   text-decoration: underline;
 }
+/* The background, border and arrow must outrank CodeMirror's base theme,
+   which paints every tooltip with two classes (`.ͼ2 .cm-tooltip`); a theme
+   overrides them with `.cm-tooltip.zt-signature-hint`. */
+.cm-tooltip.zt-signature-hint {
+  border: none;
+  background-color: var(--notice-background);
+}
 .cm-tooltip.zt-signature-hint .cm-tooltip-arrow:before,
 .cm-tooltip.zt-signature-hint .cm-tooltip-arrow:after {
-  border-top-color: var(--background-modifier-message);
+  border-top-color: var(--notice-background);
 }
 /* Obsidian sizes a popover's content for a note page; a hover card fits its text. */
 .popover.hover-popover > .zt-template-hover {

@@ -1,12 +1,8 @@
-// The Signature Hint of a Filter Expression editor: while the caret is inside
-// a call's arguments, the callee's signature with the parameter at the caret
-// marked and its description beneath. The registry of `@zotlit/item-query`
-// is the one source of the signatures, so the hint names what evaluation
-// checks.
-import { StateEffect, StateField } from "@codemirror/state";
-import type { EditorState, Extension } from "@codemirror/state";
-import { EditorView, showTooltip } from "@codemirror/view";
-import type { Tooltip } from "@codemirror/view";
+// What the Signature Hint of a Filter Expression editor names: the call
+// around the caret, the callee's signatures and the parameter at the caret.
+// The registry of `@zotlit/item-query` is the one source of the signatures,
+// so the hint names what evaluation checks. The tooltip is in
+// `signature-hint-tooltip.ts`.
 import type { SyntaxNode } from "@lezer/common";
 
 import { parser } from "@zotlit/filter-expression";
@@ -111,117 +107,12 @@ function callAround(inner: SyntaxNode, pos: number): SyntaxNode | null {
 }
 
 /**
- * The public theme hook of the Signature Hint tooltip. A host styles it; the
- * web host leaves CodeMirror's own tooltip look.
- */
-export const SIGNATURE_HINT_CLASS = "zt-signature-hint";
-
-/** Whether the editor has focus: the hint shows only while it does. */
-const focused = StateField.define<boolean>({
-  create: () => false,
-  update: (value, tr) => {
-    for (const effect of tr.effects)
-      if (effect.is(setFocused)) return effect.value;
-    return value;
-  },
-});
-
-const setFocused = StateEffect.define<boolean>();
-
-/** Appends `text` with each `code` span in backticks as a `<code>`. */
-function appendProse(parent: HTMLElement, text: string) {
-  const doc = parent.ownerDocument;
-  text.split("`").forEach((part, at) => {
-    if (part === "") return;
-    if (at % 2 === 0) parent.append(part);
-    else parent.appendChild(doc.createElement("code")).textContent = part;
-  });
-}
-
-const parameterText = ({ name, type, optional, rest }: HintParameter) =>
-  `${rest ? "..." : ""}${name}${optional && !rest ? "?" : ""}: ${type}`;
-
-function renderHint(
-  doc: Document,
-  callee: string,
-  signatures: readonly HintSignature[],
-): HTMLElement {
-  const dom = doc.createElement("div");
-  dom.className = SIGNATURE_HINT_CLASS;
-  for (const { parameters, active, returns, description } of signatures) {
-    const block = dom.appendChild(doc.createElement("div"));
-    const label = block.appendChild(doc.createElement("code"));
-    label.append(`${callee}(`);
-    parameters.forEach((parameter, at) => {
-      if (at > 0) label.append(", ");
-      const text = parameterText(parameter);
-      if (at === active)
-        label.appendChild(doc.createElement("mark")).textContent = text;
-      else label.append(text);
-    });
-    label.append(returns ? `) → ${returns}` : ")");
-    appendProse(block.appendChild(doc.createElement("div")), description);
-  }
-  return dom;
-}
-
-function hintTooltip(
-  state: EditorState,
-  options: SignatureHintOptions,
-): Tooltip | null {
-  const { main } = state.selection;
-  if (!state.field(focused) || !main.empty) return null;
-  const hint = signatureAt(state.doc.toString(), main.head, options);
-  if (!hint) return null;
-  return {
-    pos: main.head,
-    above: true,
-    arrow: true,
-    create: (view) => ({
-      dom: renderHint(view.dom.ownerDocument, hint.callee, hint.signatures),
-    }),
-  };
-}
-
-/**
- * The Signature Hint of a Filter Expression editor: a tooltip above the
- * caret while it stands inside a call's arguments and the editor has focus.
- * It draws above the caret, so a completion list below the caret leaves it
- * in view.
- */
-export function signatureHint(options: SignatureHintOptions = {}): Extension {
-  const hint = StateField.define<Tooltip | null>({
-    create: (state) => hintTooltip(state, options),
-    update: (value, tr) =>
-      tr.docChanged ||
-      tr.selection ||
-      tr.startState.field(focused) !== tr.state.field(focused)
-        ? hintTooltip(tr.state, options)
-        : value,
-    provide: (field) => showTooltip.from(field),
-  });
-  // The focus events set the field as they fire. CodeMirror's own focus
-  // notice comes later and is dropped when another dispatch comes first, as
-  // a host's dispatch from the same focus event does.
-  const tell = (view: EditorView, focus: boolean) => {
-    if (view.state.field(focused) !== focus)
-      view.dispatch({ effects: setFocused.of(focus) });
-  };
-  return [
-    focused,
-    hint,
-    EditorView.domEventHandlers({
-      focus: (_event, view) => tell(view, true),
-      blur: (_event, view) => tell(view, false),
-    }),
-  ];
-}
-
-/**
- * The Signature Hint at `pos` in the Filter Expression `text`: the call whose
- * arguments hold `pos`, each definition its callee can name, and in each the
- * parameter the argument at `pos` fills. Null outside a call's arguments and
- * for a name the registry does not hold.
+ * The Signature Hint at a position of a Filter Expression.
+ * @param text The Filter Expression.
+ * @param pos The caret's offset in `text`.
+ * @returns The call whose arguments hold `pos`, each definition its callee
+ *   can name, and in each the parameter the argument at `pos` fills. Null
+ *   outside a call's arguments and for a name the registry does not hold.
  */
 export function signatureAt(
   text: string,
