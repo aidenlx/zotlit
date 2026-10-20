@@ -60,15 +60,17 @@ The field name is on the left and a quoted value is on the right. A value may us
 
 ## List functions [#list-functions]
 
-The list fields `tags` and `collections` take a function call. Every argument is a string literal.
+The list fields `tags` and `collections` take a list method. Every argument is a string literal.
 
-| Function            | Fields                | Arguments   | Holds when                                                                    |
-| ------------------- | --------------------- | ----------- | ----------------------------------------------------------------------------- |
-| `contains(value)`   | `tags`, `collections` | Exactly one | The list holds that value.                                                    |
-| `containsAny(a, b)` | `tags`, `collections` | One or more | The list holds at least one of the values.                                    |
-| `containsAll(a, b)` | `tags`, `collections` | One or more | The list holds every value.                                                   |
-| `isEmpty()`         | `tags`, `collections` | None        | The list holds no values.                                                     |
-| `within(path)`      | `collections`         | Exactly one | The item is filed in that Collection or in one of its descendant Collections. |
+| Method        | Fields                |
+| ------------- | --------------------- |
+| `contains`    | `tags`, `collections` |
+| `containsAny` | `tags`, `collections` |
+| `containsAll` | `tags`, `collections` |
+| `isEmpty`     | `tags`, `collections` |
+| `within`      | `collections`         |
+
+[List methods](/docs/reference/functions-and-methods#list-methods) gives the signature and result of each method.
 
 On `collections`, `contains` tests direct filing: `collections.contains("Project/Drafts")` holds only when the item is filed directly in that exact path. `within` accepts any descendant. On `tags`, the value is one Tag name, not a path.
 
