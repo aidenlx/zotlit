@@ -1,6 +1,8 @@
 // The static types the planner gives the subexpressions of a Filter Expression
 // in an editor: what the value before a `.` is, with the Formulas and the
 // Query Context of the view, and the members a filter reads on a record.
+import { isMemberName } from "@zotlit/filter-expression";
+
 import type { QueryDataset } from "./dataset";
 import type { Span } from "./fault";
 import type { StaticType } from "./filter-plan";
@@ -22,8 +24,6 @@ export interface SubexpressionType {
   readonly members?: readonly PlannedMember[];
 }
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
-
 /** A record the Query Context of a view binds. */
 export type ContextRecord = keyof QueryContext;
 
@@ -38,7 +38,7 @@ function recordMemberNames(): readonly string[] {
           dataset.names.map((name) => name.split(".")[0]!),
         ),
         ...NOTE_FIELDS.keys(),
-      ].filter((name) => IDENTIFIER.test(name)),
+      ].filter(isMemberName),
     ),
   ];
   return memberNames;

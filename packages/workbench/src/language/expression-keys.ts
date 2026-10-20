@@ -16,11 +16,7 @@ import type {
  * the path before the `[`, the range the quoted key fills, what is typed of
  * it, and whether the `]` is still to write.
  */
-function bracketKeyAt(
-  inner: SyntaxNode,
-  pos: number,
-  source: string,
-): {
+function bracketKeyAt({ inner, pos, source }: Caret): {
   path: string;
   from: number;
   to: number;
@@ -61,10 +57,10 @@ function bracketKeyAt(
  * @returns Undefined in any other bracket access, which takes an expression.
  */
 export function keyCompletions(
-  { inner, pos, source }: Caret,
+  caret: Caret,
   vocabulary: ExpressionVocabulary,
 ): ExpressionCompletionResult | null | undefined {
-  const key = bracketKeyAt(inner, pos, source);
+  const key = bracketKeyAt(caret);
   if (!key) return undefined;
   const names: readonly ExpressionName[] | undefined =
     key.path === "vault"

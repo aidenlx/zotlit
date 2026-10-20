@@ -2,7 +2,11 @@ import { parseIndexedKey } from "@zotlit/db";
 // Validation of a Filter Expression against the registries. The result is a
 // typed tree in which every name is resolved, so that execution and the
 // planner read one structure.
-import { parseExpressionAst } from "@zotlit/filter-expression";
+import {
+  isIdentifierName,
+  parseExpressionAst,
+  parsePartialExpressionAst,
+} from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
 import type {
@@ -304,10 +308,14 @@ export interface PlannedSubexpression {
 export const CONTEXT_RECORD_MEMBERS: readonly string[] = ["indexedKey", "key"];
 
 /**
- * Plan `text` as {@link planFilter} does and read the subexpression at
- * exactly `at`, the outermost of several. A custom field is not a member:
- * it is read by bracket access.
- * @returns Undefined where `text` does not plan or no subexpression spans `at`.
+ * Plan `text`, as it is being typed, as {@link planFilter} does, and read the
+ * subexpression at exactly `at` as the planner typed it where it stands: a
+ * name a list method binds by that method's scope. An unfinished member
+ * access stands for its object, as does a member being typed off `at`, a call left open ends with the text, and a
+ * fault elsewhere leaves a subexpression planned before it typed. A custom
+ * field is not a member: it is read by bracket access.
+ * @returns Undefined where `text` does not parse that far or the planner
+ *   does not reach a subexpression spanning `at`.
  */
 export function planSubexpression<Item, Needs>(
   text: string,
@@ -318,21 +326,27 @@ export function planSubexpression<Item, Needs>(
     formula,
   }: PlanFilterOptions<Item, Needs>,
 ): PlannedSubexpression | undefined {
-  const { ast } = parseExpressionAst(text);
+  // A member being typed off `at` is not finished, so the planner reads past it.
+  const ast = parsePartialExpressionAst(text, { typing: at });
   if (!ast) return undefined;
+  let node: FilterNode<Item> | undefined;
   const validator = new Validator<Item, Needs>(
     { needs: [], customFields: [], warnings: [] },
     registry,
-    { context, formula },
+    {
+      context,
+      formula,
+      // Children are told first, so the last at `at` is the outermost.
+      observe: (planned, filter) => {
+        if (planned.from === at.from && planned.to === at.to) node = filter;
+      },
+    },
   );
-  let root: FilterNode<Item>;
   try {
-    root = validator.node(ast);
+    validator.node(ast);
   } catch (thrown) {
-    if (thrown instanceof Invalid) return undefined;
-    throw thrown;
+    if (!(thrown instanceof Invalid)) throw thrown;
   }
-  const node = nodeAt(root, at);
   if (!node) return undefined;
   const navigation = validator.navigation(node);
   const members = navigation?.member;
@@ -360,60 +374,15 @@ export function planSubexpression<Item, Needs>(
   return { valueType: node.valueType };
 }
 
-/** The nodes a node is planned from; a Formula's own text is not among them. */
-function childrenOf<Item>(node: FilterNode<Item>): readonly FilterNode<Item>[] {
-  switch (node.kind) {
-    case "literal":
-    case "field":
-    case "custom-field":
-    case "binding":
-    case "formula":
-      return [];
-    case "list":
-      return node.elements;
-    case "element":
-      return [node.subject, node.expression, ...node.args];
-    case "unary":
-      return [node.operand];
-    case "binary":
-      return [node.left, node.right];
-    case "if":
-      return node.whenFalse
-        ? [node.condition, node.whenTrue, node.whenFalse]
-        : [node.condition, node.whenTrue];
-    case "function":
-      return node.args;
-    case "method":
-      return [node.subject, ...node.args];
-    case "property":
-      return [node.subject];
-    case "index":
-      return [node.subject, node.index];
-  }
-}
-
-function nodeAt<Item>(
-  node: FilterNode<Item>,
-  at: Span,
-): FilterNode<Item> | undefined {
-  if (node.from > at.from || node.to < at.to) return undefined;
-  if (node.from === at.from && node.to === at.to) return node;
-  for (const child of childrenOf(node)) {
-    const found = nodeAt(child, at);
-    if (found) return found;
-  }
-  return undefined;
-}
-
 /**
  * Whether a custom field has a bare form in a Filter Expression: its name is
  * one identifier of the grammar and no built-in field, function, or keyword
  * has that name. The check is the same for every Library and every Item.
  */
 export function hasBareForm(customFieldName: string): boolean {
-  if (RESERVED_NAMES.has(customFieldName)) return false;
-  const { ast } = parseExpressionAst(customFieldName);
-  return ast?.type === "identifier" && ast.name === customFieldName;
+  return (
+    !RESERVED_NAMES.has(customFieldName) && isIdentifierName(customFieldName)
+  );
 }
 
 /**
@@ -674,9 +643,12 @@ class Validator<Item, Needs> {
     {
       context,
       formula,
+      observe,
     }: {
       context: QueryContext | undefined;
       formula: FormulaResolver<Item, Needs> | undefined;
+      /** Told each node as it is planned, in the scope it stands in. */
+      observe?: (ast: ExpressionNode, node: FilterNode<Item>) => void;
     },
   ) {
     this.context = context;
@@ -684,9 +656,20 @@ class Validator<Item, Needs> {
     this.#needs = needs;
     this.#customFields = customFields;
     this.#warnings = warnings;
+    this.#observe = observe;
   }
 
+  readonly #observe:
+    | ((ast: ExpressionNode, node: FilterNode<Item>) => void)
+    | undefined;
+
   node(ast: ExpressionNode): FilterNode<Item> {
+    const planned = this.#plan(ast);
+    this.#observe?.(ast, planned);
+    return planned;
+  }
+
+  #plan(ast: ExpressionNode): FilterNode<Item> {
     const { from, to } = ast;
     const span = { from, to };
     switch (ast.type) {

@@ -6,6 +6,7 @@ import type {
   ContextRecord,
   FilterValueType,
   FunctionDefinition,
+  QueryDataset,
 } from "@zotlit/item-query";
 
 import { matchScore } from "./matching";
@@ -99,6 +100,17 @@ export interface Caret {
   readonly inner: SyntaxNode;
   readonly pos: number;
   readonly source: string;
+}
+
+/**
+ * The custom fields `names` as `dataset` reads them: inside `custom[...]`,
+ * or `item.custom[...]` where the dataset reads its Item's.
+ */
+export function datasetCustomFields(
+  dataset: Pick<QueryDataset, "customPrefix">,
+  names: readonly string[],
+): NonNullable<ExpressionVocabulary["custom"]> {
+  return { path: `${dataset.customPrefix}custom`, names };
 }
 
 export interface ExpressionCompletionResult {

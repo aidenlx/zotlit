@@ -127,6 +127,14 @@ describe("namespaces", () => {
     ]);
   });
 
+  it("writes a name the dot cannot reach, a keyword included, by bracket access", () => {
+    const vocabulary = { ...FILTER, formulas: [{ name: "true" }] };
+    expect(offered("formula.t|", vocabulary)!.options[0]).toMatchObject({
+      label: "formula.true",
+      insert: 'formula["true"]',
+    });
+  });
+
   it("reads a namespace across the spaces around its dot, and replaces the whole access", () => {
     const result = offered("formula . sc|")!;
     expect(result).toMatchObject({ from: 0, to: "formula . sc".length });
@@ -471,6 +479,15 @@ describe("the members a Query Dataset's planner reads", () => {
     expect(labels('attachments.reduce(value.|, "")', items)).toContain(
       "fileType",
     );
+    // A bound name types where it stands, inside any call of the element expression.
+    for (const text of [
+      "tags.filter(if(index.|, true, false))",
+      'tags.filter(title.replace(index.|, "x"))',
+    ]) {
+      expect(labels(text, items), text).toContain("toFixed");
+      for (const other of ["year", "lower", "contains"])
+        expect(labels(text, items), text).not.toContain(other);
+    }
     // A call left unfinished in the element expression still types its receiver.
     expect(labels("attachments.filter(value.title.|)", items)).toContain(
       "lower",

@@ -1,6 +1,6 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
@@ -9,6 +9,7 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 import type { FieldLabelLocale } from "@zotlit/zotero-types/field-labels";
 
+import { useCustomFieldNames } from "./custom-fields";
 import { useWorkbenchStore } from "./editor";
 import { ExampleActions } from "./example-state";
 import { schemaLocale } from "./explorer-sections";
@@ -51,6 +52,7 @@ import { MatchSelect } from "./match.rows";
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
+import { datasetCustomFields } from "#/language/expression-options";
 import { datasetReceiver } from "#/language/expression-receiver";
 import { datasetExpressionFields } from "#/language/filter-expression-completion";
 
@@ -94,7 +96,7 @@ function profileExpressions(
     fields: datasetExpressionFields(ITEMS, label),
     context: [],
     formulas: [],
-    custom: { path: `${ITEMS.customPrefix}custom`, names: custom },
+    custom: datasetCustomFields(ITEMS, custom),
     receiver,
   };
 }
@@ -188,18 +190,14 @@ export function MatchPane({
     ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
     : undefined;
   const locale = host.getLocale();
-  const [custom, setCustom] = useState<readonly string[]>([]);
-  useEffect(() => {
-    const controller = new AbortController();
-    host.matchData.customFields(controller.signal).then(
-      (names) => {
-        if (!controller.signal.aborted) setCustom(names);
-      },
-      // Without the names, `custom[` offers none.
-      () => {},
-    );
-    return () => controller.abort();
-  }, [host.matchData, vocabularyRevision]);
+  const { matchData } = host;
+  const readCustom = useCallback(
+    (signal: AbortSignal) => matchData.customFields(signal),
+    [matchData],
+  );
+  const custom = useCustomFieldNames(readCustom, {
+    revision: vocabularyRevision,
+  });
   const expression = useMemo(
     () => profileExpressions(locale, custom),
     [locale, custom],

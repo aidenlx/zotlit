@@ -35,7 +35,7 @@ import { boundRecords } from "./context-hint";
 import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
 import {
   expressionVocabulary,
-  useCustomFieldNames,
+  useViewCustomFields,
 } from "./expression-vocabulary";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf } from "./results";
@@ -191,7 +191,7 @@ function ExpressionField({
   const properties = useViewProperties(view);
   const dataset = useStore(view.state, (s) => s.view?.from);
   const formulas = useStore(view.state, (s) => s.file?.formulas);
-  const custom = useCustomFieldNames(view);
+  const custom = useViewCustomFields(view);
   // A Formula reads no vault property, and naming itself is a cycle.
   const vocabulary = useMemo(
     () =>

@@ -29,6 +29,7 @@ export type {
   ExpressionReceiver,
   ExpressionVocabulary,
 } from "./filter-expression-completion";
+export { datasetCustomFields } from "./expression-options";
 export { datasetReceiver } from "./expression-receiver";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {

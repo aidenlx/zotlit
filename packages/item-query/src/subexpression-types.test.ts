@@ -75,6 +75,25 @@ describe("subexpression types", () => {
       );
   });
 
+  it("types a bound name where it stands in the whole text, an unfinished member access at it", () => {
+    const types = subexpressionTypes(ITEMS);
+    for (const text of [
+      "tags.filter(index.",
+      "tags.filter(if(index., true, false))",
+      'tags.filter(title.replace(index., "x"))',
+      "tags.reduce(index.",
+      "tags.reduce(index., 0)",
+    ])
+      expect(typeOf(types, text, "index"), text).toEqual({
+        valueType: "number",
+      });
+    expect(
+      names(typeOf(types, 'attachments.reduce(value., "")', "value")),
+    ).toContain("fileType");
+    // A missing operand leaves the text untyped.
+    expect(typeOf(types, "(title +.", "title")).toBeUndefined();
+  });
+
   it("lists the keys of a Creator record", () => {
     const creator = ["family", "fullName", "given", "literal", "role"];
     expect(
