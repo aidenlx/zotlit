@@ -16,21 +16,6 @@ import type {
   AttachmentReader,
 } from "./attachment-open";
 
-/** Every notice the reader shows, by its text. */
-const notices = vi.hoisted(() => ({ shown: [] as string[] }));
-vi.mock("@/lib/notice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/notice")>();
-  return {
-    ...actual,
-    BaseNotice: class extends actual.BaseNotice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        if (typeof message === "string") notices.shown.push(message);
-      }
-    },
-  };
-});
-
 type Row = ObsidianOpenableAttachment;
 
 /** An Attachment named `label`, opening from the vault. */
@@ -260,28 +245,28 @@ describe("createObsidianAttachmentReader", () => {
 
   // A caller with somewhere else to send the link — Capture, handing a
   // Durable Annotation Link to Zotero — takes the missing file instead of the
-  // notice, decided here at the open rather than by a check ahead of it.
-  it("hands a missing file to the caller's onMissing instead of a notice", async () => {
+  // notice, decided here at the open rather than by a check ahead of it. That
+  // no notice shows is the desktop End-to-end Run's to observe.
+  it("hands a missing file to the caller's onMissing and opens nothing", async () => {
     const { app, openFile } = fakeApp(() => null);
     const reader = createObsidianAttachmentReader(app);
     const onMissing = vi.fn();
-    notices.shown.length = 0;
 
     await reader.open(row("Doe 2024.pdf"), false, { onMissing });
 
     expect(onMissing).toHaveBeenCalledOnce();
     expect(openFile).not.toHaveBeenCalled();
-    expect(notices.shown).toEqual([]);
   });
 
-  it("shows the missing-file notice to a caller with no onMissing", async () => {
-    const { app } = fakeApp(() => null);
+  it("leaves onMissing unrun when the file opens", async () => {
+    const { app, openFile } = fakeApp(() => new TFile());
     const reader = createObsidianAttachmentReader(app);
-    notices.shown.length = 0;
+    const onMissing = vi.fn();
 
-    await reader.open(row("Doe 2024.pdf"), false);
+    await reader.open(row("Doe 2024.pdf"), false, { onMissing });
 
-    expect(notices.shown).toHaveLength(1);
+    expect(openFile).toHaveBeenCalledOnce();
+    expect(onMissing).not.toHaveBeenCalled();
   });
 
   it("runs onOpened once the file is on screen", async () => {

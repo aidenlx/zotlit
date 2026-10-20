@@ -111,8 +111,18 @@ export class AttachmentResolver extends Service<void> {
   readonly #zoteroPref;
   readonly #platform;
   readonly #emitter = createNanoEvents<AttachmentResolverEvents>();
+  readonly #indexed = Promise.withResolvers<void>();
 
   ready: Promise<void>;
+
+  /**
+   * Settles once the first index lands, from here on lookups answer for real
+   * rather than `pending`. Waiting on it starts no build: something else —
+   * {@link warm} or a lookup — has to ask for one.
+   */
+  get indexed(): Promise<void> {
+    return this.#indexed.promise;
+  }
 
   constructor({
     reads,
@@ -188,7 +198,10 @@ export class AttachmentResolver extends Service<void> {
     this.#queries.client.setQueryDefaults(PATH_INDEX_KEY, { gcTime: Infinity });
     stack.defer(
       this.#queries.watch<PathIndex>(PATH_INDEX_KEY, {
-        changed: () => this.#emitter.emit("resolutions-changed"),
+        changed: () => {
+          this.#indexed.resolve();
+          this.#emitter.emit("resolutions-changed");
+        },
         settled: () => {},
       }),
     );

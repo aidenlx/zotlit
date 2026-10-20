@@ -348,6 +348,23 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
   expect(resolver.resolve(path)).toEqual(ROUGIER);
 });
 
+// `indexed` is what a caller waits on to know lookups answer for real; waiting
+// on it must not be what builds the index, or it could not tell a warmed
+// resolver from one nobody asked.
+it("settles indexed once the first index lands, and builds nothing itself", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { prime: false });
+  let settled = false;
+  void resolver.indexed.then(() => (settled = true));
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(settled).toBe(false);
+
+  resolver.warm();
+  await resolver.indexed;
+  expect(resolver.locate("RGRPDF24")).toMatchObject({ kind: "located" });
+});
+
 it("builds the first index when warmed, before any lookup", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver } = await setup(stack, { prime: false });
