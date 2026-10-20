@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AttachmentReader } from "@/lib/attachment-open";
-import type { AttachmentResolution } from "@/services/attachment-resolver/service";
+import type {
+  AttachmentLocation,
+  AttachmentResolution,
+} from "@/services/attachment-resolver/service";
 import type { Settings } from "@/services/settings/schema";
 
 import {
@@ -29,19 +32,65 @@ const RESOLVED_EPUB: AttachmentResolution = {
   openable: false,
 };
 
-function context(resolution: AttachmentResolution, vaultBasePath = VAULT) {
+/** Where the Fixture's Rougier PDF sits: a linked file inside the vault. */
+const ROUGIER_PATH = "/Users/me/Vault/attachments/rougier-2014.pdf";
+
+const RESOLVED_ROUGIER: AttachmentResolution = {
+  kind: "resolved",
+  serverID: null,
+  attachmentKey: "RGRPDF24",
+  itemKey: "RUGIER24",
+  openable: true,
+};
+
+function context(
+  resolution: AttachmentResolution,
+  {
+    vaultBasePath = VAULT,
+    location = { kind: "unresolved" },
+    exists = true,
+  }: {
+    vaultBasePath?: string;
+    location?: AttachmentLocation;
+    exists?: boolean;
+  } = {},
+) {
   const asked: string[] = [];
+  const located: string[] = [];
   return {
     asked,
+    located,
     ctx: {
       resolve: (path: string) => {
         asked.push(path);
         return resolution;
       },
+      locate: (key: string) => {
+        located.push(key);
+        return location;
+      },
+      exists: () => exists,
       vaultBasePath,
       platform: "darwin" as NodeJS.Platform,
     },
   };
+}
+
+/** A durable link's context: the Rougier PDF located, resolved, and on disk. */
+function durable(
+  options: {
+    resolution?: AttachmentResolution;
+    location?: AttachmentLocation;
+    exists?: boolean;
+  } = {},
+) {
+  return context(options.resolution ?? RESOLVED_ROUGIER, {
+    location: options.location ?? {
+      kind: "located",
+      absolutePath: ROUGIER_PATH,
+    },
+    exists: options.exists ?? true,
+  });
 }
 
 describe("paneFromTarget", () => {
@@ -150,6 +199,94 @@ describe("decideFileLinkCapture", () => {
   });
 });
 
+/** The Durable Annotation Link a Zotero child note carries for one highlight. */
+const DURABLE =
+  "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2";
+
+describe("decideFileLinkCapture, for a Durable Annotation Link", () => {
+  it("opens the PDF this computer holds at the Annotation the link names", () => {
+    const { asked, located, ctx } = durable();
+    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({
+      kind: "capture",
+      attachment: {
+        indexedKey: "RGRPDF24",
+        label: "rougier-2014.pdf",
+        openPath: "attachments/rougier-2014.pdf",
+        absolutePath: ROUGIER_PATH,
+        subpath: "#page=2&zt-annotation=FDRFQ7C2",
+      },
+    });
+    expect(located).toEqual(["RGRPDF24"]);
+    expect(asked).toEqual([ROUGIER_PATH]);
+  });
+
+  // The fragment carries no library segment of its own, so both keys travel as
+  // Indexed Keys — the form an Annotation Record's key already takes.
+  it("names a group-library Attachment and Annotation by their Indexed Keys", () => {
+    const { located, ctx } = durable();
+    expect(
+      decideFileLinkCapture(
+        "zotero://open/groups/4200309/items/RGRGRUP9?annotation=FDRFQ7C2&page=2",
+        ctx,
+      ),
+    ).toMatchObject({
+      kind: "capture",
+      attachment: { subpath: "#page=2&zt-annotation=FDRFQ7C2g4200309" },
+    });
+    expect(located).toEqual(["RGRGRUP9g4200309"]);
+  });
+
+  // `page` is a printed label. Only a label that reads as a page number can
+  // stand in for Obsidian's own jump; the Annotation's own page wins anyway.
+  it("leaves out a page label that is no page number", () => {
+    const { ctx } = durable();
+    expect(
+      decideFileLinkCapture(
+        "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=iv",
+        ctx,
+      ),
+    ).toMatchObject({ attachment: { subpath: "#zt-annotation=FDRFQ7C2" } });
+  });
+
+  it("leaves a link whose Attachment Zotero does not hold to Zotero", () => {
+    const { ctx } = durable({ location: { kind: "unresolved" } });
+    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
+  });
+
+  it("leaves the link to Zotero while the resolver cannot answer yet", () => {
+    const { ctx } = durable({ location: { kind: "pending" } });
+    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
+  });
+
+  // A synced library on a second computer names a file that never arrived:
+  // that computer reaches the passage through Zotero instead.
+  it("leaves a link whose file is not on this computer to Zotero", () => {
+    const { ctx } = durable({ exists: false });
+    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
+  });
+
+  it("leaves a link to an Attachment Obsidian cannot host to Zotero", () => {
+    const { ctx } = durable({ resolution: RESOLVED_EPUB });
+    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
+  });
+
+  it.each([
+    ["names no annotation", "zotero://open/library/items/RGRPDF24"],
+    [
+      "carries a malformed annotation key",
+      "zotero://open/library/items/RGRPDF24?annotation=FDRF",
+    ],
+    [
+      "selects rather than opens",
+      "zotero://select/library/items/RGRPDF24?annotation=FDRFQ7C2",
+    ],
+  ])("leaves a link that %s alone without asking", (_, url) => {
+    const { located, ctx } = durable();
+    expect(decideFileLinkCapture(url, ctx)).toEqual({ kind: "pass" });
+    expect(located).toEqual([]);
+  });
+});
+
 const ZOTERO_PDF = "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf";
 
 /**
@@ -157,8 +294,13 @@ const ZOTERO_PDF = "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf";
  * `open` reads `target.open` at each call, so a disposed registration is
  * observed rather than the wrapper the install returned.
  */
-function host(resolution: AttachmentResolution, enabled = true) {
+function host(
+  resolution: AttachmentResolution,
+  enabled = true,
+  location: AttachmentLocation = { kind: "unresolved" },
+) {
   const native = vi.fn(() => null);
+  let warmed = 0;
   const opened: {
     attachment: ObsidianOpenableAttachment;
     pane: unknown;
@@ -170,14 +312,22 @@ function host(resolution: AttachmentResolution, enabled = true) {
   const target = { open: native } as unknown as Window;
   const registration = registerFileLinkCapture({
     vaultBasePath: VAULT,
-    attachments: { resolve: () => resolution },
+    attachments: {
+      resolve: () => resolution,
+      locate: () => location,
+      warm: () => void warmed++,
+    },
     settings: { current: { "reader.open-file-links": enabled } as Settings },
     reader,
     window: target,
+    exists: () => true,
   });
   return {
     native,
     opened,
+    get warmed() {
+      return warmed;
+    },
     open: (...args: Parameters<Window["open"]>) => target.open(...args),
     [Symbol.dispose]: registration[Symbol.dispose].bind(registration),
   };
@@ -232,6 +382,61 @@ describe("registerFileLinkCapture", () => {
     capture.open("zotero://open/library/items/ABCD1234");
 
     expect(capture.native).toHaveBeenCalled();
+    expect(capture.opened).toEqual([]);
+  });
+
+  const LOCATED_ROUGIER: AttachmentLocation = {
+    kind: "located",
+    absolutePath: ROUGIER_PATH,
+  };
+
+  // A note's links are clicked before any PDF is open, and a resolver still
+  // building its index answers `pending`, which hands the click to Zotero.
+  it("asks the resolver for its index as it installs", () => {
+    using capture = host(RESOLVED_ROUGIER);
+
+    expect(capture.warmed).toBe(1);
+  });
+
+  it("sends a Durable Annotation Link to the reader at its Annotation", () => {
+    using capture = host(RESOLVED_ROUGIER, true, LOCATED_ROUGIER);
+
+    expect(capture.open(DURABLE, "")).toBeNull();
+
+    expect(capture.native).not.toHaveBeenCalled();
+    expect(capture.opened).toEqual([
+      {
+        attachment: {
+          indexedKey: "RGRPDF24",
+          label: "rougier-2014.pdf",
+          openPath: "attachments/rougier-2014.pdf",
+          absolutePath: ROUGIER_PATH,
+          subpath: "#page=2&zt-annotation=FDRFQ7C2",
+        },
+        pane: false,
+      },
+    ]);
+  });
+
+  it("hands a Durable Annotation Link back to Zotero for Obsidian's open-in-default-app target", () => {
+    using capture = host(RESOLVED_ROUGIER, true, LOCATED_ROUGIER);
+
+    capture.open(DURABLE, "_external");
+
+    expect(capture.native).toHaveBeenCalledWith(
+      DURABLE,
+      "_external",
+      undefined,
+    );
+    expect(capture.opened).toEqual([]);
+  });
+
+  it("hands a Durable Annotation Link back to Zotero while the setting is off", () => {
+    using capture = host(RESOLVED_ROUGIER, false, LOCATED_ROUGIER);
+
+    capture.open(DURABLE, "");
+
+    expect(capture.native).toHaveBeenCalledWith(DURABLE, "", undefined);
     expect(capture.opened).toEqual([]);
   });
 

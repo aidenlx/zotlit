@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { parseAnnotationSubpath } from "@zotlit/db";
+
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { decideFileLinkCapture } from "@/services/attachment-open/capture";
 import type { AttachmentResolution } from "@/services/attachment-resolver/service";
 
 import { annotation } from "./__fixtures__";
@@ -150,6 +153,65 @@ describe("decideMarkLanding", () => {
         { attachment: { kind: "pending" }, records: [], marks: new Map() },
       ),
     ).toEqual({ kind: "page", reason: "attachment-pending" });
+  });
+
+  // A Durable Annotation Link reaches the leaf as the same Anchor a file link
+  // carries, so the Landing it feeds is the one this module already decides.
+  it("selects the Mark a captured Durable Annotation Link names", () => {
+    const capture = decideFileLinkCapture(
+      "zotero://open/library/items/RGRPDF24?annotation=SPILL234&page=1",
+      {
+        resolve: () => RESOLVED,
+        locate: () => ({
+          kind: "located",
+          absolutePath: "/Users/me/Vault/attachments/rougier-2014.pdf",
+        }),
+        exists: () => true,
+        vaultBasePath: "/Users/me/Vault",
+        platform: "darwin",
+      },
+    );
+    if (capture.kind !== "capture")
+      throw new Error("the link was not captured");
+
+    expect(
+      landing(parseAnnotationSubpath(capture.attachment.subpath), {
+        rendered: [4, 5],
+      }),
+    ).toEqual({ kind: "select", annotationKey: "SPILL234", pageIndex: 4 });
+  });
+
+  it("selects the Mark a group-library Durable Annotation Link names", () => {
+    const grouped = annotation("HIGHL234g4200309", "highlight", {
+      pageIndex: 3,
+      rects: [[100, 600, 500, 640]],
+    });
+    const capture = decideFileLinkCapture(
+      "zotero://open/groups/4200309/items/RGRGRUP9?annotation=HIGHL234",
+      {
+        resolve: () => ({ ...RESOLVED, attachmentKey: "RGRGRUP9g4200309" }),
+        locate: () => ({
+          kind: "located",
+          absolutePath: "/Users/me/Zotero/storage/RGRGRUP9/shared.pdf",
+        }),
+        exists: () => true,
+        vaultBasePath: "/Users/me/Vault",
+        platform: "darwin",
+      },
+    );
+    if (capture.kind !== "capture")
+      throw new Error("the link was not captured");
+
+    expect(
+      landing(parseAnnotationSubpath(capture.attachment.subpath), {
+        records: [grouped],
+        marks: new Map([[3, [placement(grouped)]]]),
+      }),
+    ).toEqual({
+      kind: "select",
+      annotationKey: "HIGHL234g4200309",
+      pageIndex: 3,
+    });
   });
 
   it("leaves the page to Obsidian for a file Zotero does not know", () => {
