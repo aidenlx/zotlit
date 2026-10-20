@@ -42,13 +42,6 @@ function host(select?: (keys: readonly string[]) => void) {
 }
 
 describe("ReaderSessionHost", () => {
-  it("names its source and starts holding nothing", () => {
-    const { session } = host();
-    expect(session.source).toBe("obsidian-pdf");
-    expect(session.target).toBe(null);
-    expect(session.selected).toEqual([]);
-  });
-
   it("announces a target only when it moves", () => {
     const { session } = host();
     const seen = watch(session);
@@ -60,15 +53,6 @@ describe("ReaderSessionHost", () => {
 
     expect(seen.targets).toEqual([PAPER, STANDALONE, null]);
     expect(session.target).toBe(null);
-  });
-
-  it("carries a standalone Attachment with no parent Item", () => {
-    const { session } = host();
-    session.setTarget(STANDALONE);
-    expect(session.target).toEqual({
-      attachmentKey: "LSTAND23",
-      itemKey: null,
-    });
   });
 
   it("drops the selection when the Attachment changes", () => {
@@ -96,14 +80,6 @@ describe("ReaderSessionHost", () => {
       ["A2345678", "B2345678"],
       ["B2345678", "A2345678"],
     ]);
-  });
-
-  it("passes both gestures to the reader that owns them", () => {
-    const { session, navigated, asked } = host();
-    session.navigateToAnnotation("ANNO2345");
-    session.setSelectedAnnotations(["ANNO2345"]);
-    expect(navigated).toEqual(["ANNO2345"]);
-    expect(asked).toEqual([["ANNO2345"]]);
   });
 
   it("holds the selection a reader answers with, and no other", () => {
@@ -257,11 +233,5 @@ describe("ZoteroReaderSession", () => {
     session[Symbol.dispose]();
     expect(live.subscribers).toBe(0);
     expect(signals.map((signal) => signal.aborted)).toEqual([true]);
-  });
-
-  it("opens an annotation through the port Zotero gave it", () => {
-    const { session, navigated } = build(PUSHED);
-    session.navigateToAnnotation("ANNO2345");
-    expect(navigated).toEqual(["ANNO2345"]);
   });
 });

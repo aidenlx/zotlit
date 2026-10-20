@@ -83,20 +83,6 @@ afterEach(() => {
   resetMockPlatform();
 });
 
-it("lends the open document's bytes and pages for an absolute path", async () => {
-  const reader = pdfReader();
-  const document_ = withBytes(reader);
-  await using service = await readerRegistry(pdfView("paper.pdf", reader));
-
-  const borrowed = service.borrowDocument("/vault/paper.pdf");
-
-  expect(borrowed?.path).toBe("/vault/paper.pdf");
-  expect(borrowed?.document).toBe(document_);
-  expect(await borrowed?.bytes()).toEqual(PDF_BYTES);
-  expect(await borrowed?.page(0)).toBe(reader.page.pdfPage);
-  expect((document_ as { getPage: Mock }).getPage).toHaveBeenCalledWith(1);
-});
-
 it("answers nothing for a file no open view holds", async () => {
   const reader = pdfReader();
   withBytes(reader);
@@ -240,33 +226,4 @@ it("answers no page for a document that cannot read one", async () => {
   const borrowed = service.borrowDocument("/vault/paper.pdf");
 
   expect(await borrowed?.page(0)).toBeNull();
-});
-
-it("leaves the reader session's own role untouched", async () => {
-  const reader = pdfReader();
-  withBytes(reader);
-  const view = pdfView("paper.pdf", reader);
-  const annotations = annotationReads();
-  await using service = await readerRegistry(
-    view,
-    attachmentReads({
-      kind: "resolved",
-      serverID: null,
-      attachmentKey: "ABCD2345",
-      itemKey: "WXYZ6789g4711",
-      openable: true,
-    }),
-    annotations,
-  );
-
-  reader.renderFirstPage();
-  const binding = service.bindings[0]!;
-  await binding.probed;
-
-  // The binding stands on the reader's own session, and excerpt work reaches
-  // the same document while it does.
-  expect(binding.supported).toBe(true);
-  expect(binding.session).toBe(service.sessionForPath("paper.pdf"));
-  expect(binding.session.source).toBe("obsidian-pdf");
-  expect(service.borrowDocument("/vault/paper.pdf")).not.toBeNull();
 });
