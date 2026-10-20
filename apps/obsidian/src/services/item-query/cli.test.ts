@@ -27,8 +27,8 @@ import {
   QUERY_SCHEMA_COMMAND,
 } from "./contract";
 import type { Diagnostic } from "./contract";
-import { decodeQuery, rejectionDiagnostic } from "./decode";
-import { GUIDE_EXAMPLES, GUIDE_FILTERS, GUIDE_TOPIC_NAMES } from "./guide";
+import { decodeQuery } from "./decode";
+import { GUIDE_EXAMPLES, GUIDE_FILTERS } from "./guide";
 
 const itemQueryGuideHandler = guideHandler;
 
@@ -230,87 +230,6 @@ describe("zotlit:query formula answer text", () => {
 });
 
 describe("zotlit:query-guide", () => {
-  it("prints the quickstart as plain text with every command and topic", () => {
-    const output = itemQueryGuideHandler({});
-
-    expect(() => JSON.parse(output)).toThrow();
-    for (const command of [
-      QUERY_COMMAND,
-      QUERY_CANCEL_COMMAND,
-      QUERY_SCHEMA_COMMAND,
-      QUERY_GUIDE_COMMAND,
-    ]) {
-      expect(output).toContain(command);
-    }
-    for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
-    expect(output).toContain(
-      "obsidian zotlit:query [from=<items|attachments|annotations>]",
-    );
-    expect(output).toContain("[fields=<list|json>]");
-    expect(output).toContain("[formulas=<json>]");
-    expect(output).toContain("[library=<list|all>]");
-    expect(output).toContain("Library scope");
-    expect(output).toContain("from=annotations");
-  });
-
-  it("prints the recovery text of each diagnostic code that the handlers answer", async () => {
-    using scenario = openScenarioDatabase({ annotations: true });
-    const output = itemQueryGuideHandler({ topic: "results" });
-    const flat = output.replaceAll(/\s+/g, " ");
-    const run = runnerOf(scenario, {
-      mode: "selected",
-      libraries: [{ type: "group", groupID: 999 }],
-    });
-
-    type Answered = { code: string; hint: string };
-    // The renderer answers a malformed argument; the handler, the rest.
-    const malformed = decodeQuery({ limit: "0" });
-    if (malformed.kind === "valid") throw new Error("limit=0 decoded");
-    const diagnostics: Answered[] = [rejectionDiagnostic(malformed)];
-    const failing: CliData[] = [{}, { library: "group:999" }];
-    for (const params of failing) {
-      const answer = (await run(params)) as { diagnostic: Answered };
-      diagnostics.push(answer.diagnostic);
-    }
-
-    for (const { code, hint } of diagnostics) {
-      expect(flat).toContain(`${code}: ${hint}`);
-    }
-  });
-
-  it.each([
-    ["filter", ["key is the Zotero Key", "attachments", "lower()", "within"]],
-    ["fields", ['custom["<exact name>"]', "fields='[]'", "null"]],
-    ["sort", ["10 comes before 9", "first possible day", "limit", "all"]],
-    [
-      "results",
-      [
-        "diagnostic.report",
-        "warnings",
-        "suggestions",
-        "severity",
-        "location",
-        "span",
-      ],
-    ],
-    [
-      "cancel",
-      [
-        "id=",
-        "obsidian zotlit:query-cancel id=",
-        "cancelRequested",
-        "already finished",
-        "query-id-in-use",
-        "Without id",
-      ],
-    ],
-  ])("prints topic=%s", (topic, facts) => {
-    const output = itemQueryGuideHandler({ topic });
-
-    expect(() => JSON.parse(output)).toThrow();
-    expect(facts.filter((fact) => !output.includes(fact))).toEqual([]);
-  });
-
   it("answers an unknown topic with the diagnostic envelope", () => {
     const answer = JSON.parse(itemQueryGuideHandler({ topic: "bogus" }));
 

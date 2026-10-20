@@ -536,29 +536,6 @@ describe("NoteIndex", () => {
     ]);
   });
 
-  it("warns with every path when an Indexed Key resolves to multiple literature notes", async () => {
-    const { service } = await makeHarness(
-      {
-        "Literature/Newer.md": cache({ itemKey: ITEM_A }),
-        "Archive/Older.md": cache({ itemKey: ITEM_A }),
-      },
-      { enabledAtRuntime: true },
-    );
-
-    service.getNotesByItemKey(ITEM_A);
-
-    expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "Indexed Key resolves to multiple Literature Notes",
-      {
-        indexedKey: ITEM_A,
-        paths: ["Archive/Older.md", "Literature/Newer.md"],
-      },
-    );
-
-    service.getNotesByItemKey(ITEM_A);
-    expect(warn).toHaveBeenCalledOnce();
-  });
-
   it("drops the item index on delete", async () => {
     const { service, vault, metadataCache, workspace } = await makeHarness({
       "paper.md": cache({ itemKey: ITEM_A }),

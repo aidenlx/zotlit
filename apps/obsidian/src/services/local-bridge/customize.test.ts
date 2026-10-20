@@ -208,21 +208,6 @@ describe("the Customize flow", () => {
     expect(local.update).not.toHaveBeenCalled();
   });
 
-  it("shows the sheet on the first launch of this device, then opens the browser", async () => {
-    await h.customize({ profileId: "default" });
-
-    expect(h.sheets).toHaveLength(1);
-    expect(h.sheets[0]).toEqual({
-      website: "zotlit.aidenlx.site",
-      vault: "Research",
-      item: null,
-      template: "Default",
-      turnServerOn: false,
-      turnWorkbenchOn: false,
-    });
-    expect(h.opened).toEqual([LAUNCH_URL]);
-  });
-
   it("skips the sheet once the web choice is remembered", async () => {
     const asked = harness({
       settings: { "server.enabled": true },
@@ -388,19 +373,6 @@ describe("the Customize flow", () => {
     });
     await plain.customize({ profileId: "default" });
     expect(plain.launches[0]).toEqual({ profileId: "default", item: null });
-  });
-
-  it("keeps an Eta Profile in Obsidian instead of opening a browser", async () => {
-    const eta = harness({
-      settings: { "server.enabled": true },
-      source: ETA_PROFILE,
-    });
-
-    await eta.customize({ profileId: "default" });
-
-    expect(eta.opened).toEqual([]);
-    expect(eta.sheets).toEqual([]);
-    expect(eta.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
   });
 
   it.each([

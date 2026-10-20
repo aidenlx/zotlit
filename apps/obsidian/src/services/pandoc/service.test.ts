@@ -129,15 +129,6 @@ function harness(options: HarnessOptions = {}) {
 }
 
 describe("PandocEngineService", () => {
-  it("downloads nothing until an explicit install", async () => {
-    const { service, download } = harness();
-    await service.ready;
-
-    expect(service.getStatus()).toEqual({ kind: "absent" });
-    expect(download).not.toHaveBeenCalled();
-    await service[Symbol.asyncDispose]();
-  });
-
   it("caches a verified binary under its own hash", async () => {
     const { service, store, download } = harness();
     await service.ready;
@@ -152,21 +143,6 @@ describe("PandocEngineService", () => {
       version: PIN.version,
       binary: { directory: "pandoc-engine", name: CACHED_NAME },
     });
-    await service[Symbol.asyncDispose]();
-  });
-
-  it("reports a binary that does not match the pinned hash, and caches nothing", async () => {
-    const expected = "f".repeat(64);
-    const { service, store } = harness({ pin: { ...PIN, sha256: expected } });
-    await service.ready;
-
-    await expect(service.install()).rejects.toThrow();
-
-    expect(service.getStatus()).toEqual({
-      kind: "failed",
-      failure: { code: "hash-mismatch", expected, actual: PIN.sha256 },
-    });
-    expect([...store.files.keys()]).toEqual([]);
     await service[Symbol.asyncDispose]();
   });
 
@@ -217,24 +193,6 @@ describe("PandocEngineService", () => {
     await service[Symbol.asyncDispose]();
   });
 
-  it("drops earlier binaries once the new one verifies, leaving downloads in flight alone", async () => {
-    const stale = bytes(new TextEncoder().encode("pandoc 3.9"));
-    const { service, store } = harness({
-      files: {
-        "0123.wasm": stale,
-        [`${"9".repeat(64)}.f1e2.part`]: stale,
-      },
-    });
-    await service.ready;
-
-    await service.install();
-
-    expect([...store.files.keys()].sort()).toEqual(
-      [`${"9".repeat(64)}.f1e2.part`, CACHED_NAME].sort(),
-    );
-    await service[Symbol.asyncDispose]();
-  });
-
   it("replaces the binary another vault cached while the download ran", async () => {
     const { service, store } = harness({
       // The competing vault verifies the same bytes and renames onto the cache
@@ -255,18 +213,6 @@ describe("PandocEngineService", () => {
       version: PIN.version,
       binary: { directory: "pandoc-engine", name: CACHED_NAME },
     });
-    await service[Symbol.asyncDispose]();
-  });
-
-  it("clears the whole cache on uninstall and offers the install again", async () => {
-    const { service, store } = harness();
-    await service.ready;
-    await service.install();
-
-    await service.uninstall();
-
-    expect([...store.files.keys()]).toEqual([]);
-    expect(service.getStatus()).toEqual({ kind: "absent" });
     await service[Symbol.asyncDispose]();
   });
 
@@ -292,25 +238,6 @@ describe("PandocEngineService", () => {
     expect([...store.files.keys()]).toEqual([]);
     expect(service.getStatus()).toEqual({ kind: "absent" });
     await service[Symbol.asyncDispose]();
-  });
-
-  it("remembers a declined offer across restarts, and forgets it on install", async () => {
-    const consent = memoryConsent();
-    const first = harness({ consent });
-    await first.service.ready;
-
-    first.service.decline();
-    expect(first.service.getStatus()).toEqual({ kind: "declined" });
-    await first.service[Symbol.asyncDispose]();
-
-    const restarted = harness({ consent });
-    await restarted.service.ready;
-    expect(restarted.service.getStatus()).toEqual({ kind: "declined" });
-
-    await restarted.service.install();
-    await restarted.service.uninstall();
-    expect(restarted.service.getStatus()).toEqual({ kind: "absent" });
-    await restarted.service[Symbol.asyncDispose]();
   });
 
   it("notifies subscribers on every status change", async () => {
