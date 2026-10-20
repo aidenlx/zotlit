@@ -42,7 +42,7 @@ import {
   withText,
 } from "./document";
 import type { LibraryNode, LibraryViewDocument } from "./document";
-import { searchTerms } from "./search";
+import { searchTerms, searchTokens } from "./search";
 
 /** The filter ZotLit Query runs for a view that holds no vault condition. */
 const viewFilter = (file: QueryFile, view: QueryFileView) =>
@@ -884,6 +884,38 @@ describe("searchTerms", () => {
 
   it("keeps a bare tag: as a word", () => {
     expect(searchTerms("tag: fig")).toEqual({ words: "tag: fig", tags: [] });
+  });
+
+  it("keeps the Annotation Suggester's color: and paper: tokens as words", () => {
+    expect(searchTerms("color:red paper:rougier tag:a")).toEqual({
+      words: "color:red paper:rougier",
+      tags: ["a"],
+    });
+  });
+});
+
+describe("searchTokens", () => {
+  it("reads each named token in the tag: grammar, bare or quoted", () => {
+    expect(
+      searchTokens(
+        'fig Color:yellow paper:"ten simple" tag:method color:#FF6666',
+        ["tag", "color", "paper"],
+      ),
+    ).toEqual({
+      words: "fig",
+      tokens: {
+        tag: ["method"],
+        color: ["yellow", "#FF6666"],
+        paper: ["ten simple"],
+      },
+    });
+  });
+
+  it("leaves a name it was not given among the words", () => {
+    expect(searchTokens("note:x tag:a", ["tag"])).toEqual({
+      words: "note:x",
+      tokens: { tag: ["a"] },
+    });
   });
 });
 

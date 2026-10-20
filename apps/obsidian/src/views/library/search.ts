@@ -1,15 +1,10 @@
 // The text in the Library View's search box, as the search reads it: the
 // words go to the worker search, ranked as the quick switcher ranks, and
-// each `tag:` token narrows to the Items with that tag.
+// each `tag:` token narrows to the Items with that tag. The Annotation
+// Suggester reads its query in the same grammar, with `color:` and `paper:`
+// beside `tag:`.
 //
 // @see apps/obsidian/docs/adr/0073-search-enters-the-library-view-as-an-ordered-key-set.md
-import { regex } from "arkregex";
-
-/** A `tag:` token: a bare name, or a quoted one that may hold spaces. */
-const TAG_TOKEN = regex(
-  '(?:^|\\s)tag:(?:"(?<quoted>[^"]+)"|(?<bare>[^\\s"]+))',
-  "gi",
-);
 
 export interface SearchTerms {
   /** The words the worker search ranks by; empty where the text holds only tags. */
@@ -18,11 +13,41 @@ export interface SearchTerms {
   readonly tags: readonly string[];
 }
 
+export interface SearchTokens<Name extends string> {
+  /** The text outside the tokens, its words joined by one space. */
+  readonly words: string;
+  /** The values of each token name, in the order the text names them. */
+  readonly tokens: { readonly [K in Name]: readonly string[] };
+}
+
+/**
+ * Split `text` into words and `name:` tokens: a token is `name:` at the start
+ * of the text or after whitespace, then a bare value or a quoted one that may
+ * hold spaces. A name matches in any case. A name not in `names`, and a
+ * `name:` with no value, stay among the words.
+ *
+ * @param names - lowercase token names, letters only.
+ */
+export function searchTokens<const Name extends string>(
+  text: string,
+  names: readonly Name[],
+): SearchTokens<Name> {
+  const tokens = Object.fromEntries(
+    names.map((name) => [name, [] as string[]]),
+  ) as Record<Name, string[]>;
+  const token = new RegExp(
+    `(?:^|\\s)(?<name>${names.join("|")}):(?:"(?<quoted>[^"]+)"|(?<bare>[^\\s"]+))`,
+    "gi",
+  );
+  for (const match of text.matchAll(token)) {
+    const { name, quoted, bare } = match.groups!;
+    tokens[name!.toLowerCase() as Name].push((quoted ?? bare)!);
+  }
+  const words = text.replace(token, " ").split(/\s+/).filter(Boolean);
+  return { words: words.join(" "), tokens };
+}
+
 export function searchTerms(text: string): SearchTerms {
-  const tags: string[] = [];
-  TAG_TOKEN.lastIndex = 0;
-  for (let match = TAG_TOKEN.exec(text); match; match = TAG_TOKEN.exec(text))
-    tags.push((match.groups.quoted ?? match.groups.bare)!);
-  const words = text.replace(TAG_TOKEN, " ").split(/\s+/).filter(Boolean);
-  return { words: words.join(" "), tags };
+  const { words, tokens } = searchTokens(text, ["tag"]);
+  return { words, tags: tokens.tag };
 }
