@@ -57,6 +57,8 @@ interface ReaderState {
 
 /** What one scenario left behind, read before its own cleanup ran. */
 interface Outcome {
+  /** Whether the Rougier PDF's view draws any Annotation Mark. */
+  drawn: boolean;
   /** The Rougier PDF's view, or `null` when no tab shows it. */
   reader: ReaderState | null;
   /** Every `zotero:` URL the system handler was asked to open. */
@@ -125,6 +127,7 @@ async function follow({
       const observe=()=>{
         const pdf=app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(PDF_PATH)});
         return {
+          drawn:!!pdf?.containerEl.querySelector('.zt-pdf-annotation-mark'),
           reader:pdf?{page:pdf.viewer.child?.pdfViewer?.pdfViewer?.currentPageNumber??null,selected:[...new Set([...pdf.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))]}:null,
           passed:window.__ztLinks.passed.slice(),
           notices:${WINDOW_DOCUMENTS}.flatMap((doc)=>[...doc.querySelectorAll('.notice')].map((notice)=>notice.textContent)),
@@ -152,9 +155,21 @@ async function follow({
         if(${gesture === "live-preview" || gesture === "properties"})view.editor.setCursor({line:view.editor.lastLine(),ch:0});
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
-        for(const end=Date.now()+15000;Date.now()<end;await sleep(100)){
-          const now=observe();
-          if(now.passed.length>0||(lands!==null&&JSON.stringify(now.reader)===lands))break;
+        if(lands===null){
+          // A passed link is recorded as the open hands it on, which is the
+          // whole of the gesture's work.
+          for(const end=Date.now()+15000;window.__ztLinks.passed.length===0;await sleep(100))
+            if(Date.now()>end)throw new Error('No link reached the system handler');
+        }else{
+          // The reader's binding decides the Landing as it draws the read it
+          // starts once it names the Attachment; a later read replaces the
+          // promise, so the wait runs until the one awaited is the last.
+          let binding=null;
+          for(const end=Date.now()+15000;!(binding=s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'));await sleep(100))
+            if(Date.now()>end)throw new Error('No reader named the PDF\\'s Attachment');
+          for(let read=binding.refreshed;;read=binding.refreshed){await read;if(read===binding.refreshed)break;}
+          // Obsidian's own page jump and the Landing's scroll frame follow.
+          for(const end=Date.now()+15000;JSON.stringify(observe().reader)!==lands&&Date.now()<end;)await sleep(100);
         }
         outcome=observe();
       }
@@ -252,7 +267,13 @@ describe.skipIf(!reachable)("Annotation links", () => {
       lands,
     });
 
-    expect(outcome).toEqual({ reader: lands, passed: [], notices: [] });
+    // `drawn` says the read the Landing was decided against reached the page.
+    expect(outcome).toEqual({
+      drawn: true,
+      reader: lands,
+      passed: [],
+      notices: [],
+    });
   }, 120000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps
@@ -289,6 +310,7 @@ describe.skipIf(!reachable)("Annotation links", () => {
         });
 
         expect(outcome).toEqual({
+          drawn: false,
           reader: null,
           passed: [expect.objectContaining({ url })],
           notices: [],

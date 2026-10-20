@@ -353,15 +353,16 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
 // resolver from one nobody asked.
 it("settles indexed once the first index lands, and builds nothing itself", async () => {
   await using stack = new AsyncDisposableStack();
-  const { resolver } = await setup(stack, { prime: false });
-  let settled = false;
-  void resolver.indexed.then(() => (settled = true));
+  const { resolver, queries } = await setup(stack, { prime: false });
+  // Every build asks the query client for the index, as it starts.
+  const builds = vi.spyOn(queries, "ask");
 
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(settled).toBe(false);
+  const indexed = resolver.indexed;
+  expect(builds).not.toHaveBeenCalled();
 
   resolver.warm();
-  await resolver.indexed;
+  expect(builds).toHaveBeenCalledOnce();
+  await indexed;
   expect(resolver.locate("RGRPDF24")).toMatchObject({ kind: "located" });
 });
 
@@ -602,6 +603,7 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
   return {
     resolver,
     reads,
+    queries,
     zoteroPref,
     prefEvents,
     /** Makes every later path index read fail, until set back. */
