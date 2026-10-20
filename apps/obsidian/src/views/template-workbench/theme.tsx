@@ -12,7 +12,7 @@ import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
 
-import { codePane } from "./editor-extension";
+import { codePane, hostedEditor } from "./editor-extension";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
@@ -189,6 +189,10 @@ const previewNotice =
 export const templateWorkbenchTheme: WorkbenchTheme = {
   icon: (name) => <Icon name={templateWorkbenchIcons[name]} />,
   editorExtension: () => [templateHighlighting, codePane],
+  // The Match editor, the Filter popover and the Formula page all draw their
+  // expression editors under this theme, so each keeps working in a popout;
+  // they keep the text font the code pane would replace.
+  expressionExtension: hostedEditor,
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",

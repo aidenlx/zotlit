@@ -14,24 +14,12 @@ import {
 import { themeHook } from "@/lib/theme-hooks";
 
 import { CODE_PANE_CLASS, codePane } from "./editor-extension";
+import { windowMigration } from "./test-window-migration";
 
 let view: EditorView | null = null;
-const onWindowMigrated = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "onWindowMigrated",
-);
 afterEach(() => {
   view?.destroy();
   view = null;
-  if (onWindowMigrated) {
-    Object.defineProperty(
-      HTMLElement.prototype,
-      "onWindowMigrated",
-      onWindowMigrated,
-    );
-  } else {
-    Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
-  }
   Reflect.deleteProperty(navigator, "clipboard");
 });
 
@@ -141,20 +129,8 @@ describe("template token hooks", () => {
 });
 
 describe("code panes", () => {
-  function migrationHost() {
-    let migrate: ((win: Window) => void) | null = null;
-    const dispose = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "onWindowMigrated", {
-      configurable: true,
-      value: (listener: (win: Window) => void) => {
-        migrate = listener;
-        return dispose;
-      },
-    });
-    return { dispose, move: (win: Window) => migrate?.(win) };
-  }
   it("puts the code class on the editor element", () => {
-    migrationHost();
+    using _migration = windowMigration();
     view = new EditorView({
       state: EditorState.create({ doc: "", extensions: [codePane] }),
       parent: document.body,
@@ -163,7 +139,7 @@ describe("code panes", () => {
   });
 
   it("moves editor styles to its new document and releases the native listener", () => {
-    const host = migrationHost();
+    using host = windowMigration();
     view = new EditorView({
       state: EditorState.create({
         doc: "{{ zt.title }}",
@@ -181,11 +157,11 @@ describe("code panes", () => {
     expect(view.state).toBe(state);
     view.destroy();
     view = null;
-    expect(host.dispose).toHaveBeenCalledOnce();
+    expect(host.release).toHaveBeenCalledOnce();
   });
 
   it("copies in a popout without moving focus through a fallback textarea", () => {
-    const host = migrationHost();
+    using host = windowMigration();
     const frame = document.createElement("iframe");
     document.body.append(frame);
     const writeText = vi.fn(async () => {});
