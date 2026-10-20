@@ -200,10 +200,20 @@ export function signatureHint(options: SignatureHintOptions = {}): Extension {
         : value,
     provide: (field) => showTooltip.from(field),
   });
+  // The focus events set the field as they fire. CodeMirror's own focus
+  // notice comes later and is dropped when another dispatch comes first, as
+  // a host's dispatch from the same focus event does.
+  const tell = (view: EditorView, focus: boolean) => {
+    if (view.state.field(focused) !== focus)
+      view.dispatch({ effects: setFocused.of(focus) });
+  };
   return [
     focused,
     hint,
-    EditorView.focusChangeEffect.of((_state, focus) => setFocused.of(focus)),
+    EditorView.domEventHandlers({
+      focus: (_event, view) => tell(view, true),
+      blur: (_event, view) => tell(view, false),
+    }),
   ];
 }
 

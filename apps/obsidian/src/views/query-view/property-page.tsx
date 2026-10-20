@@ -13,7 +13,7 @@ import { useStore } from "zustand";
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
 import {
-  ExpressionVocabularyProvider,
+  ExpressionTypesProvider,
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
@@ -29,7 +29,7 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import { expressionVocabulary } from "@/views/template-workbench/expression-vocabulary";
+import { expressionTypes } from "@/views/template-workbench/expression-types";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
 import { datasetSpec } from "./datasets";
@@ -175,8 +175,8 @@ function ExpressionField({
           )
         }
       >
-        <ExpressionVocabularyProvider
-          vocabulary={expressionVocabulary(datasetSpec(dataset).engine)}
+        <ExpressionTypesProvider
+          types={expressionTypes(datasetSpec(dataset).engine)}
         >
           <MatchExpressionInput
             lines={3}
@@ -186,7 +186,7 @@ function ExpressionField({
             onChange={onChange}
             onBlur={onBlur}
           />
-        </ExpressionVocabularyProvider>
+        </ExpressionTypesProvider>
       </Chooser.PageField>
     </WorkbenchThemeProvider>
   );

@@ -3,7 +3,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 
 import {
-  ExpressionVocabularyProvider,
+  ExpressionTypesProvider,
   MatchExpressionInput,
 } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
@@ -39,19 +39,19 @@ it("mounts the extension the theme supplies for expression editors", () => {
   ).toBe(true);
 });
 
-it("shows the Signature Hint of the method at the caret, typed by the vocabulary", async () => {
+it("shows the Signature Hint of the method at the caret, typed as the host types it", async () => {
   // happy-dom reports a document without focus, which CodeMirror reads as
   // an editor without focus.
   const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   onTestFinished(() => hasFocus.mockRestore());
   const { container } = render(
-    <ExpressionVocabularyProvider
-      vocabulary={{
+    <ExpressionTypesProvider
+      types={{
         receiverType: (text) => (text === "title" ? "string" : undefined),
       }}
     >
       <MatchExpressionInput value="title.slice(1, )" onChange={() => {}} />
-    </ExpressionVocabularyProvider>,
+    </ExpressionTypesProvider>,
   );
   const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
   view.focus();

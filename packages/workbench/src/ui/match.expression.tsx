@@ -25,24 +25,24 @@ import { signatureHint } from "#/language/signature-hint";
  * a method call's receiver in its Query Dataset. A field without one still
  * shows the Signature Hint, naming every definition of a method.
  */
-export interface ExpressionVocabulary {
+export interface ExpressionTypes {
   readonly receiverType?: SignatureHintOptions["receiverType"];
 }
 
-const ExpressionVocabularyContext = createContext<ExpressionVocabulary>({});
+const ExpressionTypesContext = createContext<ExpressionTypes>({});
 
-/** Gives the expression fields under it the host's vocabulary. */
-export function ExpressionVocabularyProvider({
-  vocabulary,
+/** Gives the expression fields under it what the host knows of their expressions. */
+export function ExpressionTypesProvider({
+  types,
   children,
 }: {
-  vocabulary: ExpressionVocabulary;
+  types: ExpressionTypes;
   children: ReactNode;
 }) {
   return (
-    <ExpressionVocabularyContext.Provider value={vocabulary}>
+    <ExpressionTypesContext.Provider value={types}>
       {children}
-    </ExpressionVocabularyContext.Provider>
+    </ExpressionTypesContext.Provider>
   );
 }
 
@@ -93,7 +93,7 @@ export function MatchExpressionInput({
 }: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
   const part = useParts("match");
   const hostExtension = useExpressionExtension();
-  const vocabulary = useContext(ExpressionVocabularyContext);
+  const types = useContext(ExpressionTypesContext);
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   // The editor is made once; it reads what it needs then, and later props,
@@ -107,7 +107,7 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
-    vocabulary,
+    types,
   });
   props.current = {
     value,
@@ -118,7 +118,7 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
-    vocabulary,
+    types,
   };
   const attributes = useRef(new Compartment());
   useEffect(() => {
@@ -132,8 +132,7 @@ export function MatchExpressionInput({
           filterExpressionLanguage,
           filterExpressionHighlighting,
           signatureHint({
-            receiverType: (text) =>
-              props.current.vocabulary.receiverType?.(text),
+            receiverType: (text) => props.current.types.receiverType?.(text),
           }),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
