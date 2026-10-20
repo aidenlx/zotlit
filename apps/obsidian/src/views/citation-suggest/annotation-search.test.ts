@@ -153,6 +153,25 @@ describe("searchAnnotations", () => {
     }
   });
 
+  it("lists every annotation for an empty query, the latest paper first", async () => {
+    await using h = setup({
+      RULES222: Temporal.Instant.from("2026-10-01T00:00:00Z").epochMilliseconds,
+    });
+    const keys = await h.search("");
+    expect(keys[0]).toBe("RULESANN");
+    expect(keys.toSorted()).toEqual(
+      [
+        "RULESANN",
+        "ANN2HGHT",
+        ...COMMENTED,
+        "ANL2IMAG",
+        "ANL2INK2",
+        "ANL2UNDR",
+        "ANL2TEXT",
+      ].toSorted(),
+    );
+  });
+
   it("returns what a hit shows and inserts", async () => {
     await using h = setup();
     const [hit] = (await searchAnnotations(h.service, "use it", {
