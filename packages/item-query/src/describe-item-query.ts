@@ -86,6 +86,8 @@ export interface SchemaParameter {
 /** A global function of the Filter Expression language. */
 export interface SchemaFunction {
   readonly name: string;
+  /** One English sentence that says what the call yields. */
+  readonly description: string;
   readonly parameters: readonly SchemaParameter[];
   /** Parameters after the required ones that a call can omit. */
   readonly optional: readonly SchemaParameter[];
@@ -111,6 +113,8 @@ export interface SchemaMethod extends SchemaFunction {
 export interface SchemaProperty {
   readonly name: string;
   readonly on: FilterValueType;
+  /** One English sentence that says what the property reads. */
+  readonly description: string;
   readonly returns: FilterType;
 }
 
@@ -393,10 +397,11 @@ const parameter = ({
 function signature(
   definition: Pick<
     FunctionDefinition,
-    "parameters" | "optional" | "rest" | "returns"
+    "description" | "parameters" | "optional" | "rest" | "returns"
   >,
 ): Omit<SchemaFunction, "name"> {
   return {
+    description: definition.description,
     parameters: definition.parameters.map(parameter),
     optional: (definition.optional ?? []).map(parameter),
     rest: definition.rest ? parameter(definition.rest) : null,
@@ -423,5 +428,10 @@ const METHODS: readonly SchemaMethod[] = METHOD_ENTRIES.map(
 );
 
 const PROPERTIES: readonly SchemaProperty[] = PROPERTY_ENTRIES.map(
-  ([on, name, property]) => ({ name, on, returns: property.returns }),
+  ([on, name, property]) => ({
+    name,
+    on,
+    description: property.description,
+    returns: property.returns,
+  }),
 );

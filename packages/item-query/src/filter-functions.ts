@@ -61,6 +61,11 @@ export interface FunctionParameter {
  * Error Value; `call` does not run. An Error Value argument is the result.
  */
 export interface FunctionDefinition {
+  /**
+   * One English sentence, in the Query Schema vocabulary, that says what the
+   * call yields. The Item Query Schema publishes it.
+   */
+  readonly description: string;
   /** Semantic eligibility for a diagnostic correction, checked with the signature. */
   readonly diagnosticCorrection?: "membership" | "conversion";
   /** The required parameters, in order. */
@@ -92,6 +97,8 @@ export interface FunctionDefinition {
 
 /** A property of a value, read as `value.name`. */
 export interface PropertyDefinition {
+  /** One English sentence that says what the property reads. */
+  readonly description: string;
   /** The type of the result when it is not null. */
   readonly returns: Exclude<FilterValueType, "null">;
   readonly read: (subject: FilterValue, clock: QueryClock) => FilterValue;
@@ -182,8 +189,12 @@ function inRange(value: FilterValue | undefined, max: number): value is number {
 }
 
 /** `min` and `max`: the pick among the numbers; null without a number. */
-function extreme(pick: (...values: number[]) => number): FunctionDefinition {
+function extreme(
+  pick: (...values: number[]) => number,
+  description: string,
+): FunctionDefinition {
   return {
+    description,
     parameters: NONE,
     rest: { ...number("values"), nullable: true },
     returns: "number",
@@ -200,6 +211,8 @@ function extreme(pick: (...values: number[]) => number): FunctionDefinition {
  */
 export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
   number: {
+    description:
+      "The value as a number: a text read as a decimal number, a boolean as 1 or 0, and a date as its Unix time in milliseconds; a text that is not a number gives an Error Value.",
     parameters: [any("value")],
     returns: "number",
     call: (_subject, [value = null], clock) => {
@@ -213,7 +226,6 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
           ? unparseable("number", value)
           : finite(parsed, "number");
       }
-      // A date is its Unix time in milliseconds, as its `timestamp` property.
       if (isDate(value)) return datePart(value, "timestamp", clock);
       return errorValue({
         code: "wrong-argument-type",
@@ -224,24 +236,34 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
       });
     },
   },
-  min: extreme(Math.min),
-  max: extreme(Math.max),
-  // The Query Clock: every call in one query sees the same instant.
+  min: extreme(
+    Math.min,
+    "The smallest number among the arguments, or null when no argument is a number.",
+  ),
+  max: extreme(
+    Math.max,
+    "The largest number among the arguments, or null when no argument is a number.",
+  ),
   now: {
+    description:
+      "The instant of the Query Clock as a date with a time, the same for every call in one query.",
     parameters: NONE,
     returns: "date",
     call: (_subject, _args, clock) => timestamp(clock.now),
   },
   today: {
+    description:
+      "The calendar day of the Query Clock in the query time zone, as a date.",
     parameters: NONE,
     returns: "date",
     call: (_subject, _args, clock) => today(clock),
   },
   date: {
+    description:
+      "The text read as a date, or a date unchanged; a text that is not a date gives an Error Value.",
     diagnosticCorrection: "conversion",
     parameters: [{ name: "text", type: ["string", "date"] }],
     returns: "date",
-    // A date stays as it is.
     call: (_subject, [text], clock) =>
       typeof text === "string"
         ? blank(text)
@@ -250,6 +272,8 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
         : text!,
   },
   duration: {
+    description:
+      'The text read as a duration, such as `"7d"` or `"PT1H30M"`; a text that is not a duration gives an Error Value.',
     diagnosticCorrection: "conversion",
     parameters: [string("text")],
     returns: "duration",
@@ -259,9 +283,9 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
         : (parseDuration(text as string) ??
           unparseable("duration", text as string)),
   },
-  // A list stays as it is; null is the empty list; any other value is a
-  // one-element list.
   list: {
+    description:
+      "The value as a list: a list unchanged, null as the empty list, and any other value as a list of that one element.",
     parameters: [any("value")],
     returns: "list",
     call: (_subject, [value = null]) =>
@@ -271,19 +295,30 @@ export const GLOBAL_FUNCTIONS: Registry<FunctionDefinition> = functions({
 
 /** The parameters of the `if` special form: `if(condition, then, else?)`. */
 export const IF_FUNCTION = {
+  description:
+    "The `then` value when the condition is truthy, otherwise the `else` value or null; only the selected branch is evaluated.",
   parameters: [any("condition"), any("then")],
   optional: [any("else")],
-} as const satisfies Pick<FunctionDefinition, "parameters" | "optional">;
+} as const satisfies Pick<
+  FunctionDefinition,
+  "description" | "parameters" | "optional"
+>;
 
 const isEmpty = (
   empty: (subject: FilterValue) => boolean,
+  description: string,
 ): FunctionDefinition => ({
+  description,
   parameters: NONE,
   returns: "boolean",
   call: (subject) => empty(subject),
 });
 
-const rounding = (round: (value: number) => number): FunctionDefinition => ({
+const rounding = (
+  round: (value: number) => number,
+  description: string,
+): FunctionDefinition => ({
+  description,
   parameters: NONE,
   returns: "number",
   call: (subject) => round(subject as number),
@@ -342,10 +377,11 @@ function sortOrder(a: FilterValue, b: FilterValue, clock: QueryClock): number {
  * `value` and `index` for each element, and `acc` in `reduce`.
  */
 const elementMethod = (
-  entry: Pick<FunctionDefinition, "returns" | "scope"> & {
+  entry: Pick<FunctionDefinition, "description" | "returns" | "scope"> & {
     readonly after?: readonly FunctionParameter[];
   },
 ): FunctionDefinition => ({
+  description: entry.description,
   parameters: [any("expression"), ...(entry.after ?? [])],
   returns: entry.returns,
   scope: entry.scope,
@@ -357,12 +393,16 @@ const elementMethod = (
 /** The methods of each value type. A type also has {@link ANY_METHODS}. */
 const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
   {
-    null: functions({ isEmpty: isEmpty(() => true) }),
+    null: functions({
+      isEmpty: isEmpty(() => true, "True: null is empty."),
+    }),
     boolean: functions({}),
     record: functions({}),
     number: functions({
-      isEmpty: isEmpty(() => false),
+      isEmpty: isEmpty(() => false, "False: a number is never empty."),
       round: {
+        description:
+          "The number rounded to the nearest integer, or to `digits` decimal places.",
         parameters: NONE,
         optional: [number("digits")],
         returns: "number",
@@ -379,12 +419,12 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           );
         },
       },
-      ceil: rounding(Math.ceil),
-      floor: rounding(Math.floor),
-      abs: rounding(Math.abs),
-      // A text with `precision` decimals; a precision outside 0 to 100 is
-      // out of range.
+      ceil: rounding(Math.ceil, "The number rounded up to an integer."),
+      floor: rounding(Math.floor, "The number rounded down to an integer."),
+      abs: rounding(Math.abs, "The absolute value of the number."),
       toFixed: {
+        description:
+          "The number as text with `precision` decimal places, from 0 to 100.",
         parameters: [number("precision")],
         returns: "string",
         call: (subject, [precision]) =>
@@ -394,30 +434,38 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
     }),
     string: functions({
-      isEmpty: isEmpty((subject) => subject === ""),
+      isEmpty: isEmpty(
+        (subject) => subject === "",
+        "Whether the text is the empty text.",
+      ),
       lower: {
+        description: "The text in lower case.",
         parameters: NONE,
         returns: "string",
         call: (subject) => (subject as string).toLowerCase(),
       },
       startsWith: {
+        description: "Whether the text starts with `prefix`.",
         parameters: [string("prefix")],
         returns: "boolean",
         call: (subject, [prefix]) =>
           (subject as string).startsWith(prefix as string),
       },
       endsWith: {
+        description: "Whether the text ends with `suffix`.",
         parameters: [string("suffix")],
         returns: "boolean",
         call: (subject, [suffix]) =>
           (subject as string).endsWith(suffix as string),
       },
       contains: {
+        description: "Whether `text` occurs in the text.",
         parameters: [string("text")],
         returns: "boolean",
         call: (subject, [text]) => (subject as string).includes(text as string),
       },
       containsAny: {
+        description: "Whether the text contains at least one of `texts`.",
         parameters: NONE,
         rest: string("texts"),
         returns: "boolean",
@@ -425,6 +473,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           texts.some((text) => (subject as string).includes(text as string)),
       },
       containsAll: {
+        description: "Whether the text contains every one of `texts`.",
         parameters: NONE,
         rest: string("texts"),
         returns: "boolean",
@@ -432,13 +481,16 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           texts.every((text) => (subject as string).includes(text as string)),
       },
       trim: {
+        description: "The text without its leading and trailing whitespace.",
         parameters: NONE,
         returns: "string",
         call: (subject) => (subject as string).trim(),
       },
-      // The first code point of each word that starts the text or follows
-      // whitespace is upper-cased; the rest stays as it is.
+      // A word starts the text or follows whitespace; only its first code
+      // point changes.
       title: {
+        description:
+          "The text with the first letter of each word in upper case.",
         parameters: NONE,
         returns: "string",
         call: (subject) =>
@@ -448,9 +500,10 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
               before + first.toUpperCase(),
           ),
       },
-      // A count that is negative, not an integer, or above 10 000, or that
-      // gives a result above 1 000 000 code units, is out of range.
+      // A result above 1 000 000 code units is out of range too.
       repeat: {
+        description:
+          "The text repeated `count` times, a count from 0 to 10 000.",
         parameters: [number("count")],
         returns: "string",
         call: (subject, [count]) =>
@@ -461,6 +514,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       // By code point, so an emoji survives.
       reverse: {
+        description: "The text with its characters in reverse order.",
         parameters: NONE,
         returns: "string",
         call: (subject) =>
@@ -468,18 +522,21 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             .reverse()
             .join(""),
       },
-      // In code units, as `length` and index access.
       slice: {
+        description:
+          "The part of the text from index `start` up to, not including, `end`, counted in UTF-16 code units.",
         parameters: [number("start")],
         optional: [number("end")],
         returns: "string",
         call: (subject, [start, end]) =>
           (subject as string).slice(start as number, end as number | undefined),
       },
-      // A text pattern: every occurrence, with the replacement as literal
-      // text. A regexp pattern follows JavaScript: `g` decides whether the
-      // first or every occurrence changes, and `$1` names a group.
+      // The replacement of a text pattern is literal text. Of a regexp
+      // pattern, `g` decides whether the first or every occurrence changes,
+      // and `$1` names a group.
       replace: {
+        description:
+          "The text with every occurrence of a text pattern replaced, or with the matches of a regexp pattern replaced as JavaScript does.",
         parameters: [
           { name: "pattern", type: ["string", "regexp"] },
           string("replacement"),
@@ -499,9 +556,11 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           );
         },
       },
-      // `n` keeps the first `n` parts. A group of a regexp separator that
-      // does not take part in the match is null.
+      // A group of a regexp separator that does not take part in the match
+      // is null.
       split: {
+        description:
+          "The list of the parts of the text between occurrences of `separator`, at most `n` parts when `n` is given.",
         parameters: [{ name: "separator", type: ["string", "regexp"] }],
         optional: [number("n")],
         returns: "list",
@@ -521,8 +580,10 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
     list: functions({
       isEmpty: isEmpty(
         (subject) => (subject as readonly unknown[]).length === 0,
+        "Whether the list has no elements.",
       ),
       contains: {
+        description: "Whether the list has an element equal to `value`.",
         diagnosticCorrection: "membership",
         parameters: [any("value")],
         returns: "boolean",
@@ -530,6 +591,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           includes(subject as readonly FilterValue[], value, clock),
       },
       containsAny: {
+        description:
+          "Whether the list has an element equal to at least one of the values, or of the elements of a single list argument.",
         parameters: NONE,
         rest: any("values"),
         returns: "boolean",
@@ -539,6 +602,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           ),
       },
       containsAll: {
+        description:
+          "Whether the list has an element equal to each of the values, or to each element of a single list argument.",
         parameters: NONE,
         rest: any("values"),
         returns: "boolean",
@@ -549,6 +614,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
       // The list helpers of Bases that take no element expression.
       flat: {
+        description:
+          "The list with each element that is a list replaced by its elements, one level deep.",
         parameters: NONE,
         returns: "list",
         call: (subject) =>
@@ -557,6 +624,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           ),
       },
       join: {
+        description:
+          "The elements of the list as text joined by `separator`, with null as the empty text.",
         parameters: [string("separator")],
         returns: "string",
         call: (subject, [separator]) =>
@@ -565,12 +634,14 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             .join(separator as string),
       },
       reverse: {
+        description: "The list with its elements in reverse order.",
         parameters: NONE,
         returns: "list",
         call: (subject) => (subject as readonly FilterValue[]).toReversed(),
       },
-      // The index rules of JavaScript: a negative index counts from the end.
       slice: {
+        description:
+          "The elements of the list from index `start` up to, not including, `end`; a negative index counts from the end.",
         parameters: [number("start")],
         optional: [number("end")],
         returns: "list",
@@ -581,6 +652,8 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
           ),
       },
       sort: {
+        description:
+          "The list in ascending order: numbers by value, texts in the Item Query collation, dates by their start, false before true, and elements of different types grouped by type.",
         parameters: NONE,
         returns: "list",
         call: (subject, _args, clock) =>
@@ -588,8 +661,9 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             sortOrder(a, b, clock),
           ),
       },
-      // The first of the elements that `==` makes equal stays.
       unique: {
+        description:
+          "The list with only the first of each group of equal elements.",
         parameters: NONE,
         returns: "list",
         call: (subject, _args, clock) =>
@@ -599,18 +673,30 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
             [],
           ),
       },
-      // The element expressions of Bases: each one evaluates its expression
-      // once for each element.
-      filter: elementMethod({ returns: "list", scope: ["value", "index"] }),
-      map: elementMethod({ returns: "list", scope: ["value", "index"] }),
+      // The element expressions of Bases.
+      filter: elementMethod({
+        description:
+          "The elements of the list for which the expression, with `value` and `index` bound, is truthy.",
+        returns: "list",
+        scope: ["value", "index"],
+      }),
+      map: elementMethod({
+        description:
+          "The list of the results of the expression for each element, with `value` and `index` bound.",
+        returns: "list",
+        scope: ["value", "index"],
+      }),
       reduce: elementMethod({
+        description:
+          "The result of the expression run on each element in turn, with `acc` bound to the previous result and starting from `initial`.",
         returns: null,
         scope: ["value", "index", "acc"],
         after: [any("initial")],
       }),
-      // A Collection element is its root-first path: `within` matches the
-      // Collection at `path` and every Collection below it.
+      // A Collection element is its root-first path.
       within: {
+        description:
+          "Whether the list of Collection paths holds the Collection at `path` or a Collection below it.",
         parameters: [string("path")],
         returns: "boolean",
         call: (subject, [path]) =>
@@ -622,25 +708,32 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       },
     }),
     date: functions({
-      isEmpty: isEmpty(() => false),
-      // The calendar day of a timestamp in the query time zone.
+      isEmpty: isEmpty(() => false, "False: a date is never empty."),
       date: {
+        description:
+          "The calendar day of the date in the query time zone, without its time.",
         parameters: NONE,
         returns: "date",
         call: (subject, _args, clock) => dateOnly(subject as DateValue, clock),
       },
       time: {
+        description:
+          "The time of day of the date in the query time zone, as `HH:MM:SS` text.",
         parameters: NONE,
         returns: "string",
         call: (subject, _args, clock) => timeOfDay(subject as DateValue, clock),
       },
       format: {
+        description:
+          "The date as text, with the tokens `YYYY`, `MM`, `DD`, `HH`, `mm`, and `ss` of `pattern` replaced by its parts in the query time zone.",
         parameters: [string("pattern")],
         returns: "string",
         call: (subject, [pattern], clock) =>
           formatDate(subject as DateValue, pattern as string, clock),
       },
       relative: {
+        description:
+          "The date as text relative to the Query Clock, such as `3 days ago` or `in 2 hours`.",
         parameters: NONE,
         returns: "string",
         call: (subject, _args, clock) =>
@@ -652,6 +745,7 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
       // The match position is reset before each test, so g and y stay
       // deterministic.
       matches: {
+        description: "Whether the regexp matches somewhere in `text`.",
         parameters: [string("text")],
         returns: "boolean",
         call: (subject, [text]) => {
@@ -676,6 +770,7 @@ const ANY_METHODS: Registry<FunctionDefinition> = new Map<
   [
     "toString",
     {
+      description: "The value as text.",
       parameters: NONE,
       returns: "string",
       call: (subject) => toText(subject),
@@ -684,6 +779,8 @@ const ANY_METHODS: Registry<FunctionDefinition> = new Map<
   [
     "isType",
     {
+      description:
+        "Whether the value has the named value type; `any` names every type.",
       parameters: [{ ...string("type"), values: ["any", ...VALUE_TYPES] }],
       returns: "boolean",
       call: (subject, [type]) => type === "any" || type === typeOf(subject),
@@ -692,6 +789,8 @@ const ANY_METHODS: Registry<FunctionDefinition> = new Map<
   [
     "isTruthy",
     {
+      description:
+        "Whether the value is truthy: false for null, false, 0, the empty text, the empty list, an empty duration, and an Error Value.",
       parameters: NONE,
       returns: "boolean",
       call: (subject) => truthy(subject),
@@ -699,14 +798,17 @@ const ANY_METHODS: Registry<FunctionDefinition> = new Map<
   ],
 ]);
 
-const length: PropertyDefinition = {
+const length = (description: string): PropertyDefinition => ({
+  description,
   returns: "number",
   read: (subject) => (subject as string | readonly FilterValue[]).length,
-};
+});
 
 const datePartProperty = (
   part: Parameters<typeof datePart>[1],
+  description: string,
 ): PropertyDefinition => ({
+  description,
   returns: "number",
   read: (subject, clock) => datePart(subject as DateValue, part, clock),
 });
@@ -719,17 +821,43 @@ const PROPERTIES: Readonly<
   boolean: properties({}),
   record: properties({}),
   number: properties({}),
-  string: properties({ length }),
-  list: properties({ length }),
+  string: properties({
+    length: length("The number of UTF-16 code units in the text."),
+  }),
+  list: properties({ length: length("The number of elements in the list.") }),
   date: properties({
-    year: datePartProperty("year"),
-    month: datePartProperty("month"),
-    day: datePartProperty("day"),
-    hour: datePartProperty("hour"),
-    minute: datePartProperty("minute"),
-    second: datePartProperty("second"),
-    millisecond: datePartProperty("millisecond"),
-    timestamp: datePartProperty("timestamp"),
+    year: datePartProperty(
+      "year",
+      "The year of the date in the query time zone.",
+    ),
+    month: datePartProperty(
+      "month",
+      "The month of the date from 1 to 12, or null for a date of only a year.",
+    ),
+    day: datePartProperty(
+      "day",
+      "The day of the month of the date, or null for a date without a day.",
+    ),
+    hour: datePartProperty(
+      "hour",
+      "The hour of the date from 0 to 23 in the query time zone, 0 for a calendar date.",
+    ),
+    minute: datePartProperty(
+      "minute",
+      "The minute of the date in the query time zone, 0 for a calendar date.",
+    ),
+    second: datePartProperty(
+      "second",
+      "The second of the date in the query time zone, 0 for a calendar date.",
+    ),
+    millisecond: datePartProperty(
+      "millisecond",
+      "The millisecond of the date in the query time zone, 0 for a calendar date.",
+    ),
+    timestamp: datePartProperty(
+      "timestamp",
+      "The Unix time of the start of the date in milliseconds.",
+    ),
   }),
   duration: properties({}),
   error: properties({}),
