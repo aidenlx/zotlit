@@ -1661,6 +1661,30 @@ it("underlines the query's Fault in an expression condition, and a Syntax Fault 
   expect(underlined()).toEqual(['"yellow']);
 });
 
+it("underlines the Fault of a vault condition at its span in the condition", async () => {
+  const { view, el, settle } = await mount([], () => {}, {
+    propertyNames: ["status"],
+  });
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: 'title != null && vault["status"].nope()'
+`),
+  );
+  await settle();
+
+  const editor = EditorView.findFromDOM(
+    section(el, "view").querySelector("[data-condition-row] .cm-editor")!,
+  )!;
+  const marked: string[] = [];
+  forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
+    marked.push(editor.state.sliceDoc(from, to));
+  });
+  expect(marked).toEqual(["nope"]);
+});
+
 it("offers the Tags and Collections of the Libraries the view reads", async () => {
   const { view } = await mount([]);
   await expect(view.filterValues()).resolves.toEqual({

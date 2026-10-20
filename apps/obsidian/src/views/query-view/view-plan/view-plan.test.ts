@@ -356,9 +356,24 @@ views:
   });
 
   it("marks one ZotLit Query cannot plan with its message", () => {
-    const { fault } = plan(items("vault.status.nope()"));
-    expect(fault?.at).toEqual({ section: "view", path: [0] });
+    const text = "vault.status.nope()";
+    const { fault } = plan(items(text));
+    expect(fault?.at).toEqual({
+      section: "view",
+      path: [0],
+      fault: { text, span: span(text, "nope") },
+    });
     expect(fault?.diagnostic.message).toBeTruthy();
+  });
+
+  it("places the fault of a vault conjunct in its condition's text", () => {
+    const text = 'title != null && vault["status"].nope()';
+    const { fault } = plan(items(`'${text}'`));
+    expect(fault?.at).toEqual({
+      section: "view",
+      path: [0],
+      fault: { text, span: span(text, "nope") },
+    });
   });
 });
 
