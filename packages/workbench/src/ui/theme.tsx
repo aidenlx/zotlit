@@ -331,7 +331,7 @@ export interface WorkbenchTheme {
    * Match condition's expression and a Formula. A host without one mounts
    * the editor's own extensions alone.
    */
-  readonly expressionExtension?: () => Extension;
+  readonly expressionExtension?: Extension;
   /** Draws a named icon; a host without one draws none. */
   readonly icon?: (name: WorkbenchIcon) => ReactNode;
   /**
@@ -432,7 +432,6 @@ export function useEditorExtension() {
   return useContext(ThemeContext).editorExtension;
 }
 
-/** The host's CodeMirror extensions for Filter Expression editors. */
 export function useExpressionExtension() {
   return useContext(ThemeContext).expressionExtension;
 }

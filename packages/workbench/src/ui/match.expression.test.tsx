@@ -11,8 +11,9 @@ it("mounts the extension the theme supplies for expression editors", () => {
   const { container } = render(
     <WorkbenchThemeProvider
       theme={{
-        expressionExtension: () =>
-          EditorView.editorAttributes.of({ class: "host-expression" }),
+        expressionExtension: EditorView.editorAttributes.of({
+          class: "host-expression",
+        }),
       }}
     >
       <MatchExpressionInput value="itemType == 'book'" onChange={() => {}} />

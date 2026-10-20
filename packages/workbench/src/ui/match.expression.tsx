@@ -111,7 +111,7 @@ export function MatchExpressionInput({
           placeholder ? placeholderText(placeholder) : [],
           EditorView.contentAttributes.of({ spellcheck: "false" }),
           attributes.current.of(contentAttributes(props.current)),
-          hostExtension?.() ?? [],
+          hostExtension ?? [],
           EditorView.updateListener.of((update) => {
             if (
               update.docChanged &&

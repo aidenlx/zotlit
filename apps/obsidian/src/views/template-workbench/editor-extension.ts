@@ -16,7 +16,12 @@ const popoutCopy = EditorView.domEventHandlers({
   },
 });
 
-export const codePane: Extension = [
+/**
+ * What every Obsidian-hosted editor of the plugin's views needs: lint marks in
+ * Obsidian's error color, and copy and styles that survive a move to a popout
+ * window. A code pane adds the code font on top.
+ */
+export const hostedEditor: Extension = [
   EditorView.theme({
     ".cm-problem-button": { color: "var(--text-error)" },
     ".cm-lintRange-error": {
@@ -30,7 +35,6 @@ export const codePane: Extension = [
       color: "inherit",
     },
   }),
-  EditorView.editorAttributes.of({ class: CODE_PANE_CLASS }),
   popoutCopy,
   ViewPlugin.define((view) => {
     const dispose = view.dom.onWindowMigrated((win) => {
@@ -39,4 +43,9 @@ export const codePane: Extension = [
     });
     return { destroy: dispose };
   }),
+];
+
+export const codePane: Extension = [
+  hostedEditor,
+  EditorView.editorAttributes.of({ class: CODE_PANE_CLASS }),
 ];
