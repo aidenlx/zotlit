@@ -16,6 +16,26 @@ export function isDraftMarkdown(element: HTMLElement): boolean {
   return element.closest("[data-zotlit-draft]") !== null;
 }
 
+/**
+ * The Markdown view an element a post-processor rendered sits in, which is
+ * what a hover popover hangs off.
+ *
+ * @returns the view, or null for an element no open Markdown view holds — an
+ *   embed's or a draft's own rendering.
+ */
+export function markdownViewOf(
+  app: App,
+  element: HTMLElement,
+): MarkdownView | null {
+  for (const leaf of app.workspace.getLeavesOfType("markdown")) {
+    const { view } = leaf;
+    if (view instanceof MarkdownView && view.containerEl.contains(element)) {
+      return view;
+    }
+  }
+  return null;
+}
+
 /** The document offsets one rendered reading-view section covers. */
 export interface SectionRange {
   from: number;
