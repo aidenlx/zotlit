@@ -216,37 +216,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     "offers Expression Completion in a Formula and a filter condition, above the chooser and the Filter popover, in the %s window",
     async (host) => {
       const path = "query-files/Expression completion.zotquery";
-      const layout = await obEval(
-        run.vaultId,
-        "JSON.stringify(app.workspace.getLayout())",
-      );
-      await using cleanup = new AsyncDisposableStack();
-      cleanup.defer(async () => {
-        // Teardown closes a popover a failed step left open; not a reader's press.
-        await obEval(
-          run.vaultId,
-          `(async()=>{const leaf=window.zotlitE2ECompletion;delete window.zotlitE2ECompletion;for(const popup of (leaf?.view.contentEl.doc??document).querySelectorAll('[popover]:popover-open'))popup.hidePopover();leaf?.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
-        );
-      });
       // A view whose own filter is an expression row, which the visual rows
       // cannot show.
       const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');window.zotlitE2ECompletion=leaf;await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('popout focused',()=>leaf.view.contentEl.doc.hasFocus(),5000);" : ""}return true;})()`,
-      );
       // What one field of a surface offers as it is typed in: the list
       // drawn in the surface's root, in Obsidian's suggestion skin, its
       // middle on top past the surface's edge where it reaches past it.
-      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;const field=content.cmTile.root.view;field.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null}};};const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();const delivered=(type)=>new Promise(r=>win.addEventListener(type,r,{once:true,capture:true}));return {key:async(keyCode)=>{const up=delivered('keyup');contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;},click:async(el)=>{const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};const up=delivered('mouseup');contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await up;}};};const picked=(list)=>[...list.querySelectorAll('li')].findIndex(li=>li.getAttribute('aria-selected')==='true');const ready=async(input,list)=>{const end=Date.now()+2000;while(Date.now()<end){await input.key('Down');if(picked(list)>0){await input.key('Up');await until('first row picked again',()=>picked(list)===0);return;}}throw new Error('Timed out: the list takes keys');};`;
+      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;const field=content.cmTile.root.view;field.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));await until('list placed and measured',()=>list.style.top!=='-10000px'&&list.getBoundingClientRect().width>0,5000);const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null}};};const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();const delivered=(type)=>new Promise(r=>win.addEventListener(type,r,{once:true,capture:true}));return {key:async(keyCode)=>{const up=delivered('keyup');contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;},click:async(el)=>{const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};const up=delivered('mouseup');contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await up;}};};const picked=(list)=>[...list.querySelectorAll('li')].findIndex(li=>li.getAttribute('aria-selected')==='true');const ready=async(input,list)=>{const end=Date.now()+2000;while(Date.now()<end){await input.key('Down');if(picked(list)>0){await input.key('Up');await until('first row picked again',()=>picked(list)===0);return;}}throw new Error('Timed out: the list takes keys');};`;
 
       // A new Formula: `mi` offers `min()`, which Enter writes with the
-      // caret between its parentheses. Escape closes the list and keeps the
-      // page; Escape again steps back to the rows.
-      const formula = JSON.parse(
+      // caret between its parentheses. In it, `ti` opens the list below
+      // the call's Signature Hint: Escape closes the list, then the hint,
+      // each keeping the page; Escape again steps back to the rows.
+      // Then the view's filter condition: `tit` in a call offers `title`,
+      // the list below the caret and the call's Signature Hint above it,
+      // apart. A click on the row writes it while the Filter popover stays
+      // open. The eval restores the vault and the layout before it answers.
+      const { formula, filter } = JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{${PAGE}${LIST}const view=window.zotlitE2ECompletion.view;const el=view.contentEl;const input=trusted(el.win);await until('the window takes keys',()=>activeWindow===el.win);press(await until('Properties button',()=>el.querySelector('[data-query-properties]')),'Properties');const popup=await until('Properties popover',()=>el.doc.querySelector('[data-query-properties-popup]:popover-open'));press(await until('Add formula',()=>[...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(run.m.query_view_formula_add())})),'Add formula');const page=await until('formula page',()=>popup.querySelector('[data-chooser-page] [data-query-formula-page]'));const content=await until('editor',()=>page.querySelector('[data-query-formula-expression] .cm-content'));const editor=content.cmTile.root.view;const offered=await listOf(popup,content,'mi');await ready(input,offered.list);await input.key('Return');await until('Enter writes the entry',()=>editor.state.doc.toString()!=='mi');const accepted={doc:editor.state.doc.toString(),caret:editor.state.selection.main.head};await listOf(popup,content,'ti');await input.key('Escape');await until('Escape closes the list',()=>!popup.querySelector('.cm-tooltip-autocomplete'));const first={page:!!popup.querySelector('[data-chooser-page]')};await input.key('Escape');await until('Escape leaves the page',()=>!popup.querySelector('[data-chooser-page]'));const second={open:popup.matches(':popover-open')};popup.hidePopover();return JSON.stringify({offered:{...offered,list:undefined},accepted,first,second});})()`,
+          `(async()=>{${PAGE}${LIST}await using cleanup=new AsyncDisposableStack();const layout=app.workspace.getLayout();cleanup.defer(()=>app.workspace.changeLayout(layout));const file=cleanup.adopt(await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)}),file=>app.vault.delete(file));const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());cleanup.defer(()=>{for(const popup of (leaf.view?.contentEl?.doc??document).querySelectorAll('[popover]:popover-open'))popup.hidePopover();});await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('popout focused',()=>leaf.view.contentEl.doc.hasFocus(),5000);" : ""}const formula=await (async()=>{const view=leaf.view;const el=view.contentEl;const input=trusted(el.win);await until('the window takes keys',()=>activeWindow===el.win);press(await until('Properties button',()=>el.querySelector('[data-query-properties]')),'Properties');const popup=await until('Properties popover',()=>el.doc.querySelector('[data-query-properties-popup]:popover-open'));press(await until('Add formula',()=>[...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(run.m.query_view_formula_add())})),'Add formula');const page=await until('formula page',()=>popup.querySelector('[data-chooser-page] [data-query-formula-page]'));const content=await until('editor',()=>page.querySelector('[data-query-formula-expression] .cm-content'));const editor=content.cmTile.root.view;const offered=await listOf(popup,content,'mi');await ready(input,offered.list);await input.key('Return');await until('Enter writes the entry',()=>editor.state.doc.toString()!=='mi');const accepted={doc:editor.state.doc.toString(),caret:editor.state.selection.main.head};await listOf(popup,content,'ti');await input.key('Escape');await until('Escape closes the list',()=>!popup.querySelector('.cm-tooltip-autocomplete'));const first={page:!!popup.querySelector('[data-chooser-page]'),hint:!!popup.querySelector('.zt-signature-hint')};await input.key('Escape');await until('Escape closes the hint',()=>!popup.querySelector('.zt-signature-hint'));const second={page:!!popup.querySelector('[data-chooser-page]')};await input.key('Escape');await until('Escape leaves the page',()=>!popup.querySelector('[data-chooser-page]'));const third={open:popup.matches(':popover-open')};popup.hidePopover();return {offered:{...offered,list:undefined},accepted,first,second,third};})();const filter=await (async()=>{const el=leaf.view.contentEl;const input=trusted(el.win);press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;editor.dispatch({selection:{anchor:editor.state.doc.length}});const offered=await listOf(popup,content,' && max(tit');const hint=await until('Signature Hint',()=>popup.querySelector('.zt-signature-hint'));const caret=editor.coordsAtPos(editor.state.selection.main.head);const h=hint.getBoundingClientRect();const l=offered.list.getBoundingClientRect();const apart={hintAbove:h.bottom<=caret.top+1,listBelow:l.top>=caret.bottom-1};const row=[...offered.list.querySelectorAll('li')].find(li=>li.querySelector('.cm-completionLabel')?.textContent==='title');await input.click(row);await until('the click writes the entry',()=>editor.state.doc.toString().endsWith('(title'));const after={doc:editor.state.doc.toString(),open:popup.matches(':popover-open')};popup.hidePopover();return {offered:{...offered,list:undefined},apart,after};})();return JSON.stringify({formula,filter});})()`,
         ),
       );
       expect(formula).toEqual({
@@ -256,19 +245,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           first: { label: "min", type: "min(…) → number" },
         },
         accepted: { doc: "min()", caret: 4 },
-        first: { page: true },
-        second: { open: true },
+        first: { page: true, hint: true },
+        second: { page: true },
+        third: { open: true },
       });
 
-      // The view's filter condition: `tit` in a call offers `title`, the
-      // list below the caret and the call's Signature Hint above it, apart.
-      // A click on the row writes it while the Filter popover stays open.
-      const filter = JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}${LIST}const el=window.zotlitE2ECompletion.view.contentEl;const input=trusted(el.win);press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;editor.dispatch({selection:{anchor:editor.state.doc.length}});const offered=await listOf(popup,content,' && max(tit');const hint=await until('Signature Hint',()=>popup.querySelector('.zt-signature-hint'));const caret=editor.coordsAtPos(editor.state.selection.main.head);const h=hint.getBoundingClientRect();const l=offered.list.getBoundingClientRect();const apart={hintAbove:h.bottom<=caret.top+1,listBelow:l.top>=caret.bottom-1};const row=[...offered.list.querySelectorAll('li')].find(li=>li.querySelector('.cm-completionLabel')?.textContent==='title');await input.click(row);await until('the click writes the entry',()=>editor.state.doc.toString().endsWith('(title'));const after={doc:editor.state.doc.toString(),open:popup.matches(':popover-open')};popup.hidePopover();return JSON.stringify({offered:{...offered,list:undefined},apart,after});})()`,
-        ),
-      );
       expect(filter).toEqual({
         offered: {
           skin: true,
@@ -284,18 +265,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("offers the members of a typed receiver, the names a list method binds and the vault keys in a filter condition", async () => {
     const path = "query-files/Member completion.zotquery";
-    const layout = await obEval(
-      run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
-    );
-    await using cleanup = new AsyncDisposableStack();
-    cleanup.defer(async () => {
-      // Teardown closes a popover a failed step left open; not a reader's press.
-      await obEval(
-        run.vaultId,
-        `(async()=>{const leaf=window.zotlitE2EMembers;delete window.zotlitE2EMembers;for(const popup of document.querySelectorAll('[popover]:popover-open'))popup.hidePopover();leaf?.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
-      );
-    });
     // A Formula of text that the filter condition reads by name.
     const source = `formulas:\n  short: title.slice(0, 10)\nviews:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
     const texts = [
@@ -306,14 +275,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "tags.filter(",
       "tags.reduce(",
       "(title +.",
+      "firstAuthor.",
       "vault[",
     ];
     // What the list offers for each text typed over the expression row's
-    // text; the row is never left empty, which would remove it.
+    // text; the row is never left empty, which would remove it. The eval
+    // restores the vault and the layout before it answers.
     const offered = JSON.parse(
       await obEval(
         run.vaultId,
-        `(async()=>{${PAGE}const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');window.zotlitE2EMembers=leaf;await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;const out={};for(const text of ${JSON.stringify(texts)}){editor.contentDOM.blur();await until('the list closes',()=>!popup.querySelector('.cm-tooltip-autocomplete'));editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});editor.focus();await until('focus in the field',()=>el.doc.activeElement===content&&el.doc.hasFocus());el.doc.execCommand('insertText',false,text);const list=await until('list for '+text,()=>editor.state.doc.toString()===text&&popup.querySelector('.cm-tooltip-autocomplete li')&&popup.querySelector('.cm-tooltip-autocomplete'));out[text]=[...list.querySelectorAll('.cm-completionLabel')].map(n=>n.textContent);}popup.hidePopover();return JSON.stringify(out);})()`,
+        `(async()=>{${PAGE}await using cleanup=new AsyncDisposableStack();const layout=app.workspace.getLayout();cleanup.defer(()=>app.workspace.changeLayout(layout));const file=cleanup.adopt(await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)}),file=>app.vault.delete(file));const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());cleanup.defer(()=>{for(const popup of document.querySelectorAll('[popover]:popover-open'))popup.hidePopover();});await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;const out={};for(const text of ${JSON.stringify(texts)}){editor.contentDOM.blur();await until('the list closes',()=>!popup.querySelector('.cm-tooltip-autocomplete'));editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});editor.focus();await until('focus in the field',()=>el.doc.activeElement===content&&el.doc.hasFocus());el.doc.execCommand('insertText',false,text);const list=await until('list for '+text,()=>editor.state.doc.toString()===text&&popup.querySelector('.cm-tooltip-autocomplete li')&&popup.querySelector('.cm-tooltip-autocomplete'));out[text]=[...list.querySelectorAll('.cm-completionLabel')].map(n=>n.textContent);}popup.hidePopover();return JSON.stringify(out);})()`,
       ),
     ) as Record<string, string[]>;
     const has = (text: string, names: string[], not: string[] = []) => {
@@ -325,6 +296,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     has("formula.short.", ["lower"], ["year"]);
     has("attachments[0].", ["title", "fileType"]);
     has("(title +.", ["lower", "year", "filter"]);
+    has("firstAuthor.", ["fullName", "family", "given"]);
     expect(offered["tags.filter("]!.slice(0, 2)).toEqual(["value", "index"]);
     expect(offered["tags.reduce("]!.slice(0, 3)).toEqual([
       "value",
