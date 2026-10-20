@@ -1,13 +1,11 @@
 import type { Span } from "#/language/span";
+import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
-import {
-  ExpressionTypesProvider,
-  MatchExpressionInput,
-} from "./match.expression";
+import { MatchExpressionInput } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
 
 import { documentFocus } from "#/language/test-utils";
@@ -43,16 +41,60 @@ it("mounts the extension the theme supplies for expression editors", () => {
   ).toBe(true);
 });
 
+it("offers the completion of the vocabulary it is given, in the theme's presentation", async () => {
+  const { container } = render(
+    <WorkbenchThemeProvider
+      theme={{ expressionCompletion: { tooltipClass: () => "host-list" } }}
+    >
+      <MatchExpressionInput
+        value=""
+        onChange={() => {}}
+        vocabulary={{
+          fields: [{ path: "title", label: "Title" }],
+          context: false,
+          formulas: [],
+        }}
+      />
+    </WorkbenchThemeProvider>,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.dispatch({
+    changes: { from: 0, insert: "tit" },
+    selection: { anchor: 3 },
+    userEvent: "input.type",
+  });
+  const list = await vi.waitFor(() => {
+    const found = document.querySelector(".cm-tooltip-autocomplete.host-list");
+    if (!found) throw new Error("no list yet");
+    return found;
+  });
+  expect(list.querySelector(".cm-completionLabel")?.textContent).toBe("title");
+});
+
+it("offers no completion without a vocabulary", () => {
+  const { container } = render(
+    <MatchExpressionInput value="mi" onChange={() => {}} />,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.dispatch({ selection: { anchor: 2 } });
+  startCompletion(view);
+  // A list that would open stands pending from the request on.
+  expect(completionStatus(view.state)).toBeNull();
+});
+
 it("shows the Signature Hint of the method at the caret, typed as the host types it", () => {
   using _focus = documentFocus();
   const { container } = render(
-    <ExpressionTypesProvider
-      types={{
+    <MatchExpressionInput
+      value="title.slice(1, )"
+      onChange={() => {}}
+      vocabulary={{
+        fields: [],
+        context: false,
+        formulas: [],
         receiverType: (text) => (text === "title" ? "string" : undefined),
       }}
-    >
-      <MatchExpressionInput value="title.slice(1, )" onChange={() => {}} />
-    </ExpressionTypesProvider>,
+    />,
   );
   const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
   view.focus();
@@ -84,4 +126,30 @@ it("holds the faults it is given as error ranges, and clears them", () => {
   expect(marked()).toEqual([{ text: "'book", severity: "error" }]);
   act(() => mounted.rerender(field([])));
   expect(marked()).toEqual([]);
+});
+
+it("keeps what the user typed when the owner gives back an older text it sent", () => {
+  const field = (value: string) => (
+    <MatchExpressionInput value={value} onChange={() => {}} />
+  );
+  const mounted = render(field("a"));
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const type = (text: string) =>
+    editor.dispatch({
+      changes: { from: editor.state.doc.length, insert: text },
+      selection: { anchor: editor.state.doc.length + text.length },
+      userEvent: "input.type",
+    });
+  type("b");
+  type("c");
+  // The owner's render of the first edit lands after the second.
+  act(() => mounted.rerender(field("ab")));
+  expect(editor.state.doc.toString()).toBe("abc");
+  expect(editor.state.selection.main.head).toBe(3);
+  act(() => mounted.rerender(field("abc")));
+  // A text of the owner's own replaces the field's.
+  act(() => mounted.rerender(field("x")));
+  expect(editor.state.doc.toString()).toBe("x");
 });

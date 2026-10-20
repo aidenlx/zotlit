@@ -1,6 +1,9 @@
 import "./theme.css";
 // Shared authoring controls inherit Obsidian's surfaces and editor typography.
-import { templateHighlighting } from "@zotlit/workbench/language";
+import {
+  expressionOption,
+  templateHighlighting,
+} from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -13,6 +16,7 @@ import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
 
 import { codePane, hostedEditor, popoverTooltips } from "./editor-extension";
+import { nativeCompletion } from "./native-completion";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
@@ -194,6 +198,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
   // they keep the text font the code pane would replace, and draw their
   // tooltips above the popover or chooser page they sit in.
   expressionExtension: [hostedEditor, popoverTooltips],
+  expressionCompletion: nativeCompletion(expressionOption),
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",

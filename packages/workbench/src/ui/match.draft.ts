@@ -1,3 +1,4 @@
+import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import type { Span } from "#/language/span";
 import type { ReactNode } from "react";
 
@@ -93,6 +94,11 @@ export interface MatchVocabulary<Row extends LabelledRow> {
    * asked.
    */
   issue?: (condition: RowCondition<Row>, path: FilterPath) => string | null;
+  /**
+   * What an expression row can read, which its Expression Completion offers
+   * and its Signature Hint types receivers by; no completion without one.
+   */
+  expression?: ExpressionVocabulary;
   /**
    * The Faults an expression row underlines in `text`, its Filter
    * Expression as typed. A row asks again only when this function, the text

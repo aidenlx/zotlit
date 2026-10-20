@@ -14,10 +14,21 @@ export {
   completionSuggestion,
   templateCompletion,
 } from "./completion";
+export type { SuggestionSource, CompletionPresentation } from "./completion";
+export {
+  datasetExpressionFields,
+  datasetReceiverType,
+  expressionCompletions,
+  expressionOption,
+  filterExpressionCompletion,
+} from "./filter-expression-completion";
 export type {
-  SuggestionSource,
-  TemplateCompletionPresentation,
-} from "./completion";
+  ExpressionCompletionResult,
+  ExpressionField,
+  ExpressionName,
+  ExpressionOption,
+  ExpressionVocabulary,
+} from "./filter-expression-completion";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,

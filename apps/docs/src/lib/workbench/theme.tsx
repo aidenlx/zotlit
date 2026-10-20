@@ -41,6 +41,10 @@ import { inputVariants } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
 import { editorTheme } from "./editor-theme";
+import {
+  webExpressionCompletion,
+  webExpressionList,
+} from "./expression-completion";
 
 const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
@@ -95,6 +99,8 @@ export const WEB_THEME: WorkbenchTheme = {
       ? [EditorView.theme({ ".cm-content": { minHeight: "5rem" } })]
       : []),
   ],
+  expressionExtension: webExpressionList,
+  expressionCompletion: webExpressionCompletion,
   classes: {
     match: {
       "remove-button": cn(

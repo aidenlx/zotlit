@@ -1,9 +1,6 @@
 export { MatchEditor, MatchPane } from "./match";
-export {
-  ExpressionTypesProvider,
-  MatchExpressionInput,
-} from "./match.expression";
-export type { SignatureHintOptions } from "#/language/signature-hint";
+export { MatchExpressionInput } from "./match.expression";
+export type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 export { filterVocabulary } from "./match.fields";
 export type { FilterValues } from "./match.fields";
 export type { FilterField } from "#/match/fields";
