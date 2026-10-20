@@ -1,3 +1,4 @@
+import type { Span } from "#/language/span";
 import type { ReactNode } from "react";
 
 import { filterGroup } from "@zotlit/filter-expression";
@@ -6,8 +7,6 @@ import type {
   FilterPath,
   FilterTree,
 } from "@zotlit/filter-expression";
-
-import type { FaultSpan } from "./match.expression";
 
 // Preserve nested Match trees and expression rows through labelled edits.
 
@@ -101,7 +100,7 @@ export interface MatchVocabulary<Row extends LabelledRow> {
    * the same.
    * @param path The row's place in the stored filter.
    */
-  faults?: (text: string, path: FilterPath) => readonly FaultSpan[];
+  faults?: (text: string, path: FilterPath) => readonly Span[];
 }
 
 export function isGroup<Row extends LabelledRow>(

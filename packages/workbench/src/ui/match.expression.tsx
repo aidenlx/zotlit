@@ -1,4 +1,5 @@
 import type { SignatureHintOptions } from "#/language/signature-hint";
+import type { Span } from "#/language/span";
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
@@ -59,13 +60,7 @@ const contentAttributes = ({
 /** Marks the edit that brings in a new `value`, which is not the user's. */
 const fromValue = Annotation.define<true>();
 
-/** The span a Fault names in a text, in UTF-16 offsets; `to` is exclusive. */
-export interface FaultSpan {
-  readonly from: number;
-  readonly to: number;
-}
-
-const NO_FAULTS: readonly FaultSpan[] = [];
+const NO_FAULTS: readonly Span[] = [];
 
 export interface MatchExpressionInputProps {
   value: string;
@@ -74,7 +69,7 @@ export interface MatchExpressionInputProps {
    * reports; the field shows no tooltip over them. A new array sets them
    * again, so the owner keeps one while they stay the same.
    */
-  faults?: readonly FaultSpan[];
+  faults?: readonly Span[];
   /** Each edit, with the window the field is in. */
   onChange: (text: string, win: Window) => void;
   onBlur?: () => void;
