@@ -4,10 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import {
-  ExpressionTypesProvider,
-  MatchExpressionInput,
-} from "./match.expression";
+import { MatchExpressionInput } from "./match.expression";
 import type { FaultSpan } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
 
@@ -52,7 +49,7 @@ it("offers the completion of the vocabulary it is given, in the theme's presenta
       <MatchExpressionInput
         value=""
         onChange={() => {}}
-        completion={{
+        vocabulary={{
           fields: [{ path: "title", label: "Title" }],
           context: false,
           formulas: [],
@@ -88,13 +85,16 @@ it("offers no completion without a vocabulary", () => {
 it("shows the Signature Hint of the method at the caret, typed as the host types it", () => {
   using _focus = documentFocus();
   const { container } = render(
-    <ExpressionTypesProvider
-      types={{
+    <MatchExpressionInput
+      value="title.slice(1, )"
+      onChange={() => {}}
+      vocabulary={{
+        fields: [],
+        context: false,
+        formulas: [],
         receiverType: (text) => (text === "title" ? "string" : undefined),
       }}
-    >
-      <MatchExpressionInput value="title.slice(1, )" onChange={() => {}} />
-    </ExpressionTypesProvider>,
+    />,
   );
   const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
   view.focus();

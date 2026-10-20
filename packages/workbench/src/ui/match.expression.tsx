@@ -5,7 +5,6 @@ import type {
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
-import type { SignatureHintOptions } from "#/language/signature-hint";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { linter, setDiagnostics } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
@@ -14,8 +13,7 @@ import {
   keymap,
   placeholder as placeholderText,
 } from "@codemirror/view";
-import { createContext, useContext, useEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   useExpressionCompletion,
@@ -48,28 +46,6 @@ const followDocument = EditorView.domEventHandlers({
 });
 import { signatureHint } from "#/language/signature-hint-tooltip";
 
-const ExpressionTypesContext = createContext<SignatureHintOptions>({});
-
-/**
- * Gives the expression fields under it what the host knows of the types in
- * their expressions, such as a method call's receiver in its Query Dataset.
- * A field without it still shows the Signature Hint, naming every definition
- * of a method.
- */
-export function ExpressionTypesProvider({
-  types,
-  children,
-}: {
-  types: SignatureHintOptions;
-  children: ReactNode;
-}) {
-  return (
-    <ExpressionTypesContext.Provider value={types}>
-      {children}
-    </ExpressionTypesContext.Provider>
-  );
-}
-
 /** The label and validity of the field, on its editable content. */
 const contentAttributes = ({
   label,
@@ -86,12 +62,12 @@ const contentAttributes = ({
 /** Expression Completion over the vocabulary the field holds now. */
 const completionOf = (props: {
   readonly current: {
-    completion?: ExpressionVocabulary;
+    vocabulary?: ExpressionVocabulary;
     presentation?: ExpressionCompletionPresentation;
   };
 }) =>
   filterExpressionCompletion(
-    () => props.current.completion,
+    () => props.current.vocabulary,
     props.current.presentation,
   );
 
@@ -123,10 +99,12 @@ export interface MatchExpressionInputProps {
   /** The lines the field shows before it grows with its text. */
   lines?: number;
   /**
-   * What Expression Completion offers as the user types, read per
-   * keystroke; a field without one offers no completion.
+   * What the field can read, read per keystroke: Expression Completion
+   * offers its names, and the Signature Hint types a method call's receiver
+   * by it. A field without one offers no completion, and its Signature Hint
+   * names every definition of a method.
    */
-  completion?: ExpressionVocabulary;
+  vocabulary?: ExpressionVocabulary;
 }
 
 /**
@@ -145,13 +123,12 @@ export function MatchExpressionInput({
   "aria-invalid": invalid = false,
   placeholder,
   lines = 1,
-  completion,
+  vocabulary,
   ...data
 }: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
   const part = useParts("match");
   const hostExtension = useExpressionExtension();
   const presentation = useExpressionCompletion();
-  const types = useContext(ExpressionTypesContext);
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   // The editor is made once; it reads what it needs then, and later props,
@@ -165,9 +142,8 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
-    completion,
+    vocabulary,
     presentation,
-    types,
   });
   props.current = {
     value,
@@ -178,15 +154,14 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
-    completion,
+    vocabulary,
     presentation,
-    types,
   };
   const attributes = useRef(new Compartment());
   const completer = useRef(new Compartment());
   // The vocabulary is read per keystroke, so only its arrival or its leaving
   // changes the editor.
-  const completes = completion !== undefined;
+  const completes = vocabulary !== undefined;
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
@@ -208,7 +183,8 @@ export function MatchExpressionInput({
           filterExpressionHighlighting,
           followDocument,
           signatureHint({
-            receiverType: (text) => props.current.types.receiverType?.(text),
+            receiverType: (text) =>
+              props.current.vocabulary?.receiverType?.(text),
           }),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -228,7 +204,7 @@ export function MatchExpressionInput({
           attributes.current.of(contentAttributes(props.current)),
           hostExtension ?? [],
           completer.current.of(
-            props.current.completion ? completionOf(props) : [],
+            props.current.vocabulary ? completionOf(props) : [],
           ),
           EditorView.updateListener.of((update) => {
             if (

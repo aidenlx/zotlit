@@ -13,7 +13,6 @@ import { useStore } from "zustand";
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
 import {
-  ExpressionTypesProvider,
   MatchExpressionInput,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
@@ -30,10 +29,8 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import { expressionTypes } from "@/views/template-workbench/expression-types";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
-import { datasetSpec } from "./datasets";
 import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
 import { expressionVocabulary } from "./expression-vocabulary";
 import { displayName, formulaProperty } from "./query-file";
@@ -191,7 +188,7 @@ function ExpressionField({
   const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
   const formulas = useStore(view.state, (s) => s.file?.formulas);
   // A Formula reads no vault property, and naming itself is a cycle.
-  const completion = useMemo(
+  const vocabulary = useMemo(
     () =>
       expressionVocabulary({
         dataset,
@@ -236,7 +233,7 @@ function ExpressionField({
         }
       >
         <MatchExpressionInput
-          completion={completion}
+          vocabulary={vocabulary}
           lines={3}
           aria-invalid={value !== "" && issue !== null}
           value={value}
@@ -245,19 +242,6 @@ function ExpressionField({
           onChange={onChange}
           onBlur={onBlur}
         />
-        <ExpressionTypesProvider
-          types={expressionTypes(datasetSpec(dataset).engine)}
-        >
-          <MatchExpressionInput
-            lines={3}
-            aria-invalid={value !== "" && issue !== null}
-            value={value}
-            faults={faults}
-            data-query-formula-expression=""
-            onChange={onChange}
-            onBlur={onBlur}
-          />
-        </ExpressionTypesProvider>
       </Chooser.PageField>
     </WorkbenchThemeProvider>
   );

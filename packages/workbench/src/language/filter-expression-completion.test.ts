@@ -4,11 +4,12 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
-import { ITEMS } from "@zotlit/item-query";
+import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
 
 import { filterExpressionLanguage } from "./filter-expression";
 import {
   datasetExpressionFields,
+  datasetReceiverType,
   expressionCompletions,
   filterExpressionCompletion,
 } from "./filter-expression-completion";
@@ -221,5 +222,21 @@ describe("the fields of a Query Dataset", () => {
     expect(fields).toContainEqual({ path: "creators", type: "list" });
     // `custom` is read only by bracket access to a custom field.
     expect(fields.map((field) => field.path)).not.toContain("custom");
+  });
+});
+
+describe("the receiver types of a Query Dataset", () => {
+  it("types a receiver as the dataset's planner types it", () => {
+    const type = datasetReceiverType(ITEMS);
+    expect(type("title")).toBe("string");
+    expect(type("tags")).toBe("list");
+    expect(type("dateAdded")).toBe("date");
+    expect(datasetReceiverType(ANNOTATIONS)("text")).toBe("string");
+  });
+
+  it("leaves a receiver the planner cannot type untyped", () => {
+    const type = datasetReceiverType(ITEMS);
+    expect(type("formula.missing")).toBeUndefined();
+    expect(type("title.")).toBeUndefined();
   });
 });

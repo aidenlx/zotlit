@@ -13,6 +13,7 @@ import type { FunctionDefinition, QueryDataset } from "@zotlit/item-query";
 
 import type { TemplateCompletionPresentation } from "./completion";
 import { matchScore } from "./matching";
+import type { SignatureHintOptions } from "./signature-hint";
 
 /** A field of the Query Dataset, read by its name. */
 export interface ExpressionField {
@@ -31,7 +32,11 @@ export interface ExpressionName {
   readonly label?: string;
 }
 
-/** What one editor can read, as its host knows it. */
+/**
+ * What one expression editor can read, as its host knows it. Expression
+ * Completion offers its names, and the Signature Hint types a method call's
+ * receiver by it.
+ */
 export interface ExpressionVocabulary {
   readonly fields: readonly ExpressionField[];
   /** Whether the view binds a Query Context, which `this` reads. */
@@ -40,6 +45,11 @@ export interface ExpressionVocabulary {
   readonly formulas: readonly ExpressionName[];
   /** The vault properties a filter condition reads; absent in a Formula. */
   readonly vault?: readonly ExpressionName[];
+  /**
+   * The static type of a method call's receiver, given its text; undefined
+   * where it is not known.
+   */
+  readonly receiverType?: SignatureHintOptions["receiverType"];
 }
 
 /** One entry of the list. */
@@ -222,6 +232,22 @@ export function datasetExpressionFields(
     const named = label(field.path);
     return named === undefined ? field : { ...field, label: named };
   });
+}
+
+/**
+ * The type of a receiver as the planner of `dataset` types it. A receiver
+ * that does not plan, or plans to a type known only at execution, is untyped.
+ */
+export function datasetReceiverType(
+  dataset: Pick<QueryDataset, "planFilter">,
+): NonNullable<ExpressionVocabulary["receiverType"]> {
+  return (text) => {
+    const plan = dataset.planFilter(text);
+    const root = "root" in plan ? plan.root : undefined;
+    return root && "valueType" in root && root.valueType !== "unknown"
+      ? root.valueType
+      : undefined;
+  };
 }
 
 /** The planned fields of each dataset, which a descriptor never changes. */

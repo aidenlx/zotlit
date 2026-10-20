@@ -19,7 +19,7 @@ import { windowMigration } from "./test-window-migration";
 /** An expression editor under the theme the Match editor and Formula use. */
 async function mountExpression(
   within: HTMLElement = document.body,
-  completion?: ExpressionVocabulary,
+  vocabulary?: ExpressionVocabulary,
 ) {
   const container = document.createElement("div");
   within.append(container);
@@ -32,7 +32,7 @@ async function mountExpression(
         createElement(MatchExpressionInput, {
           value: "itemType == 'book'",
           onChange: () => {},
-          completion,
+          vocabulary,
         }),
       ),
     );

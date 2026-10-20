@@ -22,7 +22,7 @@ it("offers a Match condition's Expression Completion with the signature and desc
         <MatchExpressionInput
           value=""
           onChange={() => {}}
-          completion={{ fields: [], context: false, formulas: [] }}
+          vocabulary={{ fields: [], context: false, formulas: [] }}
         />
       </WorkbenchThemeProvider>,
     ),

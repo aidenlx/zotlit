@@ -95,8 +95,11 @@ export interface MatchVocabulary<Row extends LabelledRow> {
    * asked.
    */
   issue?: (condition: RowCondition<Row>, path: FilterPath) => string | null;
-  /** What an expression row's Expression Completion offers; none without one. */
-  completion?: ExpressionVocabulary;
+  /**
+   * What an expression row can read, which its Expression Completion offers
+   * and its Signature Hint types receivers by; no completion without one.
+   */
+  expression?: ExpressionVocabulary;
   /**
    * The Faults an expression row underlines in `text`, its Filter
    * Expression as typed. A row asks again only when this function, the text

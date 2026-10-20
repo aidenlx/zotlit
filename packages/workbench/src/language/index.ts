@@ -20,6 +20,7 @@ export type {
 } from "./completion";
 export {
   datasetExpressionFields,
+  datasetReceiverType,
   expressionCompletions,
   expressionOption,
   filterExpressionCompletion,

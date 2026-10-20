@@ -1,8 +1,12 @@
-// What Expression Completion offers in a Query View's expression editors: a
-// filter condition and a Formula. Every name wears the label the Properties
-// popover gives its Property.
+// What a Query View's expression editors can read, a filter condition's and a
+// Formula's: the names Expression Completion offers, each with the label the
+// Properties popover gives its Property, and the receiver types the Signature
+// Hint reads, as the dataset's planner types them.
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { datasetExpressionFields } from "@zotlit/workbench/language";
+import {
+  datasetExpressionFields,
+  datasetReceiverType,
+} from "@zotlit/workbench/language";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 
 import { DATASETS } from "./datasets";
@@ -14,18 +18,21 @@ import type { ViewProperties } from "./view-properties";
 export function expressionVocabulary({
   dataset,
   properties,
-  formulas,
-  context,
+  formulas = [],
+  context = false,
   vaultNames,
 }: {
   /** The dataset the expression reads. */
   dataset: QueryFileDataset;
-  /** The Properties of the view, whose labels name the entries. */
-  properties: ViewProperties | null;
+  /**
+   * The Properties of the view, whose labels name the entries; without
+   * them, a field wears its own label.
+   */
+  properties?: ViewProperties | null;
   /** The names of the Formulas the expression can read. */
-  formulas: readonly string[];
+  formulas?: readonly string[];
   /** Whether the view binds a Query Context. */
-  context: boolean;
+  context?: boolean;
   /**
    * The vault properties a filter condition reads; absent in a Formula,
    * which ZotLit Query evaluates without the vault.
@@ -34,8 +41,10 @@ export function expressionVocabulary({
 }): ExpressionVocabulary {
   const label = (path: string) =>
     properties?.entry(path).label ?? fieldLabel(path);
+  const { engine } = DATASETS[dataset];
   return {
-    fields: datasetExpressionFields(DATASETS[dataset].engine, label),
+    fields: datasetExpressionFields(engine, label),
+    receiverType: datasetReceiverType(engine),
     context,
     formulas: formulas.map((name) => ({
       name,

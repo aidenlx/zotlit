@@ -16,7 +16,6 @@ import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 import {
-  ExpressionTypesProvider,
   MatchEditor,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
@@ -33,12 +32,10 @@ import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
-import { expressionTypes } from "@/views/template-workbench/expression-types";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
-import { DATASETS } from "./datasets";
 import { conditionFaults } from "./expression-faults";
 import { expressionVocabulary } from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
@@ -199,10 +196,11 @@ export interface FilterEditorProps {
   /** The type of the vault property `name`, for the icon of its condition. */
   vaultType?: (name: string) => VaultPropertyType;
   /**
-   * What an expression condition's Expression Completion offers on a
-   * dataset; none without one.
+   * What an expression condition on a dataset can read. By default it reads
+   * the dataset's fields, labelled by `properties`, and no Formula, Query
+   * Context or vault property.
    */
-  completion?: (dataset: QueryFileDataset) => ExpressionVocabulary;
+  expressions?: (dataset: QueryFileDataset) => ExpressionVocabulary;
   /** Save one section's filters; answers whether they were kept. */
   onChange: (section: FilterSection, next: MatchTree | undefined) => boolean;
 }
@@ -219,7 +217,7 @@ export function FilterEditor({
   sections: shown = ["all", "view"],
   vaultFields = [],
   vaultType,
-  completion,
+  expressions = (of) => expressionVocabulary({ dataset: of, properties }),
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
@@ -279,9 +277,7 @@ export function FilterEditor({
       ),
       extra: of === "items" ? vaultFields : [],
     });
-    return completion
-      ? { ...conditions, completion: completion(of) }
-      : conditions;
+    return { ...conditions, expression: expressions(of) };
   };
   const sections = (
     [
@@ -295,17 +291,11 @@ export function FilterEditor({
         {m.query_view_filter_other_dataset()}
       </p>
     ) : (
-      <ExpressionTypesProvider
-        types={expressionTypes(
-          DATASETS[section === "all" ? shared : dataset].engine,
-        )}
-      >
-        <MatchEditor
-          value={value}
-          vocabulary={vocabulary(section)}
-          onChange={(next) => onChange(section, next)}
-        />
-      </ExpressionTypesProvider>
+      <MatchEditor
+        value={value}
+        vocabulary={vocabulary(section)}
+        onChange={(next) => onChange(section, next)}
+      />
     );
   return (
     <WorkbenchHostProvider host={host}>
@@ -445,7 +435,7 @@ export function FilterButton({ view }: { view: QueryView }) {
         properties={properties}
         vaultFields={vaultFields}
         vaultType={(name) => literatureNotes.propertyType(name)}
-        completion={(dataset) =>
+        expressions={(dataset) =>
           expressionVocabulary({
             dataset,
             properties,
