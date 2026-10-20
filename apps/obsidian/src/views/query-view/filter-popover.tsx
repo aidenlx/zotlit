@@ -37,10 +37,7 @@ import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
 import { conditionFaults } from "./expression-faults";
-import {
-  expressionVocabulary,
-  useCustomFieldNames,
-} from "./expression-vocabulary";
+import { expressionVocabulary } from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -413,7 +410,7 @@ export function FilterButton({ view }: { view: QueryView }) {
     [names, literatureNotes, properties, vaultVersion],
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
-  const custom = useCustomFieldNames(view);
+  const [custom, setCustom] = useState<readonly string[]>([]);
   if (!file || !shown) return null;
   return (
     <ToolbarPopover
@@ -426,6 +423,9 @@ export function FilterButton({ view }: { view: QueryView }) {
       onOpen={() => {
         view.filterValues().then(setValues, (error: unknown) => {
           logger.warn("The filter values could not be read", { error });
+        });
+        view.customFieldNames().then(setCustom, (error: unknown) => {
+          logger.warn("The custom fields could not be read", { error });
         });
       }}
     >

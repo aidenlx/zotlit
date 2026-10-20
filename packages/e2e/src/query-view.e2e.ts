@@ -282,6 +282,60 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     120000,
   );
 
+  it("offers the members of a typed receiver, the names a list method binds and the vault keys in a filter condition", async () => {
+    const path = "query-files/Member completion.zotquery";
+    const layout = await obEval(
+      run.vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      // Teardown closes a popover a failed step left open; not a reader's press.
+      await obEval(
+        run.vaultId,
+        `(async()=>{const leaf=window.zotlitE2EMembers;delete window.zotlitE2EMembers;for(const popup of document.querySelectorAll('[popover]:popover-open'))popup.hidePopover();leaf?.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    // A Formula of text that the filter condition reads by name.
+    const source = `formulas:\n  short: title.slice(0, 10)\nviews:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
+    const texts = [
+      "title.",
+      "dateAdded.",
+      "formula.short.",
+      "attachments[0].",
+      "tags.filter(",
+      "tags.reduce(",
+      "(title +.",
+      "vault[",
+    ];
+    // What the list offers for each text typed over the expression row's
+    // text; the row is never left empty, which would remove it.
+    const offered = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');window.zotlitE2EMembers=leaf;await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;const out={};for(const text of ${JSON.stringify(texts)}){editor.contentDOM.blur();await until('the list closes',()=>!popup.querySelector('.cm-tooltip-autocomplete'));editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});editor.focus();await until('focus in the field',()=>el.doc.activeElement===content&&el.doc.hasFocus());el.doc.execCommand('insertText',false,text);const list=await until('list for '+text,()=>editor.state.doc.toString()===text&&popup.querySelector('.cm-tooltip-autocomplete li')&&popup.querySelector('.cm-tooltip-autocomplete'));out[text]=[...list.querySelectorAll('.cm-completionLabel')].map(n=>n.textContent);}popup.hidePopover();return JSON.stringify(out);})()`,
+      ),
+    ) as Record<string, string[]>;
+    const has = (text: string, names: string[], not: string[] = []) => {
+      expect(offered[text], text).toEqual(expect.arrayContaining(names));
+      for (const name of not) expect(offered[text], text).not.toContain(name);
+    };
+    has("title.", ["lower", "length"], ["year", "format"]);
+    has("dateAdded.", ["year", "format"], ["lower"]);
+    has("formula.short.", ["lower"], ["year"]);
+    has("attachments[0].", ["title", "fileType"]);
+    has("(title +.", ["lower", "year", "filter"]);
+    expect(offered["tags.filter("]!.slice(0, 2)).toEqual(["value", "index"]);
+    expect(offered["tags.reduce("]!.slice(0, 3)).toEqual([
+      "value",
+      "index",
+      "acc",
+    ]);
+    // Each name a Literature Note carries, quoted.
+    expect(offered["vault["]!.length).toBeGreaterThan(0);
+    for (const key of offered["vault["]!) expect(key).toMatch(/^".*"$/);
+  }, 120000);
+
   it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {
     const notePath = "query-files/Export check.md";
     const pdfPath = join(workspaceRoot, ".scratch", "e2e-query-export.pdf");
