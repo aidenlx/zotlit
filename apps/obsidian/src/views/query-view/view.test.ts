@@ -41,7 +41,7 @@ import type { ContextSource } from "./context-hint";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
-import { formulaIssuesOf } from "./results";
+import { formulaIssuesOf, formulaSpansOf } from "./results";
 import { inferType } from "./table-notes";
 import type {
   VaultEdit,
@@ -2885,6 +2885,10 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
         short: "In formula.short: nope is not a method of string. Use slice.",
       },
     },
+  });
+  // The formula page underlines the Fault at its place in the Formula's text.
+  expect(formulaSpansOf(view.state.getState())).toEqual({
+    short: { from: 6, to: 10 },
   });
   expect(tableText(el)).toEqual([
     ["", "Title", "formula.year", "formula.short"],

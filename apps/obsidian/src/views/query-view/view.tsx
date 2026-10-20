@@ -13,7 +13,7 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import { nameDictionary } from "@zotlit/item-query";
-import type { NameDictionary, QueryContext } from "@zotlit/item-query";
+import type { QueryContext } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
 import { PaneState } from "@/components/pane-state";
@@ -463,20 +463,41 @@ const FORMULA_READ_FAULTS: ReadonlySet<string> = new Set([
   "unknown-formula",
 ]);
 
-/** The reason of each Formula that the run left out, by name. */
-function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
-  const faults =
-    outcome.kind === "result"
+/** The Formula marks of one run. */
+type FormulaMarks = Pick<ResultSnapshot, "formulaIssues" | "formulaSpans">;
+
+/** No Formula marks, for a run that planned no Formula. */
+const NO_FORMULA_MARKS: FormulaMarks = {
+  formulaIssues: NO_RESULTS.formulaIssues,
+  formulaSpans: NO_RESULTS.formulaSpans,
+};
+
+/**
+ * The reason of each Formula that the run left out, by name, and where in
+ * the Formula's own text its Fault is, where it names a place there.
+ */
+function formulaMarks(outcome: QueryViewOutcome): FormulaMarks {
+  const faults = Object.entries(
+    (outcome.kind === "result"
       ? outcome.result.formulaDiagnostics
       : outcome.kind === "failed"
         ? outcome.formulaDiagnostics
-        : undefined;
-  return nameDictionary(
-    Object.entries(faults ?? {}).map(([name, diagnostic]) => [
-      name,
-      readerText(diagnostic),
-    ]),
+        : undefined) ?? {},
   );
+  return {
+    formulaIssues: nameDictionary(
+      faults.map(([name, diagnostic]) => [name, readerText(diagnostic)]),
+    ),
+    formulaSpans: nameDictionary(
+      faults.flatMap(([name, { location }]) =>
+        location?.argument === "formulas" &&
+        location.path === name &&
+        location.span
+          ? [[name, location.span] as const]
+          : [],
+      ),
+    ),
+  };
 }
 
 export class QueryView extends Component implements HistorySurface {
@@ -1030,7 +1051,7 @@ export class QueryView extends Component implements HistorySurface {
     if (plan.fault) {
       // A vault condition the vault cannot answer apart from ZotLit Query
       // keeps the view from running.
-      this.#fail(run, plan.fault.diagnostic, nameDictionary());
+      this.#fail(run, plan.fault.diagnostic, NO_FORMULA_MARKS);
       return;
     }
     const controller = new AbortController();
@@ -1067,7 +1088,7 @@ export class QueryView extends Component implements HistorySurface {
             message: error instanceof Error ? error.message : String(error),
             hint: "",
           },
-          nameDictionary(),
+          NO_FORMULA_MARKS,
         );
       },
     );
@@ -1083,7 +1104,7 @@ export class QueryView extends Component implements HistorySurface {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(run, outcome.diagnostic, formulaIssues(outcome));
+        this.#fail(run, outcome.diagnostic, formulaMarks(outcome));
         return;
       case "result": {
         const result = outcome.result;
@@ -1126,7 +1147,7 @@ export class QueryView extends Component implements HistorySurface {
                 ]),
               ).values(),
             ],
-            formulaIssues: formulaIssues(outcome),
+            ...formulaMarks(outcome),
           },
           failure: null,
         });
@@ -1150,12 +1171,12 @@ export class QueryView extends Component implements HistorySurface {
    * marked at that condition. The filters cannot hold without a Formula they
    * read: a condition that reads a Formula with a mistake, or one that the
    * file does not define, shows no rows. Kept rows keep the Formula marks of
-   * the run that gave them; `issues` mark the Formulas otherwise.
+   * the run that gave them; `marks` mark the Formulas otherwise.
    */
   #fail(
     { view, plan, key, binding }: ViewRun,
     diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
-    issues: NameDictionary<string>,
+    marks: FormulaMarks,
   ): void {
     const kept =
       !FORMULA_READ_FAULTS.has(diagnostic.code) &&
@@ -1179,7 +1200,7 @@ export class QueryView extends Component implements HistorySurface {
           ...at,
           message: readerText(diagnostic),
         },
-        formulaIssues: issues,
+        ...marks,
       },
     }));
   }
