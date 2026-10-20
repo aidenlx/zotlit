@@ -20,8 +20,7 @@ export const filterExpressionLanguage = LRLanguage.define({
     props: [
       styleTags({
         "Identifier PropertyName": tags.propertyName,
-        String: tags.string,
-        Escape: tags.escape,
+        "String/...": tags.string,
         RegExp: tags.regexp,
         RealNumber: tags.number,
         "BooleanLiteral NullLiteral": tags.literal,

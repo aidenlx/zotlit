@@ -77,6 +77,12 @@ describe("filter expression highlighting", () => {
     ]);
   });
 
+  it("keeps an escape inside a string in the string color", () => {
+    expect(hooks(String.raw`"a\nb"`)).toEqual([
+      [String.raw`"a\nb"`, "zt-template-string"],
+    ]);
+  });
+
   it("colors operators", () => {
     expect(
       hooks("!a && b || c == 1 != 2 < 3 + 4 - 5 * 6 / 7 % 8 >= -9")
