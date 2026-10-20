@@ -38,6 +38,8 @@ export interface SearchOptions {
   limit?: number;
   /** The Libraries to search in place of the Library Scope in force. */
   libraries?: readonly AvailableLibrary[];
+  /** Indexed Keys to label as cited and put first in empty queries. */
+  cited?: readonly string[];
 }
 
 export interface SearchHit extends ReadsSearchHit {
@@ -46,6 +48,7 @@ export interface SearchHit extends ReadsSearchHit {
    * `null` when one Library is available and the label would say nothing.
    */
   library: AvailableLibrary | null;
+  cited: boolean;
 }
 
 export interface ItemLookupDeps {
@@ -153,7 +156,9 @@ export class ItemLookup extends Service<ItemLookupReady> {
     const libraries =
       opts?.libraries ?? this.#libraryScope.current?.available ?? [];
     if (limit <= 0 || libraries.length === 0) return [];
-    return run(this.#searchItems(libraries, query, limit));
+    return run(
+      this.#searchItems(libraries, query, { limit, cited: opts?.cited }),
+    );
   }
 
   async #load(): Promise<ItemLookupReady> {
@@ -170,7 +175,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
     const prewarm = (resolved: ResolvedLibraryScope | null) => {
       const libraries = resolved?.available ?? [];
       if (libraries.length === 0) return;
-      runPrewarm(Effect.asVoid(this.#searchItems(libraries, "", 1)));
+      runPrewarm(Effect.asVoid(this.#searchItems(libraries, "", { limit: 1 })));
     };
     const sessions = new Set<FiberHandle.FiberHandle<SearchHit[], never>>();
     const openHandle = () => {
@@ -226,13 +231,14 @@ export class ItemLookup extends Service<ItemLookupReady> {
   #searchItems(
     libraries: readonly AvailableLibrary[],
     query: string,
-    limit: number,
+    { limit, cited }: { limit: number; cited?: readonly string[] },
   ): Effect.Effect<SearchHit[]> {
     // One available Library makes every label identical, so the rows carry none.
     const labels =
       libraries.length > 1
         ? new Map(libraries.map((library) => [library.libraryID, library]))
         : null;
+    const citedKeys = new Set(cited);
     const t0 = performance.now();
     return Effect.promise(() => this.#reads.ready).pipe(
       Effect.flatMap(({ reads }) =>
@@ -240,7 +246,9 @@ export class ItemLookup extends Service<ItemLookupReady> {
           libraryIDs: libraries.map((library) => library.libraryID),
           query,
           limit,
-          ...(query.trim() === "" ? { uses: this.#useLedger.uses } : {}),
+          ...(query.trim() === ""
+            ? { uses: this.#useLedger.uses, ...(cited ? { cited } : {}) }
+            : {}),
         }),
       ),
       Effect.map((hits) => {
@@ -254,6 +262,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
           (hit): SearchHit => ({
             ...hit,
             library: labels?.get(hit.item.libraryID) ?? null,
+            cited: citedKeys.has(hit.item.indexedKey),
           }),
         );
       }),

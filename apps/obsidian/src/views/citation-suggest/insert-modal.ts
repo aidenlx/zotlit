@@ -1,11 +1,12 @@
 import { Keymap } from "obsidian";
-import type { Editor } from "obsidian";
+import type { Editor, TFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { ItemSearchModal } from "@/services/item-lookup/search-modal";
 import type { SearchHit } from "@/services/item-lookup/service";
 
+import { readDocumentCitedKeys } from "./document-citations";
 import {
   commitCitationInsert,
   padCitationInsert,
@@ -21,11 +22,15 @@ import type { CitationSuggestDeps } from "./register";
 export class InsertCitationModal extends ItemSearchModal {
   readonly #deps: CitationSuggestDeps;
   readonly #editor: Editor;
+  readonly #file: TFile | null;
+  #documentController?: AbortController;
+  #cited: Promise<readonly string[]> = Promise.resolve([]);
 
-  constructor(deps: CitationSuggestDeps, editor: Editor) {
+  constructor(deps: CitationSuggestDeps, editor: Editor, file: TFile | null) {
     super(deps);
     this.#deps = deps;
     this.#editor = editor;
+    this.#file = file;
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
@@ -39,6 +44,28 @@ export class InsertCitationModal extends ItemSearchModal {
       this.selectActiveSuggestion(evt);
       return false;
     });
+  }
+
+  override onOpen(): void {
+    this.#documentController = new AbortController();
+    this.#cited = readDocumentCitedKeys(
+      this.#deps.citationIndex,
+      this.#file,
+      this.#documentController.signal,
+    );
+    super.onOpen();
+  }
+
+  override onClose(): void {
+    this.#documentController?.abort();
+    super.onClose();
+  }
+
+  override async getSuggestions(query: string): Promise<SearchHit[]> {
+    const controller = this.#documentController;
+    const cited = await this.#cited;
+    if (!controller || controller.signal.aborted) return [];
+    return super.getSuggestions(query, { cited });
   }
 
   override async onChooseSuggestion(

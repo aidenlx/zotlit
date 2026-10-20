@@ -1,15 +1,23 @@
+import type { App, Editor, EditorSuggestContext, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   CitekeyResolution,
 } from "@/services/citation-index/service";
+import { ItemLookup } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
 import {
+  CitationEditorSuggest,
   padCitationInsert,
   resolveCitationInsert,
   resolveCitationTrigger,
@@ -487,5 +495,157 @@ describe("padCitationInsert", () => {
     expect(
       resolveCitationTrigger(line, 4 + padded.cursor, { atTrigger: true }),
     ).toBeNull();
+  });
+});
+
+describe("Citation Suggester document citations", () => {
+  const file = { path: "Draft.md" } as TFile;
+  const context = {
+    file,
+    editor: {} as Editor,
+    start: { line: 0, ch: 0 },
+    end: { line: 0, ch: 2 },
+    query: "",
+  } satisfies EditorSuggestContext;
+
+  function setup(read: unknown) {
+    const search = vi.fn().mockResolvedValue([]);
+    const close = vi.fn();
+    const suggest = new CitationEditorSuggest({
+      app: {} as App,
+      lookup: { openSession: () => ({ search, close }) },
+      citationIndex: { getDocumentCitationSet: read },
+      settings: { current: {} },
+    } as unknown as CitationSuggestDeps);
+    return { suggest, search, [Symbol.dispose]: () => suggest.close() };
+  }
+
+  it("reads once per dropdown and skips unresolved keys", async () => {
+    const read = vi.fn().mockResolvedValue({
+      citations: [
+        { indexedKey: "AAAA2222" },
+        { indexedKey: null },
+        { indexedKey: "BBBB3333g2" },
+      ],
+    });
+    using h = setup(read);
+    await h.suggest.getSuggestions(context);
+    await h.suggest.getSuggestions({ ...context, query: "Paper" });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(file, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(h.search).toHaveBeenLastCalledWith("Paper", {
+      limit: 50,
+      cited: ["AAAA2222", "BBBB3333g2"],
+    });
+    h.suggest.close();
+    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
+    await h.suggest.getSuggestions(context);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the newest hits visible when keystrokes overlap a document read", async () => {
+    const document = Promise.withResolvers<{ citations: [] }>();
+    await using reads = inProcessReadsService(
+      memoryOpener(
+        () => `
+      insert into libraries (libraryID, type, version, clientVersion)
+        values (1, 'user', 1, 0);
+      insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+      insert into fieldsCombined (fieldID, fieldName, custom) values (10, 'title', 0);
+      insert into itemDataValues (valueID, value) values (1, 'Alpha');
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ALPHA222');
+      insert into itemData (itemID, fieldID, valueID) values (1, 10, 1);
+    `,
+      ).open,
+    );
+    await using lookup = new ItemLookup({
+      reads,
+      useLedger: { ready: Promise.resolve(), uses: {} },
+      libraryScope: {
+        ready: Promise.resolve(),
+        on: () => () => {},
+        current: {
+          mode: "all",
+          invalid: false,
+          unavailable: [],
+          available: [
+            { selector: { type: "personal" }, libraryID: 1, name: null },
+          ],
+        },
+      },
+    });
+    const suggest = new CitationEditorSuggest({
+      app: {} as App,
+      lookup,
+      citationIndex: { getDocumentCitationSet: () => document.promise },
+      settings: { current: {} },
+    } as unknown as CitationSuggestDeps);
+    using _close = { [Symbol.dispose]: () => suggest.close() };
+    const close = vi.spyOn(suggest, "close");
+    // Obsidian consumes every answer and closes the dropdown for an empty list.
+    const showSuggestions = (hits: SearchHit[]) => {
+      if (hits.length === 0) suggest.close();
+      return hits.map((hit) => hit.item.indexedKey);
+    };
+    const first = suggest
+      .getSuggestions({ ...context, query: "missing" })
+      .then(showSuggestions);
+    const second = suggest
+      .getSuggestions({ ...context, query: "Alpha" })
+      .then(showSuggestions);
+    document.resolve({ citations: [] });
+
+    expect(await Promise.all([first, second])).toEqual([
+      ["ALPHA222"],
+      ["ALPHA222"],
+    ]);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("keeps searching when document citations fail", async () => {
+    using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
+    const error = new Error("Index unavailable");
+    using h = setup(vi.fn().mockRejectedValue(error));
+    await h.suggest.getSuggestions(context);
+    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
+    expect(debug).toHaveBeenCalledWith(expect.any(String), {
+      reason: "failed",
+      error,
+    });
+  });
+
+  it("bounds a slow document read and retains the fallback for the session", async () => {
+    using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
+    vi.useFakeTimers();
+    using _restore = { [Symbol.dispose]: () => vi.useRealTimers() };
+    const read = vi.fn().mockReturnValue(new Promise(() => {}));
+    using h = setup(read);
+    const pending = h.suggest.getSuggestions(context);
+    await vi.advanceTimersByTimeAsync(150);
+    await pending;
+    expect(debug).toHaveBeenCalledWith(expect.any(String), {
+      reason: "timeout",
+    });
+    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
+    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
+    await h.suggest.getSuggestions(context);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a pending answer when the dropdown closes", async () => {
+    using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
+    const read = vi.fn().mockReturnValue(new Promise(() => {}));
+    using h = setup(read);
+    const pending = h.suggest.getSuggestions(context);
+    h.suggest.close();
+    await expect(pending).resolves.toEqual([]);
+    expect(debug).toHaveBeenCalledWith(expect.any(String), {
+      reason: "aborted",
+    });
+    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
+    expect(h.search).not.toHaveBeenCalled();
   });
 });

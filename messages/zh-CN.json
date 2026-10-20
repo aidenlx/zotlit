@@ -405,6 +405,7 @@
   "citekey_ambiguous_placeholder": "选择要为 @{citekey} 打开的条目",
   "instruction_navigate": "导航",
   "instruction_dismiss": "关闭",
+  "citation_suggester_cited_in_note": "已在本笔记中引用",
   "instruction_insert_citation": "插入引文",
   "instruction_insert_alternate_citation": "插入替代引文",
   "instruction_open_lit_note": "打开文献笔记",

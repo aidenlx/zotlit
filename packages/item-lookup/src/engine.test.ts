@@ -60,6 +60,44 @@ describe("item search engine", () => {
     ).toEqual(["B", "C"]);
   });
 
+  it.each([
+    { cited: ["A"], limit: 3, expected: ["A", "B", "C"] },
+    { cited: ["A"], limit: 1, expected: ["A"] },
+    { cited: ["OUTSIDE"], limit: 2, expected: ["B", "C"] },
+    { cited: ["A", "A", "C", "B"], limit: 2, expected: ["B", "C"] },
+    {
+      cited: ["A", "C"],
+      uses: { A: 25, B: 40 },
+      limit: 3,
+      expected: ["A", "C", "B"],
+    },
+    { cited: ["C"], query: "Paper", limit: 2, expected: ["A", "B"] },
+  ])(
+    "ranks cited Items for $cited with limit $limit and query $query",
+    async ({ cited, uses, query = "", limit, expected }) => {
+      const index = await buildEngineIndex(
+        Stream.make([
+          item({
+            key: "A",
+            title: "Paper",
+            lastActivity: 10,
+            dateModified: "2026-01-01T00:00:00Z",
+          }),
+          item({ key: "B", title: "Paper", lastActivity: 30 }),
+          item({ key: "C", title: "Paper", lastActivity: 20 }),
+        ]),
+        { libraries: LIBRARIES },
+      ).pipe(Effect.provide(layerSegmenterNone), Effect.runPromise);
+      expect(
+        keys(
+          await Effect.runPromise(
+            searchEngineIndex(index, query, { limit, cited, uses }),
+          ),
+        ),
+      ).toEqual(expected);
+    },
+  );
+
   it("orders a seeded Zotero library by reads, child notes and Annotations", async () => {
     using scenario = openScenarioDatabase({ annotations: true });
     scenario.sqlite
