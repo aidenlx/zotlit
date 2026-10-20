@@ -299,6 +299,7 @@ export function filterVocabulary(
     m,
     values,
     issue,
+    faults,
     label,
     icon,
     extra = [],
@@ -309,6 +310,7 @@ export function filterVocabulary(
       condition: RowCondition<FilterRow>,
       path: readonly number[],
     ) => string | null;
+    faults?: MatchVocabulary<FilterRow>["faults"];
     label?: (field: FilterField) => string | null | undefined;
     icon?: (field: FilterField) => ReactNode;
     extra?: readonly FilterField[];
@@ -341,5 +343,10 @@ export function filterVocabulary(
     }),
   );
   const first = fields[0]!.kind;
-  return { kinds, newKind: first, ...(issue ? { issue } : {}) };
+  return {
+    kinds,
+    newKind: first,
+    ...(issue ? { issue } : {}),
+    ...(faults ? { faults } : {}),
+  };
 }

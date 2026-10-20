@@ -666,6 +666,10 @@ export interface FilterLocation {
 /** A condition of the filters, with the message the Match editor marks it with. */
 export interface ConditionIssue extends FilterLocation {
   readonly message: string;
+  /** The condition's text the fault was found in, where the fault has a place in it. */
+  readonly text?: string;
+  /** The fault's place in `text`. */
+  readonly span?: { readonly from: number; readonly to: number };
 }
 
 /**

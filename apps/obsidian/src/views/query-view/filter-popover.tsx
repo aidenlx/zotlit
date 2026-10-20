@@ -35,6 +35,7 @@ import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
+import { conditionFaults } from "./expression-faults";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -237,6 +238,13 @@ export function FilterEditor({
         issue && issue.section === section && samePath(issue.path, path)
           ? issue.message
           : null,
+      faults: (text, path) =>
+        conditionFaults(
+          text,
+          issue && issue.section === section && samePath(issue.path, path)
+            ? issue
+            : null,
+        ),
       // A condition shows the Display Name of its field in the view's
       // Properties, and the icon the view's property list shows.
       label: (field) =>

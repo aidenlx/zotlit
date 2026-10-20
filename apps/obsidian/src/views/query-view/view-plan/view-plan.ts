@@ -38,7 +38,7 @@ import {
 } from "@/views/query-view/view-properties";
 
 import { splitFilters } from "./filter-split";
-import type { FilterSplit } from "./filter-split";
+import type { ConditionFault, FilterSplit } from "./filter-split";
 import { planVaultFilter } from "./vault-filter";
 import type { VaultFilter } from "./vault-filter";
 
@@ -97,13 +97,14 @@ export interface ViewPlan {
     rows: readonly R[],
   ): LayoutRows & { dropped: boolean };
   /**
-   * The condition that a fault at `span` of the request's filter marks, or
-   * `null` when the span falls inside no one condition.
+   * The condition that a fault at `span` of the request's filter marks, with
+   * the fault's place in the condition's text, or `null` when the span falls
+   * inside no one condition.
    */
   locate(span: {
     readonly from: number;
     readonly to: number;
-  }): FilterLocation | null;
+  }): ConditionFault | null;
 }
 
 /**

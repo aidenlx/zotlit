@@ -559,6 +559,11 @@ function Row<Row extends LabelledRow>({
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
                 value={condition.text}
+                faults={
+                  stored === null
+                    ? undefined
+                    : vocabulary.faults?.(condition.text, stored)
+                }
                 onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (

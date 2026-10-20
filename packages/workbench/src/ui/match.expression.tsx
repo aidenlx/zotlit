@@ -37,7 +37,8 @@ const fromValue = Annotation.define<true>();
 export interface ExpressionFault {
   readonly from: number;
   readonly to: number;
-  readonly message: string;
+  /** What the owner reports for it, where it reports something. */
+  readonly message?: string;
 }
 
 const NO_FAULTS: readonly ExpressionFault[] = [];
@@ -172,7 +173,7 @@ export function MatchExpressionInput({
         editor.state,
         faults
           .filter(({ from, to }) => from <= to && to <= length)
-          .map(({ from, to, message }) => ({
+          .map(({ from, to, message = "" }) => ({
             from,
             to,
             message,
