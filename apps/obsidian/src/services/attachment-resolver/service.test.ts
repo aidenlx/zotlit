@@ -123,6 +123,56 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
   ]);
 });
 
+// The reverse lookup a durable `zotero://open` link needs: it names an
+// Attachment by its key, never by a path.
+it("locates the file an Attachment names by its Indexed Key", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { baseAttachmentPath: null });
+
+  expect(
+    ["RGRPDF24", "PDFSTR22", "LINKURL2", "IANPDF25", "ZZZZZZZZ"].map((key) =>
+      resolver.locate(key),
+    ),
+  ).toEqual([
+    {
+      kind: "located",
+      absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
+    },
+    {
+      kind: "located",
+      absolutePath: `${DATA_DIR}/storage/PDFSTR22/sakimas-song.pdf`,
+    },
+    // A web link names no file.
+    { kind: "unresolved" },
+    // A base-directory row names none while the base pref is unset.
+    { kind: "unresolved" },
+    { kind: "unresolved" },
+  ]);
+});
+
+it("locates a group-library Attachment by its group's Indexed Key alone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, {
+    rows: `
+      insert into libraries (libraryID, type) values (1, 'user'), (2, 'group');
+      insert into groups (groupID, libraryID, name)
+        values (4200309, 2, 'Shared Reading');
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values
+          (30, 2, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 2, 'RGRGRUP9'),
+          (31, 1, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 2, 'RUGIERG9');
+      insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+        values (30, 31, 0, 'application/pdf', 'storage:shared.pdf');
+    `,
+  });
+
+  expect(resolver.locate("RGRGRUP9g4200309")).toEqual({
+    kind: "located",
+    absolutePath: `${DATA_DIR}/storage/RGRGRUP9/shared.pdf`,
+  });
+  expect(resolver.locate("RGRGRUP9")).toEqual({ kind: "unresolved" });
+});
+
 it("leaves a base-directory attachment unresolved while the base pref is unset", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver } = await setup(stack, { baseAttachmentPath: null });
@@ -288,6 +338,7 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
   await expect.poll(() => reads.state).toBe("degraded");
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
+  expect(resolver.locate("RGRPDF24")).toEqual({ kind: "pending" });
 
   // The database recovers: the build it was waiting on lands and says so.
   const announced = nextAnnouncement(resolver);
@@ -295,6 +346,38 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
   await announced;
 
   expect(resolver.resolve(path)).toEqual(ROUGIER);
+});
+
+// `indexed` is what a caller waits on to know lookups answer for real; waiting
+// on it must not be what builds the index, or it could not tell a warmed
+// resolver from one nobody asked.
+it("settles indexed once the first index lands, and builds nothing itself", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver, queries } = await setup(stack, { prime: false });
+  // Every build asks the query client for the index, as it starts.
+  const builds = vi.spyOn(queries, "ask");
+
+  const indexed = resolver.indexed;
+  expect(builds).not.toHaveBeenCalled();
+
+  resolver.warm();
+  expect(builds).toHaveBeenCalledOnce();
+  await indexed;
+  expect(resolver.locate("RGRPDF24")).toMatchObject({ kind: "located" });
+});
+
+it("builds the first index when warmed, before any lookup", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { prime: false });
+
+  const announced = nextAnnouncement(resolver);
+  resolver.warm();
+  await announced;
+
+  expect(resolver.locate("RGRPDF24")).toEqual({
+    kind: "located",
+    absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
+  });
 });
 
 it("announces the first index to a caller that was told pending", async () => {
@@ -520,6 +603,7 @@ async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
   return {
     resolver,
     reads,
+    queries,
     zoteroPref,
     prefEvents,
     /** Makes every later path index read fail, until set back. */

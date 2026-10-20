@@ -340,8 +340,12 @@ _Avoid_: Openable Attachment (the Zotero-reader sense), Readable Attachment, rea
 A Markdown link whose target is an Attachment's own file on this device, written as a `file://` URI. ZotLit writes one from the `fileLink` Template Helper on an Attachment and on an Annotation (which anchors it to `#page=N` and carries an Annotation Anchor), and from Attachment Import's fallback for a blocked source; a hand-written link of the same shape is one too. Names a device-local path, so it is valid only on the device that rendered it.
 _Avoid_: file link (ambiguous with a vault link), local link, attachment link (covers the Zotero deep link too)
 
+**Durable Annotation Link**:
+Zotero's own open link to one Annotation, `zotero://open/library/items/<attachment key>?annotation=<annotation key>&page=<page label>` (`groups/<id>` in place of `library` for a group Library). Names the Attachment and the Annotation by their keys, so it works on any device that holds the PDF, and Zotero opens it anywhere ZotLit does not. An Annotation's Backlink is one, and so is every annotation link in an imported Zotero Child Note. Its `page` is a printed page label, not a page number.
+_Avoid_: annotation backlink (in prose), zotero link, deep link
+
 **File Link Capture**:
-Sending a clicked Attachment File Link to Obsidian's PDF view instead of the system handler, when the path resolves to an Obsidian-Openable Attachment. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off.
+Sending a clicked Attachment File Link or Durable Annotation Link to Obsidian's PDF view instead of the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off. A Durable Annotation Link the system handler keeps opens in Zotero.
 _Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
 
 **Annotation Anchor**:

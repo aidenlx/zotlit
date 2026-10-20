@@ -243,6 +243,32 @@ describe("createObsidianAttachmentReader", () => {
     expect(openFile).not.toHaveBeenCalled();
   });
 
+  // A caller with somewhere else to send the link — Capture, handing a
+  // Durable Annotation Link to Zotero — takes the missing file instead of the
+  // notice, decided here at the open rather than by a check ahead of it. That
+  // no notice shows is the desktop End-to-end Run's to observe.
+  it("hands a missing file to the caller's onMissing and opens nothing", async () => {
+    const { app, openFile } = fakeApp(() => null);
+    const reader = createObsidianAttachmentReader(app);
+    const onMissing = vi.fn();
+
+    await reader.open(row("Doe 2024.pdf"), false, { onMissing });
+
+    expect(onMissing).toHaveBeenCalledOnce();
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("leaves onMissing unrun when the file opens", async () => {
+    const { app, openFile } = fakeApp(() => new TFile());
+    const reader = createObsidianAttachmentReader(app);
+    const onMissing = vi.fn();
+
+    await reader.open(row("Doe 2024.pdf"), false, { onMissing });
+
+    expect(openFile).toHaveBeenCalledOnce();
+    expect(onMissing).not.toHaveBeenCalled();
+  });
+
   it("runs onOpened once the file is on screen", async () => {
     const absolutePath = join(dir, "Doe 2024.pdf");
     await writeFile(absolutePath, "");

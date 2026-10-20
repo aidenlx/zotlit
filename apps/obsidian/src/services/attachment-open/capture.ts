@@ -1,15 +1,24 @@
-// File Link Capture: a clicked Attachment File Link reaches Obsidian's own PDF
-// view instead of the system handler, when it names an Obsidian-Openable
-// Attachment.
+// File Link Capture: a clicked Attachment File Link, or a Durable Annotation
+// Link, reaches Obsidian's own PDF view instead of the system handler, when it
+// names an Obsidian-Openable Attachment.
 
 import { around } from "monkey-around";
 import { fileURLToPath } from "node:url";
 import type { PaneType } from "obsidian";
 
+import {
+  formatAnnotationSubpath,
+  formatIndexedKey,
+  parseAnnotationOpenUri,
+} from "@zotlit/db";
+
 import type { AttachmentReader } from "@/lib/attachment-open";
 import { disposable } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
-import type { AttachmentResolution } from "@/services/attachment-resolver/service";
+import type {
+  AttachmentLocation,
+  AttachmentResolution,
+} from "@/services/attachment-resolver/service";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -40,6 +49,8 @@ export function paneFromTarget(target: string | undefined): PaneType | boolean {
 /** What Capture needs to judge one clicked URL, with no Obsidian objects in it. */
 export interface FileLinkCaptureContext {
   resolve: (absolutePath: string) => AttachmentResolution;
+  /** The file an Attachment keeps, by its Indexed Key, for a Durable Annotation Link. */
+  locate: (attachmentKey: string) => AttachmentLocation;
   vaultBasePath: string;
   platform: NodeJS.Platform;
 }
@@ -47,11 +58,16 @@ export interface FileLinkCaptureContext {
 /**
  * Either ZotLit takes the click, naming the Attachment exactly as every other
  * ZotLit reader gesture names one, or the original `window.open` runs
- * untouched.
+ * untouched. `passWhenMissing` marks a link the original can still serve when
+ * the reader finds no file: Zotero opens a Durable Annotation Link anywhere.
  */
 export type FileLinkCapture =
   | { kind: "pass" }
-  | { kind: "capture"; attachment: ObsidianOpenableAttachment };
+  | {
+      kind: "capture";
+      attachment: ObsidianOpenableAttachment;
+      passWhenMissing?: true;
+    };
 
 const PASS: FileLinkCapture = { kind: "pass" };
 
@@ -70,6 +86,7 @@ export function decideFileLinkCapture(
   } catch {
     return PASS;
   }
+  if (parsed.protocol === "zotero:") return decideDurableLinkCapture(url, ctx);
   if (parsed.protocol !== "file:") return PASS;
 
   let absolutePath: string;
@@ -78,7 +95,68 @@ export function decideFileLinkCapture(
   } catch {
     return PASS;
   }
+  return captureAt(absolutePath, parsed.hash, ctx);
+}
 
+/** A printed page label that also reads as a 1-based page number. */
+const PAGE_NUMBER_RE = /^[1-9]\d*$/;
+
+/**
+ * Decide a `zotero://open` link that names an Annotation. It names the
+ * Attachment by key, so the resolver locates the file first. A file this
+ * computer does not hold leaves the link to Zotero — the reason the link is
+ * durable at all — and the reader finds that out as it opens, so the capture
+ * says to hand the link back then. Anything short of a valid Annotation key is
+ * Zotero's alone, `zotero://select` included.
+ *
+ * The link's `page` is a printed label, which Obsidian's own jump reads as a
+ * page number. It is carried only when it reads as one; the Annotation's own
+ * page wins over it whenever the reader can place the Annotation.
+ *
+ * @see apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md
+ */
+function decideDurableLinkCapture(
+  url: string,
+  ctx: FileLinkCaptureContext,
+): FileLinkCapture {
+  const link = parseAnnotationOpenUri(url);
+  if (link === null) return PASS;
+
+  const location = ctx.locate(
+    formatIndexedKey(link.attachmentKey, link.groupID),
+  );
+  if (location.kind !== "located") {
+    logger.debug("Durable Annotation Link left to Zotero", {
+      attachmentKey: link.attachmentKey,
+      groupID: link.groupID,
+      reason: location.kind,
+    });
+    return PASS;
+  }
+
+  const page =
+    link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
+      ? Number(link.pageLabel)
+      : null;
+  const capture = captureAt(
+    location.absolutePath,
+    formatAnnotationSubpath({
+      page,
+      annotation: formatIndexedKey(link.annotationKey, link.groupID),
+    }),
+    ctx,
+  );
+  return capture.kind === "capture"
+    ? { ...capture, passWhenMissing: true }
+    : capture;
+}
+
+/** Claim the file at `absolutePath` when it is an Obsidian-Openable Attachment. */
+function captureAt(
+  absolutePath: string,
+  subpath: string,
+  ctx: FileLinkCaptureContext,
+): FileLinkCapture {
   const resolution = ctx.resolve(absolutePath);
   if (resolution.kind !== "resolved" || !resolution.openable) return PASS;
 
@@ -89,7 +167,7 @@ export function decideFileLinkCapture(
       label: filename(absolutePath),
       openPath: obsidianOpenPath(absolutePath, ctx.vaultBasePath, ctx.platform),
       absolutePath,
-      ...(parsed.hash ? { subpath: parsed.hash } : {}),
+      ...(subpath ? { subpath } : {}),
     },
   };
 }
@@ -97,7 +175,7 @@ export function decideFileLinkCapture(
 export interface FileLinkCaptureDeps {
   /** The vault's own directory, for telling an in-vault Attachment from one outside. */
   vaultBasePath: string;
-  attachments: Pick<AttachmentResolver, "resolve">;
+  attachments: Pick<AttachmentResolver, "resolve" | "locate" | "warm">;
   settings: Pick<SettingsService, "current">;
   /** Where a captured link opens — the same reader every other ZotLit gesture uses. */
   reader: AttachmentReader<ObsidianOpenableAttachment>;
@@ -115,10 +193,16 @@ export interface FileLinkCaptureDeps {
  * global `window.open`, which is why `activeWindow` exists at all, so the
  * click reaches this patch whichever window it happened in.
  *
+ * The resolver builds its index on the first lookup and answers `pending`
+ * until it lands, which hands a click to the system handler. A note's links
+ * are clicked before any PDF asks for that index, so Capture asks for it as it
+ * installs.
+ *
  * @see apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md
  */
 export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
   const host = (deps.window ?? window) as { open: Window["open"] };
+  deps.attachments.warm();
 
   return disposable(
     around(host, {
@@ -134,6 +218,7 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           }
           const capture = decideFileLinkCapture(String(url), {
             resolve: (path) => deps.attachments.resolve(path),
+            locate: (key) => deps.attachments.locate(key),
             vaultBasePath: deps.vaultBasePath,
             platform: process.platform,
           });
@@ -144,7 +229,22 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
             openPath: capture.attachment.openPath,
             subpath: capture.attachment.subpath,
           });
-          void deps.reader.open(capture.attachment, paneFromTarget(target));
+          void deps.reader.open(
+            capture.attachment,
+            paneFromTarget(target),
+            capture.passWhenMissing
+              ? {
+                  // Decided at the open, not by a check ahead of it: the file
+                  // can go between the two.
+                  onMissing: () => {
+                    logger.debug("Durable Annotation Link handed to Zotero", {
+                      attachmentKey: capture.attachment.indexedKey,
+                    });
+                    native(url, target, features);
+                  },
+                }
+              : undefined,
+          );
           return null;
         },
     }),
