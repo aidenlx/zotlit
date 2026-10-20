@@ -29,7 +29,7 @@ Read `src/lib/context/note-context.ts` for the public seam and `src/lib/context/
 
 The `zt` types plus their doc comments are the single source of truth for the template contract. `scripts/generate-contract.ts` extracts them into a contract IR and emits one JSON Schema per data root, both committed under `src/contract/generated/`. `src/contract/roots.ts` holds the Template-slot → root registry the emitter and the Template Workbench CLI share.
 
-- Regenerate with `pnpm --filter @zotlit/db generate:contract` after any contract type or doc-comment change; CI fails on a stale artifact.
+- Regenerate with `pnpm --filter @zotlit/db generate:contract` after any contract type or doc-comment change; `pnpm verify` (the pre-push hook) fails on a stale artifact.
 - The extractor parses with ts-morph's vendored frozen TypeScript 6, not the repo's TypeScript 7. See [ADR 0015](../../docs/adr/0015-template-contract-artifacts-generate-from-ts-types.md).
 - Three doc tags on a contract member carry emitter data: `@ztFilter <name>` names the Liquid filter of a helper member, `@ztInert` (empty tag) marks a helper the resolver can leave inert, and `@example` holds exactly one fenced code block. Any other content in any tag fails the extractor.
 

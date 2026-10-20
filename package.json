@@ -30,6 +30,7 @@
     "format:fix": "oxfmt",
     "quality": "pnpm lint && pnpm format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
+    "verify": "node packages/scripts/scripts/verify.ts",
     "prepare": "lefthook install || exit 0"
   },
   "dependencies": {

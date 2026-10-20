@@ -39,12 +39,18 @@ counterpart line before merging a release PR.
 1. Check out `next` (for pre-releases and stable graduations) or `main` (for
    hotfixes only).
 2. Run `pnpm release` — the interactive script bumps the version, syncs
-   manifests, commits, pushes, and opens a PR. The PR target is inferred from
+   manifests, runs the release gate (`pnpm verify --release`), commits,
+   pushes, opens a PR, and offers to merge it. The PR target is inferred from
    the version picked: a non-prerelease version on `next` targets `main` (stable
    graduation); a prerelease targets `next`; on `main`, all releases target
    `main`.
-3. CI runs format check → lint → test on the PR. Merge when green.
-4. On merge, `release.yml` auto-creates the GitHub release and uploads assets.
+3. Pull requests run no checks: the pre-push hook runs `pnpm verify`, and the
+   release gate already passed in step 2. See
+   [ADR 0076](docs/adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md).
+4. On merge, `release.yml` runs the release gate on the merged tree, then
+   auto-creates the GitHub release and uploads assets. If its `verify` job
+   fails, nothing publishes: land the fix and re-run the workflow from the
+   Actions tab.
    The Obsidian job cuts **two** releases per version: `<version>` with the three
    files the community-plugin scanner accepts, and `res-<version>` with the
    version's Language Packs and template data JSON Schemas — so a translation fix
