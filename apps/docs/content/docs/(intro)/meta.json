@@ -1,10 +1,4 @@
 {
   "title": "Get started",
-  "pages": [
-    "install-zotlit",
-    "install-companion",
-    "install-skill",
-    "../tutorial/first-note",
-    "credits"
-  ]
+  "pages": ["credits"]
 }

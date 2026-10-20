@@ -1,9 +1,4 @@
 {
   "title": "Find and read sources",
-  "pages": [
-    "../how-to/use-library-view",
-    "../how-to/open-pdf-in-obsidian",
-    "../how-to/use-annotation-view",
-    "../how-to/edit-pdf-annotations"
-  ]
+  "pages": []
 }

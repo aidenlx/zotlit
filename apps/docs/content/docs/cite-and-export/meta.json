@@ -1,13 +1,4 @@
 {
   "title": "Cite and export",
-  "pages": [
-    "../tutorial/write-and-export-cited-note",
-    "../how-to/insert-citations",
-    "../how-to/review-copy-troubleshoot-references",
-    "../how-to/explore-citations-in-graph",
-    "../how-to/export-note-with-citations",
-    "../how-to/export-with-native-pandoc",
-    "../tutorial/pandoc-citation-workflow",
-    "../concepts/how-citekey-links-work"
-  ]
+  "pages": []
 }
