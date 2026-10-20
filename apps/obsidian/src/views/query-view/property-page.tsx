@@ -7,7 +7,7 @@
 // is the Match editor's expression input, with a parse-only check: the engine
 // plans the Formula when the view runs, and marks a mistake it finds at the
 // Formula's row.
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
@@ -30,10 +30,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
+import { expressionVocabulary } from "./expression-vocabulary";
 import { displayName, formulaProperty } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import type { QueryView } from "./view";
-import { fieldLabel } from "./view-properties";
+import { fieldLabel, useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
 
 /** How long a Formula's text rests before it saves while the user types. */
@@ -121,11 +122,16 @@ function DisplayNameField({
  * colour. An empty field shows what to type instead.
  */
 function ExpressionField({
+  view,
+  formula,
   value,
   onChange,
   onBlur,
   issue,
 }: {
+  view: QueryView;
+  /** The Formula the text defines, which its completion leaves out; `null` for a new one. */
+  formula: string | null;
   value: string;
   /** Called with the typed text and the window the field stands in. */
   onChange: (value: string, win: Window) => void;
@@ -133,6 +139,22 @@ function ExpressionField({
   /** What is wrong with the text, or `null` when nothing is. */
   issue: string | null;
 }) {
+  const properties = useViewProperties(view);
+  const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
+  const formulas = useStore(view.state, (s) => s.file?.formulas);
+  // A Formula reads no vault property, and naming itself is a cycle.
+  const completion = useMemo(
+    () =>
+      expressionVocabulary({
+        dataset,
+        properties,
+        formulas: Object.keys(formulas ?? {}).filter(
+          (name) => name !== formula,
+        ),
+        context: view.contextSource !== undefined,
+      }),
+    [dataset, properties, formulas, formula, view],
+  );
   return (
     <WorkbenchThemeProvider theme={matchTheme}>
       <Chooser.PageField
@@ -169,6 +191,7 @@ function ExpressionField({
         }
       >
         <MatchExpressionInput
+          completion={completion}
           lines={3}
           aria-invalid={value !== "" && issue !== null}
           value={value}
@@ -246,6 +269,8 @@ function FormulaText({ view, name }: { view: QueryView; name: string }) {
     text === saved && Object.hasOwn(issues, name) ? issues[name]! : null;
   return (
     <ExpressionField
+      view={view}
+      formula={name}
       value={text}
       issue={formulaSyntaxIssue(text) ?? runIssue}
       onChange={(next, win) => {
@@ -378,6 +403,8 @@ export function NewFormulaPage({ view }: { view: QueryView }) {
             />
           </Chooser.PageField>
           <ExpressionField
+            view={view}
+            formula={null}
             value={text}
             onChange={setText}
             issue={syntaxIssue}

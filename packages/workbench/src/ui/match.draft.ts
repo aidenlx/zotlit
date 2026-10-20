@@ -1,3 +1,4 @@
+import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import type { ReactNode } from "react";
 
 import { filterGroup } from "@zotlit/filter-expression";
@@ -92,6 +93,8 @@ export interface MatchVocabulary<Row extends LabelledRow> {
    * asked.
    */
   issue?: (condition: RowCondition<Row>, path: FilterPath) => string | null;
+  /** What an expression row's Expression Completion offers; none without one. */
+  completion?: ExpressionVocabulary;
 }
 
 export function isGroup<Row extends LabelledRow>(

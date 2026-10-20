@@ -4,7 +4,7 @@
 import type { App } from "obsidian";
 import { render } from "preact";
 import { act } from "preact/test-utils";
-import { createElement as h } from "react";
+import { createElement as h, useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -12,7 +12,7 @@ import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { shimPopover } from "./__fixtures__/popover";
-import { Chooser } from "./chooser";
+import { Chooser, useChooserPage } from "./chooser";
 import type { ChooserRow } from "./chooser-logic";
 
 vi.mock("obsidian", async (importOriginal) => ({
@@ -147,8 +147,12 @@ it("opens again with an empty search, every row and no highlight", async () => {
   expect(highlighted()).toBe("method");
 });
 
-/** A key through the Chooser's pushed scope, as the mock records it. */
-function pressKey(scope: unknown, key: string): void {
+/**
+ * A key through the Chooser's pushed scope, as the mock records it.
+ * @returns `false` when the Chooser took the key, which then reaches nothing
+ *   else.
+ */
+function pressKey(scope: unknown, key: string): unknown {
   const { handlers } = scope as {
     handlers: {
       modifiers: string[] | null;
@@ -156,7 +160,96 @@ function pressKey(scope: unknown, key: string): void {
       func: (event: KeyboardEvent) => unknown;
     }[];
   };
-  handlers
+  return handlers
     .find((handler) => handler.key === key && !handler.modifiers?.length)
     ?.func(new KeyboardEvent("keydown", { key }));
 }
+
+/**
+ * A Chooser whose page holds a field with a typing list, as an expression
+ * editor's completion list stands while the user picks from it.
+ */
+function mountPage(app: App) {
+  host = document.body.appendChild(document.createElement("div"));
+  function Opener() {
+    const { openPage } = useChooserPage();
+    return h(
+      "button",
+      { type: "button", "data-open": "", onClick: () => openPage("edit") },
+      "Edit",
+    );
+  }
+  function Field() {
+    const [listOpen, setListOpen] = useState(true);
+    return h("div", null, [
+      h("div", {
+        key: "field",
+        role: "textbox",
+        contentEditable: true,
+        tabIndex: 0,
+        "data-field": "",
+        // What a CodeMirror editor carries while its list stands.
+        ...(listOpen && {
+          "aria-haspopup": "listbox",
+          "aria-controls": "typing-list",
+        }),
+      }),
+      listOpen && h("ul", { key: "list", id: "typing-list", role: "listbox" }),
+      h("button", {
+        key: "close",
+        type: "button",
+        "data-close-list": "",
+        onClick: () => setListOpen(false),
+      }),
+    ]);
+  }
+  render(
+    h(AppContext, {
+      value: app,
+      children: h(Chooser, {
+        value: [],
+        onValueChange: () => {},
+        children: [
+          h(Chooser.Trigger, { key: "trigger" }, "Tags"),
+          h(Chooser.Popup, {
+            key: "popup",
+            children: [
+              h(Opener, { key: "opener" }),
+              h(Chooser.Page, { key: "page", children: () => h(Field, null) }),
+            ],
+          }),
+        ],
+      }),
+    }),
+    host,
+  );
+  const popup = host.querySelector<HTMLElement>("[popover]")!;
+  return {
+    popup,
+    shim: shimPopover(popup),
+    page: () => popup.querySelector("[data-chooser-page]"),
+    field: () => popup.querySelector<HTMLElement>("[data-field]")!,
+  };
+}
+
+it("leaves Escape to a page field's open typing list, and steps back on the next press", async () => {
+  const app = editorApp();
+  const { popup, shim, page, field } = mountPage(app);
+  await shim.open();
+  await act(() => popup.querySelector<HTMLElement>("[data-open]")!.click());
+  expect(page()).not.toBeNull();
+  field().focus();
+
+  // The key goes on to the editor, which closes its list.
+  expect(pressKey(app.scopes[0]!, "Escape")).not.toBe(false);
+  expect(page()).not.toBeNull();
+  await act(() =>
+    popup.querySelector<HTMLElement>("[data-close-list]")!.click(),
+  );
+  field().focus();
+
+  await act(() => {
+    expect(pressKey(app.scopes[0]!, "Escape")).toBe(false);
+  });
+  expect(page()).toBeNull();
+});

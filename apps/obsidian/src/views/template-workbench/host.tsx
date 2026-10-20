@@ -23,7 +23,6 @@ import {
   completionSuggestion,
   templateCompletion,
 } from "@zotlit/workbench/language";
-import type { TemplateCompletionPresentation } from "@zotlit/workbench/language";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
@@ -52,6 +51,7 @@ import { COMMUNITY } from "@/views/welcome/links";
 import { extractPartialMenu } from "./extract-partial";
 import type { ExtractPartial } from "./extract-partial";
 import { templateHover } from "./hover";
+import { nativeCompletion } from "./native-completion";
 import { templateWorkbenchIcons } from "./theme";
 
 class EditorDialog extends Modal {
@@ -261,34 +261,16 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
   }
 }
 
-/**
- * The typing popup wears Obsidian's own suggestion classes, the way Obsidian
- * skins CodeMirror's completion for a Bases formula. Types get their own
- * line so unions and function signatures keep the same reading order.
- */
-const nativeCompletion: TemplateCompletionPresentation = {
-  tooltipClass: () => "suggestion-container zt-template-completion",
-  optionClass: () => "suggestion-item mod-complex",
-  addToOptions: [
-    {
-      position: 60,
-      render(completion) {
-        const type = completionSuggestion(completion)?.type;
-        if (!type) return null;
-        return createDiv({ cls: "zt-template-completion-type", text: type });
-      },
-    },
-    {
-      position: 70,
-      render(completion) {
-        const suggestion = completionSuggestion(completion);
-        return suggestion && !suggestion.syntax
-          ? createDiv({ cls: "suggestion-note", text: suggestion.detail })
-          : null;
-      },
-    },
-  ],
-};
+/** A tag's syntax and example read in the docstring, not in a row cell. */
+const templateCompletionPresentation = nativeCompletion((completion) => {
+  const suggestion = completionSuggestion(completion);
+  return (
+    suggestion && {
+      type: suggestion.type,
+      ...(suggestion.syntax ? {} : { note: suggestion.detail }),
+    }
+  );
+});
 
 /**
  * The Workbench's rows on a native menu, each with the icon it names. A menu
@@ -364,7 +346,7 @@ export function createTemplateWorkbenchHost(
             });
           }),
         })),
-        templateCompletion(read, nativeCompletion),
+        templateCompletion(read, templateCompletionPresentation),
         templateHover(read, hoverParent),
         extractPartial ? extractPartialMenu(read, extractPartial) : [],
       ];

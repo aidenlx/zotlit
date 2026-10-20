@@ -1,9 +1,12 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
+import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import { useEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
+import { ITEMS } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
+import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { useWorkbenchStore } from "./editor";
 import { ExampleActions } from "./example-state";
@@ -46,6 +49,8 @@ import { MatchSelect } from "./match.rows";
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
+import { datasetExpressionFields } from "#/language/filter-expression-completion";
+
 export type {
   ConditionControlProps,
   ConditionPath,
@@ -58,6 +63,20 @@ export type {
 } from "./match.draft";
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
+
+/**
+ * What a Profile Match condition reads: the fields of an Item, labelled as
+ * Zotero labels them. A Profile binds no Query Context, has no Formulas and
+ * reads no vault property.
+ */
+function profileCompletion(locale: string): ExpressionVocabulary {
+  const labels = FIELD_LABELS[locale.startsWith("zh") ? "zh-CN" : "en-US"];
+  return {
+    fields: datasetExpressionFields(ITEMS, (path) => labels[path]),
+    context: false,
+    formulas: [],
+  };
+}
 
 /**
  * The Match of the open Profile document: the Match editor with the
@@ -147,9 +166,11 @@ export function MatchPane({
   const faulty = span
     ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
     : undefined;
+  const locale = host.getLocale();
+  const completion = useMemo(() => profileCompletion(locale), [locale]);
   const vocabulary = useMemo(
-    () =>
-      filterVocabulary("items", {
+    () => ({
+      ...filterVocabulary("items", {
         m,
         values,
         issue: (_, path) =>
@@ -159,7 +180,9 @@ export function MatchPane({
             ? answer.message
             : null,
       }),
-    [m, values, faulty, answer],
+      completion,
+    }),
+    [m, values, faulty, answer, completion],
   );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
@@ -559,6 +582,7 @@ function Row<Row extends LabelledRow>({
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
                 value={condition.text}
+                completion={vocabulary.completion}
                 onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (

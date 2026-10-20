@@ -1,6 +1,7 @@
+import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { MatchExpressionInput } from "./match.expression";
 import { WorkbenchThemeProvider } from "./theme";
@@ -34,4 +35,45 @@ it("mounts the extension the theme supplies for expression editors", () => {
       .querySelector(".cm-editor")
       ?.classList.contains("host-expression"),
   ).toBe(true);
+});
+
+it("offers the completion of the vocabulary it is given, in the theme's presentation", async () => {
+  const { container } = render(
+    <WorkbenchThemeProvider
+      theme={{ expressionCompletion: { tooltipClass: () => "host-list" } }}
+    >
+      <MatchExpressionInput
+        value=""
+        onChange={() => {}}
+        completion={{
+          fields: [{ path: "title", label: "Title" }],
+          context: false,
+          formulas: [],
+        }}
+      />
+    </WorkbenchThemeProvider>,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.dispatch({
+    changes: { from: 0, insert: "tit" },
+    selection: { anchor: 3 },
+    userEvent: "input.type",
+  });
+  const list = await vi.waitFor(() => {
+    const found = document.querySelector(".cm-tooltip-autocomplete.host-list");
+    if (!found) throw new Error("no list yet");
+    return found;
+  });
+  expect(list.querySelector(".cm-completionLabel")?.textContent).toBe("title");
+});
+
+it("offers no completion without a vocabulary", () => {
+  const { container } = render(
+    <MatchExpressionInput value="mi" onChange={() => {}} />,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.dispatch({ selection: { anchor: 2 } });
+  startCompletion(view);
+  // A list that would open stands pending from the request on.
+  expect(completionStatus(view.state)).toBeNull();
 });

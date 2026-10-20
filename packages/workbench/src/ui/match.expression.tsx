@@ -1,3 +1,7 @@
+import type {
+  ExpressionCompletionPresentation,
+  ExpressionVocabulary,
+} from "#/language/filter-expression-completion";
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
@@ -10,12 +14,17 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
-import { useExpressionExtension, useParts } from "./theme";
+import {
+  useExpressionCompletion,
+  useExpressionExtension,
+  useParts,
+} from "./theme";
 
 import {
   filterExpressionHighlighting,
   filterExpressionLanguage,
 } from "#/language/filter-expression";
+import { filterExpressionCompletion } from "#/language/filter-expression-completion";
 
 /** The label and validity of the field, on its editable content. */
 const contentAttributes = ({
@@ -30,6 +39,18 @@ const contentAttributes = ({
     ...(label === undefined ? {} : { "aria-label": label }),
   });
 
+/** Expression Completion over the vocabulary the field holds now. */
+const completionOf = (props: {
+  readonly current: {
+    completion?: ExpressionVocabulary;
+    presentation?: ExpressionCompletionPresentation;
+  };
+}) =>
+  filterExpressionCompletion(
+    () => props.current.completion,
+    props.current.presentation,
+  );
+
 /** Marks the edit that brings in a new `value`, which is not the user's. */
 const fromValue = Annotation.define<true>();
 
@@ -43,6 +64,11 @@ export interface MatchExpressionInputProps {
   placeholder?: string;
   /** The lines the field shows before it grows with its text. */
   lines?: number;
+  /**
+   * What Expression Completion offers as the user types, read per
+   * keystroke; a field without one offers no completion.
+   */
+  completion?: ExpressionVocabulary;
 }
 
 /**
@@ -60,10 +86,12 @@ export function MatchExpressionInput({
   "aria-invalid": invalid = false,
   placeholder,
   lines = 1,
+  completion,
   ...data
 }: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
   const part = useParts("match");
   const hostExtension = useExpressionExtension();
+  const presentation = useExpressionCompletion();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   // The editor is made once; it reads what it needs then, and later props,
@@ -77,6 +105,8 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
+    completion,
+    presentation,
   });
   props.current = {
     value,
@@ -87,8 +117,23 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
+    completion,
+    presentation,
   };
   const attributes = useRef(new Compartment());
+  const completer = useRef(new Compartment());
+  // The vocabulary is read per keystroke, so only its arrival or its leaving
+  // changes the editor.
+  const completes = completion !== undefined;
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor) return;
+    editor.dispatch({
+      effects: completer.current.reconfigure(
+        completes ? completionOf(props) : [],
+      ),
+    });
+  }, [completes]);
   useEffect(() => {
     const { value, placeholder, lines, hostExtension } = props.current;
     const parent = host.current!;
@@ -113,6 +158,9 @@ export function MatchExpressionInput({
           EditorView.contentAttributes.of({ spellcheck: "false" }),
           attributes.current.of(contentAttributes(props.current)),
           hostExtension ?? [],
+          completer.current.of(
+            props.current.completion ? completionOf(props) : [],
+          ),
           EditorView.updateListener.of((update) => {
             if (
               update.docChanged &&

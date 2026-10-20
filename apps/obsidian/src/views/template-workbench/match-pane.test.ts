@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
@@ -16,7 +17,10 @@ import { matchTheme } from "./match-pane";
 import { windowMigration } from "./test-window-migration";
 
 /** An expression editor under the theme the Match editor and Formula use. */
-async function mountExpression(within: HTMLElement = document.body) {
+async function mountExpression(
+  within: HTMLElement = document.body,
+  completion?: ExpressionVocabulary,
+) {
   const container = document.createElement("div");
   within.append(container);
   const root = createRoot(container);
@@ -28,6 +32,7 @@ async function mountExpression(within: HTMLElement = document.body) {
         createElement(MatchExpressionInput, {
           value: "itemType == 'book'",
           onChange: () => {},
+          completion,
         }),
       ),
     );
@@ -124,5 +129,39 @@ describe("expression editors in Obsidian", () => {
     const tooltip = openTooltip(editor.view);
     expect(destination.body.contains(tooltip)).toBe(true);
     expect(editor.dom.contains(tooltip)).toBe(false);
+  });
+
+  it("offer Expression Completion in Obsidian's suggestion skin, signature and description as cells", async () => {
+    using _migration = windowMigration();
+    using surface = popoverSurface();
+    await using editor = await mountExpression(surface.scroller, {
+      fields: [{ path: "title", label: "Title", type: "string" }],
+      context: false,
+      formulas: [],
+    });
+    editor.view.focus();
+    editor.view.dispatch({
+      changes: { from: 0, to: editor.view.state.doc.length, insert: "mi" },
+      selection: { anchor: 2 },
+      userEvent: "input.type",
+    });
+    const list = await vi.waitFor(() => {
+      const found = surface.root.querySelector(".cm-tooltip-autocomplete");
+      if (!found) throw new Error("no list yet");
+      return found;
+    });
+    expect(list.classList.contains("suggestion-container")).toBe(true);
+    expect(surface.scroller.contains(list)).toBe(false);
+    const row = [...list.querySelectorAll("li")].find(
+      (option) =>
+        option.querySelector(".cm-completionLabel")?.textContent === "min",
+    )!;
+    expect(row.className).toBe("suggestion-item mod-complex");
+    expect(row.querySelector(".zt-template-completion-type")?.textContent).toBe(
+      "min(…) → number",
+    );
+    expect(row.querySelector(".suggestion-note")?.textContent).toBe(
+      "The smallest number among the arguments, or null when no argument is a number.",
+    );
   });
 });

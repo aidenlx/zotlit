@@ -3,6 +3,7 @@
 // state with `data-state`, and carries no class of its own (ADR 0044).
 
 import type { WorkbenchSliceId } from "#/document/controller";
+import type { ExpressionCompletionPresentation } from "#/language/filter-expression-completion";
 import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
@@ -332,6 +333,12 @@ export interface WorkbenchTheme {
    * the editor's own extensions alone.
    */
   readonly expressionExtension?: Extension;
+  /**
+   * How a Filter Expression editor draws its Expression Completion list: the
+   * classes the list and its rows wear and the cells a row adds. A host
+   * without one draws CodeMirror's own list.
+   */
+  readonly expressionCompletion?: ExpressionCompletionPresentation;
   /** Draws a named icon; a host without one draws none. */
   readonly icon?: (name: WorkbenchIcon) => ReactNode;
   /**
@@ -434,4 +441,8 @@ export function useEditorExtension() {
 
 export function useExpressionExtension() {
   return useContext(ThemeContext).expressionExtension;
+}
+
+export function useExpressionCompletion() {
+  return useContext(ThemeContext).expressionCompletion;
 }

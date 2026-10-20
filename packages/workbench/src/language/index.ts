@@ -18,6 +18,20 @@ export type {
   SuggestionSource,
   TemplateCompletionPresentation,
 } from "./completion";
+export {
+  datasetExpressionFields,
+  expressionCompletions,
+  expressionOption,
+  filterExpressionCompletion,
+} from "./filter-expression-completion";
+export type {
+  ExpressionCompletionPresentation,
+  ExpressionCompletionResult,
+  ExpressionField,
+  ExpressionName,
+  ExpressionOption,
+  ExpressionVocabulary,
+} from "./filter-expression-completion";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,

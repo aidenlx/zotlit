@@ -14,6 +14,7 @@ import { useStore } from "zustand";
 
 import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
+import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 import {
   MatchEditor,
   WorkbenchHostProvider,
@@ -35,6 +36,7 @@ import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
+import { expressionVocabulary } from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -192,6 +194,11 @@ export interface FilterEditorProps {
   vaultFields?: readonly FilterField[];
   /** The type of the vault property `name`, for the icon of its condition. */
   vaultType?: (name: string) => VaultPropertyType;
+  /**
+   * What an expression condition's Expression Completion offers on a
+   * dataset; none without one.
+   */
+  completion?: (dataset: QueryFileDataset) => ExpressionVocabulary;
   /** Save one section's filters; answers whether they were kept. */
   onChange: (section: FilterSection, next: MatchTree | undefined) => boolean;
 }
@@ -208,6 +215,7 @@ export function FilterEditor({
   sections: shown = ["all", "view"],
   vaultFields = [],
   vaultType,
+  completion,
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
@@ -230,7 +238,7 @@ export function FilterEditor({
   useEffect(() => () => host[Symbol.dispose](), [host]);
   const vocabulary = (section: FilterSection) => {
     const of = section === "all" ? shared : dataset;
-    return filterVocabulary(of, {
+    const conditions = filterVocabulary(of, {
       m: host.messages,
       values,
       issue: (_, path) =>
@@ -257,6 +265,9 @@ export function FilterEditor({
       ),
       extra: of === "items" ? vaultFields : [],
     });
+    return completion
+      ? { ...conditions, completion: completion(of) }
+      : conditions;
   };
   const sections = (
     [
@@ -414,6 +425,16 @@ export function FilterButton({ view }: { view: QueryView }) {
         properties={properties}
         vaultFields={vaultFields}
         vaultType={(name) => literatureNotes.propertyType(name)}
+        completion={(dataset) =>
+          expressionVocabulary({
+            dataset,
+            properties,
+            formulas: Object.keys(file.formulas ?? {}),
+            context: view.contextSource !== undefined,
+            // Only a view of Items reads vault properties.
+            ...(dataset === "items" && { vaultNames: names }),
+          })
+        }
         onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>

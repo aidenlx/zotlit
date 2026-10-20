@@ -496,10 +496,20 @@ function ChooserSession({ children }: { children: ReactNode }) {
     // On the rows, Escape is the popover's own light dismiss, which a
     // handler returning `false` would suppress, so it falls through. On a
     // page, it steps back to the rows — unless a menu opened from the page
-    // stands, which the light dismiss closes first.
+    // stands, which the light dismiss closes first, or the focused field's
+    // typing list stands, such as a Formula's completion, which the field
+    // closes first. The scope hears the key before the field does.
     const escape = (event: KeyboardEvent) => {
       if (composing(event) || latest.current.page === null) return;
-      if (popupRef.current?.querySelector("[data-chooser-page] :popover-open"))
+      const popup = popupRef.current;
+      if (popup?.querySelector("[data-chooser-page] :popover-open")) return;
+      const field = popup?.doc.activeElement;
+      if (
+        field &&
+        popup.contains(field) &&
+        field.getAttribute("aria-haspopup") === "listbox" &&
+        field.hasAttribute("aria-controls")
+      )
         return;
       back();
       return false;

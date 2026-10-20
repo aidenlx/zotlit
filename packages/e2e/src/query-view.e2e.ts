@@ -115,6 +115,74 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     120000,
   );
 
+  it.each(["main", "popout"] as const)(
+    "offers Expression Completion in a Formula and a filter condition, above the chooser and the Filter popover, in the %s window",
+    async (host) => {
+      const path = "query-files/Expression completion.zotquery";
+      const layout = await obEval(
+        run.vaultId,
+        "JSON.stringify(app.workspace.getLayout())",
+      );
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(async () => {
+        // Teardown closes a popover a failed step left open; not a reader's press.
+        await obEval(
+          run.vaultId,
+          `(async()=>{const leaf=window.zotlitE2ECompletion;delete window.zotlitE2ECompletion;for(const popup of (leaf?.view.contentEl.doc??document).querySelectorAll('[popover]:popover-open'))popup.hidePopover();leaf?.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        );
+      });
+      // A view whose own filter is an expression row, which the visual rows
+      // cannot show.
+      const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)});const leaf=app.workspace.getLeaf('tab');window.zotlitE2ECompletion=leaf;await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('popout focused',()=>leaf.view.contentEl.doc.hasFocus(),5000);" : ""}return true;})()`,
+      );
+      // What one field of a surface offers as it is typed in: the list
+      // drawn in the surface's root, in Obsidian's suggestion skin, its
+      // middle on top past the surface's edge where it reaches past it.
+      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;content.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null}};};const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();return {key:async(keyCode)=>{await new Promise(r=>setTimeout(r,150));contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await new Promise(r=>setTimeout(r,150));},click:async(el)=>{await new Promise(r=>setTimeout(r,150));const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await new Promise(r=>setTimeout(r,150));}};};`;
+
+      // A new Formula: `mi` offers `min()`, which Enter writes with the
+      // caret between its parentheses. Escape closes the list and keeps the
+      // page; Escape again steps back to the rows.
+      const formula = JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}${LIST}const view=window.zotlitE2ECompletion.view;const el=view.contentEl;const input=trusted(el.win);press(el.querySelector('[data-query-properties]'),'Properties');const popup=await until('Properties popover',()=>el.doc.querySelector('[data-query-properties-popup]:popover-open'));press(await until('Add formula',()=>[...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(run.m.query_view_formula_add())})),'Add formula');const page=await until('formula page',()=>popup.querySelector('[data-chooser-page] [data-query-formula-page]'));const content=await until('editor',()=>page.querySelector('[data-query-formula-expression] .cm-content'));const editor=content.cmTile.root.view;const offered=await listOf(popup,content,'mi');await input.key('Return');const accepted={doc:editor.state.doc.toString(),caret:editor.state.selection.main.head};await listOf(popup,content,'ti');await input.key('Escape');const first={list:!!popup.querySelector('.cm-tooltip-autocomplete'),page:!!popup.querySelector('[data-chooser-page]')};await input.key('Escape');const second={page:!!popup.querySelector('[data-chooser-page]'),open:popup.matches(':popover-open')};popup.hidePopover();return JSON.stringify({offered:{...offered,list:undefined},accepted,first,second});})()`,
+        ),
+      );
+      expect(formula).toEqual({
+        offered: {
+          skin: true,
+          shown: true,
+          first: { label: "min", type: "min(…) → number" },
+        },
+        accepted: { doc: "min()", caret: 4 },
+        first: { list: false, page: true },
+        second: { page: false, open: true },
+      });
+
+      // The view's filter condition: `tit` offers `title`, which a click on
+      // its row writes while the Filter popover stays open.
+      const filter = JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}${LIST}const el=window.zotlitE2ECompletion.view.contentEl;const input=trusted(el.win);press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;editor.dispatch({selection:{anchor:editor.state.doc.length}});const offered=await listOf(popup,content,' && tit');const row=[...offered.list.querySelectorAll('li')].find(li=>li.querySelector('.cm-completionLabel')?.textContent==='title');await input.click(row);const after={doc:editor.state.doc.toString(),open:popup.matches(':popover-open')};popup.hidePopover();return JSON.stringify({offered:{...offered,list:undefined},after});})()`,
+        ),
+      );
+      expect(filter).toEqual({
+        offered: {
+          skin: true,
+          shown: true,
+          first: { label: "title", type: "string" },
+        },
+        after: { doc: "title.length > 0 && title", open: true },
+      });
+    },
+    120000,
+  );
+
   it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {
     const notePath = "query-files/Export check.md";
     const pdfPath = join(workspaceRoot, ".scratch", "e2e-query-export.pdf");
