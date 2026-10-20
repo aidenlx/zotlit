@@ -1,7 +1,9 @@
 // The token assignment of the expression languages the editors color: the
 // Filter Expression, and the JSON-e expressions in a rule or a Profile value.
-// It follows Bases: names and paths read as properties, a call's callee as a
-// function, and `true`, `false`, `null` and numbers as values. Each language
+// Names and paths read as properties, a call's callee as a function, and
+// `true`, `false`, `null` and numbers as values. The host colors each kind
+// with the code color variables Obsidian defines for `.base` files (and
+// Prism): compatible with Bases, not identical to its rendering. Each language
 // tags its tokens by these roles, and the template highlighter gives each
 // tag its theme hook.
 import { tags } from "@lezer/highlight";
