@@ -83,7 +83,7 @@ Template fields insert data from Zotero. You will add the annotation's `colorNam
     Select `colorName`. The line now contains:
 
     ```liquid
-    [!quote] {% if zt.pageLabel %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}, {{ zt.colorName }}
+    [!quote] {% if zt.pageLabel and zt.pageLabel != "" %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}, {{ zt.colorName }}
     ```
 
   </Step>

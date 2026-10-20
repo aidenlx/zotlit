@@ -115,20 +115,24 @@ describe("Liquid default templates via the facade", () => {
     ).toContain(`Page [iv](${DURABLE})`);
   });
 
-  it("links an annotation that has no page label", () => {
-    const facade = new TemplateFacade();
-    facade.define("annotation", annotationLiquid, "liquid");
+  // Zotero's database can hold an empty label, which reads as no label.
+  it.each([null, ""])(
+    "links an annotation whose page label is %j",
+    (pageLabel) => {
+      const facade = new TemplateFacade();
+      facade.define("annotation", annotationLiquid, "liquid");
 
-    expect(
-      facade.render("annotation", {
-        pageLabel: null,
-        backlink: DURABLE,
-        imgLink: null,
-        text: "Highlighted text",
-        comment: null,
-      }),
-    ).toContain(`> [!note] [Zotero](${DURABLE})\n`);
-  });
+      expect(
+        facade.render("annotation", {
+          pageLabel,
+          backlink: DURABLE,
+          imgLink: null,
+          text: "Highlighted text",
+          comment: null,
+        }),
+      ).toContain(`> [!note] [Zotero](${DURABLE})\n`);
+    },
+  );
 
   it("renders a tight notes list under a heading", () => {
     const facade = new TemplateFacade();
@@ -385,6 +389,16 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
         backlink: "zotero://open/groups/7/items/ATTX2345?annotation=ANNX2345",
         imgLink: null,
         text: "unpaged",
+        comment: null,
+      },
+    ],
+    [
+      "empty page label",
+      {
+        pageLabel: "",
+        backlink: "zotero://open/library/items/ATTX2345?annotation=ANNX2345",
+        imgLink: null,
+        text: "unlabelled",
         comment: null,
       },
     ],

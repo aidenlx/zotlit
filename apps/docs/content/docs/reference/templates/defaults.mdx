@@ -85,7 +85,7 @@ In a Profile document: the Annotation Section, the final section after the stand
 
 ```liquid
 {% bq %}
-[!note] {% if zt.pageLabel %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
+[!note] {% if zt.pageLabel and zt.pageLabel != "" %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
 
 {{ zt.imgLink | embed }}{{ zt.text }}
 {% if zt.comment %}
