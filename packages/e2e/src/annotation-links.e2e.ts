@@ -1,7 +1,7 @@
 // Annotation links in a note: a Durable Annotation Link clicked in any
 // Obsidian surface lands on its Annotation in Obsidian's reader, or reaches
-// Zotero when this computer cannot open the PDF. Later scenarios of the same
-// spec (hover, the annotation suggester) join this file.
+// Zotero when this computer cannot open the PDF. The Annotation Suggester
+// writes the same link from a search at the cursor. Hover joins this file.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -141,6 +141,67 @@ async function insertFromCard(annotationKey: string): Promise<string> {
     60000,
   );
   return JSON.parse(reply) as string;
+}
+
+/** What typing a search into a draft left: its text, and which suggesters opened. */
+interface SearchOutcome {
+  text: string;
+  /** The rows the Annotation Suggester showed for the query, by their text. */
+  rows: string[];
+  /** Whether the Citation Suggester opened on the typed text. */
+  citationOpen: boolean;
+}
+
+/**
+ * Types `typed` at the end of an empty draft as one input, waits for the
+ * Annotation Suggester to answer that query, and chooses the row whose text
+ * holds `choose`. Answers the draft's text once the insert lands, from a
+ * vault already restored.
+ */
+async function searchAndInsert(
+  typed: string,
+  choose: string,
+): Promise<SearchOutcome> {
+  const reply = await obEval(
+    run.vaultId,
+    `(async()=>{
+      ${WAITS}
+      const suggesters=app.workspace.editorSuggest.suggests;
+      const annotations=suggesters.find((s)=>s.constructor.name==='AnnotationEditorSuggest');
+      const citations=suggesters.find((s)=>s.constructor.name==='CitationEditorSuggest');
+      if(!annotations)throw new Error('No Annotation Suggester is registered');
+      let outcome;
+      {
+        await using cleanup=new AsyncDisposableStack();
+        const layout=app.workspace.getLayout();
+        cleanup.defer(()=>app.workspace.changeLayout(layout));
+        const file=await app.vault.create(${JSON.stringify(NOTE)},'# Draft\\n\\n');
+        cleanup.defer(()=>app.vault.delete(file));
+        const leaf=app.workspace.getLeaf('tab');
+        // The insertion is an edit the view saves later; saving it first
+        // keeps that save from writing the note back after its deletion.
+        cleanup.adopt(leaf,async(leaf)=>{annotations.close();await leaf.view.save?.();leaf.detach();});
+        await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});
+        app.workspace.setActiveLeaf(leaf,{focus:true});
+        const editor=leaf.view.editor;
+        editor.setCursor({line:editor.lastLine(),ch:0});
+        editor.focus();
+        editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(typed)}),{userEvent:'input.type'});
+        const query=${JSON.stringify(typed)}.slice(${JSON.stringify(typed)}.indexOf('[>')+2);
+        const rows=()=>[...annotations.suggestEl.querySelectorAll('.suggestion-item')];
+        const row=await until(()=>annotations.isOpen&&annotations.context?.query===query&&rows().find((el)=>el.textContent.includes(${JSON.stringify(choose)})),()=>'The Annotation Suggester showed no row for '+JSON.stringify(query)+': '+JSON.stringify(rows().map((el)=>el.textContent)));
+        const shown=rows().map((el)=>el.textContent);
+        const citationOpen=!!citations?.isOpen;
+        row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));
+        row.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+        const text=await until(()=>{const value=editor.getValue();return !value.includes('[>')&&value.includes('zotero://')&&value;},()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
+        outcome={text,rows:shown,citationOpen};
+      }
+      return JSON.stringify(outcome);
+    })()`,
+    60000,
+  );
+  return JSON.parse(reply) as SearchOutcome;
 }
 
 interface Scenario {
@@ -364,6 +425,25 @@ describe.skipIf(!reachable)("Annotation links", () => {
     });
 
     expect(outcome).toMatchObject({ reader: lands, passed: [] });
+  }, 120000);
+
+  // The Annotation Suggester searches the Zotero database with Zotero closed:
+  // the trigger, a word of the quote, and a narrowing token in the Library
+  // View's grammar find the passage; choosing it writes the quote through
+  // the annotation template, durable link and all, in place of the search.
+  it("searches annotations from the cursor and inserts the chosen one", async () => {
+    const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+
+    const outcome = await searchAndInsert(
+      "[>MESSAGE tag:visualization color:blue",
+      FIRST_PAGE.text!,
+    );
+
+    expect(outcome.citationOpen).toBe(false);
+    expect(outcome.rows).toEqual([expect.stringContaining(FIRST_PAGE.text!)]);
+    expect(outcome.text).toContain(FIRST_PAGE.text!);
+    expect(outcome.text).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
+    expect(outcome.text).not.toContain("[>");
   }, 120000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps
