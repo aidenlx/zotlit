@@ -82,6 +82,45 @@ const LINK_IN = {
 } as const;
 
 /**
+ * Eval code that writes {@link NOTE} holding `content`, a JavaScript
+ * expression, and shows it where `gesture` reaches its link, binding `file`,
+ * `leaf` and `view`. Each step is undone on the evaluation's `cleanup` stack,
+ * registered before the next step that can fail. An editor's cursor rests on
+ * the note's last line, which holds no link, so Live Preview draws the link.
+ */
+function showNote(content: string, gesture: keyof typeof LINK_IN): string {
+  const state =
+    gesture === "reading" ? "{mode:'preview'}" : "{mode:'source',source:false}";
+  return `const file=await app.vault.create(${JSON.stringify(NOTE)},${content});
+    cleanup.defer(()=>app.vault.delete(file));
+    const leaf=app.workspace.getLeaf('tab');
+    cleanup.adopt(leaf,(leaf)=>leaf.detach());
+    await leaf.setViewState({type:'markdown',state:{file:file.path,...${state}},active:true});
+    app.workspace.setActiveLeaf(leaf,{focus:true});
+    const view=leaf.view;
+    ${gesture === "reading" ? "" : "view.editor.setCursor({line:view.editor.lastLine(),ch:0});"}`;
+}
+
+/**
+ * Eval code that finds the rendered link to `url` where `gesture` reaches it,
+ * brings it into view, and binds `link` with a point `x`, `y` on it that
+ * nothing covers.
+ *
+ * Gestures are synthetic: the End-to-end Run's window stays behind other apps,
+ * where Chromium delivers no trusted input. Live Preview finds the link under
+ * the pointer from the event's coordinates, so they name a point near the
+ * start of the link's first line box: a wrapped link has none at the middle of
+ * its bounding box, and a long Properties value runs on under the sidebar.
+ */
+function linkTarget(gesture: keyof typeof LINK_IN): string {
+  return `const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
+    link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+    const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
+    const hit=link.ownerDocument.elementFromPoint(x,y);
+    if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));`;
+}
+
+/**
  * The bounded waits an evaluation declares first. Every wait ends by
  * throwing, inside the evaluation, so its cleanup stack still runs.
  * `until(found, what)` polls until `found()` answers, and answers with it;
@@ -165,13 +204,8 @@ interface Scenario {
  * One scenario in one evaluation: write the note, show it, follow its link,
  * wait for the reader to land or the link to pass, and read the outcome. Every
  * change is undone on the evaluation's own stack, registered before the step
- * that can fail, so the outcome comes back from a vault already restored.
- *
- * The click is synthetic: the End-to-end Run's window stays behind other apps,
- * where Chromium delivers no trusted input. Live Preview finds the link under
- * the pointer from the event's coordinates, so they name a point near the
- * start of the link's first line box: a wrapped link has none at the middle of
- * its bounding box, and a long Properties value runs on under the sidebar.
+ * that can fail, so the outcome comes back from a vault already restored. The
+ * click lands on {@link linkTarget}'s point.
  */
 async function follow({
   note,
@@ -180,16 +214,10 @@ async function follow({
   captureOff = false,
   lands,
 }: Scenario): Promise<Outcome> {
-  const state =
-    gesture === "reading" ? "{mode:'preview'}" : "{mode:'source',source:false}";
   const follow =
     gesture === "external"
       ? `window.open(url,'_external');`
-      : `const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
-        link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
-        const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
-        const hit=link.ownerDocument.elementFromPoint(x,y);
-        if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));
+      : `${linkTarget(gesture)}
         const init={clientX:x,clientY:y,bubbles:true,cancelable:true,button:0,view:link.ownerDocument.defaultView};
         link.dispatchEvent(new MouseEvent('mousedown',{...init,buttons:1}));link.dispatchEvent(new MouseEvent('mouseup',init));link.dispatchEvent(new MouseEvent('click',init));`;
   const reply = await obEval(
@@ -217,15 +245,8 @@ async function follow({
         for(const doc of ${WINDOW_DOCUMENTS})for(const notice of doc.querySelectorAll('.notice'))notice.remove();
         const fileUrl=require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href;
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
-        const file=await app.vault.create(${JSON.stringify(NOTE)},${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl));
-        cleanup.defer(()=>app.vault.delete(file));
         if(${captureOff})s.settings.update({'reader.open-file-links':false});
-        const leaf=app.workspace.getLeaf('tab');
-        cleanup.adopt(leaf,(leaf)=>leaf.detach());
-        await leaf.setViewState({type:'markdown',state:{file:file.path,...${state}},active:true});
-        app.workspace.setActiveLeaf(leaf,{focus:true});
-        const view=leaf.view;
-        if(${gesture === "live-preview" || gesture === "properties"})view.editor.setCursor({line:view.editor.lastLine(),ch:0});
+        ${showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
         if(lands===null){
@@ -281,11 +302,9 @@ interface HoverScenario {
  * {@link follow}, every change is undone on the evaluation's own stack before
  * the outcome comes back.
  *
- * The hover is a synthetic `mouseover` at a point of the link's first line
- * box, for the reason {@link follow}'s click is: Live Preview finds the link
- * under the pointer from the event's coordinates. Obsidian hangs a hover
- * popover off the view once its opening delay has run, so a hover that shows
- * nothing is read against a later hover that does.
+ * The hover is a synthetic `mouseover` at {@link linkTarget}'s point. Obsidian
+ * hangs a hover popover off the view once its opening delay has run, so a
+ * hover that shows nothing is read against a later hover that does.
  */
 async function hover({
   url,
@@ -293,21 +312,10 @@ async function hover({
   hoverAction,
   image = false,
 }: HoverScenario): Promise<HoverOutcome> {
-  const state =
-    gesture === "reading" ? "{mode:'preview'}" : "{mode:'source',source:false}";
   const reply = await obEval(
     run.vaultId,
     `(async()=>{
-      const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
-      const deadline=()=>Temporal.Now.instant().add({seconds:30});
-      const past=(end)=>Temporal.Instant.compare(Temporal.Now.instant(),end)>0;
-      const until=async(found,what)=>{
-        for(const end=deadline();;await sleep(100)){
-          const value=found();
-          if(value)return value;
-          if(past(end))throw new Error(what());
-        }
-      };
+      ${WAITS}
       const s=app.plugins.plugins.zotlit.services;
       let outcome;
       {
@@ -317,20 +325,9 @@ async function hover({
         const hoverAction=s.settings.current['citation.hover-action'];
         cleanup.defer(()=>s.settings.update({'citation.hover-action':hoverAction}));
         const url=${JSON.stringify(url)};
-        const file=await app.vault.create(${JSON.stringify(NOTE)},${JSON.stringify(noteWith(url))});
-        cleanup.defer(()=>app.vault.delete(file));
         ${hoverAction === undefined ? "" : `s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}});`}
-        const leaf=app.workspace.getLeaf('tab');
-        cleanup.adopt(leaf,(leaf)=>leaf.detach());
-        await leaf.setViewState({type:'markdown',state:{file:file.path,...${state}},active:true});
-        app.workspace.setActiveLeaf(leaf,{focus:true});
-        const view=leaf.view;
-        if(${gesture === "live-preview"})view.editor.setCursor({line:view.editor.lastLine(),ch:0});
-        const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
-        link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
-        const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
-        const hit=link.ownerDocument.elementFromPoint(x,y);
-        if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));
+        ${showNote(JSON.stringify(noteWith(url)), gesture)}
+        ${linkTarget(gesture)}
         cleanup.defer(()=>view.hoverPopover?.hide());
         link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,view:link.ownerDocument.defaultView}));
         const opened=(view)=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
