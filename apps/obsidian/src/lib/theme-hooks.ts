@@ -29,6 +29,11 @@ export const themeHook = {
   templateInvalid: "zt-template-invalid",
   /** The popover that explains the template token under the pointer. */
   templateHover: "zt-template-hover",
+  /**
+   * The tooltip of a Filter Expression field that names the signature of the
+   * call around the caret, with the parameter at the caret marked.
+   */
+  signatureHint: "zt-signature-hint",
   /** The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page. */
   pdfAnnotationOverlay: "zt-pdf-annotation-overlay",
   /**

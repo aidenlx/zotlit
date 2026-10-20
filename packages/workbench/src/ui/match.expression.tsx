@@ -1,3 +1,4 @@
+import type { SignatureHintOptions } from "#/language/signature-hint";
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
 // color theirs.
@@ -9,7 +10,8 @@ import {
   keymap,
   placeholder as placeholderText,
 } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 import { useExpressionExtension, useParts } from "./theme";
 
@@ -17,6 +19,29 @@ import {
   filterExpressionHighlighting,
   filterExpressionLanguage,
 } from "#/language/filter-expression";
+import { signatureHint } from "#/language/signature-hint-tooltip";
+
+const ExpressionTypesContext = createContext<SignatureHintOptions>({});
+
+/**
+ * Gives the expression fields under it what the host knows of the types in
+ * their expressions, such as a method call's receiver in its Query Dataset.
+ * A field without it still shows the Signature Hint, naming every definition
+ * of a method.
+ */
+export function ExpressionTypesProvider({
+  types,
+  children,
+}: {
+  types: SignatureHintOptions;
+  children: ReactNode;
+}) {
+  return (
+    <ExpressionTypesContext.Provider value={types}>
+      {children}
+    </ExpressionTypesContext.Provider>
+  );
+}
 
 /** The label and validity of the field, on its editable content. */
 const contentAttributes = ({
@@ -80,6 +105,7 @@ export function MatchExpressionInput({
 }: MatchExpressionInputProps & Partial<Record<`data-${string}`, string>>) {
   const part = useParts("match");
   const hostExtension = useExpressionExtension();
+  const types = useContext(ExpressionTypesContext);
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   // The editor is made once; it reads what it needs then, and later props,
@@ -93,6 +119,7 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
+    types,
   });
   props.current = {
     value,
@@ -103,6 +130,7 @@ export function MatchExpressionInput({
     placeholder,
     lines,
     hostExtension,
+    types,
   };
   const attributes = useRef(new Compartment());
   useEffect(() => {
@@ -115,6 +143,9 @@ export function MatchExpressionInput({
         extensions: [
           filterExpressionLanguage,
           filterExpressionHighlighting,
+          signatureHint({
+            receiverType: (text) => props.current.types.receiverType?.(text),
+          }),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,

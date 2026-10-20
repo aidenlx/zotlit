@@ -34,6 +34,14 @@ export {
 } from "./highlight";
 export type { TemplateToken } from "./highlight";
 export { embeddedTemplates } from "./embedded";
+export { signatureAt } from "./signature-hint";
+export { SIGNATURE_HINT_CLASS, signatureHint } from "./signature-hint-tooltip";
+export type {
+  HintParameter,
+  HintSignature,
+  SignatureHintOptions,
+  SignatureHintResult,
+} from "./signature-hint";
 
 export { templatePairing } from "./pairing";
 export type { PairingSource } from "./pairing";

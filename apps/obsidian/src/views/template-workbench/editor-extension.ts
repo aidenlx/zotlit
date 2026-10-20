@@ -4,6 +4,7 @@
 import { Compartment } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, tooltips } from "@codemirror/view";
+import type { ViewUpdate } from "@codemirror/view";
 
 /** The class the stylesheet keys monospace typography on. */
 export const CODE_PANE_CLASS = "zt-template-workbench-code";
@@ -63,12 +64,24 @@ const tooltipPlacement = new Compartment();
  * it is typed in: a view moved to a popout window loses focus on the way, so
  * its next focus moves the tooltips of an editor outside a popover to the
  * popout's body.
+ *
+ * The place is chosen once CodeMirror has told the editor of the focus, after
+ * that update. A dispatch from the focus event itself would come first, and
+ * CodeMirror drops its own notice of the focus when the next dispatch, such
+ * as the caret a click puts down, comes before that notice.
  */
 export const popoverTooltips: Extension = ViewPlugin.fromClass(
   class {
     #parent: HTMLElement | null = null;
+    #destroyed = false;
     constructor(readonly view: EditorView) {}
+    update(update: ViewUpdate) {
+      if (!update.focusChanged || !update.view.hasFocus) return;
+      // An update cannot dispatch; the place follows it.
+      queueMicrotask(() => this.place());
+    }
     place() {
+      if (this.#destroyed) return;
       const { dom } = this.view;
       const parent =
         dom.closest<HTMLElement>("[popover]") ?? dom.ownerDocument.body;
@@ -78,15 +91,11 @@ export const popoverTooltips: Extension = ViewPlugin.fromClass(
         effects: tooltipPlacement.reconfigure(tooltips({ parent })),
       });
     }
+    destroy() {
+      this.#destroyed = true;
+    }
   },
-  {
-    eventHandlers: {
-      focus() {
-        this.place();
-      },
-    },
-    provide: () => tooltipPlacement.of([]),
-  },
+  { provide: () => tooltipPlacement.of([]) },
 );
 
 export const codePane: Extension = [

@@ -15,6 +15,7 @@ import { useStore } from "zustand";
 import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
+  ExpressionTypesProvider,
   MatchEditor,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
@@ -31,10 +32,12 @@ import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
+import { expressionTypes } from "@/views/template-workbench/expression-types";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows } from "@/views/template-workbench/theme";
 
+import { DATASETS } from "./datasets";
 import { conditionFaults } from "./expression-faults";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
@@ -281,11 +284,17 @@ export function FilterEditor({
         {m.query_view_filter_other_dataset()}
       </p>
     ) : (
-      <MatchEditor
-        value={value}
-        vocabulary={vocabulary(section)}
-        onChange={(next) => onChange(section, next)}
-      />
+      <ExpressionTypesProvider
+        types={expressionTypes(
+          DATASETS[section === "all" ? shared : dataset].engine,
+        )}
+      >
+        <MatchEditor
+          value={value}
+          vocabulary={vocabulary(section)}
+          onChange={(next) => onChange(section, next)}
+        />
+      </ExpressionTypesProvider>
     );
   return (
     <WorkbenchHostProvider host={host}>
