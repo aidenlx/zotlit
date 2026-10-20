@@ -44,6 +44,7 @@ import type {
 } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { FIELD_POPUP_ATTRIBUTE } from "@zotlit/workbench/language";
 
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
@@ -497,8 +498,9 @@ function ChooserSession({ children }: { children: ReactNode }) {
     // handler returning `false` would suppress, so it falls through. On a
     // page, it steps back to the rows — unless a menu opened from the page
     // stands, which the light dismiss closes first, or the focused field's
-    // typing list stands, such as a Formula's completion, which the field
-    // closes first. The scope hears the key before the field does.
+    // typing list or other popup of its own stands, such as a Formula's
+    // completion or Signature Hint, which the field closes first. The scope
+    // hears the key before the field does.
     const escape = (event: KeyboardEvent) => {
       if (composing(event) || latest.current.page === null) return;
       const popup = popupRef.current;
@@ -507,8 +509,9 @@ function ChooserSession({ children }: { children: ReactNode }) {
       if (
         field &&
         popup.contains(field) &&
-        field.getAttribute("aria-haspopup") === "listbox" &&
-        field.hasAttribute("aria-controls")
+        ((field.getAttribute("aria-haspopup") === "listbox" &&
+          field.hasAttribute("aria-controls")) ||
+          field.hasAttribute(FIELD_POPUP_ATTRIBUTE))
       )
         return;
       back();

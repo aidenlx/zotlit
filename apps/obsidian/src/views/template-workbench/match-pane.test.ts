@@ -199,7 +199,7 @@ describe("expression editors in Obsidian", () => {
     using surface = popoverSurface();
     await using editor = await mountExpression(surface.scroller, {
       fields: [{ path: "title", label: "Title", type: "string" }],
-      context: false,
+      context: [],
       formulas: [],
     });
     editor.view.focus();

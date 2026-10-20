@@ -167,9 +167,10 @@ function pressKey(scope: unknown, key: string): unknown {
 
 /**
  * A Chooser whose page holds a field with a typing list, as an expression
- * editor's completion list stands while the user picks from it.
+ * editor's completion list stands while the user picks from it, or with a
+ * popup of its own, as its Signature Hint stands while the user types.
  */
-function mountPage(app: App) {
+function mountPage(app: App, popup: "list" | "hint" = "list") {
   host = document.body.appendChild(document.createElement("div"));
   function Opener() {
     const { openPage } = useChooserPage();
@@ -189,10 +190,13 @@ function mountPage(app: App) {
         tabIndex: 0,
         "data-field": "",
         // What a CodeMirror editor carries while its list stands.
-        ...(listOpen && {
-          "aria-haspopup": "listbox",
-          "aria-controls": "typing-list",
-        }),
+        ...(listOpen &&
+          popup === "list" && {
+            "aria-haspopup": "listbox",
+            "aria-controls": "typing-list",
+          }),
+        // What an expression editor carries while its Signature Hint stands.
+        ...(listOpen && popup === "hint" && { "data-field-popup": "" }),
       }),
       listOpen && h("ul", { key: "list", id: "typing-list", role: "listbox" }),
       h("button", {
@@ -223,33 +227,36 @@ function mountPage(app: App) {
     }),
     host,
   );
-  const popup = host.querySelector<HTMLElement>("[popover]")!;
+  const element = host.querySelector<HTMLElement>("[popover]")!;
   return {
-    popup,
-    shim: shimPopover(popup),
-    page: () => popup.querySelector("[data-chooser-page]"),
-    field: () => popup.querySelector<HTMLElement>("[data-field]")!,
+    popup: element,
+    shim: shimPopover(element),
+    page: () => element.querySelector("[data-chooser-page]"),
+    field: () => element.querySelector<HTMLElement>("[data-field]")!,
   };
 }
 
-it("leaves Escape to a page field's open typing list, and steps back on the next press", async () => {
-  const app = editorApp();
-  const { popup, shim, page, field } = mountPage(app);
-  await shim.open();
-  await act(() => popup.querySelector<HTMLElement>("[data-open]")!.click());
-  expect(page()).not.toBeNull();
-  field().focus();
+it.each(["list", "hint"] as const)(
+  "leaves Escape to a page field's open %s, and steps back on the next press",
+  async (open) => {
+    const app = editorApp();
+    const { popup, shim, page, field } = mountPage(app, open);
+    await shim.open();
+    await act(() => popup.querySelector<HTMLElement>("[data-open]")!.click());
+    expect(page()).not.toBeNull();
+    field().focus();
 
-  // The key goes on to the editor, which closes its list.
-  expect(pressKey(app.scopes[0]!, "Escape")).not.toBe(false);
-  expect(page()).not.toBeNull();
-  await act(() =>
-    popup.querySelector<HTMLElement>("[data-close-list]")!.click(),
-  );
-  field().focus();
+    // The key goes on to the editor, which closes its list.
+    expect(pressKey(app.scopes[0]!, "Escape")).not.toBe(false);
+    expect(page()).not.toBeNull();
+    await act(() =>
+      popup.querySelector<HTMLElement>("[data-close-list]")!.click(),
+    );
+    field().focus();
 
-  await act(() => {
-    expect(pressKey(app.scopes[0]!, "Escape")).toBe(false);
-  });
-  expect(page()).toBeNull();
-});
+    await act(() => {
+      expect(pressKey(app.scopes[0]!, "Escape")).toBe(false);
+    });
+    expect(page()).toBeNull();
+  },
+);

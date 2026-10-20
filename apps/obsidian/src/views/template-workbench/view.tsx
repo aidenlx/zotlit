@@ -208,8 +208,11 @@ export function originatingNoteUpdateNotice(
 
 export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   noteFeature?: Pick<NoteFeature, "updateNote">;
-  /** ZotLit Query, which tests the Match of a Profile on a real Item. */
-  query?: Pick<QueryService, "run">;
+  /**
+   * ZotLit Query, which tests the Match of a Profile on a real Item and names
+   * the custom fields a condition reads.
+   */
+  query?: Pick<QueryService, "run" | "customFieldNames">;
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;

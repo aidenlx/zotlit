@@ -296,6 +296,8 @@ export interface PlannedSubexpression {
    * record, or a record whose members are known only at execution.
    */
   readonly member?: (name: string) => StaticType | undefined;
+  /** Every name `member` answers, for a record of fixed keys. */
+  readonly names?: readonly string[];
 }
 
 /** What a filter reads on a record of the Query Context. */
@@ -332,10 +334,12 @@ export function planSubexpression<Item, Needs>(
   }
   const node = nodeAt(root, at);
   if (!node) return undefined;
-  const members = validator.navigation(node)?.member;
+  const navigation = validator.navigation(node);
+  const members = navigation?.member;
   if (members)
     return {
       valueType: node.valueType,
+      ...(navigation.names && { names: navigation.names }),
       member: (name) => {
         // `custom` is read only by bracket access, on a record as alone.
         if (name === "custom") return undefined;
@@ -351,6 +355,7 @@ export function planSubexpression<Item, Needs>(
       valueType: node.valueType,
       member: (name) =>
         CONTEXT_RECORD_MEMBERS.includes(name) ? "string" : undefined,
+      names: CONTEXT_RECORD_MEMBERS,
     };
   return { valueType: node.valueType };
 }
@@ -641,6 +646,7 @@ class Validator<Item, Needs> {
     return {
       dataset: left.dataset,
       equalityField: left.equalityField,
+      ...(left.names && right.names && { names: left.names }),
       member: (name) => {
         const a = left.member?.(name);
         const b = right.member?.(name);

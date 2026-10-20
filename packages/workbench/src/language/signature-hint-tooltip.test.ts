@@ -5,7 +5,11 @@ import { EditorView, ViewPlugin } from "@codemirror/view";
 import { expect, it } from "vitest";
 
 import { filterExpressionLanguage } from "./filter-expression";
-import { SIGNATURE_HINT_CLASS, signatureHint } from "./signature-hint-tooltip";
+import {
+  FIELD_POPUP_ATTRIBUTE,
+  SIGNATURE_HINT_CLASS,
+  signatureHint,
+} from "./signature-hint-tooltip";
 import { documentFocus } from "./test-utils";
 
 /**
@@ -91,6 +95,32 @@ it("closes when the caret leaves the call", () => {
   expect(field.hint()).not.toBeNull();
   field.caret("title.slice(1, 2) +".length);
   expect(field.hint()).toBeNull();
+});
+
+it("closes on Escape before the host hears it, and marks its field while it stands", () => {
+  using field = editor("title.slice(1, 2)");
+  field.caret("title.slice(".length);
+  const marked = () =>
+    field.view.contentDOM.hasAttribute(FIELD_POPUP_ATTRIBUTE);
+  const escape = () => {
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      cancelable: true,
+    });
+    field.view.contentDOM.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  expect(field.hint()).not.toBeNull();
+  expect(marked()).toBe(true);
+
+  expect(escape()).toBe(true);
+  expect(field.hint()).toBeNull();
+  expect(marked()).toBe(false);
+  // With the hint closed, Escape is the host's.
+  expect(escape()).toBe(false);
+
+  field.caret("title.slice(1, ".length);
+  expect(field.hint()).not.toBeNull();
 });
 
 it("hides when the editor loses focus", async () => {

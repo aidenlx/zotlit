@@ -2,12 +2,14 @@
 // run binds nothing to. The host says only which surface it is; the members
 // each surface can bind, and where a member gets its record otherwise, live
 // here, so no host writes the hint.
+import type { ContextRecord } from "@zotlit/item-query";
+
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { ReaderDiagnosticSource } from "./reader-diagnostic";
 
 /** A record of the Query Context, as a filter reads it from `this`. */
-export type ContextMember = "item" | "attachment";
+export type ContextMember = ContextRecord;
 
 /**
  * The surface a host is, by what it binds to `this`: a note's embed or block
@@ -27,6 +29,16 @@ const BOUND: Record<
     attachment: m.query_view_context_hint_sidebar_attachment,
   },
 };
+
+const RECORDS: Record<ContextSource, readonly ContextMember[]> = {
+  note: Object.keys(BOUND.note) as ContextMember[],
+  sidebar: Object.keys(BOUND.sidebar) as ContextMember[],
+};
+
+/** The records a host that is `source` binds to `this`; none in a Query File's own tab. */
+export const boundRecords = (
+  source: ContextSource | undefined,
+): readonly ContextMember[] => (source === undefined ? [] : RECORDS[source]);
 
 /** Where a member gets its record, for a surface that cannot bind it. */
 const ELSEWHERE: Record<ContextMember, () => string> = {

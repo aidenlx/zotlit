@@ -21,7 +21,7 @@ const FILTER: ExpressionVocabulary = {
     { path: "itemType", label: "Item type", type: "string" },
     { path: "dateAdded", label: "Date added", type: "date" },
   ],
-  context: true,
+  context: ["item", "attachment"],
   formulas: [
     { name: "score", label: "Reading score" },
     { name: "late", label: "formula.late" },
@@ -90,10 +90,18 @@ describe("namespaces", () => {
       expect.arrayContaining(["this.item", "this.attachment"]),
     );
     expect(
-      labels("th|", { ...FILTER, context: false }).filter((label) =>
+      labels("th|", { ...FILTER, context: [] }).filter((label) =>
         label.startsWith("this"),
       ),
     ).toEqual([]);
+  });
+
+  it("offers only the records the host binds, as a note binds only its Item", () => {
+    expect(
+      labels("th|", { ...FILTER, context: ["item"] }).filter((label) =>
+        label.startsWith("this"),
+      ),
+    ).toEqual(["this.item"]);
   });
 
   it("offers each Formula Property as formula.<name>, before and after the dot", () => {
@@ -112,6 +120,15 @@ describe("namespaces", () => {
     expect(result.options.map((option) => option.label)).toEqual([
       "formula.score",
     ]);
+  });
+
+  it("reads a namespace across the spaces around its dot, and replaces the whole access", () => {
+    const result = offered("formula . sc|")!;
+    expect(result).toMatchObject({ from: 0, to: "formula . sc".length });
+    expect(result.options.map((option) => option.label)).toEqual([
+      "formula.score",
+    ]);
+    expect(offered("min(formula .|)")).toMatchObject({ from: 4, to: 13 });
   });
 
   it("offers vault properties in a filter, by bracket access where the dot cannot reach", () => {
@@ -246,6 +263,23 @@ describe("bracket keys", () => {
 
   it("offers vault names quoted inside vault[, in filter conditions only", () => {
     expect(labels("vault[|", FILTER)).toEqual(['"status"', '"reading-status"']);
+    // A vault key keeps the label its `vault.<name>` entry shows, and matches by it.
+    expect(offered("vault[|", FILTER)!.options[0]).toMatchObject({
+      label: '"status"',
+      note: "status (note)",
+    });
+    expect(
+      labels("vault[|", {
+        ...FILTER,
+        vault: [{ name: "status", label: "Reading stage" }],
+      }),
+    ).toEqual(['"status"']);
+    expect(
+      labels('vault["stage|', {
+        ...FILTER,
+        vault: [{ name: "status", label: "Reading stage" }],
+      }),
+    ).toEqual(['"status"']);
     expect(offered("vault[|", { ...FILTER, vault: undefined })).toBeNull();
   });
 
@@ -393,9 +427,49 @@ describe("the members a Query Dataset's planner reads", () => {
     options?: Parameters<typeof datasetReceiver>[1],
   ): ExpressionVocabulary => ({
     fields: [],
-    context: false,
+    context: [],
     formulas: [],
     receiver: datasetReceiver(dataset, options),
+  });
+
+  it("offers the keys of a Creator after firstAuthor.", () => {
+    const fields = offered("firstAuthor.|", planned(ITEMS))!
+      .options.filter((option) => option.kind === "field")
+      .map((option) => option.label);
+    expect(fields.toSorted()).toEqual([
+      "family",
+      "fullName",
+      "given",
+      "literal",
+      "role",
+    ]);
+  });
+
+  it("labels a member by its full path, as the Properties popover does", () => {
+    const vocabulary = planned(ANNOTATIONS, {
+      label: (path) => (path === "item.title" ? "Paper heading" : undefined),
+    });
+    expect(offered("item.|", vocabulary)!.options).toContainEqual({
+      label: "title",
+      insert: "title",
+      kind: "field",
+      type: "string",
+      note: "Paper heading",
+    });
+    expect(labels("item.heading|", vocabulary)[0]).toBe("title");
+  });
+
+  it("keeps the later arguments of a list method when it types a bound name", () => {
+    const items = planned(ITEMS);
+    expect(labels("tags.reduce(index.|, 0)", items)).toContain("toFixed");
+    expect(labels("tags.reduce(index.|, 0)", items)).not.toContain("lower");
+    expect(labels('attachments.reduce(value.|, "")', items)).toContain(
+      "fileType",
+    );
+    // A call left unfinished in the element expression still types its receiver.
+    expect(labels("attachments.filter(value.title.|)", items)).toContain(
+      "lower",
+    );
   });
 
   it("types title., date. and tags. as the planner types them", () => {
@@ -442,7 +516,10 @@ describe("the members a Query Dataset's planner reads", () => {
   });
 
   it("types this.item as the record the Query Context binds", () => {
-    const fields = offered("this.item.|", planned(ITEMS, { context: true }))!
+    const fields = offered(
+      "this.item.|",
+      planned(ITEMS, { context: ["item", "attachment"] }),
+    )!
       .options.filter((option) => option.kind === "field")
       .map((option) => option.label);
     expect(fields.sort()).toEqual(["indexedKey", "key"]);

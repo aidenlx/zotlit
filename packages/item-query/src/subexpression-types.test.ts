@@ -35,12 +35,18 @@ describe("subexpression types", () => {
 
   it("types this.item as a record with its keys where the view binds a Query Context", () => {
     const type = typeOf(
-      subexpressionTypes(ITEMS, { context: true }),
+      subexpressionTypes(ITEMS, { context: ["item", "attachment"] }),
       "this.item",
     );
     expect(type?.valueType).toBe("record");
     expect(names(type)?.toSorted()).toEqual(["indexedKey", "key"]);
     expect(typeOf(subexpressionTypes(ITEMS), "this.item")).toBeUndefined();
+  });
+
+  it("types only the records the view binds", () => {
+    const types = subexpressionTypes(ITEMS, { context: ["item"] });
+    expect(typeOf(types, "this.item")?.valueType).toBe("record");
+    expect(typeOf(types, "this.attachment")).toBeUndefined();
   });
 
   it("types a bound name where its list method binds it", () => {
@@ -67,6 +73,18 @@ describe("subexpression types", () => {
       expect(ANNOTATIONS.planFilter(`item.${name}`), name).toHaveProperty(
         "root",
       );
+  });
+
+  it("lists the keys of a Creator record", () => {
+    const creator = ["family", "fullName", "given", "literal", "role"];
+    expect(
+      names(typeOf(subexpressionTypes(ITEMS), "firstAuthor"))?.toSorted(),
+    ).toEqual(creator);
+    expect(
+      names(
+        typeOf(subexpressionTypes(ANNOTATIONS), "item.firstAuthor"),
+      )?.toSorted(),
+    ).toEqual(creator);
   });
 
   it("does not read into another Formula's text", () => {

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { makeItem } from "@zotlit/item-lookup/fixtures";
 import type { WorkbenchSuggesterOption } from "@zotlit/workbench/ui";
+import { NO_MATCH_DATA } from "@zotlit/workbench/ui";
 
 import { createTemplateWorkbenchHost } from "./host";
 import {
@@ -36,12 +37,7 @@ it("searches Zotero from the first item chooser and selects a matching paper", a
     render: async () => {
       throw new Error("unused");
     },
-    matchData: {
-      tags: async () => [],
-      collections: async () => [],
-      libraries: async () => [],
-      matches: async () => ({ kind: "missing" }),
-    },
+    matchData: NO_MATCH_DATA,
     insertTarget: () => null,
   });
   const chosen = chooseWorkbenchItem(host, deps);

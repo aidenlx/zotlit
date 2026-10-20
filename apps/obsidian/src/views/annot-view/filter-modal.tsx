@@ -11,6 +11,7 @@ import { useStore } from "zustand";
 import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { useFilterExpressions } from "@/views/query-view/expression-vocabulary";
 import { FilterEditor } from "@/views/query-view/filter-popover";
 import type { FilterValues } from "@/views/query-view/filter-popover";
 import { allViewsDataset } from "@/views/query-view/query-file";
@@ -29,6 +30,10 @@ function SidebarFilter({ query }: { query: QueryView }) {
     (s) => s.failure?.filterIssue ?? null,
   );
   const properties = useViewProperties(query);
+  // The dialog stands while it is mounted, so it reads the custom fields once.
+  const expressions = useFilterExpressions(query, properties, {
+    reading: true,
+  });
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
   useEffect(() => {
     query.filterValues().then(setValues, (error: unknown) => {
@@ -46,6 +51,7 @@ function SidebarFilter({ query }: { query: QueryView }) {
       values={values}
       issue={filterIssue}
       properties={properties}
+      expressions={expressions}
       sections={["view"]}
       onChange={(section, next) => query.document.setFilters(section, next)}
     />

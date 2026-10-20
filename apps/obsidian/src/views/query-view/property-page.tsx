@@ -31,6 +31,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
+import { boundRecords } from "./context-hint";
 import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
 import {
   expressionVocabulary,
@@ -200,7 +201,7 @@ function ExpressionField({
         formulas: Object.fromEntries(
           Object.entries(formulas ?? {}).filter(([name]) => name !== formula),
         ),
-        context: view.contextSource !== undefined,
+        context: boundRecords(view.contextSource),
         custom,
       }),
     [dataset, properties, formulas, formula, view, custom],

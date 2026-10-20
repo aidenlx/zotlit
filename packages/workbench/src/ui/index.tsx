@@ -43,7 +43,12 @@ export {
   useWorkbenchStore,
 } from "./editor";
 export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
-export { WorkbenchHostProvider, useTooltip, useWorkbenchHost } from "./host";
+export {
+  NO_MATCH_DATA,
+  WorkbenchHostProvider,
+  useTooltip,
+  useWorkbenchHost,
+} from "./host";
 export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,
