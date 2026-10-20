@@ -79,37 +79,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(tooltip).toBe(names.sort);
   }, 120000);
 
-  it("draws what reaches past the edge of the Filter popover and the Properties chooser, as an editor's tooltip does", async () => {
-    const layout = await obEval(
-      run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
-    );
-    await using cleanup = new AsyncDisposableStack();
-    cleanup.defer(async () => {
+  it.each(["main", "popout"] as const)(
+    "draws what reaches past the edge of the Filter popover and the Properties chooser, as an editor's tooltip does, in the %s window",
+    async (host) => {
+      const layout = await obEval(
+        run.vaultId,
+        "JSON.stringify(app.workspace.getLayout())",
+      );
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(async () => {
+        await obEval(
+          run.vaultId,
+          `(async()=>{window.zotlitE2EPastEdge?.detach();delete window.zotlitE2EPastEdge;await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        );
+      });
       await obEval(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        `(async()=>{${PAGE}const leaf=app.workspace.getLeaf('tab');window.zotlitE2EPastEdge=leaf;await leaf.openFile(app.vault.getFileByPath('query-files/Reading list.zotquery'));app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);" : ""}return true;})()`,
       );
-    });
-    await obEval(
-      run.vaultId,
-      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath('query-files/Reading list.zotquery'));app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;return true;})()`,
-    );
-    // A box hung under the surface's root, past its bottom edge, where an
-    // expression editor's tooltip lands: the point under the box's middle
-    // shows the box, not the view behind the surface.
-    const reachesPast = (selector: string) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const root=await until('surface',()=>el.querySelector(${JSON.stringify(selector)}));root.showPopover();await new Promise(r=>requestAnimationFrame(r));const box=root.ownerDocument.createElement('div');box.style.cssText='position:absolute;top:100%;left:0;width:40px;height:40px;';root.append(box);const edge=root.getBoundingClientRect().bottom;const r=box.getBoundingClientRect();const hit=root.ownerDocument.elementFromPoint(r.left+20,r.top+20);box.remove();root.hidePopover();return JSON.stringify({past:r.top>=edge-1,shown:hit===box});})()`,
-      );
-    expect(
-      JSON.parse(await reachesPast('[data-query-popover="filter"]')),
-    ).toEqual({ past: true, shown: true });
-    expect(
-      JSON.parse(await reachesPast("[data-query-properties-popup]")),
-    ).toEqual({ past: true, shown: true });
-  }, 120000);
+      // A box hung under the surface's root, past its bottom edge, where an
+      // expression editor's tooltip lands: the point under the box's middle
+      // shows the box, not the view behind the surface.
+      const reachesPast = (selector: string) =>
+        obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}using cleanup=new DisposableStack();const el=window.zotlitE2EPastEdge.view.contentEl;const root=await until('surface',()=>el.querySelector(${JSON.stringify(selector)}));root.showPopover();cleanup.defer(()=>root.hidePopover());await until('surface shows',()=>root.matches(':popover-open')&&root.getBoundingClientRect().height>0);const box=root.ownerDocument.createElement('div');box.style.cssText='position:absolute;top:100%;left:0;width:40px;height:40px;';root.append(box);cleanup.defer(()=>box.remove());const edge=root.getBoundingClientRect().bottom;const r=box.getBoundingClientRect();const hit=root.ownerDocument.elementFromPoint(r.left+20,r.top+20);return JSON.stringify({past:r.top>=edge-1,shown:hit===box});})()`,
+        );
+      expect(
+        JSON.parse(await reachesPast('[data-query-popover="filter"]')),
+      ).toEqual({ past: true, shown: true });
+      expect(
+        JSON.parse(await reachesPast("[data-query-properties-popup]")),
+      ).toEqual({ past: true, shown: true });
+    },
+    120000,
+  );
 
   it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {
     const notePath = "query-files/Export check.md";

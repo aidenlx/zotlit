@@ -33,8 +33,6 @@ async function mountExpression(within: HTMLElement = document.body) {
     );
   });
   const dom = container.querySelector<HTMLElement>(".cm-editor")!;
-  // The editor places its tooltips once it stands in the page.
-  await act(() => Promise.resolve());
   return {
     dom,
     view: EditorView.findFromDOM(dom)!,
@@ -45,8 +43,12 @@ async function mountExpression(within: HTMLElement = document.body) {
   };
 }
 
-/** Opens a placeholder tooltip under the end of the text, as completion will. */
+/**
+ * Opens a placeholder tooltip under the end of the text, as completion will
+ * once the user types in the field, which then holds focus.
+ */
 function openTooltip(view: EditorView): HTMLElement {
+  view.focus();
   const tooltip = document.createElement("div");
   tooltip.dataset.placeholderTooltip = "";
   view.dispatch({
@@ -61,16 +63,20 @@ function openTooltip(view: EditorView): HTMLElement {
 }
 
 /**
- * A top-layer surface, such as the Filter popover or the chooser popup, and
- * the box its contents scroll in.
+ * A top-layer surface in the page, such as the Filter popover or the chooser
+ * popup: its root, and the box its contents scroll in.
  */
-function popover(): HTMLElement {
+function popoverSurface() {
   const root = document.createElement("div");
   root.setAttribute("popover", "auto");
   const scroller = document.createElement("div");
   root.append(scroller);
   document.body.append(root);
-  return scroller;
+  return {
+    root,
+    scroller,
+    [Symbol.dispose]: () => root.remove(),
+  };
 }
 
 describe("expression editors in Obsidian", () => {
@@ -91,12 +97,11 @@ describe("expression editors in Obsidian", () => {
 
   it("draw their tooltips in the popover they sit in, outside its scrolling", async () => {
     using _migration = windowMigration();
-    const scroller = popover();
-    await using editor = await mountExpression(scroller);
+    using surface = popoverSurface();
+    await using editor = await mountExpression(surface.scroller);
     const tooltip = openTooltip(editor.view);
-    expect(tooltip.closest("[popover]")).toBe(scroller.parentElement);
-    expect(scroller.contains(tooltip)).toBe(false);
-    scroller.parentElement!.remove();
+    expect(tooltip.closest("[popover]")).toBe(surface.root);
+    expect(surface.scroller.contains(tooltip)).toBe(false);
   });
 
   it("draw their tooltips in the page outside a popover", async () => {
@@ -111,6 +116,8 @@ describe("expression editors in Obsidian", () => {
   it("draw their tooltips in the popout window the view moves to", async () => {
     using migration = windowMigration();
     await using editor = await mountExpression();
+    // The field was in use in the main window before the view moved.
+    editor.view.focus();
     const destination = document.implementation.createHTMLDocument();
     destination.body.append(editor.dom.parentElement!);
     migration.move({ document: destination } as Window);

@@ -57,33 +57,37 @@ const tooltipPlacement = new Compartment();
  * The popover's root does not clip — its contents scroll in an inner box — so
  * a tooltip drawn there reaches past the popover's edge.
  *
- * The editor stands in the page only once it is made, so the place is chosen
- * a microtask later, and again when the view moves to another window, whose
- * body then holds the tooltips of an editor outside a popover.
+ * An editor's tooltips open as the user types in it, so the place is chosen
+ * each time the editor takes focus. By then the editor stands in the page,
+ * which it does not while its plugins are made, and it stands in the window
+ * it is typed in: a view moved to a popout window loses focus on the way, so
+ * its next focus moves the tooltips of an editor outside a popover to the
+ * popout's body.
  */
-export const popoverTooltips: Extension = [
-  tooltipPlacement.of([]),
-  ViewPlugin.define((view) => {
-    let live = true;
-    const place = () => {
-      if (!live) return;
+export const popoverTooltips: Extension = ViewPlugin.fromClass(
+  class {
+    #parent: HTMLElement | null = null;
+    constructor(readonly view: EditorView) {}
+    place() {
+      const { dom } = this.view;
       const parent =
-        view.dom.closest<HTMLElement>("[popover]") ??
-        view.dom.ownerDocument.body;
-      view.dispatch({
+        dom.closest<HTMLElement>("[popover]") ?? dom.ownerDocument.body;
+      if (parent === this.#parent) return;
+      this.#parent = parent;
+      this.view.dispatch({
         effects: tooltipPlacement.reconfigure(tooltips({ parent })),
       });
-    };
-    queueMicrotask(place);
-    const stopMigration = view.dom.onWindowMigrated(place);
-    return {
-      destroy() {
-        live = false;
-        stopMigration();
+    }
+  },
+  {
+    eventHandlers: {
+      focus() {
+        this.place();
       },
-    };
-  }),
-];
+    },
+    provide: () => tooltipPlacement.of([]),
+  },
+);
 
 export const codePane: Extension = [
   hostedEditor,
