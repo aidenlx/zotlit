@@ -101,12 +101,20 @@ export async function prepareAnnotationInsert(
     );
   const page = "pageIndex" in a.position ? a.position.pageIndex + 1 : null;
   const fileLink = resolvers.fileLink(attachment, { annotation: a.key, page });
+  // The Durable Annotation Link: what the note points back to the passage
+  // with, on any computer, rather than this computer's file path.
+  const backlink = annotationOpenUri({
+    annotationKey: key.key,
+    attachmentKey: attachment.key,
+    groupID: key.groupID,
+    pageLabel: a.pageLabel,
+  });
   const prepared = await ctx.singleExcerpt({
     annotation: a,
     request,
     settings: ctx.settings.current,
     notePath: options.notePath,
-    sourceLink: fileLink(),
+    sourceLink: `[Zotero](${backlink})`,
     signal,
     valid,
   });
@@ -147,12 +155,7 @@ export async function prepareAnnotationInsert(
     })),
     imgLink: prepared.helper,
     fileLink,
-    backlink: annotationOpenUri({
-      annotationKey: key.key,
-      attachmentKey: attachment.key,
-      groupID: key.groupID,
-      pageLabel: a.pageLabel,
-    }),
+    backlink,
     parentItem,
     parentAttachment: tplAttachment,
     get citation() {

@@ -41,13 +41,15 @@ These entry points need ZotLit Companion, the Zotero add-on, at the version rele
 - In the library, select one PDF attachment, or one item that has a PDF, and choose <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> from the top-level context menu.
 - While reading a PDF in Zotero, right-click inside the page and choose <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />. This opens the PDF you are reading.
 
-## From a file link in a note
+## From a link in a note [#file-links]
 
-A literature note's `fileLink` writes a link straight to the attachment file, and an annotation's `fileLink` adds the page it came from and the annotation itself. Click one and the PDF opens in Obsidian, on that page, with that annotation selected and scrolled into view. An annotation Zotero no longer has still opens the PDF on its page.
+Each annotation ZotLit writes into a note links back to Zotero with a durable link. Click one and the PDF opens in Obsidian, with that annotation selected and scrolled into view. The link works on every computer: when this one does not hold the PDF, Zotero opens the annotation instead. An annotation Zotero no longer has still opens the PDF on its page. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links) for every case.
 
-This applies to any link in your vault that points at a PDF in your Zotero library, however the link got there. A link to any other file — an EPUB, a web snapshot, a PDF Zotero does not know about — opens in your system app as before.
+A literature note's `fileLink` writes a link straight to the attachment file, and a click opens that PDF in Obsidian. Notes from an earlier ZotLit link each annotation to the file as well. Those links keep opening in Obsidian on the annotation.
 
-To open one link in your system app anyway, right-click it and choose **Open in default browser**. To turn the whole behavior off, clear <UiLabel name={m.settings_reader_open_file_links_name()} /> in **Settings → ZotLit → Reader**.
+File links work for any link in your vault that points at a PDF in your Zotero library, however the link got there. A link to any other file — an EPUB, a web snapshot, a PDF Zotero does not know about — opens in your system app as before.
+
+To open one link in your system app anyway, right-click it and choose **Open in default browser**. An annotation link then opens in Zotero. To turn the whole behavior off, clear <UiLabel name={m.settings_reader_open_file_links_name()} /> in **Settings → ZotLit → Reader**.
 
 ## What you get
 

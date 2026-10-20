@@ -25,11 +25,12 @@ export function renderSnippet(
   kind: SnippetKind,
 ): string {
   const accessor = formatAccessorPath(node.path, "zt");
+  const show = isBacklink(node) ? asZoteroLink : (output: string) => output;
   switch (kind) {
     case "output":
-      return interpolate(engine, callForm(node, engine, accessor));
+      return show(interpolate(engine, callForm(node, engine, accessor)));
     case "if-present":
-      return guard(engine, callForm(node, engine, accessor));
+      return guard(engine, callForm(node, engine, accessor), show);
     case "loop":
       return loop(engine, accessor, loopVar(node));
     case "joined":
@@ -37,7 +38,19 @@ export function renderSnippet(
   }
 }
 
-/** Eta calls a link helper explicitly (`zt.fileLink()`); Liquid auto-invokes zero-arg properties, so the bare accessor is the call. */
+/**
+ * A `backlink` is a bare Zotero URL — for an Annotation, its durable link —
+ * so its snippet is the Markdown link a note can follow, not the raw URL.
+ */
+function isBacklink(node: DisplayNode): boolean {
+  return node.kind === "value" && node.path.at(-1) === "backlink";
+}
+
+function asZoteroLink(output: string): string {
+  return `[Zotero](${output})`;
+}
+
+/** Eta calls a link helper explicitly (`zt.noteLink()`); Liquid auto-invokes zero-arg properties, so the bare accessor is the call. */
 function callForm(
   node: DisplayNode,
   engine: TemplateEngine,
@@ -51,10 +64,15 @@ function interpolate(engine: TemplateEngine, expr: string): string {
   return engine === "liquid" ? `{{ ${expr} }}` : `<%= ${expr} %>`;
 }
 
-function guard(engine: TemplateEngine, expr: string): string {
+function guard(
+  engine: TemplateEngine,
+  expr: string,
+  show: (output: string) => string,
+): string {
+  const output = show(interpolate(engine, expr));
   return engine === "liquid"
-    ? `{% if ${expr} %}{{ ${expr} }}{% endif %}`
-    : `<% if (${expr}) { %><%= ${expr} %><% } %>`;
+    ? `{% if ${expr} %}${output}{% endif %}`
+    : `<% if (${expr}) { %>${output}<% } %>`;
 }
 
 function loop(engine: TemplateEngine, accessor: string, item: string): string {

@@ -3361,8 +3361,8 @@ export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
   {
     name: "annotation",
     language: "liquid",
-    find: "[!note] Page",
-    replace: "[!quote] Page",
+    find: "[!note] ",
+    replace: "[!quote] ",
   },
   {
     name: "cite",
@@ -3380,7 +3380,7 @@ export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
     name: UPGRADER_LEGACY_PARTIAL_NAME,
     language: "liquid",
     from: "annotation",
-    find: "[!note] Page",
-    replace: "[!tip] Page",
+    find: "[!note] ",
+    replace: "[!tip] ",
   },
 ];
