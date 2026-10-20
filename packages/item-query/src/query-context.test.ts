@@ -9,11 +9,18 @@ import {
   openScenarioDatabase,
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
+import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryDataset } from ".";
 import { ItemQueryError } from "./error";
 import { runEffect } from "./test-helpers";
+
+let scenario: ScenarioDatabase;
+beforeAll(() => {
+  scenario = openScenarioDatabase({ annotations: true });
+});
+afterAll(() => scenario.close());
 
 const logs: LogRecord[] = [];
 beforeEach(() => {
@@ -39,7 +46,6 @@ async function run(
   request: Omit<ItemQueryRequest, "libraries"> &
     Partial<Pick<ItemQueryRequest, "libraries">>,
 ) {
-  using scenario = openScenarioDatabase({ annotations: true });
   const { exit } = await runEffect(
     collectQuery(dataset, {
       libraries: [SCENARIO_LIBRARIES.personal],

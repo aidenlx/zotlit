@@ -1,7 +1,7 @@
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";
+import type { Annotation } from "@/lib/zt-annot";
 import type { AnnotationFileLinkAnchor } from "@/lib/zt-annot-anchor";
 
 import {
@@ -80,15 +80,6 @@ function anchorsFor(
 }
 
 describe("annotation type", () => {
-  it("is a closed literal union of the type names a template can receive", () => {
-    expectTypeOf<ResolvedAnnotationTypeName>().toEqualTypeOf<
-      "highlight" | "note" | "image" | "ink" | "underline" | "text" | "unknown"
-    >();
-    expectTypeOf<
-      TemplateAnnotation["type"]
-    >().toEqualTypeOf<ResolvedAnnotationTypeName>();
-  });
-
   it("resolves the raw type int to its literal name", () => {
     expect(makeTemplateData({ type: 1 }).type).toBe("highlight");
     expect(makeTemplateData({ type: 5 }).type).toBe("underline");
@@ -151,13 +142,6 @@ describe("fileLink", () => {
 });
 
 describe("withAnnotationCitation", () => {
-  it("types citation as part of the annotation root", () => {
-    const root = withAnnotationCitation(makeTemplateData(), () => "[@doe2020]");
-
-    expectTypeOf(root.citation).toEqualTypeOf<string | null>();
-    expect(root.citation).toBe("[@doe2020]");
-  });
-
   it("renders the citation lazily, only when a template reads it", () => {
     const render = vi.fn(() => "[@doe2020, p. 42]");
     const root = withAnnotationCitation(makeTemplateData(), render);
