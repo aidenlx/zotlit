@@ -2,6 +2,8 @@
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
+import { forEachDiagnostic } from "@codemirror/lint";
+import { EditorView } from "@codemirror/view";
 import {
   Menu,
   hideSuggestChooser,
@@ -41,7 +43,7 @@ import type { ContextSource } from "./context-hint";
 import { groupOptions } from "./properties";
 import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
-import { formulaIssuesOf } from "./results";
+import { formulaIssuesOf, formulaSpansOf } from "./results";
 import { inferType } from "./table-notes";
 import type {
   VaultEdit,
@@ -1311,6 +1313,7 @@ it("shows a wrong condition's diagnostic at its row and keeps the last good resu
     section: "view",
     path: [0],
     message: "colourName is not a field of Annotations. Use colorName.",
+    fault: { text: 'colourName == "yellow"', span: { from: 0, to: 10 } },
   });
   expect(cards(el)).toEqual(["ANNOTBBB"]);
   expect(el.querySelector("[data-query-filter-error]")?.textContent).toBe(
@@ -1384,6 +1387,7 @@ it("names the tokens a syntax error lacks once, at the row and in the view's dia
     path: [0],
     message:
       "Found end of filter where the filter takes !, (, -, [, a name, a number, a regular expression, a string, false, null, true.",
+    fault: { text: "place !=", span: { from: 8, to: 8 } },
   });
 
   await act(() => {
@@ -1613,6 +1617,48 @@ it("shows the query's diagnostic at the wrong condition in the Filter popover", 
     "colourName is not a field of Annotations. Use colorName.",
   );
   expect(rows[1]!.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("underlines the query's Fault in an expression condition, and a Syntax Fault as it is typed", async () => {
+  const { view, el, settle } = await mount(
+    [result([row("ANNOTBBB")]), filterFault(1, 11)],
+    () => {},
+  );
+  await act(() => view.setText(FILE));
+  await settle();
+  await act(() => {
+    view.document.setFilters("view", {
+      and: ['colourName == "yellow"', 'tags.contains("figure")'],
+    });
+  });
+  await settle();
+
+  const editor = EditorView.findFromDOM(
+    section(el, "view").querySelector("[data-condition-row] .cm-editor")!,
+  )!;
+  const underlined = () => {
+    const marked: string[] = [];
+    forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
+      marked.push(editor.state.sliceDoc(from, to));
+    });
+    return marked;
+  };
+  expect(underlined()).toEqual(["colourName"]);
+
+  // The text no longer is the one the query ran: its Fault no longer shows,
+  // and the unclosed string shows at once.
+  await act(() => {
+    editor.dispatch({
+      changes: {
+        from: editor.state.doc.length - 1,
+        to: editor.state.doc.length,
+      },
+    });
+  });
+  expect(editor.state.doc.toString()).toBe('colourName == "yellow');
+  expect(underlined()).toEqual(['"yellow']);
+  await settle();
+  expect(underlined()).toEqual(['"yellow']);
 });
 
 it("offers the Tags and Collections of the Libraries the view reads", async () => {
@@ -2885,6 +2931,11 @@ it("marks a wrong Formula at its column from the one run, and shows the other co
         short: "In formula.short: nope is not a method of string. Use slice.",
       },
     },
+  });
+  // The formula page underlines the Fault at its place in the text the run
+  // planned.
+  expect(formulaSpansOf(view.state.getState())).toEqual({
+    short: { text: "title.nope()", span: { from: 6, to: 10 } },
   });
   expect(tableText(el)).toEqual([
     ["", "Title", "formula.year", "formula.short"],
