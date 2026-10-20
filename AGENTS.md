@@ -14,6 +14,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `packages/templates` — Eta-based template rendering.
 - `packages/zotero-types` — generated item-field shapes from Zotero's upstream schema.
 - `packages/obsidian-api` — **git submodule** (`obsidianmd/obsidian-api`). Init via `mise run init`.
+- `video/` — **private, opt-in git submodule**: the workbench for product videos. Check it out with `git submodule update --init --checkout video`, then follow `video/AGENTS.md`.
 
 ## Bootstrap & toolchain
 

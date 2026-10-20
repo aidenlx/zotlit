@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+  # Private, opt-in submodule; an empty folder adds no package.
+  - video
 
 patchedDependencies:
   "@codemirror/lang-liquid@6.3.2": patches/@codemirror__lang-liquid@6.3.2.patch
