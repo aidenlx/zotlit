@@ -116,6 +116,9 @@ export function captureInsertion(options: {
     signal: controller.signal,
     valid,
     cancel,
+    /** The held range as edits since the capture moved it; `null` once one touched it. */
+    range: (): { from: number; to: number } | null =>
+      cm.state.field(marker, false) ?? null,
     commit(text: string): boolean {
       if (!valid()) return false;
       const range = cm.state.field(marker)!;

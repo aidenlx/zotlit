@@ -693,6 +693,11 @@ export abstract class EditorSuggest<T> {
   context: EditorSuggestContext | null = null;
   limit = 0;
   readonly app: App;
+  /** The popup's container; a bare element outside a DOM environment. */
+  suggestEl: HTMLElement =
+    typeof document === "undefined"
+      ? ({ addClass: () => {} } as unknown as HTMLElement)
+      : document.createElement("div");
 
   constructor(app: App) {
     this.app = app;

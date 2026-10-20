@@ -126,6 +126,11 @@ export const schema = v.object({
 
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
+  /**
+   * The text that opens the Annotation Suggester; empty turns it off. A
+   * trigger that overlaps a citation trigger opens nothing.
+   */
+  "citation.annotation-trigger": v.string(),
   "citation.show-citekey-in-suggester": v.boolean(),
   /** Include Pandoc citation syntax in the shared document citation set. */
   "citation.pandoc-citations": v.boolean(),
@@ -258,6 +263,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "log.to-file": false,
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
+  // A bracket like the Citation Suggester's `[@`, and `>` for a quote.
+  "citation.annotation-trigger": "[>",
   "citation.show-citekey-in-suggester": false,
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,

@@ -72,7 +72,10 @@ import {
   citationPresentationFileMenu,
   registerCitationPresentation,
 } from "./views/citation-presentation/register";
-import { registerCitationSuggest } from "./views/citation-suggest/register";
+import {
+  registerAnnotationSuggest,
+  registerCitationSuggest,
+} from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
@@ -419,6 +422,16 @@ export default class ZotLitPlugin extends Plugin {
       citationLookup: services.citationLookup,
       citationIndex: services.citationIndex,
       useLedger: services.useLedger,
+    });
+    registerAnnotationSuggest(this, {
+      app: this.app,
+      query: services.query,
+      annotations: services.annotationRepository,
+      noteFeature: services.noteFeature,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      useLedger: services.useLedger,
+      notify: (message) => void new BaseNotice(message),
     });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
