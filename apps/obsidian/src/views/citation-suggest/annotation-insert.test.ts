@@ -157,6 +157,17 @@ describe("insertAnnotation", () => {
     expect(h.record).toHaveBeenCalledWith("ART2FULL", "cited");
   });
 
+  it("records no Use when an edit over the trigger text drops the insert", async () => {
+    using h = setup("As shown [>exact] here", {
+      rendered: "quote",
+      whileRendering: (cm) =>
+        cm.dispatch({ changes: { from: 9, to: 17, insert: "typed" } }),
+    });
+    expect(await h.insert(9, 17)).toEqual({ kind: "settled" });
+    expect(h.text()).toBe("As shown typed here");
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
   it("answers unavailable and leaves the trigger text when the annotation is gone", async () => {
     using h = setup("[>exact]", {
       rendered: "quote",
