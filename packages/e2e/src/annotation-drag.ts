@@ -158,7 +158,7 @@ export async function verifyAnnotationDrag(
       "Page [2](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)",
     );
     // The default template cites the Rougier paper, at the page, after the quote.
-    expect(text).toContain(" [@rougier2014, p. 2]");
+    expect(text).toContain(" [@rougierTenSimpleRules2014, {p. 2}]");
     expect(text).not.toContain("file://");
     // The callout stands as its own block, even where the drop splits a line.
     const prefix = "LEFT RIGHT".slice(0, capture.directPosition);

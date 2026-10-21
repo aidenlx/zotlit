@@ -53,10 +53,10 @@ const LINK_TEXT = "the quoted passage";
 
 /**
  * The citation the default annotation template writes after a quote of the
- * Rougier Item: its citation key, with the Annotation's page as locator.
+ * Rougier Item: its citation key, with the Annotation's page as a braced Pandoc locator.
  */
 function citationOf(annotation: { pageLabel: string }): string {
-  return `[@${annotationItem.citationKey}, p. ${annotation.pageLabel}]`;
+  return `[@${annotationItem.citationKey}, {p. ${annotation.pageLabel}}]`;
 }
 
 /** A note quoting one passage, ending on an empty line that holds no link. */

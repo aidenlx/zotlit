@@ -111,13 +111,13 @@ describe("Liquid default templates via the facade", () => {
         imgLink: null,
         text: "Highlighted text",
         comment: "My comment",
-        citation: "[@smith2020, p. iv]",
+        citation: "[@smith2020, {p. iv}]",
       }),
     ).toBe(
       [
         `> [!note] Page [iv](${DURABLE})`,
         ">",
-        "> Highlighted text [@smith2020, p. iv]",
+        "> Highlighted text [@smith2020, {p. iv}]",
         ">",
         "> My comment",
         "",
@@ -416,7 +416,7 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
         imgLink: () => "[[ANNOT.png]]",
         text: "cited",
         comment: "a comment",
-        citation: "[@smith2020, p. 5]",
+        citation: "[@smith2020, {p. 5}]",
       },
     ],
     [

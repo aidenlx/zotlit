@@ -152,8 +152,11 @@ export async function verifyAnnotationInsert(
       } else {
         expect(text).toContain("![[");
         expect(text).toContain("zotlit-excerpt-");
-        // The default template cites the Rougier paper, at the page.
-        expect(text).toContain(" [@rougier2014, p. 2]");
+        // The default template cites the Rougier paper, at the Annotation's
+        // page, after the embedded excerpt.
+        expect(text).toMatch(
+          /\]\] \[@rougierTenSimpleRules2014, \{p\. \d+\}\]/,
+        );
         expect(text.split("zotlit-excerpt-")).toHaveLength(2);
         expect(
           await obEvalUntil(
