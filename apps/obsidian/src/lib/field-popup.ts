@@ -24,14 +24,18 @@ export function popupScope(
   return (keys) => {
     const scope = new Scope(app.scope);
     let pushed = true;
-    // The Scope stands on the stack of one window, so a field that moves to
-    // another hands the keys back; it pushes again there when a popup opens.
     let unwatch: (() => void) | undefined;
     const release = () => {
       unwatch?.();
       unwatch = undefined;
       if (pushed) app.keymap.popScope(scope);
       pushed = false;
+    };
+    // A release of the Scope's own, before the popup closes, tells the field,
+    // which hands the keys over again while a popup still stands there.
+    const letGo = () => {
+      release();
+      keys.released();
     };
     // A key the popup did not act on, typed into a composition or arriving
     // in the list's first moments, reaches the field untouched.
@@ -44,13 +48,16 @@ export function popupScope(
     // the surface below has the keymap back before focus moves: a dialog
     // keeps focus inside it only while its own Scope is on top.
     scope.register(["Shift"], "Tab", () => {
-      release();
+      letGo();
       return undefined;
     });
     // Onto the stack of the window that has focus, which is the field's: a
     // popup opens only in a focused field.
     app.keymap.pushScope(scope);
-    unwatch = keys.view.dom.onWindowMigrated(release);
+    // The Scope stands on the stack of one window, so a field that moves to
+    // another gives it back; the field hands the keys over again as it takes
+    // focus there, and they go onto that window's stack.
+    unwatch = keys.view.dom.onWindowMigrated(letGo);
     return release;
   };
 }

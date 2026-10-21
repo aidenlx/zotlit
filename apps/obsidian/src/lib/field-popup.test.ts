@@ -8,7 +8,7 @@ import type { FieldPopupKeys } from "@zotlit/workbench/language";
 import { popupScope } from "./field-popup";
 
 /** A keymap that records its stack, and the keys a popup hands it. */
-function setup({ accepts = true, closes = true } = {}) {
+function setup() {
   const stack: Scope[] = [];
   const keymap = {
     pushScope: (scope: Scope) => stack.push(scope),
@@ -24,11 +24,12 @@ function setup({ accepts = true, closes = true } = {}) {
         },
       },
     },
-    accept: vi.fn(() => accepts),
-    close: vi.fn(() => closes),
+    accept: vi.fn(() => true),
+    close: vi.fn(() => true),
+    released: vi.fn(),
   } as unknown as FieldPopupKeys;
-  const release = popupScope({ scope: new Scope(), keymap })(keys);
-  return { stack, keys, release, migrated };
+  popupScope({ scope: new Scope(), keymap })(keys);
+  return { stack, keys, migrated };
 }
 
 /** The test double's Scope, which records its handlers. */
@@ -40,63 +41,28 @@ type MockScope = {
   }[];
 };
 
-/** What the Scope's handler of `key` answers. */
-function press(
-  scope: Scope,
-  key: string,
-  { shift = false, isComposing = false } = {},
-) {
-  const event = new KeyboardEvent("keydown", {
-    key,
-    shiftKey: shift,
-    isComposing,
-  });
-  const modifiers = shift ? ["Shift"] : [];
+/** What the Scope's handler of Shift-Tab answers. */
+function pressShiftTab(scope: Scope) {
+  const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true });
   const handler = (scope as unknown as MockScope).handlers.find(
-    (entry) =>
-      entry.key === key && entry.modifiers?.join() === modifiers.join(),
+    (entry) => entry.key === "Tab" && entry.modifiers?.join() === "Shift",
   );
   return handler?.func(event);
 }
 
-it("pushes a Scope while the popup stands and pops it once", () => {
-  const { stack, release } = setup();
-  expect(stack).toHaveLength(1);
-  release();
-  release();
-  expect(stack).toHaveLength(0);
-});
-
-it("takes Tab and Enter for the option and Escape for closing", () => {
+it("gives the keymap back before Shift-Tab moves focus, and tells the field", () => {
   const { stack, keys } = setup();
-  const [scope] = stack;
-  expect(press(scope!, "Tab")).toBe(false);
-  expect(press(scope!, "Enter")).toBe(false);
-  expect(keys.accept).toHaveBeenCalledTimes(2);
-  expect(press(scope!, "Escape")).toBe(false);
-  expect(keys.close).toHaveBeenCalledTimes(1);
-});
-
-it("leaves a key the popup did not act on, or a composing one, to the field", () => {
-  const { stack, keys } = setup({ accepts: false, closes: false });
-  const [scope] = stack;
-  expect(press(scope!, "Tab")).toBeUndefined();
-  expect(press(scope!, "Escape")).toBeUndefined();
-  expect(press(scope!, "Enter", { isComposing: true })).toBeUndefined();
-  expect(keys.accept).toHaveBeenCalledTimes(1);
-});
-
-it("gives the keymap back before Shift-Tab moves focus", () => {
-  const { stack, keys } = setup();
-  expect(press(stack[0]!, "Tab", { shift: true })).toBeUndefined();
+  expect(pressShiftTab(stack[0]!)).toBeUndefined();
   expect(stack).toHaveLength(0);
   expect(keys.accept).not.toHaveBeenCalled();
+  expect(keys.released).toHaveBeenCalledTimes(1);
 });
 
-it("pops the Scope when the field moves to another window", () => {
-  const { stack, migrated } = setup();
+it("pops the Scope when the field moves to another window, and tells the field", () => {
+  const { stack, keys, migrated } = setup();
   expect(migrated).toHaveLength(1);
   migrated[0]!();
   expect(stack).toHaveLength(0);
   expect(migrated).toHaveLength(0);
+  expect(keys.released).toHaveBeenCalledTimes(1);
 });

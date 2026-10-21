@@ -43,12 +43,20 @@ export interface FieldPopupKeys {
   readonly accept: () => boolean;
   /** Escape. */
   readonly close: () => boolean;
+  /**
+   * Tells the field the host gave the keys back on its own, before the
+   * popup closed: Shift-Tab leaving the field, or the editor moving to
+   * another window. While a popup still stands in the focused field, the
+   * field hands the keys to the host again at its next change or focus.
+   */
+  readonly released: () => void;
 }
 
 /**
  * A host's own key system, given the keys when a popup opens in a focused
  * field, and released when the last popup closes, the field loses focus or
- * the editor goes.
+ * the editor goes. A host that lets go of the keys before then calls
+ * {@link FieldPopupKeys.released}.
  */
 export type FieldPopupKeyHost = (keys: FieldPopupKeys) => FieldPopupRelease;
 
@@ -78,7 +86,12 @@ const popupKeymap = Prec.highest(
   }),
 );
 
-/** Hands the keys to the host while a popup stands in the focused field. */
+/**
+ * Hands the keys to the host while a popup stands in the focused field, and
+ * again after the host gave them back on its own while one still stands: at
+ * the field's next change, or as it takes focus, which is how a field moved
+ * to another window comes to hold the keys there.
+ */
 const hostHold = ViewPlugin.fromClass(
   class {
     #release: FieldPopupRelease | null = null;
@@ -92,18 +105,31 @@ const hostHold = ViewPlugin.fromClass(
       const { view } = this;
       const host = view.state.facet(fieldPopupKeyHost);
       const held = host !== null && view.hasFocus && standing(view) !== null;
-      if (held && !this.#release)
-        this.#release = host({
+      if (held && !this.#release) {
+        const release: FieldPopupRelease = host({
           view,
           accept: () => accept(view),
           close: () => close(view),
+          // A hold the host let go of before this one has nothing to forget.
+          released: () => {
+            if (this.#release === release) this.#release = null;
+          },
         });
-      else if (!held) this.destroy();
+        this.#release = release;
+      } else if (!held) this.destroy();
     }
     destroy() {
-      this.#release?.();
+      const release = this.#release;
       this.#release = null;
+      release?.();
     }
+  },
+  {
+    eventHandlers: {
+      focus() {
+        this.sync();
+      },
+    },
   },
 );
 
