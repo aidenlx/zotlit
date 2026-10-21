@@ -992,7 +992,7 @@
   "settings_citation_open_as_links_name": "Open citations as links",
   "settings_citation_open_as_links_desc": "Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.",
   "settings_citation_open_annotation_links_name": "Open annotation links in Obsidian",
-  "settings_citation_open_annotation_links_desc": "Open the PDF in Obsidian with the annotation selected when you select a Zotero annotation link. When off, the link opens in Zotero, and hover still shows the annotation.",
+  "settings_citation_open_annotation_links_desc": "Open the PDF in Obsidian with the annotation selected when you select a Zotero annotation link. This also needs “{setting}” in the Reader settings. When off, the link opens in Zotero, and hover still shows the annotation.",
   "settings_citation_hover_heading": "Hover",
   "settings_citation_hover_action_name": "Hover action",
   "settings_citation_hover_action_desc": "What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.",

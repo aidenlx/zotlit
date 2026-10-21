@@ -124,9 +124,9 @@ export function citationsPageItems(
         {
           id: "settings_citation_open_annotation_links",
           name: m.settings_citation_open_annotation_links_name(),
-          desc: m.settings_citation_open_annotation_links_desc(),
-          visible: () =>
-            ctx.settings.current?.["citation.annotation-links"] ?? true,
+          desc: m.settings_citation_open_annotation_links_desc({
+            setting: m.settings_reader_open_file_links_name(),
+          }),
           control: { type: "toggle", key: "citation.open-annotation-links" },
         },
       ],

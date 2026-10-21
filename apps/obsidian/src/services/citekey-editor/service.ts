@@ -193,7 +193,7 @@ export class CitekeyEditor extends Service<void> {
     });
     // Filled before it is registered, so the first editors start with it and
     // need no reconfiguring for it.
-    if (this.#settings.current?.["citation.annotation-links"] ?? true) {
+    if ((this.#settings.current ?? defaults)["citation.annotation-links"]) {
       this.#annotationLinkExtensions.push(this.#annotationLinkHover);
     }
     this.#plugin.registerEditorExtension(this.#annotationLinkExtensions);

@@ -302,10 +302,14 @@ The navigation setting also controls the four open-under-cursor commands. <UiLab
 <UiLabel name={m.settings_citation_open_annotation_links_name()} />: Open the
 PDF in Obsidian with the annotation selected when you select a durable
 annotation link in a note. When off, the link opens in Zotero, and hovering it
-still shows the annotation. The row is visible only while
-<UiLabel name={m.settings_citation_annotation_links_name()} /> is on. The page
-label on an annotation view card is not a link in a note, so it keeps opening
-the PDF in Obsidian.
+still shows the annotation. It takes effect only while
+<UiLabel name={m.settings_citation_annotation_links_name()} /> and
+<SettingsPath
+  page={m.settings_page_reader()}
+  setting={m.settings_reader_open_file_links_name()}
+/>
+are on. The page label on an annotation view card is not a link in a note, so it
+keeps opening the PDF in Obsidian.
 
 ### Hover
 
