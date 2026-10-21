@@ -683,11 +683,10 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
         await app.workspace.revealLeaf(sidebar);
         const cards=()=>[...new Set([...sidebar.view.contentEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map((el)=>el.dataset.zoteroAnnotationKey))].sort();
         // Each wait ends on the cards of the Attachment its tab holds; a
-        // sidebar stuck on the other tab's cards times out with them.
-        const beside=async(leaf,expected)=>{
+        // sidebar stuck on other cards fails with the cards it last showed.
+        const beside=(leaf,expected)=>{
           app.workspace.setActiveLeaf(leaf,{focus:true});
-          try{return await until(()=>JSON.stringify(cards())===expected&&cards(),()=>'cards: '+JSON.stringify(cards()));}
-          catch{return cards();}
+          return until(()=>JSON.stringify(cards())===expected&&cards(),()=>'The Annotation View beside the tab showed '+JSON.stringify(cards())+', not '+expected);
         };
         const besideRestored=await beside(restored,${JSON.stringify(cardsOf([SHARED.annotationKey]))});
         const besideSecond=await beside(second,${JSON.stringify(cardsOf(annotationKeys))});
