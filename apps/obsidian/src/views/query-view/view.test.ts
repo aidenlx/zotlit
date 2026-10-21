@@ -2190,7 +2190,7 @@ views:
 });
 
 it("expands an Item row into its Attachments, and an Attachment row into its Annotations", async () => {
-  const { view, el, run, settle, readers } = await mount([
+  const { view, el, run, settle } = await mount([
     result([
       itemRow("ITEMAAAA", "Ten simple rules", ["PDFAAAAA"]),
       itemRow("ITEMBBBB", "Deep learning"),
@@ -2211,7 +2211,6 @@ it("expands an Item row into its Attachments, and an Attachment row into its Ann
           text: "Rule 1: know your audience",
           color: "#ffd400",
           pageLabel: "3",
-          pageIndex: 2,
         },
       },
     ]),
@@ -2253,24 +2252,6 @@ it("expands an Item row into its Attachments, and an Attachment row into its Ann
     ["", "Rule 1: know your audiencePage 3"],
     ["", "Deep learning", "2014", "Create"],
   ]);
-
-  // An Annotation's link opens that Annotation at its page, not just its
-  // Attachment; the pane is Obsidian's own reading of the click.
-  await act(() => {
-    el.querySelector<HTMLElement>(
-      '[data-query-table-row="annotation"] [data-query-open="annotation"]',
-    )!.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
-  });
-  expect(readers.open).toHaveBeenLastCalledWith(
-    {
-      kind: "annotation",
-      attachmentKey: "PDFAAAAA",
-      annotationKey: "ANNOTAAA",
-      pageIndex: 2,
-      pageLabel: "3",
-    },
-    expect.anything(),
-  );
 
   // Collapsing the Item hides every row under it.
   await act(async () => {

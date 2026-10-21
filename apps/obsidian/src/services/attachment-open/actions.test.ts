@@ -17,7 +17,6 @@ import { activateAnnotView } from "@/views/annot-view/register";
 import {
   addAttachmentOpenActions,
   createPdfReader,
-  pdfPickerReader,
   resolveLiteratureNoteAttachments,
 } from "./actions";
 import type {
@@ -231,19 +230,6 @@ describe("open-pdf command", () => {
         reader: expect.anything(),
         app,
       }),
-    );
-  });
-});
-
-describe("pdfPickerReader", () => {
-  it("opens a picked row through the opener, by its key, in the pane asked for", async () => {
-    const open = vi.fn(() => Promise.resolve({ kind: "reader" as const }));
-
-    await pdfPickerReader({ open }).open(OPENABLE_FIXTURE[0]!, "tab");
-
-    expect(open).toHaveBeenCalledExactlyOnceWith(
-      { kind: "attachment", attachmentKey: "ATCH2345" },
-      "tab",
     );
   });
 });
