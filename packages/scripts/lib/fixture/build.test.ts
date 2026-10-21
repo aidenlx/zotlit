@@ -1990,36 +1990,17 @@ describe("a two-Library Stress Build", () => {
 
 describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
-    for (const name of [
-      "citation-networks-notes.md",
-      "citation-only-test.md",
-      "cited-work-node-test.md",
-      "citekey-smoke-test.md",
-      "knowledge-management-survey.md",
-      "literature-note-citation-test.md",
-      "pandoc-export-error-intent.md",
-      "pandoc-export-missing-bibliography.md",
-      "pandoc-export-success.md",
-      "profile-examples/profile-import-partials.md",
-      "profile-examples/profile-import-replacement-v1.md",
-      "profile-examples/profile-import-replacement-v2.md",
-      "profile-examples/profile-import-unavailable-style.md",
-      "query-files/Annotation formulas.zotquery",
-      "query-files/Formula lab.zotquery",
-      "query-files/Lab annotations.zotquery",
-      "query-files/Lab overview.md",
-      "query-files/Reading annotations.zotquery",
-      "query-files/Reading list.zotquery",
-      "query-files/Vault cells.base",
-      "query-files/Vault cells.zotquery",
-      "tools-for-thought.md",
-      "wikilink-display-test.md",
-      "wikilink-parity-test.md",
-    ]) {
-      const asset = await readFile(
-        join(import.meta.dirname, "vault-pages", name),
-        "utf-8",
+    const pages = join(import.meta.dirname, "vault-pages");
+    const names = (
+      await readdir(pages, { recursive: true, withFileTypes: true })
+    )
+      .filter((entry) => entry.isFile())
+      .map((entry) =>
+        join(entry.parentPath, entry.name).slice(pages.length + 1),
       );
+    expect(names).not.toEqual([]);
+    for (const name of names) {
+      const asset = await readFile(join(pages, name), "utf-8");
 
       expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
     }
