@@ -300,6 +300,8 @@ plugin settings.
 
 One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the bibliography entry of every cited item. <UiLabel name={m.settings_citation_hover_action_page_preview()} /> shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. <UiLabel name={m.settings_citation_hover_action_off()} /> adds no ZotLit hover result.
 
+A durable annotation link shows its annotation under both <UiLabel name={m.settings_citation_hover_action_popover()} /> and <UiLabel name={m.settings_citation_hover_action_page_preview()} />. Under <UiLabel name={m.settings_citation_hover_action_page_preview()} />, it waits for Ctrl (Windows) or Command (macOS) exactly when the Page preview plugin's ZotLit citation key row asks for it, as a citation does.
+
 #### Require modifier key
 
 Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while <UiLabel name={m.settings_citation_hover_action_name()} /> is <UiLabel name={m.settings_citation_hover_action_popover()} />, and lists toggles for editing modes and the graph view.

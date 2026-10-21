@@ -134,6 +134,11 @@ declare module "obsidian" {
     getConfig(key: "readableLineLength"): boolean;
   }
   interface Workspace {
+    /**
+     * Every source `registerHoverLinkSource` registered, by id: the rows of
+     * the Page preview settings. Verified in Obsidian 1.14.4.
+     */
+    hoverLinkSources: Record<string, HoverLinkSource>;
     /** Flushes deferred file-open/active-leaf events. Verified in Obsidian 1.14.4. */
     requestActiveLeafEvents: { run(): void };
     on(

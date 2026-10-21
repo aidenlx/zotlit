@@ -54,11 +54,23 @@ const DOC =
  */
 async function hoverHarness(stack: AsyncDisposableStack) {
   const settings = new SettingsStub({ "citation.pandoc-citations": false });
+  /** The Page preview core plugin's row toggles, by hover source. */
+  const pagePreviewOptions: Record<string, boolean> = {};
   const registered: Extension[] = [];
   const shown: AnnotationHoverRequest[] = [];
   const service = stack.use(
     new CitekeyEditor({
-      app: { workspace: { updateOptions: () => undefined } },
+      app: {
+        workspace: {
+          updateOptions: () => undefined,
+          // As `registerHoverLinkSource` registers ZotLit's row.
+          hoverLinkSources: { "zotlit-citekey": { defaultMod: true } },
+        },
+        internalPlugins: {
+          getEnabledPluginById: (id: string) =>
+            id === "page-preview" ? { options: pagePreviewOptions } : null,
+        },
+      },
       plugin: {
         registerEditorExtension: (extension: Extension) => {
           registered.push(extension);
@@ -96,7 +108,7 @@ async function hoverHarness(stack: AsyncDisposableStack) {
       .querySelector(".cm-link")!
       .dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
   };
-  return { settings, shown, hover };
+  return { settings, shown, hover, pagePreviewOptions };
 }
 
 describe("CitekeyEditor annotation link hover", () => {
@@ -126,7 +138,22 @@ describe("CitekeyEditor annotation link hover", () => {
     run.hover();
     expect(run.shown).toEqual([]);
 
+    run.settings.update({ "citation.hover-action": "popover" });
+    run.hover();
+    expect(run.shown).toHaveLength(1);
+  });
+
+  // Under Page Preview the gate is the one Obsidian puts on a citation's
+  // preview: ZotLit's row asks for Mod by default, and its toggle wins.
+  it("waits for Mod under Page Preview while Obsidian's Page preview row asks for it", async () => {
+    await using stack = new AsyncDisposableStack();
+    const run = await hoverHarness(stack);
     run.settings.update({ "citation.hover-action": "page-preview" });
+
+    run.hover();
+    expect(run.shown).toEqual([]);
+
+    run.pagePreviewOptions["zotlit-citekey"] = false;
     run.hover();
     expect(run.shown).toHaveLength(1);
   });

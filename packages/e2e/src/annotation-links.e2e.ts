@@ -356,6 +356,10 @@ interface HoverScenario {
   hoverAction?: "off" | "popover" | "page-preview";
   /** Wait for a decoded Excerpt Image as well as the text. */
   image?: boolean;
+  /** Hold Ctrl or Command through the hover. */
+  mod?: boolean;
+  /** The hover is expected to show nothing; read against a control hover. */
+  absent?: boolean;
 }
 
 /**
@@ -373,6 +377,8 @@ async function hover({
   gesture,
   hoverAction,
   image = false,
+  mod = false,
+  absent = hoverAction === "off",
 }: HoverScenario): Promise<HoverOutcome> {
   const reply = await obEval(
     run.vaultId,
@@ -391,9 +397,9 @@ async function hover({
         ${showNote(JSON.stringify(noteWith(url)), gesture)}
         ${linkTarget(gesture)}
         cleanup.defer(()=>view.hoverPopover?.hide());
-        link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,view:link.ownerDocument.defaultView}));
+        link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
         const opened=(view)=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
-        if(${hoverAction === "off"}){
+        if(${absent}){
           // Absence is read off a control: the same link hovered later, in a
           // split under the Citation Popover. Every hover popover waits the
           // same opening delay, so once the control's has opened, one the
@@ -688,14 +694,28 @@ describe.skipIf(!reachable)("Annotation links", () => {
       120000,
     );
 
-    it("as the popover under Page Preview", async () => {
+    // Page Preview gates the hover as it gates a citation's preview: ZotLit's
+    // row in Obsidian's Page preview settings asks for Mod by default.
+    it("as the popover under Page Preview, with Mod held", async () => {
       const outcome = await hover({
         url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
         gesture: "reading",
         hoverAction: "page-preview",
+        mod: true,
       });
 
       expect(outcome.text).toContain(FIRST_PAGE.text);
+    }, 120000);
+
+    it("with nothing under Page Preview while Mod is not held", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "reading",
+        hoverAction: "page-preview",
+        absent: true,
+      });
+
+      expect(outcome.popover).toBe(false);
     }, 120000);
 
     it("as unavailable for an Annotation Zotero no longer has", async () => {

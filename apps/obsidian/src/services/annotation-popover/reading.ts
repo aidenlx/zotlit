@@ -13,6 +13,7 @@ import {
   annotationHoverIntent,
   hoverGesture,
   hoverPreferences,
+  pagePreviewRequiresMod,
 } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
@@ -119,6 +120,7 @@ export class AnnotationLinkReading extends Service<void> {
     const intent = annotationHoverIntent(
       hoverGesture(event, { surface: "reading" }),
       this.#hover,
+      () => pagePreviewRequiresMod(this.#deps.app),
     );
     if (intent.kind === "nothing") {
       logger.trace("Annotation link hover suppressed", {

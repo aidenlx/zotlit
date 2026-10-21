@@ -24,6 +24,8 @@ export type DurableAnnotationLink = AnnotationOpenUriOptions;
 export interface AnnotationLinkHoverHandlers {
   /** What hover answers with, read once per hover. */
   hoverPreferences: () => HoverPreferences;
+  /** Whether Obsidian's Page preview row for ZotLit citations asks for Mod. */
+  pagePreviewRequiresMod: () => boolean;
   /** Show the popover of one hovered Durable Annotation Link. */
   showAnnotation: (request: AnnotationHoverRequest) => void;
 }
@@ -71,6 +73,7 @@ function hoverAt(
   const intent = annotationHoverIntent(
     hoverGesture(event, { surface: "editor", editorMode }),
     handlers.hoverPreferences(),
+    handlers.pagePreviewRequiresMod,
   );
   if (intent.kind === "nothing") {
     logger.trace("Annotation link hover suppressed", {
