@@ -34,11 +34,7 @@ import {
   changeNativeAnnotationCallout,
   openProfilesSettings,
 } from "./e2e-run-helpers.ts";
-import {
-  offlineZoteroPortArg,
-  registerEndToEndRunHooks,
-  run,
-} from "./e2e-run-lifecycle.ts";
+import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import {
   clickModalButton,
   createFixtureNote,
@@ -81,7 +77,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshPath,
       "--vault-case",
       "fresh",
-      offlineZoteroPortArg(),
     ]);
     const freshId = created.stdout.trim().split("\n")[0]!.trim();
     await keepRendering(freshId);

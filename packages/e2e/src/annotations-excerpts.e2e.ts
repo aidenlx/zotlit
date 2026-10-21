@@ -15,11 +15,7 @@ import {
   runVaultScript,
   workspaceRoot,
 } from "./e2e-run-fixture.ts";
-import {
-  offlineZoteroPortArg,
-  registerEndToEndRunHooks,
-  run,
-} from "./e2e-run-lifecycle.ts";
+import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { createFixtureNote } from "./e2e-run-note-helpers.ts";
 import {
   verifyMultiPdfExcerptBatch,
@@ -273,7 +269,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       path,
       "--vault-case",
       "fresh",
-      offlineZoteroPortArg(),
     ]);
     const id = opened.stdout.trim().split("\n")[0]!.trim();
     await keepRendering(id);

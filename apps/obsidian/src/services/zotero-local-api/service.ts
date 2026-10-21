@@ -203,10 +203,12 @@ export class ZoteroLocalApiClient extends Service<void> {
   #announced: ProbeState = { kind: "unprobed" };
   /** The probe in flight, so concurrent demands cost one request. */
   #probing: Promise<void> | null = null;
-  /** A Freshness Signal that arrived while that probe ran, still to announce. */
-  #moved = false;
-  /** The resolved paths moved while that probe ran, so it asked the old port. */
-  #stale = false;
+  /**
+   * What the signals that joined the probe in flight still owe: `moved`, a
+   * Freshness Signal to announce once it settles; `stale`, a move of the
+   * resolved paths, so its answer is about the port it asked before the move.
+   */
+  readonly #pending = { moved: false, stale: false };
   /**
    * The one authorization request in flight, and the gestures waiting on it, so
    * two presses of Allow editing raise one dialog between them.
@@ -745,13 +747,16 @@ export class ZoteroLocalApiClient extends Service<void> {
    * A signal that lands while a probe is already running is coalesced into it
    * rather than dropped, so a Freshness Signal always reaches the partition it
    * invalidates however it is timed against the probe. A move of the resolved
-   * paths is the exception: the probe in flight read the port before the move,
-   * so its answer is about another Zotero, and one more probe runs before the
-   * probe settles for everyone waiting on it.
+   * paths is the exception (#1645): the probe in flight read the port before
+   * the move, so its answer is about another Zotero. That answer is discarded
+   * unseen, and the probe runs again before it settles for everyone waiting on
+   * it. The last check for a move and the release of the probe happen in one
+   * step, so no move can join a probe that has already finished.
    *
-   * @param trigger.moved whether the trigger itself says this source's records
+   * @param options.moved whether the trigger itself says this source's records
    *   changed, which is only ever true of the source that is standing.
-   * @param trigger.stale whether the trigger moved the port a running probe
+   * @param options.silent whether a server change goes unannounced.
+   * @param options.stale whether the trigger moved the port a running probe
    *   asked.
    */
   async #reprobe(
@@ -762,25 +767,27 @@ export class ZoteroLocalApiClient extends Service<void> {
       stale = false,
     }: { moved?: boolean; silent?: boolean; stale?: boolean } = {},
   ): Promise<void> {
-    this.#moved ||= moved;
+    this.#pending.moved ||= moved;
     const running = this.#probing;
     if (running) {
-      this.#stale ||= stale;
+      this.#pending.stale ||= stale;
       return await running;
     }
     const before = this.#serverID;
     const probing = (async () => {
-      do {
-        this.#stale = false;
+      try {
         await this.#probe(reason, silent);
-      } while (this.#stale);
-    })().finally(() => {
-      this.#probing = null;
-    });
+        while (this.#pending.stale) {
+          await this.#probe("resolved paths moved during a probe", silent);
+        }
+      } finally {
+        this.#probing = null;
+      }
+    })();
     this.#probing = probing;
     await probing;
-    const announce = this.#moved;
-    this.#moved = false;
+    const announce = this.#pending.moved;
+    this.#pending.moved = false;
     const serverID = this.#serverID;
     if (serverID !== before || (announce && serverID !== null)) {
       this.#emitter.emit("changed");
@@ -802,14 +809,28 @@ export class ZoteroLocalApiClient extends Service<void> {
     // A library Zotero refused a write to is a session fact the probe is
     // allowed to retire: the group's permissions may well have changed.
     this.#retireWriteRefusals();
+    this.#pending.stale = false;
     const reply = await this.#send("/api/", {
       serverID: null,
       signal: this.#deadline(),
     });
-    this.#state =
+    const state: ProbeState =
       "failure" in reply
         ? { kind: "unavailable", failure: probeFailure(reply.failure) }
         : await this.#sessionFrom(reply.value);
+    // The resolved paths moved while the request was out: the answer is about
+    // the port asked before the move, and the probe that follows replaces it.
+    if (this.#pending.stale) {
+      logger.debug(
+        "Zotero Local API probe discarded: the resolved paths moved",
+        {
+          reason,
+          answered: state,
+        },
+      );
+      return;
+    }
+    this.#state = state;
     logger.debug("Zotero Local API probed", {
       reason,
       was: previous.kind,

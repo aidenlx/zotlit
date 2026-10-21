@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 
 import {
   annotationPage,
@@ -612,10 +612,10 @@ it("announces a Freshness Signal that arrived while a probe was running", async 
   await expect(announced).resolves.toBeUndefined();
 });
 
-// Linking a vault to a Zotero profile moves the port while a probe that
-// started on the old one is still out: its answer is about a Zotero this
-// session no longer talks to.
-it("probes the new port when the resolved paths move while a probe is running", async () => {
+// #1645: linking a vault to a Zotero profile moves the port while a probe that
+// started on the old one is still out. Its answer is about a Zotero this
+// session no longer talks to, so no surface may see it.
+it("probes the new port when the resolved paths move while a probe is running, and shows no surface the old port's answer", async () => {
   await using stack = new AsyncDisposableStack();
   const held = Promise.withResolvers<Response>();
   const reached = Promise.withResolvers<void>();
@@ -628,6 +628,9 @@ it("probes the new port when the resolved paths move while a probe is running", 
       return held.promise;
     },
   });
+  const seen: unknown[] = [];
+  stack.defer(client.on("capability-changed", () => seen.push(client.state)));
+  stack.defer(client.on("server-changed", (id) => seen.push(id)));
 
   const probing = client.probe();
   await reached.promise;
@@ -636,12 +639,37 @@ it("probes the new port when the resolved paths move while a probe is running", 
   held.resolve(localApiDisabled());
   await probing;
 
-  await vi.waitFor(() =>
-    expect(client.state).toEqual({
-      kind: "unavailable",
-      failure: { kind: "unreachable" },
-    }),
-  );
+  const offline = { kind: "unavailable", failure: { kind: "unreachable" } };
+  expect(client.state).toEqual(offline);
+  expect(seen).toEqual([offline]);
+  expect(requests.map(({ url }) => Number(url.port))).toEqual([PORT, PORT + 1]);
+});
+
+// #1645: a move that lands after a probe committed its answer, from a surface
+// redrawing on that answer, still reaches the new port before the probe
+// settles for its waiters.
+it("probes the new port when the resolved paths move after a probe commits its answer", async () => {
+  await using stack = new AsyncDisposableStack();
+  let probes = 0;
+  const { client, requests, zoteroPref, prefEvents } = await setup(stack, {
+    root: () => {
+      probes += 1;
+      return probes > 1 ? unreachable() : localApiDisabled();
+    },
+  });
+  const moveOnce = client.on("capability-changed", () => {
+    moveOnce();
+    zoteroPref.httpPort = PORT + 1;
+    prefEvents.emit("resolved-changed");
+  });
+  stack.defer(moveOnce);
+
+  await client.probe();
+
+  expect(client.state).toEqual({
+    kind: "unavailable",
+    failure: { kind: "unreachable" },
+  });
   expect(requests.map(({ url }) => Number(url.port))).toEqual([PORT, PORT + 1]);
 });
 

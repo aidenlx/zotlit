@@ -1,3 +1,4 @@
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { afterAll } from "vitest";
 
@@ -20,13 +21,42 @@ import {
   isObsidianReachable,
   vaultScript,
 } from "./vault-script.ts";
+import type { VaultScript } from "./vault-script.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const e2eVaultPath = e2eVaultDir(workspaceRoot, "fixture-vault");
 const e2eFixture = getFixtureLayout(
   join(workspaceRoot, ".scratch", "e2e-fixture"),
 );
-const runVaultScript = vaultScript(workspaceRoot, e2eFixture.root);
+/**
+ * The Zotero HTTP endpoint the shared Fixture's profile names: it accepts and
+ * drops every connection, so ZotLit sees Zotero closed. The shipped port 23119
+ * belongs to whatever Zotero the developer runs (#1645).
+ */
+const offlineZotero = createServer((socket) => socket.destroy());
+await new Promise<void>((resolve, reject) => {
+  offlineZotero.once("error", reject);
+  offlineZotero.listen(0, "127.0.0.1", resolve);
+});
+afterAll(() => offlineZotero[Symbol.asyncDispose]());
+const offlineZoteroAddress = offlineZotero.address();
+if (offlineZoteroAddress === null || typeof offlineZoteroAddress === "string")
+  throw new Error("Offline Zotero endpoint did not receive a TCP port");
+
+/** The `obsidian-vault.ts` commands that rebuild the Fixture's profile. */
+const PROFILE_WRITERS = new Set(["open", "sync"]);
+const fixtureVaultScript = vaultScript(workspaceRoot, e2eFixture.root);
+/**
+ * `obsidian-vault.ts` on the shared Fixture. Every rebuild of its profile names
+ * the offline endpoint, so no vault on it, and no later rebuild, reaches the
+ * developer's Zotero.
+ */
+const runVaultScript: VaultScript = (args) =>
+  fixtureVaultScript(
+    PROFILE_WRITERS.has(args[0]!)
+      ? [...args, `--zotero-http-port=${offlineZoteroAddress.port}`]
+      : args,
+  );
 
 const targetItem = ITEMS.find((item) => item.itemID === 1)!;
 
