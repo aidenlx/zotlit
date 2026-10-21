@@ -1,4 +1,4 @@
-import type { Span } from "#/language/span";
+import type { PlacedFault } from "#/language/span";
 import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
@@ -106,27 +106,102 @@ it("shows the Signature Hint of the method at the caret, typed as the host types
   expect(hint.textContent).not.toContain("The elements of the list");
 });
 
+/** The text each underline of the field marks, and how it marks it. */
+const marks = (container: HTMLElement) => {
+  const editor = EditorView.findFromDOM(
+    container.querySelector(".cm-editor")!,
+  )!;
+  const found: { text: string; severity: string }[] = [];
+  forEachDiagnostic(editor.state, ({ severity }, from, to) => {
+    found.push({ text: editor.state.sliceDoc(from, to), severity });
+  });
+  return found;
+};
+
+/** Types `text` at the end of the field, as the user would. */
+const typeAtEnd = (container: HTMLElement, text: string) => {
+  const editor = EditorView.findFromDOM(
+    container.querySelector(".cm-editor")!,
+  )!;
+  const end = editor.state.doc.length;
+  act(() => {
+    editor.dispatch({ changes: { from: end, insert: text } });
+  });
+};
+
 // The look of the underline, and that no tooltip shows over it, are proved
 // in the running app (query-view e2e).
-it("holds the faults it is given as error ranges, and clears them", () => {
-  const text = "lower(title) == 'book";
-  const field = (faults: readonly Span[]) => (
-    <MatchExpressionInput value={text} onChange={() => {}} faults={faults} />
+it("underlines the Syntax Fault of its text, and follows the text as it is typed", () => {
+  const { container } = render(
+    <MatchExpressionInput value="a ==" onChange={() => {}} />,
   );
-  const mounted = render(field([{ from: 16, to: 21 }]));
-  const editor = EditorView.findFromDOM(
-    mounted.container.querySelector(".cm-editor")!,
-  )!;
-  const marked = () => {
-    const found: { text: string; severity: string }[] = [];
-    forEachDiagnostic(editor.state, ({ severity }, from, to) => {
-      found.push({ text: editor.state.sliceDoc(from, to), severity });
-    });
-    return found;
+  expect(marks(container)).toEqual([{ text: "==", severity: "error" }]);
+  typeAtEnd(container, " 'book");
+  expect(marks(container)).toEqual([{ text: "'book", severity: "error" }]);
+  typeAtEnd(container, "'");
+  expect(marks(container)).toEqual([]);
+});
+
+it("underlines nothing in an empty text, which the owner explains", () => {
+  const { container } = render(
+    <MatchExpressionInput value="" onChange={() => {}} />,
+  );
+  expect(marks(container)).toEqual([]);
+});
+
+it("underlines the run's Fault while its text is the one the run planned", () => {
+  const text = "title.nope()";
+  const fault: PlacedFault = { text, span: { from: 6, to: 10 } };
+  const field = (value: string, given?: PlacedFault) => (
+    <MatchExpressionInput value={value} onChange={() => {}} fault={given} />
+  );
+  const mounted = render(field(text));
+  expect(marks(mounted.container)).toEqual([]);
+  act(() => mounted.rerender(field(text, fault)));
+  expect(marks(mounted.container)).toEqual([
+    { text: "nope", severity: "error" },
+  ]);
+  // The next run finds nothing.
+  act(() => mounted.rerender(field(text)));
+  expect(marks(mounted.container)).toEqual([]);
+});
+
+it("drops the run's Fault once the text differs from the one the run planned", () => {
+  const fault: PlacedFault = {
+    text: "title.nope()",
+    span: { from: 6, to: 10 },
   };
-  expect(marked()).toEqual([{ text: "'book", severity: "error" }]);
-  act(() => mounted.rerender(field([])));
-  expect(marked()).toEqual([]);
+  const typed = render(
+    <MatchExpressionInput
+      value={fault.text}
+      onChange={() => {}}
+      fault={fault}
+    />,
+  );
+  typeAtEnd(typed.container, " && true");
+  expect(marks(typed.container)).toEqual([]);
+  cleanup();
+  // A Fault of a run of other text, while the next run is pending.
+  const other = render(
+    <MatchExpressionInput
+      value="title.slice(0, 3)"
+      onChange={() => {}}
+      fault={fault}
+    />,
+  );
+  expect(marks(other.container)).toEqual([]);
+});
+
+it("underlines the Syntax Fault over a run's Fault of the same text", () => {
+  const text = "title.nope(";
+  const { container } = render(
+    <MatchExpressionInput
+      value={text}
+      onChange={() => {}}
+      fault={{ text, span: { from: 6, to: 10 } }}
+    />,
+  );
+  expect(marks(container)).toEqual([{ text: "(", severity: "error" }]);
 });
 
 it("keeps what the user typed when the owner gives back an older text it sent", () => {

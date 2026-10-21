@@ -189,6 +189,23 @@ export function MatchPane({
   const faulty = span
     ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
     : undefined;
+  // The test's Fault, in the text of the condition it is in.
+  const placed = useMemo(
+    () =>
+      filter && faulty && span
+        ? {
+            path: faulty.path,
+            fault: {
+              text: filter.text.slice(faulty.from, faulty.to),
+              span: {
+                from: span.from - faulty.from,
+                to: span.to - faulty.from,
+              },
+            },
+          }
+        : null,
+    [filter, faulty, span],
+  );
   const locale = host.getLocale();
   const { matchData } = host;
   const readCustom = useCallback(
@@ -213,10 +230,14 @@ export function MatchPane({
           placeKey(path) === placeKey(faulty.path)
             ? answer.message
             : null,
+        fault: (path) =>
+          placed && placeKey(path) === placeKey(placed.path)
+            ? placed.fault
+            : undefined,
       }),
       expression,
     }),
-    [m, values, faulty, answer, expression],
+    [m, values, faulty, answer, placed, expression],
   );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
@@ -581,14 +602,12 @@ function Row<Row extends LabelledRow>({
   const host = useWorkbenchHost();
   const issue =
     stored === null ? null : (vocabulary.issue?.(condition, stored) ?? null);
-  const text = isExpression(condition) ? condition.text : null;
   const place = stored === null ? null : placeKey(stored);
-  const findFaults = vocabulary.faults;
-  const faults = useMemo(
-    () =>
-      text === null || stored === null ? undefined : findFaults?.(text, stored),
+  const findFault = vocabulary.fault;
+  const fault = useMemo(
+    () => (stored === null ? undefined : findFault?.(stored)),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `place` stands for `stored`, a new array on each render
-    [findFaults, text, place],
+    [findFault, place],
   );
   const labelled = isExpression(condition)
     ? asLabelled(condition, vocabulary)
@@ -626,7 +645,7 @@ function Row<Row extends LabelledRow>({
                 aria-invalid={issue !== null}
                 value={condition.text}
                 vocabulary={vocabulary.expression}
-                faults={faults}
+                fault={fault}
                 onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (

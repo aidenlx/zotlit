@@ -13,6 +13,13 @@ export interface ExpressionSyntaxError {
   found: string | null;
   expected: readonly string[];
   opened: { from: number; to: number; closer: string } | null;
+  /**
+   * The span an editor underlines: `from`–`to`, or, for a fault at the end
+   * of the text, the unclosed quote or bracket it is in, else the token
+   * before it, such as a dangling operator; `null` where no token comes
+   * before the fault.
+   */
+  span: { from: number; to: number } | null;
 }
 
 export interface ParseExpressionResult {

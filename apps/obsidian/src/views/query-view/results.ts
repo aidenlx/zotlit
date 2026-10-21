@@ -3,13 +3,13 @@
 // whole or clears them.
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
+import type { PlacedFault } from "@zotlit/workbench/language";
 
 import type {
   QueryViewResult,
   QueryViewRow,
 } from "@/services/item-query/query-view";
 
-import type { PlacedFault } from "./expression-faults";
 import type { ConditionIssue } from "./query-file";
 import type { ReaderDiagnosticSource } from "./reader-diagnostic";
 import type { ShownRecord } from "./record-rows";

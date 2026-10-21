@@ -12,7 +12,7 @@ import { useStore } from "zustand";
 
 import { parseExpression } from "@zotlit/filter-expression";
 import { FORMULA_NAME, nameDictionary } from "@zotlit/item-query";
-import type { Span } from "@zotlit/workbench/language";
+import type { PlacedFault } from "@zotlit/workbench/language";
 import {
   MatchExpressionInput,
   WorkbenchThemeProvider,
@@ -32,7 +32,6 @@ import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 
 import { boundRecords } from "./context-hint";
-import { ranFaultSpan, syntaxFaultSpan } from "./expression-faults";
 import {
   expressionVocabulary,
   useViewCustomFields,
@@ -64,20 +63,20 @@ export interface FormulaRunFault extends FormulaIssue {
   readonly saved: string;
 }
 
-/** What the Formula field reports and underlines. */
+/** What the Formula field reports, and the run's Fault it underlines. */
 export interface FormulaCheck {
   /** What is wrong with the text, or `null` when nothing is. */
   readonly issue: string | null;
   /** Whether the text parses, apart from what the run found. */
   readonly syntax: "valid" | "invalid";
-  readonly faults: readonly Span[];
+  /** Where the run found its Fault, while the text is the saved text. */
+  readonly fault?: PlacedFault;
 }
 
 /**
  * @param run What the last run found in the Formula, or `null`.
  * @returns the text's Syntax Fault, else the run's Fault while the text is
- * the saved text, each underlined at its span; the span of the run's Fault
- * only while the text is also the one the run planned.
+ * the saved text. The field underlines both itself.
  */
 export function formulaCheck(
   text: string,
@@ -87,22 +86,23 @@ export function formulaCheck(
     return {
       issue: m.query_view_formula_expression_empty(),
       syntax: "invalid",
-      faults: [],
     };
-  const { tree, error } = parseExpression(text);
+  const { error } = parseExpression(text);
   if (error) {
     const expected = error.expected.join(", ");
     const issue =
       error.found === null
         ? m.query_view_formula_syntax_end({ expected })
         : m.query_view_formula_syntax({ found: error.found, expected });
-    const span = syntaxFaultSpan(tree, error);
-    return { issue, syntax: "invalid", faults: span ? [span] : [] };
+    return { issue, syntax: "invalid" };
   }
   if (run === null || run.saved !== text)
-    return { issue: null, syntax: "valid", faults: [] };
-  const span = ranFaultSpan(text, run.place);
-  return { issue: run.message, syntax: "valid", faults: span ? [span] : [] };
+    return { issue: null, syntax: "valid" };
+  return {
+    issue: run.message,
+    syntax: "valid",
+    ...(run.place && { fault: run.place }),
+  };
 }
 
 /** The Syntax Fault of a Formula's text, or `null` when it parses. */
@@ -175,7 +175,7 @@ function ExpressionField({
   value,
   onChange,
   onBlur,
-  check: { issue, syntax, faults },
+  check: { issue, syntax, fault },
 }: {
   /** The view whose Query Dataset the Formula reads. */
   view: QueryView;
@@ -243,7 +243,7 @@ function ExpressionField({
           lines={3}
           aria-invalid={value !== "" && issue !== null}
           value={value}
-          faults={faults}
+          fault={fault}
           data-query-formula-expression=""
           onChange={onChange}
           onBlur={onBlur}
