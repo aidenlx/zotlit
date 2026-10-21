@@ -52,7 +52,7 @@ import {
 } from "@zotlit/scripts/fixture/spec";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { keepRendering } from "./background-throttling.ts";
+import { keepRendering, showBehind } from "./background-throttling.ts";
 import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
 import {
   DATASET_QUERY_SPECS,
@@ -437,7 +437,7 @@ async function requireVisible(): Promise<void> {
   // Shows a hidden or minimized window and leaves the OS focus where it is.
   await obEval(
     vaultId,
-    "(()=>{const win=require('@electron/remote').getCurrentWindow();if(win.isMinimized())win.restore();win.showInactive();return true;})()",
+    `(()=>{const win=require('@electron/remote').getCurrentWindow();if(win.isMinimized())win.restore();${showBehind("win")}return true;})()`,
   );
   log(
     `The window of the vault at ${vaultPath} is hidden. Bring it on screen and keep it uncovered: the script waits for 2 minutes.`,

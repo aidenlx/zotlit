@@ -155,12 +155,14 @@ async function obEval(code: string, target?: string): Promise<string> {
  * process creates the vault window during that call and later calls its `show`,
  * which gives it the OS focus. With `--inactive`, a `browser-window-created`
  * listener in the main process, there only for the call, makes that window's
- * `show` call `showInactive` and its `focus` do nothing.
+ * `show` call `showInactive` and its `focus` do nothing. `showInactive` still
+ * puts the window in front of every other app's windows on macOS, so `show`
+ * then calls `blur`, which there orders the window behind them.
  */
 function vaultOpenCode(abs: string): string {
   const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
   if (!inactive) return open;
-  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>win.showInactive();win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
+  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>{win.showInactive();if(process.platform==="darwin")win.blur();};win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
 }
 
 /** Any reply means the app runs, including "Vault not found." with no vault window. */

@@ -6,6 +6,7 @@
 
 import { expect } from "vitest";
 
+import { showBehind } from "./background-throttling.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 
@@ -227,15 +228,15 @@ export const FIRE = `const fire=(type,x,y,target,extra)=>{const node=target??doc
 export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return node;};`;
 
 /**
- * Shows the vault's window if it is hidden or minimized, and leaves the OS
- * focus where it is. A pointer gesture is hit-tested against the page as laid
+ * Shows the vault's window if it is hidden or minimized, behind other apps'
+ * windows, and leaves the OS focus where it is. A pointer gesture is hit-tested against the page as laid
  * out; `keepRendering` keeps a covered window laying it out.
  */
 export async function raiseWindow(vaultId: string): Promise<void> {
   expect(
     await obEvalUntil(
       vaultId,
-      "(function(){const electronWindow=require('@electron/remote').getCurrentWindow();if(!electronWindow.isVisible()||electronWindow.isMinimized())electronWindow.showInactive();return document.visibilityState;})()",
+      `(function(){const electronWindow=require('@electron/remote').getCurrentWindow();if(!electronWindow.isVisible()||electronWindow.isMinimized()){${showBehind("electronWindow")}}return document.visibilityState;})()`,
       { expected: "visible" },
     ),
   ).toBe(true);
