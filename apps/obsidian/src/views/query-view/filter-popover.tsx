@@ -158,18 +158,13 @@ const filterTheme = {
         "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full",
         "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:px-(--size-2-1)",
       ),
-      // A condition keeps one line, as in Bases, at any depth: a nested
-      // group is narrower, so the property select gives up width first and
-      // the value keeps room for a few characters.
-      fields:
-        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-nowrap zt:items-stretch zt:overflow-hidden",
-      value: cn(matchTheme.classes.match?.value, "zt:min-w-[8ch]"),
-      // The property select carries the icon of the property's type, as the
+      // The row's layout is the Match theme's: the property select keeps
+      // its name, and the value yields or takes a line of its own. The
+      // property select carries the icon of the property's type, as the
       // Bases property picker does, and is capped as Bases caps it; the
       // native operator after it stands behind a rule.
       predicate: cn(
-        "zt:[&>[data-part=wrapper]]:shrink-0",
-        "zt:flex zt:max-w-full zt:min-w-0 zt:[&>:is([role=combobox],[data-part=wrapper])]:border-border",
+        matchTheme.classes.match?.predicate,
         "zt:[&>[role=combobox]~[data-part=wrapper]]:border-s-(length:--border-width)",
         "zt:[&>[role=combobox]:first-of-type]:max-w-[14em]",
       ),

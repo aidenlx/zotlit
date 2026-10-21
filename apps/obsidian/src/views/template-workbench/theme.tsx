@@ -237,20 +237,29 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full zt:[&:has([aria-invalid=true])]:ring-(--background-modifier-error)",
         "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:gap-0 zt:[&>[data-part=actions]]:px-0.5",
       ),
+      // A condition's layout: the kind's Select keeps its whole name, and the
+      // value is what yields. The value stays beside the predicate while its
+      // narrowest form fits there (its widest chip or word, an input's
+      // width), and otherwise takes a line of its own; it grows into what is
+      // left either way. Only a predicate wider than the whole line shrinks,
+      // and then the operator gives up width before the kind's name does.
       fields:
         "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-stretch zt:overflow-hidden",
       // The kind's Select trigger and the native operator, a rule between.
-      predicate:
-        "zt:flex zt:min-w-0 zt:max-w-full zt:[&>[role=combobox]~[data-part=wrapper]]:border-s zt:[&>:is([role=combobox],[data-part=wrapper])]:border-border",
+      predicate: cn(
+        "zt:flex zt:max-w-full zt:min-w-0 zt:flex-none",
+        "zt:[&>[data-part=wrapper]]:min-w-0 zt:[&>[role=combobox]]:max-w-full zt:[&>[role=combobox]]:shrink-0",
+        "zt:[&>:is([role=combobox],[data-part=wrapper])]:border-border zt:[&>[role=combobox]~[data-part=wrapper]]:border-s",
+      ),
       value: cn(
-        "zt:-ms-px zt:-mt-px zt:flex zt:max-w-full zt:min-w-0 zt:flex-auto zt:items-start zt:border-s zt:border-t zt:border-border zt:empty:hidden",
+        "zt:-ms-px zt:-mt-px zt:flex zt:max-w-full zt:min-w-0 zt:grow zt:basis-[min-content] zt:items-start zt:border-s zt:border-t zt:border-border zt:empty:hidden",
         "zt:[&>:is([data-part=input],div[data-part=control])]:w-[12ch] zt:[&>:not([data-part=actions],datalist)]:flex-auto",
       ),
       actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
       control:
         "zt:min-w-0 zt:max-w-full zt:[div&]:flex zt:[div&]:flex-col zt:[span&]:px-2 zt:[span&]:pb-1 zt:[span&]:text-xs zt:[span&]:leading-normal zt:[span&]:text-muted-foreground",
       chips:
-        "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:w-max zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
+        "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
       chip: "multi-select-pill",
       // A CodeMirror field drawn as an Obsidian text input, at least as tall
       // as one; the editor hook scopes the template token colors to it.
