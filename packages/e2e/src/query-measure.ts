@@ -437,7 +437,7 @@ async function requireVisible(): Promise<void> {
   // Shows a hidden or minimized window and leaves the OS focus where it is.
   await obEval(
     vaultId,
-    `(()=>{const win=require('@electron/remote').getCurrentWindow();if(win.isMinimized())win.restore();${showBehind("win")}return true;})()`,
+    `(()=>{const win=require('@electron/remote').getCurrentWindow();${showBehind("win")}return true;})()`,
   );
   log(
     `The window of the vault at ${vaultPath} is hidden. Bring it on screen and keep it uncovered: the script waits for 2 minutes.`,

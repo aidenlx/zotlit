@@ -32,10 +32,13 @@ import { obEval } from "./obsidian-cli.ts";
  * Eval code that shows the Electron window `win` names and leaves the OS focus
  * and the developer's windows alone. `showInactive` keeps the focus but puts the
  * window in front of every other app's windows on macOS; `blur` there orders it
- * behind them. `keepRendering` keeps a covered window rendering.
+ * behind them. A minimized window comes back from the Dock in front for the
+ * length of the animation, so it stays transparent until it is restored and
+ * ordered back. Restore a minimized window with this, not `restore()`.
+ * `keepRendering` keeps a covered window rendering.
  */
 export const showBehind = (win: string): string =>
-  `${win}.showInactive();if(process.platform==='darwin')${win}.blur();`;
+  `((w)=>{if(process.platform!=='darwin'){w.showInactive();return;}if(!w.isMinimized()){w.showInactive();w.blur();return;}const opacity=w.getOpacity();w.setOpacity(0);w.once('restore',()=>{w.blur();setTimeout(()=>w.setOpacity(opacity),100);});w.showInactive();})(${win});`;
 
 /** Global the restore function lives on in the vault window between calls. */
 const RESTORE = "__ztRestoreBackgroundThrottling";
