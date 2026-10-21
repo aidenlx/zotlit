@@ -36,24 +36,28 @@ export const uniqueIdPaths = ["react", "preact/compat", "preact/hooks"].map(
   }),
 );
 
-/** Exact baseline paths relative to the package's nested lint config. */
-export function testBaselineOverrides(directory: string) {
-  const prefix = `${directory}/`;
-  const files = testBaseline
-    .filter((file) => file.startsWith(prefix))
-    .map((file) => file.slice(prefix.length));
+/**
+ * One override per baselined rule, with exact paths relative to the nested
+ * lint config in `directory`, or to the repository root when it is omitted.
+ */
+export function testBaselineOverrides(directory?: string) {
+  const prefix = directory ? `${directory}/` : "";
+  const filesByRule = new Map<string, string[]>();
+  for (const [file, rules] of Object.entries(
+    testBaseline as Record<string, string[]>,
+  )) {
+    if (!file.startsWith(prefix)) continue;
+    for (const rule of rules)
+      filesByRule.set(rule, [
+        ...(filesByRule.get(rule) ?? []),
+        file.slice(prefix.length),
+      ]);
+  }
   // Entries may be deleted, never added.
-  return files.length === 0
-    ? []
-    : [
-        {
-          files,
-          rules: {
-            "zotlit-tests/no-source-text": "off" as const,
-            "zotlit-tests/no-internal-mock": "off" as const,
-          },
-        },
-      ];
+  return [...filesByRule].map(([rule, files]) => ({
+    files,
+    rules: { [rule]: "off" as const },
+  }));
 }
 
 export default defineConfig({
@@ -148,6 +152,13 @@ export default defineConfig({
       // Absolute: a config that extends this one cannot resolve a relative path.
       jsPlugins: [join(import.meta.dirname, "oxlint-plugin-tests.ts")],
       rules: { "zotlit-tests/no-class-assertion": "error" },
+    },
+    {
+      // A unit test asserts what an element does; its classes and markup
+      // belong in the End-to-end Run (policies/testing-strategy.md).
+      files: ["**/*.test.{ts,tsx}"],
+      jsPlugins: [join(import.meta.dirname, "oxlint-plugin-tests.ts")],
+      rules: { "zotlit-tests/no-markup-assertion": "error" },
     },
     {
       // Tests and build scripts can inspect the generated schema.

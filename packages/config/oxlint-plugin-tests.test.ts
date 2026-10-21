@@ -3,6 +3,7 @@ import { RuleTester } from "oxlint/plugins-dev";
 
 import {
   noClassAssertion,
+  noMarkupAssertion,
   noSourceText,
   noInternalMock,
 } from "./oxlint-plugin-tests.ts";
@@ -54,6 +55,70 @@ tester.run("no-class-assertion", noClassAssertion, {
       errors: ztClass,
     },
   ],
+});
+
+// Failure modes: a markup read reaches an assertion directly, through a
+// matcher, or through a variable it initializes; selecting an element to act
+// on it, or by text, role or data attribute, stays legal.
+tester.run("no-markup-assertion", noMarkupAssertion, {
+  valid: [
+    'if (el.classList.contains("is-active")) el.click()',
+    'el.className = "suggestion-item"',
+    'expect(el.getAttribute("aria-label")).toBe("Open")',
+    'render(<div className="suggestion-item mod-complex" />)',
+    'root.querySelector<HTMLElement>(".mod-cta")!.click()',
+    'expect(root.querySelector("[data-state=open]")).not.toBeNull()',
+    'expect(root.querySelector("button[aria-pressed=true]")).not.toBeNull()',
+    'expect(root.querySelectorAll("li")).toHaveLength(2)',
+    "expect(root.querySelector(selector)).toBeNull()",
+    `const button = root.querySelector<HTMLElement>(".mod-cta")!;
+     button.click();
+     expect(onSubmit).toHaveBeenCalledOnce();`,
+    `const input = root.querySelector<HTMLInputElement>("input.prompt-input")!;
+     input.value = "kant";
+     input.dispatchEvent(new Event("input"));
+     expect(store.query).toBe("kant");`,
+    `const items = root.querySelectorAll(".suggestion-item");
+     fireEvent.click(items[1]!);
+     expect(onChoose).toHaveBeenCalledWith("b");`,
+    `const editor = EditorView.findFromDOM(root.querySelector(".cm-editor")!)!;
+     expect(editor.state.doc.toString()).toBe("{{ title }}");`,
+    'expect(EditorView.findFromDOM(root.querySelector(".cm-editor")!)?.state.doc.length).toBe(0)',
+  ],
+  invalid: [
+    'expect(el.classList.contains("is-active")).toBe(true)',
+    'expect(item.className).toBe("suggestion-item mod-complex")',
+    'expect(rows.map((row) => row.className)).toEqual(["mod-complex"])',
+    'expect(el.getAttribute("class")).toContain("is-active")',
+    'expect(el.classList).toContain("is-active")',
+    'expect(root.querySelector(".zt-code-pane")).toBeNull()',
+    'expect(root.querySelectorAll("li.is-selected")).toHaveLength(1)',
+    'expect(el.closest(`[class~="is-open"]`)).not.toBeNull()',
+    'expect(el.matches(".is-active")).toBe(true)',
+    'expect(root.querySelector(".tree-item-self")?.textContent).toBe("A")',
+    'expect(root.querySelector("." + CODE_PANE_CLASS)).toBeNull()',
+    "expect(root.querySelector(`.${CODE_PANE_CLASS}`)).toBeNull()",
+    `const pane = root.querySelector(".zt-code-pane");
+     expect(pane).toBeNull();`,
+    `const names = [...root.querySelectorAll(".suggestion-item")];
+     expect(names.map((item) => item.textContent)).toEqual(["A"]);`,
+    `const rows = root.querySelectorAll(".tree-item");
+     const first = rows[0];
+     expect(first?.textContent).toBe("A");`,
+    `const classes = el.className;
+     expect(classes).toBe("suggestion-item mod-complex");`,
+    `const button = root.querySelector<HTMLElement>(".mod-cta")!;
+     button.click();
+     expect(button.textContent).toBe("Saved");`,
+    'expect(Array.from(root.querySelectorAll(".row"), (row) => row.textContent)).toEqual(["A"])',
+    `await vi.waitFor(() =>
+       expect(view.dom.querySelector(".cm-unresolved")?.textContent).toBe("@b"),
+     );`,
+    `const classes = rows.map((row) => {
+       return row.className;
+     });
+     expect(classes).toEqual(["is-selected"]);`,
+  ].map((code) => ({ code, errors: [{ messageId: "markup" }] })),
 });
 
 // Failure modes: path constructors and templates hide source extensions;

@@ -1,6 +1,6 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
+import baseConfig, { testBaselineOverrides } from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
@@ -16,5 +16,6 @@ export default defineConfig({
         "zotlit-workbench/no-controller-source-slice": "off",
       },
     },
+    ...testBaselineOverrides("packages/workbench"),
   ],
 });
