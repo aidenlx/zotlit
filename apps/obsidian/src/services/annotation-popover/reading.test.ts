@@ -1,0 +1,137 @@
+// @vitest-environment happy-dom
+// What a hovered link in reading view shows is proven in the running app
+// (`packages/e2e/src/annotation-links.e2e.ts`). These cases cover the hover
+// listener's lifecycle, which the End-to-end Run cannot reach: the pointer
+// moving within one link, a section Obsidian unloads, and a service that is
+// gone while its sections stay rendered.
+import { Component, MarkdownView } from "obsidian";
+import type {
+  MarkdownPostProcessor,
+  MarkdownPostProcessorContext,
+} from "obsidian";
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  setup,
+  useFakeTimers,
+} from "@/services/annotation-repository/__fixtures__";
+import { defaults } from "@/services/settings/schema";
+
+import { AnnotationLinkReading } from "./reading";
+import { AnnotationPopover } from "./service";
+
+const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
+
+/**
+ * One rendered reading-view section holding a Durable Annotation Link, inside
+ * a Markdown view, with the real popover over the real repository behind it.
+ * Obsidian's post-processor registry and its workspace stand outside the
+ * test; the section is a real component Obsidian would unload.
+ */
+async function harness(stack: AsyncDisposableStack) {
+  const { repository } = await setup(stack);
+  const popover = stack.use(
+    new AnnotationPopover({
+      annotations: repository,
+      excerptDisplay: {
+        open: () => {
+          throw new Error("The hovered Annotation has no Excerpt Image");
+        },
+      },
+      excerptRequest: () =>
+        Promise.reject(new Error("No Excerpt Image is asked for")),
+      commentRenderer: () => () => () => {},
+    }),
+  );
+  let process: MarkdownPostProcessor | undefined;
+  const container = document.body.appendChild(document.createElement("div"));
+  stack.defer(() => container.remove());
+  const view = Object.assign(
+    Object.create(MarkdownView.prototype) as MarkdownView,
+    { containerEl: container, hoverPopover: null },
+  );
+  const service = stack.use(
+    new AnnotationLinkReading({
+      app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
+      plugin: {
+        registerMarkdownPostProcessor: (postProcessor) => {
+          process = postProcessor;
+          return postProcessor;
+        },
+      },
+      settings: {
+        ready: Promise.resolve(),
+        subscribe: (listener) => {
+          listener(defaults);
+          return () => undefined;
+        },
+      },
+      annotationPopover: popover,
+    }),
+  );
+  await service.ready;
+  const el = container.appendChild(document.createElement("div"));
+  el.innerHTML = `<p><a class="external-link" href="${HREF}"><strong>p. 1</strong></a></p>`;
+  const section = new Component();
+  section.load();
+  stack.defer(() => section.unload());
+  await process!(el, {
+    sourcePath: "drafts/chapter.md",
+    addChild: (child: Component) => section.addChild(child),
+  } as unknown as MarkdownPostProcessorContext);
+  // Obsidian's hover delay runs on a fake clock; the repository's reads do not.
+  useFakeTimers();
+  stack.defer(() => {
+    vi.useRealTimers();
+  });
+  const anchor = el.querySelector("a")!;
+  return {
+    anchor,
+    service,
+    section,
+    /** Whether a popover opened on the view once Obsidian's delay passed. */
+    opened(): boolean {
+      vi.advanceTimersByTime(1000);
+      return view.hoverPopover !== null;
+    },
+  };
+}
+
+const enter = (anchor: Element, from: Element | null = null): void => {
+  anchor.dispatchEvent(
+    new MouseEvent("mouseover", { bubbles: true, relatedTarget: from }),
+  );
+};
+
+describe("AnnotationLinkReading", () => {
+  it("hovers once while the pointer moves inside one link", async () => {
+    await using stack = new AsyncDisposableStack();
+    const run = await harness(stack);
+
+    enter(run.anchor, run.anchor.querySelector("strong"));
+    expect(run.opened()).toBe(false);
+
+    enter(run.anchor);
+    expect(run.opened()).toBe(true);
+  });
+
+  it("stops answering hovers once Obsidian unloads the section", async () => {
+    await using stack = new AsyncDisposableStack();
+    const run = await harness(stack);
+
+    run.section.unload();
+    enter(run.anchor);
+
+    expect(run.opened()).toBe(false);
+  });
+
+  it("stops answering hovers once the service is gone, though the section stays rendered", async () => {
+    await using stack = new AsyncDisposableStack();
+    const run = await harness(stack);
+
+    await run.service[Symbol.asyncDispose]();
+    enter(run.anchor);
+
+    expect(run.opened()).toBe(false);
+  });
+});

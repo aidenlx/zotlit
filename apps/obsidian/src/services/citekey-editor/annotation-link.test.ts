@@ -1,7 +1,31 @@
+// @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
-import { describe, expect, it } from "vitest";
+import { Decoration, EditorView } from "@codemirror/view";
+import { describe, expect, it, vi } from "vitest";
 
-import { annotationLinkAtPos } from "./annotation-link";
+// Obsidian's editor carries the note it edits in a state field of its own.
+vi.mock("obsidian", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("obsidian")>();
+  const { StateField } = await import("@codemirror/state");
+  return {
+    ...actual,
+    editorInfoField: StateField.define({
+      create: () => ({ file: { path: "note.md" } }),
+      update: (value) => value,
+    }),
+  };
+});
+
+import { editorInfoField } from "obsidian";
+
+import type { AnnotationHoverRequest } from "@/services/annotation-popover/service";
+import { hoverPreferences } from "@/services/citekey-navigation";
+import { defaults } from "@/services/settings/schema";
+
+import {
+  annotationLinkAtPos,
+  annotationLinkHoverExtension,
+} from "./annotation-link";
 
 const LINK =
   "[p. 2](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)";
@@ -65,5 +89,48 @@ describe("annotationLinkAtPos", () => {
     ]) {
       expect(annotationLinkAtPos(EditorState.create({ doc }), 2)).toBeNull();
     }
+  });
+});
+
+// What a hovered link in the editor shows is proven in the running app
+// (`packages/e2e/src/annotation-links.e2e.ts`), which cannot move the pointer
+// within one link.
+describe("annotationLinkHoverExtension", () => {
+  it("hovers once while the pointer moves inside one link", () => {
+    const shown: AnnotationHoverRequest[] = [];
+    // The link text classed the way Obsidian's Markdown highlighter classes
+    // it; happy-dom lays nothing out, so the pointer is answered from inside it.
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: `See ${LINK} here.`,
+        extensions: [
+          editorInfoField,
+          EditorView.decorations.of(
+            Decoration.set([Decoration.mark({ class: "cm-link" }).range(5, 9)]),
+          ),
+          annotationLinkHoverExtension({
+            hoverPreferences: () => hoverPreferences(defaults),
+            pagePreviewRequiresMod: () => true,
+            showAnnotation: (request) => shown.push(request),
+          }),
+        ],
+      }),
+    });
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+    view.dom.classList.add("is-live-preview");
+    vi.spyOn(view, "posAtCoords").mockReturnValue(6);
+    const linkText = view.dom.querySelector<HTMLElement>(".cm-link")!;
+
+    linkText.dispatchEvent(
+      new MouseEvent("mouseover", {
+        bubbles: true,
+        relatedTarget: linkText.firstChild,
+      }),
+    );
+    expect(shown).toEqual([]);
+
+    linkText.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(shown).toHaveLength(1);
   });
 });
