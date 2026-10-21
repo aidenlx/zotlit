@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "preact/test-utils";
-import type { ReactElement } from "react";
-import { createRoot } from "react-dom/client";
+import type { HoverParent } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -16,33 +14,20 @@ import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { AnnotationPopover } from "./service";
 import type { AnnotationHoverRequest } from "./service";
 
-const popovers = vi.hoisted(
-  () =>
-    [] as {
-      render: ReturnType<typeof vi.fn>;
-      hide: () => void;
-      retarget: ReturnType<typeof vi.fn>;
-    }[],
-);
+/**
+ * The card a hover parent shows, once Obsidian's opening delay has passed.
+ */
+async function shownUnder(parent: HoverParent): Promise<HTMLElement> {
+  await vi.waitFor(() => expect(parent.hoverPopover).not.toBeNull());
+  return parent.hoverPopover!.hoverEl;
+}
 
-vi.mock("@/services/citation-popover/popover", () => ({
-  CitationHoverPopover: class {
-    readonly render = vi.fn(() => true);
-    readonly retarget = vi.fn();
-    readonly #cleanup: (() => void)[] = [];
-    readonly hide = (): void => {
-      for (const cleanup of this.#cleanup.splice(0).reverse()) cleanup();
-    };
-
-    constructor() {
-      popovers.push(this);
-    }
-
-    register(cleanup: () => void): void {
-      this.#cleanup.push(cleanup);
-    }
-  },
-}));
+/** A hover target in the document, removed with `stack`. */
+function target(stack: AsyncDisposableStack): HTMLElement {
+  const el = document.body.appendChild(document.createElement("span"));
+  stack.defer(() => el.remove());
+  return el;
+}
 
 /** One display demand that paints `image` once a request is stated. */
 function excerptDemand(image: ExcerptImageDisplay["image"]) {
@@ -104,22 +89,21 @@ async function harness(stack: AsyncDisposableStack) {
     },
   });
   stack.use(service);
-  const element = document.createElement("div");
-  const root = createRoot(element);
-  stack.defer(() => root.unmount());
-  const hoverParent = { hoverPopover: null };
+  const targetEl = target(stack);
+  const hoverParent: HoverParent = { hoverPopover: null };
   return {
     repository,
     client,
     demands,
     request,
+    hoverParent,
     show(
       link: Partial<AnnotationHoverRequest["link"]> & { annotationKey: string },
     ) {
       void service.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
-        targetEl: element,
+        targetEl,
         sourcePath: "note.md",
         link: {
           attachmentKey: "RGRPDF24",
@@ -129,17 +113,8 @@ async function harness(stack: AsyncDisposableStack) {
         },
       });
     },
-    /** What the newest popover draws now. */
-    async shown(): Promise<HTMLElement> {
-      await vi.waitFor(() =>
-        expect(popovers.at(-1)!.render).toHaveBeenCalled(),
-      );
-      const content = popovers
-        .at(-1)!
-        .render.mock.calls.at(-1)![0] as ReactElement | null;
-      await act(() => root.render(content));
-      return element;
-    },
+    /** What the popover draws now. */
+    shown: () => shownUnder(hoverParent),
   };
 }
 
@@ -185,7 +160,7 @@ describe("AnnotationPopover", () => {
     expect(run.demands).toHaveLength(1);
     expect(run.demands[0]!.stated).toEqual([run.request]);
 
-    popovers.at(-1)!.hide();
+    run.hoverParent.hoverPopover!.hide();
     expect(run.demands[0]!.released).toBe(true);
   });
 
@@ -261,12 +236,12 @@ describe("AnnotationPopover", () => {
         },
       }),
     );
-    const hoverParent = { hoverPopover: null };
+    const hoverParent: HoverParent = { hoverPopover: null };
     const show = (annotationKey: string): Promise<void> =>
       service.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
-        targetEl: document.createElement("span"),
+        targetEl: target(stack),
         sourcePath: "note.md",
         link: {
           attachmentKey: "RGRPDF24",
@@ -275,10 +250,6 @@ describe("AnnotationPopover", () => {
           groupID: null,
         },
       });
-    const element = document.createElement("div");
-    const root = createRoot(element);
-    stack.defer(() => root.unmount());
-
     // The pointer moves on before the first link's read answers.
     const stale = show("PUPR5FG5");
     const fresh = show("HRK7BG32");
@@ -287,10 +258,9 @@ describe("AnnotationPopover", () => {
     reads[0]!.resolve(list);
     await stale;
 
-    const content = popovers.at(-1)!.render.mock.calls.at(-1)![0];
-    await act(() => root.render(content as ReactElement));
-    expect(element.textContent).toContain("Making figures is hard :(");
-    expect(element.textContent).not.toContain("Identify Your Message");
+    const card = await shownUnder(hoverParent);
+    expect(card.textContent).toContain("Making figures is hard :(");
+    expect(card.textContent).not.toContain("Identify Your Message");
   });
 
   it("reads the annotation again on the next hover", async () => {
@@ -302,7 +272,7 @@ describe("AnnotationPopover", () => {
         "Making figures is hard :(",
       ),
     );
-    popovers.at(-1)!.hide();
+    run.hoverParent.hoverPopover!.hide();
 
     run.client.$client.exec(
       "update itemAnnotations set comment = 'Figures are easier now' where itemID = 51",
