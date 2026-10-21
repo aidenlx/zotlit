@@ -1,157 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  AttachmentLookup,
-  AttachmentResolution,
-} from "@/services/attachment-resolver/service";
-
-import { createTargetOpener } from "./open-target";
-import type { OpenTarget, ReaderOutcome } from "./open-target";
-import type { ObsidianOpenableAttachment } from "./resolve";
-
-const VAULT = "/Users/me/Vault";
-
-/** One Attachment row the fake resolver knows, keyed as the real index keys it. */
-interface Row {
-  attachmentKey: string;
-  itemKey: string | null;
-  absolutePath: string;
-  openable: boolean;
-}
-
-/** The Fixture's Rougier PDF: a linked file inside the vault. */
-const ROUGIER: Row = {
-  attachmentKey: "RGRPDF24",
-  itemKey: "RUGIER24",
-  absolutePath: `${VAULT}/attachments/rougier-2014.pdf`,
-  openable: true,
-};
-
-/** A second Attachment of the same file, which the path does not choose. */
-const ROUGIER_COPY: Row = {
-  attachmentKey: "RGRCPYB8",
-  itemKey: "RUGIERC8",
-  absolutePath: ROUGIER.absolutePath,
-  openable: true,
-};
-
-/** A Zotero-managed PDF outside the vault. */
-const STORED: Row = {
-  attachmentKey: "PDFSTR22",
-  itemKey: "SAKIMA22",
-  absolutePath: "/Users/me/Zotero/storage/PDFSTR22/sakimas song.pdf",
-  openable: true,
-};
-
-/** A file Obsidian's PDF view cannot host. */
-const EPUB: Row = {
-  attachmentKey: "EPUBSTR2",
-  itemKey: "SAKIMA22",
-  absolutePath: "/Users/me/Zotero/storage/EPUBSTR2/sakimas-song.epub",
-  openable: false,
-};
-
-/** A group-library Attachment, by its group's Indexed Key. */
-const GROUPED: Row = {
-  attachmentKey: "RGRGRUP9g4200309",
-  itemKey: "RUGIERG9g4200309",
-  absolutePath: "/Users/me/Zotero/storage/RGRGRUP9/shared.pdf",
-  openable: true,
-};
-
-const ROWS = [ROUGIER, ROUGIER_COPY, STORED, EPUB, GROUPED];
-
-/**
- * The Attachment resolver over `rows`, answering only what each lookup asks.
- * The first row of a file is the one its path chooses, as the real index ranks
- * a shared file; `pending` answers every lookup until `index()` lands.
- */
-function attachments(rows: readonly Row[], { pending = false } = {}) {
-  let indexed = !pending;
-  const landed = Promise.withResolvers<void>();
-  // A wait nobody ends must not fail the run once a test has moved on.
-  landed.promise.catch(() => {});
-  if (indexed) landed.resolve();
-  const resolutionOf = (row: Row): AttachmentResolution => ({
-    kind: "resolved",
-    serverID: null,
-    attachmentKey: row.attachmentKey,
-    itemKey: row.itemKey,
-    openable: row.openable,
-  });
-  return {
-    resolve(
-      absolutePath: string,
-      { attachmentKey }: { attachmentKey?: string | null } = {},
-    ): AttachmentResolution {
-      if (!indexed) return { kind: "pending" };
-      const named = rows.find(
-        (row) =>
-          row.attachmentKey === attachmentKey &&
-          row.absolutePath === absolutePath,
-      );
-      const row =
-        named ?? rows.find((row) => row.absolutePath === absolutePath);
-      return row ? resolutionOf(row) : { kind: "unresolved" };
-    },
-    lookup(attachmentKey: string): AttachmentLookup {
-      if (!indexed) return { kind: "pending" };
-      const row = rows.find((row) => row.attachmentKey === attachmentKey);
-      return row
-        ? {
-            ...(resolutionOf(row) as Extract<
-              AttachmentResolution,
-              { kind: "resolved" }
-            >),
-            absolutePath: row.absolutePath,
-          }
-        : { kind: "unresolved" };
-    },
-    warm() {},
-    get indexed() {
-      return landed.promise;
-    },
-    /** The first index lands. */
-    index() {
-      indexed = true;
-      landed.resolve();
-    },
-    /** The first index fails, and the index stays unbuilt. */
-    fail() {
-      landed.reject(new Error("The Zotero database cannot be read"));
-    },
-  };
-}
-
-/**
- * The opener over a reader that records each open and finds no file at the
- * paths in `missing`, and a system handler that records each link.
- */
-function setup({
-  rows = ROWS,
-  pending = false,
-  missing = [] as readonly string[],
-} = {}) {
-  const opened: { attachment: ObsidianOpenableAttachment; pane: unknown }[] =
-    [];
-  const handed: string[] = [];
-  const resolver = attachments(rows, { pending });
-  const opener = createTargetOpener({
-    attachments: resolver,
-    reader: {
-      open: (attachment, pane): Promise<ReaderOutcome> => {
-        if (missing.includes(attachment.absolutePath))
-          return Promise.resolve("file-missing");
-        opened.push({ attachment, pane });
-        return Promise.resolve("opened");
-      },
-    },
-    native: (url) => void handed.push(url),
-    vaultBasePath: VAULT,
-    platform: "darwin",
-  });
-  return { opener, opened, handed, resolver };
-}
+import { FILES, openerHarness } from "./__fixtures__";
+import type { OpenTarget } from "./open-target";
 
 const ANNOTATION: OpenTarget = {
   kind: "annotation",
@@ -163,7 +13,8 @@ const ANNOTATION: OpenTarget = {
 
 describe("open", () => {
   it("opens an Obsidian-Openable Attachment in Obsidian's reader, in the pane asked for", async () => {
-    const { opener, opened, handed } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack);
 
     await expect(
       opener.open({ kind: "attachment", attachmentKey: "PDFSTR22" }, "tab"),
@@ -174,8 +25,8 @@ describe("open", () => {
         attachment: {
           indexedKey: "PDFSTR22",
           label: "sakimas song.pdf",
-          openPath: "file:/Users/me/Zotero/storage/PDFSTR22/sakimas song.pdf",
-          absolutePath: STORED.absolutePath,
+          openPath: `file:${FILES.stored}`,
+          absolutePath: FILES.stored,
         },
         pane: "tab",
       },
@@ -184,7 +35,8 @@ describe("open", () => {
   });
 
   it("opens an Annotation at its page, with its Annotation Anchor", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
     await opener.open(ANNOTATION, false);
 
@@ -194,7 +46,7 @@ describe("open", () => {
           indexedKey: "RGRPDF24",
           label: "rougier-2014.pdf",
           openPath: "attachments/rougier-2014.pdf",
-          absolutePath: ROUGIER.absolutePath,
+          absolutePath: FILES.rougier,
           subpath: "#page=2&zt-annotation=FDRFQ7C2",
         },
         pane: false,
@@ -205,7 +57,11 @@ describe("open", () => {
   // Two Attachments keep one file. The open names the one it was asked for,
   // not the one the path chooses, and the reader binds that one.
   it("opens the Attachment it was asked for where another keeps the same file", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, resolver } = await openerHarness(stack);
+    expect(resolver.resolve(FILES.rougier)).toMatchObject({
+      attachmentKey: "RGRPDF24",
+    });
 
     await opener.open({ kind: "attachment", attachmentKey: "RGRCPYB8" }, false);
 
@@ -215,7 +71,8 @@ describe("open", () => {
   });
 
   it("hands an Attachment Obsidian cannot host to Zotero", async () => {
-    const { opener, opened, handed } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack);
 
     await expect(
       opener.open({ kind: "attachment", attachmentKey: "EPUBSTR2" }, "tab"),
@@ -229,7 +86,8 @@ describe("open", () => {
   });
 
   it("hands an Annotation Obsidian cannot host to Zotero, at the Annotation", async () => {
-    const { opener, handed } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, handed } = await openerHarness(stack);
 
     await opener.open(
       { ...ANNOTATION, attachmentKey: "EPUBSTR2", pageLabel: "iv" },
@@ -242,7 +100,8 @@ describe("open", () => {
   });
 
   it("hands an Attachment that keeps no file Zotero knows of to Zotero", async () => {
-    const { opener, opened, handed } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack);
 
     await opener.open({ kind: "attachment", attachmentKey: "LINKURL2" }, false);
 
@@ -253,8 +112,9 @@ describe("open", () => {
   // A synced library on a second computer names a file that never arrived;
   // that computer reaches the Attachment through Zotero instead.
   it("hands the target to Zotero when the reader finds no file at the open", async () => {
-    const { opener, opened, handed } = setup({
-      missing: [ROUGIER.absolutePath],
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack, {
+      missing: [FILES.rougier],
     });
 
     await expect(opener.open(ANNOTATION, "tab")).resolves.toEqual({
@@ -269,12 +129,13 @@ describe("open", () => {
   });
 
   it("names a group-library target to Zotero by its group", async () => {
-    const { opener, handed } = setup({ rows: [] });
+    await using stack = new AsyncDisposableStack();
+    const { opener, handed } = await openerHarness(stack);
 
     await opener.open(
       {
         kind: "annotation",
-        attachmentKey: "RGRGRUP9g4200309",
+        attachmentKey: "GRPMISS9g4200309",
         annotationKey: "FDRFQ7C2g4200309",
         pageIndex: null,
         pageLabel: null,
@@ -283,57 +144,45 @@ describe("open", () => {
     );
 
     expect(handed).toEqual([
-      "zotero://open/groups/4200309/items/RGRGRUP9?annotation=FDRFQ7C2",
+      "zotero://open/groups/4200309/items/GRPMISS9?annotation=FDRFQ7C2",
     ]);
   });
 
   // A card clicked while the index is still building waits for it, rather
   // than sending a PDF this computer holds to Zotero.
   it("waits for the first index before it decides", async () => {
-    const { opener, opened, handed, resolver } = setup({ pending: true });
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed, resolver } = await openerHarness(stack, {
+      prime: false,
+    });
+    expect(resolver.lookup("RGRPDF24")).toEqual({ kind: "pending" });
 
-    const outcome = opener.open(
-      { kind: "attachment", attachmentKey: "RGRPDF24" },
-      false,
-    );
-    resolver.index();
+    await expect(
+      opener.open({ kind: "attachment", attachmentKey: "RGRPDF24" }, false),
+    ).resolves.toEqual({ kind: "reader" });
 
-    await expect(outcome).resolves.toEqual({ kind: "reader" });
     expect(opened).toHaveLength(1);
     expect(handed).toEqual([]);
   });
 
   // An index that never comes must not swallow the click: past the wait, the
-  // target opens in Zotero, as it did while the index was pending.
+  // target opens in Zotero, as it did while the index was pending. A database
+  // read that fails leaves the index unbuilt the same way.
   it("opens in Zotero once the first index outlasts the wait", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed, failReads } = await openerHarness(stack, {
+      prime: false,
+    });
+    failReads(true);
     vi.useFakeTimers();
-    await using cleanup = new AsyncDisposableStack();
-    cleanup.defer(() => {
+    stack.defer(() => {
       vi.useRealTimers();
     });
-    const { opener, opened, handed } = setup({ pending: true });
 
-    const outcome = opener.open(
-      { kind: "attachment", attachmentKey: "RGRPDF24" },
-      false,
-    );
+    const outcome = opener.open(ANNOTATION, false);
     await vi.advanceTimersByTimeAsync(4_999);
     expect(handed).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
-
-    await expect(outcome).resolves.toEqual({
-      kind: "zotero",
-      url: "zotero://open/library/items/RGRPDF24",
-    });
-    expect(opened).toEqual([]);
-    expect(handed).toEqual(["zotero://open/library/items/RGRPDF24"]);
-  });
-
-  it("opens in Zotero when the first index fails", async () => {
-    const { opener, opened, handed, resolver } = setup({ pending: true });
-
-    const outcome = opener.open(ANNOTATION, false);
-    resolver.fail();
 
     await expect(outcome).resolves.toEqual({
       kind: "zotero",
@@ -344,7 +193,8 @@ describe("open", () => {
   });
 
   it("opens nothing for a key that is no Indexed Key", async () => {
-    const { opener, opened, handed } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack);
 
     await expect(
       opener.open({ kind: "attachment", attachmentKey: "not a key" }, false),
@@ -356,7 +206,7 @@ describe("open", () => {
 });
 
 const STORED_LINK =
-  "file:///Users/me/Zotero/storage/PDFSTR22/sakimas%20song.pdf";
+  "file:///fixture/zotero-data/storage/PDFSTR22/sakimas%20song.pdf";
 const DURABLE =
   "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2";
 
@@ -364,10 +214,13 @@ describe("follow", () => {
   it.each([
     ["a web link", "https://example.com/paper.pdf"],
     ["a string that is no URL", "not a url"],
-    ["a file Zotero does not know", `file://${VAULT}/attachments/other.pdf`],
+    [
+      "a file Zotero does not know",
+      "file:///fixture/vault/attachments/other.pdf",
+    ],
     [
       "a file Obsidian cannot host",
-      "file:///Users/me/Zotero/storage/EPUBSTR2/sakimas-song.epub",
+      "file:///fixture/zotero-data/storage/EPUBSTR2/sakimas-song.epub",
     ],
     ["a link that names no Annotation", "zotero://open/library/items/RGRPDF24"],
     [
@@ -378,8 +231,9 @@ describe("follow", () => {
       "a link to an Attachment Obsidian cannot host",
       "zotero://open/library/items/EPUBSTR2?annotation=FDRFQ7C2",
     ],
-  ])("leaves %s to the caller", (_, url) => {
-    const { opener, opened, handed } = setup();
+  ])("leaves %s to the caller", async (_, url) => {
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack);
 
     expect(opener.follow(url, false)).toBeNull();
 
@@ -388,15 +242,17 @@ describe("follow", () => {
   });
 
   // Until the index lands ZotLit cannot name the file, and does not claim it.
-  it("leaves every link to the caller while the index is building", () => {
-    const { opener } = setup({ pending: true });
+  it("leaves every link to the caller while the index is building", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { opener } = await openerHarness(stack, { prime: false });
 
     expect(opener.follow(STORED_LINK, false)).toBeNull();
     expect(opener.follow(DURABLE, false)).toBeNull();
   });
 
   it("opens an Attachment File Link in Obsidian's reader at the page it names", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
     await expect(
       opener.follow(`${STORED_LINK}#page=7`, "split"),
@@ -407,8 +263,8 @@ describe("follow", () => {
         attachment: {
           indexedKey: "PDFSTR22",
           label: "sakimas song.pdf",
-          openPath: "file:/Users/me/Zotero/storage/PDFSTR22/sakimas song.pdf",
-          absolutePath: STORED.absolutePath,
+          openPath: `file:${FILES.stored}`,
+          absolutePath: FILES.stored,
           subpath: "#page=7",
         },
         pane: "split",
@@ -417,17 +273,24 @@ describe("follow", () => {
   });
 
   it("opens an in-vault Attachment File Link by its vault-relative path", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
-    await opener.follow(`file://${ROUGIER.absolutePath}`, false);
+    await opener.follow(`file://${FILES.rougier}`, false);
 
-    expect(opened[0]?.attachment.openPath).toBe("attachments/rougier-2014.pdf");
+    expect(opened[0]?.attachment).toMatchObject({
+      indexedKey: "RGRPDF24",
+      openPath: "attachments/rougier-2014.pdf",
+    });
   });
 
   // An Attachment File Link names nothing Zotero can open in its stead, so
   // the caller says the file is missing.
   it("reports a missing file behind an Attachment File Link, and hands nothing to Zotero", async () => {
-    const { opener, handed } = setup({ missing: [STORED.absolutePath] });
+    await using stack = new AsyncDisposableStack();
+    const { opener, handed } = await openerHarness(stack, {
+      missing: [FILES.stored],
+    });
 
     await expect(opener.follow(STORED_LINK, false)).resolves.toEqual({
       kind: "file-missing",
@@ -437,7 +300,8 @@ describe("follow", () => {
   });
 
   it("opens a Durable Annotation Link at the Annotation it names", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
     await expect(opener.follow(DURABLE, "tab")).resolves.toEqual({
       kind: "reader",
@@ -449,7 +313,7 @@ describe("follow", () => {
           indexedKey: "RGRPDF24",
           label: "rougier-2014.pdf",
           openPath: "attachments/rougier-2014.pdf",
-          absolutePath: ROUGIER.absolutePath,
+          absolutePath: FILES.rougier,
           subpath: "#page=2&zt-annotation=FDRFQ7C2",
         },
         pane: "tab",
@@ -458,7 +322,8 @@ describe("follow", () => {
   });
 
   it("opens the Attachment a Durable Annotation Link names where another keeps the same file", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
     await opener.follow(
       "zotero://open/library/items/RGRCPYB8?annotation=FDRFQ7C2",
@@ -473,7 +338,8 @@ describe("follow", () => {
   // The fragment carries no library segment of its own, so both keys travel
   // as Indexed Keys — the form an Annotation Record's key already takes.
   it("names a group-library Annotation by its Indexed Key", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
     await opener.follow(
       "zotero://open/groups/4200309/items/RGRGRUP9?annotation=FDRFQ7C2&page=2",
@@ -482,6 +348,7 @@ describe("follow", () => {
 
     expect(opened[0]?.attachment).toMatchObject({
       indexedKey: "RGRGRUP9g4200309",
+      absolutePath: FILES.grouped,
       subpath: "#page=2&zt-annotation=FDRFQ7C2g4200309",
     });
   });
@@ -489,7 +356,8 @@ describe("follow", () => {
   // `page` is a printed label. Only a label that reads as a page number can
   // stand in for Obsidian's own jump; the Annotation's own page wins anyway.
   it("leaves out a page label that is no page number", async () => {
-    const { opener, opened } = setup();
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened } = await openerHarness(stack);
 
     await opener.follow(
       "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=iv",
@@ -500,7 +368,10 @@ describe("follow", () => {
   });
 
   it("hands a Durable Annotation Link to Zotero as written when the reader finds no file", async () => {
-    const { opener, handed } = setup({ missing: [ROUGIER.absolutePath] });
+    await using stack = new AsyncDisposableStack();
+    const { opener, handed } = await openerHarness(stack, {
+      missing: [FILES.rougier],
+    });
     const link =
       "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=iv";
 

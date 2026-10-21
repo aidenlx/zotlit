@@ -1,31 +1,54 @@
 // @vitest-environment happy-dom
+// What a hovered link in reading view shows is proven in the running app
+// (`packages/e2e/src/annotation-links.e2e.ts`). These cases cover the hover
+// listener's lifecycle, which the End-to-end Run cannot reach: the pointer
+// moving within one link, a section Obsidian unloads, and a service that is
+// gone while its sections stay rendered.
 import { Component, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
 } from "obsidian";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import {
+  setup,
+  useFakeTimers,
+} from "@/services/annotation-repository/__fixtures__";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 
 import { AnnotationLinkReading } from "./reading";
-import type { AnnotationHoverRequest } from "./service";
+import { AnnotationPopover } from "./service";
 
 const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
 
-/** One rendered reading-view section holding `html`, inside a Markdown view. */
-async function harness(
-  stack: AsyncDisposableStack,
-  html: string,
-  overrides: Partial<Settings> = {},
-) {
+/**
+ * One rendered reading-view section holding a Durable Annotation Link, inside
+ * a Markdown view, with the real popover over the real repository behind it.
+ * Obsidian's post-processor registry and its workspace stand outside the
+ * test; the section is a real component Obsidian would unload.
+ */
+async function harness(stack: AsyncDisposableStack) {
+  const { repository } = await setup(stack);
+  const popover = stack.use(
+    new AnnotationPopover({
+      annotations: repository,
+      excerptDisplay: {
+        open: () => {
+          throw new Error("The hovered Annotation has no Excerpt Image");
+        },
+      },
+      excerptRequest: () =>
+        Promise.reject(new Error("No Excerpt Image is asked for")),
+      commentRenderer: () => () => () => {},
+    }),
+  );
   let process: MarkdownPostProcessor | undefined;
-  const shown: AnnotationHoverRequest[] = [];
-  const container = document.createElement("div");
+  const container = document.body.appendChild(document.createElement("div"));
+  stack.defer(() => container.remove());
   const view = Object.assign(
     Object.create(MarkdownView.prototype) as MarkdownView,
-    { containerEl: container },
+    { containerEl: container, hoverPopover: null },
   );
   const service = stack.use(
     new AnnotationLinkReading({
@@ -39,21 +62,16 @@ async function harness(
       settings: {
         ready: Promise.resolve(),
         subscribe: (listener) => {
-          listener({ ...defaults, ...overrides });
+          listener(defaults);
           return () => undefined;
         },
       },
-      annotationPopover: {
-        show: async (request) => {
-          shown.push(request);
-        },
-      },
+      annotationPopover: popover,
     }),
   );
   await service.ready;
   const el = container.appendChild(document.createElement("div"));
-  el.innerHTML = html;
-  // The children Obsidian hangs on the section, unloaded with it.
+  el.innerHTML = `<p><a class="external-link" href="${HREF}"><strong>p. 1</strong></a></p>`;
   const section = new Component();
   section.load();
   stack.defer(() => section.unload());
@@ -61,104 +79,59 @@ async function harness(
     sourcePath: "drafts/chapter.md",
     addChild: (child: Component) => section.addChild(child),
   } as unknown as MarkdownPostProcessorContext);
-  return { el, view, shown, service, section };
+  // Obsidian's hover delay runs on a fake clock; the repository's reads do not.
+  useFakeTimers();
+  stack.defer(() => {
+    vi.useRealTimers();
+  });
+  const anchor = el.querySelector("a")!;
+  return {
+    anchor,
+    service,
+    section,
+    /** Whether a popover opened on the view once Obsidian's delay passed. */
+    opened(): boolean {
+      vi.advanceTimersByTime(1000);
+      return view.hoverPopover !== null;
+    },
+  };
 }
 
-const hover = (anchor: Element): void => {
-  anchor.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+const enter = (anchor: Element, from: Element | null = null): void => {
+  anchor.dispatchEvent(
+    new MouseEvent("mouseover", { bubbles: true, relatedTarget: from }),
+  );
 };
 
 describe("AnnotationLinkReading", () => {
-  it("shows the annotation a rendered Durable Annotation Link names", async () => {
-    await using stack = new AsyncDisposableStack();
-    const { el, view, shown } = await harness(
-      stack,
-      `<p>Quoted <a class="external-link" href="${HREF}">p. 1</a>.</p>`,
-    );
-    const anchor = el.querySelector("a")!;
-
-    hover(anchor);
-
-    expect(shown).toHaveLength(1);
-    expect(shown[0]).toMatchObject({
-      hoverParent: view,
-      targetEl: anchor,
-      sourcePath: "drafts/chapter.md",
-      link: {
-        attachmentKey: "RGRPDF24",
-        annotationKey: "PUPR5FG5",
-        pageLabel: "1",
-        groupID: null,
-      },
-    });
-  });
-
   it("hovers once while the pointer moves inside one link", async () => {
     await using stack = new AsyncDisposableStack();
-    const { el, shown } = await harness(
-      stack,
-      `<p><a class="external-link" href="${HREF}"><strong>p. 1</strong></a></p>`,
-    );
-    const anchor = el.querySelector("a")!;
+    const run = await harness(stack);
 
-    anchor.dispatchEvent(
-      new MouseEvent("mouseover", {
-        bubbles: true,
-        relatedTarget: anchor.querySelector("strong"),
-      }),
-    );
+    enter(run.anchor, run.anchor.querySelector("strong"));
+    expect(run.opened()).toBe(false);
 
-    expect(shown).toEqual([]);
-  });
-
-  it("shows nothing while the Hover action is off", async () => {
-    await using stack = new AsyncDisposableStack();
-    const { el, shown } = await harness(
-      stack,
-      `<p><a class="external-link" href="${HREF}">p. 1</a></p>`,
-      { "citation.hover-action": "off" },
-    );
-
-    hover(el.querySelector("a")!);
-
-    expect(shown).toEqual([]);
-  });
-
-  it("stops answering hovers once the service is gone, though the section stays rendered", async () => {
-    await using stack = new AsyncDisposableStack();
-    const { el, shown, service } = await harness(
-      stack,
-      `<p><a class="external-link" href="${HREF}">p. 1</a></p>`,
-    );
-
-    await service[Symbol.asyncDispose]();
-    hover(el.querySelector("a")!);
-
-    expect(shown).toEqual([]);
+    enter(run.anchor);
+    expect(run.opened()).toBe(true);
   });
 
   it("stops answering hovers once Obsidian unloads the section", async () => {
     await using stack = new AsyncDisposableStack();
-    const { el, shown, section } = await harness(
-      stack,
-      `<p><a class="external-link" href="${HREF}">p. 1</a></p>`,
-    );
+    const run = await harness(stack);
 
-    section.unload();
-    hover(el.querySelector("a")!);
+    run.section.unload();
+    enter(run.anchor);
 
-    expect(shown).toEqual([]);
+    expect(run.opened()).toBe(false);
   });
 
-  it("leaves a Zotero link that names no annotation alone", async () => {
+  it("stops answering hovers once the service is gone, though the section stays rendered", async () => {
     await using stack = new AsyncDisposableStack();
-    const { el, shown } = await harness(
-      stack,
-      `<p><a class="external-link" href="zotero://select/library/items/RGRPDF24">item</a></p>`,
-    );
+    const run = await harness(stack);
 
-    hover(el.querySelector("a")!);
+    await run.service[Symbol.asyncDispose]();
+    enter(run.anchor);
 
-    expect(shown).toEqual([]);
+    expect(run.opened()).toBe(false);
   });
 });

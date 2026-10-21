@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import type { App, Editor, EditorSuggestContext } from "obsidian";
 import { describe, expect, it } from "vitest";
 
@@ -102,11 +103,13 @@ describe("AnnotationEditorSuggest", () => {
     run: AnnotationSuggestDeps["query"]["run"] = async () => ({
       kind: "cancelled",
     }),
+    commentRenderer?: AnnotationSuggestDeps["commentRenderer"],
   ) {
     const suggest = new AnnotationEditorSuggest({
       app: {} as App,
       settings: { current: settings as Settings | undefined },
       query: { run },
+      commentRenderer,
     } as AnnotationSuggestDeps);
     return { suggest, [Symbol.dispose]: () => suggest.close() };
   }
@@ -136,23 +139,127 @@ describe("AnnotationEditorSuggest", () => {
     expect(trigger(h.suggest, "x [>fig")).toBeNull();
   });
 
-  it("stops the search of the keystroke before", async () => {
-    const signals: AbortSignal[] = [];
-    using h = setup({}, async (_request, signal) => {
-      signals.push(signal);
-      return { kind: "cancelled" };
-    });
+  /**
+   * ZotLit Query as the suggester reaches it: a search for one word answers
+   * one paper and two annotations named after the word, once `release(word)`
+   * lets it finish, and answers `cancelled` for a search aborted meanwhile,
+   * as the query worker does.
+   */
+  function gatedQuery() {
+    const gates = new Map<string, PromiseWithResolvers<void>>();
+    const gate = (word: string) => {
+      let held = gates.get(word);
+      if (!held) {
+        held = Promise.withResolvers<void>();
+        gates.set(word, held);
+      }
+      return held;
+    };
+    const run: AnnotationSuggestDeps["query"]["run"] = async (
+      request,
+      signal,
+    ) => {
+      const word =
+        /contains\("([^"]*)"\)/.exec(request.filter ?? "")?.[1] ?? "";
+      await gate(word).promise;
+      if (signal.aborted) return { kind: "cancelled" };
+      if (request.from === "items")
+        return {
+          kind: "result",
+          result: { rows: [{ indexedKey: "PAPER" }] },
+        } as never;
+      return {
+        kind: "result",
+        result: {
+          groups: [
+            {
+              value: "PAPER",
+              rows: [`${word}-1`, `${word}-2`].map((key) => ({
+                indexedKey: key,
+                attachmentIndexedKey: "PDF",
+                itemIndexedKey: "PAPER",
+                values: { comment: key },
+              })),
+            },
+          ],
+        },
+      } as never;
+    };
+    return { run, release: (word: string) => gate(word).resolve() };
+  }
+
+  it("drops the search of the keystroke before, and the live one as it closes", async () => {
+    const query = gatedQuery();
+    using h = setup({}, query.run);
     const context = {
       file: null,
       editor: editor(""),
       start: { line: 0, ch: 0 },
       end: { line: 0, ch: 2 },
     } as unknown as EditorSuggestContext;
-    await h.suggest.getSuggestions({ ...context, query: "fi" });
-    await h.suggest.getSuggestions({ ...context, query: "fig" });
-    expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+    const keys = async (hits: Promise<{ key: string }[]>) =>
+      (await hits).map(({ key }) => key);
+
+    // The next keystroke's search starts while the first is still running.
+    const before = keys(h.suggest.getSuggestions({ ...context, query: "fi" }));
+    const typed = keys(h.suggest.getSuggestions({ ...context, query: "fig" }));
+    query.release("fig");
+    query.release("fi");
+
+    await expect(typed).resolves.toEqual(["fig-1", "fig-2"]);
+    await expect(before).resolves.toEqual([]);
+
+    const closing = keys(
+      h.suggest.getSuggestions({ ...context, query: "figure" }),
+    );
     h.suggest.close();
-    expect(signals[1]!.aborted).toBe(true);
+    query.release("figure");
+
+    await expect(closing).resolves.toEqual([]);
+  });
+
+  /**
+   * The suggester over {@link gatedQuery}, drawing each row it finds. Obsidian's
+   * Markdown renderer, which draws a row's comment, stands outside the test:
+   * `live` holds every comment drawn and not yet let go.
+   */
+  function drawing() {
+    const query = gatedQuery();
+    const live = new Set<string>();
+    const h = setup({}, query.run, () => (el, html) => {
+      live.add(html);
+      el.setText(html);
+      return () => live.delete(html);
+    });
+    const show = async (word: string) => {
+      query.release(word);
+      const hits = await h.suggest.getSuggestions({
+        query: word,
+        file: null,
+      } as unknown as EditorSuggestContext);
+      for (const hit of hits)
+        h.suggest.renderSuggestion(hit, document.createElement("div"));
+    };
+    return { ...h, live, show };
+  }
+
+  it("lets go of the comments of the rows a new search replaces", async () => {
+    using h = drawing();
+    await h.show("fig");
+    expect([...h.live].toSorted()).toEqual(["fig-1", "fig-2"]);
+
+    await h.show("table");
+
+    expect([...h.live].toSorted()).toEqual(["table-1", "table-2"]);
+  });
+
+  it("lets go of every drawn comment as it closes", async () => {
+    using h = drawing();
+    await h.show("fig");
+
+    h.suggest.close();
+
+    expect([...h.live]).toEqual([]);
   });
 });
 

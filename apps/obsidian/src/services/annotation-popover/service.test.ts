@@ -1,106 +1,71 @@
 // @vitest-environment happy-dom
+// What a hovered link shows is proven in the running app
+// (`packages/e2e/src/annotation-links.e2e.ts`). These cases cover what the
+// End-to-end Run cannot time or observe: a popover held open across a change
+// in the repository, two reads that land out of order, the Excerpt Image read
+// a hidden popover lets go, and image bytes that fail to decode.
 import type { HoverParent } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { setup } from "@/services/annotation-repository/__fixtures__";
-import type {
-  ExcerptDisplayDemand,
-  ExcerptImageDisplay,
+import { redPng } from "@/services/excerpt-image/__fixtures__/png";
+import {
+  EXCERPT_DISPLAY,
+  ExcerptDisplayService,
 } from "@/services/excerpt-image/display";
-import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import type { ExcerptRequest } from "@/services/excerpt-image/service";
+import { savedExcerptRequest } from "@/services/excerpt-image/request";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 
 import { AnnotationPopover } from "./service";
 import type { AnnotationHoverRequest } from "./service";
 
-/**
- * The card a hover parent shows, once Obsidian's opening delay has passed.
- */
+/** The card a hover parent shows, once Obsidian's opening delay has passed. */
 async function shownUnder(parent: HoverParent): Promise<HTMLElement> {
   await vi.waitFor(() => expect(parent.hoverPopover).not.toBeNull());
   return parent.hoverPopover!.hoverEl;
 }
 
-/** A hover target in the document, removed with `stack`. */
-function target(stack: AsyncDisposableStack): HTMLElement {
-  const el = document.body.appendChild(document.createElement("span"));
-  stack.defer(() => el.remove());
-  return el;
-}
-
-/** One display demand that paints `image` once a request is stated. */
-function excerptDemand(image: ExcerptImageDisplay["image"]) {
-  const listeners = new Set<() => void>();
-  let display: ExcerptImageDisplay = {
-    image: null,
-    current: false,
-    status: "reading",
-  };
-  const stated: (ExcerptRequest | null)[] = [];
-  let released = false;
-  const demand: ExcerptDisplayDemand = {
-    demand: (request) => {
-      stated.push(request);
-      display = { image, current: true, status: "settled" };
-      for (const listener of listeners) listener();
-    },
-    release: () => {
-      released = true;
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    snapshot: () => display,
-  };
-  return {
-    demand,
-    stated,
-    get released() {
-      return released;
-    },
-  };
-}
-
+/**
+ * The popover over the real Annotation repository, reading the Fixture's
+ * Annotations from an in-memory Zotero database. A comment renders through
+ * Obsidian's Markdown renderer, which stands outside the test: it is drawn as
+ * text. No case here hovers an Annotation with an Excerpt Image.
+ */
 async function harness(stack: AsyncDisposableStack) {
   const { repository, client } = await setup(stack);
-  const demands: ReturnType<typeof excerptDemand>[] = [];
-  const image = {
-    bytes: new Uint8Array([137, 80, 78, 71]),
-    format: PNG_FORMAT,
-  };
-  const request = { annotation: "stated" } as unknown as ExcerptRequest;
-  const service = new AnnotationPopover({
-    annotations: repository,
-    excerptDisplay: {
-      open: () => {
-        const opened = excerptDemand(image);
-        demands.push(opened);
-        return opened.demand;
+  const service = stack.use(
+    new AnnotationPopover({
+      annotations: repository,
+      excerptDisplay: {
+        open: () => {
+          throw new Error("No hovered Annotation here has an Excerpt Image");
+        },
       },
-    },
-    excerptRequest: async () => request,
-    commentRenderer: () => (el, html) => {
-      el.textContent = html;
-      return () => {
-        el.textContent = "";
-      };
-    },
-  });
-  stack.use(service);
-  const targetEl = target(stack);
+      excerptRequest: () =>
+        Promise.reject(new Error("No Excerpt Image is asked for")),
+      commentRenderer: () => (el, html) => {
+        el.textContent = html;
+        return () => {
+          el.textContent = "";
+        };
+      },
+    }),
+  );
   const hoverParent: HoverParent = { hoverPopover: null };
   return {
     repository,
     client,
-    demands,
-    request,
     hoverParent,
+    /** Hovers a link over a target of its own; settles once its read drew. */
     show(
       link: Partial<AnnotationHoverRequest["link"]> & { annotationKey: string },
-    ) {
-      void service.show({
+    ): Promise<void> {
+      const targetEl = document.body.appendChild(
+        document.createElement("span"),
+      );
+      stack.defer(() => targetEl.remove());
+      return service.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
         targetEl,
@@ -118,91 +83,19 @@ async function harness(stack: AsyncDisposableStack) {
   };
 }
 
+/** The note Annotation's comment, as the Fixture holds it. */
+const COMMENT = "Making figures is hard :(";
+const EDITED =
+  "update itemAnnotations set comment = 'Figures are easier now' where itemID = 51";
+
 describe("AnnotationPopover", () => {
-  it("shows a highlight's text, page label, and colour", async () => {
-    await using stack = new AsyncDisposableStack();
-    const run = await harness(stack);
-
-    run.show({ annotationKey: "PUPR5FG5" });
-
-    await vi.waitFor(async () => {
-      const shown = await run.shown();
-      expect(shown.textContent).toContain("Identify Your Message");
-      expect(shown.textContent).toContain(m.annot_view_page({ page: "1" }));
-      expect(shown.innerHTML).toContain("#2ea8e5");
-    });
-    expect(run.demands).toEqual([]);
-  });
-
-  it("shows a note annotation's comment", async () => {
-    await using stack = new AsyncDisposableStack();
-    const run = await harness(stack);
-
-    run.show({ annotationKey: "HRK7BG32" });
-
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toContain(
-        "Making figures is hard :(",
-      ),
-    );
-  });
-
-  it("shows an image annotation's Excerpt Image and lets it go on hide", async () => {
-    await using stack = new AsyncDisposableStack();
-    const run = await harness(stack);
-
-    run.show({ annotationKey: "FDRFQ7C2" });
-
-    await vi.waitFor(async () => {
-      const img = (await run.shown()).querySelector("img");
-      expect(img?.getAttribute("src")).toMatch(/^blob:/);
-    });
-    expect(run.demands).toHaveLength(1);
-    expect(run.demands[0]!.stated).toEqual([run.request]);
-
-    run.hoverParent.hoverPopover!.hide();
-    expect(run.demands[0]!.released).toBe(true);
-  });
-
-  it("says an annotation that no longer exists is unavailable", async () => {
-    await using stack = new AsyncDisposableStack();
-    const run = await harness(stack);
-
-    run.show({ annotationKey: "GONE2345" });
-
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toBe(
-        m.annotation_popover_unavailable(),
-      ),
-    );
-  });
-
-  it("says a link to an Attachment the library lacks is unavailable", async () => {
-    await using stack = new AsyncDisposableStack();
-    const run = await harness(stack);
-
-    run.show({ attachmentKey: "GONE2345", annotationKey: "PUPR5FG5" });
-
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toBe(
-        m.annotation_popover_unavailable(),
-      ),
-    );
-  });
-
   it("redraws an open popover when the annotation changes", async () => {
     await using stack = new AsyncDisposableStack();
     const run = await harness(stack);
-    run.show({ annotationKey: "HRK7BG32" });
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toContain(
-        "Making figures is hard :(",
-      ),
-    );
+    await run.show({ annotationKey: "HRK7BG32" });
+    expect((await run.shown()).textContent).toContain(COMMENT);
 
-    run.client.$client.exec(
-      "update itemAnnotations set comment = 'Figures are easier now' where itemID = 51",
-    );
+    run.client.$client.exec(EDITED);
     await run.repository.refresh("RGRPDF24");
 
     await vi.waitFor(async () =>
@@ -212,24 +105,52 @@ describe("AnnotationPopover", () => {
     );
   });
 
+  it("reads the annotation again on the next hover", async () => {
+    await using stack = new AsyncDisposableStack();
+    const run = await harness(stack);
+    await run.show({ annotationKey: "HRK7BG32" });
+    expect((await run.shown()).textContent).toContain(COMMENT);
+    run.hoverParent.hoverPopover!.hide();
+
+    run.client.$client.exec(EDITED);
+    await run.repository.refresh("RGRPDF24");
+    await run.show({ annotationKey: "HRK7BG32" });
+
+    expect((await run.shown()).textContent).toContain("Figures are easier now");
+  });
+
+  // The pointer moves on to a second link before the first link's read
+  // answers, and the first read lands last. Holding the first hover's
+  // database read under the real repository held the second hover's read
+  // too, so the order is not reversed there: the reads are held here, each
+  // answering with the list the repository read for its Attachment.
   it("keeps the newer link when the first hover's read lands after it", async () => {
     await using stack = new AsyncDisposableStack();
     const { repository } = await setup(stack);
-    const list = await repository.read("RGRPDF24");
-    const reads: PromiseWithResolvers<typeof list>[] = [];
+    const lists = {
+      EPUBBKS2: await repository.read("EPUBBKS2"),
+      RGRPDF24: await repository.read("RGRPDF24"),
+    };
+    const reads: { key: string; held: PromiseWithResolvers<void> }[] = [];
     const service = stack.use(
       new AnnotationPopover({
         annotations: {
-          read: () => {
-            const read = Promise.withResolvers<typeof list>();
-            reads.push(read);
-            return read.promise;
+          read: async (key) => {
+            const held = Promise.withResolvers<void>();
+            reads.push({ key, held });
+            await held.promise;
+            return lists[key as keyof typeof lists];
           },
           hold: () => ({ [Symbol.dispose]: () => {} }),
           on: () => () => {},
         },
-        excerptDisplay: { open: () => excerptDemand(null).demand },
-        excerptRequest: async () => null,
+        excerptDisplay: {
+          open: () => {
+            throw new Error("No hovered Annotation here has an Excerpt Image");
+          },
+        },
+        excerptRequest: () =>
+          Promise.reject(new Error("No Excerpt Image is asked for")),
         commentRenderer: () => (el, html) => {
           el.textContent = html;
           return () => {};
@@ -237,53 +158,131 @@ describe("AnnotationPopover", () => {
       }),
     );
     const hoverParent: HoverParent = { hoverPopover: null };
-    const show = (annotationKey: string): Promise<void> =>
-      service.show({
+    const show = (link: { attachmentKey: string; annotationKey: string }) => {
+      const targetEl = document.body.appendChild(
+        document.createElement("span"),
+      );
+      stack.defer(() => targetEl.remove());
+      return service.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
-        targetEl: target(stack),
+        targetEl,
         sourcePath: "note.md",
-        link: {
-          attachmentKey: "RGRPDF24",
-          annotationKey,
-          pageLabel: null,
-          groupID: null,
-        },
+        link: { ...link, pageLabel: null, groupID: null },
       });
-    // The pointer moves on before the first link's read answers.
-    const stale = show("PUPR5FG5");
-    const fresh = show("HRK7BG32");
-    reads[1]!.resolve(list);
+    };
+
+    const stale = show({
+      attachmentKey: "EPUBBKS2",
+      annotationKey: "EPUBMRK2",
+    });
+    const fresh = show({
+      attachmentKey: "RGRPDF24",
+      annotationKey: "HRK7BG32",
+    });
+    expect(reads.map(({ key }) => key)).toEqual(["EPUBBKS2", "RGRPDF24"]);
+    reads[1]!.held.resolve();
     await fresh;
-    reads[0]!.resolve(list);
+    reads[0]!.held.resolve();
     await stale;
 
     const card = await shownUnder(hoverParent);
-    expect(card.textContent).toContain("Making figures is hard :(");
-    expect(card.textContent).not.toContain("Identify Your Message");
+    expect(card.textContent).toContain(COMMENT);
+    expect(card.textContent).not.toContain("A paragraph in a reflowable book");
   });
+});
 
-  it("reads the annotation again on the next hover", async () => {
+// Whether a real Excerpt Image shows in the popover is proven in the running
+// app. These cases cover what it cannot observe: the display read a hidden
+// popover lets go, and bytes the browser fails to decode.
+describe("AnnotationPopover with an Excerpt Image", () => {
+  const DATA_DIR = "/zotero";
+
+  /**
+   * The Fixture's image Annotation in a popover, over the real repository and
+   * the real Excerpt Image display. Every file the image service reads answers
+   * with one red pixel, which the browser never decodes here: a case fires
+   * the decode failure itself.
+   */
+  async function harness(stack: AsyncDisposableStack) {
+    const { repository, db, queryClient } = await setup(stack);
+    const images = stack.use(
+      new ExcerptImageService({ read: async () => redPng }),
+    );
+    const display = stack.use(
+      new ExcerptDisplayService({
+        queries: queryClient,
+        resolve: (request, signal) => images.resolve(request, signal),
+        stored: (request) => images.stored(request),
+      }),
+    );
+    const service = stack.use(
+      new AnnotationPopover({
+        annotations: repository,
+        excerptDisplay: display,
+        excerptRequest: ({ annotation, source }) =>
+          savedExcerptRequest({
+            annotation,
+            source,
+            sourceScope: DATA_DIR,
+            zoteroReads: db,
+            paths: { dataDir: DATA_DIR, baseAttachmentPath: null },
+          }),
+        commentRenderer: () => () => () => {},
+      }),
+    );
+    const hoverParent: HoverParent = { hoverPopover: null };
+    const targetEl = document.body.appendChild(document.createElement("span"));
+    stack.defer(() => targetEl.remove());
+    await service.show({
+      event: new MouseEvent("mouseover"),
+      hoverParent,
+      targetEl,
+      sourcePath: "note.md",
+      link: {
+        attachmentKey: "RGRPDF24",
+        annotationKey: "FDRFQ7C2",
+        pageLabel: null,
+        groupID: null,
+      },
+    });
+    const card = await shownUnder(hoverParent);
+    const img = await vi.waitFor(() => {
+      const found = card.querySelector("img");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    return {
+      card,
+      img,
+      hoverParent,
+      /** The display reads the query client holds now. */
+      displayReads: () =>
+        queryClient.client
+          .getQueryCache()
+          .findAll({ queryKey: [EXCERPT_DISPLAY] }).length,
+    };
+  }
+
+  it("lets the Excerpt Image's display read go when the popover hides", async () => {
     await using stack = new AsyncDisposableStack();
     const run = await harness(stack);
-    run.show({ annotationKey: "HRK7BG32" });
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toContain(
-        "Making figures is hard :(",
-      ),
-    );
+    expect(run.displayReads()).toBe(1);
+
     run.hoverParent.hoverPopover!.hide();
 
-    run.client.$client.exec(
-      "update itemAnnotations set comment = 'Figures are easier now' where itemID = 51",
-    );
-    await run.repository.refresh("RGRPDF24");
-    run.show({ annotationKey: "HRK7BG32" });
+    expect(run.displayReads()).toBe(0);
+  });
 
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toContain(
-        "Figures are easier now",
-      ),
-    );
+  it("says the Excerpt Image is unavailable when its bytes fail to decode", async () => {
+    await using stack = new AsyncDisposableStack();
+    const run = await harness(stack);
+
+    run.img.dispatchEvent(new Event("error"));
+
+    await vi.waitFor(() => {
+      expect(run.card.querySelector("img")).toBeNull();
+      expect(run.card.textContent).toContain(m.annot_view_image_unavailable());
+    });
   });
 });

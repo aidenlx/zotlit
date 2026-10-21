@@ -100,7 +100,8 @@ export interface TargetOpener {
    * host, and whose file this device holds, opens there in `pane`; every other
    * one opens in Zotero, which finds any Attachment by its key. Waits a
    * bounded time for the Attachment index while it is still being built, and
-   * opens in Zotero once that wait ends or the index fails.
+   * opens in Zotero once that wait ends. A failed build is retried, so the
+   * index never fails outright; it is only late.
    */
   open(target: OpenTarget, pane: PaneType | boolean): Promise<OpenOutcome>;
   /**
@@ -159,18 +160,16 @@ export function createTargetOpener({
 
   /**
    * The index's answer for `attachmentKey`, waiting a bounded time for the
-   * first index; still `pending` when that wait ends or the index fails.
+   * first index; still `pending` when that wait ends.
    */
   const lookup = async (attachmentKey: string): Promise<AttachmentLookup> => {
     const found = attachments.lookup(attachmentKey);
     if (found.kind !== "pending") return found;
     logger.debug("Target waits for the Attachment index", { attachmentKey });
     attachments.warm();
-    const waited = await indexedWithin(attachments.indexed, indexWait);
-    if (waited !== "indexed") {
+    if (!(await indexedWithin(attachments.indexed, indexWait))) {
       logger.debug("Target gave up on the Attachment index", {
         attachmentKey,
-        reason: waited,
       });
       return { kind: "pending" };
     }
@@ -290,26 +289,20 @@ export function createTargetOpener({
   };
 }
 
-/** Whether `indexed` settled within `wait`, failed, or outlasted it. */
+/**
+ * Whether `indexed` settled within `wait`. The resolver retries a failed
+ * build, so `indexed` never rejects; it only settles late or not at all.
+ */
 async function indexedWithin(
   indexed: Promise<void>,
   wait: Temporal.Duration,
-): Promise<"indexed" | "index-timeout" | "index-failed"> {
+): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<"index-timeout">((resolve) => {
-    timer = setTimeout(
-      () => resolve("index-timeout"),
-      wait.total("milliseconds"),
-    );
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), wait.total("milliseconds"));
   });
   try {
-    return await Promise.race([
-      indexed.then(
-        () => "indexed" as const,
-        () => "index-failed" as const,
-      ),
-      timeout,
-    ]);
+    return await Promise.race([indexed.then(() => true), timeout]);
   } finally {
     clearTimeout(timer);
   }

@@ -1254,6 +1254,13 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
 // A tab Obsidian restored at startup records no open of its own; a later open
 // that names another Attachment of the same file is the researcher's own, and
 // is recorded as a read of that Attachment.
+//
+// Kept beside annotation-links.e2e.ts, which proves the rename and the read of
+// the named Attachment in a tab ZotLit found open. There the opener's
+// same-file open rebinds through a reconcile on a workspace event, and the
+// in-place rebind this case drives was not reached: the restored-view line in
+// `#unbind` survived a mutation. The case stays until that path is shown
+// reachable from Obsidian's own same-leaf navigation, or shown dead.
 it("records a read of the other Attachment an open names in a restored tab", async () => {
   const SHARED = { ...RESOLVED, attachmentKey: "SHRDKEY2" } as const;
   const leaf = Object.assign(new WorkspaceLeaf(), {
@@ -1302,71 +1309,4 @@ it("records a read of the other Attachment an open names in a restored tab", asy
     RESOLVED.attachmentKey,
     SHARED.attachmentKey,
   ]);
-});
-
-// Obsidian turns the leaf active, which fires `file-open`, before it hands the
-// leaf its ephemeral state: a cold view is bound before `setEphemeralState`.
-it("binds the Attachment a cold open names, once, before its ephemeral state arrives", async () => {
-  const SHARED = { ...RESOLVED, attachmentKey: "SHRDKEY2" } as const;
-  const leaf = Object.assign(new WorkspaceLeaf(), {
-    getViewState: () => ({ type: "pdf" }),
-  });
-  const view = Object.assign(pdfView("attachments/rougier-2014.pdf"), {
-    leaf,
-  });
-  const open: { view: unknown }[] = [];
-  const { app, relayout } = workspace(open);
-  // Declared before the service, so the service is disposed, and its patch
-  // removed, before the native method is restored.
-  using _native = vi
-    .spyOn(WorkspaceLeaf.prototype, "setViewState")
-    .mockImplementation(async function (
-      this: WorkspaceLeaf,
-      _viewState: unknown,
-      eState?: unknown,
-    ) {
-      Object.assign(this, { view });
-      open.push({ view });
-      relayout();
-      if (eState) this.setEphemeralState(eState);
-    });
-  const attachments = attachmentReads(RESOLVED);
-  attachments.resolve.mockImplementation(((
-    _path: string,
-    named?: { attachmentKey: string | null },
-  ) =>
-    named?.attachmentKey === SHARED.attachmentKey
-      ? SHARED
-      : RESOLVED) as never);
-  const annotations = annotationReads();
-  const recordRead = vi.fn();
-
-  await using service = new PdfAnnotationEditor({
-    app,
-    attachments,
-    annotations,
-    capabilityGestures: capabilityGestures(),
-    recordRead,
-    now: () => NOW,
-    ...standingDeps(),
-  });
-  await service.ready;
-
-  await leaf.setViewState(
-    { type: "pdf", state: { file: "attachments/rougier-2014.pdf" } },
-    { subpath: `#page=1&zt-attachment=${SHARED.attachmentKey}` },
-  );
-
-  expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
-    expect.any(String),
-    { attachmentKey: SHARED.attachmentKey },
-  );
-  expect(service.bindings[0]!.attachment).toMatchObject({
-    attachmentKey: SHARED.attachmentKey,
-  });
-  // The file's path owner was never read, nor its Annotations held.
-  expect(recordRead.mock.calls.map(([read]) => read.attachmentKey)).toEqual([
-    SHARED.attachmentKey,
-  ]);
-  expect(annotations.histories).toEqual(new Map([[SHARED.attachmentKey, 1]]));
 });

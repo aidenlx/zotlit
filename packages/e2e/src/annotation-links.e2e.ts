@@ -12,6 +12,7 @@ import { ATTACHMENTS } from "@zotlit/scripts/fixture";
 import {
   annotationAttachment,
   annotationItem,
+  annotationKeys,
   attachmentAnnotations,
   e2eFixture,
   reachable,
@@ -36,6 +37,8 @@ const ALSO_FIRST_PAGE = attachmentAnnotations.find(
 const COMMENTED = attachmentAnnotations.find(({ key }) => key === "HRK7BG32")!;
 /** The Fixture's ink Annotation. */
 const INK = attachmentAnnotations.find(({ key }) => key === "TYY6Z6ZF")!;
+/** An underline whose text a case rewrites with rich text. */
+const RICH = attachmentAnnotations.find(({ key }) => key === "K3JRFLFQ")!;
 /** A PDF the Fixture's Zotero holds a row for, and never a file. */
 const MISSING_PDF = ATTACHMENTS.find(({ key }) => key === "MISSNG22")!;
 
@@ -100,6 +103,7 @@ const LINK_IN = {
   reading: `[...view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===url)`,
   properties: `[...(view.metadataEditor?.containerEl.querySelectorAll('.metadata-link-inner.external-link')??[])].find((link)=>link.dataset.href===url)`,
   "live-preview": `[...view.editor.cm.contentDOM.querySelectorAll('.cm-link .cm-underline')].find((el)=>el.textContent===${JSON.stringify(LINK_TEXT)})`,
+  source: `[...view.editor.cm.contentDOM.querySelectorAll('.cm-link')].find((el)=>el.textContent===${JSON.stringify(LINK_TEXT)})`,
 } as const;
 
 /**
@@ -111,7 +115,9 @@ const LINK_IN = {
  */
 function showNote(content: string, gesture: keyof typeof LINK_IN): string {
   const state =
-    gesture === "reading" ? "{mode:'preview'}" : "{mode:'source',source:false}";
+    gesture === "reading"
+      ? "{mode:'preview'}"
+      : `{mode:'source',source:${gesture === "source"}}`;
   return `const file=await app.vault.create(${JSON.stringify(NOTE)},${content});
     cleanup.defer(()=>app.vault.delete(file));
     const leaf=app.workspace.getLeaf('tab');
@@ -163,6 +169,35 @@ const WAITS = `
       if(past(end))throw new Error(what());
     }
   };`;
+
+/**
+ * Eval code, inside an `await using cleanup` block after {@link WAITS} and
+ * first on its stack, that puts the Use Ledger back as the block found it once
+ * every view the block opened has closed. A followed link records a read and
+ * an insert a citation; the ledger keeps the newest Use of each Item and lets
+ * none go, so ZotLit loads afresh over the saved entries, as it would at
+ * startup — only where the scenario changed them. The reload unpatches and
+ * patches `window.open` again over the suite's recorder, and warms the
+ * Attachment index again, which the next scenario's click needs.
+ */
+const RESTORE_LEDGER = `
+  const savedLedger=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
+  cleanup.defer(async()=>{
+    if(JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null)===savedLedger)return;
+    app.workspace.requestActiveLeafEvents.run();
+    const old=app.plugins.plugins.zotlit.services;
+    await app.plugins.disablePlugin('zotlit');
+    await old.pdfAnnotationEditor[Symbol.asyncDispose]();
+    await old.useLedger[Symbol.asyncDispose]();
+    await old.zoteroLocalApi[Symbol.asyncDispose]();
+    app.saveLocalStorage('zotlit-use-ledger',JSON.parse(savedLedger));
+    await app.plugins.enablePlugin('zotlit');
+    const fresh=app.plugins.plugins.zotlit.services;
+    await within(fresh.useLedger.ready,deadline(),'The Use Ledger did not load again');
+    const restored=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
+    if(restored!==savedLedger)throw new Error('The Use Ledger came back changed: '+restored);
+    await within(fresh.attachmentResolver.indexed,deadline(),'The Attachment index was not built again');
+  });`;
 
 /**
  * Opens a draft `leaf` in Live Preview whose last line reads `line`, as eval
@@ -231,20 +266,20 @@ const INLINE_PROFILE = `
 /**
  * Where an insert lands and what follows it: the draft's last line reads
  * `line` with the cursor at `ch`; `inline` renders through
- * {@link INLINE_ANNOTATION}; `then` is typed once the insert lands.
+ * {@link INLINE_ANNOTATION}; `typeOn` is typed once the insert lands.
  */
 interface InsertAt {
   line?: string;
   ch?: number;
   inline?: boolean;
-  then?: string;
+  typeOn?: string;
 }
 
-/** Eval code that types `then` at the cursor of `editor`, when given. */
-const typeAfter = (then: string | undefined) =>
-  then === undefined
+/** Eval code that types `typeOn` at the cursor of `editor`, when given. */
+const typeAfter = (typed: string | undefined) =>
+  typed === undefined
     ? ""
-    : `editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(then)}),{userEvent:'input.type'});`;
+    : `editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(typed)}),{userEvent:'input.type'});`;
 
 /**
  * Inserts the Annotation `annotationKey` of the Rougier Item into an empty
@@ -254,7 +289,7 @@ const typeAfter = (then: string | undefined) =>
  */
 async function insertFromCard(
   annotationKey: string,
-  { line = "", ch = 0, inline = false, then }: InsertAt = {},
+  { line = "", ch = 0, inline = false, typeOn }: InsertAt = {},
 ): Promise<string> {
   const card = `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`;
   const reply = await obEval(
@@ -264,6 +299,7 @@ async function insertFromCard(
       let text;
       {
         await using cleanup=new AsyncDisposableStack();
+        ${RESTORE_LEDGER}
         ${inline ? INLINE_PROFILE : ""}
         ${draft(line)}
         const sidebar=app.workspace.getRightLeaf(false);
@@ -279,7 +315,7 @@ async function insertFromCard(
         await ${MENU_READY};
         item.click();
         await until(()=>editor.getValue().includes(${JSON.stringify(annotationKey)}),()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
-        ${typeAfter(then)}
+        ${typeAfter(typeOn)}
         text=editor.getValue();
       }
       return JSON.stringify(text);
@@ -294,8 +330,12 @@ interface SearchOutcome {
   text: string;
   /** The rows the Annotation Suggester showed for the query, by their text. */
   rows: string[];
+  /** The superscript the chosen row drew from the quote's rich text, if any. */
+  sup: string | null;
   /** Whether the Citation Suggester opened on the typed text. */
   citationOpen: boolean;
+  /** The Use the insert recorded for the Rougier Item, or null for none. */
+  use: string | null;
 }
 
 /**
@@ -307,7 +347,7 @@ interface SearchOutcome {
 async function searchAndInsert(
   typed: string,
   choose: string,
-  { line = "", ch = 0, inline = false, then }: InsertAt = {},
+  { line = "", ch = 0, inline = false, typeOn }: InsertAt = {},
 ): Promise<SearchOutcome> {
   const reply = await obEval(
     run.vaultId,
@@ -320,9 +360,12 @@ async function searchAndInsert(
       let outcome;
       {
         await using cleanup=new AsyncDisposableStack();
+        ${RESTORE_LEDGER}
         ${inline ? INLINE_PROFILE : ""}
         ${draft(line)}
         cleanup.defer(()=>annotations.close());
+        const ledger=()=>app.plugins.plugins.zotlit.services.useLedger.get(${JSON.stringify(annotationItem.key)});
+        const before=ledger()?.instant.toString()??null;
         app.workspace.setActiveLeaf(leaf,{focus:true});
         const editor=leaf.view.editor;
         editor.setCursor({line:editor.lastLine(),ch:${ch}});
@@ -332,13 +375,18 @@ async function searchAndInsert(
         const rows=()=>[...annotations.suggestEl.querySelectorAll('.suggestion-item')];
         const row=await until(()=>annotations.isOpen&&annotations.context?.query===query&&rows().find((el)=>el.textContent.includes(${JSON.stringify(choose)})),()=>'The Annotation Suggester showed no row for '+JSON.stringify(query)+': '+JSON.stringify(rows().map((el)=>el.textContent)));
         const shown=rows().map((el)=>el.textContent);
+        const sup=row.querySelector('sup')?.textContent??null;
         const citationOpen=!!citations?.isOpen;
         row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));
         row.dispatchEvent(new MouseEvent('click',{bubbles:true}));
         await until(()=>{const value=editor.getValue();return !value.includes('[>')&&value.includes('zotero://');},()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
-        ${typeAfter(then)}
+        ${typeAfter(typeOn)}
         const text=editor.getValue();
-        outcome={text,rows:shown,citationOpen};
+        // The Use lands with the text, so a Use the insert made is newer than
+        // the one held before the search.
+        const after=ledger();
+        const use=after&&after.instant.toString()!==before?after.kind:null;
+        outcome={text,rows:shown,sup,citationOpen,use};
       }
       return JSON.stringify(outcome);
     })()`,
@@ -417,6 +465,7 @@ async function follow({
       let outcome;
       {
         await using cleanup=new AsyncDisposableStack();
+        ${RESTORE_LEDGER}
         const layout=app.workspace.getLayout();
         cleanup.defer(async()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();await app.workspace.changeLayout(layout);});
         const captureSetting=s.settings.current['reader.open-file-links'];
@@ -560,6 +609,140 @@ async function reindexed(kind: "resolved" | "unresolved"): Promise<string> {
   return JSON.parse(reply) as string;
 }
 
+/** What two tabs on the Rougier PDF's one file showed, as {@link sharedTabs} read it. */
+interface SharedTabsOutcome {
+  /**
+   * The Attachment the tab ZotLit found open held each time an open recorded
+   * a read of the paper, from the open that named {@link SHARED}'s Attachment.
+   */
+  reads: (string | null)[];
+  /** The Attachment that tab is bound to once that open lands. */
+  restored: string | null;
+  /** The Annotation View's cards beside that tab, by key. */
+  besideRestored: string[];
+  /** The Annotation View's cards beside a second tab on the file, by key. */
+  besideSecond: string[];
+  /** Every `zotero:` URL the system handler was asked to open. */
+  passed: string[];
+}
+
+/**
+ * With {@link SHARED} in the Fixture: a tab on the Rougier PDF that ZotLit
+ * found open as it loaded, the way it finds a tab Obsidian restored at
+ * startup, takes an open of {@link SHARED}'s Annotation through the opener
+ * every ZotLit gesture shares. A second tab then opens the same file plainly,
+ * and the sidebar Annotation View, following the active tab, is read beside
+ * each tab. Every change is undone on the evaluation's own stack, the Use
+ * Ledger included.
+ */
+async function sharedTabs(): Promise<SharedTabsOutcome> {
+  const cardsOf = (keys: readonly string[]) => JSON.stringify([...keys].sort());
+  const reply = await obEval(
+    run.vaultId,
+    `(async()=>{
+      ${WAITS}
+      const services=()=>app.plugins.plugins.zotlit.services;
+      const file=app.vault.getFileByPath(${JSON.stringify(PDF_PATH)});
+      const attachmentOf=(leaf)=>services().pdfAnnotationEditor.sessionFor(leaf.view)?.target?.attachmentKey??null;
+      const boundTo=(leaf,key,what)=>until(()=>attachmentOf(leaf)===key,()=>what+' never named '+key+': '+attachmentOf(leaf));
+      let outcome;
+      {
+        await using cleanup=new AsyncDisposableStack();
+        ${RESTORE_LEDGER}
+        const layout=app.workspace.getLayout();
+        cleanup.defer(async()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();await app.workspace.changeLayout(layout);});
+        window.__ztLinks.passed=[];
+        const restored=app.workspace.getLeaf('tab');
+        cleanup.adopt(restored,(leaf)=>leaf.detach());
+        await restored.openFile(file);
+        await boundTo(restored,${JSON.stringify(annotationAttachment.key)},'The first tab');
+        // ZotLit loads with the tab already open, as at startup.
+        await app.plugins.disablePlugin('zotlit');
+        await app.plugins.enablePlugin('zotlit');
+        await within(services().attachmentResolver.indexed,deadline(),'The Attachment index was not built again');
+        await boundTo(restored,${JSON.stringify(annotationAttachment.key)},'The tab ZotLit found open');
+        // A read is recorded once its binding names the Attachment, before
+        // the tab's session does, so each is credited to the binding's.
+        const reads=[];
+        const ledger=services().useLedger;
+        cleanup.defer(ledger.on('changed',()=>{
+          const [newest]=Object.entries(ledger.uses).sort(([,a],[,b])=>b-a)[0]??[];
+          if(ledger.get(newest)?.kind==='read')reads.push(services().pdfAnnotationEditor.bindingFor(restored.view)?.attachment.attachmentKey??null);
+        }));
+        app.workspace.setActiveLeaf(restored,{focus:true});
+        const opened=await services().targetOpener.open({kind:'annotation',attachmentKey:${JSON.stringify(SHARED.attachmentKey)},annotationKey:${JSON.stringify(SHARED.annotationKey)},pageIndex:0,pageLabel:${JSON.stringify(FIRST_PAGE.pageLabel)}},false);
+        if(opened.kind!=='reader')throw new Error('The open went elsewhere: '+JSON.stringify(opened));
+        await boundTo(restored,${JSON.stringify(SHARED.attachmentKey)},'The tab ZotLit found open');
+        const second=app.workspace.getLeaf('tab');
+        cleanup.adopt(second,(leaf)=>leaf.detach());
+        await second.openFile(file);
+        await boundTo(second,${JSON.stringify(annotationAttachment.key)},'The second tab');
+        const sidebar=app.workspace.getRightLeaf(false);
+        cleanup.adopt(sidebar,(leaf)=>leaf.detach());
+        await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'active-tab'}});
+        await app.workspace.revealLeaf(sidebar);
+        const cards=()=>[...new Set([...sidebar.view.contentEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map((el)=>el.dataset.zoteroAnnotationKey))].sort();
+        // Each wait ends on the cards of the Attachment its tab holds; a
+        // sidebar stuck on other cards fails with the cards it last showed.
+        const beside=(leaf,expected)=>{
+          app.workspace.setActiveLeaf(leaf,{focus:true});
+          return until(()=>JSON.stringify(cards())===expected&&cards(),()=>'The Annotation View beside the tab showed '+JSON.stringify(cards())+', not '+expected);
+        };
+        const besideRestored=await beside(restored,${JSON.stringify(cardsOf([SHARED.annotationKey]))});
+        const besideSecond=await beside(second,${JSON.stringify(cardsOf(annotationKeys))});
+        outcome={reads,restored:attachmentOf(restored),besideRestored,besideSecond,passed:window.__ztLinks.passed.map(({url})=>url)};
+      }
+      return JSON.stringify(outcome);
+    })()`,
+    120000,
+  );
+  return JSON.parse(reply) as SharedTabsOutcome;
+}
+
+/**
+ * Sets the stored text of the Fixture's Annotation `annotationKey` to `text`
+ * in its Zotero database, as Zotero stores rich text: its own HTML subset.
+ * Disposing writes the Fixture's text back.
+ */
+function rewriteAnnotationText(
+  databasePath: string,
+  annotationKey: string,
+  text: string,
+): Disposable {
+  const write = (value: string | null) => {
+    using database = new DatabaseSync(databasePath);
+    database
+      .prepare(
+        "update itemAnnotations set text = ? where itemID = (select itemID from items where key = ?)",
+      )
+      .run(value, annotationKey);
+  };
+  const original = attachmentAnnotations.find(
+    ({ key }) => key === annotationKey,
+  )!.text;
+  write(text);
+  return { [Symbol.dispose]: () => write(original ?? null) };
+}
+
+/**
+ * Has ZotLit read the database again and waits, bounded, until its Annotation
+ * repository holds `text` for the Rougier PDF's Annotation `annotationKey`.
+ */
+async function reread(annotationKey: string, text: string): Promise<void> {
+  await obEval(
+    run.vaultId,
+    `(async()=>{
+      ${WAITS}
+      const s=app.plugins.plugins.zotlit.services;
+      await s.zoteroReads.refresh();
+      const holds=async()=>(await s.annotationRepository.read(${JSON.stringify(annotationAttachment.key)}))?.annotations.find(({key})=>key===${JSON.stringify(annotationKey)})?.text===${JSON.stringify(text)};
+      for(const end=deadline();!(await holds());await sleep(100))if(past(end))throw new Error('The repository never read the new text of ${annotationKey}');
+      return true;
+    })()`,
+    60000,
+  );
+}
+
 /** What a hover over one link left on screen, read before its cleanup ran. */
 interface HoverOutcome {
   /** Whether the hover hung a popover off the note's view. */
@@ -570,14 +753,26 @@ interface HoverOutcome {
   color: string | null;
   /** Whether the popover painted a decoded Excerpt Image. */
   image: boolean;
+  /** The superscript the popover drew from the quote's rich text, if any. */
+  sup: string | null;
 }
+
+/** The link a hover that shows nothing is read against: one that shows a popover. */
+const CONTROL_URL = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
 
 interface HoverScenario {
   /** The link the note quotes, and the pointer hovers. */
   url: string;
-  gesture: "live-preview" | "reading";
+  gesture: "live-preview" | "reading" | "source";
   /** The Hover Action for this scenario; the vault's own when omitted. */
   hoverAction?: "off" | "popover" | "page-preview";
+  /**
+   * Whether ZotLit's row in Obsidian's Page preview settings asks for Mod;
+   * the vault's own when omitted.
+   */
+  pagePreviewMod?: boolean;
+  /** Turn `citation.pandoc-citations` off for this scenario. */
+  pandocOff?: boolean;
   /** Wait for a decoded Excerpt Image as well as the text. */
   image?: boolean;
   /** Hold Ctrl or Command through the hover. */
@@ -594,16 +789,25 @@ interface HoverScenario {
  *
  * The hover is a synthetic `mouseover` at {@link linkTarget}'s point. Obsidian
  * hangs a hover popover off the view once its opening delay has run, so a
- * hover that shows nothing is read against a later hover that does.
+ * hover that shows nothing is read against a later hover over
+ * {@link CONTROL_URL} that does.
  */
 async function hover({
   url,
   gesture,
   hoverAction,
+  pagePreviewMod,
+  pandocOff = false,
   image = false,
   mod = false,
   absent = hoverAction === "off",
 }: HoverScenario): Promise<HoverOutcome> {
+  // The control link has a line of its own; the cursor stays on the empty
+  // last line, which holds no link.
+  const note =
+    absent && url !== CONTROL_URL
+      ? `${noteWith(url)}\nSee also [the control](${CONTROL_URL}).\n`
+      : noteWith(url);
   const reply = await obEval(
     run.vaultId,
     `(async()=>{
@@ -616,27 +820,39 @@ async function hover({
         cleanup.defer(async()=>{await app.workspace.changeLayout(layout);});
         const hoverAction=s.settings.current['citation.hover-action'];
         cleanup.defer(()=>s.settings.update({'citation.hover-action':hoverAction}));
+        const pandoc=s.settings.current['citation.pandoc-citations'];
+        cleanup.defer(()=>s.settings.update({'citation.pandoc-citations':pandoc}));
         const url=${JSON.stringify(url)};
         ${hoverAction === undefined ? "" : `s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}});`}
-        ${showNote(JSON.stringify(noteWith(url)), gesture)}
+        ${pandocOff ? "s.settings.update({'citation.pandoc-citations':false});" : ""}
+        ${
+          pagePreviewMod === undefined
+            ? ""
+            : `const pagePreview=app.internalPlugins.getEnabledPluginById('page-preview')?.options;
+        if(!pagePreview)throw new Error('The Page preview core plugin is off');
+        const rowSet=Object.hasOwn(pagePreview,'zotlit-citekey'),row=pagePreview['zotlit-citekey'];
+        cleanup.defer(()=>{if(rowSet)pagePreview['zotlit-citekey']=row;else delete pagePreview['zotlit-citekey'];});
+        pagePreview['zotlit-citekey']=${pagePreviewMod};`
+        }
+        ${showNote(JSON.stringify(note), gesture)}
         ${linkTarget(gesture)}
         cleanup.defer(()=>view.hoverPopover?.hide());
         link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
         const opened=(view)=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
         if(${absent}){
-          // Absence is read off a control: the same link hovered later, in a
-          // split under the Citation Popover. Every hover popover waits the
-          // same opening delay, so once the control's has opened, one the
-          // first hover had started would have opened too.
+          // Absence is read off a control: a link that shows a popover,
+          // hovered later in a split under the Citation Popover. Every hover
+          // popover waits the same opening delay, so once the control's has
+          // opened, one the first hover had started would have opened too.
           s.settings.update({'citation.hover-action':'popover'});
           const control=app.workspace.getLeaf('split','vertical');
           cleanup.adopt(control,(leaf)=>leaf.detach());
           await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});
           cleanup.defer(()=>control.view.hoverPopover?.hide());
-          const controlLink=await until(()=>[...control.view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===url),()=>'The control link did not render');
+          const controlLink=await until(()=>[...control.view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===${JSON.stringify(CONTROL_URL)}),()=>'The control link did not render');
           controlLink.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:controlLink.ownerDocument.defaultView}));
           await until(()=>opened(control.view),()=>'The control hover opened no popover');
-          outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false};
+          outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false,sup:null};
         }else{
           const popover=await until(()=>opened(view),()=>'No popover opened over the link');
           const content=()=>popover.hoverEl.isConnected?popover.hoverEl.querySelector('.zt-citation-popover-content'):null;
@@ -644,7 +860,7 @@ async function hover({
           const painted=()=>[...content().querySelectorAll('img')].find((img)=>img.src.startsWith('blob:')&&img.complete&&img.naturalWidth>0);
           if(${image})await until(painted,()=>'The popover painted no Excerpt Image: '+content().outerHTML.slice(0,300));
           const colored=content().querySelector('[style*="--zt-annot-color"]');
-          outcome={popover:true,text:content().textContent,color:colored?colored.style.getPropertyValue('--zt-annot-color'):null,image:!!painted()};
+          outcome={popover:true,text:content().textContent,color:colored?colored.style.getPropertyValue('--zt-annot-color'):null,image:!!painted(),sup:content().querySelector('sup')?.textContent??null};
         }
       }
       return JSON.stringify(outcome);
@@ -789,85 +1005,80 @@ describe.skipIf(!reachable)("Annotation links", () => {
     );
 
     expect(outcome.citationOpen).toBe(false);
-    expect(outcome.rows).toEqual([expect.stringContaining(FIRST_PAGE.text!)]);
+    // A row names the passage, its page as the Annotation View does, and
+    // the paper.
+    expect(outcome.rows).toEqual([
+      expect.stringContaining(
+        `${run.m.annot_view_page({ page: FIRST_PAGE.pageLabel })} · ${annotationItem.title}`,
+      ),
+    ]);
+    expect(outcome.rows[0]).toContain(FIRST_PAGE.text!);
     expect(outcome.text).toContain(FIRST_PAGE.text!);
     expect(outcome.text).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
     expect(outcome.text).toContain(
       `${FIRST_PAGE.text} ${citationOf(FIRST_PAGE)}`,
     );
     expect(outcome.text).not.toContain("[>");
+    expect(outcome.use).toBe("cited");
   }, 120000);
 
-  // A one-line template quotes inside a sentence: the insert stands one
-  // space apart from the words around it, runs straight into closing
-  // punctuation, and leaves a space at a line end, where typing goes on. A
-  // trigger typed straight after a word is where the researcher wanted it, so
-  // the Annotation Suggester adds no space before it (`suggested`).
-  const PLACEMENTS: {
-    where: string;
-    line: string;
-    ch: number;
-    then?: string;
-    expected: string;
-    suggested?: string;
-  }[] = [
-    {
-      where: "before a word",
-      line: "As argued here",
-      ch: 10,
-      expected: `As argued ${inlineOf(FIRST_PAGE)} here`,
-    },
-    {
-      where: "before closing punctuation",
-      line: "As argued .",
-      ch: 10,
-      expected: `As argued ${inlineOf(FIRST_PAGE)}.`,
-    },
-    {
-      where: "at a line end, typing on after the space",
-      line: "As argued ",
-      ch: 10,
-      then: "next",
-      expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
-    },
-    {
-      where: "right after a word",
+  // A note Annotation quotes nothing: its row shows its comment.
+  it("finds an Annotation by its comment, and its row shows the comment", async () => {
+    const outcome = await searchAndInsert("[>figures hard", COMMENTED.comment!);
+
+    expect(outcome.rows).toEqual([expect.stringContaining(COMMENTED.comment!)]);
+  }, 120000);
+
+  // Zotero stores an Annotation's text as its own HTML subset: both the
+  // popover and the Annotation Suggester's row draw it, never show it.
+  it("draws an Annotation's rich text in its popover and its suggestion row", async () => {
+    const text = `${RICH.text} E = mc<sup>2</sup>`;
+    await using cleanup = new AsyncDisposableStack();
+    // Disposed in reverse: the Fixture's text is written back, then read.
+    cleanup.defer(() => reread(RICH.key, RICH.text!));
+    cleanup.use(rewriteAnnotationText(e2eFixture.databasePath, RICH.key, text));
+    await reread(RICH.key, text);
+
+    const hovered = await hover({
+      url: durableLink(RICH.key, RICH.pageLabel),
+      gesture: "reading",
+    });
+    // Chosen by the rewritten text as drawn, so a row from an index that
+    // still holds the Fixture's text is never chosen.
+    const searched = await searchAndInsert("[>classically defined", "E = mc2");
+
+    expect(hovered).toMatchObject({ popover: true, sup: "2" });
+    expect(hovered.text).not.toContain("<sup>");
+    expect(searched.sup).toBe("2");
+    expect(searched.rows.join("")).not.toContain("<sup>");
+  }, 180000);
+
+  // A one-line template quotes inside a sentence; where the insert lands
+  // around the words beside it is the insertion's own rule, tested with it.
+  // A trigger typed straight after a word is where the researcher wanted it,
+  // so the Annotation Suggester adds no space before it.
+  it("places a one-line Annotation from its card right after a word, typing on", async () => {
+    const text = await insertFromCard(FIRST_PAGE.key, {
       line: "As argued",
       ch: 9,
-      then: "next",
-      expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
-      suggested: `As argued${inlineOf(FIRST_PAGE)} next`,
-    },
-  ];
+      inline: true,
+      typeOn: "next",
+    });
 
-  it.each(PLACEMENTS)(
-    "places a one-line Annotation from its card $where",
-    async ({ line, ch, then, expected }) => {
-      const text = await insertFromCard(FIRST_PAGE.key, {
-        line,
-        ch,
-        inline: true,
-        then,
-      });
+    expect(text).toBe(`# Draft\n\nAs argued ${inlineOf(FIRST_PAGE)} next`);
+  }, 120000);
 
-      expect(text).toBe(`# Draft\n\n${expected}`);
-    },
-    120000,
-  );
+  it("places a one-line Annotation from the Annotation Suggester right after a word, typing on", async () => {
+    const outcome = await searchAndInsert(
+      "[>MESSAGE tag:visualization color:blue",
+      FIRST_PAGE.text!,
+      { line: "As argued", ch: 9, inline: true, typeOn: "next" },
+    );
 
-  it.each(PLACEMENTS)(
-    "places a one-line Annotation from the Annotation Suggester $where",
-    async ({ line, ch, then, expected, suggested = expected }) => {
-      const outcome = await searchAndInsert(
-        "[>MESSAGE tag:visualization color:blue",
-        FIRST_PAGE.text!,
-        { line, ch, inline: true, then },
-      );
-
-      expect(outcome.text).toBe(`# Draft\n\n${suggested}`);
-    },
-    120000,
-  );
+    expect(outcome.text).toBe(
+      `# Draft\n\nAs argued${inlineOf(FIRST_PAGE)} next`,
+    );
+  }, 120000);
 
   // The page chip of an Annotation View card opens the Annotation its
   // backlink names the way a followed link does, so it opens Obsidian's
@@ -931,6 +1142,35 @@ describe.skipIf(!reachable)("Annotation links", () => {
     // The reader held the named Attachment from its first read: the path's
     // own Attachment was never bound, nor read.
     expect(outcome.reads).toEqual([SHARED.attachmentKey]);
+  }, 180000);
+
+  // A tab ZotLit found open records no open of its own, but an open that
+  // names the file's other Attachment in it is the researcher's own: the
+  // tab's read of the path's Attachment ends, and a read of the named one
+  // begins. Two tabs on the one file are then two Attachments, and the
+  // Annotation View beside each shows that tab's own.
+  it("rebinds a tab ZotLit found open to the other Attachment an open names, and the Annotation View follows each of two tabs on the shared PDF", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await reindexed("unresolved");
+    });
+    cleanup.use(
+      addSharedFileAttachment(e2eFixture.databasePath, FIRST_PAGE.key),
+    );
+    expect(await reindexed("resolved")).toBe(annotationAttachment.key);
+
+    const outcome = await sharedTabs();
+
+    // The tab's read of the path's Attachment ends first; the last read
+    // recorded is of the Attachment the open named.
+    expect(outcome.reads.at(0)).toBe(annotationAttachment.key);
+    expect(outcome.reads.at(-1)).toBe(SHARED.attachmentKey);
+    expect(outcome).toMatchObject({
+      restored: SHARED.attachmentKey,
+      besideRestored: [SHARED.annotationKey],
+      besideSecond: [...annotationKeys].sort(),
+      passed: [],
+    });
   }, 180000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps
@@ -1084,17 +1324,83 @@ describe.skipIf(!reachable)("Annotation links", () => {
       expect(outcome.popover).toBe(false);
     }, 120000);
 
-    it("as unavailable for an Annotation Zotero no longer has", async () => {
+    // ZotLit's row in Obsidian's Page preview settings, once the researcher
+    // turns its Mod off, lets the hover through without it.
+    it("under Page Preview without Mod once ZotLit's Page preview row asks for none", async () => {
       const outcome = await hover({
-        url: durableLink("ZZZZZZZ2", "1"),
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
         gesture: "live-preview",
+        hoverAction: "page-preview",
+        pagePreviewMod: false,
       });
 
-      expect(outcome).toMatchObject({
-        popover: true,
-        text: run.m.annotation_popover_unavailable(),
-      });
+      expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
+
+    // Source mode shows the link's Markdown, where a hover is editing more
+    // often than reading: as for Obsidian's own links, it waits for Mod.
+    it("in Source mode with Mod held", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "source",
+        mod: true,
+      });
+
+      expect(outcome.text).toContain(FIRST_PAGE.text);
+    }, 120000);
+
+    it("with nothing in Source mode while Mod is not held", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "source",
+        absent: true,
+      });
+
+      expect(outcome.popover).toBe(false);
+    }, 120000);
+
+    // A Durable Annotation Link is no Pandoc citation: its hover stays when
+    // the citation treatment is off.
+    it("while Pandoc citations are off", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "live-preview",
+        pandocOff: true,
+      });
+
+      expect(outcome.text).toContain(FIRST_PAGE.text);
+    }, 120000);
+
+    it("with nothing for a Zotero link that names no Annotation", async () => {
+      const outcome = await hover({
+        url: `zotero://select/library/items/${annotationAttachment.key}`,
+        gesture: "reading",
+        absent: true,
+      });
+
+      expect(outcome.popover).toBe(false);
+    }, 120000);
+
+    // Zotero answers no list for an Attachment it does not know, and an
+    // Attachment's list without the Annotation: both say the link is stale.
+    it.each([
+      ["an Annotation Zotero no longer has", durableLink("ZZZZZZZ2", "1")],
+      [
+        "an Attachment Zotero does not know",
+        durableLink(FIRST_PAGE.key, "1", { attachmentKey: "ZZZZZZZ3" }),
+      ],
+    ])(
+      "as unavailable for %s",
+      async (_, url) => {
+        const outcome = await hover({ url, gesture: "live-preview" });
+
+        expect(outcome).toMatchObject({
+          popover: true,
+          text: run.m.annotation_popover_unavailable(),
+        });
+      },
+      120000,
+    );
 
     it.each(["live-preview", "reading"] as const)(
       "with nothing while the Hover Action is off, in %s",
