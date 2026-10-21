@@ -29,10 +29,11 @@ const CLOSERS = new Set(".,;:!?)]}。，、；：！？）】」』》");
 
 /**
  * Inline text with the space it needs after it, and where the cursor goes in
- * it, as an offset from its start. A space follows where the character after
- * the range would otherwise be glued to the text; a space already there is
- * reused, and the cursor rests past it, so typing goes on after the space.
- * A line end, closing punctuation, or text that ends in a space needs none.
+ * it, as an offset from its start. One space follows the text, so neither the
+ * word after it nor what the researcher types next is glued to it: a space
+ * already there is reused, and the cursor rests past the space either way.
+ * Closing punctuation after the range, or text that ends in a space, needs
+ * none.
  */
 function placeInline(
   text: string,
@@ -40,8 +41,7 @@ function placeInline(
 ): { insert: string; cursor: number } {
   if (/\s$/u.test(text)) return { insert: text, cursor: text.length };
   if (next === " ") return { insert: text, cursor: text.length + 1 };
-  const glued = next !== "" && !/\s/u.test(next) && !CLOSERS.has(next);
-  const insert = glued ? `${text} ` : text;
+  const insert = CLOSERS.has(next) ? text : `${text} `;
   return { insert, cursor: insert.length };
 }
 

@@ -204,7 +204,7 @@ it("passes over a note in Reading view, which shows no editor, and says where it
   );
 });
 
-it("parts a dropped or inserted citation from the words around it with a space, and adds none at a line start or end", async () => {
+it("parts a dropped or inserted citation from the words around it with a space, and adds none at a line start", async () => {
   const env = setup();
   const draft = env.note("Draft.md");
   env.activate(draft);
@@ -223,7 +223,7 @@ it("parts a dropped or inserted citation from the words around it with a space, 
   cm.dispatch({ selection: { anchor: cm.state.doc.length } });
   await env.actions.insertCitation(KEY);
   expect(draft.text()).toBe(
-    "[@vaswani2017] LEFT [@vaswani2017] RIGHT [@vaswani2017]",
+    "[@vaswani2017] LEFT [@vaswani2017] RIGHT [@vaswani2017] ",
   );
   expect(env.record).toHaveBeenCalledTimes(3);
   expect(env.record).toHaveBeenLastCalledWith(KEY, "cited");

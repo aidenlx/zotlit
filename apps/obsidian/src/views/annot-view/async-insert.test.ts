@@ -167,7 +167,7 @@ describe("captured asynchronous insertion", () => {
     });
     f.cm.dispatch({ changes: { from: 0, insert: "prefix " } });
     expect(target.commit(" DROP")).toBe(true);
-    expect(f.cm.state.doc.toString()).toBe("prefix before TARGET after DROP");
+    expect(f.cm.state.doc.toString()).toBe("prefix before TARGET after DROP ");
   });
   it("cancels an explicit drop position when an edit lands on it", () => {
     using f = fixture();
@@ -271,22 +271,23 @@ describe("a one-line insertion", () => {
       where: "at the end of a line",
       doc: "As shown\nnext",
       at: 8,
-      expected: `As shown${QUOTE}|\nnext`,
+      expected: `As shown${QUOTE} |\nnext`,
     },
     {
       where: "at the end of the note",
       doc: "As shown ",
       at: 9,
-      expected: `As shown ${QUOTE}|`,
+      expected: `As shown ${QUOTE} |`,
     },
-    {
-      where: "before closing punctuation",
-      doc: "As shown.",
-      at: 8,
-      expected: `As shown${QUOTE}|.`,
+  ])(
+    "leaves one space after it $where, so typing goes on past it",
+    ({ doc, at, expected }) => {
+      expect(insertAt(doc, at)).toBe(expected);
     },
-  ])("stands apart from the text after it $where", ({ doc, at, expected }) => {
-    expect(insertAt(doc, at)).toBe(expected);
+  );
+
+  it("runs straight into closing punctuation", () => {
+    expect(insertAt("As shown.", 8)).toBe(`As shown${QUOTE}|.`);
   });
 
   it("adds no space after text that already ends in one", () => {

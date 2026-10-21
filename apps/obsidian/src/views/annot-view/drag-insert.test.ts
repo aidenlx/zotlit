@@ -97,7 +97,7 @@ it("inserts at the note's selection after the annotation sidebar takes focus", a
   expect(f.prepare).toHaveBeenCalledOnce();
   f.pending[0]!.resolve(result("EXCERPT"));
   await operation;
-  expect(f.cm.state.doc.toString()).toBe("one EXCERPT");
+  expect(f.cm.state.doc.toString()).toBe("one EXCERPT ");
   expect(f.notify).not.toHaveBeenCalled();
 });
 
@@ -144,7 +144,7 @@ it("keeps the established text fallback for a Profile error", async () => {
     }),
   );
   await operation;
-  expect(f.cm.state.doc.toString()).toBe("one Original highlight");
+  expect(f.cm.state.doc.toString()).toBe("one Original highlight ");
   expect(f.notify).toHaveBeenCalledTimes(1);
 });
 
@@ -166,7 +166,7 @@ it("supersedes the pending action and inserts once with one undo", async () => {
   await second;
   f.pending[0]!.resolve(result("STALE"));
   await first;
-  expect(f.cm.state.doc.toString()).toBe("user one EXCERPT");
+  expect(f.cm.state.doc.toString()).toBe("user one EXCERPT ");
   expect(f.notify).not.toHaveBeenCalled();
   undo(f.cm);
   expect(f.cm.state.doc.toString()).toBe("user one two");
@@ -201,7 +201,7 @@ it("reports an unavailable result once after insertion", async () => {
   });
   await operation;
   expect(f.cm.state.doc.toString()).toBe(
-    "one Image unavailable [Zotero](zotero://open)",
+    "one Image unavailable [Zotero](zotero://open) ",
   );
   expect(f.notify).toHaveBeenCalledTimes(1);
 });
