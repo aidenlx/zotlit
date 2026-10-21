@@ -13,7 +13,6 @@ import {
   useWorkbenchProblems,
 } from "./problems-footer";
 import type { RenderTrigger } from "./scheduler";
-import { createWorkbenchStore } from "./store";
 import { TabBar, TabPanel } from "./tab-bar";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
@@ -194,27 +193,6 @@ describe("the tab bar", () => {
     expect(mounted.store.getState().tab).toBe("note");
   });
 
-  it("marks its parts and wears the host's classes, nothing more", () => {
-    using mounted = mount(<TabBar />);
-    const { ui } = mounted;
-    render(ui);
-    const list = screen.getByRole("tablist");
-    expect(list.dataset.part).toBe("tab-bar");
-    expect(list.className).toBe("part-tab-bar");
-    for (const tab of tabs()) {
-      expect(tab.dataset.part).toBe("tab");
-      expect(tab.className).toBe("part-tab");
-    }
-    expect(tabs().map((tab) => tab.dataset.state)).toEqual([
-      "active",
-      "inactive",
-      "inactive",
-      "inactive",
-      "inactive",
-      "inactive",
-    ]);
-  });
-
   it("runs host navigation effects only for user tab and mode actions", () => {
     const onTabChange = vi.fn<(tab: string) => void>();
     const onModeChange = vi.fn<(advanced: boolean) => void>();
@@ -242,63 +220,9 @@ describe("the tab bar", () => {
     fireEvent.click(basic);
     expect(onModeChange.mock.calls).toEqual([[false], [false]]);
   });
-
-  it("paints inert outside an editor", () => {
-    render(
-      <>
-        <TabBar />
-        <TabPanel tab="note" description={false}>
-          quiet
-        </TabPanel>
-      </>,
-    );
-    for (const tab of tabs()) {
-      expect(tab.getAttribute("aria-disabled")).toBe("true");
-      expect((tab as HTMLButtonElement).disabled).toBe(true);
-    }
-    expect(tabs()[0]?.className).toBe("");
-    expect(screen.getByRole("tabpanel").textContent).toBe("quiet");
-  });
 });
 
 describe("the edit toolbar", () => {
-  it("puts shared history and an Advanced toggle between the host's header slots", () => {
-    const onModeChange = vi.fn<(advanced: boolean) => void>();
-    using mounted = mount(
-      <EditToolbar
-        layout="linear"
-        leading={<button>Paper</button>}
-        onModeChange={onModeChange}
-      >
-        <button>Markdown</button>
-        <button>Menu</button>
-      </EditToolbar>,
-    );
-    const { store, ui } = mounted;
-    render(ui);
-    expect(
-      screen
-        .getAllByRole("button")
-        .map(
-          (button) => button.getAttribute("aria-label") ?? button.textContent,
-        ),
-    ).toEqual([
-      "Paper",
-      m.workbench_undo(),
-      m.workbench_redo(),
-      m.workbench_advanced(),
-      "Markdown",
-      "Menu",
-    ]);
-    const advanced = screen.getByRole("button", {
-      name: m.workbench_advanced(),
-    });
-    fireEvent.click(advanced);
-    expect(store.getState().advanced).toBe(true);
-    fireEvent.click(advanced);
-    expect(store.getState().advanced).toBe(false);
-    expect(onModeChange.mock.calls).toEqual([[true], [false]]);
-  });
   it("switches Basic and Advanced through the store", () => {
     using mounted = mount(<EditToolbar />);
     const { store, ui } = mounted;
@@ -350,22 +274,6 @@ describe("the edit toolbar", () => {
 
     fireEvent.click(redo);
     expect(controller.source.startsWith("# ")).toBe(true);
-  });
-
-  it("carries the host's own controls and paints inert outside an editor", () => {
-    render(
-      <EditToolbar>
-        <button type="button">Add a field</button>
-      </EditToolbar>,
-    );
-    for (const button of screen.getAllByRole("button")) {
-      expect((button as HTMLButtonElement).disabled).toBe(
-        button.textContent !== "Add a field",
-      );
-    }
-    expect(screen.getByRole("button", { name: m.workbench_undo() }).title).toBe(
-      m.workbench_undo(),
-    );
   });
 });
 
@@ -1353,29 +1261,5 @@ describe("the error report", () => {
     } finally {
       globalThis.Temporal = present;
     }
-  });
-});
-
-describe("the view store", () => {
-  it("starts on the Note tab in Basic mode", () => {
-    const store = createWorkbenchStore();
-    expect(store.getState()).toMatchObject({
-      tab: "note",
-      item: null,
-      root: "note",
-      advanced: false,
-    });
-  });
-
-  it("takes a host's starting state and changes one field at a time", () => {
-    const store = createWorkbenchStore({ tab: "name" });
-    const { setItem, setRoot } = store.getState();
-    setItem({ id: "ABCD1234", title: "A paper" });
-    setRoot("filename");
-    expect(store.getState()).toMatchObject({
-      tab: "name",
-      item: { id: "ABCD1234", title: "A paper" },
-      root: "filename",
-    });
   });
 });

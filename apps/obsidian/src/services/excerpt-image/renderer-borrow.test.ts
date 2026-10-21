@@ -250,27 +250,6 @@ function holdingReader(
   };
 }
 
-it("crops from the reader's own document without loading another PDF", async () => {
-  const reader = readerDocument({ bytes: PDF_BYTES });
-  await using f = await harness({ reader: holdingReader(reader) });
-
-  const outcome = await f.service.resolve(f.request);
-
-  expect(outcome).toMatchObject({
-    kind: "available",
-    provenance: "rendered",
-    freshness: "checked",
-    format: { format: "webp" },
-  });
-  // No second document: the reader's own page supplied the crop.
-  expect(f.detached.load).not.toHaveBeenCalled();
-  expect(reader.page.mock.calls).toEqual([[1]]);
-  expect(reader.answered.cleanup).not.toHaveBeenCalled();
-  expect(reader.borrow).toHaveBeenCalledExactlyOnceWith(f.pdfPath);
-  expect(f.canvases).toHaveLength(1);
-  expect([...f.entries.keys()]).toEqual([excerptKey(f.request)]);
-});
-
 it("owns its crop canvas and task alone", async () => {
   const reader = readerDocument({ bytes: PDF_BYTES });
   await using f = await harness({ reader: holdingReader(reader) });

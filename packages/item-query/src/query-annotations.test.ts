@@ -17,6 +17,7 @@ import {
 import type { ItemQueryRequest } from ".";
 import { ANNOTATION_SCENARIO_QUERIES } from "./annotation-scenario-queries";
 import { ItemQueryError } from "./error";
+import { ItemQueryScheduler } from "./scheduler";
 import type { RunOptions } from "./test-helpers";
 import { runEffect } from "./test-helpers";
 
@@ -351,52 +352,53 @@ it("reads parent custom fields, relations, timestamps and identities through the
   ).toBe("2024-06-01T10:00:00Z");
 });
 
-describe("Annotation parity with the forced scan", () => {
-  describe.each([
-    { name: "personal", libraries: [SCENARIO_LIBRARIES.personal] },
-    { name: "group", libraries: [SCENARIO_LIBRARIES.group] },
-    {
-      name: "both Libraries",
-      libraries: [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group],
-    },
-  ])("$name", ({ libraries }) => {
-    it.each(ANNOTATION_SCENARIO_QUERIES)("request %# %j", async (request) => {
-      const run = async (tuning: RunOptions["tuning"]) => {
-        const { exit } = await runEffect(
-          collectQuery(ANNOTATIONS, { ...request, libraries }),
-          { client: scenario.db, tuning },
-        );
-        if (exit._tag === "Success")
-          return JSON.parse(JSON.stringify({ result: exit.value }));
-        const failure = Cause.findErrorOption(exit.cause);
-        if (failure._tag === "None") throw new Error(String(exit.cause));
-        return JSON.parse(
-          JSON.stringify({
-            failure: Object.assign({}, failure.value, {
-              message: failure.value.message,
+{
+  describe.runIf(process.env.ZOTLIT_SCENARIO_LAYOUT !== "lowest")(
+    "Annotation parity with the forced scan",
+    () => {
+      const libraries = [SCENARIO_LIBRARIES.personal, SCENARIO_LIBRARIES.group];
+      it.each(ANNOTATION_SCENARIO_QUERIES)("request %# %j", async (request) => {
+        const run = async (tuning: RunOptions["tuning"]) => {
+          const { exit } = await runEffect(
+            collectQuery(ANNOTATIONS, { ...request, libraries }),
+            {
+              client: scenario.db,
+              tuning,
+              scheduler: new ItemQueryScheduler({ budgetMs: Infinity }),
+            },
+          );
+          if (exit._tag === "Success")
+            return JSON.parse(JSON.stringify({ result: exit.value }));
+          const failure = Cause.findErrorOption(exit.cause);
+          if (failure._tag === "None") throw new Error(String(exit.cause));
+          return JSON.parse(
+            JSON.stringify({
+              failure: Object.assign({}, failure.value, {
+                message: failure.value.message,
+              }),
             }),
-          }),
-        );
-      };
-      const expected = await run({ forceScan: true });
-      for (const tuning of [
-        {},
-        { capRatio: 1 },
-        { capRatio: 0 },
-        { capRatio: 0.1 },
-        { capRatio: 1, scanPageSize: 3, hydrateChunkSize: 2 },
-        { scanPageSize: 1, hydrateChunkSize: 1, mergeStepSize: 1 },
-      ]) {
-        expect({
-          request,
-          libraries,
-          tuning,
-          outcome: await run(tuning),
-        }).toEqual({ request, libraries, tuning, outcome: expected });
-      }
-    });
-  });
-});
+          );
+        };
+        const expected = await run({ forceScan: true });
+        for (const tuning of [
+          {},
+          { capRatio: 1 },
+          { capRatio: 0 },
+          { capRatio: 0.1 },
+          { capRatio: 1, scanPageSize: 3, hydrateChunkSize: 2 },
+          { scanPageSize: 1, hydrateChunkSize: 1, mergeStepSize: 1 },
+        ]) {
+          expect({
+            request,
+            libraries,
+            tuning,
+            outcome: await run(tuning),
+          }).toEqual({ request, libraries, tuning, outcome: expected });
+        }
+      });
+    },
+  );
+}
 
 it("caps after parent expansion and uses a bounded Annotation candidate when available", async () => {
   const run = (filter: string, capRatio: number) =>

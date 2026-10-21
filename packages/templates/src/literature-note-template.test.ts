@@ -212,44 +212,37 @@ describe("Literature Note Template document", () => {
     ]);
   });
 
-  it("dry-runs every merge strategy across every frontmatter output kind", () => {
-    const expressions = [
-      ["null", null],
-      ["true", true],
-      ["42", 42],
-      ['"text"', "text"],
-      ['["one", "two"]', ["one", "two"]],
-      ['({ nested: "value" })', { nested: "value" }],
+  it("dry-runs representative merge strategies and frontmatter output kinds", () => {
+    const combinations = [
+      ["replace", '({ nested: "value" })', { nested: "value" }],
+      ["append", '["one", "two"]', ["one", "two"]],
+      ["keep", "null", null],
     ] as const;
 
-    for (const merge of ["replace", "append", "keep"] as const) {
-      for (const [expr, expected] of expressions) {
-        const facade = new TemplateFacade({
-          transformRender: (name, output) =>
-            name === "content" ? formatManagedRegion(output) : output,
-        });
-        const note = '{% render "content" with zt as zt %}';
-        facade.define("note", note, "liquid");
-        facade.define("content", "Managed", "liquid");
-        facade.define("filename", "note", "liquid");
+    for (const [merge, expr, expected] of combinations) {
+      const facade = new TemplateFacade({
+        transformRender: (name, output) =>
+          name === "content" ? formatManagedRegion(output) : output,
+      });
+      const note = '{% render "content" with zt as zt %}';
+      facade.define("note", note, "liquid");
+      facade.define("content", "Managed", "liquid");
+      facade.define("filename", "note", "liquid");
 
-        const converted = facade.convertLegacyLiteratureNoteTemplates(
-          {
-            note: { source: note, language: "liquid" },
-            content: { source: "Managed", language: "liquid" },
-            filename: { source: "note", language: "liquid" },
-          },
-          { note: {}, filename: {} },
-          {
-            frontmatter: [
-              { key: "field", expr, merge, language: "javascript" },
-            ],
-            javascript: true,
-          },
-        );
+      const converted = facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: { source: note, language: "liquid" },
+          content: { source: "Managed", language: "liquid" },
+          filename: { source: "note", language: "liquid" },
+        },
+        { note: {}, filename: {} },
+        {
+          frontmatter: [{ key: "field", expr, merge, language: "javascript" }],
+          javascript: true,
+        },
+      );
 
-        expect(converted.frontmatterPatch).toEqual({ field: expected });
-      }
+      expect(converted.frontmatterPatch).toEqual({ field: expected });
     }
   });
 

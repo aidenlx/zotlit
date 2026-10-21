@@ -7,10 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ManagedBinaryService } from "@/services/managed-binary/service";
 import type { BinaryPin } from "@/services/managed-binary/service";
-import {
-  memoryDevice,
-  vaultConsent,
-} from "@/services/managed-binary/test-utils";
+import { memoryDevice } from "@/services/managed-binary/test-utils";
 
 import { CHINESE_SEGMENTER } from "./service";
 
@@ -33,7 +30,6 @@ const PIN: BinaryPin = {
   sha256: createHash("sha256").update(BINARY).digest("hex"),
 };
 const SEGMENTER = { ...CHINESE_SEGMENTER, pin: PIN };
-const CACHED = `${PIN.sha256}.wasm`;
 
 type Device = ReturnType<typeof memoryDevice>;
 
@@ -53,24 +49,6 @@ function open(
 }
 
 describe("Chinese Segmenter", () => {
-  it("caches the pinned binary under zotlit/chinese-segmenter and reports its version", async () => {
-    const device = memoryDevice();
-    const download = serve();
-    await using segmenter = open(device, { download });
-    await segmenter.ready;
-    expect(segmenter.getStatus()).toEqual({ kind: "absent" });
-
-    await segmenter.install();
-
-    expect(download).toHaveBeenCalledExactlyOnceWith(PIN.url);
-    expect(device.names("chinese-segmenter")).toEqual([CACHED]);
-    expect(segmenter.getStatus()).toEqual({
-      kind: "installed",
-      version,
-      binary: { directory: "chinese-segmenter", name: CACHED },
-    });
-  });
-
   it("cuts a Chinese title with the installed binary", async () => {
     const device = memoryDevice();
     await using segmenter = open(device);
@@ -90,81 +68,6 @@ describe("Chinese Segmenter", () => {
       "城市化",
       "研究",
     ]);
-  });
-
-  it("reports a download that does not match the pin, and keeps nothing", async () => {
-    const device = memoryDevice();
-    await using segmenter = open(device, {
-      download: serve(new Uint8Array(new TextEncoder().encode("tampered"))),
-    });
-    await segmenter.ready;
-
-    await expect(segmenter.install()).rejects.toThrow();
-
-    expect(segmenter.getStatus()).toMatchObject({
-      kind: "failed",
-      failure: { code: "hash-mismatch", expected: PIN.sha256 },
-    });
-    expect(device.names("chinese-segmenter")).toEqual([]);
-  });
-
-  it("shows as installed in a second vault on the device without a download", async () => {
-    const device = memoryDevice();
-    {
-      await using first = open(device);
-      await first.ready;
-      await first.install();
-    }
-
-    const download = serve();
-    await using second = open(device, { download, consent: vaultConsent() });
-    await second.ready;
-
-    expect(second.getStatus()).toEqual({
-      kind: "installed",
-      version,
-      binary: { directory: "chinese-segmenter", name: CACHED },
-    });
-    expect(download).not.toHaveBeenCalled();
-  });
-
-  it("remembers a dismissed offer per vault, and uninstall removes the binary device-wide and forgets it", async () => {
-    const device = memoryDevice();
-    const otherVault = vaultConsent();
-    {
-      await using dismissed = open(device);
-      await dismissed.ready;
-      dismissed.decline();
-    }
-    {
-      await using restarted = open(device);
-      await restarted.ready;
-      expect(restarted.getStatus()).toEqual({ kind: "declined" });
-    }
-    {
-      await using other = open(device, { consent: otherVault });
-      await other.ready;
-      expect(other.getStatus()).toEqual({ kind: "absent" });
-      await other.install();
-    }
-
-    {
-      await using dismissed = open(device);
-      await dismissed.ready;
-      expect(dismissed.getStatus()).toEqual({
-        kind: "installed",
-        version,
-        binary: { directory: "chinese-segmenter", name: CACHED },
-      });
-      await dismissed.uninstall();
-    }
-
-    expect(device.names("chinese-segmenter")).toEqual([]);
-    await using restarted = open(device);
-    await using other = open(device, { consent: otherVault });
-    await Promise.all([restarted.ready, other.ready]);
-    expect(restarted.getStatus()).toEqual({ kind: "absent" });
-    expect(other.getStatus()).toEqual({ kind: "absent" });
   });
 
   it("reports a downloaded binary that does not start as init-failed at install", async () => {

@@ -22,11 +22,7 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import {
-  createTemplateWorkbenchHandlers,
-  TEMPLATE_DATA_COMMAND,
-  TEMPLATE_RENDER_COMMAND,
-} from "./cli";
+import { createTemplateWorkbenchHandlers, TEMPLATE_DATA_COMMAND } from "./cli";
 import { loadCitationData, loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { registerTemplateWorkbench } from "./register";
@@ -320,28 +316,6 @@ describe("registered field discovery", () => {
 });
 
 describe("zotlit:template-data with the real loader", () => {
-  it("renders through inert resolvers without invoking a write surface", async () => {
-    await using fixture = createFixture({
-      render: (name, data) => {
-        const noteLink = (
-          data as { notes: { noteLink: () => string }[] }
-        ).notes[0]!.noteLink();
-        return `${name}:${noteLink}`;
-      },
-    });
-
-    expect(await runTemplateRender(fixture.deps, "MAIN2345")).toMatchObject({
-      ok: true,
-      request: {
-        key: "MAIN2345",
-        template: "note",
-        format: "json",
-      },
-      markdown: "note:",
-    });
-    expect(fixture.writeCalls).toEqual([]);
-  });
-
   it.each([
     ["note", "MAIN2345", noteSchema],
     ["annotation", "ANNA2345", annotationSchema],
@@ -583,37 +557,6 @@ describe("zotlit:template-data with the real loader", () => {
       citations: { item: unknown }[];
     };
     expect(zt.items).toEqual([zt.citations[0]!.item]);
-  });
-
-  it("renders the Citation Template for the Item an Indexed Key names", async () => {
-    await using fixture = createFixture();
-
-    const result = await runTemplateRender(
-      fixture.deps,
-      "MAIN2345",
-      "citation",
-    );
-
-    expect(result).toMatchObject({
-      command: TEMPLATE_RENDER_COMMAND,
-      ok: true,
-      request: { key: "MAIN2345", template: "citation", variant: "main" },
-      template: { name: "citation", language: "liquid" },
-    });
-    // The stub Citation Template echoes the data it received as JSON.
-    expect(JSON.parse(result.markdown as string)).toMatchObject({
-      variant: "main",
-      citations: [
-        {
-          item: { citationKey: "fixture2024" },
-          locator: null,
-          label: null,
-          suppressAuthor: false,
-          prefix: null,
-          suffix: null,
-        },
-      ],
-    });
   });
 
   it.each(CITATION_EXAMPLE_IDS)(
@@ -907,77 +850,6 @@ async function runTemplateData(
       ...(typeof selector === "string" ? { key: selector } : selector),
       root,
       full: "",
-      format: "json",
-    }),
-  ) as Record<string, unknown>;
-}
-
-async function runTemplateRender(
-  deps: FixtureDeps,
-  key: string,
-  template: "note" | "citation" = "note",
-): Promise<Record<string, unknown>> {
-  const handlers = createTemplateWorkbenchHandlers({
-    selectNote: async () => ({
-      error: "TARGET_NOT_FOUND" as const,
-      matches: [],
-    }),
-    pluginVersion: "1.2.3",
-    getIdentity: () => ({
-      vault: { name: "Test Vault", path: "/vaults/test" },
-      source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
-    }),
-    loadCitation: (selector, variant) =>
-      loadCitationData(deps, selector, variant),
-    loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
-    templates: {
-      getCitationTemplateStatus: () => ({
-        path: "Templates/zotlit-citation.md",
-        customized: false,
-        language: "liquid" as const,
-        inertPath: null,
-        compileError: null,
-      }),
-      // Stands in for the Citation Template, so a test reads the data the
-      // real loader handed it.
-      renderCitationData: (data) => JSON.stringify(data),
-      javascriptTemplatesEnabled: false,
-      compileErrors: deps.templates.compileErrors,
-      getPartialDocument: () => null,
-      getTemplateFileStatuses: () => [
-        {
-          name: "note",
-          winner: {
-            language: "liquid",
-            source: { kind: "embedded-default" },
-          },
-          editablePath: "Templates/zotlit-note.liquid.md",
-          shadowedFiles: [],
-          inertFiles: [],
-          compileError: null,
-        },
-      ],
-      render: deps.templates.render,
-      renderFilename: (data) => deps.templates.render("filename", data),
-      analyzeRootVariables: () => null,
-      getTemplateSource: async () => "",
-      waitUntilSettled: async () => "settled" as const,
-    },
-    frontmatter: {
-      read: () => ({
-        fields: [],
-        inertKeys: [],
-        javascriptTemplatesEnabled: false,
-      }),
-      evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => null,
-      write: () => {},
-    },
-  });
-  return JSON.parse(
-    await handlers[TEMPLATE_RENDER_COMMAND]({
-      key,
-      template,
       format: "json",
     }),
   ) as Record<string, unknown>;

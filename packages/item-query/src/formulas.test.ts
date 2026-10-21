@@ -1,7 +1,7 @@
 // Formulas: named Filter Expressions that a query evaluates for each record
 // and returns with the Query Row as `formula.<name>`.
 import { Cause } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   openScenarioDatabase,
@@ -21,6 +21,17 @@ import { ItemQueryError } from "./error";
 import { runEffect } from "./test-helpers";
 
 const { personal } = SCENARIO_LIBRARIES;
+let scenario: ScenarioDatabase;
+let annotatedScenario: ScenarioDatabase;
+
+beforeAll(() => {
+  scenario = openScenarioDatabase();
+  annotatedScenario = openScenarioDatabase({ annotations: true });
+});
+afterAll(() => {
+  scenario.close();
+  annotatedScenario.close();
+});
 
 async function run(
   scenario: ScenarioDatabase,
@@ -36,7 +47,6 @@ async function run(
 }
 
 it("returns a Formula's value as formula.<name> in each Item Row", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: 'indexedKey == "BK2MNTH2"',
     formulas: { next: "date.year + 1" },
@@ -47,7 +57,7 @@ it("returns a Formula's value as formula.<name> in each Item Row", async () => {
 });
 
 it("returns formula.<name> on Attachment Rows and Annotation Rows", async () => {
-  using scenario = openScenarioDatabase({ annotations: true });
+  const scenario = annotatedScenario;
   const files = await run(
     scenario,
     {
@@ -75,7 +85,6 @@ it("returns formula.<name> on Attachment Rows and Annotation Rows", async () => 
 });
 
 it("returns a date in the date object shape and a list element by element", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: '["BK2MNTH2", "CHP2YEAR"].contains(indexedKey)',
     formulas: { published: "date", pair: "[date.year, title.length > 0]" },
@@ -111,7 +120,6 @@ it("returns a date in the date object shape and a list element by element", asyn
 });
 
 it("returns an Error Value cell as kind, code, and message", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: 'indexedKey == "BK2MNTH2"',
     formulas: {
@@ -137,7 +145,6 @@ it("returns an Error Value cell as kind, code, and message", async () => {
 });
 
 it("excludes a record whose filter reads an Error Value of a Formula", async () => {
-  using scenario = openScenarioDatabase();
   const read = (filter: string) =>
     run(scenario, {
       filter: `indexedKey == "BK2MNTH2" && (${filter})`,
@@ -255,7 +262,6 @@ it.each([
 ] satisfies [string, Omit<ItemQueryRequest, "libraries">, object][])(
   "fails a request with %s, and the report names the Formula",
   async (_, request, expected) => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, request);
     expect(error.diagnostic).toMatchObject(expected);
     const name =
@@ -269,7 +275,6 @@ it.each([
 );
 
 it("checks a custom field of a Formula against the source", async () => {
-  using scenario = openScenarioDatabase();
   const error = await failure(scenario, {
     formulas: { status: 'custom["no such field"]' },
     fields: ["formula.status"],
@@ -282,7 +287,6 @@ it("checks a custom field of a Formula against the source", async () => {
 });
 
 it("warns about a Formula that the request names and never reads", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: 'indexedKey == "BK2MNTH2"',
     formulas: { year: "date.year", unused: "title.nope()" },
@@ -303,7 +307,6 @@ it("warns about a Formula that the request names and never reads", async () => {
 });
 
 it("reserves formula: a filter reads a Formula as formula.<name>", async () => {
-  using scenario = openScenarioDatabase();
   const error = await failure(scenario, {
     filter: 'formula == "x"',
     formulas: { year: "date.year" },
@@ -323,7 +326,6 @@ it("reserves formula: a filter reads a Formula as formula.<name>", async () => {
 });
 
 it("selects the records whose Formula value the filter accepts", async () => {
-  using scenario = openScenarioDatabase();
   const keys = async (request: Omit<ItemQueryRequest, "libraries">) =>
     (await run(scenario, { ...request, fields: ["title"] })).rows!.map(
       (row) => row.indexedKey,
@@ -337,7 +339,6 @@ it("selects the records whose Formula value the filter accepts", async () => {
 });
 
 it("projects a Formula that reads another Formula", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: 'indexedKey == "BK2MNTH2"',
     formulas: { a: "formula.b + 1", b: "date.year" },
@@ -350,7 +351,6 @@ it("projects a Formula that reads another Formula", async () => {
 });
 
 it("fails Formulas that read each other, and the report names the chain", async () => {
-  using scenario = openScenarioDatabase();
   const error = await failure(scenario, {
     formulas: { a: "formula.b + 1", b: "formula.a * 2" },
     fields: ["formula.a"],
@@ -365,7 +365,6 @@ it("fails Formulas that read each other, and the report names the chain", async 
 });
 
 it("fails a filter that reads a Formula the request does not define", async () => {
-  using scenario = openScenarioDatabase();
   const error = await failure(scenario, {
     filter: "title != null && formula.yeer > 2000",
     formulas: { year: "date.year" },
@@ -381,7 +380,6 @@ it("fails a filter that reads a Formula the request does not define", async () =
 });
 
 it("plans a Formula that reads another one many times once for each Formula", async () => {
-  using scenario = openScenarioDatabase();
   // Each Formula reads the one before it twice: 2^18 reads of a0 in all.
   const formulas: Record<string, string> = { a0: "date.year" };
   for (let index = 1; index <= 18; index++)
@@ -397,7 +395,6 @@ it("plans a Formula that reads another one many times once for each Formula", as
 });
 
 it("warns about a comparison in the text of a Formula, at the Formula", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: 'indexedKey == "BK2MNTH2"',
     formulas: { x: 'date > "2019"' },
@@ -454,7 +451,6 @@ it.each([
 ] satisfies [string, Omit<ItemQueryRequest, "libraries">, object][])(
   "rejects a %s by a Formula, and says that it is not available yet",
   async (_, request, expected) => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, request);
     expect(error.diagnostic).toMatchObject(expected);
     expect(error.diagnostic.message).toContain("formula.year yet");
@@ -462,7 +458,6 @@ it.each([
 );
 
 it("reads a Formula whose name is also an object member, such as __proto__", async () => {
-  using scenario = openScenarioDatabase();
   const result = await run(scenario, {
     filter: 'indexedKey == "BK2MNTH2"',
     formulas: JSON.parse(
@@ -491,7 +486,6 @@ it.each([
 ] satisfies [string, Omit<ItemQueryRequest, "libraries">][])(
   "reports a mistake in the Formula's own text when %s reads it",
   async (_, request) => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, request);
     expect(error.diagnostic).toMatchObject({
       code: "wrong-operand-type",
@@ -501,7 +495,6 @@ it.each([
 );
 
 it("reports a Formula that reads an undefined Formula in its own text", async () => {
-  using scenario = openScenarioDatabase();
   const error = await failure(scenario, {
     formulas: { a: "formula.b + formula.zz", b: "date.year" },
     fields: ["formula.a"],
@@ -514,7 +507,6 @@ it("reports a Formula that reads an undefined Formula in its own text", async ()
 });
 
 it("reports a cycle at the Formula that closes it, from the first Formula read", async () => {
-  using scenario = openScenarioDatabase();
   const error = await failure(scenario, {
     formulas: { a: "formula.b + 1", b: "formula.a * 2" },
     fields: ["formula.b"],
@@ -529,7 +521,6 @@ it("reports a cycle at the Formula that closes it, from the first Formula read",
 });
 
 it("reports the first mistake in request order: names, then the filter, then fields", async () => {
-  using scenario = openScenarioDatabase();
   const formulas = { bad: "title * 2", worse: "title.nope()" };
   const named = await failure(scenario, {
     filter: "formula.bad > 0",
@@ -556,7 +547,6 @@ it("reports the first mistake in request order: names, then the filter, then fie
 
 describe('onFormulaFault: "leave-out"', () => {
   it("answers the rows without a wrong Formula, and its Diagnostic beside the warnings", async () => {
-    using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: { year: "date.year", bad: "title * 2" },
@@ -587,7 +577,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("leaves out each Formula that reads a wrong one, with one Diagnostic that names the first wrong Formula it reads", async () => {
-    using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: {
@@ -702,7 +691,6 @@ describe('onFormulaFault: "leave-out"', () => {
     Omit<ItemQueryRequest, "libraries">,
     Record<string, string>,
   ][])("leaves out only the Formula for %s", async (_, request, codes) => {
-    using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       ...request,
@@ -722,7 +710,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("marks each Formula on a cycle with the cycle from it, and a Formula that reads into the cycle as a reader", async () => {
-    using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: {
@@ -765,7 +752,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("marks each Formula on any cycle with a cycle from it, also where two cycles share a Formula", async () => {
-    using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: {
@@ -798,7 +784,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("fails a filter that reads a wrong Formula with the Diagnostic of a Formula of fields that names a custom field the source lacks", async () => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
       filter: "formula.bad > 0",
       formulas: { bad: "title * 2", missing: 'custom["absent"]' },
@@ -820,7 +805,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("plans every Formula that the request reads, also after a reader's first read of a wrong Formula", async () => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
       filter: "formula.bad > 0 && formula.reader > 0",
       formulas: {
@@ -856,7 +840,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("gives no Diagnostic and no Formula fault for an answer without a mistake", async () => {
-    using scenario = openScenarioDatabase();
     const result = await run(scenario, {
       filter: 'indexedKey == "BK2MNTH2"',
       formulas: { ok: "date.year", unused: "title" },
@@ -870,7 +853,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("gives the Formula fault of an undefined column of fields when the filter reads a wrong Formula", async () => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
       filter: "formula.bad > 0",
       formulas: { bad: "title * 2" },
@@ -892,7 +874,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("fails a filter that reads a wrong Formula at the filter, with the root mistake as a note and every Formula fault", async () => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
       filter: "title != null && formula.a > 0",
       formulas: {
@@ -930,7 +911,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("fails a filter that reads a Formula with a custom field that the source lacks at the filter", async () => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
       filter: "formula.a > 0",
       formulas: { a: "dat", ok: "date.year" },
@@ -953,7 +933,6 @@ describe('onFormulaFault: "leave-out"', () => {
   });
 
   it("fails a filter that reads a wrong Formula with the root mistake when the request fails on it", async () => {
-    using scenario = openScenarioDatabase();
     const error = await failure(scenario, {
       filter: "formula.a > 0",
       formulas: { a: "formula.bad + 1", bad: "title * 2" },
@@ -1011,7 +990,6 @@ describe.each(["fail", "leave-out"] as const)(
     ] satisfies [string, Omit<ItemQueryRequest, "libraries">, string][])(
       "%s",
       async (_, request, code) => {
-        using scenario = openScenarioDatabase();
         const error = await failure(scenario, {
           ...request,
           onFormulaFault: policy,

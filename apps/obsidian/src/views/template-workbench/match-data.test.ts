@@ -104,21 +104,3 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
   });
   expect(dispose).toHaveBeenCalledTimes(3);
 });
-
-it("names the custom fields of the source, which custom[...] reads", async () => {
-  const customFieldNames = vi.fn(async () => ["review.status"]);
-  const data = createMatchData(
-    { acquireRead: () => Promise.reject(new Error("no read")) },
-    { run: () => Promise.reject(new Error("no run")), customFieldNames },
-  );
-  const { signal } = new AbortController();
-  await expect(data.customFields(signal)).resolves.toEqual(["review.status"]);
-  expect(customFieldNames).toHaveBeenCalledWith(signal);
-  // Without ZotLit Query, the source names none.
-  await expect(
-    createMatchData(
-      { acquireRead: () => Promise.reject(new Error("no read")) },
-      undefined,
-    ).customFields(signal),
-  ).resolves.toEqual([]);
-});

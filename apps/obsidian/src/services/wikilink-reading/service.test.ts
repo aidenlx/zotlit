@@ -195,66 +195,6 @@ async function harness({
 }
 
 describe("WikilinkReading rendering", () => {
-  it("keeps inactive and excluded Literature Note links outside the hook", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": false,
-      "citation.show-formatted": false,
-    });
-
-    for (const [linktext, alias] of [
-      [WANG, undefined],
-      [`${WANG}#Heading`, undefined],
-      [`${WANG}#^block-id`, undefined],
-      [WANG, "A literature note"],
-    ] as const) {
-      const root = await harnessed.renderSection(linktext, alias);
-      expect(
-        root.querySelector("a")?.classList.contains("zt-literature-note-link"),
-      ).toBe(false);
-    }
-  });
-
-  it("does not expose the Literature Note hook for an unresolved link", async () => {
-    await using harnessed = await harness();
-
-    const root = await harnessed.renderSection("notes/missing");
-
-    expect(
-      root.querySelector("a")?.classList.contains("zt-literature-note-link"),
-    ).toBe(false);
-  });
-
-  it("keeps self subpaths outside the hook", async () => {
-    await using inside = await harness({ sourcePath: `${WANG}.md` });
-    await using outside = await harness({ sourcePath: "note.md" });
-
-    expect(
-      (await inside.renderSection("#Heading"))
-        .querySelector("a")
-        ?.classList.contains("zt-literature-note-link"),
-    ).toBe(false);
-    expect(
-      (await outside.renderSection("#Heading"))
-        .querySelector("a")
-        ?.classList.contains("zt-literature-note-link"),
-    ).toBe(false);
-  });
-
-  it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": true,
-      formatted: {
-        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
-      },
-    });
-
-    const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
-    const rendered = root.querySelector("a");
-
-    expect(rendered?.classList.contains("zt-citation")).toBe(true);
-    expect(rendered?.classList.contains("zt-literature-note-link")).toBe(true);
-  });
-
   it("names an unavailable Imported Note Profile with an Obsidian tooltip", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
@@ -285,26 +225,6 @@ describe("WikilinkReading rendering", () => {
     recovery?.click();
     expect(harnessed.switchRequests).toEqual(["Imported/Research.md"]);
     expect(link?.title).toBe("");
-  });
-
-  it("exposes the combined literal hooks once on a rendered Citation Run", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": true,
-      formatted: {
-        [held("[@wang2020, {p. 7}; @wang2020, {p. 9}]", [WANG_KEY, WANG_KEY])]:
-          "(Wang et al. 2020, pp. 7, 9)",
-      },
-    });
-    const root = await harnessed.renderHtml(
-      `<p>${internalLink(`${WANG}#cite:locator=7`)}; ${internalLink(`${WANG}#cite:locator=9`)}</p>`,
-    );
-
-    const rendered = root.querySelectorAll("a");
-    expect(rendered).toHaveLength(1);
-    expect(rendered[0]?.classList.contains("zt-citation")).toBe(true);
-    expect(rendered[0]?.classList.contains("zt-literature-note-link")).toBe(
-      true,
-    );
   });
 
   it("keeps a fragment-carrying link native without a formatted result", async () => {

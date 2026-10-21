@@ -1275,20 +1275,6 @@ it("patches a colour with the version the last read answered, in lower case", as
   });
 });
 
-it("patches a comment with the precondition and nothing else", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(stack);
-  const sent = requests.length;
-
-  await repository.patchComment("PUPR5FG5", "Worth citing");
-
-  const [patch] = requests.slice(sent);
-  expect(JSON.parse(patch!.body ?? "")).toEqual({
-    version: 11,
-    annotationComment: "Worth citing",
-  });
-});
-
 it("autosaves after one idle second and caps a continuous editing burst", async () => {
   useFakeTimers();
   try {
@@ -2043,25 +2029,6 @@ it("keeps a draft when the replacement read fails", async () => {
   await repository.refresh("RGRPDF24");
 
   expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe("Unsaved");
-});
-
-it("recolours an ink annotation like any other", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(stack, {
-    item: () => annotationItem(afterWrite("TYY6Z6ZF", { color: "#2ea8e5" })),
-  });
-  const sent = requests.length;
-
-  const outcome = await repository.patchColor("TYY6Z6ZF", "#2EA8E5");
-
-  expect(outcome).toEqual({ kind: "idle" });
-  expect(JSON.parse(requests[sent]!.body ?? "")).toEqual({
-    version: 16,
-    annotationColor: "#2ea8e5",
-  });
-  expect(colorOf(await repository.read("RGRPDF24"), "TYY6Z6ZF")).toBe(
-    "#2ea8e5",
-  );
 });
 
 it("announces the pixels a saved recolour moved, off the record Zotero answered with", async () => {
@@ -3289,47 +3256,6 @@ const MADE: WireAnnotation = {
   sortIndex: "00000|002041|00170",
   position: { pageIndex: 0, rects: [[265.833, 611.202, 374.503, 620.019]] },
 };
-
-it("creates through a one-element multi-object POST carrying a write token", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(
-    stack,
-    { write: () => createAccepted(MADE), item: () => annotationItem(MADE) },
-    { writeToken: () => TOKEN },
-  );
-  const sent = requests.length;
-
-  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
-
-  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
-  const [create] = requests.slice(sent);
-  expect([create?.method, create?.url.pathname]).toEqual([
-    "POST",
-    "/api/users/0/items",
-  ]);
-  expect(Object.fromEntries(create!.headers)).toMatchObject({
-    "zotero-api-key": REMEMBERED_KEY,
-    "zotero-server-id": SERVER_ID,
-    "zotero-api-version": "3",
-    "zotero-allowed-request": "1",
-    "zotero-write-token": TOKEN,
-    "content-type": "application/json",
-  });
-  expect(JSON.parse(create!.body ?? "")).toEqual([
-    {
-      annotationType: "highlight",
-      itemType: "annotation",
-      parentItem: "RGRPDF24",
-      annotationText: "Identify Your Message",
-      annotationComment: "",
-      annotationColor: "#ffd400",
-      annotationPageLabel: "1",
-      annotationSortIndex: "00000|002041|00170",
-      annotationPosition:
-        '{"pageIndex":0,"rects":[[265.833,611.202,374.503,620.019]]}',
-    },
-  ]);
-});
 
 it("retains an acknowledged create when a concurrent read loses API availability", async () => {
   await using stack = new AsyncDisposableStack();

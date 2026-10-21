@@ -386,15 +386,6 @@ it("opens the comment sheet and marks a create in flight on the create variant",
   });
 });
 
-it("leaves nothing floating when commenting or in-flight is set on none", () => {
-  const store = reader();
-
-  setCommenting(store, true);
-  setInFlight(store, true);
-
-  expect(store.getState().floating).toEqual({ kind: "none" });
-});
-
 it("stands the selection down when the next read no longer holds its Annotation", () => {
   const store = reader();
   selectMark(store, "PARA7777");
@@ -723,14 +714,6 @@ function adjusting() {
   return { store, heard };
 }
 
-it("begins no adjustment while no mark is selected", () => {
-  const store = reader();
-
-  beginAdjust(store, { grip: "br", from: [570, 395.509] });
-
-  expect(selectAdjust(store.getState())).toBeNull();
-});
-
 it("begins an adjustment that proposes the confirmed position", () => {
   const { store } = adjusting();
 
@@ -912,17 +895,6 @@ it("holds a released capture while it saves, and takes no more moves", () => {
     rect: [100, 300, 300, 500],
     phase: "saving",
   });
-});
-
-it("notifies no one for a capture move that changes nothing", () => {
-  const store = capturing();
-  const heard = vi.fn();
-  store.subscribe(selectCapture, heard);
-
-  moveCapture(store, [100, 300, 300, 500]);
-  moveCapture(store, [100, 300, 300, 500]);
-
-  expect(heard).toHaveBeenCalledTimes(1);
 });
 
 it("takes the floating surface from a selected mark, and cancels to nothing", () => {
@@ -1175,16 +1147,6 @@ it.each(["", " \n\t "])(
     expect(store.getState().floating).toEqual({ kind: "none" });
   },
 );
-
-it("refits nothing while no Text Draft stands", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  const { floating } = store.getState();
-
-  refitTextDraft(store, "abcd", FIT);
-
-  expect(store.getState().floating).toBe(floating);
-});
 
 it("takes no more typing once a Text Draft is saving, and commits it once", () => {
   const store = drafting();

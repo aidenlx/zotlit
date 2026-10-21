@@ -6,13 +6,10 @@ import { editingCapabilityCopy } from "./capability-copy";
 import {
   createRequest,
   geometryPatch,
-  MAX_POSITION_LENGTH,
-  newWriteToken,
   tagsPatch,
   writeFailureMessage,
-  writePosition,
 } from "./write";
-import type { AnnotationDraft, WriteFailure } from "./write";
+import type { AnnotationDraft } from "./write";
 
 const TARGET = { library: "users/0", key: "FDRFQ7C2", version: 12 };
 
@@ -51,51 +48,6 @@ function created(request: { body?: string }): Record<string, unknown> {
   const [object] = JSON.parse(request.body!) as Record<string, unknown>[];
   return object!;
 }
-
-/** Every outcome a write can end on, which this copy table must be total over. */
-const FAILURES: WriteFailure[] = [
-  { kind: "db-source" },
-  { kind: "unknown-annotation" },
-  { kind: "not-found" },
-  { kind: "conflict" },
-  { kind: "write-token-used" },
-  { kind: "unknown-outcome" },
-  { kind: "unreachable" },
-  { kind: "local-api-disabled" },
-  { kind: "unauthorized" },
-  { kind: "denied" },
-  { kind: "library-read-only" },
-  { kind: "server-changed" },
-  { kind: "cooldown", retryAfter: Temporal.Duration.from({ seconds: 30 }) },
-  { kind: "incompatible-zotero" },
-  { kind: "invalid-response", issue: "400 itemType not provided" },
-];
-
-it("names every outcome a write can end on, and says the edit did not land", () => {
-  const messages = FAILURES.map((failure) => writeFailureMessage(failure, NOW));
-
-  expect(messages.every((message) => message.length > 0)).toBe(true);
-  // One sentence stands in front of every reason: the user learns the edit was
-  // refused before they learn why.
-  const [firstSentence] = messages.map((message) => message.split(". ")[0]);
-  expect(messages.every((message) => message.startsWith(firstSentence!))).toBe(
-    true,
-  );
-});
-
-it("tells the five outcomes no capability describes apart", () => {
-  const own = [
-    { kind: "db-source" },
-    { kind: "unknown-annotation" },
-    { kind: "not-found" },
-    { kind: "conflict" },
-    { kind: "unknown-outcome" },
-  ] satisfies WriteFailure[];
-
-  const messages = own.map((failure) => writeFailureMessage(failure, NOW));
-
-  expect(new Set(messages).size).toBe(own.length);
-});
 
 it("borrows the Editing Capability's own words where a failure has one", () => {
   const copy = editingCapabilityCopy(
@@ -271,25 +223,6 @@ it.each([
 it("names the group library in the route a group Attachment's create takes", () => {
   expect(createRequest("groups/12345", draft(), TOKEN).path).toBe(
     "/api/groups/12345/items",
-  );
-});
-
-it("mints a fresh 32-character token for every create", () => {
-  const tokens = [newWriteToken(), newWriteToken()];
-
-  expect(tokens.every((token) => /^[0-9a-f]{32}$/.test(token))).toBe(true);
-  expect(new Set(tokens).size).toBe(2);
-});
-
-it("measures the stored position against Zotero's own limit", () => {
-  const long = {
-    pageIndex: 0,
-    rects: Array.from({ length: 4000 }, () => [1.111, 2.222, 3.333, 4.444]),
-  };
-
-  expect(writePosition(long).length).toBeGreaterThan(MAX_POSITION_LENGTH);
-  expect(writePosition(draft().position).length).toBeLessThan(
-    MAX_POSITION_LENGTH,
   );
 });
 

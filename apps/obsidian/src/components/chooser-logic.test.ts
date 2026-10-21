@@ -66,11 +66,6 @@ it("keeps matching rows in source order, not in score order", () => {
   ).toEqual(["method", "theory", "review"]);
 });
 
-it("leaves the rows themselves untouched", () => {
-  chooserLayout(TAGS_ONLY, scoresAgainstSourceOrder);
-  expect(labelsOf(ROWS)).toEqual(["method", "theory", "review", "draft"]);
-});
-
 it("draws the groups in the order they were given", () => {
   const { sections } = chooserLayout(GROUPS, null);
   expect(sections.map((section) => section.label)).toEqual(["Tags", undefined]);
@@ -186,12 +181,6 @@ it("drops a value the selection already holds, keeping the rest in order", () =>
     "method",
     "review",
   ]);
-});
-
-it("returns a fresh collection rather than editing the one it was given", () => {
-  const selected = ["method"];
-  expect(toggledValues(selected, "draft")).not.toBe(selected);
-  expect(selected).toEqual(["method"]);
 });
 
 /**

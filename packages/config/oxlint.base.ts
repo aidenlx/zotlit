@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import { defineConfig } from "oxlint";
 
+import testBaseline from "./oxlint-tests-baseline.json" with { type: "json" };
+
 export const parentImportPattern = {
   group: ["../**"],
   message: "Use @/ alias instead of parent-directory relative imports.",
@@ -34,6 +36,26 @@ export const uniqueIdPaths = ["react", "preact/compat", "preact/hooks"].map(
   }),
 );
 
+/** Exact baseline paths relative to the package's nested lint config. */
+export function testBaselineOverrides(directory: string) {
+  const prefix = `${directory}/`;
+  const files = testBaseline
+    .filter((file) => file.startsWith(prefix))
+    .map((file) => file.slice(prefix.length));
+  // Entries may be deleted, never added.
+  return files.length === 0
+    ? []
+    : [
+        {
+          files,
+          rules: {
+            "zotlit-tests/no-source-text": "off" as const,
+            "zotlit-tests/no-internal-mock": "off" as const,
+          },
+        },
+      ];
+}
+
 export default defineConfig({
   options: {
     typeAware: true,
@@ -50,7 +72,9 @@ export default defineConfig({
     "promise",
     "vitest",
   ],
+  jsPlugins: [join(import.meta.dirname, "oxlint-plugin-build.ts")],
   rules: {
+    "zotlit-build/no-undeclared-env": "error",
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
@@ -108,6 +132,15 @@ export default defineConfig({
     "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
   },
   overrides: [
+    {
+      // Nested package configs share the test policy enabled by the root.
+      files: ["**/*.test.{ts,tsx,mts,mjs,js}"],
+      jsPlugins: [join(import.meta.dirname, "oxlint-plugin-tests.ts")],
+      rules: {
+        "zotlit-tests/no-source-text": "error",
+        "zotlit-tests/no-internal-mock": "error",
+      },
+    },
     {
       // A test asserts what an element does, not the zt: classes that draw it
       // (policies/ui-testing.md).

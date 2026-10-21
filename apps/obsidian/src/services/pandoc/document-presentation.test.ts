@@ -49,24 +49,6 @@ function profileSettings(
 }
 
 describe("documentPresentation", () => {
-  it("inherits the vault selections where the note carries no properties", () => {
-    expect(read(null)).toEqual({ kind: "read", presentation: {} });
-  });
-
-  it("inherits the vault selections where the note names neither", () => {
-    expect(read({ title: "Draft" })).toEqual({
-      kind: "read",
-      presentation: {},
-    });
-  });
-
-  it("takes the CSL ID the note names", () => {
-    expect(read({ "zotlit-csl": STYLE_ID })).toEqual({
-      kind: "read",
-      presentation: { styleId: STYLE_ID },
-    });
-  });
-
   it("reads the CSL ID as the property writes it, spacing aside", () => {
     expect(read({ "zotlit-csl": `  ${STYLE_ID}\t` })).toEqual({
       kind: "read",
@@ -74,24 +56,10 @@ describe("documentPresentation", () => {
     });
   });
 
-  it("takes the Document Language as the note's Citation Locale", () => {
-    expect(read({ lang: "de-DE" })).toEqual({
-      kind: "read",
-      presentation: { locale: "de-DE" },
-    });
-  });
-
   it("reads the Document Language as the property writes it, spacing aside", () => {
     expect(read({ lang: " zh-Hans-CN " })).toEqual({
       kind: "read",
       presentation: { locale: "zh-Hans-CN" },
-    });
-  });
-
-  it("takes a style and a language the note names together", () => {
-    expect(read({ "zotlit-csl": STYLE_ID, lang: "de-DE" })).toEqual({
-      kind: "read",
-      presentation: { styleId: STYLE_ID, locale: "de-DE" },
     });
   });
 

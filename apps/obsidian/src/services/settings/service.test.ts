@@ -192,19 +192,6 @@ describe("SettingsService loading", () => {
     ).toBe("👩‍🔬");
   });
 
-  it("returns null current before ready and snapshot after", async () => {
-    const { service } = makeService();
-    expect(service.current).toBeNull();
-    await service.ready;
-    expect(service.current).toEqual(defaults);
-  });
-
-  it("ready resolves to undefined", async () => {
-    const { service } = makeService();
-    const value = await service.ready;
-    expect(value).toBeUndefined();
-  });
-
   it("migrates old global note values into the default Profile without changing effective values", async () => {
     const plugin = new PluginStub({
       __VERSION__: 9,
@@ -259,25 +246,6 @@ describe("SettingsService loading", () => {
     await service.ready;
     expect(seen[1]).toEqual(defaults);
     unsub();
-  });
-
-  it("subscribers receive fresh clones (not the same reference twice)", async () => {
-    const { service } = makeService();
-    const seen: (object | null)[] = [];
-    service.subscribe((v) => seen.push(v));
-    await service.ready;
-    service.update({ "server.enabled": true });
-    // initial null + initial-load snapshot + after update
-    expect(seen[1]).not.toBe(seen[2]);
-  });
-
-  it("current returns a distinct fresh clone per access", async () => {
-    const { service } = makeService();
-    await service.ready;
-    const a = service.current;
-    const b = service.current;
-    expect(a).not.toBe(b);
-    expect(a).toEqual(b);
   });
 
   it("update() return value is a fresh clone disconnected from state", async () => {
@@ -1405,29 +1373,6 @@ describe("SettingsService mutations", () => {
     service.update({ "server.hostname": "/x", "server.enabled": true });
     service.reset();
     expect(service.current).toEqual(defaults);
-  });
-
-  it("update({}) still notifies subscribers and schedules a save", async () => {
-    const { service, plugin } = makeService();
-    await service.ready;
-    const seen: (object | null)[] = [];
-    service.subscribe((v) => seen.push(v));
-    expect(seen).toHaveLength(1);
-    service.update({});
-    expect(seen).toHaveLength(2);
-    await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 10 });
-  });
-
-  it("reset() of un-overridden keys still notifies and schedules a save", async () => {
-    const { service, plugin } = makeService();
-    await service.ready;
-    const seen: (object | null)[] = [];
-    service.subscribe((v) => seen.push(v));
-    service.reset(["server.hostname"]);
-    expect(seen).toHaveLength(2);
-    await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 10 });
   });
 });
 

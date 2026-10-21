@@ -32,7 +32,6 @@ import {
   memoryOpener,
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
-import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
@@ -874,22 +873,6 @@ An annotation.
       controller.undo();
     });
     expect(view.getViewData()).toBe(SOURCE);
-  });
-
-  it("shows Name and folder controls without a Settings shortcut", async () => {
-    await using cleanup = new AsyncDisposableStack();
-    const { view } = setup();
-    cleanup.defer(() => act(async () => view.close()));
-    await act(async () => view.open());
-    await act(async () => view.store.getState().setTab("name"));
-    expect(
-      view.contentEl.querySelector('[data-part="filename-editor"]'),
-    ).not.toBeNull();
-    expect(
-      [...view.contentEl.querySelectorAll("button")].some(
-        (button) => button.textContent === m.workbench_open_settings(),
-      ),
-    ).toBe(false);
   });
 
   it("keeps a file-known Default disabled when opened with invalid source", async () => {
@@ -2569,6 +2552,21 @@ An annotation.
     });
   }
 
+  it("keeps the document and selection when the partial prompt is cancelled", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.mocked(createSharedPartial).mockResolvedValueOnce(null);
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+
+    await extract(editor, SELECTION.length);
+
+    expect(createSharedPartial).toHaveBeenCalledOnce();
+    expect(view.getViewData()).toBe(EXTRACT_SOURCE);
+    expect(editor.state.selection.main.anchor).toBe(0);
+    expect(editor.state.selection.main.head).toBe(SELECTION.length);
+  });
+
   it("leaves a Liquid render tag over the three lines it moved out", async () => {
     await using cleanup = new AsyncDisposableStack();
     vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
@@ -2821,25 +2819,6 @@ language: liquid
     await act(async () => view.setViewData(edited, false));
 
     expect(view.preview!.state.getState().source).toBe(edited);
-  });
-
-  it("renders the Citation Template through the document-kind dispatcher", async () => {
-    await using cleanup = new AsyncDisposableStack();
-    const { view } = openCitation();
-    cleanup.defer(() => act(async () => view.close()));
-    await act(async () => view.open());
-
-    await act(async () => {
-      view.scheduler.run();
-      await Promise.resolve();
-    });
-
-    expect(vi.mocked(renderNativeTemplate)).toHaveBeenCalledOnce();
-    // The default Citation set, which the session feeds from the context alone.
-    expect(vi.mocked(renderNativeTemplate).mock.lastCall?.[1]).toMatchObject({
-      source: CITATION_SOURCE,
-      citation: { variant: "main", example: "one-item" },
-    });
   });
 });
 

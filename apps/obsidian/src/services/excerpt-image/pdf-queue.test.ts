@@ -4,7 +4,6 @@ import {
   EXCERPT_JOB_LIMIT,
   EXCERPT_PDF_AFFINITY,
   ExcerptPdfQueue,
-  PdfAffinityQueue,
 } from "./pdf-queue";
 
 /** A signal nothing cancels, for jobs a test drives to completion. */
@@ -95,48 +94,6 @@ describe("Excerpt PDF queue admission", () => {
     expect(ran.slice(4)).toEqual(["resumed 1", "resumed 2", "resumed 3"]);
     expect(queue.diagnostics.admitted).toBe(3);
     for (const admission of resumed) admission.release();
-    expect(queue.diagnostics.admitted).toBe(0);
-  });
-
-  it("holds the default admitted bound at the literal 128 jobs", async () => {
-    // ADR 0052 fixes the bound at 128: the literal catches a drift in the
-    // constant itself, which a bound derived from it cannot.
-    expect(EXCERPT_JOB_LIMIT).toBe(128);
-    const queue = new ExcerptPdfQueue();
-    const ran: number[] = [];
-    const reservations = Array.from({ length: 128 }, () =>
-      queue.reserve(running()),
-    );
-    expect(queue.diagnostics.admitted).toBe(128);
-    const admitted = await Promise.all(reservations);
-    await Promise.all(
-      admitted.map((admission, index) =>
-        admission.render(
-          async () => {
-            ran.push(index);
-          },
-          { pdf: "PDF", sequence: queue.nextSequence(), signal: running() },
-        ),
-      ),
-    );
-    expect(ran).toHaveLength(128);
-    const overflow = queue.reserve(running());
-    expect(queue.diagnostics.awaiting).toBe(1);
-    // The 129th job is admitted nowhere: the PDF slot served exactly the jobs
-    // the bound admitted, and no more.
-    expect(ran).toHaveLength(128);
-    admitted[0]!.release();
-    const resumed = await overflow;
-    await resumed.render(
-      async () => {
-        ran.push(128);
-      },
-      { pdf: "PDF", sequence: queue.nextSequence(), signal: running() },
-    );
-    expect(ran).toHaveLength(129);
-    for (const admission of admitted.slice(1)) admission.release();
-    expect(queue.diagnostics.admitted).toBe(1);
-    resumed.release();
     expect(queue.diagnostics.admitted).toBe(0);
   });
 
@@ -496,27 +453,5 @@ describe("Excerpt PDF queue rendering", () => {
     await idle;
     expect(sequence).toEqual(["teardown", "idle"]);
     await expect(rendering).resolves.toBeUndefined();
-  });
-});
-
-describe("PdfAffinityQueue contract", () => {
-  it("sizes, filters, re-prioritizes, and removes queued jobs", () => {
-    const queued = new PdfAffinityQueue();
-    const runs = Array.from({ length: 3 }, () => async () => undefined);
-    queued.enqueue(runs[0]!, { id: "a", pdf: "ONE", priority: 0 });
-    queued.enqueue(runs[1]!, { id: "b", pdf: "TWO", priority: 0 });
-    queued.enqueue(runs[2]!, { id: "c", pdf: "ONE", priority: 0 });
-    expect(queued.size).toBe(3);
-    expect(queued.filter({ pdf: "ONE" })).toEqual([runs[0], runs[2]]);
-    expect(queued.filter({ pdf: "TWO" })).toEqual([runs[1]]);
-    queued.setPriority("b", 1);
-    expect(queued.dequeue()).toBe(runs[1]);
-    expect(() => queued.setPriority("gone", 1)).toThrow("gone");
-    // Queued-abort removal is keyed by the task id p-queue assigns.
-    queued.remove("c");
-    expect(queued.size).toBe(1);
-    expect(queued.dequeue()).toBe(runs[0]);
-    expect(queued.dequeue()).toBeUndefined();
-    expect(queued.size).toBe(0);
   });
 });

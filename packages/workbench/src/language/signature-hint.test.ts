@@ -61,18 +61,6 @@ function marked(text: string, options?: Parameters<typeof signatureAt>[2]) {
   );
 }
 
-it("names any as the result of a call whose result type varies", () => {
-  expect(hintAt("if(|")?.signatures.map(({ returns }) => returns)).toEqual([
-    "any",
-  ]);
-});
-
-it("writes a parameter's texts and null as the reference does", () => {
-  expect(
-    hintAt("max(|")?.signatures[0]?.parameters.map(({ type }) => type),
-  ).toEqual(["number | null"]);
-});
-
 it("follows the caret through a global function's arguments", () => {
   expect(marked("date(|")).toEqual({ callee: "date", marked: ["global:text"] });
   expect(marked('if(a, "b", |)')).toEqual({

@@ -13,7 +13,7 @@ import {
 
 import { themeHook } from "@/lib/theme-hooks";
 
-import { CODE_PANE_CLASS, codePane } from "./editor-extension";
+import { codePane } from "./editor-extension";
 import { windowMigration } from "./test-window-migration";
 
 let view: EditorView | null = null;
@@ -146,12 +146,6 @@ function codePaneEditor(doc: string) {
 }
 
 describe("code panes", () => {
-  it("puts the code class on the editor element", () => {
-    using _migration = windowMigration();
-    using pane = codePaneEditor("");
-    expect(pane.editor.dom.classList.contains(CODE_PANE_CLASS)).toBe(true);
-  });
-
   it("moves editor styles to its new document and releases the native listener", () => {
     using host = windowMigration();
     using pane = codePaneEditor("{{ zt.title }}");

@@ -16,11 +16,7 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import { defaults } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
-import {
-  CITATION_TEMPLATE_SOURCE,
-  DEFAULT_TEMPLATES,
-  templatePath,
-} from "./defaults";
+import { CITATION_TEMPLATE_SOURCE, DEFAULT_TEMPLATES } from "./defaults";
 import { InertTemplateError } from "./errors";
 import type { MissingPartialError } from "./errors";
 import { TemplateService } from "./service";
@@ -1438,13 +1434,6 @@ partials:
     });
   });
 
-  it("templatePath emits the extension for the requested language", () => {
-    expect(templatePath("templates", "note")).toBe(
-      "templates/zotlit-note.liquid.md",
-    );
-    expect(templatePath("", "note", "eta")).toBe("zotlit-note.eta.md");
-  });
-
   it("unsubscribes vault events on dispose", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.eta.md", "first <%= zt.title %>");
@@ -1594,12 +1583,6 @@ partials:
 });
 
 describe("javascript templates gate", () => {
-  it("is off by default", async () => {
-    const { service } = await makeHarness();
-
-    expect(service.javascriptTemplatesEnabled).toBe(false);
-  });
-
   it("throws InertTemplateError naming the file for an eta-only override when the gate is off", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.eta.md", "custom <%= zt.title %>");

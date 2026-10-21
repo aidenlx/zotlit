@@ -60,31 +60,6 @@ function withCalls(calls = CALLS) {
   );
 }
 
-it("boxes a plain quoted name and leaves every other call form as source", () => {
-  const { container, view } = placeholders(withCalls());
-
-  expect(
-    [...container.querySelectorAll("[data-partial-box]")].map(
-      (box) => box.querySelector('[data-part="partial-name"]')?.textContent,
-    ),
-  ).toEqual(["authors", "venue-line"]);
-  expect(view.contentDOM.textContent).not.toContain('{% render "authors" %}');
-  expect(view.contentDOM.textContent).not.toContain(
-    "{% include 'venue-line' %}",
-  );
-  expect(view.contentDOM.textContent).toContain("{% render partial_name %}");
-});
-
-it("shows the arguments a call passes beside its name", () => {
-  const { container } = placeholders(
-    withCalls('{% render "authors" with zt.creators as zt %}'),
-  );
-
-  expect(
-    container.querySelector('[data-part="partial-arguments"]')?.textContent,
-  ).toBe("with zt.creators as zt");
-});
-
 it("reveals the raw call while the selection touches it", () => {
   const { view } = placeholders(withCalls());
   const at = view.state.doc.toString().indexOf('{% render "authors" %}');

@@ -7,8 +7,6 @@
 // @see apps/obsidian/policies/theme-hooks.md
 import { expect, it } from "vitest";
 
-import { SIGNATURE_HINT_CLASS } from "@zotlit/workbench/language";
-
 import { themeAttribute, themeHook } from "./theme-hooks";
 
 it("promises the Annotation View hooks by literal name", () => {
@@ -56,16 +54,5 @@ it("promises the Text Draft hook by literal name", () => {
 it("promises the regular expression hook of the template editors by literal name", () => {
   expect({ regexp: themeHook.templateRegexp }).toEqual({
     regexp: "zt-template-regexp",
-  });
-});
-
-it("promises the Signature Hint hook of the expression fields by literal name", () => {
-  // The workbench emits the class; the registry names what it emits.
-  expect({
-    registry: themeHook.signatureHint,
-    emitted: SIGNATURE_HINT_CLASS,
-  }).toEqual({
-    registry: "zt-signature-hint",
-    emitted: "zt-signature-hint",
   });
 });

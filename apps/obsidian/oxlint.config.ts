@@ -1,5 +1,6 @@
 import { defineConfig } from "oxlint";
 
+import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
   itemQuerySchemaPaths,
   parentImportPattern,
@@ -31,6 +32,8 @@ const commonImports = {
 export default defineConfig({
   extends: [baseConfig],
   jsPlugins: [
+    new URL("../../packages/config/oxlint-plugin-design.ts", import.meta.url)
+      .pathname,
     "./scripts/oxlint-plugin-popout-windows.ts",
     "./scripts/oxlint-plugin-menu-sections.ts",
     "./scripts/oxlint-plugin-obsidian-css.ts",
@@ -82,6 +85,12 @@ export default defineConfig({
     ],
   },
   overrides: [
+    {
+      files: ["src/views/annot-view/*.{ts,tsx}"],
+      excludeFiles: ["**/*.test.{ts,tsx}"],
+      rules: { "zotlit-design/annotation-view": "error" },
+    },
+    ...testBaselineOverrides("apps/obsidian"),
     {
       // UI code runs in the window it stands in, a pop-out included.
       files: ["src/views/**", "src/components/**", "src/**/*.tsx"],

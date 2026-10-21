@@ -1,0 +1,10 @@
+.card {
+  margin-left: 2px;
+  text-align: right;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  columns: 2;
+  column-count: 2;
+  transition: all 1s;
+  transition-property: opacity, all;
+}

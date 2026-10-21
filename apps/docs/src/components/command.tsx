@@ -27,6 +27,7 @@ export type CommandProps = CommandOptions &
       }
   );
 
+/** Catalog names receive the ZotLit prefix; children preserve external command names. */
 export function Command(props: CommandProps) {
   const inline = props.inline ?? false;
   const commandName =

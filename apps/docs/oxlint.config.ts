@@ -1,5 +1,6 @@
 import { defineConfig } from "oxlint";
 
+import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
   itemQuerySchemaPaths,
   parentImportPattern,
@@ -40,7 +41,17 @@ export default defineConfig({
       { patterns: [parentImportPattern], paths: itemQuerySchemaPaths },
     ],
   },
+  jsPlugins: [
+    new URL("../../packages/config/oxlint-plugin-design.ts", import.meta.url)
+      .pathname,
+  ],
   overrides: [
+    {
+      files: ["src/lib/workbench/*.tsx"],
+      excludeFiles: ["**/*.test.tsx"],
+      rules: { "zotlit-design/workbench-chrome": "error" },
+    },
+    ...testBaselineOverrides("apps/docs"),
     {
       // workerd ships no Temporal: the publication-date schema, its date
       // helpers, and the Date the feed library takes (AGENTS.md → Dates).
