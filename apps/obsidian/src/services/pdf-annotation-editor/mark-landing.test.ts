@@ -69,6 +69,7 @@ function landing(
     anchor: {
       page: anchor.page ?? null,
       annotation: anchor.annotation ?? null,
+      attachment: null,
     },
     attachment,
     read,
@@ -162,8 +163,8 @@ describe("decideMarkLanding", () => {
       "zotero://open/library/items/RGRPDF24?annotation=SPILL234&page=1",
       {
         resolve: () => RESOLVED,
-        locate: () => ({
-          kind: "located",
+        lookup: () => ({
+          ...RESOLVED,
           absolutePath: "/Users/me/Vault/attachments/rougier-2014.pdf",
         }),
         vaultBasePath: "/Users/me/Vault",
@@ -188,9 +189,10 @@ describe("decideMarkLanding", () => {
     const capture = decideFileLinkCapture(
       "zotero://open/groups/4200309/items/RGRGRUP9?annotation=HIGHL234",
       {
-        resolve: () => ({ ...RESOLVED, attachmentKey: "RGRGRUP9g4200309" }),
-        locate: () => ({
-          kind: "located",
+        resolve: () => RESOLVED,
+        lookup: () => ({
+          ...RESOLVED,
+          attachmentKey: "RGRGRUP9g4200309",
           absolutePath: "/Users/me/Zotero/storage/RGRGRUP9/shared.pdf",
         }),
         vaultBasePath: "/Users/me/Vault",

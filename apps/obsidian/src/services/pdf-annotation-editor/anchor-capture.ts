@@ -9,7 +9,11 @@
 import { around } from "monkey-around";
 import { WorkspaceLeaf } from "obsidian";
 
-import { ANNOTATION_ANCHOR_KEY, parseAnnotationSubpath } from "@zotlit/db";
+import {
+  ANNOTATION_ANCHOR_KEY,
+  ATTACHMENT_ANCHOR_KEY,
+  parseAnnotationSubpath,
+} from "@zotlit/db";
 import type { ParsedAnnotationSubpath } from "@zotlit/db";
 
 import { disposable } from "@/lib/disposables";
@@ -24,9 +28,14 @@ const logger = getLogger("pdf-annotation-editor");
  * drains it. Per leaf rather than per view, because the patch writes it before
  * the binding that reads it exists; the two are never alive at once.
  *
+ * The Anchor carries the Attachment the open named, when it named one, beside
+ * the Annotation: two Attachments can keep one file, and the binding names
+ * its Attachment from it.
+ *
  * A leaf that swaps files needs no sweep here: an Indexed Key names one
  * Annotation of one Attachment, so a binding for the file now on screen answers
- * a leftover Anchor `annotation-unknown` and drops it.
+ * a leftover Anchor `annotation-unknown` and drops it, and the resolver takes a
+ * leftover Attachment only for the file that Attachment keeps.
  */
 const pending = new WeakMap<WorkspaceLeaf, ParsedAnnotationSubpath>();
 
@@ -79,6 +88,7 @@ export function registerAnnotationAnchorCapture(
           if (anchor === null) return;
           logger.debug("An open carried an Annotation Anchor", {
             annotationKey: anchor.annotation,
+            attachmentKey: anchor.attachment,
             page: anchor.page,
           });
           deps.onAnchor(this);
@@ -105,17 +115,25 @@ function navigationSubpathOf(state: unknown): string | null {
   return typeof subpath === "string" ? subpath : null;
 }
 
-/** The Anchor one subpath carries, for a leaf showing a PDF. */
+/**
+ * The Anchor one subpath carries, for a leaf showing a PDF: an Annotation to
+ * land on, the Attachment the open named, or both.
+ */
 function anchorOf(
   leaf: WorkspaceLeaf,
   subpath: string,
 ): ParsedAnnotationSubpath | null {
   if (
-    !subpath.includes(ANNOTATION_ANCHOR_KEY) ||
+    !(
+      subpath.includes(ANNOTATION_ANCHOR_KEY) ||
+      subpath.includes(ATTACHMENT_ANCHOR_KEY)
+    ) ||
     leaf.getViewState().type !== PDF_VIEW_TYPE
   ) {
     return null;
   }
   const anchor = parseAnnotationSubpath(subpath);
-  return anchor.annotation === null ? null : anchor;
+  return anchor.annotation === null && anchor.attachment === null
+    ? null
+    : anchor;
 }

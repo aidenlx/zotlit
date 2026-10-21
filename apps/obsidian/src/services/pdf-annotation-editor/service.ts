@@ -10,6 +10,7 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import { getLogger } from "@/lib/log";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
@@ -28,6 +29,8 @@ import type { PdfRead } from "./reads";
 import { openFileOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import { toolColorStore } from "./tools";
+
+const logger = getLogger("pdf-annotation-editor");
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
@@ -220,10 +223,27 @@ export class PdfAnnotationEditor extends Service<void> {
     this.commit(stack.move());
   }
 
-  /** Re-aims a PDF view that is already open at the Annotation an Anchor named. */
+  /**
+   * Re-aims a PDF view that is already open at the Annotation an Anchor named.
+   * A view bound to another Attachment of the same file than the one the open
+   * named is bound afresh, and the new binding lands off its first read.
+   */
   #landAnchor(leaf: WorkspaceLeaf): void {
     if (this.#retired) return;
-    this.#bindings.get(leaf.view as PDFFileView)?.land();
+    const view = leaf.view as PDFFileView;
+    const binding = this.#bindings.get(view);
+    if (!binding?.renamed) {
+      binding?.land();
+      return;
+    }
+    logger.debug("An open named another Attachment of the bound file", {
+      path: binding.filePath,
+      bound: binding.historyAttachment,
+    });
+    if (this.#trackOpens) binding.close();
+    binding[Symbol.dispose]();
+    this.#bindings.delete(view);
+    this.#reconcileViews();
   }
 
   #reconcileViews(): void {

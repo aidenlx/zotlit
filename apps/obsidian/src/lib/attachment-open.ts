@@ -4,7 +4,7 @@ import { Keymap, Menu, SuggestModal } from "obsidian";
 import type { App, PaneType } from "obsidian";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { attachmentOpenUri } from "@zotlit/db";
+import { ATTACHMENT_ANCHOR_KEY, attachmentOpenUri } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -176,14 +176,30 @@ export function createObsidianAttachmentReader(
         return;
       }
       // Obsidian's PDF view reads `#page=N` and the rest of its subpath
-      // grammar off `eState.subpath`; an absent subpath opens at the start.
-      const leaf = app.workspace.getLeaf(pane);
-      await (attachment.subpath
-        ? leaf.openFile(file, { eState: { subpath: attachment.subpath } })
-        : leaf.openFile(file));
+      // grammar off `eState.subpath`; an absent page opens at the start.
+      await app.workspace.getLeaf(pane).openFile(file, {
+        eState: { subpath: namingAttachment(attachment) },
+      });
       onOpened?.();
     },
   };
+}
+
+/**
+ * The subpath an open carries: where to land, and the Attachment it opens.
+ * Two Attachments can keep one file, and the PDF view's binding names its
+ * Attachment from this rather than from the path when the open names one.
+ * Appended rather than re-serialised, so the keys Obsidian reads by name keep
+ * the spelling they were written in.
+ *
+ * @see apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md
+ */
+function namingAttachment({
+  subpath,
+  indexedKey,
+}: ObsidianOpenableAttachment): string {
+  const named = `${ATTACHMENT_ANCHOR_KEY}=${encodeURIComponent(indexedKey)}`;
+  return subpath ? `${subpath}&${named}` : `#${named}`;
 }
 
 /**

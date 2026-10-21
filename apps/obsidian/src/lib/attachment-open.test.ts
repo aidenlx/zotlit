@@ -183,7 +183,9 @@ describe("createObsidianAttachmentReader", () => {
     return { app, openFile };
   }
 
-  it("opens the resolved vault file once the disk file is confirmed", async () => {
+  // Two Attachments can keep one file, so every open names the one it means,
+  // and the reader binds that one rather than the one the path chooses.
+  it("opens the resolved vault file, naming the Attachment it opens", async () => {
     const absolutePath = join(dir, "Doe 2024.pdf");
     await writeFile(absolutePath, "");
     const file = new TFile();
@@ -200,10 +202,12 @@ describe("createObsidianAttachmentReader", () => {
 
     await reader.open(attachment, false);
 
-    expect(openFile).toHaveBeenCalledWith(file);
+    expect(openFile).toHaveBeenCalledWith(file, {
+      eState: { subpath: "#zt-attachment=ATCH2345" },
+    });
   });
 
-  it("lands on the page a subpath names", async () => {
+  it("lands on the page a subpath names, naming the Attachment beside it", async () => {
     const absolutePath = join(dir, "Doe 2024.pdf");
     await writeFile(absolutePath, "");
     const file = new TFile();
@@ -222,7 +226,7 @@ describe("createObsidianAttachmentReader", () => {
     );
 
     expect(openFile).toHaveBeenCalledWith(file, {
-      eState: { subpath: "#page=7" },
+      eState: { subpath: "#page=7&zt-attachment=ATCH2345" },
     });
   });
 

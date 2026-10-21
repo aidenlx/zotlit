@@ -16,7 +16,7 @@ import type { AttachmentReader } from "@/lib/attachment-open";
 import { disposable } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type {
-  AttachmentLocation,
+  AttachmentLookup,
   AttachmentResolution,
 } from "@/services/attachment-resolver/service";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
@@ -49,8 +49,8 @@ export function paneFromTarget(target: string | undefined): PaneType | boolean {
 /** What Capture needs to judge one clicked URL, with no Obsidian objects in it. */
 export interface FileLinkCaptureContext {
   resolve: (absolutePath: string) => AttachmentResolution;
-  /** The file an Attachment keeps, by its Indexed Key, for a Durable Annotation Link. */
-  locate: (attachmentKey: string) => AttachmentLocation;
+  /** An Attachment by its Indexed Key, for a Durable Annotation Link. */
+  lookup: (attachmentKey: string) => AttachmentLookup;
   vaultBasePath: string;
   platform: NodeJS.Platform;
 }
@@ -103,7 +103,8 @@ const PAGE_NUMBER_RE = /^[1-9]\d*$/;
 
 /**
  * Decide a `zotero://open` link that names an Annotation. It names the
- * Attachment by key, so the resolver locates the file first. A file this
+ * Attachment by key, so the resolver looks that Attachment up by it — the
+ * Attachment the link names, even where another one keeps the same file. A file this
  * computer does not hold leaves the link to Zotero — the reason the link is
  * durable at all — and the reader finds that out as it opens, so the capture
  * says to hand the link back then. Anything short of a valid Annotation key is
@@ -122,13 +123,14 @@ function decideDurableLinkCapture(
   const link = parseAnnotationOpenUri(url);
   if (link === null) return PASS;
 
-  const attachmentKey = formatIndexedKey(link.attachmentKey, link.groupID);
-  const location = ctx.locate(attachmentKey);
-  if (location.kind !== "located") {
+  const attachment = ctx.lookup(
+    formatIndexedKey(link.attachmentKey, link.groupID),
+  );
+  if (attachment.kind !== "resolved" || !attachment.openable) {
     logger.debug("Durable Annotation Link left to Zotero", {
       attachmentKey: link.attachmentKey,
       groupID: link.groupID,
-      reason: location.kind,
+      reason: attachment.kind === "resolved" ? "not-openable" : attachment.kind,
     });
     return PASS;
   }
@@ -137,27 +139,21 @@ function decideDurableLinkCapture(
     link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
       ? Number(link.pageLabel)
       : null;
-  const capture = captureAt(
-    location.absolutePath,
-    formatAnnotationSubpath({
-      page,
-      annotation: formatIndexedKey(link.annotationKey, link.groupID),
-    }),
-    ctx,
-  );
-  if (capture.kind !== "capture") return capture;
-  // Two Attachments can name one file. Obsidian's reader binds the file to
-  // the Attachment its path resolves to and shows that one's Annotations, so
-  // a link to the other one goes to Zotero, which opens it by its key.
-  if (capture.attachment.indexedKey !== attachmentKey) {
-    logger.debug("Durable Annotation Link left to Zotero", {
-      attachmentKey,
-      reason: "path-names-another-attachment",
-      pathAttachmentKey: capture.attachment.indexedKey,
-    });
-    return PASS;
-  }
-  return { ...capture, passWhenMissing: true };
+  return {
+    kind: "capture",
+    attachment: openableAt(
+      {
+        indexedKey: attachment.attachmentKey,
+        absolutePath: attachment.absolutePath,
+        subpath: formatAnnotationSubpath({
+          page,
+          annotation: formatIndexedKey(link.annotationKey, link.groupID),
+        }),
+      },
+      ctx,
+    ),
+    passWhenMissing: true,
+  };
 }
 
 /** Claim the file at `absolutePath` when it is an Obsidian-Openable Attachment. */
@@ -171,20 +167,34 @@ function captureAt(
 
   return {
     kind: "capture",
-    attachment: {
-      indexedKey: resolution.attachmentKey,
-      label: filename(absolutePath),
-      openPath: obsidianOpenPath(absolutePath, ctx.vaultBasePath, ctx.platform),
-      absolutePath,
-      ...(subpath ? { subpath } : {}),
-    },
+    attachment: openableAt(
+      { indexedKey: resolution.attachmentKey, absolutePath, subpath },
+      ctx,
+    ),
+  };
+}
+
+function openableAt(
+  {
+    indexedKey,
+    absolutePath,
+    subpath,
+  }: { indexedKey: string; absolutePath: string; subpath: string },
+  ctx: Pick<FileLinkCaptureContext, "vaultBasePath" | "platform">,
+): ObsidianOpenableAttachment {
+  return {
+    indexedKey,
+    label: filename(absolutePath),
+    openPath: obsidianOpenPath(absolutePath, ctx.vaultBasePath, ctx.platform),
+    absolutePath,
+    ...(subpath ? { subpath } : {}),
   };
 }
 
 export interface FileLinkCaptureDeps {
   /** The vault's own directory, for telling an in-vault Attachment from one outside. */
   vaultBasePath: string;
-  attachments: Pick<AttachmentResolver, "resolve" | "locate" | "warm">;
+  attachments: Pick<AttachmentResolver, "resolve" | "lookup" | "warm">;
   settings: Pick<SettingsService, "current">;
   /** Where a captured link opens — the same reader every other ZotLit gesture uses. */
   reader: AttachmentReader<ObsidianOpenableAttachment>;
@@ -227,7 +237,7 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           }
           const capture = decideFileLinkCapture(String(url), {
             resolve: (path) => deps.attachments.resolve(path),
-            locate: (key) => deps.attachments.locate(key),
+            lookup: (key) => deps.attachments.lookup(key),
             vaultBasePath: deps.vaultBasePath,
             platform: process.platform,
           });

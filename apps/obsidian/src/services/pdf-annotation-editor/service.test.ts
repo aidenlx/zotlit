@@ -186,6 +186,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
 
     expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
       "/vault/attachments/rougier-2014.pdf",
+      { attachmentKey: null },
     );
     const binding = service.bindings[0]!;
     expect(binding.attachment).toEqual(RESOLVED);
@@ -560,6 +561,7 @@ it("reads an external file's absolute path from the file itself", async () => {
 
   expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/Users/reader/Zotero/storage/ABCD2345/paper.pdf",
+    { attachmentKey: null },
   );
   expect(service.bindings[0]!.absolutePath).toBe(
     "/Users/reader/Zotero/storage/ABCD2345/paper.pdf",
@@ -687,6 +689,7 @@ it("fails closed to the reader when the controller seam changed shape", async ()
   // The resolution the repository and the Annotation View read is untouched.
   expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/vault/attachments/rougier-2014.pdf",
+    { attachmentKey: null },
   );
   expect(binding.attachment).toEqual(RESOLVED);
 });
@@ -742,6 +745,7 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
   );
   expect(attachments.resolve).toHaveBeenLastCalledWith(
     "/vault/attachments/second.pdf",
+    { attachmentKey: null },
   );
   expect(second.child.on).toHaveBeenCalledWith(
     "pagerendered",
@@ -784,6 +788,7 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
 
   expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/vault/attachments/rougier-2014.pdf",
+    { attachmentKey: null },
   );
 });
 

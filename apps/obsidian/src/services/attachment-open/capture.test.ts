@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AttachmentReader } from "@/lib/attachment-open";
 import type {
-  AttachmentLocation,
+  AttachmentLookup,
   AttachmentResolution,
 } from "@/services/attachment-resolver/service";
 import type { Settings } from "@/services/settings/schema";
@@ -43,14 +43,20 @@ const RESOLVED_ROUGIER: AttachmentResolution = {
   openable: true,
 };
 
+const ROUGIER_BY_KEY: AttachmentLookup = {
+  ...RESOLVED_ROUGIER,
+  kind: "resolved",
+  absolutePath: ROUGIER_PATH,
+};
+
 function context(
   resolution: AttachmentResolution,
   {
     vaultBasePath = VAULT,
-    location = { kind: "unresolved" },
+    byKey = { kind: "unresolved" },
   }: {
     vaultBasePath?: string;
-    location?: AttachmentLocation;
+    byKey?: AttachmentLookup;
   } = {},
 ) {
   const asked: string[] = [];
@@ -63,9 +69,9 @@ function context(
         asked.push(path);
         return resolution;
       },
-      locate: (key: string) => {
+      lookup: (key: string) => {
         located.push(key);
-        return location;
+        return byKey;
       },
       vaultBasePath,
       platform: "darwin" as NodeJS.Platform,
@@ -73,18 +79,10 @@ function context(
   };
 }
 
-/** A durable link's context: the Rougier PDF located and resolved. */
-function durable(
-  options: {
-    resolution?: AttachmentResolution;
-    location?: AttachmentLocation;
-  } = {},
-) {
-  return context(options.resolution ?? RESOLVED_ROUGIER, {
-    location: options.location ?? {
-      kind: "located",
-      absolutePath: ROUGIER_PATH,
-    },
+/** A durable link's context: the Rougier PDF known by its key. */
+function durable(options: { byKey?: AttachmentLookup } = {}) {
+  return context(RESOLVED_ROUGIER, {
+    byKey: options.byKey ?? ROUGIER_BY_KEY,
   });
 }
 
@@ -213,14 +211,14 @@ describe("decideFileLinkCapture, for a Durable Annotation Link", () => {
       passWhenMissing: true,
     });
     expect(located).toEqual(["RGRPDF24"]);
-    expect(asked).toEqual([ROUGIER_PATH]);
+    expect(asked).toEqual([]);
   });
 
   // The fragment carries no library segment of its own, so both keys travel as
   // Indexed Keys — the form an Annotation Record's key already takes.
   it("names a group-library Attachment and Annotation by their Indexed Keys", () => {
     const { located, ctx } = durable({
-      resolution: { ...RESOLVED_ROUGIER, attachmentKey: "RGRGRUP9g4200309" },
+      byKey: { ...ROUGIER_BY_KEY, attachmentKey: "RGRGRUP9g4200309" },
     });
     expect(
       decideFileLinkCapture(
@@ -247,27 +245,32 @@ describe("decideFileLinkCapture, for a Durable Annotation Link", () => {
   });
 
   it("leaves a link whose Attachment Zotero does not hold to Zotero", () => {
-    const { ctx } = durable({ location: { kind: "unresolved" } });
+    const { ctx } = durable({ byKey: { kind: "unresolved" } });
     expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
   });
 
   it("leaves the link to Zotero while the resolver cannot answer yet", () => {
-    const { ctx } = durable({ location: { kind: "pending" } });
+    const { ctx } = durable({ byKey: { kind: "pending" } });
     expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
   });
 
   // Two Attachments name one file, and the path stands for the other one.
-  // Obsidian's reader binds the file to that one and would show its
-  // Annotations, never the one the link names, so Zotero opens the link.
-  it("leaves the link to Zotero when its file stands for another Attachment", () => {
-    const { ctx } = durable({
-      resolution: { ...RESOLVED_ROUGIER, attachmentKey: "RGRCOPY1" },
+  // The open names the Attachment the link names, and the reader binds that.
+  it("opens the Attachment the link names where its file stands for another", () => {
+    const { ctx } = context(
+      { ...RESOLVED_ROUGIER, attachmentKey: "RGRCOPY1" },
+      { byKey: ROUGIER_BY_KEY },
+    );
+    expect(decideFileLinkCapture(DURABLE, ctx)).toMatchObject({
+      kind: "capture",
+      attachment: { indexedKey: "RGRPDF24" },
     });
-    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
   });
 
   it("leaves a link to an Attachment Obsidian cannot host to Zotero", () => {
-    const { ctx } = durable({ resolution: RESOLVED_EPUB });
+    const { ctx } = durable({
+      byKey: { ...ROUGIER_BY_KEY, ...RESOLVED_EPUB, kind: "resolved" },
+    });
     expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
   });
 
@@ -299,11 +302,11 @@ function host(
   resolution: AttachmentResolution,
   {
     enabled = true,
-    location = { kind: "unresolved" },
+    byKey = { kind: "unresolved" },
     missing = false,
   }: {
     enabled?: boolean;
-    location?: AttachmentLocation;
+    byKey?: AttachmentLookup;
     /** The reader finds no file at the open, as on a computer without the PDF. */
     missing?: boolean;
   } = {},
@@ -326,7 +329,7 @@ function host(
     vaultBasePath: VAULT,
     attachments: {
       resolve: () => resolution,
-      locate: () => location,
+      lookup: () => byKey,
       warm: () => void warmed++,
     },
     settings: { current: { "reader.open-file-links": enabled } as Settings },
@@ -396,11 +399,6 @@ describe("registerFileLinkCapture", () => {
     expect(capture.opened).toEqual([]);
   });
 
-  const LOCATED_ROUGIER: AttachmentLocation = {
-    kind: "located",
-    absolutePath: ROUGIER_PATH,
-  };
-
   // A note's links are clicked before any PDF is open, and a resolver still
   // building its index answers `pending`, which hands the click to Zotero.
   it("asks the resolver for its index as it installs", () => {
@@ -410,7 +408,7 @@ describe("registerFileLinkCapture", () => {
   });
 
   it("sends a Durable Annotation Link to the reader at its Annotation", () => {
-    using capture = host(RESOLVED_ROUGIER, { location: LOCATED_ROUGIER });
+    using capture = host(RESOLVED_ROUGIER, { byKey: ROUGIER_BY_KEY });
 
     expect(capture.open(DURABLE, "")).toBeNull();
 
@@ -434,7 +432,7 @@ describe("registerFileLinkCapture", () => {
   // passage through Zotero instead of a missing-file notice.
   it("hands a Durable Annotation Link to Zotero when the reader finds no file", () => {
     using capture = host(RESOLVED_ROUGIER, {
-      location: LOCATED_ROUGIER,
+      byKey: ROUGIER_BY_KEY,
       missing: true,
     });
 
@@ -455,7 +453,7 @@ describe("registerFileLinkCapture", () => {
   });
 
   it("hands a Durable Annotation Link back to Zotero for Obsidian's open-in-default-app target", () => {
-    using capture = host(RESOLVED_ROUGIER, { location: LOCATED_ROUGIER });
+    using capture = host(RESOLVED_ROUGIER, { byKey: ROUGIER_BY_KEY });
 
     capture.open(DURABLE, "_external");
 
@@ -470,7 +468,7 @@ describe("registerFileLinkCapture", () => {
   it("hands a Durable Annotation Link back to Zotero while the setting is off", () => {
     using capture = host(RESOLVED_ROUGIER, {
       enabled: false,
-      location: LOCATED_ROUGIER,
+      byKey: ROUGIER_BY_KEY,
     });
 
     capture.open(DURABLE, "");
