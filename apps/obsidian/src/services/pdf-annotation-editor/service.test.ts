@@ -6,7 +6,7 @@ import {
   TExternalFile,
   WorkspaceLeaf,
 } from "obsidian";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
@@ -1469,4 +1469,70 @@ it("records a read of the other Attachment an open names in a restored tab", asy
     RESOLVED.attachmentKey,
     SHARED.attachmentKey,
   ]);
+});
+
+// Obsidian turns the leaf active, which fires `file-open`, before it hands the
+// leaf its ephemeral state: a cold view is bound before `setEphemeralState`.
+it("binds the Attachment a cold open names, once, before its ephemeral state arrives", async () => {
+  const SHARED = { ...RESOLVED, attachmentKey: "SHRDKEY2" } as const;
+  const leaf = Object.assign(new WorkspaceLeaf(), {
+    getViewState: () => ({ type: "pdf" }),
+  });
+  const view = Object.assign(pdfView("attachments/rougier-2014.pdf"), {
+    leaf,
+  });
+  const open: { view: unknown }[] = [];
+  const { app, relayout } = workspace(open);
+  const native = vi
+    .spyOn(WorkspaceLeaf.prototype, "setViewState")
+    .mockImplementation(async function (
+      this: WorkspaceLeaf,
+      _viewState: unknown,
+      eState?: unknown,
+    ) {
+      Object.assign(this, { view });
+      open.push({ view });
+      relayout();
+      if (eState) this.setEphemeralState(eState);
+    });
+  onTestFinished(() => native.mockRestore());
+  const attachments = attachmentReads(RESOLVED);
+  attachments.resolve.mockImplementation(((
+    _path: string,
+    named?: { attachmentKey: string | null },
+  ) =>
+    named?.attachmentKey === SHARED.attachmentKey
+      ? SHARED
+      : RESOLVED) as never);
+  const annotations = annotationReads();
+  const recordRead = vi.fn();
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments,
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    recordRead,
+    now: () => NOW,
+    ...standingDeps(),
+  });
+  await service.ready;
+
+  await leaf.setViewState(
+    { type: "pdf", state: { file: "attachments/rougier-2014.pdf" } },
+    { subpath: `#page=1&zt-attachment=${SHARED.attachmentKey}` },
+  );
+
+  expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
+    expect.any(String),
+    { attachmentKey: SHARED.attachmentKey },
+  );
+  expect(service.bindings[0]!.attachment).toMatchObject({
+    attachmentKey: SHARED.attachmentKey,
+  });
+  // The file's path owner was never read, nor its Annotations held.
+  expect(recordRead.mock.calls.map(([read]) => read.attachmentKey)).toEqual([
+    SHARED.attachmentKey,
+  ]);
+  expect(annotations.histories).toEqual(new Map([[SHARED.attachmentKey, 1]]));
 });
