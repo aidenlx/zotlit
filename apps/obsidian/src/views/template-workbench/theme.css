@@ -42,11 +42,11 @@
   color: inherit;
   text-decoration: none;
 }
-/* A Match chip is Obsidian's pill (`chip` and its parts above), wherever the
-   theme draws the Match editor: the Template Workbench, and the Query View's
-   Filter and Property page. Obsidian sizes the pill for a property field, so
-   these take back what does not fit a chip that sits in a line of its own. */
-/* .multi-select-pill { max-width: calc(100% - var(--size-2-3) - 1ch) } leaves
+/* A Match chip is Obsidian's pill wherever the theme draws the Match editor:
+   the Template Workbench, and the Query View's Filter and Property page.
+   Obsidian sizes the pill for a property field, so these rules take back
+   what does not fit a chip on a line of its own.
+   .multi-select-pill { max-width: calc(100% - var(--size-2-3) - 1ch) } leaves
    room for the field's input; the chip's line is sized to the pill, so the
    margin squeezed every pill under its text. */
 .zt-root [data-chip-input] .multi-select-pill {
@@ -59,6 +59,8 @@
   word-break: normal;
   overflow-wrap: break-word;
 }
+/* The remove button is a `clickable-icon`, whose box and colour are a
+   toolbar icon's; the chip keeps the pill's compact remove mark. */
 .zt-root [data-chip-input] .multi-select-pill-remove-button {
   padding: var(--size-2-1);
   height: auto;

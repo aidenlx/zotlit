@@ -834,6 +834,105 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   }, 120000);
 
+  // #1641: a crowded condition row once squeezed its property select to its
+  // icon, and broke its chips mid-word. The select keeps its whole name at
+  // any depth, and each chip keeps its value on one line.
+  it("keeps each condition's property name and chips whole in the Filter popover, in a nested group and with a chip list", async () => {
+    const layout = await obEval(
+      run.vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    const deep = "query-files/Nested conditions.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        run.vaultId,
+        `(async()=>{for(const popup of document.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(deep)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    await obEval(
+      run.vaultId,
+      `(async()=>{await app.vault.create(${JSON.stringify(deep)},${JSON.stringify(
+        [
+          "views:",
+          "  - type: table",
+          "    name: Nested",
+          "    from: items",
+          "    filters:",
+          "      and:",
+          "        - 'date.year >= 1950'",
+          "        - or:",
+          "            - 'itemType == \"book\"'",
+          "            - and:",
+          "                - 'firstAuthor.fullName.contains(\"Collator\")'",
+          "                - or:",
+          "                    - 'title.contains(\"reading\")'",
+          "                    - and:",
+          "                        - 'title.contains(\"method\")'",
+          '                        - \'tags.containsAny("methodology", "visualization")\'',
+          "    order:",
+          "      - title",
+          "",
+        ].join("\n"),
+      )});return true;})()`,
+    );
+    interface Row {
+      kind: string;
+      label: number;
+      clipped: boolean;
+      chips: Record<string, number>;
+    }
+    /**
+     * The condition rows of a view's own filter: each property select's
+     * label width and whether its text is cut, and the lines each chip's
+     * value takes.
+     */
+    const rowsOf = async (path: string, view: string) =>
+      JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});leaf.view.query.selectView(${JSON.stringify(view)});await leaf.view.query.settled;const el=leaf.view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]'),20000),'Filter');await until('Filter popover',()=>popover.matches(':popover-open'));const pickers=()=>[...popover.querySelectorAll('[data-filter-section="view"] [data-condition-row] [aria-label=${JSON.stringify(run.m.workbench_match_condition_kind())}]')];await until('condition rows',()=>pickers().length>0,5000);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const lines=node=>{const range=node.ownerDocument.createRange();range.selectNodeContents(node);return new Set([...range.getClientRects()].map(r=>Math.round(r.top))).size;};const rows=pickers().map(picker=>{const label=picker.querySelector(':scope > span:not([data-select-icon])');const row=picker.closest('[data-condition-row]');return {kind:picker.dataset.value,label:Math.round(label.getBoundingClientRect().width),clipped:label.scrollWidth>label.clientWidth,chips:Object.fromEntries([...row.querySelectorAll('[data-chip-input] .multi-select-pill-content')].map(content=>[content.textContent,lines(content)]))};});popover.hidePopover();leaf.detach();return JSON.stringify(rows);})()`,
+        ),
+      ) as Row[];
+    const whole = (rows: Row[]) =>
+      rows.map(({ kind, chips }) => ({
+        kind,
+        label: expect.any(Number) as number,
+        clipped: false,
+        chips: Object.fromEntries(
+          Object.keys(chips).map((value) => [value, 1]),
+        ),
+      }));
+
+    // The Fixture's view: "Tag contains any of" beside "Item type is Book",
+    // in a group of "Any of the following".
+    const advanced = await rowsOf(
+      "query-files/Formula lab.zotquery",
+      "Advanced filters",
+    );
+    expect(advanced.map(({ kind }) => kind)).toContain("tags");
+    expect(advanced).toEqual(whole(advanced));
+    expect(advanced.find(({ kind }) => kind === "tags")?.chips).toEqual({
+      methodology: 1,
+      visualization: 1,
+    });
+    for (const { label } of advanced) expect(label).toBeGreaterThan(0);
+
+    // Five groups deep, a row with a plain value keeps its property's name
+    // as well.
+    const nested = await rowsOf(deep, "Nested");
+    expect(nested.map(({ kind }) => kind)).toEqual([
+      "year",
+      "item-type",
+      "first-author",
+      "item-title",
+      "item-title",
+      "tags",
+    ]);
+    expect(nested).toEqual(whole(nested));
+    for (const { label } of nested) expect(label).toBeGreaterThan(0);
+  }, 120000);
+
   // The Fixture's Literature Note of SAKIMA22 ends with a Query Block of
   // `item == this.item`. A change in the view rewrites the block text only,
   // and the Live Preview widget stays on the page.
