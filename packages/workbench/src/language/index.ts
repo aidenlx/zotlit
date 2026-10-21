@@ -16,7 +16,6 @@ export {
 } from "./completion";
 export type { SuggestionSource, CompletionPresentation } from "./completion";
 export {
-  datasetExpressionFields,
   expressionCompletions,
   expressionOption,
   filterExpressionCompletion,
@@ -29,8 +28,7 @@ export type {
   ExpressionReceiver,
   ExpressionVocabulary,
 } from "./filter-expression-completion";
-export { datasetCustomFields } from "./expression-options";
-export { datasetReceiver } from "./expression-receiver";
+export { datasetVocabulary } from "./expression-vocabulary";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,

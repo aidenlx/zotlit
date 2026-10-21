@@ -1,5 +1,4 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
@@ -7,7 +6,6 @@ import type { FilterPath } from "@zotlit/filter-expression";
 import { ITEMS } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
-import type { FieldLabelLocale } from "@zotlit/zotero-types/field-labels";
 
 import { useCustomFieldNames } from "./custom-fields";
 import { useWorkbenchStore } from "./editor";
@@ -52,9 +50,7 @@ import { MatchSelect } from "./match.rows";
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
-import { datasetCustomFields } from "#/language/expression-options";
-import { datasetReceiver } from "#/language/expression-receiver";
-import { datasetExpressionFields } from "#/language/filter-expression-completion";
+import { datasetVocabulary } from "#/language/expression-vocabulary";
 
 export type {
   ConditionControlProps,
@@ -68,38 +64,6 @@ export type {
 } from "./match.draft";
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
-
-/** How the Items dataset types a receiver, its members labelled in one schema locale. */
-const receivers = new Map<
-  FieldLabelLocale,
-  NonNullable<ExpressionVocabulary["receiver"]>
->();
-
-/**
- * What a Profile Match condition reads: the fields of an Item, labelled as
- * Zotero labels them, and the source's custom fields. A Profile binds no
- * Query Context, has no Formulas and reads no vault property.
- */
-function profileExpressions(
-  locale: string,
-  custom: readonly string[],
-): ExpressionVocabulary {
-  const schema = schemaLocale(locale);
-  const labels = FIELD_LABELS[schema];
-  const label = (path: string) => labels[path];
-  let receiver = receivers.get(schema);
-  if (!receiver) {
-    receiver = datasetReceiver(ITEMS, { label });
-    receivers.set(schema, receiver);
-  }
-  return {
-    fields: datasetExpressionFields(ITEMS, label),
-    context: [],
-    formulas: [],
-    custom: datasetCustomFields(ITEMS, custom),
-    receiver,
-  };
-}
 
 /**
  * The Match of the open Profile document: the Match editor with the
@@ -215,10 +179,17 @@ export function MatchPane({
   const custom = useCustomFieldNames(readCustom, {
     revision: vocabularyRevision,
   });
-  const expression = useMemo(
-    () => profileExpressions(locale, custom),
-    [locale, custom],
-  );
+  // What a condition reads: the fields of an Item, labelled as Zotero labels
+  // them, and the source's custom fields. A Profile binds no Query Context,
+  // has no Formulas and reads no vault property.
+  const schema = schemaLocale(locale);
+  const expression = useMemo(() => {
+    const labels = FIELD_LABELS[schema];
+    return datasetVocabulary(ITEMS, {
+      label: (path) => labels[path],
+      custom,
+    });
+  }, [schema, custom]);
   const vocabulary = useMemo(
     () => ({
       ...filterVocabulary("items", {

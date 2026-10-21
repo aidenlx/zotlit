@@ -6,10 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
 
-import { datasetReceiver } from "./expression-receiver";
+import { datasetVocabulary } from "./expression-vocabulary";
 import { filterExpressionLanguage } from "./filter-expression";
 import {
-  datasetExpressionFields,
   expressionCompletions,
   filterExpressionCompletion,
 } from "./filter-expression-completion";
@@ -416,34 +415,13 @@ describe("in the editor", () => {
   });
 });
 
-describe("the fields of a Query Dataset", () => {
-  it("lists each name a filter reads, with the type its planner gives and the host's label", () => {
-    const fields = datasetExpressionFields(ITEMS, (path) =>
-      path === "title" ? "Title" : undefined,
-    );
-    expect(fields).toContainEqual({
-      path: "title",
-      label: "Title",
-      type: "string",
-    });
-    expect(fields).toContainEqual({ path: "dateAdded", type: "date" });
-    expect(fields).toContainEqual({ path: "creators", type: "list" });
-    // `custom` is read only by bracket access to a custom field.
-    expect(fields.map((field) => field.path)).not.toContain("custom");
-  });
-});
-
 describe("the members a Query Dataset's planner reads", () => {
   /** The vocabulary of `dataset`, its receivers typed by its planner. */
   const planned = (
     dataset: typeof ITEMS,
-    options?: Parameters<typeof datasetReceiver>[1],
-  ): ExpressionVocabulary => ({
-    fields: [],
-    context: [],
-    formulas: [],
-    receiver: datasetReceiver(dataset, options),
-  });
+    options?: Partial<Parameters<typeof datasetVocabulary>[1]>,
+  ): ExpressionVocabulary =>
+    datasetVocabulary(dataset, { label: () => undefined, ...options });
 
   it("offers the keys of a Creator after firstAuthor.", () => {
     const fields = offered("firstAuthor.|", planned(ITEMS))!
@@ -575,11 +553,11 @@ describe("the members a Query Dataset's planner reads", () => {
   });
 
   it("gives the Signature Hint the type of a receiver", () => {
-    const receiver = datasetReceiver(ITEMS, {
+    const { receiver } = planned(ITEMS, {
       formulas: { short: "title.slice(0, 10)" },
     });
     const text = "formula.short.lower";
-    expect(receiver(text, { from: 0, to: 13 })).toEqual({ type: "string" });
-    expect(receiver("formula.missing", { from: 0, to: 15 })).toBeUndefined();
+    expect(receiver?.(text, { from: 0, to: 13 })).toEqual({ type: "string" });
+    expect(receiver?.("formula.missing", { from: 0, to: 15 })).toBeUndefined();
   });
 });

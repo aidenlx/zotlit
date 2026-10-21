@@ -8,11 +8,7 @@ import { useCallback, useMemo } from "react";
 import { useStore } from "zustand";
 
 import type { ContextRecord } from "@zotlit/item-query";
-import {
-  datasetCustomFields,
-  datasetExpressionFields,
-  datasetReceiver,
-} from "@zotlit/workbench/language";
+import { datasetVocabulary } from "@zotlit/workbench/language";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 import { useCustomFieldNames } from "@zotlit/workbench/ui";
 
@@ -20,7 +16,6 @@ import { getLogger } from "@/lib/log";
 
 import { boundRecords } from "./context-hint";
 import { datasetSpec } from "./datasets";
-import { formulaProperty, vaultProperty } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import type { QueryView } from "./view";
 import { fieldLabel } from "./view-properties";
@@ -75,25 +70,13 @@ export function expressionVocabulary({
   /** The custom fields of the Zotero source, once they are read. */
   custom?: readonly string[];
 }): ExpressionVocabulary {
-  const label = (path: string) =>
-    properties?.entry(path).label ?? fieldLabel(path);
-  const { engine } = datasetSpec(dataset);
-  return {
-    fields: datasetExpressionFields(engine, label),
-    receiver: datasetReceiver(engine, { context, formulas, label }),
+  return datasetVocabulary(datasetSpec(dataset).engine, {
+    label: (path) => properties?.entry(path).label ?? fieldLabel(path),
+    formulas,
     context,
-    formulas: Object.keys(formulas).map((name) => ({
-      name,
-      label: label(formulaProperty(name)),
-    })),
-    ...(vaultNames && {
-      vault: vaultNames.map((name) => ({
-        name,
-        label: label(vaultProperty(name)),
-      })),
-    }),
-    ...(custom && { custom: datasetCustomFields(engine, custom) }),
-  };
+    ...(vaultNames && { vault: vaultNames }),
+    ...(custom && { custom }),
+  });
 }
 
 /**

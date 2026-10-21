@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 
 import { ITEMS } from "@zotlit/item-query";
 
-import { datasetReceiver } from "./expression-receiver";
+import { datasetVocabulary } from "./expression-vocabulary";
 import { signatureAt } from "./signature-hint";
 
 /** The hint at the `|` in `text`. */
@@ -165,7 +165,8 @@ it("asks for the receiver where it stands in the text", () => {
 });
 
 it("types a Formula and a bound name as the dataset's planner reads them", () => {
-  const receiver = datasetReceiver(ITEMS, {
+  const { receiver } = datasetVocabulary(ITEMS, {
+    label: () => undefined,
     formulas: { short: "title.slice(0, 10)" },
   });
   expect(marked("formula.short.slice(1, |", { receiver })).toEqual({
