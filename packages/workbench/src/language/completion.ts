@@ -1,6 +1,5 @@
 // CodeMirror completion adapter over the shared Template field resolver.
 
-import { autocompletion } from "@codemirror/autocomplete";
 import type {
   Completion,
   CompletionContext,
@@ -11,6 +10,8 @@ import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { regex } from "arkregex";
 
+import { syntaxCompletion } from "./field-popup";
+import type { CompletionPresentation } from "./field-popup";
 import { pairingContext } from "./pairing-context";
 import { expressionBrackets, addPair, pairingState } from "./pairing-state";
 import { completionEdit, suggestions } from "./suggestions";
@@ -98,25 +99,17 @@ export function applyTemplateCompletion(
  */
 export type SuggestionSource = (position: number) => SuggestionConfig | null;
 
-/**
- * How a host draws a completion list and its rows, Template Completion's or
- * Expression Completion's: the classes it adds and the extra cells it renders.
- */
-export type CompletionPresentation = Pick<
-  NonNullable<Parameters<typeof autocompletion>[0]>,
-  "tooltipClass" | "optionClass" | "addToOptions"
->;
+export type { CompletionPresentation } from "./field-popup";
 
 /** CodeMirror completion over the pane's current contract and source scope. */
 export function templateCompletion(
   read: SuggestionSource,
   presentation: CompletionPresentation = {},
 ): Extension {
-  return autocompletion({
-    override: [(context) => completionAt(context, read)],
-    icons: false,
-    ...presentation,
-  });
+  return syntaxCompletion(
+    (context) => completionAt(context, read),
+    presentation,
+  );
 }
 
 const suggestionOf = new WeakMap<Completion, Suggestion>();

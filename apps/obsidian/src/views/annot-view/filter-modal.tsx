@@ -1,7 +1,7 @@
 // "Filter..." in the sidebar's More options menu: the Query View's Match
 // editor in a dialog, with the conditions of the sidebar's one view. The
 // filter that names the followed Attachment stays out of it.
-import { Modal, Scope } from "obsidian";
+import { Modal } from "obsidian";
 import type { App } from "obsidian";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,9 +9,7 @@ import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
 
 import { AppContext } from "@/lib/app-context";
-import { fieldPopupStands } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { useFilterExpressions } from "@/views/query-view/expression-vocabulary";
 import { FilterEditor } from "@/views/query-view/filter-popover";
@@ -68,16 +66,6 @@ export class SidebarFilterModal extends Modal {
     super(app);
     this.#query = query;
     this.setTitle(m.annot_view_filter_title());
-    // The dialog's scope hears Escape before the field does. While an
-    // expression field's completion list or Signature Hint stands, the key
-    // falls through for the field to close it; otherwise it closes the
-    // dialog, as Obsidian's own scope does.
-    this.scope = new Scope();
-    this.scope.register([], "Escape", (event) => {
-      if (composing(event) || fieldPopupStands(this.modalEl)) return;
-      this.close();
-      return false;
-    });
   }
 
   override onOpen(): void {

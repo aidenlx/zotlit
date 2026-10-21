@@ -5,7 +5,7 @@
 // cannot disagree with evaluation. Members after a `.` are in
 // `expression-members.ts`, quoted keys in `expression-keys.ts`, and the names
 // a list method binds in `list-scope.ts`.
-import { autocompletion, startCompletion } from "@codemirror/autocomplete";
+import { startCompletion } from "@codemirror/autocomplete";
 import type { Completion, CompletionContext } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
@@ -18,7 +18,6 @@ import {
 import { GLOBAL_FUNCTIONS, IF_FUNCTION } from "@zotlit/item-query";
 import type { QueryDataset } from "@zotlit/item-query";
 
-import type { CompletionPresentation } from "./completion";
 import { keyCompletions } from "./expression-keys";
 import { memberCompletions, namespaceAccessAt } from "./expression-members";
 import {
@@ -35,6 +34,8 @@ import type {
   ExpressionOption,
   ExpressionVocabulary,
 } from "./expression-options";
+import { syntaxCompletion } from "./field-popup";
+import type { CompletionPresentation } from "./field-popup";
 import { bindsNames, boundNameOptions } from "./list-scope";
 
 export type {
@@ -230,9 +231,8 @@ export function filterExpressionCompletion(
   read: () => ExpressionVocabulary | null | undefined,
   presentation: CompletionPresentation = {},
 ): Extension {
-  return autocompletion({
-    override: [(context) => completionAt(context, read)],
-    icons: false,
-    ...presentation,
-  });
+  return syntaxCompletion(
+    (context) => completionAt(context, read),
+    presentation,
+  );
 }

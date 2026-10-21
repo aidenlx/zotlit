@@ -49,7 +49,6 @@ import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
-import { fieldPopupStands } from "@/lib/field-popup";
 import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -497,15 +496,13 @@ function ChooserSession({ children }: { children: ReactNode }) {
     // On the rows, Escape is the popover's own light dismiss, which a
     // handler returning `false` would suppress, so it falls through. On a
     // page, it steps back to the rows — unless a menu opened from the page
-    // stands, which the light dismiss closes first, or the focused field's
-    // typing list or other popup of its own stands, such as a Formula's
-    // completion or Signature Hint, which the field closes first. The scope
-    // hears the key before the field does.
+    // stands, which the light dismiss closes first. A field's own popup, such
+    // as a Formula's completion list or Signature Hint, pushes a Scope above
+    // this one while it stands, so its Escape never reaches here.
     const escape = (event: KeyboardEvent) => {
       if (composing(event) || latest.current.page === null) return;
       const popup = popupRef.current;
       if (popup?.querySelector("[data-chooser-page] :popover-open")) return;
-      if (popup && fieldPopupStands(popup)) return;
       back();
       return false;
     };

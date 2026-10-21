@@ -3,9 +3,11 @@
 // parameter at the caret marked and the description beneath.
 import { StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
-import { EditorView, keymap, showTooltip } from "@codemirror/view";
+import { showTooltip } from "@codemirror/view";
+import type { EditorView } from "@codemirror/view";
 import type { Tooltip, ViewUpdate } from "@codemirror/view";
 
+import { fieldPopup } from "./field-popup";
 import { appendProse } from "./prose";
 import { signatureAt } from "./signature-hint";
 import type { HintSignature, SignatureHintOptions } from "./signature-hint";
@@ -15,13 +17,6 @@ import type { HintSignature, SignatureHintOptions } from "./signature-hint";
  * web host leaves CodeMirror's own tooltip look.
  */
 export const SIGNATURE_HINT_CLASS = "zt-signature-hint";
-
-/**
- * The attribute an editor's field carries while a popup of its own stands,
- * such as the Signature Hint, which Escape closes first. A host that takes
- * Escape before the field does leaves it to the field while it is there.
- */
-export const FIELD_POPUP_ATTRIBUTE = "data-field-popup";
 
 /** Closes the hint until the text or the caret changes. */
 const dismiss = StateEffect.define<null>();
@@ -98,26 +93,20 @@ export function signatureHint(options: SignatureHintOptions = {}): Extension {
         : tr.docChanged || tr.selection
           ? hintTooltip(tr.state, options)
           : value,
-    provide: (field) => [
-      showTooltip.from(field),
-      EditorView.contentAttributes.from(
-        field,
-        (shown): Record<string, string> =>
-          shown ? { [FIELD_POPUP_ATTRIBUTE]: "" } : {},
-      ),
-    ],
+    provide: (field) => showTooltip.from(field),
   });
   return [
     hint,
-    keymap.of([
-      {
-        key: "Escape",
-        run: (view) => {
-          if (!view.state.field(hint)) return false;
-          view.dispatch({ effects: dismiss.of(null) });
-          return true;
-        },
-      },
-    ]),
+    // Escape closes the hint; a completion list standing with it closes first.
+    fieldPopup.of((view) =>
+      view.state.field(hint)
+        ? {
+            close: (shown: EditorView) => {
+              shown.dispatch({ effects: dismiss.of(null) });
+              return true;
+            },
+          }
+        : null,
+    ),
   ];
 }

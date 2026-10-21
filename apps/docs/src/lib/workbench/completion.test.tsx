@@ -138,3 +138,54 @@ it("pairs typed delimiters, dismisses completion on a closer, and keeps composit
   expect(view.state.selection.main.head).toBe(26);
   expect(view.hasFocus).toBe(true);
 });
+
+it("takes the option on Tab and closes only the list on Escape", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const view = new EditorView({
+    state: EditorState.create({
+      extensions: [webCompletion(() => ({ root: "note", partials: [] }))],
+    }),
+    parent: document.body,
+  });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    await act(async () => view.destroy());
+  });
+  const press = async (key: string, init: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    await act(async () => view.contentDOM.dispatchEvent(event));
+    return event.defaultPrevented;
+  };
+  const typeOver = async (text: string) => {
+    await act(async () => {
+      view.focus();
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        selection: { anchor: text.length },
+        userEvent: "input.type",
+      });
+    });
+  };
+  const list = () => document.querySelector('[role="option"]');
+
+  await typeOver("{{ zt.ti");
+  expect(list()?.textContent).toContain("title");
+  expect(await press("Tab", { shiftKey: true })).toBe(false);
+  expect(await press("Tab")).toBe(true);
+  expect(view.state.doc.toString()).toContain("{{ zt.title");
+  expect(list()).toBeNull();
+
+  await typeOver("{{ zt.ti");
+  expect(list()).not.toBeNull();
+  expect(await press("Escape")).toBe(true);
+  expect(list()).toBeNull();
+  expect(view.state.doc.toString()).toBe("{{ zt.ti");
+  // With the list gone, Tab and Escape are the page's.
+  expect(await press("Escape")).toBe(false);
+  expect(await press("Tab")).toBe(false);
+});

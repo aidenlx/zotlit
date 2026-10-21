@@ -27,9 +27,11 @@ import {
 import type { ChooserPageMenuItem } from "@/components/chooser";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
+import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 import { matchTheme } from "@/views/template-workbench/match-pane";
+import { onKeymap } from "@/views/template-workbench/theme";
 
 import { boundRecords } from "./context-hint";
 import {
@@ -188,6 +190,7 @@ function ExpressionField({
   /** What the validity line reports and the field underlines. */
   check: FormulaCheck;
 }) {
+  const app = useObsidianApp();
   const properties = useViewProperties(view);
   const dataset = useStore(view.state, (s) => s.view?.from);
   const formulas = useStore(view.state, (s) => s.file?.formulas);
@@ -207,7 +210,7 @@ function ExpressionField({
     [dataset, properties, formulas, formula, view, custom],
   );
   return (
-    <WorkbenchThemeProvider theme={matchTheme}>
+    <WorkbenchThemeProvider theme={onKeymap(matchTheme, app)}>
       <Chooser.PageField
         label={m.query_view_formula_expression()}
         description={value === "" && m.query_view_formula_expression_desc()}
