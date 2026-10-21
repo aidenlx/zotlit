@@ -57,7 +57,6 @@
   "apps/obsidian/src/views/note-preview/view.test.ts",
   "apps/obsidian/src/views/pandoc-export/register.test.ts",
   "apps/obsidian/src/views/query-view/table-notes.test.ts",
-  "apps/obsidian/src/views/query-view/table-readers.test.ts",
   "apps/obsidian/src/views/quick-switch/modal.test.ts",
   "apps/obsidian/src/views/references/References.test.ts",
   "apps/obsidian/src/views/references/view.test.ts",
