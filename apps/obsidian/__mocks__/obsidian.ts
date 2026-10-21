@@ -948,7 +948,11 @@ export abstract class FuzzySuggestModal<T> {
 
 export abstract class SuggestModal<T> {
   readonly containerEl = { addClass() {}, removeClass() {} };
-  readonly resultContainerEl = { createDiv() {} };
+  readonly resultContainerEl = {
+    createDiv() {},
+    setAttribute(_name: string, _value: string) {},
+    removeAttribute(_name: string) {},
+  };
   onOpen(): void {}
   limit = 0;
   readonly contentEl = { addClass: (_className: string) => {} };

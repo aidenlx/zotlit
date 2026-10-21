@@ -132,27 +132,95 @@ function noteBody(source: string): string {
   return source.slice(end + 4);
 }
 
+/** The prompt opened last in the focused window, the one keys reach. */
+const LAST_PROMPT =
+  "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1)";
+
 /**
- * Moves the open prompt's selection onto the suggestion whose text includes
- * `needle` and returns that row's text. The chooser selects on hover, and a
- * physical cursor resting over the prompt re-selects the row under it after
- * every re-render, so the wanted row is hovered explicitly instead of waited
- * for.
+ * Moves the last prompt's selection onto its first row that `matches` accepts.
+ * The chooser selects on hover, and a physical cursor resting over the prompt
+ * re-selects the row under it after every re-render, so the wanted row is
+ * hovered until it stays selected instead of waited for.
+ *
+ * @param vaultId - The vault whose window holds the prompt.
+ * @param matches - Source of a function from a `.suggestion-item` element to
+ *   whether it is the wanted row.
+ * @returns The selected row's text.
  */
-async function selectSuggestion(
+async function hoverSuggestion(
   vaultId: string,
-  needle: string,
+  matches: string,
 ): Promise<string> {
   expect(
     await obEvalUntil(
       vaultId,
-      `(function(){var prompt=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1);var row=Array.from(prompt?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
+      `(function(){var matches=${matches};var row=Array.from(${LAST_PROMPT}?.querySelectorAll('.suggestion-item')??[]).find(matches);if(!row)return false;row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
       { expected: "true" },
     ),
   ).toBe(true);
   return obEval(
     vaultId,
-    "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
+    `${LAST_PROMPT}.querySelector('.suggestion-item.is-selected').textContent`,
+  );
+}
+
+/**
+ * Moves the last prompt's selection onto the row whose text includes `needle`.
+ *
+ * @param vaultId - The vault whose window holds the prompt.
+ * @param needle - Text the row includes.
+ * @returns The selected row's text.
+ */
+function selectSuggestion(vaultId: string, needle: string): Promise<string> {
+  return hoverSuggestion(
+    vaultId,
+    `row=>row.textContent.includes(${JSON.stringify(needle)})`,
+  );
+}
+
+/**
+ * Types `query` into the last prompt, an Item search, and selects the row of
+ * the Item whose Indexed Key is `key`. The prompt marks its results
+ * `aria-busy` until the answer to the typed query shows; the rows before it
+ * answer an earlier query. Rows of Items that share a title read the same, so
+ * the row is found by its `data-indexed-key`.
+ *
+ * @param vaultId - The vault whose window holds the prompt.
+ * @param query - The text typed into the prompt.
+ * @param key - The Indexed Key of the Item to select.
+ * @returns The selected row's text.
+ */
+async function selectItemSuggestion(
+  vaultId: string,
+  query: string,
+  key: string,
+): Promise<string> {
+  await obEval(
+    vaultId,
+    `(function(){var input=${LAST_PROMPT}.querySelector('input');input.value=${JSON.stringify(query)};input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+  );
+  return hoverSuggestion(
+    vaultId,
+    `row=>!row.closest('[aria-busy]')&&row.dataset.indexedKey===${JSON.stringify(key)}`,
+  );
+}
+
+/**
+ * Presses `key` in the last prompt's input.
+ *
+ * @param vaultId - The vault whose window holds the prompt.
+ * @param key - The key pressed.
+ * @param modifiers - The modifier keys held with it.
+ */
+async function pressPromptKey(
+  vaultId: string,
+  key: "Enter" | "Escape",
+  modifiers: { altKey?: boolean } = {},
+): Promise<void> {
+  const keyCode = key === "Enter" ? 13 : 27;
+  await obEval(
+    vaultId,
+    `${LAST_PROMPT}.querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',${JSON.stringify({ key, code: key, keyCode, which: keyCode, bubbles: true, ...modifiers })}));true`,
   );
 }
 
@@ -407,7 +475,9 @@ export {
   expectedLibraryIDs,
   managedRegion,
   noteBody,
+  pressPromptKey,
   selectSuggestion,
+  selectItemSuggestion,
   clickModalButton,
   observeNotices,
   syntheticTitles,
