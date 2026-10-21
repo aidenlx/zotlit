@@ -16,7 +16,6 @@ export {
 } from "./completion";
 export type { SuggestionSource, CompletionPresentation } from "./completion";
 export {
-  datasetExpressionFields,
   expressionCompletions,
   expressionOption,
   filterExpressionCompletion,
@@ -29,8 +28,8 @@ export type {
   ExpressionReceiver,
   ExpressionVocabulary,
 } from "./filter-expression-completion";
-export { datasetCustomFields } from "./expression-options";
-export { datasetReceiver } from "./expression-receiver";
+export { VAULT_SEGMENT } from "./expression-options";
+export { datasetVocabulary } from "./expression-vocabulary";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,
@@ -62,5 +61,5 @@ export type {
 
 export { templatePairing } from "./pairing";
 export type { PairingSource } from "./pairing";
-export type { Span } from "./span";
+export type { PlacedFault, Span } from "./span";
 export { appendProse } from "./prose";

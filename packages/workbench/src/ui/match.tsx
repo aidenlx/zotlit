@@ -1,5 +1,4 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
@@ -7,7 +6,6 @@ import type { FilterPath } from "@zotlit/filter-expression";
 import { ITEMS } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
-import type { FieldLabelLocale } from "@zotlit/zotero-types/field-labels";
 
 import { useCustomFieldNames } from "./custom-fields";
 import { useWorkbenchStore } from "./editor";
@@ -52,9 +50,7 @@ import { MatchSelect } from "./match.rows";
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
-import { datasetCustomFields } from "#/language/expression-options";
-import { datasetReceiver } from "#/language/expression-receiver";
-import { datasetExpressionFields } from "#/language/filter-expression-completion";
+import { datasetVocabulary } from "#/language/expression-vocabulary";
 
 export type {
   ConditionControlProps,
@@ -68,38 +64,6 @@ export type {
 } from "./match.draft";
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
-
-/** How the Items dataset types a receiver, its members labelled in one schema locale. */
-const receivers = new Map<
-  FieldLabelLocale,
-  NonNullable<ExpressionVocabulary["receiver"]>
->();
-
-/**
- * What a Profile Match condition reads: the fields of an Item, labelled as
- * Zotero labels them, and the source's custom fields. A Profile binds no
- * Query Context, has no Formulas and reads no vault property.
- */
-function profileExpressions(
-  locale: string,
-  custom: readonly string[],
-): ExpressionVocabulary {
-  const schema = schemaLocale(locale);
-  const labels = FIELD_LABELS[schema];
-  const label = (path: string) => labels[path];
-  let receiver = receivers.get(schema);
-  if (!receiver) {
-    receiver = datasetReceiver(ITEMS, { label });
-    receivers.set(schema, receiver);
-  }
-  return {
-    fields: datasetExpressionFields(ITEMS, label),
-    context: [],
-    formulas: [],
-    custom: datasetCustomFields(ITEMS, custom),
-    receiver,
-  };
-}
 
 /**
  * The Match of the open Profile document: the Match editor with the
@@ -189,6 +153,23 @@ export function MatchPane({
   const faulty = span
     ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
     : undefined;
+  // The test's Fault, in the text of the condition it is in.
+  const placed = useMemo(
+    () =>
+      filter && faulty && span
+        ? {
+            path: faulty.path,
+            fault: {
+              text: filter.text.slice(faulty.from, faulty.to),
+              span: {
+                from: span.from - faulty.from,
+                to: span.to - faulty.from,
+              },
+            },
+          }
+        : null,
+    [filter, faulty, span],
+  );
   const locale = host.getLocale();
   const { matchData } = host;
   const readCustom = useCallback(
@@ -198,10 +179,17 @@ export function MatchPane({
   const custom = useCustomFieldNames(readCustom, {
     revision: vocabularyRevision,
   });
-  const expression = useMemo(
-    () => profileExpressions(locale, custom),
-    [locale, custom],
-  );
+  // What a condition reads: the fields of an Item, labelled as Zotero labels
+  // them, and the source's custom fields. A Profile binds no Query Context,
+  // has no Formulas and reads no vault property.
+  const schema = schemaLocale(locale);
+  const expression = useMemo(() => {
+    const labels = FIELD_LABELS[schema];
+    return datasetVocabulary(ITEMS, {
+      label: (path) => labels[path],
+      custom,
+    });
+  }, [schema, custom]);
   const vocabulary = useMemo(
     () => ({
       ...filterVocabulary("items", {
@@ -213,10 +201,14 @@ export function MatchPane({
           placeKey(path) === placeKey(faulty.path)
             ? answer.message
             : null,
+        fault: (path) =>
+          placed && placeKey(path) === placeKey(placed.path)
+            ? placed.fault
+            : undefined,
       }),
       expression,
     }),
-    [m, values, faulty, answer, expression],
+    [m, values, faulty, answer, placed, expression],
   );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
@@ -581,14 +573,12 @@ function Row<Row extends LabelledRow>({
   const host = useWorkbenchHost();
   const issue =
     stored === null ? null : (vocabulary.issue?.(condition, stored) ?? null);
-  const text = isExpression(condition) ? condition.text : null;
   const place = stored === null ? null : placeKey(stored);
-  const findFaults = vocabulary.faults;
-  const faults = useMemo(
-    () =>
-      text === null || stored === null ? undefined : findFaults?.(text, stored),
+  const findFault = vocabulary.fault;
+  const fault = useMemo(
+    () => (stored === null ? undefined : findFault?.(stored)),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `place` stands for `stored`, a new array on each render
-    [findFaults, text, place],
+    [findFault, place],
   );
   const labelled = isExpression(condition)
     ? asLabelled(condition, vocabulary)
@@ -626,7 +616,7 @@ function Row<Row extends LabelledRow>({
                 aria-invalid={issue !== null}
                 value={condition.text}
                 vocabulary={vocabulary.expression}
-                faults={faults}
+                fault={fault}
                 onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (

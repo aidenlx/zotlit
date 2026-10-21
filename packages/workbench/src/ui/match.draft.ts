@@ -1,5 +1,5 @@
 import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
-import type { Span } from "#/language/span";
+import type { PlacedFault } from "#/language/span";
 import type { ReactNode } from "react";
 
 import { filterGroup } from "@zotlit/filter-expression";
@@ -100,13 +100,14 @@ export interface MatchVocabulary<Row extends LabelledRow> {
    */
   expression?: ExpressionVocabulary;
   /**
-   * The Faults an expression row underlines in `text`, its Filter
-   * Expression as typed. A row asks again only when this function, the text
-   * or the place changes, so a host keeps one function while its Faults stay
-   * the same.
+   * Where the last run found a Fault in an expression row, which the row
+   * underlines while its text is the text that run planned; the row
+   * underlines its own Syntax Fault itself. A row asks again only when this
+   * function or the place changes, so a host keeps one function while its
+   * Faults stay the same.
    * @param path The row's place in the stored filter.
    */
-  faults?: (text: string, path: FilterPath) => readonly Span[];
+  fault?: (path: FilterPath) => PlacedFault | undefined;
 }
 
 export function isGroup<Row extends LabelledRow>(

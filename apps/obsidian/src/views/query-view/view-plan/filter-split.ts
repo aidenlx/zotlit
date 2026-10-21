@@ -18,9 +18,8 @@ import type {
   FilterLeaf,
   FilterTree,
 } from "@zotlit/filter-expression";
-import type { Span } from "@zotlit/workbench/language";
+import type { PlacedFault, Span } from "@zotlit/workbench/language";
 
-import type { PlacedFault } from "@/views/query-view/expression-faults";
 import { allViewsDataset } from "@/views/query-view/query-file";
 import type {
   FilterLocation,

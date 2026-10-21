@@ -474,6 +474,7 @@ it("offers an AND correction as data", () => {
         found: "AND",
         expected: ["&&", "end of filter"],
         opened: null,
+        span: { from: 2, to: 5 },
       },
     },
     "a AND b",
@@ -490,7 +491,14 @@ it("keeps syntax suggestions empty without source text", () => {
   const diagnostic = diagnose(
     {
       kind: "syntax",
-      fault: { from: 2, to: 5, found: "AND", expected: ["&&"], opened: null },
+      fault: {
+        from: 2,
+        to: 5,
+        found: "AND",
+        expected: ["&&"],
+        opened: null,
+        span: { from: 2, to: 5 },
+      },
     },
     "",
     { argument: "filter", dataset: ITEMS },

@@ -1,24 +1,9 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ANNOTATIONS, ITEMS } from "@zotlit/item-query";
-
 import { useCustomFieldNames } from "./custom-fields";
 
-import { datasetCustomFields } from "#/language/expression-options";
-
 afterEach(cleanup);
-
-it("reads the custom fields at the path each dataset reads them by", () => {
-  expect(datasetCustomFields(ITEMS, ["Shelf"])).toEqual({
-    path: "custom",
-    names: ["Shelf"],
-  });
-  expect(datasetCustomFields(ANNOTATIONS, ["Shelf"])).toEqual({
-    path: "item.custom",
-    names: ["Shelf"],
-  });
-});
 
 function Names(props: {
   read: (signal: AbortSignal) => Promise<readonly string[]>;

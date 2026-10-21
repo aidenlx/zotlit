@@ -1,12 +1,13 @@
 // The expression input of a Match condition and of a Formula: a small
 // CodeMirror editor that colors its Filter Expression as the template panes
-// color theirs.
+// color theirs, and underlines its Syntax Fault, else the Fault a run found.
 
 import type { CompletionPresentation } from "#/language/completion";
 import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
-import type { Span } from "#/language/span";
+import type { PlacedFault } from "#/language/span";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { setDiagnostics } from "@codemirror/lint";
+import { setDiagnostics, setDiagnosticsEffect } from "@codemirror/lint";
+import type { Diagnostic } from "@codemirror/lint";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView,
@@ -14,6 +15,8 @@ import {
   placeholder as placeholderText,
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
+
+import { parseExpression } from "@zotlit/filter-expression";
 
 import {
   useExpressionCompletion,
@@ -57,16 +60,28 @@ const completionOf = (props: {
 /** Marks the edit that brings in a new `value`, which is not the user's. */
 const fromValue = Annotation.define<true>();
 
-const NO_FAULTS: readonly Span[] = [];
+/**
+ * What the field underlines in `text`: its Syntax Fault, else the run's
+ * Fault while `text` is the text that run planned.
+ */
+function underlines(
+  text: string,
+  fault: PlacedFault | undefined,
+): Diagnostic[] {
+  const { error } = parseExpression(text);
+  const span = error ? error.span : fault?.text === text ? fault.span : null;
+  return span ? [{ ...span, message: "", severity: "error" }] : [];
+}
 
 export interface MatchExpressionInputProps {
   value: string;
   /**
-   * The Faults of `value` to underline, which the owner's status line
-   * reports; the field shows no tooltip over them. A new array sets them
-   * again, so the owner keeps one while they stay the same.
+   * Where the last run found a Fault, which the field underlines while its
+   * text is the text that run planned. The field underlines its own Syntax
+   * Fault first. The owner's status line reports both; the field shows no
+   * tooltip over them.
    */
-  faults?: readonly Span[];
+  fault?: PlacedFault;
   /** Each edit, with the window the field is in. */
   onChange: (text: string, win: Window) => void;
   onBlur?: () => void;
@@ -93,7 +108,7 @@ export interface MatchExpressionInputProps {
  */
 export function MatchExpressionInput({
   value,
-  faults = NO_FAULTS,
+  fault,
   onChange,
   onBlur,
   "aria-label": label,
@@ -121,6 +136,7 @@ export function MatchExpressionInput({
     hostExtension,
     vocabulary,
     presentation,
+    fault,
   });
   props.current = {
     value,
@@ -133,6 +149,7 @@ export function MatchExpressionInput({
     hostExtension,
     vocabulary,
     presentation,
+    fault,
   };
   const attributes = useRef(new Compartment());
   const completer = useRef(new Compartment());
@@ -160,6 +177,17 @@ export function MatchExpressionInput({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
           underlineOnlyLint,
+          // Each edit underlines its own text, so no underline is carried to
+          // a text it was not found in.
+          EditorState.transactionExtender.of((tr) =>
+            tr.docChanged
+              ? {
+                  effects: setDiagnosticsEffect.of(
+                    underlines(tr.newDoc.toString(), props.current.fault),
+                  ),
+                }
+              : null,
+          ),
           // CodeMirror's base theme is unlayered CSS, so it outranks a
           // host's layered utilities on these parts.
           EditorView.theme({
@@ -232,15 +260,10 @@ export function MatchExpressionInput({
     editor.dispatch(
       setDiagnostics(
         editor.state,
-        faults.map(({ from, to }) => ({
-          from,
-          to,
-          message: "",
-          severity: "error",
-        })),
+        underlines(editor.state.doc.toString(), fault),
       ),
     );
-  }, [faults]);
+  }, [fault]);
   useEffect(() => {
     const editor = view.current;
     if (!editor) return;
