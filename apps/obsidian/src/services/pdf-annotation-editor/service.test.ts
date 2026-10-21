@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { FileSystemAdapter, Scope, TExternalFile } from "obsidian";
+import {
+  FileSystemAdapter,
+  Scope,
+  TExternalFile,
+  WorkspaceLeaf,
+} from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -792,9 +797,10 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
   );
 });
 
-it("exposes each open PDF view as a Reader Session, by the file it holds", async () => {
+it("exposes each open PDF view as a Reader Session of its own", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const other = pdfView("attachments/other.pdf");
   const { app } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({
@@ -806,14 +812,14 @@ it("exposes each open PDF view as a Reader Session, by the file it holds", async
   });
   await service.ready;
 
-  const session = service.sessionForPath("attachments/rougier-2014.pdf");
+  const session = service.sessionFor(view as never);
   expect(session).toBe(service.bindings[0]!.session);
   expect(session!.source).toBe("obsidian-pdf");
   expect(session!.target).toEqual({
     attachmentKey: "ABCD2345",
     itemKey: "WXYZ6789g4711",
   });
-  expect(service.sessionForPath("attachments/other.pdf")).toBeNull();
+  expect(service.sessionFor(other as never)).toBeNull();
 });
 
 it("announces a late PDF session after its resolved target is available", async () => {
@@ -833,7 +839,7 @@ it("announces a late PDF session after its resolved target is available", async 
   service.on("session-added", (filePath) => {
     announced.push({
       filePath,
-      target: service.sessionForPath(filePath)?.target,
+      target: service.sessionFor(view as never)?.target,
     });
   });
 
@@ -867,7 +873,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
   });
   await service.ready;
 
-  expect(service.sessionForPath("attachments/loose.pdf")!.target).toEqual({
+  expect(service.sessionFor(view as never)!.target).toEqual({
     attachmentKey: "LSTAND23",
     itemKey: null,
   });
@@ -1131,7 +1137,7 @@ it("stops announcing once the view's binding is gone", async () => {
 
   expect(announced).toEqual([]);
   expect(service.bindings).toEqual([]);
-  expect(service.sessionForPath("attachments/rougier-2014.pdf")).toBeNull();
+  expect(service.sessionFor(view as never)).toBeNull();
 });
 
 it("shows the Editing Capability in the reader's toolbar and follows it", async () => {
@@ -1410,4 +1416,57 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
   expect(gestures.reportBlockedGesture).toHaveBeenCalledExactlyOnceWith(
     "ABCD2345",
   );
+});
+
+// A tab Obsidian restored at startup records no open of its own; a later open
+// that names another Attachment of the same file is the researcher's own, and
+// is recorded as a read of that Attachment.
+it("records a read of the other Attachment an open names in a restored tab", async () => {
+  const SHARED = { ...RESOLVED, attachmentKey: "SHRDKEY2" } as const;
+  const leaf = Object.assign(new WorkspaceLeaf(), {
+    getViewState: () => ({ type: "pdf" }),
+  });
+  const view = Object.assign(pdfView("attachments/rougier-2014.pdf"), {
+    leaf,
+  });
+  Object.assign(leaf, { view });
+  const { app } = workspace([{ view }]);
+  let layoutReady = () => {};
+  Object.assign((app as { workspace: object }).workspace, {
+    onLayoutReady: (callback: () => void) => {
+      layoutReady = callback;
+    },
+  });
+  const attachments = attachmentReads(RESOLVED);
+  attachments.resolve.mockImplementation(((
+    _path: string,
+    named?: { attachmentKey: string | null },
+  ) =>
+    named?.attachmentKey === SHARED.attachmentKey
+      ? SHARED
+      : RESOLVED) as never);
+  const recordRead = vi.fn();
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments,
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    recordRead,
+    now: () => NOW,
+    ...standingDeps(),
+  });
+  await service.ready;
+  layoutReady();
+  expect(recordRead).not.toHaveBeenCalled();
+
+  leaf.setEphemeralState({ subpath: `#zt-attachment=${SHARED.attachmentKey}` });
+
+  expect(service.bindings[0]!.attachment).toMatchObject({
+    attachmentKey: SHARED.attachmentKey,
+  });
+  expect(recordRead.mock.calls.map(([read]) => read.attachmentKey)).toEqual([
+    RESOLVED.attachmentKey,
+    SHARED.attachmentKey,
+  ]);
 });
