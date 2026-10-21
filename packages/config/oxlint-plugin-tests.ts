@@ -89,6 +89,143 @@ export const noClassAssertion: Rule = {
   },
 };
 
+type AnyNode = NonNullable<CallNode["parent"]>;
+
+/** Whether the callee is `Array.from`, which keeps the elements it copies. */
+function isArrayFrom(callee: CallNode["callee"]): boolean {
+  return (
+    callee.type === "MemberExpression" &&
+    callee.object.type === "Identifier" &&
+    callee.object.name === "Array" &&
+    staticName(callee) === "from"
+  );
+}
+
+/** Whether the call is `….getAttribute("class")`. */
+function isClassAttribute(node: CallNode): boolean {
+  const [name] = node.arguments;
+  return (
+    node.callee.type === "MemberExpression" &&
+    staticName(node.callee) === "getAttribute" &&
+    name?.type === "Literal" &&
+    name.value === "class"
+  );
+}
+
+const selectorMethods = new Set([
+  "querySelector",
+  "querySelectorAll",
+  "closest",
+  "matches",
+]);
+
+/** A selector's static text, with `x` standing in for each expression. */
+function selectorText(node: AnyNode | undefined): string {
+  if (node?.type === "Literal")
+    return typeof node.value === "string" ? node.value : "x";
+  if (node?.type === "TemplateLiteral")
+    return node.quasis
+      .map((part) => part.value.cooked ?? part.value.raw)
+      .join("x");
+  if (node?.type === "BinaryExpression" && node.operator === "+")
+    return selectorText(node.left) + selectorText(node.right);
+  return "x";
+}
+
+/** Whether the selector matches on a class: `.name` or `[class…]`. */
+function isClassSelector(text: string): boolean {
+  if (/\[\s*class\s*[\]~*^$|=]/.test(text)) return true;
+  // Quoted values and attribute selectors may hold dots of their own.
+  const bare = text.replaceAll(/"[^"]*"|'[^']*'|\[[^\]]*\]/g, "");
+  return /\.[\w\\-]/.test(bare);
+}
+
+/** Whether the call selects elements, or tests one, by class. */
+function isClassQuery(node: CallNode): boolean {
+  return (
+    node.callee.type === "MemberExpression" &&
+    selectorMethods.has(staticName(node.callee) ?? "") &&
+    isClassSelector(selectorText(node.arguments[0]))
+  );
+}
+
+/**
+ * Markup is how the host draws an element, and a unit test runs in happy-dom,
+ * not the host: assert it in the End-to-end Run (policies/testing-strategy.md).
+ */
+export const noMarkupAssertion: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description: "Assert behavior in unit tests, not classes or markup.",
+    },
+    messages: {
+      markup:
+        "Assert what the element does or says (text, role, state, data attribute), not its classes; markup belongs in an *.e2e.ts test (policies/testing-strategy.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    /**
+     * Whether the value reaches an assertion, directly or through the
+     * variables it initializes. Acting on an element (`click`, `fireEvent`,
+     * typing) leaves it outside `expect`, and handing it to a helper
+     * (`EditorView.findFromDOM(el)`) turns it into something else: both stay
+     * legal.
+     */
+    const asserted = (node: AnyNode, seen = new Set<AnyNode>()): boolean => {
+      // Until the walk leaves a callback, the value itself is in hand.
+      let direct = true;
+      for (let from = node, at = node.parent; at; from = at, at = at.parent) {
+        if (at.type === "CallExpression") {
+          if (isExpectChain(at.callee)) return true;
+          if (
+            direct &&
+            at.arguments.includes(from as never) &&
+            !isArrayFrom(at.callee)
+          )
+            return false;
+        } else if (at.type === "VariableDeclarator" && at.init === from) {
+          if (seen.has(at)) return false;
+          seen.add(at);
+          return context.sourceCode
+            .getDeclaredVariables(at)
+            .some((variable) =>
+              variable.references.some(
+                (reference) =>
+                  !reference.init &&
+                  asserted(reference.identifier as AnyNode, seen),
+              ),
+            );
+        } else if (
+          at.type === "ArrowFunctionExpression" ||
+          at.type === "FunctionExpression"
+        )
+          direct = false;
+        else if (
+          direct &&
+          at.type.endsWith("Statement") &&
+          at.type !== "ReturnStatement" &&
+          at.type !== "BlockStatement"
+        )
+          return false;
+      }
+      return false;
+    };
+    return {
+      CallExpression(node) {
+        if ((isClassAttribute(node) || isClassQuery(node)) && asserted(node))
+          context.report({ node, messageId: "markup" });
+      },
+      MemberExpression(node) {
+        const name = staticName(node);
+        if ((name === "className" || name === "classList") && asserted(node))
+          context.report({ node, messageId: "markup" });
+      },
+    };
+  },
+};
+
 /** Static fragments of a path, including join/resolve and URL expressions. */
 function pathFragments(
   node: NonNullable<CallNode["parent"]> | undefined,
@@ -259,6 +396,7 @@ export default {
   meta: { name: "zotlit-tests" },
   rules: {
     "no-class-assertion": noClassAssertion,
+    "no-markup-assertion": noMarkupAssertion,
     "no-source-text": noSourceText,
     "no-internal-mock": noInternalMock,
   },
