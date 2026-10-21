@@ -24,6 +24,7 @@ import type {
   AttachmentLookup,
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
+import type { SettingsService } from "@/services/settings/service";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
 import { filename, obsidianOpenPath } from "./resolve";
@@ -81,6 +82,12 @@ export interface TargetOpenerDeps {
   >;
   reader: TargetReader;
   native: NativeOpener;
+  /**
+   * Read per followed link: `citation.annotation-links` and
+   * `citation.open-annotation-links` decide whether a Durable Annotation Link
+   * is ZotLit's to follow at all.
+   */
+  settings: Pick<SettingsService, "current">;
   /** The vault's own directory, for telling an in-vault file from one outside. */
   vaultBasePath: string;
   /** @default process.platform */
@@ -111,7 +118,8 @@ export interface TargetOpener {
    *
    * @returns `null` for a link ZotLit leaves to the caller's own handler —
    *   another scheme, a file no Attachment keeps, a file Obsidian cannot host,
-   *   and every link while the index is still being built.
+   *   a Durable Annotation Link while the settings leave those to Zotero, and
+   *   every link while the index is still being built.
    */
   follow(url: string, pane: PaneType | boolean): Promise<OpenOutcome> | null;
 }
@@ -124,6 +132,7 @@ export function createTargetOpener({
   attachments,
   reader,
   native,
+  settings,
   vaultBasePath,
   platform = process.platform,
   indexWait = Temporal.Duration.from({ seconds: 5 }),
@@ -208,6 +217,11 @@ export function createTargetOpener({
    * The link's `page` is a printed label, which Obsidian's own jump reads as a
    * page number. It is carried only when it reads as one; the Annotation's own
    * page wins over it whenever the reader can place the Annotation.
+   *
+   * The link is ZotLit's to follow only while the settings say so: with
+   * `citation.annotation-links` off ZotLit treats none of these links, and
+   * with `citation.open-annotation-links` off a click is Zotero's. Either way
+   * the link reaches Zotero as written, as it would without ZotLit.
    */
   const followDurable = (
     url: string,
@@ -215,6 +229,18 @@ export function createTargetOpener({
   ): Promise<OpenOutcome> | null => {
     const link = parseAnnotationOpenUri(url);
     if (link === null) return null;
+    const current = settings.current;
+    if (
+      !(current?.["citation.annotation-links"] ?? true) ||
+      !(current?.["citation.open-annotation-links"] ?? true)
+    ) {
+      logger.debug("Durable Annotation Link left to Zotero", {
+        attachmentKey: link.attachmentKey,
+        groupID: link.groupID,
+        reason: "settings",
+      });
+      return null;
+    }
     const attachment = attachments.lookup(
       formatIndexedKey(link.attachmentKey, link.groupID),
     );

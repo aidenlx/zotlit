@@ -214,6 +214,7 @@ export function buildServices(
           attachments: attachmentResolver,
           reader: createPdfReader({ app: plugin.app, settings }),
           native: openWithSystem,
+          settings,
           // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
           vaultBasePath: (
             plugin.app.vault.adapter as FileSystemAdapter

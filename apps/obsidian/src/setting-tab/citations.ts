@@ -83,6 +83,12 @@ export function citationsPageItems(
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
         },
+        {
+          id: "settings_citation_annotation_links",
+          name: m.settings_citation_annotation_links_name(),
+          desc: m.settings_citation_annotation_links_desc(),
+          control: { type: "toggle", key: "citation.annotation-links" },
+        },
       ],
     },
     {
@@ -114,6 +120,14 @@ export function citationsPageItems(
           name: m.settings_citation_open_as_links_name(),
           desc: m.settings_citation_open_as_links_desc(),
           control: { type: "toggle", key: "citation.open-as-links" },
+        },
+        {
+          id: "settings_citation_open_annotation_links",
+          name: m.settings_citation_open_annotation_links_name(),
+          desc: m.settings_citation_open_annotation_links_desc(),
+          visible: () =>
+            ctx.settings.current?.["citation.annotation-links"] ?? true,
+          control: { type: "toggle", key: "citation.open-annotation-links" },
         },
       ],
     },

@@ -43,12 +43,15 @@ export interface AnnotationLinkReadingDeps {
  * puts the listener on the link itself. A render child of the section owns
  * the listener: Obsidian unloads it with the section, and this service
  * unloads every child it still holds when it goes, so a section that stays
- * rendered no longer reaches the service. The Hover Action is read per hover,
- * so a settings change needs no render.
+ * rendered no longer reaches the service. The Hover Action and
+ * `citation.annotation-links` are read per hover, so a settings change needs
+ * no render.
  */
 export class AnnotationLinkReading extends Service<void> {
   readonly #deps;
   #hover: HoverPreferences = hoverPreferences(defaults);
+  /** `citation.annotation-links`: whether ZotLit treats these links at all. */
+  #enabled = defaults["citation.annotation-links"];
   /** The render children holding a section's hover listeners. */
   readonly #sections = new Set<MarkdownRenderChild>();
   /** Set once the service goes; the post-processor stays registered after. */
@@ -67,7 +70,9 @@ export class AnnotationLinkReading extends Service<void> {
     await settings.ready;
     stack.defer(
       settings.subscribe((current) => {
-        if (current) this.#hover = hoverPreferences(current);
+        if (!current) return;
+        this.#hover = hoverPreferences(current);
+        this.#enabled = current["citation.annotation-links"];
       }),
     );
     plugin.registerMarkdownPostProcessor((el, ctx) => this.#process(el, ctx));
@@ -117,6 +122,15 @@ export class AnnotationLinkReading extends Service<void> {
     // within one link hovers it once.
     const related = event.relatedTarget as Node | null;
     if (related?.instanceOf(Node) && anchor.contains(related)) return;
+    // Off, the link is Zotero's alone. A section already rendered keeps its
+    // listener, which answers nothing, so the change needs no render.
+    if (!this.#enabled) {
+      logger.trace("Annotation link hover suppressed", {
+        annotationKey: link.annotationKey,
+        reason: "annotation-links-off",
+      });
+      return;
+    }
     const intent = annotationHoverIntent(
       hoverGesture(event, { surface: "reading" }),
       this.#hover,
