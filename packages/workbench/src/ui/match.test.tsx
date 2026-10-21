@@ -32,7 +32,7 @@ it("keeps the row the user is typing in when the owner gives back an older filte
   );
   const mounted = render(editor({ and: ["te"] }));
   const field = () =>
-    mounted.container.querySelector<HTMLElement>(".cm-content");
+    mounted.container.querySelector<HTMLElement>('[role="textbox"]');
   const content = field()!;
   const view = EditorView.findFromDOM(content)!;
   const type = (text: string) =>
