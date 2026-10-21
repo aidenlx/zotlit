@@ -1,5 +1,12 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
@@ -341,7 +348,9 @@ function useMatchTest(
 /**
  * A Match tree as "All" / "Any" / "None of the following are true" groups of
  * condition rows. The caller owns the stored filter and the conditions it
- * offers; `onChange` answers whether the caller kept the new filter.
+ * offers; `onChange` answers whether the caller kept the new filter, and a
+ * kept filter comes back as `value` in the render the change causes. A
+ * `value` the rows on screen do not store replaces them.
  */
 export function MatchEditor<Row extends LabelledRow>({
   value,
@@ -368,25 +377,16 @@ export function MatchEditor<Row extends LabelledRow>({
   }
   const latest = useRef(vocabulary);
   latest.current = vocabulary;
-  /** The filters the editor sent that the caller has not given back yet. */
-  const sent = useRef<string[]>([]);
-  useEffect(() => {
-    // The caller's echo of a filter the editor sent. An effect can run after
-    // the author typed again, so the echo may be of an older filter than the
-    // tree on screen stores; reading it back would rebuild the rows under
-    // the author's caret.
-    const echoed = sent.current.lastIndexOf(JSON.stringify(value));
-    if (echoed !== -1) {
-      sent.current = sent.current.slice(echoed + 1);
-      return;
-    }
+  // Read as the caller's render commits, before the next key: an effect
+  // waits for paint, and the author may type again before it runs, so the
+  // caller's echo of the editor's own edit would read as an older filter
+  // than the tree on screen and rebuild the rows under the caret (#1651).
+  useLayoutEffect(() => {
     if (
       fitsVocabulary(shown.current, latest.current) &&
       storesFilter(shown.current, value, latest.current)
     )
       return;
-    // A filter of the caller's own: what the editor sent before it is gone.
-    sent.current = [];
     setRoot(fromFilter(value, latest.current));
   }, [value]);
   // A new vocabulary — a view's dataset changed — may not offer the kinds
@@ -402,12 +402,8 @@ export function MatchEditor<Row extends LabelledRow>({
     const settled = settle(next, vocabulary);
     setRoot(settled);
     const { filter } = storedFilter(settled, vocabulary);
-    // The caller holds the last filter it kept, which its render may not
-    // have brought here yet.
-    const text = JSON.stringify(filter);
-    if (text === (sent.current.at(-1) ?? JSON.stringify(value))) return;
-    if (onChange(filter)) sent.current.push(text);
-    else setRoot(fromFilter(value, vocabulary));
+    if (JSON.stringify(filter) === JSON.stringify(value)) return;
+    if (!onChange(filter)) setRoot(fromFilter(value, vocabulary));
   }
   const { places } = storedFilter(tree, vocabulary);
   const reorder = useMatchReorder({ root: tree, disabled, onChange: change });
