@@ -10,7 +10,8 @@ import {
   attachmentTags,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
-import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import { readQueryViewUntil, revealQueryView } from "./note-query-view.ts";
+import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -498,17 +499,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(notePath)});await app.vault.modify(file,${JSON.stringify(noteText.replace(/^(---\n[\s\S]*?\n---\n)/, "$1\n![[Saved colour.zotquery]]\n\n"))});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'preview'}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
     );
-    // The embed stands at the top of the note, where Reading view draws it
-    // without a scroll.
-    const readEmbed = `(async()=>{const view=app.workspace.getMostRecentLeaf()?.view;if(view?.file?.path!==${JSON.stringify(notePath)})return JSON.stringify({file:view?.file?.path??null});const el=[...view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());if(!el)return JSON.stringify({embed:null});await el.zotlitQueryView.settled;return JSON.stringify({cards:[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort(),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
-    let embed: unknown = null;
-    const shown = await waitFor(async () => {
-      embed = JSON.parse(await obEval(run.vaultId, readEmbed));
-      return (
-        JSON.stringify((embed as { cards?: string[] }).cards) ===
-        JSON.stringify(ofColor)
-      );
-    }, 120);
-    if (!shown) throw new Error(`Query File embed: ${JSON.stringify(embed)}`);
+    const savedEmbed = await revealQueryView(run.vaultId, notePath, {
+      embed: "Saved colour.zotquery",
+    });
+    const readEmbed = `(async()=>{const el=${savedEmbed.el};return JSON.stringify({cards:[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort(),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
+    await readQueryViewUntil<{ cards: string[] }>(run.vaultId, readEmbed, {
+      ready: ({ cards }) => JSON.stringify(cards) === JSON.stringify(ofColor),
+      what: "Query File embed",
+      tries: 120,
+    });
   }, 180000);
 });

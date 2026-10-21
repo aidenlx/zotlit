@@ -36,6 +36,7 @@ import {
   verifyExcerptRendering,
   verifyZoteroExcerptParity,
 } from "./excerpt-rendering.ts";
+import { readQueryViewUntil, revealQueryView } from "./note-query-view.ts";
 import {
   clearNotices,
   cli,
@@ -7240,27 +7241,36 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         `(async()=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'source',source:false},active:true});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
       );
       const note = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
-      const card = `[...${note}.containerEl.querySelectorAll('.internal-embed')].find((el)=>el.zotlitQueryView)?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
-      expect(
-        await obEvalUntil(vaultId!, `String(!!${card})`, {
-          expected: "true",
+      // The embed stands below the note's Query Block, past the part of the
+      // note Live Preview first draws (#1646).
+      const embed = await revealQueryView(vaultId!, notePath, {
+        embed: "Lab annotations.zotquery#This item",
+      });
+      const card = `${embed.el}.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+      await readQueryViewUntil<boolean>(
+        vaultId!,
+        `(async()=>JSON.stringify(!!${card}))()`,
+        {
+          ready: (present) => present,
+          what: "the card in the note's embed",
           tries: 120,
-        }),
-      ).toBe(true);
+        },
+      );
 
       // Type a comment on the embedded card, as on the sidebar's.
       const editor = `${card}?.querySelector('.cm-content')`;
-      expect(
-        await obEvalUntil(
-          vaultId!,
-          `(function(){${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
-          { expected: "open" },
-        ),
-      ).toBe(true);
+      await readQueryViewUntil<string>(
+        vaultId!,
+        `(async()=>JSON.stringify(await (async()=>{${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()))()`,
+        {
+          ready: (answer) => answer === "open",
+          what: "the comment editor on the embed's card",
+        },
+      );
       const comment = "Typed in a note's embed";
       await obEval(
         vaultId!,
-        `(function(){const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+        `(async()=>{const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
       );
       expect(
         await waitFor(async () => (await storedComment()) === comment, 120),
@@ -7277,7 +7287,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       const pressUndo = (target: string) =>
         obJson<{ prevented: boolean }>(
           vaultId!,
-          `(function(){const target=${target};target.focus();const event=new KeyboardEvent('keydown',{key:'z',code:'KeyZ',${platformKey}:true,bubbles:true,cancelable:true});target.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+          `(async()=>{const target=${target};target.focus();const event=new KeyboardEvent('keydown',{key:'z',code:'KeyZ',${platformKey}:true,bubbles:true,cancelable:true});target.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
         );
 
       // The undo key in the note's own text is the note's: the comment stays.
@@ -7297,7 +7307,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEval(
           vaultId!,
-          `(function(){const view=${note};const cm=view.editor.cm;const transfer=new DataTransfer();const handle=${card}.querySelector('[draggable]');const from=handle.getBoundingClientRect();handle.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(from.left+from.width/2),clientY:Math.floor(from.top+from.height/2)}));const rect=cm.coordsAtPos(cm.state.doc.length);cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(rect.left+1),clientY:Math.floor((rect.top+rect.bottom)/2)}));return 'dropped';})()`,
+          `(async()=>{const view=${note};const cm=view.editor.cm;const transfer=new DataTransfer();const handle=${card}.querySelector('[draggable]');const from=handle.getBoundingClientRect();handle.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(from.left+from.width/2),clientY:Math.floor(from.top+from.height/2)}));const rect=cm.coordsAtPos(cm.state.doc.length);cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(rect.left+1),clientY:Math.floor((rect.top+rect.bottom)/2)}));return 'dropped';})()`,
         ),
       ).toBe("dropped");
       expect(
@@ -7421,29 +7431,33 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           vaultId!,
           `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(created)}),{state:{mode:'source',source:false}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
         );
-        const blockEl = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(created)})?.view.containerEl.querySelector('.block-language-zotquery')`;
-        expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const el=${blockEl};if(!el?.zotlitQueryView)return 'null';await el.zotlitQueryView.settled;return JSON.stringify([...el.querySelectorAll('.zt-annot-card')].map((n)=>n.getAttribute('data-zotero-annotation-key')));})()`,
-            { expected: JSON.stringify(own), tries: 120 },
-          ),
-        ).toBe(true);
+        const blockEl = (await revealQueryView(vaultId!, created, { block: 0 }))
+          .el;
+        await readQueryViewUntil<string[]>(
+          vaultId!,
+          `(async()=>JSON.stringify([...${blockEl}.querySelectorAll('.zt-annot-card')].map((n)=>n.getAttribute('data-zotero-annotation-key'))))()`,
+          {
+            ready: (cards) => JSON.stringify(cards) === JSON.stringify(own),
+            what: "the Query Block's cards",
+            tries: 120,
+          },
+        );
 
         // Select the card alone, open its comment editor, and type.
-        const card = `${blockEl}?.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+        const card = `${blockEl}.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
         const editor = `${card}?.querySelector('.cm-content')`;
-        expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
-            { expected: "open" },
-          ),
-        ).toBe(true);
+        await readQueryViewUntil<string>(
+          vaultId!,
+          `(async()=>JSON.stringify(await (async()=>{${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()))()`,
+          {
+            ready: (answer) => answer === "open",
+            what: "the comment editor on the block's card",
+          },
+        );
         const comment = "Typed in a Literature Note";
         await obEval(
           vaultId!,
-          `(function(){const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          `(async()=>{const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
         );
         expect(
           await waitFor(
@@ -7453,13 +7467,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             120,
           ),
         ).toBe(true);
-        expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){return ${card}?.querySelector('.zt-annot-comment')?.textContent??'';})()`,
-            { expected: comment },
-          ),
-        ).toBe(true);
+        await readQueryViewUntil<string>(
+          vaultId!,
+          `(async()=>JSON.stringify(${card}?.querySelector('.zt-annot-comment')?.textContent??''))()`,
+          {
+            ready: (answer) => answer === comment,
+            what: "the comment on the block's card",
+          },
+        );
 
         // A sort change in the block's toolbar rewrites the block text.
         const inBlock = (script: string) =>
@@ -7474,24 +7489,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           "press(el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]'),'Add sort')",
         );
         // The new sort goes after the two of the default block.
-        expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(${blockEl}?.querySelectorAll('[data-query-popover="sort"] [data-sort-row]').length)`,
-            { expected: "3" },
-          ),
-        ).toBe(true);
+        await readQueryViewUntil<number>(
+          vaultId!,
+          `(async()=>JSON.stringify(${blockEl}.querySelectorAll('[data-query-popover="sort"] [data-sort-row]').length))()`,
+          {
+            ready: (rows) => rows === 3,
+            what: "the Query Block's sort rows",
+          },
+        );
         for (const [control, value] of [
           ["data-sort-property", "type"],
           ["data-sort-direction", "DESC"],
         ] as const) {
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${blockEl}?.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]'))`,
-              { expected: "true" },
-            ),
-          ).toBe(true);
+          await readQueryViewUntil<boolean>(
+            vaultId!,
+            `(async()=>JSON.stringify(!!${blockEl}.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]')))()`,
+            {
+              ready: (present) => present,
+              what: "the sort row's control",
+            },
+          );
           await inBlock(
             `await pick(el.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]'),${JSON.stringify(value)},'${control}')`,
           );
