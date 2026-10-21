@@ -62,18 +62,25 @@ _Avoid_: perf fixture, large fixture
 ## Desktop admission
 
 **Desktop Slot**:
-Exclusive use of the developer's one desktop Obsidian app, across every clone,
-worktree, and session of the user on this machine. A Paired Zotero joins a hold
-only when the hold opens a vault in that app; Zotero-only work takes no slot.
+One of a few places to drive the developer's one desktop Obsidian app, shared
+across every clone, worktree, and session of the user on this machine. Each
+holder drives its own vault, and a worktree holds at most one slot at a time. A
+Paired Zotero joins a hold only when the hold opens a vault in that app;
+Zotero-only work takes no slot.
 _Avoid_: desktop lock, desktop mutex
 
+**Exclusive Hold**:
+A hold of every Desktop Slot at once, for work that needs the whole app to
+itself, such as timing a query or capturing the screen.
+_Avoid_: global lock, full lock
+
 **Desktop Queue**:
-The ordered line of waiters for the Desktop Slot; the waiter at its head is the
-only one that may take the slot when it frees.
+The ordered line of waiters for a Desktop Slot; the waiter at its head is the
+only one that may take a slot when one frees.
 _Avoid_: lock waiters, wait list
 
 **Lease**:
-The bounded time a holder may keep the Desktop Slot, counted from when it was
+The bounded time a holder may keep its Desktop Slot, counted from when it was
 admitted; a holder whose Lease ends loses the slot.
 _Avoid_: timeout, hold limit
 

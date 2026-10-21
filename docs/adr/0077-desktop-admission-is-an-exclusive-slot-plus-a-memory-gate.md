@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded in part by ADR-0078
 ---
 
 # Desktop admission is an exclusive slot plus a memory gate, with leases
@@ -29,7 +29,7 @@ Each holder enforces its own Lease by ending its process group. When a Lease plu
 
 - **vatt's memory gate alone** (vattention/vatt-repo#1120, #1137): it admits runs on OS memory pressure and tracks nothing after admission. That suits a fungible resource. Here, two runs would interleave inside the one Obsidian app.
 - **vatt's named slot pools** (vattention/vatt-repo#1119): rename-claimed slots, liveness checked by pid and boot time, and pools claimed in sorted order. The slot shape is kept. The pools had no order, no waiter deadline, and no lease, and those three gaps caused the 2026-10-21 incident.
-- **A larger N for Obsidian**: the code can route by vault id, but the shared app state above means two runs would steal each other's focus, throttling, and reloads.
+- **A larger N for Obsidian**: rejected here because the shared app state above seemed to make two runs steal each other's focus, throttling, and reloads. That was wrong: all three are per window. ADR 0078 adopts a pool of N.
 - **Only waiters kill an overdue holder**: that kills another session's processes as routine, not as a last resort. A self-enforced Lease ends the run's own process group cleanly. Eviction by a waiter remains only as a backstop for a hung holder.
 - **Unordered waiting**: a waiter whose caller has a 600 s timeout can lose every race. FIFO tickets also make the queue visible.
 - **A gate per `vitest run`**: about 17 packages run tests in parallel under one `pnpm test`. A 30 s settle per package would serialize them for more than eight minutes.
