@@ -122,9 +122,8 @@ function decideDurableLinkCapture(
   const link = parseAnnotationOpenUri(url);
   if (link === null) return PASS;
 
-  const location = ctx.locate(
-    formatIndexedKey(link.attachmentKey, link.groupID),
-  );
+  const attachmentKey = formatIndexedKey(link.attachmentKey, link.groupID);
+  const location = ctx.locate(attachmentKey);
   if (location.kind !== "located") {
     logger.debug("Durable Annotation Link left to Zotero", {
       attachmentKey: link.attachmentKey,
@@ -146,9 +145,19 @@ function decideDurableLinkCapture(
     }),
     ctx,
   );
-  return capture.kind === "capture"
-    ? { ...capture, passWhenMissing: true }
-    : capture;
+  if (capture.kind !== "capture") return capture;
+  // Two Attachments can name one file. Obsidian's reader binds the file to
+  // the Attachment its path resolves to and shows that one's Annotations, so
+  // a link to the other one goes to Zotero, which opens it by its key.
+  if (capture.attachment.indexedKey !== attachmentKey) {
+    logger.debug("Durable Annotation Link left to Zotero", {
+      attachmentKey,
+      reason: "path-names-another-attachment",
+      pathAttachmentKey: capture.attachment.indexedKey,
+    });
+    return PASS;
+  }
+  return { ...capture, passWhenMissing: true };
 }
 
 /** Claim the file at `absolutePath` when it is an Obsidian-Openable Attachment. */
