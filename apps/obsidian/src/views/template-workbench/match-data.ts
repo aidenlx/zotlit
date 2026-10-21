@@ -22,7 +22,7 @@ import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
   db: Pick<ZoteroReadsService, "acquireRead">,
-  query: Pick<QueryService, "run"> | undefined,
+  query: Pick<QueryService, "run" | "customFieldNames"> | undefined,
 ): WorkbenchHost["matchData"] {
   return {
     async tags() {
@@ -53,6 +53,7 @@ export function createMatchData(
       }));
     },
     matches: (indexedKey, filter) => testMatch(query, indexedKey, filter),
+    customFields: async (signal) => query?.customFieldNames(signal) ?? [],
   };
 }
 

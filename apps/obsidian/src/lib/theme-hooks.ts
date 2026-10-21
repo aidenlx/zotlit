@@ -1,5 +1,7 @@
 // The stable CSS hooks ZotLit exposes to themes and CSS snippets.
 
+import type { SIGNATURE_HINT_CLASS } from "@zotlit/workbench/language";
+
 export const themeHook = {
   citation: "zt-citation",
   citationKey: "zt-citation-key",
@@ -21,12 +23,20 @@ export const themeHook = {
   templateFilter: "zt-template-filter",
   templateString: "zt-template-string",
   templateValue: "zt-template-value",
+  /** A regular expression; it also carries {@link themeHook.templateValue}. */
+  templateRegexp: "zt-template-regexp",
   templateOperator: "zt-template-operator",
   templatePunctuation: "zt-template-punctuation",
   templateComment: "zt-template-comment",
   templateInvalid: "zt-template-invalid",
   /** The popover that explains the template token under the pointer. */
   templateHover: "zt-template-hover",
+  /**
+   * The tooltip of a Filter Expression field that names the signature of the
+   * call around the caret, with the parameter at the caret marked. The
+   * workbench emits the class, and the type holds the two names together.
+   */
+  signatureHint: "zt-signature-hint" satisfies typeof SIGNATURE_HINT_CLASS,
   /** The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page. */
   pdfAnnotationOverlay: "zt-pdf-annotation-overlay",
   /**

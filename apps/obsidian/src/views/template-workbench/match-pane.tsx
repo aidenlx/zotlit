@@ -6,9 +6,10 @@ import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { MatchPane, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
 
 import { Select } from "@/components/select";
+import { useObsidianApp } from "@/lib/app-context";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
-import { templateWorkbenchTheme } from "./theme";
+import { onKeymap, templateWorkbenchTheme } from "./theme";
 
 /**
  * The Workbench theme with the plugin's own Select for the Match editor's
@@ -37,6 +38,7 @@ export function NativeMatchPane({
   db: Pick<ZoteroReadsService, "on">;
   onChooseItem?: () => void;
 }) {
+  const app = useObsidianApp();
   // A database change can bring new Tags and Collections, and a new answer.
   const [vocabularyRevision, setVocabularyRevision] = useState(0);
   useEffect(
@@ -44,7 +46,7 @@ export function NativeMatchPane({
     [db],
   );
   return (
-    <WorkbenchThemeProvider theme={matchTheme}>
+    <WorkbenchThemeProvider theme={onKeymap(matchTheme, app)}>
       <MatchPane
         onChooseItem={onChooseItem}
         controller={controller}

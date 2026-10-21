@@ -1,5 +1,7 @@
+export { useCustomFieldNames } from "./custom-fields";
 export { MatchEditor, MatchPane } from "./match";
 export { MatchExpressionInput } from "./match.expression";
+export type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 export { filterVocabulary } from "./match.fields";
 export type { FilterValues } from "./match.fields";
 export type { FilterField } from "#/match/fields";
@@ -42,7 +44,12 @@ export {
   useWorkbenchStore,
 } from "./editor";
 export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
-export { WorkbenchHostProvider, useTooltip, useWorkbenchHost } from "./host";
+export {
+  NO_MATCH_DATA,
+  WorkbenchHostProvider,
+  useTooltip,
+  useWorkbenchHost,
+} from "./host";
 export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,

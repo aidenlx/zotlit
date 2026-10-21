@@ -186,7 +186,8 @@ const ZOTERO_FIELD: Readonly<Record<string, string>> = {
   abstract: "abstractNote",
 };
 
-function schemaLocale(locale: string): FieldLabelLocale {
+/** The Zotero label locale that the host locale `locale` reads. */
+export function schemaLocale(locale: string): FieldLabelLocale {
   return locale.startsWith("zh") ? "zh-CN" : "en-US";
 }
 

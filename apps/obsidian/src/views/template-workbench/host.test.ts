@@ -8,7 +8,7 @@ import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { liquidTemplate } from "@zotlit/workbench/language";
-import { AnnotationPointer } from "@zotlit/workbench/ui";
+import { AnnotationPointer, NO_MATCH_DATA } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -24,12 +24,7 @@ function setup() {
   } as unknown as App;
   const host = createTemplateWorkbenchHost(app, {
     render: () => Promise.reject(new Error("This test renders nothing.")),
-    matchData: {
-      tags: async () => [],
-      collections: async () => [],
-      libraries: async () => [],
-      matches: async () => ({ kind: "missing" }),
-    },
+    matchData: NO_MATCH_DATA,
     insertTarget: () => null,
   });
   return { host, memory };

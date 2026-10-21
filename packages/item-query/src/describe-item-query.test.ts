@@ -1,12 +1,33 @@
 import { Cause, Exit } from "effect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "vitest";
 
 import { ItemQueryLayoutError } from "@zotlit/db/item-query";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { ANNOTATIONS, ATTACHMENTS, describeQueryCustomFields, ITEMS } from ".";
+import {
+  ANNOTATIONS,
+  ATTACHMENTS,
+  describeQueryCustomFields,
+  GLOBAL_FUNCTIONS,
+  IF_FUNCTION,
+  ITEMS,
+  METHOD_ENTRIES,
+  parameterAt,
+  PROPERTY_ENTRIES,
+} from ".";
 import type {
+  FilterValueType,
+  FunctionDefinition,
+  FunctionParameter,
+  PropertyDefinition,
   ItemQueryRequest,
   ItemQuerySchema,
   SchemaFunction,
@@ -511,6 +532,60 @@ it("publishes one catalog of the executed dataset schemas and the shared languag
   expect(paths.items).toContain("title");
   expect(paths.attachments).toContain("item.title");
   expect(paths.annotations).toContain("item.title");
+});
+
+it("describes every function, method, and property in one sentence the registry holds", () => {
+  const { functions, methods, properties } = describeQueryVocabulary();
+  for (const entry of [...functions, ...methods, ...properties]) {
+    const label = "on" in entry ? `${entry.on}.${entry.name}` : entry.name;
+    // One line that ends in one period, with no sentence end before it.
+    expect(entry.description, label).toMatch(
+      /^[A-Z`](?:[^.!?\n]|[.!?](?=\S))*[^.!?\s]\.$/u,
+    );
+  }
+  const named = <T extends { readonly name: string }>(
+    entries: readonly T[],
+    name: string,
+    on?: string,
+  ) =>
+    entries.find(
+      (entry) =>
+        entry.name === name &&
+        (on === undefined || ("on" in entry && entry.on === on)),
+    );
+  expect(named(functions, "if")?.description).toBe(IF_FUNCTION.description);
+  expect(named(functions, "date")?.description).toBe(
+    GLOBAL_FUNCTIONS.get("date")?.description,
+  );
+  const split = METHOD_ENTRIES.find(
+    ([on, name]) => on === "string" && name === "split",
+  );
+  expect(named(methods, "split", "string")?.description).toBe(
+    split?.[2].description,
+  );
+  const year = PROPERTY_ENTRIES.find(
+    ([on, name]) => on === "date" && name === "year",
+  );
+  expect(named(properties, "year", "date")?.description).toBe(
+    year?.[2].description,
+  );
+});
+
+it("exports the registry entries with their registry types", () => {
+  expectTypeOf(GLOBAL_FUNCTIONS).toEqualTypeOf<
+    ReadonlyMap<string, FunctionDefinition>
+  >();
+  expectTypeOf(METHOD_ENTRIES).toEqualTypeOf<
+    readonly (readonly [FilterValueType | "any", string, FunctionDefinition])[]
+  >();
+  expectTypeOf(PROPERTY_ENTRIES).toEqualTypeOf<
+    readonly (readonly [FilterValueType, string, PropertyDefinition])[]
+  >();
+  expectTypeOf(IF_FUNCTION.description).toBeString();
+  expectTypeOf(parameterAt).returns.toEqualTypeOf<
+    FunctionParameter | undefined
+  >();
+  expect(parameterAt(IF_FUNCTION, 2)?.name).toBe("else");
 });
 
 it("publishes the Formula path, name form, result types, Fault codes, and Error Value", async () => {

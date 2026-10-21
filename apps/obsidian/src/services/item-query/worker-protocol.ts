@@ -4,7 +4,11 @@ import type { QueryDataset } from "@zotlit/item-query";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import type { QUERY_COMMAND, QueryCliCommand } from "./contract";
+import type {
+  QUERY_COMMAND,
+  QUERY_SCHEMA_COMMAND,
+  QueryCliCommand,
+} from "./contract";
 import type { DecodedQuery, DecodedValues } from "./decode";
 import type { QueryViewOutcome, QueryViewRequest } from "./query-view";
 import type { WorkerMeasurement } from "./trace";
@@ -31,8 +35,19 @@ export interface QueryViewCommand {
   view: QueryViewRequest;
 }
 
+/** The custom fields of the active source, for the expression editors. */
+export interface QueryCustomFieldsCommand {
+  command: typeof QUERY_SCHEMA_COMMAND;
+  schema: false;
+  customFields: true;
+}
+
 /** Small request data for the ZoteroReads worker. Query rows stay in that worker. */
-export type QueryJob = (QueryCommand | QueryViewCommand) & {
+export type QueryJob = (
+  | QueryCommand
+  | QueryViewCommand
+  | QueryCustomFieldsCommand
+) & {
   id: string;
   source: WorkbenchIdentity["source"];
   vault: WorkbenchIdentity["vault"];
@@ -70,5 +85,7 @@ export interface QueryAnswer extends QueryReply {
   cancelled?: true;
   /** The outcome of a typed query; `answer` is empty. */
   view?: QueryViewReply["view"];
+  /** The names of the custom fields; absent when the source cannot answer. */
+  customFields?: readonly string[];
   measurement?: WorkerMeasurement;
 }

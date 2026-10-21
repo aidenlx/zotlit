@@ -66,6 +66,7 @@ import type {
   ChooserMove,
   ChooserRow,
 } from "./chooser-logic";
+import { tooltipHostRoot } from "./popover-surface";
 import "./chooser.css";
 
 // `chooser-logic.ts` is a module of its own rather than an implementation
@@ -494,12 +495,12 @@ function ChooserSession({ children }: { children: ReactNode }) {
     };
     // On the rows, Escape is the popover's own light dismiss, which a
     // handler returning `false` would suppress, so it falls through. On a
-    // page, it steps back to the rows — unless a menu opened from the page
-    // stands, which the light dismiss closes first.
+    // page, it steps back to the rows. A layer standing over the page — its
+    // `PageMenu`, or a field's own popup such as a Formula's completion list
+    // or Signature Hint — pushes a Scope above this one while it stands, so
+    // its Escape never reaches here.
     const escape = (event: KeyboardEvent) => {
       if (composing(event) || latest.current.page === null) return;
-      if (popupRef.current?.querySelector("[data-chooser-page] :popover-open"))
-        return;
       back();
       return false;
     };
@@ -710,6 +711,10 @@ export interface ChooserPopupProps extends Omit<
  * painting after it closes, dropping out of the top layer so the view behind
  * draws over it. It reads as a popup that will not close and has lost its
  * background.
+ *
+ * The root does not clip, so an editor's tooltip drawn in it, such as a
+ * Formula page's, reaches past its edge; its rows and its pages scroll in
+ * boxes of their own.
  */
 function Popup({
   className,
@@ -794,6 +799,7 @@ function Popup({
       className={cn(
         themeHook.chooser,
         "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
+        tooltipHostRoot,
         // No padding of its own: the search field runs edge to edge over its
         // rule, and the list carries the inset — `--menu-padding` — as
         // Obsidian's Bases toolbar menus are built.
@@ -1548,10 +1554,41 @@ export interface ChooserPageMenuProps {
  * layer, so the menu is a popover of its own, nested in the popup: the
  * platform keeps the popup open while it stands, and Escape or a click
  * outside it closes it alone.
+ *
+ * While the menu stands, a Scope of its own sits above the Chooser's, so the
+ * Chooser's keys — Escape stepping back from the page among them — never hear
+ * a key meant for the menu. It registers nothing: Escape falls to the app
+ * scope it is parented to, and the light dismiss closes the menu alone. It is
+ * pushed as the menu opens, from the gesture in the window that holds the
+ * popup, and popped as the menu closes or unmounts.
  */
 function PageMenu({ label, items }: ChooserPageMenuProps) {
+  const app = useObsidianApp();
   const id = useUniqueId();
   const menu = useRef<HTMLDivElement>(null);
+  // `beforetoggle`, not `toggle`: the browser queues `toggle` after the menu
+  // shows, and a key arriving first would reach the Chooser.
+  useLayoutEffect(() => {
+    const el = menu.current;
+    if (!el) return;
+    const scope = new Scope(app.scope);
+    let pushed = false;
+    const release = () => {
+      if (pushed) app.keymap.popScope(scope);
+      pushed = false;
+    };
+    const onBeforeToggle = (event: ToggleEvent) => {
+      if (event.newState !== "open") return release();
+      if (pushed) return;
+      app.keymap.pushScope(scope);
+      pushed = true;
+    };
+    el.addEventListener("beforetoggle", onBeforeToggle);
+    return () => {
+      el.removeEventListener("beforetoggle", onBeforeToggle);
+      release();
+    };
+  }, [app]);
   const anchor = { "--zt-chooser-menu-anchor": `--${id}` } as CSSProperties;
   return (
     <>

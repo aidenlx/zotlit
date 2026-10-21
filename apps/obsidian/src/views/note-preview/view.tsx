@@ -35,6 +35,7 @@ import {
   WorkbenchThemeProvider,
   usePublishedProblems,
   useRenderState,
+  NO_MATCH_DATA,
 } from "@zotlit/workbench/ui";
 import type {
   RenderScheduler,
@@ -487,13 +488,8 @@ export class NotePreviewView extends ItemView {
     const host = resources.use(
       createTemplateWorkbenchHost(this.app, {
         render: (request) => renderNativeTemplate(deps, request),
-        matchData: {
-          tags: async () => [],
-          collections: async () => [],
-          libraries: async () => [],
-          // This view shows no Match.
-          matches: async () => ({ kind: "missing" }),
-        },
+        // This view shows no Match.
+        matchData: NO_MATCH_DATA,
         insertTarget: () => null,
         markdown: (props) => (
           <PreviewSheet

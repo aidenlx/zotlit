@@ -891,9 +891,33 @@ describe("parseExpression", () => {
   });
 });
 
+// The span an editor underlines: a fault at the end of the text names no
+// character, so it takes what was left open or the token before it.
+it.each([
+  { input: "a AND b", underlined: "AND" },
+  { input: "title == )", underlined: ")" },
+  { input: "a ==", underlined: "==" },
+  { input: "title ==  ", underlined: "==" },
+  { input: "title.lower()+", underlined: "+" },
+  { input: "title == 'book", underlined: "'book" },
+  { input: 'f(["x', underlined: '"x' },
+  { input: "title.contains(", underlined: "(" },
+])("underlines $underlined in $input", ({ input, underlined }) => {
+  const span = parseExpression(input).error?.span;
+  expect(span && input.slice(span.from, span.to)).toBe(underlined);
+});
+
+it.each(["", " "])(
+  "underlines nothing where no token comes before the fault, as in %j",
+  (input) => {
+    expect(parseExpression(input).error?.span).toBeNull();
+  },
+);
+
 // Fault seams: token extent, live expectations, EOF acceptance, recovered openers.
 it("reports the whole unexpected word and the grammar's continuations", () => {
-  expect(parseExpression("a AND b").error).toEqual({
+  const { span: _, ...facts } = parseExpression("a AND b").error!;
+  expect(facts).toEqual({
     from: 2,
     to: 5,
     found: "AND",
@@ -942,7 +966,8 @@ it.each([
 ])(
   "reports the innermost unclosed quote in $input",
   ({ input, from, opened, expected }) => {
-    expect(parseExpression(input).error).toEqual({
+    const { span: _, ...facts } = parseExpression(input).error!;
+    expect(facts).toEqual({
       from,
       to: from,
       found: null,
@@ -1156,7 +1181,8 @@ it.each(
 )(
   "reports syntax facts for $input",
   ({ input, from, found, expected, opener, closer }) => {
-    expect(parseExpression(input).error).toEqual({
+    const { span: _, ...facts } = parseExpression(input).error!;
+    expect(facts).toEqual({
       from,
       to: from + (found?.length ?? 0),
       found,

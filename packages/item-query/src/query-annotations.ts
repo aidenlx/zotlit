@@ -26,7 +26,7 @@ import { ANNOTATION_LOADING } from "./annotation-hydration";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
-import { planFilter } from "./filter-plan";
+import { planFilter, planSubexpression } from "./filter-plan";
 import { projectColumns } from "./formulas";
 import { parentPathResolver, parentRootName } from "./parent-records";
 import { ATTACHMENTS } from "./query-attachments";
@@ -73,6 +73,11 @@ export const ANNOTATIONS: QueryDataset<ItemQueryRequest> = {
         }),
     },
   },
+  planSubexpression: (text, at, options) =>
+    planSubexpression(text, at, {
+      registry: annotationFilterRegistry,
+      ...options,
+    }),
   sortableFields: ANNOTATION_SORT_FIELDS,
   definition: annotationFieldDefinition,
   filterField: (name) => annotationFilterRegistry.field(name),

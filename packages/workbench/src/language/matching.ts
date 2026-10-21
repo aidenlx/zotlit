@@ -37,7 +37,11 @@ export function rankSuggestions(
     .concat(pinned);
 }
 
-function matchScore(value: string, search: string): number {
+/**
+ * How well `value` matches `search`, case-insensitively: 0 when equal, 1 for
+ * a prefix, 2 for the letters in order, `Infinity` for no match.
+ */
+export function matchScore(value: string, search: string): number {
   const text = value.toLowerCase();
   const query = search.toLowerCase();
   if (text === query) return 0;

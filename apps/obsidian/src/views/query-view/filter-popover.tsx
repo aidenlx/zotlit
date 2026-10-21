@@ -14,11 +14,13 @@ import { useStore } from "zustand";
 
 import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
+import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 import {
   MatchEditor,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
   filterVocabulary,
+  NO_MATCH_DATA,
 } from "@zotlit/workbench/ui";
 import type {
   FilterField,
@@ -33,8 +35,12 @@ import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
-import { matchRows } from "@/views/template-workbench/theme";
+import { matchRows, onKeymap } from "@/views/template-workbench/theme";
 
+import {
+  expressionVocabulary,
+  useFilterExpressions,
+} from "./expression-vocabulary";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -192,6 +198,12 @@ export interface FilterEditorProps {
   vaultFields?: readonly FilterField[];
   /** The type of the vault property `name`, for the icon of its condition. */
   vaultType?: (name: string) => VaultPropertyType;
+  /**
+   * What an expression condition on a dataset can read. By default it reads
+   * the dataset's fields, labelled by `properties`, and no Formula, Query
+   * Context or vault property.
+   */
+  expressions?: (dataset: QueryFileDataset) => ExpressionVocabulary;
   /** Save one section's filters; answers whether they were kept. */
   onChange: (section: FilterSection, next: MatchTree | undefined) => boolean;
 }
@@ -208,6 +220,7 @@ export function FilterEditor({
   sections: shown = ["all", "view"],
   vaultFields = [],
   vaultType,
+  expressions = (of) => expressionVocabulary({ dataset: of, properties }),
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
@@ -215,28 +228,32 @@ export function FilterEditor({
     const created = createTemplateWorkbenchHost(app, {
       render: () =>
         Promise.reject(new Error("The Query View filter renders no template.")),
-      matchData: {
-        tags: async () => [],
-        collections: async () => [],
-        libraries: async () => [],
-        // The Filter offers its own values and tests no Item.
-        matches: async () => ({ kind: "missing" }),
-      },
+      // The Filter offers its own values and tests no Item.
+      matchData: NO_MATCH_DATA,
       insertTarget: () => null,
     });
     // The popover sits in the top layer, over Obsidian's suggestion popups.
     return { ...created, inputSuggestions: undefined };
   }, [app]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
+  // Per section, and kept while the issue stays, so a row underlines again
+  // only when the issue changes.
+  const faultsOf = useMemo(() => {
+    const issueAt = (section: FilterSection, path: readonly number[]) =>
+      issue && issue.section === section && samePath(issue.path, path)
+        ? issue
+        : null;
+    const of = (section: FilterSection) => (path: readonly number[]) =>
+      issueAt(section, path)?.fault;
+    return { issueAt, all: of("all"), view: of("view") };
+  }, [issue]);
   const vocabulary = (section: FilterSection) => {
     const of = section === "all" ? shared : dataset;
-    return filterVocabulary(of, {
+    const conditions = filterVocabulary(of, {
       m: host.messages,
       values,
-      issue: (_, path) =>
-        issue && issue.section === section && samePath(issue.path, path)
-          ? issue.message
-          : null,
+      issue: (_, path) => faultsOf.issueAt(section, path)?.message ?? null,
+      fault: faultsOf[section],
       // A condition shows the Display Name of its field in the view's
       // Properties, and the icon the view's property list shows.
       label: (field) =>
@@ -257,6 +274,7 @@ export function FilterEditor({
       ),
       extra: of === "items" ? vaultFields : [],
     });
+    return { ...conditions, expression: expressions(of) };
   };
   const sections = (
     [
@@ -278,7 +296,7 @@ export function FilterEditor({
     );
   return (
     <WorkbenchHostProvider host={host}>
-      <WorkbenchThemeProvider theme={filterTheme}>
+      <WorkbenchThemeProvider theme={onKeymap(filterTheme, app)}>
         {sections.length > 1 ? (
           sections.map(([section, heading, value]) => (
             <FoldSection
@@ -389,6 +407,11 @@ export function FilterButton({ view }: { view: QueryView }) {
     [names, literatureNotes, properties, vaultVersion],
   );
   const [values, setValues] = useState<FilterValues>(NO_VALUES);
+  const [open, setOpen] = useState(false);
+  const expressions = useFilterExpressions(view, properties, {
+    reading: open,
+    vaultNames: names,
+  });
   if (!file || !shown) return null;
   return (
     <ToolbarPopover
@@ -399,10 +422,12 @@ export function FilterButton({ view }: { view: QueryView }) {
       hook="filter"
       className="zt:w-[min(--spacing(130),calc(100vw_-_var(--size-4-8)))] zt:max-w-none"
       onOpen={() => {
+        setOpen(true);
         view.filterValues().then(setValues, (error: unknown) => {
           logger.warn("The filter values could not be read", { error });
         });
       }}
+      onClose={() => setOpen(false)}
     >
       <FilterEditor
         dataset={shown.from ?? "annotations"}
@@ -414,6 +439,7 @@ export function FilterButton({ view }: { view: QueryView }) {
         properties={properties}
         vaultFields={vaultFields}
         vaultType={(name) => literatureNotes.propertyType(name)}
+        expressions={expressions}
         onChange={(section, next) => view.document.setFilters(section, next)}
       />
     </ToolbarPopover>

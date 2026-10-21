@@ -27,7 +27,7 @@ import { ATTACHMENT_LOADING } from "./attachment-hydration";
 import type { QueryDataset } from "./dataset";
 import type { DatasetRun } from "./execution";
 import { matches as isMatch } from "./filter-evaluate";
-import { planFilter } from "./filter-plan";
+import { planFilter, planSubexpression } from "./filter-plan";
 import { projectColumns } from "./formulas";
 import { parentPathResolver, parentRootName } from "./parent-records";
 import { ANNOTATIONS } from "./query-annotations";
@@ -69,6 +69,11 @@ export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
         }),
     },
   },
+  planSubexpression: (text, at, options) =>
+    planSubexpression(text, at, {
+      registry: attachmentFilterRegistry,
+      ...options,
+    }),
   sortableFields: ATTACHMENT_SORT_FIELDS,
   definition: attachmentFieldDefinition,
   filterField: (name) => attachmentFilterRegistry.field(name),

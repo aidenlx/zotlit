@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
 
+import {
+  filterExpressionLanguage,
+  highlightFilterExpression,
+} from "./filter-expression";
+import { templateToken } from "./highlight";
+import type { TemplateToken } from "./highlight";
 import { jsonSyntaxTokens } from "./json-e";
 import { completionEdit, hoverHint, suggestions } from "./suggestions";
 import type { SuggestionConfig } from "./suggestions";
@@ -220,12 +226,34 @@ it("replaces the actual dot when a non-identifier key follows whitespace", () =>
   ).toBe("obj['paper-title']");
 });
 
+/** The kind of template token whose theme hooks are `classes`. */
+const kindOf = (classes: string) =>
+  (Object.keys(templateToken) as TemplateToken[]).find(
+    (kind) => templateToken[kind] === classes,
+  ) ?? classes;
+
 function syntax(source: string) {
-  return jsonSyntaxTokens(source).map(({ from, to, kind }) => [
-    source.slice(from, to),
-    kind,
+  return jsonSyntaxTokens(source).map((token) => [
+    source.slice(token.from, token.to),
+    kindOf(token.classes),
   ]);
 }
+
+it("colors a JSON-e expression as the Filter Expression colors the same text", () => {
+  const text = "len(zt.tags) + 1 > 0 && zt.title != 'x' || null == false";
+  const filter: string[][] = [];
+  highlightFilterExpression(
+    filterExpressionLanguage.parser.parse(text),
+    (from, to, classes) => filter.push([text.slice(from, to), classes]),
+  );
+  const json = `{"$eval":${JSON.stringify(text)}}`;
+  const offset = json.indexOf(text);
+  expect(
+    jsonSyntaxTokens(json)
+      .filter((token) => token.from >= offset)
+      .map((token) => [json.slice(token.from, token.to), token.classes]),
+  ).toEqual(filter);
+});
 
 it("highlights JSON-e operators and only their contextual companion keys", () => {
   expect(
@@ -234,23 +262,23 @@ it("highlights JSON-e operators and only their contextual companion keys", () =>
     ),
   ).toEqual([
     ["$if", "keyword"],
-    ["true", "keyword"],
+    ["true", "value"],
     ["then", "keyword"],
     ["else", "keyword"],
     ["$eval", "keyword"],
     ["len", "filter"],
-    ["(", "operator"],
-    ["zt", "variable"],
-    [".", "operator"],
-    ["tags", "variable"],
-    [")", "operator"],
+    ["(", "punctuation"],
+    ["zt", "property"],
+    [".", "punctuation"],
+    ["tags", "property"],
+    [")", "punctuation"],
   ]);
   expect(
     syntax('{"$map":[],"each(item)":"${item}","$$eval":"literal"}'),
   ).toContainEqual(["each(item)", "keyword"]);
   expect(syntax('{"$switch":{"true":1,"$default":2}}')).toEqual([
     ["$switch", "keyword"],
-    ["true", "keyword"],
+    ["true", "value"],
     ["$default", "keyword"],
   ]);
 });
@@ -258,9 +286,9 @@ it("highlights JSON-e operators and only their contextual companion keys", () =>
 it("highlights interpolation delimiters with raw escape offsets and leaves escaped interpolation literal", () => {
   expect(syntax('{"text":"${zt.title} $${literal} ${1 + 2}"}')).toEqual([
     ["${", "operator"],
-    ["zt", "variable"],
-    [".", "operator"],
-    ["title", "variable"],
+    ["zt", "property"],
+    [".", "punctuation"],
+    ["title", "property"],
     ["}", "operator"],
     ["${", "operator"],
     ["1", "value"],
@@ -274,7 +302,7 @@ it("highlights interpolation delimiters with raw escape offsets and leaves escap
   ]);
   expect(syntax('{"text":"${zt.')).toEqual([
     ["${", "operator"],
-    ["zt", "variable"],
-    [".", "operator"],
+    ["zt", "property"],
+    [".", "punctuation"],
   ]);
 });

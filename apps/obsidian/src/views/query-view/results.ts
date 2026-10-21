@@ -3,6 +3,7 @@
 // whole or clears them.
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary } from "@zotlit/item-query";
+import type { PlacedFault } from "@zotlit/workbench/language";
 
 import type {
   QueryViewResult,
@@ -40,9 +41,16 @@ export interface ResultSnapshot {
   warnings: readonly QueryViewWarning[];
   /**
    * The Formulas the run left out, since ZotLit Query names a mistake in
-   * them: each name with the message. Their columns show no values.
+   * them, by name. Their columns show no values.
    */
-  formulaIssues: NameDictionary<string>;
+  formulaIssues: NameDictionary<FormulaIssue>;
+}
+
+/** What a run found wrong in one Formula. */
+export interface FormulaIssue {
+  readonly message: string;
+  /** Where the Fault is in the text the run planned, where it names a place. */
+  readonly place?: PlacedFault;
 }
 
 /** Why a run gave no rows. */
@@ -50,8 +58,8 @@ export interface QueryViewFailure {
   diagnostic: ReaderDiagnosticSource;
   /** The condition of the filters that the diagnostic marks. */
   filterIssue: ConditionIssue | null;
-  /** The Formulas the run left out, by name, with the message of each. */
-  formulaIssues: NameDictionary<string>;
+  /** The Formulas the run left out, by name. */
+  formulaIssues: NameDictionary<FormulaIssue>;
 }
 
 /** No rows: what a reader of the results sees while none are on screen. */
@@ -74,7 +82,7 @@ export const NO_RESULTS: ResultSnapshot = {
 export function formulaIssuesOf(state: {
   results: ResultSnapshot | null;
   failure: QueryViewFailure | null;
-}): NameDictionary<string> {
+}): NameDictionary<FormulaIssue> {
   return (
     state.results?.formulaIssues ??
     state.failure?.formulaIssues ??
