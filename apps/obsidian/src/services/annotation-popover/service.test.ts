@@ -116,7 +116,7 @@ async function harness(stack: AsyncDisposableStack) {
     show(
       link: Partial<AnnotationHoverRequest["link"]> & { annotationKey: string },
     ) {
-      service.show({
+      void service.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
         targetEl: element,
@@ -262,7 +262,7 @@ describe("AnnotationPopover", () => {
       }),
     );
     const hoverParent = { hoverPopover: null };
-    const show = (annotationKey: string): void => {
+    const show = (annotationKey: string): Promise<void> =>
       service.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
@@ -275,21 +275,17 @@ describe("AnnotationPopover", () => {
           groupID: null,
         },
       });
-    };
     const element = document.createElement("div");
     const root = createRoot(element);
     stack.defer(() => root.unmount());
 
     // The pointer moves on before the first link's read answers.
-    show("PUPR5FG5");
-    show("HRK7BG32");
+    const stale = show("PUPR5FG5");
+    const fresh = show("HRK7BG32");
     reads[1]!.resolve(list);
-    await vi.waitFor(() =>
-      expect(popovers.at(-1)!.render).toHaveBeenCalledTimes(2),
-    );
+    await fresh;
     reads[0]!.resolve(list);
-    await reads[0]!.promise;
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await stale;
 
     const content = popovers.at(-1)!.render.mock.calls.at(-1)![0];
     await act(() => root.render(content as ReactElement));

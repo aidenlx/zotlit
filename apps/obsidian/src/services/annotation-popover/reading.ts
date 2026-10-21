@@ -138,7 +138,7 @@ export class AnnotationLinkReading extends Service<void> {
     logger.trace("Annotation link shows its annotation", {
       annotationKey: link.annotationKey,
     });
-    this.#deps.annotationPopover.show({
+    void this.#deps.annotationPopover.show({
       event,
       hoverParent,
       targetEl: anchor,
