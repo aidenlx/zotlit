@@ -12,22 +12,6 @@
   background: var(--background-modifier-active-hover);
   color: var(--text-accent);
 }
-/* Native pills keep their compact text/remove layout inside the Match input. */
-.view-content.zt-template-workbench [data-chip-input] .multi-select-pill {
-  max-width: 100%;
-}
-.view-content.zt-template-workbench
-  [data-chip-input]
-  .multi-select-pill-remove-button {
-  padding: var(--size-2-1);
-  height: auto;
-  color: var(--pill-color-remove);
-}
-.view-content.zt-template-workbench
-  [data-chip-input]
-  .multi-select-pill-remove-button:hover {
-  color: var(--pill-color-remove-hover);
-}
 /* A rendered Properties list wears Obsidian's own classes. The tree's key is
    a span where the app styles an `input.metadata-property-key-input`, so the
    span takes that rule's box; an empty value reads in the app's placeholder

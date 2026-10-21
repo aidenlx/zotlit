@@ -14,7 +14,7 @@ import {
   positionDocumentItem,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
-import { selectSuggestion } from "./e2e-run-note-helpers.ts";
+import { pressPromptKey, selectSuggestion } from "./e2e-run-note-helpers.ts";
 import type { ItemQueryReport } from "./e2e-run-query-types.ts";
 import { cliCommand, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
 import { MENU_READY, PAGE } from "./page-gestures.ts";
@@ -344,10 +344,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await selectSuggestion(run.vaultId, booksProfile.label)).toContain(
       booksProfile.label,
     );
-    await obEval(
-      run.vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(run.vaultId, "Enter");
     const linked = await tableWhen((table) => book in table.notes);
     created.push(linked.notes[book]!);
     expect(linked.create).not.toContain(book);

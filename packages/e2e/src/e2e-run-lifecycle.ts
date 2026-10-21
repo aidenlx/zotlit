@@ -1,5 +1,4 @@
 import { cp, mkdir } from "node:fs/promises";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect } from "vitest";
 
@@ -20,7 +19,6 @@ export const run = {
   vaultId: "",
   m: undefined as unknown as typeof import("@obsidian-messages"),
   booksNotePath: "",
-  offlineZotero: createServer((socket) => socket.destroy()),
 };
 
 let initPromise: Promise<void> | null = null;
@@ -34,18 +32,7 @@ async function bootstrap(): Promise<void> {
   const e2ePluginDir = join(e2eVaultPath, ".obsidian", "plugins", "zotlit");
   await mkdir(e2ePluginDir, { recursive: true });
   await cp(pluginBundleDir, e2ePluginDir, { recursive: true });
-  await new Promise<void>((resolve, reject) => {
-    run.offlineZotero.once("error", reject);
-    run.offlineZotero.listen(0, "127.0.0.1", resolve);
-  });
-  const address = run.offlineZotero.address();
-  if (address === null || typeof address === "string")
-    throw new Error("Offline Zotero endpoint did not receive a TCP port");
-  const created = await runVaultScript([
-    "open",
-    e2eVaultPath,
-    `--zotero-http-port=${address.port}`,
-  ]);
+  const created = await runVaultScript(["open", e2eVaultPath]);
   run.vaultId = created.stdout.trim().split("\n")[0]!.trim();
   await obEval(run.vaultId, "app.vault.setConfig('nativeMenus',false);true");
   await prepareRunWindow(run.vaultId);
@@ -75,7 +62,6 @@ async function bootstrap(): Promise<void> {
 }
 
 async function teardown(): Promise<void> {
-  await using _offlineZotero = run.offlineZotero;
   try {
     await runVaultScript(["remove", e2eVaultPath, "--purge"]);
   } catch (error) {

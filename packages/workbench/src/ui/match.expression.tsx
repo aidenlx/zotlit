@@ -14,7 +14,7 @@ import {
   keymap,
   placeholder as placeholderText,
 } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { parseExpression } from "@zotlit/filter-expression";
 
@@ -82,7 +82,11 @@ export interface MatchExpressionInputProps {
    * tooltip over them.
    */
   fault?: PlacedFault;
-  /** Each edit, with the window the field is in. */
+  /**
+   * Each edit, with the window the field is in. The owner gives a text it
+   * keeps back as `value` in the render the edit causes; a `value` that
+   * differs from the field's text then replaces it.
+   */
   onChange: (text: string, win: Window) => void;
   onBlur?: () => void;
   "aria-label"?: string;
@@ -156,8 +160,6 @@ export function MatchExpressionInput({
   };
   const attributes = useRef(new Compartment());
   const completer = useRef(new Compartment());
-  /** The texts the field sent that the owner has not given back yet. */
-  const sent = useRef<string[]>([]);
   // The vocabulary is read per keystroke, so only its arrival or its leaving
   // changes the editor; the editor starts with what this holds.
   const completes = vocabulary !== undefined;
@@ -213,7 +215,6 @@ export function MatchExpressionInput({
             )
               return;
             const text = update.state.doc.toString();
-            sent.current.push(text);
             props.current.onChange(
               text,
               parent.ownerDocument.defaultView ?? window,
@@ -243,17 +244,13 @@ export function MatchExpressionInput({
       ),
     });
   }, [completes]);
-  useEffect(() => {
+  // Read as the owner's render commits, before the next key: an effect
+  // waits for paint, and the user may type again before it runs, so the
+  // owner's echo of a text the field sent would read as an older text and
+  // undo the typing.
+  useLayoutEffect(() => {
     const editor = view.current;
     if (!editor) return;
-    // The owner's echo of a text the field sent. An effect can run after the
-    // user typed again, so the echo may be of an older text; writing it back
-    // would undo the typing and put the caret at the start.
-    const echoed = sent.current.lastIndexOf(value);
-    if (echoed !== -1) {
-      sent.current = sent.current.slice(echoed + 1);
-      return;
-    }
     if (editor.state.doc.toString() === value) return;
     editor.dispatch({
       changes: { from: 0, to: editor.state.doc.length, insert: value },

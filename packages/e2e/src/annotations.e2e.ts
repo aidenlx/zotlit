@@ -10,7 +10,8 @@ import {
   attachmentTags,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
-import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import { readQueryViewUntil, revealQueryView } from "./note-query-view.ts";
+import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -330,11 +331,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // list the typing opens over the hint closes first. Tab takes the
     // list's option and keeps focus in the field; the method it writes
     // brings its Signature Hint, which Escape closes, the dialog still open.
-    // The condition goes again before the eval answers.
+    // A key typed straight after Enter or Tab takes an option lands in the
+    // field, which keeps focus (#1651). The condition goes again before the
+    // eval answers.
     const escapes = JSON.parse(
       await obEval(
         run.vaultId,
-        `(async()=>{${PAGE}await using cleanup=new AsyncDisposableStack();const contents=require('@electron/remote').getCurrentWebContents();const key=async(keyCode)=>{const up=new Promise(r=>window.addEventListener('keyup',r,{once:true,capture:true}));contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;};const modal=()=>document.querySelector('.modal.zt-annot-filter-modal');const section=modal().querySelector('[data-filter-section="view"]');const before=section.querySelectorAll('[data-condition-row]').length;press([...section.querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');const row=await until('new row',()=>section.querySelectorAll('[data-condition-row]')[before]);cleanup.defer(()=>{const remove=modal()?.querySelectorAll('[data-filter-section="view"] [data-condition-row]')[before]?.querySelector('button[aria-label="${run.m.workbench_match_remove_condition()}"]');if(remove)press(remove,'Remove condition');});press(row.querySelector('button[aria-label="${run.m.workbench_match_edit_as_expression()}"]'),'Edit as expression');const content=await until('expression field',()=>section.querySelectorAll('[data-condition-row]')[before]?.querySelector('.cm-content'));const editor=content.cmTile.root.view;window.focus();editor.focus();await until('focus in the field',()=>document.activeElement===content&&document.hasFocus(),5000);const type=(text)=>{editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});document.execCommand('insertText',false,text);};type('te');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete'));await key('Escape');await until('Escape closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const list={dialog:!!modal()};if(!modal())return JSON.stringify({list});type('text.slice(1, ');await until('Signature Hint',()=>document.querySelector('.zt-signature-hint'));await new Promise(r=>setTimeout(r,200));if(document.querySelector('.cm-tooltip-autocomplete')){await key('Escape');await until('Escape closes the list over the hint',()=>!document.querySelector('.cm-tooltip-autocomplete'));}await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));const hint={dialog:!!modal()};type('text.sli');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete li[aria-selected]'));await new Promise(r=>setTimeout(r,200));await key('Tab');await until('Tab closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const tab={doc:editor.state.doc.toString(),dialog:!!modal(),focus:document.activeElement===content};await until('Signature Hint of the method',()=>document.querySelector('.zt-signature-hint'));await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));tab.hintClosed=!!modal();return JSON.stringify({list,hint,tab});})()`,
+        `(async()=>{${PAGE}await using cleanup=new AsyncDisposableStack();const contents=require('@electron/remote').getCurrentWebContents();const key=async(keyCode)=>{const up=new Promise(r=>window.addEventListener('keyup',r,{once:true,capture:true}));contents.sendInputEvent({type:'keyDown',keyCode});if(keyCode.length===1)contents.sendInputEvent({type:'char',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;};const modal=()=>document.querySelector('.modal.zt-annot-filter-modal');const section=modal().querySelector('[data-filter-section="view"]');const before=section.querySelectorAll('[data-condition-row]').length;press([...section.querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');const row=await until('new row',()=>section.querySelectorAll('[data-condition-row]')[before]);cleanup.defer(()=>{const remove=modal()?.querySelectorAll('[data-filter-section="view"] [data-condition-row]')[before]?.querySelector('button[aria-label="${run.m.workbench_match_remove_condition()}"]');if(remove)press(remove,'Remove condition');});press(row.querySelector('button[aria-label="${run.m.workbench_match_edit_as_expression()}"]'),'Edit as expression');const content=await until('expression field',()=>section.querySelectorAll('[data-condition-row]')[before]?.querySelector('.cm-content'));const editor=content.cmTile.root.view;window.focus();editor.focus();await until('focus in the field',()=>document.activeElement===content&&document.hasFocus(),5000);const type=(text)=>{editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});document.execCommand('insertText',false,text);};type('te');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete'));await key('Escape');await until('Escape closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const list={dialog:!!modal()};if(!modal())return JSON.stringify({list});type('text.slice(1, ');await until('Signature Hint',()=>document.querySelector('.zt-signature-hint'));await new Promise(r=>setTimeout(r,200));if(document.querySelector('.cm-tooltip-autocomplete')){await key('Escape');await until('Escape closes the list over the hint',()=>!document.querySelector('.cm-tooltip-autocomplete'));}await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));const hint={dialog:!!modal()};type('text.sli');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete li[aria-selected]'));await new Promise(r=>setTimeout(r,200));await key('Tab');await until('Tab closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const tab={doc:editor.state.doc.toString(),dialog:!!modal(),focus:document.activeElement===content};await until('Signature Hint of the method',()=>document.querySelector('.zt-signature-hint'));await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));tab.hintClosed=!!modal();const saved=()=>app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.getState().query??'';const settled=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r)));const typed={};for(const [name,keyCode] of [['enter','Enter'],['tab','Tab']]){type('te');await until(name+' list opens',()=>document.querySelector('.cm-tooltip-autocomplete li[aria-selected]'));await new Promise(r=>setTimeout(r,200));await key(keyCode);await key('.');await until(name+' saves the typed text',()=>saved().split(String.fromCharCode(10)).some(line=>/text[.]["']?$/.test(line.trimEnd())));await settled();typed[name]={doc:editor.state.doc.toString(),focus:document.activeElement===content,dialog:!!modal()};for(let left=5;document.querySelector('.cm-tooltip-autocomplete, .zt-signature-hint');left--){if(left===0)throw new Error('Escape leaves a popup open after '+name);await key('Escape');}}return JSON.stringify({list,hint,tab,typed});})()`,
       ),
     );
     expect(escapes).toEqual({
@@ -346,6 +349,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         hintClosed: true,
       },
       hint: { dialog: true },
+      typed: {
+        enter: { doc: "text.", focus: true, dialog: true },
+        tab: { doc: "text.", focus: true, dialog: true },
+      },
     });
     await obEval(
       run.vaultId,
@@ -498,17 +505,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(notePath)});await app.vault.modify(file,${JSON.stringify(noteText.replace(/^(---\n[\s\S]*?\n---\n)/, "$1\n![[Saved colour.zotquery]]\n\n"))});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'preview'}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
     );
-    // The embed stands at the top of the note, where Reading view draws it
-    // without a scroll.
-    const readEmbed = `(async()=>{const view=app.workspace.getMostRecentLeaf()?.view;if(view?.file?.path!==${JSON.stringify(notePath)})return JSON.stringify({file:view?.file?.path??null});const el=[...view.containerEl.querySelectorAll('.internal-embed')].find(el=>el.zotlitQueryView&&el.isShown());if(!el)return JSON.stringify({embed:null});await el.zotlitQueryView.settled;return JSON.stringify({cards:[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort(),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
-    let embed: unknown = null;
-    const shown = await waitFor(async () => {
-      embed = JSON.parse(await obEval(run.vaultId, readEmbed));
-      return (
-        JSON.stringify((embed as { cards?: string[] }).cards) ===
-        JSON.stringify(ofColor)
-      );
-    }, 120);
-    if (!shown) throw new Error(`Query File embed: ${JSON.stringify(embed)}`);
+    const savedEmbed = await revealQueryView(run.vaultId, notePath, {
+      embed: "Saved colour.zotquery",
+    });
+    const readEmbed = `(async()=>{const el=${savedEmbed.el};return JSON.stringify({cards:[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort(),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
+    await readQueryViewUntil<{ cards: string[] }>(run.vaultId, readEmbed, {
+      ready: ({ cards }) => JSON.stringify(cards) === JSON.stringify(ofColor),
+      what: "Query File embed",
+      tries: 120,
+    });
   }, 180000);
 });

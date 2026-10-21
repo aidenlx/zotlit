@@ -44,6 +44,7 @@ import {
   managedRegion,
   noteBody,
   observeNotices,
+  pressPromptKey,
   recordFrames,
   selectSuggestion,
 } from "./e2e-run-note-helpers.ts";
@@ -353,10 +354,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(selected).toContain(booksProfile.label);
     expect(selected).not.toContain(run.m.modal_profile_preselected());
     expect(selected).toContain(run.booksNotePath);
-    await obEval(
-      run.vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(run.vaultId, "Enter");
     expect(
       await waitFor(async () =>
         (
@@ -883,10 +881,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(function(){var input=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(run.vaultId, preprintPath);
-    await obEval(
-      run.vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(run.vaultId, "Enter");
     expect(
       await obEvalUntil(
         run.vaultId,
@@ -1034,10 +1029,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(fallback).toContain(run.m.settings_profile_default_name());
     expect(fallback).toContain(`literatures/${childItem.citationKey}.md`);
-    await obEval(
-      run.vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
-    );
+    await pressPromptKey(run.vaultId, "Escape");
     expect(
       await obEvalUntil(
         run.vaultId,

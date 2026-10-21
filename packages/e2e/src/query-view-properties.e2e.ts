@@ -8,6 +8,7 @@ import {
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import type { ItemQueryReport } from "./e2e-run-query-types.ts";
+import { readQueryViewUntil, revealQueryView } from "./note-query-view.ts";
 import { cliCommand, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
 import { MENU_READY, PAGE } from "./page-gestures.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -434,13 +435,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       `(async()=>{const file=await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(`![[Formula items.zotquery]]\n\n\`\`\`zotquery\n`)}+${JSON.stringify(added.text)}+"\`\`\`\\n");const leaf=app.workspace.getLeaf('split');await leaf.openFile(file,{state:{mode:'preview'}});return true;})()`,
     );
-    const readNote = `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(notePath)});if(!leaf)return 'null';const el=leaf.view.containerEl;const embed=[...el.querySelectorAll('.internal-embed')].find(n=>n.zotlitQueryView);const block=el.querySelector('.block-language-zotquery');if(!embed||!block?.zotlitQueryView)return 'null';await embed.zotlitQueryView.settled;await block.zotlitQueryView.settled;const read=root=>{const columns=[...root.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column'));const at=columns.indexOf('formula.year');return [...root.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),tr.children[at]?.textContent??null]);};return JSON.stringify({embed:read(embed),block:read(block)});})()`;
-    expect(
-      await obEvalUntil(run.vaultId, readNote, {
-        expected: JSON.stringify({ embed: years, block: years }),
+    const formulaEmbed = await revealQueryView(run.vaultId, notePath, {
+      embed: "Formula items.zotquery",
+    });
+    const formulaBlock = await revealQueryView(run.vaultId, notePath, {
+      block: 0,
+    });
+    const readNote = `(async()=>{const embed=${formulaEmbed.el};const block=${formulaBlock.el};const read=root=>{const columns=[...root.querySelectorAll('[data-query-table] thead th')].map(n=>n.getAttribute('data-query-column'));const at=columns.indexOf('formula.year');return [...root.querySelectorAll('[data-query-table-row="item"]')].map(tr=>[tr.getAttribute('data-query-key'),tr.children[at]?.textContent??null]);};return JSON.stringify({embed:read(embed),block:read(block)});})()`;
+    await readQueryViewUntil<{ embed: unknown; block: unknown }>(
+      run.vaultId,
+      readNote,
+      {
+        ready: (columns) =>
+          JSON.stringify(columns) ===
+          JSON.stringify({ embed: years, block: years }),
+        what: "formula.year in the embed and the Query Block",
         tries: 120,
-      }),
-    ).toBe(true);
+      },
+    );
     await obEval(
       run.vaultId,
       `(async()=>{const leaf=app.workspace.getLeavesOfType('zotlit-query-file').find(l=>l.view.file?.path===${JSON.stringify(path)});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,

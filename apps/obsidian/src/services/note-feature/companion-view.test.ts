@@ -16,7 +16,9 @@ import type {
   CompanionNoteDeps,
   CompanionNoteTarget,
   CreationProfileSelection,
+  PreparedCreationProfile,
 } from "./index";
+import type { CreationPlan } from "./operations";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -32,6 +34,13 @@ const REF: ItemRef = {
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const PAPERS = "Rz9Wm4YfH6Kd" as ProfileId;
 
+function creationPlans(
+  indexedKeys: readonly string[],
+  plan: CreationPlan,
+): ReadonlyMap<string, CreationPlan> {
+  return new Map(indexedKeys.map((key) => [key, plan]));
+}
+
 function creationHarness(selection: CreationProfileSelection) {
   const file = { path: "Papers/Study.md" } as TFile;
   const item = { ...REF, fields: { title: "A Study" } } as Item;
@@ -40,17 +49,20 @@ function creationHarness(selection: CreationProfileSelection) {
   );
   const create = vi.fn(async () => ({ outcome: "created" as const, file }));
   const openLinkText = vi.fn(async () => {});
-  const resolveCreationProfile = vi.fn(async () => selection);
-  const prepareCreationProfiles = vi.fn(async () => [
+  const previews: PreparedCreationProfile[] = [
     {
       selector: selection.selector,
       label: "Papers",
       folder: "Papers",
       citationStyle: null,
+      document: undefined,
       path: file.path,
       create,
     },
-  ]);
+  ];
+  const planCreations = vi.fn(async (keys: readonly string[]) =>
+    creationPlans(keys, { item, selection, previews }),
+  );
   const deps = {
     useLedger: {
       withoutNoteUse: (_file: TFile, open: () => Promise<void>) => open(),
@@ -64,8 +76,7 @@ function creationHarness(selection: CreationProfileSelection) {
       resolveCompanionNote: vi.fn(
         async (): Promise<CompanionNoteTarget> => ({ outcome: "create" }),
       ),
-      resolveCreationProfile,
-      prepareCreationProfiles,
+      planCreations,
       createNote: create,
       updateNote: vi.fn(async () => ({
         bodyUpdated: true,
@@ -80,8 +91,7 @@ function creationHarness(selection: CreationProfileSelection) {
     readItems,
     create,
     openLinkText,
-    resolveCreationProfile,
-    prepareCreationProfiles,
+    planCreations,
   };
 }
 
@@ -94,24 +104,31 @@ it.each(["open", "update"] as const)(
       shouldAsk: true,
     });
     vi.mocked(chooseLiteratureNoteProfile).mockClear();
-    harness.prepareCreationProfiles.mockImplementation(async () => {
+    harness.planCreations.mockImplementation(async (keys) => {
       expect(harness.readItems).toHaveBeenCalledOnce();
-      return [
-        {
-          selector: PAPERS,
-          label: "Papers",
-          folder: "Papers",
-          citationStyle: null,
-          path: harness.file.path,
-          create: harness.create,
-        },
-      ] as never;
+      return creationPlans(keys, {
+        item: harness.item,
+        selection: { selector: PAPERS, source: "headless", shouldAsk: true },
+        previews: [
+          {
+            selector: PAPERS,
+            label: "Papers",
+            folder: "Papers",
+            citationStyle: null,
+            document: undefined,
+            path: harness.file.path,
+            create: harness.create,
+          },
+        ],
+      });
     });
     await openCompanionNote(harness.deps, REF, { action, profile: PAPERS });
-    expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
-      headless: PAPERS,
-      item: harness.item,
-    });
+    expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
+      [harness.item.indexedKey],
+      {
+        headless: PAPERS,
+      },
+    );
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(harness.create).toHaveBeenCalledOnce();
     expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
@@ -132,10 +149,12 @@ it("creates directly when a match selects the Profile for an unqualified link", 
   });
   vi.mocked(chooseLiteratureNoteProfile).mockClear();
   await openCompanionNote(harness.deps, REF, { action: "open" });
-  expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
-    headless: undefined,
-    item: harness.item,
-  });
+  expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
+    [harness.item.indexedKey],
+    {
+      headless: undefined,
+    },
+  );
   expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
   expect(harness.create).toHaveBeenCalledOnce();
   expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
@@ -194,7 +213,7 @@ it("creates directly when only Default is available", async () => {
     profile: "default",
   });
   expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-  expect(harness.prepareCreationProfiles).not.toHaveBeenCalled();
+  expect(harness.planCreations).toHaveBeenCalledOnce();
   expect(harness.openLinkText).toHaveBeenCalledOnce();
 });
 
@@ -209,7 +228,7 @@ it("keeps metadata-only missing-note updates outside the create flow", async () 
     scope: "metadata",
   });
   expect(harness.readItems).not.toHaveBeenCalled();
-  expect(harness.resolveCreationProfile).not.toHaveBeenCalled();
+  expect(harness.planCreations).not.toHaveBeenCalled();
   expect(harness.create).not.toHaveBeenCalled();
   expect(harness.openLinkText).not.toHaveBeenCalled();
 });

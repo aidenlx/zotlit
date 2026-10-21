@@ -241,10 +241,12 @@ export {
   fetchAnnotationsTemplateData,
   fetchAttachmentSources,
   fetchNoteContext,
+  fetchItemFacets,
   fetchNoteSource,
   type AnnotationParent,
   type AnnotationResolvers,
   type AnnotationSources,
+  type ItemFacets,
   type NoteResolvers,
   type NoteSource,
 } from "./lib/context/note-context";

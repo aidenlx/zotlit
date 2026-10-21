@@ -38,6 +38,7 @@ import type {
 import type {
   CreateNoteOptions,
   CreateNoteResult,
+  CreationPlan,
   CreationProfileSelection,
   PreparedCreationProfile,
 } from "./operations";
@@ -146,6 +147,21 @@ function itemsAtInterface(client: ZoteroReadsClient): ZoteroReadsClient {
   };
 }
 
+function creationPlans(
+  indexedKeys: readonly string[],
+  planFor: (item: Item) => Omit<CreationPlan, "item">,
+): ReadonlyMap<string, CreationPlan> {
+  return new Map(
+    indexedKeys.map((indexedKey) => {
+      const item = {
+        indexedKey,
+        itemID: Number.parseInt(indexedKey.slice(4)),
+      } as Item;
+      return [indexedKey, { item, ...planFor(item) }];
+    }),
+  );
+}
+
 /**
  * The Zotero database each case seeds: My Library, the Reading group's
  * library 12, and an empty collection `COLLECTION` in My Library.
@@ -223,11 +239,11 @@ function makeDeps(
     },
     libraryScope: { resolveLibraries: () => currentScope },
     noteFeature: {
-      resolveCreationProfile: async () => ({
-        selector: "default",
-        source: "bound",
-        shouldAsk: false,
-      }),
+      planCreations: async (keys: readonly string[]) =>
+        creationPlans(keys, () => ({
+          selection: { selector: "default", source: "bound", shouldAsk: false },
+          previews: [],
+        })),
     },
     createProfile: vi.fn(),
     importProfile: vi.fn(),
@@ -432,23 +448,21 @@ it.each([false, true])(
         ...defaults,
         profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
       });
-      deps.noteFeature.prepareBatchCreationProfiles = async (items) =>
-        new Map(
-          items.map((item) => [
-            item.itemID,
-            [
-              {
-                selector: "default",
-                label: undefined,
-                folder: "Literature",
-                citationStyle: null,
-                document: undefined,
-                path: `Literature/Item ${item.itemID}.md`,
-                create: (options) => create(item.itemID, options),
-              },
-            ],
-          ]),
-        );
+      deps.noteFeature.planCreations = async (keys) =>
+        creationPlans(keys, (item) => ({
+          selection: { selector: "default", source: "bound", shouldAsk: false },
+          previews: [
+            {
+              selector: "default",
+              label: undefined,
+              folder: "Literature",
+              citationStyle: null,
+              document: undefined,
+              path: `Literature/Item ${item.itemID}.md`,
+              create: (options) => create(item.itemID, options),
+            },
+          ],
+        }));
     }
     itemsIn(
       new Map([
@@ -557,40 +571,30 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
     current: { ...defaults, "note.last-used-profile": books },
   });
   using settingsUpdate = vi.spyOn(deps.settings, "update");
-  deps.noteFeature.resolveCreationProfile = vi.fn(async () => ({
-    selector: books,
-    source: "headless" as const,
-    shouldAsk: true,
-  }));
-  deps.noteFeature.prepareBatchCreationProfiles = vi.fn<
-    typeof deps.noteFeature.prepareBatchCreationProfiles
-  >(
-    async () =>
-      new Map([
-        [
-          1,
-          [
-            {
-              selector: books,
-              label: "Books",
-              folder: "Books",
-              citationStyle: null,
-              document: undefined,
-              path: "Books/New.md",
-              create,
-            },
-            {
-              selector: "default" as const,
-              label: undefined,
-              folder: "Literature",
-              citationStyle: null,
-              document: undefined,
-              path: "Literature/New.md",
-              create: createDefault,
-            },
-          ],
-        ],
-      ]),
+  deps.noteFeature.planCreations = vi.fn(async (keys) =>
+    creationPlans(keys, () => ({
+      selection: { selector: books, source: "headless", shouldAsk: true },
+      previews: [
+        {
+          selector: books,
+          label: "Books",
+          folder: "Books",
+          citationStyle: null,
+          document: undefined,
+          path: "Books/New.md",
+          create,
+        },
+        {
+          selector: "default",
+          label: undefined,
+          folder: "Literature",
+          citationStyle: null,
+          document: undefined,
+          path: "Literature/New.md",
+          create: createDefault,
+        },
+      ],
+    })),
   );
   deps.noteIndex.getNotesByItemKey = (key) =>
     key === "ITEM2"
@@ -798,12 +802,6 @@ function mixedBatch() {
       },
     },
   };
-  const resolveCreationProfile = vi.fn(
-    async ({ item }: { item?: { itemID: number } }) =>
-      selections[item!.itemID]!,
-  );
-  deps.noteFeature.resolveCreationProfile =
-    resolveCreationProfile as typeof deps.noteFeature.resolveCreationProfile;
   const created: { itemID: number; selector: ProfileSelector }[] = [];
   const plansFor = (itemID: number): PreparedCreationProfile[] =>
     (["default", BOOKS, ARTICLES] as const).map((selector) => ({
@@ -821,10 +819,13 @@ function mixedBatch() {
         };
       },
     }));
-  deps.noteFeature.prepareBatchCreationProfiles = vi.fn(
-    async (items: readonly { itemID: number }[]) =>
-      new Map(items.map(({ itemID }) => [itemID, plansFor(itemID)])),
-  ) as typeof deps.noteFeature.prepareBatchCreationProfiles;
+  const planCreations = vi.fn(async (keys: readonly string[]) =>
+    creationPlans(keys, ({ itemID }) => ({
+      selection: selections[itemID]!,
+      previews: plansFor(itemID),
+    })),
+  );
+  deps.noteFeature.planCreations = planCreations;
   const updated: string[] = [];
   deps.noteFeature.writeNoteUpdate = async (file) => {
     updated.push(file.path);
@@ -847,7 +848,7 @@ function mixedBatch() {
     key in notes ? [{ path: notes[key] } as TFile] : [];
   itemsIn(new Map([1, 2, 3, 4, 5, 6, 7, 8].map((id) => [id, USER_LIBRARY_ID])));
   vi.mocked(chooseBatchProfile).mockReset();
-  return { deps, resolveCreationProfile, created, updated, selections };
+  return { deps, planCreations, created, updated, selections };
 }
 
 async function classifyMixedBatch(deps: BatchUpdateDeps) {
@@ -877,18 +878,14 @@ const DEFAULT_LABEL = () => m.settings_profile_default_name();
 
 describe("mixed batch", () => {
   it("prepares each new row from its own selection and keeps the fallback to unmatched rows", async () => {
-    const { deps, resolveCreationProfile, created, updated } = mixedBatch();
+    const { deps, planCreations, created, updated } = mixedBatch();
     const { modal, tasks, choices, choice, run, onItemSettled } =
       await classifyMixedBatch(deps);
 
-    expect(resolveCreationProfile).toHaveBeenCalledTimes(5);
-    expect(
-      resolveCreationProfile.mock.calls.map(([sources]) => sources),
-    ).toEqual(
-      [1, 2, 3, 4, 5].map((itemID) => ({
-        headless: undefined,
-        item: { itemID, indexedKey: `ITEM${itemID}` },
-      })),
+    // One call resolves every new row (#1642).
+    expect(planCreations).toHaveBeenCalledExactlyOnceWith(
+      [1, 2, 3, 4, 5].map((itemID) => `ITEM${itemID}`),
+      { headless: undefined, signal: expect.any(AbortSignal) },
     );
     expect(tasks).toMatchObject([
       {
@@ -1065,9 +1062,9 @@ describe("mixed batch", () => {
   });
 
   it("stops a creation whose Profile was removed after the preview and keeps the others frozen", async () => {
-    const { deps, created, resolveCreationProfile } = mixedBatch();
+    const { deps, created, planCreations } = mixedBatch();
     const { tasks, run, onItemSettled } = await classifyMixedBatch(deps);
-    resolveCreationProfile.mockClear();
+    planCreations.mockClear();
 
     // Articles disappears between preview and run; the rows keep the
     // destinations they showed, and no selection is computed again.
@@ -1090,7 +1087,7 @@ describe("mixed batch", () => {
         message: m.notice_literature_note_profile_unknown({ stamp: ARTICLES }),
       },
     });
-    expect(resolveCreationProfile).not.toHaveBeenCalled();
+    expect(planCreations).not.toHaveBeenCalled();
     expect(tasks[1]).toMatchObject({ id: 2, path: "Articles/Item 2.md" });
   });
 });

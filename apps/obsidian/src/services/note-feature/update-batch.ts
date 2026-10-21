@@ -1,6 +1,6 @@
 import type { TFile } from "obsidian";
 
-import type { Item, ItemRef } from "@zotlit/db";
+import type { ItemRef } from "@zotlit/db";
 
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
@@ -48,6 +48,7 @@ import type {
   CreateNoteResult,
   NoteOperationDiagnostic,
   UpdateScope,
+  CreationPlan,
   CreationProfileSelection,
   PreparedCreationProfile,
 } from "./operations";
@@ -192,9 +193,7 @@ export async function runBatchUpdate(
   // bar advances per streamed slice and Cancel interrupts the stream;
   // `actions` is captured here for the run callback.
   let actions: BatchAction[] = [];
-  let creationItems: Item[] = [];
-  let plans: ReadonlyMap<number, readonly PreparedCreationProfile[]> =
-    new Map();
+  let plans: ReadonlyMap<string, CreationPlan> = new Map();
   let keptCount = 0;
   let notFoundCount = 0;
   const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
@@ -215,17 +214,23 @@ export async function runBatchUpdate(
     action.prepared =
       action.profile &&
       plans
-        .get(action.itemID)
-        ?.find((entry) => entry.selector === selection.selector);
+        .get(action.indexedKey)
+        ?.previews.find((entry) => entry.selector === selection.selector);
   };
   /** A Profile created after classification has no prepared path yet. */
-  const ensurePlans = async (itemID: number, selectors: ProfileSelector[]) => {
-    const prepared = plans.get(itemID) ?? [];
+  const ensurePlans = async (
+    indexedKey: string,
+    selectors: ProfileSelector[],
+  ) => {
+    const prepared = plans.get(indexedKey)?.previews ?? [];
     if (
       selectors.every((id) => prepared.some((entry) => entry.selector === id))
     )
       return;
-    plans = await deps.noteFeature.prepareBatchCreationProfiles(creationItems);
+    plans = await deps.noteFeature.planCreations(
+      creations().map((action) => action.indexedKey),
+      { headless: profile },
+    );
   };
   const choiceFor = (
     scope: BatchProfileChoiceScope,
@@ -246,7 +251,7 @@ export async function runBatchUpdate(
       const first = rows()[0];
       if (!first) return;
       await ensurePlans(
-        first.itemID,
+        first.indexedKey,
         deps.profile.profiles.map(({ id }) => id),
       );
       const chosen = await chooseBatchProfile(deps, {
@@ -262,10 +267,10 @@ export async function runBatchUpdate(
               ),
             ),
           ].join(" ") || undefined,
-        previews: plans.get(first.itemID) ?? [],
+        previews: plans.get(first.indexedKey)?.previews ?? [],
       });
       if (chosen === undefined) return;
-      await ensurePlans(first.itemID, [chosen]);
+      await ensurePlans(first.indexedKey, [chosen]);
       for (const row of rows())
         assign(row, { selector: chosen, source: "asked", shouldAsk: true });
       logger.debug("Changed batch creation Profile", {
@@ -321,32 +326,14 @@ export async function runBatchUpdate(
       notFoundCount = classified.notFound.length;
       let profileChoices: BatchProfileChoice[] | undefined;
       if (profilesEnabled && creations().length > 0) {
-        {
-          await using lease = await deps.zoteroReads.acquireRead();
-          const items = await Effect.runPromise(
-            lease.reads.ItemsByIndexedKeys({
-              indexedKeys: creations().map((action) => action.indexedKey),
-            }),
-            { signal: controls.signal },
-          );
-          creationItems = creations().flatMap(
-            (action) => items.get(action.indexedKey) ?? [],
-          );
-        }
-        plans = await deps.noteFeature.prepareBatchCreationProfiles(
-          creationItems,
-          { signal: controls.signal },
-        );
         // Each Item keeps its own result and prepared destination. Overlap
         // rows need a choice; the fallback also covers unmatched Items.
-        const itemsByID = new Map(
-          creationItems.map((item) => [item.itemID, item]),
+        plans = await deps.noteFeature.planCreations(
+          creations().map((action) => action.indexedKey),
+          { headless: profile, signal: controls.signal },
         );
         for (const action of creations()) {
-          const selection = await deps.noteFeature.resolveCreationProfile({
-            headless: profile,
-            item: itemsByID.get(action.itemID),
-          });
+          const { selection } = plans.get(action.indexedKey)!;
           action.origin =
             selection.problem && selection.problem.kind !== "overlap"
               ? "affected"

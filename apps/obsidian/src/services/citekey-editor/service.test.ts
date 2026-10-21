@@ -1,7 +1,9 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
-import type { HoverLinkSource } from "obsidian";
+import type { HoverLinkSource, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { Item } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -12,7 +14,11 @@ import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { CreationProfileSelection } from "@/services/note-feature";
+import type {
+  CreationProfileSelection,
+  PreparedCreationProfile,
+} from "@/services/note-feature";
+import type { CreationPlan } from "@/services/note-feature/operations";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -60,6 +66,18 @@ describe("CitekeyEditor Profile creation", () => {
     indexedKey: "PAPER234",
     key: "PAPER234",
   };
+  function creationPlans(
+    indexedKeys: readonly string[],
+    selection: CreationProfileSelection,
+    previews: readonly PreparedCreationProfile[],
+  ): ReadonlyMap<string, CreationPlan> {
+    return new Map(
+      indexedKeys.map((key) => [
+        key,
+        { item: item as Item, selection, previews },
+      ]),
+    );
+  }
   function fixture(
     selection: CreationProfileSelection = {
       selector: "default",
@@ -68,8 +86,8 @@ describe("CitekeyEditor Profile creation", () => {
     },
   ) {
     const create = vi.fn(async () => ({
-      outcome: "created",
-      file: { path: "Books/Paper.md" },
+      outcome: "created" as const,
+      file: { path: "Books/Paper.md" } as TFile,
     }));
     const openLinkText = vi.fn(async () => {});
     const citationLookup = new LookupStub({
@@ -94,27 +112,27 @@ describe("CitekeyEditor Profile creation", () => {
       zoteroPref: { dataDir: null },
       db: reads([{ itemID: item.itemID, key: item.key }]),
       noteFeature: {
-        resolveCreationProfile: async () => selection,
-        prepareCreationProfiles: async () => [
-          {
-            selector: "default",
-            label: undefined,
-            folder: "Literature",
-            citationStyle: null,
-            document: undefined,
-            path: "Literature/Paper.md",
-            create: vi.fn(),
-          },
-          {
-            selector: books,
-            label: "Books",
-            folder: "Books",
-            citationStyle: null,
-            document: undefined,
-            path: "Books/Paper.md",
-            create,
-          },
-        ],
+        planCreations: async (keys: readonly string[]) =>
+          creationPlans(keys, selection, [
+            {
+              selector: "default",
+              label: undefined,
+              folder: "Literature",
+              citationStyle: null,
+              document: undefined,
+              path: "Literature/Paper.md",
+              create: vi.fn(),
+            },
+            {
+              selector: books,
+              label: "Books",
+              folder: "Books",
+              citationStyle: null,
+              document: undefined,
+              path: "Books/Paper.md",
+              create,
+            },
+          ]),
       },
     } as never);
     return { service, create, openLinkText, citationLookup };

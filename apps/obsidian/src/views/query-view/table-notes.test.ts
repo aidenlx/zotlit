@@ -4,9 +4,14 @@
 import type { TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Item } from "@zotlit/db";
+
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
-import type { CreationProfileSelection } from "@/services/note-feature/operations";
+import type {
+  CreationPlan,
+  CreationProfileSelection,
+} from "@/services/note-feature/operations";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
@@ -19,6 +24,38 @@ vi.mock("@/views/annot-view/register", () => ({
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
 }));
+
+function creationPlans(
+  indexedKeys: readonly string[],
+  selection: CreationProfileSelection,
+  create: (item: {
+    indexedKey: string;
+  }) => Promise<{ outcome: "created"; file: TFile }>,
+): ReadonlyMap<string, CreationPlan> {
+  return new Map(
+    indexedKeys.map((indexedKey) => {
+      const item = { indexedKey, key: indexedKey } as Item;
+      return [
+        indexedKey,
+        {
+          item,
+          selection,
+          previews: [
+            {
+              selector: "default",
+              label: undefined,
+              folder: "",
+              citationStyle: null,
+              document: undefined,
+              path: `${indexedKey}.md`,
+              create: () => create(item),
+            },
+          ],
+        },
+      ];
+    }),
+  );
+}
 
 /** A vault of notes by path, each with its frontmatter. */
 function setup(
@@ -350,15 +387,8 @@ describe("literatureNotes vault property writes", () => {
       zoteroPref: { dataDir: null },
       noteFeature: {
         createNote,
-        resolveCreationProfile: async () => selection,
-        prepareCreationProfiles: async (item: { indexedKey: string }) => [
-          {
-            selector: "default",
-            label: undefined,
-            path: `${item.indexedKey}.md`,
-            create: () => createNote(item),
-          },
-        ],
+        planCreations: async (keys: readonly string[]) =>
+          creationPlans(keys, selection, createNote),
         replacedKeys,
       },
     } as unknown as LiteratureNotesDeps;

@@ -11,7 +11,10 @@ import {
 } from "./e2e-run-fixture.ts";
 import { openProfilesSettings, unreadOf } from "./e2e-run-helpers.ts";
 import { run } from "./e2e-run-lifecycle.ts";
-import { selectSuggestion } from "./e2e-run-note-helpers.ts";
+import {
+  pressPromptKey,
+  selectItemSuggestion,
+} from "./e2e-run-note-helpers.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 
@@ -200,7 +203,7 @@ async function writeMatch(
 }
 
 async function quickSwitchCreate(
-  item: { title: string },
+  item: { title: string; key: string },
   targetVaultId = run.vaultId,
 ) {
   expect(
@@ -259,15 +262,8 @@ async function quickSwitchCreate(
       { expected: "true" },
     ),
   ).toBe(true);
-  await obEval(
-    targetVaultId,
-    `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
-  );
-  await selectSuggestion(targetVaultId, item.title);
-  await obEval(
-    targetVaultId,
-    "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-  );
+  await selectItemSuggestion(targetVaultId, item.title, item.key);
+  await pressPromptKey(targetVaultId, "Enter");
 }
 
 export {

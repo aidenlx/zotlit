@@ -2,6 +2,8 @@ import { cp, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { ITEMS } from "@zotlit/scripts/fixture";
+
 import { prepareRunWindow } from "./background-throttling.ts";
 import {
   reachable,
@@ -17,6 +19,8 @@ import {
   clickModalButton,
   createFixtureNote,
   indexedNote,
+  pressPromptKey,
+  selectItemSuggestion,
   selectSuggestion,
 } from "./e2e-run-note-helpers.ts";
 import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
@@ -189,22 +193,13 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await obEval(
-      vaultId,
-      "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
-    );
-    await selectSuggestion(vaultId, "Thinking, fast and slow");
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    const kahneman = ITEMS.find(({ itemID }) => itemID === 61)!;
+    await selectItemSuggestion(vaultId, kahneman.title, kahneman.key);
+    await pressPromptKey(vaultId, "Enter");
     const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
     expect(choice).toContain("Books");
     expect(choice).toContain("books/Kahneman2011.md");
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(vaultId, "Enter");
     expect(
       await waitFor(async () =>
         (
