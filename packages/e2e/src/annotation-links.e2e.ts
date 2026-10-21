@@ -194,6 +194,8 @@ const RESTORE_LEDGER = `
     await app.plugins.enablePlugin('zotlit');
     const fresh=app.plugins.plugins.zotlit.services;
     await within(fresh.useLedger.ready,deadline(),'The Use Ledger did not load again');
+    const restored=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
+    if(restored!==savedLedger)throw new Error('The Use Ledger came back changed: '+restored);
     await within(fresh.attachmentResolver.indexed,deadline(),'The Attachment index was not built again');
   });`;
 
