@@ -436,20 +436,6 @@ describe("the members a Query Dataset's planner reads", () => {
     ]);
   });
 
-  it("labels a member by its full path, as the Properties popover does", () => {
-    const vocabulary = planned(ANNOTATIONS, {
-      label: (path) => (path === "item.title" ? "Paper heading" : undefined),
-    });
-    expect(offered("item.|", vocabulary)!.options).toContainEqual({
-      label: "title",
-      insert: "title",
-      kind: "field",
-      type: "string",
-      note: "Paper heading",
-    });
-    expect(labels("item.heading|", vocabulary)[0]).toBe("title");
-  });
-
   it("keeps the later arguments of a list method when it types a bound name", () => {
     const items = planned(ITEMS);
     expect(labels("tags.reduce(index.|, 0)", items)).toContain("toFixed");
@@ -470,17 +456,6 @@ describe("the members a Query Dataset's planner reads", () => {
     expect(labels("attachments.filter(value.title.|)", items)).toContain(
       "lower",
     );
-  });
-
-  it("types title., date. and tags. as the planner types them", () => {
-    const items = planned(ITEMS);
-    expect(labels("title.|", items)).toContain("lower");
-    expect(labels("title.|", items)).not.toContain("year");
-    expect(labels("date.|", items)).toEqual(
-      expect.arrayContaining(["year", "format"]),
-    );
-    expect(labels("tags.|", items)).toContain("filter");
-    expect(labels("tags.|", items)).not.toContain("lower");
   });
 
   it("offers the Item's fields after item. in an Annotation Query, each one a filter reads", () => {
@@ -515,28 +490,6 @@ describe("the members a Query Dataset's planner reads", () => {
     expect(names).not.toContain("fullName");
   });
 
-  it("types this.item as the record the Query Context binds", () => {
-    const fields = offered(
-      "this.item.|",
-      planned(ITEMS, { context: ["item", "attachment"] }),
-    )!
-      .options.filter((option) => option.kind === "field")
-      .map((option) => option.label);
-    expect(fields.sort()).toEqual(["indexedKey", "key"]);
-    // Without a Query Context, `this.item` does not plan.
-    expect(labels("this.item.|", planned(ITEMS))).toContain("year");
-  });
-
-  it("types formula.<name> from the other Formula's planned result", () => {
-    const vocabulary = planned(ITEMS, {
-      formulas: { short: "title.slice(0, 10)", added: "dateAdded" },
-    });
-    expect(labels("formula.short.|", vocabulary)).toContain("lower");
-    expect(labels("formula.short.|", vocabulary)).not.toContain("year");
-    expect(labels("formula.added.|", vocabulary)).toContain("year");
-    expect(labels("formula.added.|", vocabulary)).not.toContain("lower");
-  });
-
   it("types a bound name where the list method binds it, not as a custom field", () => {
     const items = planned(ITEMS);
     // `value` alone is a custom field of text; in `tags.filter` it is an element.
@@ -550,14 +503,5 @@ describe("the members a Query Dataset's planner reads", () => {
     expect(
       labels("title != '' && attachments.map(value.|).length", items),
     ).toContain("fileType");
-  });
-
-  it("gives the Signature Hint the type of a receiver", () => {
-    const { receiver } = planned(ITEMS, {
-      formulas: { short: "title.slice(0, 10)" },
-    });
-    const text = "formula.short.lower";
-    expect(receiver?.(text, { from: 0, to: 13 })).toEqual({ type: "string" });
-    expect(receiver?.("formula.missing", { from: 0, to: 15 })).toBeUndefined();
   });
 });

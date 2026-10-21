@@ -2,8 +2,6 @@
 // The Query View runs one view of a Query File through ZotLit Query and shows
 // its rows as live Annotation Cards. These tests drive it as a host does: the
 // file's text in, the cards, the count and the messages out.
-import { forEachDiagnostic } from "@codemirror/lint";
-import { EditorView } from "@codemirror/view";
 import {
   Menu,
   hideSuggestChooser,
@@ -1580,72 +1578,6 @@ it("shows the query's diagnostic at the wrong condition in the Filter popover", 
     "colourName is not a field of Annotations. Use colorName.",
   );
   expect(rows[1]!.querySelector('[role="alert"]')).toBeNull();
-});
-
-it("underlines the query's Fault in an expression condition, and a Syntax Fault as it is typed", async () => {
-  const { view, el, settle } = await mount(
-    [result([row("ANNOTBBB")]), filterFault(1, 11)],
-    () => {},
-  );
-  await act(() => view.setText(FILE));
-  await settle();
-  await act(() => {
-    view.document.setFilters("view", {
-      and: ['colourName == "yellow"', 'tags.contains("figure")'],
-    });
-  });
-  await settle();
-
-  const editor = EditorView.findFromDOM(
-    section(el, "view").querySelector("[data-condition-row] .cm-editor")!,
-  )!;
-  const underlined = () => {
-    const marked: string[] = [];
-    forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
-      marked.push(editor.state.sliceDoc(from, to));
-    });
-    return marked;
-  };
-  expect(underlined()).toEqual(["colourName"]);
-
-  // The text no longer is the one the query ran: its Fault no longer shows,
-  // and the unclosed string shows at once.
-  await act(() => {
-    editor.dispatch({
-      changes: {
-        from: editor.state.doc.length - 1,
-        to: editor.state.doc.length,
-      },
-    });
-  });
-  expect(editor.state.doc.toString()).toBe('colourName == "yellow');
-  expect(underlined()).toEqual(['"yellow']);
-  await settle();
-  expect(underlined()).toEqual(['"yellow']);
-});
-
-it("underlines the Fault of a vault condition at its span in the condition", async () => {
-  const { view, el, settle } = await mount([], () => {}, {
-    propertyNames: ["status"],
-  });
-  await act(() =>
-    view.setText(`views:
-  - type: table
-    name: Reading list
-    from: items
-    filters: 'title != null && vault["status"].nope()'
-`),
-  );
-  await settle();
-
-  const editor = EditorView.findFromDOM(
-    section(el, "view").querySelector("[data-condition-row] .cm-editor")!,
-  )!;
-  const marked: string[] = [];
-  forEachDiagnostic(editor.state, (_diagnostic, from, to) => {
-    marked.push(editor.state.sliceDoc(from, to));
-  });
-  expect(marked).toEqual(["nope"]);
 });
 
 it("offers the Tags and Collections of the Libraries the view reads", async () => {

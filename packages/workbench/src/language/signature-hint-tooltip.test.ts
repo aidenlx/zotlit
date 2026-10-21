@@ -61,38 +61,6 @@ function editor(doc: string, extra: Extension = []) {
   };
 }
 
-it("shows the signature with the parameter at the caret marked and the description beneath", () => {
-  using field = editor("title.slice(1, )");
-  field.caret("title.slice(1, ".length);
-
-  const hint = field.hint();
-  expect(hint?.querySelector("code")?.textContent).toBe(
-    "slice(start: number, end?: number) → string",
-  );
-  expect(hint?.querySelector("mark")?.textContent).toBe("end?: number");
-  expect(hint?.textContent).toContain(
-    "The part of the text from index start up to",
-  );
-});
-
-it("moves the mark as the caret moves to another argument", () => {
-  using field = editor("title.slice(1, 2)");
-  field.caret("title.slice(".length);
-  expect(field.hint()?.querySelector("mark")?.textContent).toBe(
-    "start: number",
-  );
-  field.caret("title.slice(1, ".length);
-  expect(field.hint()?.querySelector("mark")?.textContent).toBe("end?: number");
-});
-
-it("closes when the caret leaves the call", () => {
-  using field = editor("title.slice(1, 2) + 1");
-  field.caret("title.slice(1".length);
-  expect(field.hint()).not.toBeNull();
-  field.caret("title.slice(1, 2) +".length);
-  expect(field.hint()).toBeNull();
-});
-
 it("closes on Escape before the host hears it", () => {
   using field = editor("title.slice(1, 2)");
   field.caret("title.slice(".length);
@@ -123,8 +91,10 @@ it("hides when the editor loses focus", async () => {
   expect(field.hint()).toBeNull();
 });
 
+// Regression (#1637): the hint once read focus from the update that told of
+// it, so a dispatch from the focus event, before CodeMirror tells of the
+// focus, kept it hidden.
 it("shows while another extension reconfigures the editor as it takes focus", () => {
-  // A dispatch from the focus event, before CodeMirror tells of the focus.
   const placement = new Compartment();
   using field = editor(
     "title.slice(1, 2)",

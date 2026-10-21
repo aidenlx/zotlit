@@ -1,75 +1,12 @@
-import type { PlacedFault } from "#/language/span";
 import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 
 import { MatchExpressionInput } from "./match.expression";
-import { WorkbenchThemeProvider } from "./theme";
-
-import { documentFocus } from "#/language/test-utils";
 
 afterEach(cleanup);
-
-it("colors a method name with the function hook and its receiver with the property hook", () => {
-  const { container } = render(
-    <MatchExpressionInput value="title.lower()" onChange={() => {}} />,
-  );
-  const tokens = (hook: string) =>
-    [...container.querySelectorAll(`.${hook}`)].map((node) => node.textContent);
-  expect(tokens("zt-template-filter")).toEqual(["lower"]);
-  expect(tokens("zt-template-property")).toEqual(["title"]);
-});
-
-it("mounts the extension the theme supplies for expression editors", () => {
-  const { container } = render(
-    <WorkbenchThemeProvider
-      theme={{
-        expressionExtension: EditorView.editorAttributes.of({
-          class: "host-expression",
-        }),
-      }}
-    >
-      <MatchExpressionInput value="itemType == 'book'" onChange={() => {}} />
-    </WorkbenchThemeProvider>,
-  );
-  expect(
-    container
-      .querySelector(".cm-editor")
-      ?.classList.contains("host-expression"),
-  ).toBe(true);
-});
-
-it("offers the completion of the vocabulary it is given, in the theme's presentation", async () => {
-  const { container } = render(
-    <WorkbenchThemeProvider
-      theme={{ expressionCompletion: { tooltipClass: () => "host-list" } }}
-    >
-      <MatchExpressionInput
-        value=""
-        onChange={() => {}}
-        vocabulary={{
-          fields: [{ path: "title", label: "Title" }],
-          context: [],
-          formulas: [],
-        }}
-      />
-    </WorkbenchThemeProvider>,
-  );
-  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
-  view.dispatch({
-    changes: { from: 0, insert: "tit" },
-    selection: { anchor: 3 },
-    userEvent: "input.type",
-  });
-  const list = await vi.waitFor(() => {
-    const found = document.querySelector(".cm-tooltip-autocomplete.host-list");
-    if (!found) throw new Error("no list yet");
-    return found;
-  });
-  expect(list.querySelector(".cm-completionLabel")?.textContent).toBe("title");
-});
 
 it("offers no completion without a vocabulary", () => {
   const { container } = render(
@@ -80,30 +17,6 @@ it("offers no completion without a vocabulary", () => {
   startCompletion(view);
   // A list that would open stands pending from the request on.
   expect(completionStatus(view.state)).toBeNull();
-});
-
-it("shows the Signature Hint of the method at the caret, typed as the host types it", () => {
-  using _focus = documentFocus();
-  const { container } = render(
-    <MatchExpressionInput
-      value="title.slice(1, )"
-      onChange={() => {}}
-      vocabulary={{
-        fields: [],
-        context: [],
-        formulas: [],
-        receiver: (source, { from, to }) =>
-          source.slice(from, to) === "title" ? { type: "string" } : undefined,
-      }}
-    />,
-  );
-  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
-  view.focus();
-  view.dispatch({ selection: { anchor: "title.slice(1, ".length } });
-  const hint = container.querySelector(".zt-signature-hint")!;
-  expect(hint.querySelector("mark")?.textContent).toBe("end?: number");
-  expect(hint.textContent).toContain("The part of the text");
-  expect(hint.textContent).not.toContain("The elements of the list");
 });
 
 /** The text each underline of the field marks, and how it marks it. */
@@ -118,78 +31,15 @@ const marks = (container: HTMLElement) => {
   return found;
 };
 
-/** Types `text` at the end of the field, as the user would. */
-const typeAtEnd = (container: HTMLElement, text: string) => {
-  const editor = EditorView.findFromDOM(
-    container.querySelector(".cm-editor")!,
-  )!;
-  const end = editor.state.doc.length;
-  act(() => {
-    editor.dispatch({ changes: { from: end, insert: text } });
-  });
-};
-
-// The look of the underline, and that no tooltip shows over it, are proved
-// in the running app (query-view e2e).
-it("underlines the Syntax Fault of its text, and follows the text as it is typed", () => {
-  const { container } = render(
-    <MatchExpressionInput value="a ==" onChange={() => {}} />,
-  );
-  expect(marks(container)).toEqual([{ text: "==", severity: "error" }]);
-  typeAtEnd(container, " 'book");
-  expect(marks(container)).toEqual([{ text: "'book", severity: "error" }]);
-  typeAtEnd(container, "'");
-  expect(marks(container)).toEqual([]);
-});
-
+// A Syntax Fault as it is typed, the run's Fault on the text it planned and
+// not on another, the look of the underline, and that no tooltip shows over
+// it, are proved in the running app (query-view and query-view-properties
+// e2e).
 it("underlines nothing in an empty text, which the owner explains", () => {
   const { container } = render(
     <MatchExpressionInput value="" onChange={() => {}} />,
   );
   expect(marks(container)).toEqual([]);
-});
-
-it("underlines the run's Fault while its text is the one the run planned", () => {
-  const text = "title.nope()";
-  const fault: PlacedFault = { text, span: { from: 6, to: 10 } };
-  const field = (value: string, given?: PlacedFault) => (
-    <MatchExpressionInput value={value} onChange={() => {}} fault={given} />
-  );
-  const mounted = render(field(text));
-  expect(marks(mounted.container)).toEqual([]);
-  act(() => mounted.rerender(field(text, fault)));
-  expect(marks(mounted.container)).toEqual([
-    { text: "nope", severity: "error" },
-  ]);
-  // The next run finds nothing.
-  act(() => mounted.rerender(field(text)));
-  expect(marks(mounted.container)).toEqual([]);
-});
-
-it("drops the run's Fault once the text differs from the one the run planned", () => {
-  const fault: PlacedFault = {
-    text: "title.nope()",
-    span: { from: 6, to: 10 },
-  };
-  const typed = render(
-    <MatchExpressionInput
-      value={fault.text}
-      onChange={() => {}}
-      fault={fault}
-    />,
-  );
-  typeAtEnd(typed.container, " && true");
-  expect(marks(typed.container)).toEqual([]);
-  cleanup();
-  // A Fault of a run of other text, while the next run is pending.
-  const other = render(
-    <MatchExpressionInput
-      value="title.slice(0, 3)"
-      onChange={() => {}}
-      fault={fault}
-    />,
-  );
-  expect(marks(other.container)).toEqual([]);
 });
 
 it("underlines the Syntax Fault over a run's Fault of the same text", () => {

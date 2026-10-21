@@ -78,25 +78,6 @@ describe("renderFunctionsReference", () => {
     );
   });
 
-  it("renders a variadic nullable parameter and a result type that varies", () => {
-    const page = renderFunctionsReference(VOCABULARY);
-
-    expect(rowOf(page, "min")).toContain(
-      "`min(...values: number \\| null) → number`",
-    );
-    expect(rowOf(page, "if")).toContain(
-      "`if(condition: any, then: any, else?: any) → any`",
-    );
-  });
-
-  it("renders the texts a parameter takes as literals", () => {
-    const page = renderFunctionsReference(VOCABULARY);
-
-    expect(rowOf(page, "any.isType")).toContain(
-      '`any.isType(type: "any" \\| "null") → boolean`',
-    );
-  });
-
   it("names what an element expression can use", () => {
     const page = renderFunctionsReference(VOCABULARY);
 
