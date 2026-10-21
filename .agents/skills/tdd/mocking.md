@@ -1,11 +1,9 @@
 # When to Mock
 
-Mock at **system boundaries** only:
+Mock at **system boundaries** only: the process, network, and OS boundaries listed in [Testing strategy](../../../policies/testing-strategy.md).
 
 - External APIs (payment, email, etc.)
-- Databases (sometimes - prefer test DB)
 - Time/randomness
-- File system (sometimes)
 
 Don't mock:
 
