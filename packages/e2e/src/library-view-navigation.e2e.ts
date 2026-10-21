@@ -27,7 +27,10 @@ import {
 import { activeTab, pdfOpened, unreadOf } from "./e2e-run-helpers.ts";
 import type { ActiveTab } from "./e2e-run-helpers.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
-import { selectSuggestion } from "./e2e-run-note-helpers.ts";
+import {
+  selectItemSuggestion,
+  selectSuggestion,
+} from "./e2e-run-note-helpers.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
 import {
   clearNotices,
@@ -1381,11 +1384,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await obEval(
-      run.vaultId,
-      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(filed.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    await selectSuggestion(run.vaultId, filed.title);
+    await selectItemSuggestion(run.vaultId, filed.title, filed.key);
     await obEval(
       run.vaultId,
       "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,altKey:true,bubbles:true}));true",

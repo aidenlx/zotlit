@@ -156,6 +156,37 @@ async function selectSuggestion(
   );
 }
 
+/**
+ * Types `query` into the open Item search prompt and selects the row of the
+ * Item whose Indexed Key is `key`, returning that row's text. The prompt marks
+ * its results `aria-busy` until the answer to the typed query shows; the rows
+ * before it answer an earlier query. Rows of Items that share a title read
+ * the same, so the row is found by its `data-indexed-key`.
+ */
+async function selectItemSuggestion(
+  vaultId: string,
+  query: string,
+  key: string,
+): Promise<string> {
+  const prompt =
+    "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1)";
+  await obEval(
+    vaultId,
+    `(function(){var input=${prompt}.querySelector('input');input.value=${JSON.stringify(query)};input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+  );
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `(function(){var prompt=${prompt};if(prompt.querySelector('.prompt-results[aria-busy]'))return false;var row=prompt.querySelector(${JSON.stringify(`.suggestion-item[data-indexed-key="${key}"]`)});if(!row)return false;row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  return obEval(
+    vaultId,
+    `${prompt}.querySelector('.suggestion-item.is-selected').textContent`,
+  );
+}
+
 function clickModalButton(
   vaultId: string,
   label: string,
@@ -408,6 +439,7 @@ export {
   managedRegion,
   noteBody,
   selectSuggestion,
+  selectItemSuggestion,
   clickModalButton,
   observeNotices,
   syntheticTitles,

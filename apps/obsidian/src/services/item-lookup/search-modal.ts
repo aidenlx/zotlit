@@ -1,7 +1,7 @@
 // Search the library in Obsidian's prompt. Every picker over Zotero Items —
 // the citation insert, the Explorer's paper, the annotation view's link —
 // searches and draws its rows the same way; a subclass decides what a chosen
-// Item does.
+// Item does. A choice acts only on the answer to the query in the input.
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
@@ -28,6 +28,11 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
   readonly #search: ItemSearchDeps;
   /** The searches of this picker while it is open. */
   #session: SearchSession | null = null;
+  /**
+   * The answer to the query last typed, or `null` once it shows. Until then
+   * the rows answer an earlier query.
+   */
+  #pending: Promise<SearchHit[]> | null = null;
   readonly #firstAnswer = new FirstAnswerGate({
     // The container holds the dim backdrop too, so both show in one frame. A
     // layered utility holds while Obsidian sets no opacity on
@@ -58,6 +63,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     this.#firstAnswer.close();
     this.#session?.close();
     this.#session = null;
+    this.#settle(this.#pending);
     super.onClose();
   }
 
@@ -65,14 +71,61 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     query: string,
     options?: Pick<SearchOptions, "cited">,
   ): SearchHit[] | Promise<SearchHit[]> {
-    return this.#firstAnswer.track(
-      this.#session?.search(query, { ...options, limit: this.limit }) ??
-        Promise.resolve([]),
+    const answer = Promise.resolve(
+      this.#firstAnswer.track(
+        this.#session?.search(query, { ...options, limit: this.limit }) ??
+          Promise.resolve([]),
+      ),
     );
+    // Obsidian shows the rows once the returned answer settles, right after
+    // this step; an answer superseded by a later query settles the later one.
+    const shown: Promise<SearchHit[]> = answer.finally(() =>
+      this.#settle(shown),
+    );
+    this.#pending = shown;
+    this.resultContainerEl.setAttribute("aria-busy", "true");
+    return shown;
+  }
+
+  #settle(answer: Promise<SearchHit[]> | null): void {
+    if (this.#pending !== answer) return;
+    this.#pending = null;
+    this.resultContainerEl.removeAttribute("aria-busy");
+  }
+
+  /**
+   * Enter or a click on a row while the typed query's answer is pending would
+   * choose from an earlier query's rows, where another Item can stand in the
+   * same place, or under the same title. Enter then waits for the answer and
+   * chooses its first row, the row Obsidian selects when it shows; a click
+   * on a row about to go is dropped.
+   */
+  override selectSuggestion(
+    value: SearchHit,
+    evt: MouseEvent | KeyboardEvent,
+  ): void {
+    if (!this.#pending) {
+      super.selectSuggestion(value, evt);
+      return;
+    }
+    if ("key" in evt) void this.#chooseOnAnswer(evt);
+  }
+
+  async #chooseOnAnswer(evt: KeyboardEvent): Promise<void> {
+    let hits: SearchHit[] = [];
+    // A query typed after Enter supersedes the one Enter waited for.
+    for (let pending = this.#pending; pending; pending = this.#pending) {
+      hits = await pending.catch(() => []);
+      if (!this.#session) return;
+    }
+    const [first] = hits;
+    if (first) this.selectSuggestion(first, evt);
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
     renderSearchHit(this.#search.settings, hit, el);
+    // Rows of Items that share a title read the same; the key tells them apart.
+    el.setAttribute("data-indexed-key", hit.item.indexedKey);
   }
 }
 
@@ -82,7 +135,6 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
  */
 class ItemPickerModal extends ItemSearchModal {
   readonly #resolvers = Promise.withResolvers<SearchHit | null>();
-  #picked = false;
 
   constructor(deps: ItemSearchDeps, placeholder: string) {
     super(deps);
@@ -94,22 +146,15 @@ class ItemPickerModal extends ItemSearchModal {
     ]);
   }
 
-  /** Mark selected before super triggers close → onClose. */
-  override selectSuggestion(
-    value: SearchHit,
-    evt: MouseEvent | KeyboardEvent,
-  ): void {
-    this.#picked = true;
-    super.selectSuggestion(value, evt);
-  }
-
   override onChooseSuggestion(hit: SearchHit): void {
     this.#resolvers.resolve(hit);
   }
 
   override onClose(): void {
     super.onClose();
-    if (!this.#picked) this.#resolvers.resolve(null);
+    // A choice closes the modal before it calls onChooseSuggestion, which
+    // settles the answer first.
+    queueMicrotask(() => this.#resolvers.resolve(null));
   }
 
   requestInput(): Promise<SearchHit | null> {
