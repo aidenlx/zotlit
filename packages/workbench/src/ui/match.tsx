@@ -1,5 +1,12 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
@@ -341,7 +348,9 @@ function useMatchTest(
 /**
  * A Match tree as "All" / "Any" / "None of the following are true" groups of
  * condition rows. The caller owns the stored filter and the conditions it
- * offers; `onChange` answers whether the caller kept the new filter.
+ * offers; `onChange` answers whether the caller kept the new filter, and a
+ * kept filter comes back as `value` in the render the change causes. A
+ * `value` the rows on screen do not store replaces them.
  */
 export function MatchEditor<Row extends LabelledRow>({
   value,
@@ -368,7 +377,11 @@ export function MatchEditor<Row extends LabelledRow>({
   }
   const latest = useRef(vocabulary);
   latest.current = vocabulary;
-  useEffect(() => {
+  // Read as the caller's render commits, before the next key: an effect
+  // waits for paint, and the author may type again before it runs, so the
+  // caller's echo of the editor's own edit would read as an older filter
+  // than the tree on screen and rebuild the rows under the caret (#1651).
+  useLayoutEffect(() => {
     if (
       fitsVocabulary(shown.current, latest.current) &&
       storesFilter(shown.current, value, latest.current)

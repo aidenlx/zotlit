@@ -2,7 +2,8 @@ import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { useLayoutEffect, useState } from "react";
+import { afterEach, expect, it, onTestFinished } from "vitest";
 
 import { MatchExpressionInput } from "./match.expression";
 
@@ -54,13 +55,31 @@ it("underlines the Syntax Fault over a run's Fault of the same text", () => {
   expect(marks(container)).toEqual([{ text: "(", severity: "error" }]);
 });
 
-it("keeps what the user typed when the owner gives back an older text it sent", () => {
-  const field = (value: string) => (
-    <MatchExpressionInput value={value} onChange={() => {}} />
-  );
-  const mounted = render(field("a"));
+it("keeps what the user typed when the next key lands before the owner's render settles", async () => {
+  // The browser's own scheduling, which `act` would replace by flushing
+  // every effect before the next key.
+  const scope = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const acting = scope.IS_REACT_ACT_ENVIRONMENT;
+  scope.IS_REACT_ACT_ENVIRONMENT = false;
+  onTestFinished(() => {
+    scope.IS_REACT_ACT_ENVIRONMENT = acting;
+  });
+  // An owner that keeps each text as its state at once, as a Match row and
+  // the Formula page do, and announces each render it commits.
+  const commits: ((value: string) => void)[] = [];
+  const committed = () => new Promise<string>((done) => commits.push(done));
+  let set: (value: string) => void = () => {};
+  function Owner() {
+    const [value, setValue] = useState("a");
+    set = setValue;
+    useLayoutEffect(() => {
+      for (const commit of commits.splice(0)) commit(value);
+    }, [value]);
+    return <MatchExpressionInput value={value} onChange={setValue} />;
+  }
+  const mounted = render(<Owner />);
   const editor = EditorView.findFromDOM(
-    mounted.container.querySelector(".cm-editor")!,
+    mounted.container.querySelector<HTMLElement>('[role="textbox"]')!,
   )!;
   const type = (text: string) =>
     editor.dispatch({
@@ -68,14 +87,15 @@ it("keeps what the user typed when the owner gives back an older text it sent", 
       selection: { anchor: editor.state.doc.length + text.length },
       userEvent: "input.type",
     });
+  const echo = committed();
   type("b");
+  expect(await echo).toBe("ab");
+  const next = committed();
   type("c");
-  // The owner's render of the first edit lands after the second.
-  act(() => mounted.rerender(field("ab")));
+  expect(await next).toBe("abc");
   expect(editor.state.doc.toString()).toBe("abc");
   expect(editor.state.selection.main.head).toBe(3);
-  act(() => mounted.rerender(field("abc")));
   // A text of the owner's own replaces the field's.
-  act(() => mounted.rerender(field("x")));
+  act(() => set("x"));
   expect(editor.state.doc.toString()).toBe("x");
 });
