@@ -1,7 +1,7 @@
 <% bq(() => { %>
-[!note] Page <%= zt.pageLabel ? (zt.fileLink?.(zt.pageLabel) ?? zt.pageLabel) : "" %>
+[!note] <%= zt.pageLabel ? `Page [${zt.pageLabel}](${zt.backlink})` : `[Zotero](${zt.backlink})` %>
 
-<%= embed(zt.imgLink) %><%= zt.text %>
+<%= embed(zt.imgLink) %><%= zt.text %><%= zt.citation ? ` ${zt.citation}` : "" %>
 <% if (zt.comment) { %>
 
 <%= zt.comment %>

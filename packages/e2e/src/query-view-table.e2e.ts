@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { ATTACHMENTS, ITEMS, LIBRARIES, NOTES } from "@zotlit/scripts/fixture";
 
+import {
+  annotationOpenKeys,
+  annotationOpenSubpath,
+} from "./annotation-open-subpath.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
   annotationAttachment,
@@ -241,12 +245,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )!;
     expect(anchored, "an Annotation has a PDF page").toBeDefined();
     expect(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const proto=Object.getPrototypeOf(app.workspace.getMostRecentLeaf());const native=proto.setEphemeralState;let subpath=null;proto.setEphemeralState=function(state){if(typeof state?.subpath==='string')subpath=state.subpath;return native.call(this,state);};try{${pointer(link("annotation", anchored.indexedKey), "auxclick", MIDDLE_CLICK)}return await until('the PDF opens at the Annotation',()=>subpath,10000);}finally{proto.setEphemeralState=native;}})()`,
+      JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}${annotationOpenSubpath(pointer(link("annotation", anchored.indexedKey), "auxclick", MIDDLE_CLICK))}})()`,
+        ),
       ),
-    ).toBe(
-      `#page=${(anchored.values.pageIndex as number) + 1}&zt-annotation=${anchored.indexedKey}`,
+    ).toEqual(
+      annotationOpenKeys({
+        page: (anchored.values.pageIndex as number) + 1,
+        annotation: anchored.indexedKey,
+        attachment: annotationAttachment.key,
+      }),
     );
 
     await obEval(

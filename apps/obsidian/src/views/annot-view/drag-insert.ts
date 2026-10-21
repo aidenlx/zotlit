@@ -17,6 +17,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import { captureInsertion } from "./async-insert";
+import type { Placement } from "./async-insert";
 
 const logger = getLogger(["views", "annot-view"]);
 const SOURCE_TAG = "application/x-zotlit-annotation";
@@ -33,7 +34,7 @@ interface AsyncInsertDeps {
   notify: (message: string | DocumentFragment) => void;
 }
 
-type InsertionTarget = ReturnType<typeof captureInsertion>;
+export type InsertionTarget = ReturnType<typeof captureInsertion>;
 
 function fallbackText(annotation: AnnotationRecord): string {
   const key = parseIndexedKey(annotation.key);
@@ -44,16 +45,24 @@ function fallbackText(annotation: AnnotationRecord): string {
   );
 }
 
-async function prepareAndCommit(
-  deps: AsyncInsertDeps,
+/**
+ * Render `annotation` through its note's template and commit it to `target`:
+ * the fallback text where the template cannot render, the notices of an
+ * Excerpt Image summary or a profile error. Shared by every asynchronous
+ * annotation insert: the card menu, a drop, and the Annotation Suggester.
+ * Whatever lands is placed by `placement`. Answers whether text landed.
+ */
+export async function prepareAndCommit(
+  deps: Pick<AsyncInsertDeps, "app" | "noteFeature" | "notify">,
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;
     target: InsertionTarget;
     notePath: string;
+    placement?: Placement;
   },
-): Promise<void> {
-  const { annotation, snapshot, target, notePath } = options;
+): Promise<boolean> {
+  const { annotation, snapshot, target, notePath, placement } = options;
   try {
     const result = await deps.noteFeature.prepareAnnotationInsert({
       annotation,
@@ -64,11 +73,11 @@ async function prepareAndCommit(
       valid: target.valid,
     });
     if (!result && target.valid()) {
-      if (target.commit(fallbackText(annotation)))
-        deps.notify(m.annot_view_drag_unavailable());
-      return;
+      const landed = target.commit(fallbackText(annotation), placement);
+      if (landed) deps.notify(m.annot_view_drag_unavailable());
+      return landed;
     }
-    if (!result || !target.commit(result.text)) return;
+    if (!result || !target.commit(result.text, placement)) return false;
     const { summary } = result;
     if (summary.zotero || summary.unchecked || summary.unavailable)
       deps.notify(
@@ -77,22 +86,23 @@ async function prepareAndCommit(
           notRefreshed: summary.notRefreshed ?? 0,
         }),
       );
+    return true;
   } catch (error) {
-    if (target.signal.aborted || !target.valid()) return;
+    if (target.signal.aborted || !target.valid()) return false;
     if (error instanceof ProfileAnnotationError) {
       deps.notify(
         error.diagnostic.code === "unknown-literature-note-profile"
           ? profileRecoveryNotice(deps.app, error.diagnostic)
           : error.message,
       );
-      target.commit(annotation.text ?? annotation.key);
-      return;
+      return target.commit(annotation.text ?? annotation.key, placement);
     }
     logger.warn("Annotation insert failed", {
       annotationKey: annotation.key,
       error,
     });
     deps.notify(m.annot_view_insert_failed());
+    return false;
   }
 }
 
@@ -137,16 +147,13 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
         const current = getInsertionEditor(deps.app);
         return current?.editor === editor && current.file === info.file;
       },
+      workspace,
     });
     using cleanup = new DisposableStack();
     cleanup.defer(() => {
       if (pending === target) pending = null;
     });
     pending = target;
-    const changed = workspace.on("active-leaf-change", () => {
-      if (!target.valid()) target.cancel();
-    });
-    cleanup.defer(() => workspace.offref(changed));
     await prepareAndCommit(deps, {
       annotation,
       snapshot,
@@ -273,17 +280,11 @@ async function insertDrop(
     info,
     range: { from: position, to: position },
     isCurrent: () => info.file === file && info.editor === editor,
+    workspace: deps.app.workspace,
   });
   options.current(target);
   using cleanup = new DisposableStack();
   cleanup.defer(() => options.settled(target));
-  const validate = () => {
-    if (!target.valid()) target.cancel();
-  };
-  const activeChanged = deps.app.workspace.on("active-leaf-change", validate);
-  cleanup.defer(() => deps.app.workspace.offref(activeChanged));
-  const layoutChanged = deps.app.workspace.on("layout-change", validate);
-  cleanup.defer(() => deps.app.workspace.offref(layoutChanged));
   await prepareAndCommit(deps, {
     annotation: options.annotation,
     snapshot: options.snapshot,

@@ -9,6 +9,14 @@
 export const COMMENT_FORMATS = ["b", "i", "sub", "sup"] as const;
 export type CommentFormat = (typeof COMMENT_FORMATS)[number];
 
+/**
+ * The regular expression source of one tag of {@link COMMENT_FORMATS},
+ * opening or closing, to match without regard to case: the only markup in
+ * Zotero's annotation text and comment. Any other angle bracket, as in
+ * `p < 0.05`, is text.
+ */
+export const COMMENT_TAG_SOURCE = `</?(?:${COMMENT_FORMATS.join("|")})>`;
+
 /** One matched tag pair, in document offsets. */
 export interface FormatSpan {
   format: CommentFormat;

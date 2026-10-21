@@ -1,10 +1,7 @@
 import { Menu, TFile, TFolder } from "@mock/obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createObsidianAttachmentReader,
-  openAttachments,
-} from "@/lib/attachment-open";
+import { openAttachments } from "@/lib/attachment-open";
 import { fileMenuHandler as handlerFor } from "@/services/__fixtures__/file-menu";
 import {
   inProcessReadsService,
@@ -23,10 +20,6 @@ vi.mock("./resolve", async (importOriginal) => ({
 vi.mock("@/lib/attachment-open", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/attachment-open")>()),
   openAttachments: vi.fn(),
-  createObsidianAttachmentReader: vi.fn(() => ({
-    icon: "file-text",
-    open: vi.fn(),
-  })),
 }));
 
 /** Item ABCD2345 with two stored PDFs. */
@@ -48,11 +41,6 @@ beforeEach(() => {
   stack = new AsyncDisposableStack();
   vi.mocked(toObsidianOpenableAttachments).mockReset();
   vi.mocked(openAttachments).mockReset();
-  vi.mocked(createObsidianAttachmentReader).mockReset();
-  vi.mocked(createObsidianAttachmentReader).mockImplementation(() => ({
-    icon: "file-text",
-    open: vi.fn(),
-  }));
 });
 
 afterEach(() => stack.disposeAsync());
@@ -174,17 +162,14 @@ describe("Literature Note attachment-open file menu", () => {
    * `evt.currentTarget` is nulled once dispatch ends, which for an async
    * `onClick` happens at the very `await` this handler carries — before the
    * picker opens. The box is read before that gap and carried through it.
-   * Exercises the real `openAttachments` / `createObsidianAttachmentReader`
-   * pair (not the module-level mocks) so the regression is caught end to end.
+   * Exercises the real `openAttachments` (not the module-level mock) so the
+   * regression is caught end to end.
    */
   it("shows the picker at the button's own box for a keyboard click, after the async database read", async () => {
     const actual = await vi.importActual<
       typeof import("@/lib/attachment-open")
     >("@/lib/attachment-open");
     vi.mocked(openAttachments).mockImplementation(actual.openAttachments);
-    vi.mocked(createObsidianAttachmentReader).mockImplementation(
-      actual.createObsidianAttachmentReader,
-    );
     vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
       { indexedKey: "ATCH1", label: "Alpha.pdf" },
       { indexedKey: "ATCH2", label: "Beta.pdf" },

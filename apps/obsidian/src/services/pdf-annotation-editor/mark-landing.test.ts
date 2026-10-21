@@ -66,6 +66,7 @@ function landing(
     anchor: {
       page: anchor.page ?? null,
       annotation: anchor.annotation ?? null,
+      attachment: null,
     },
     attachment,
     read,

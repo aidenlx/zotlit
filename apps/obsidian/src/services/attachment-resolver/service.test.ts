@@ -1,18 +1,10 @@
-import { Effect, Stream } from "effect";
 import { expect, it, vi } from "vitest";
 
 import type { AttachmentWithParentKey } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
-import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import {
-  inProcessReadsService,
-  memoryOpener,
-} from "@/services/zotero-reads/test-utils";
-
-import { AttachmentResolver, buildPathIndex } from "./service";
+import { DATA_DIR, nextAnnouncement, resolverHarness } from "./__fixtures__";
+import type { ResolverHarnessOptions } from "./__fixtures__";
+import { buildPathIndex } from "./service";
 import type { AttachmentResolution } from "./service";
 
 // The Fixture's own attachment rows are the oracle: the same item ids, keys and
@@ -20,7 +12,6 @@ import type { AttachmentResolution } from "./service";
 // from it deliberately and say so where they are seeded — the base-directory
 // row, which the Fixture has no equivalent of, and the standalone row.
 // @see packages/scripts/lib/fixture/spec.ts — `ATTACHMENTS`
-const DATA_DIR = "/fixture/zotero-data";
 const VAULT_DIR = "/fixture/zt-fixture-vault";
 const LINKED_FILES_DIR = "/fixture/linked-files";
 const BASE_ATTACHMENT_DIR = "/fixture/base-attachments";
@@ -123,6 +114,64 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
   ]);
 });
 
+// The lookup a caller holding a key needs — a `zotero://open` link, a card, a
+// row — names an Attachment by its key, never by a path.
+it("looks an Attachment up by its Indexed Key, with its file and its openable verdict", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { baseAttachmentPath: null });
+
+  expect(
+    ["RGRPDF24", "HTMLSNAP", "LINKURL2", "IANPDF25", "ZZZZZZZZ"].map((key) =>
+      resolver.lookup(key),
+    ),
+  ).toEqual([
+    {
+      ...ROUGIER,
+      absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
+    },
+    {
+      kind: "resolved",
+      serverID: null,
+      attachmentKey: "HTMLSNAP",
+      itemKey: "SAKIMA22",
+      openable: false,
+      absolutePath: `${DATA_DIR}/storage/HTMLSNAP/sakimas-song.html`,
+    },
+    // A web link names no file.
+    { kind: "unresolved" },
+    // A base-directory row names none while the base pref is unset.
+    { kind: "unresolved" },
+    { kind: "unresolved" },
+  ]);
+});
+
+it("looks a group-library Attachment up by its group's Indexed Key alone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, {
+    rows: `
+      insert into libraries (libraryID, type) values (1, 'user'), (2, 'group');
+      insert into groups (groupID, libraryID, name)
+        values (4200309, 2, 'Shared Reading');
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values
+          (30, 2, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 2, 'RGRGRUP9'),
+          (31, 1, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 2, 'RUGIERG9');
+      insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+        values (30, 31, 0, 'application/pdf', 'storage:shared.pdf');
+    `,
+  });
+
+  expect(resolver.lookup("RGRGRUP9g4200309")).toEqual({
+    kind: "resolved",
+    serverID: null,
+    attachmentKey: "RGRGRUP9g4200309",
+    itemKey: "RUGIERG9g4200309",
+    openable: true,
+    absolutePath: `${DATA_DIR}/storage/RGRGRUP9/shared.pdf`,
+  });
+  expect(resolver.lookup("RGRGRUP9")).toEqual({ kind: "unresolved" });
+});
+
 it("leaves a base-directory attachment unresolved while the base pref is unset", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver } = await setup(stack, { baseAttachmentPath: null });
@@ -208,6 +257,62 @@ it("prefers the personal library, then the lowest item ID, when several attachme
   );
 });
 
+// Two Attachments of one file, as Zotero allows: the path answers one of them,
+// and a caller that already knows which one it opened says so.
+const SHARED_FILE_ROWS = `
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (40, 2, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RGREARL8'),
+      (41, 1, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RUGIERE8'),
+      (46, 1, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RUGIER24'),
+      (47, 2, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RGRPDF24'),
+      (21, 2, '2025-02-20 12:00:00', '2025-02-20 12:00:00', 1, 'PDFSTR22'),
+      (20, 1, '2025-02-20 12:00:00', '2025-02-20 12:00:00', 1, 'SAKIMA22');
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values
+      (40, 41, 2, 'application/pdf', '${VAULT_DIR}/attachments/rougier-2014.pdf'),
+      (47, 46, 2, 'application/pdf', '${VAULT_DIR}/attachments/rougier-2014.pdf'),
+      (21, 20, 0, 'application/pdf', 'storage:sakimas-song.pdf');
+`;
+
+it("answers the Attachment a shared file's path does not choose by its own key", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { rows: SHARED_FILE_ROWS });
+
+  expect(resolver.lookup("RGRPDF24")).toEqual({
+    ...ROUGIER,
+    absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
+  });
+});
+
+it("resolves a shared file to the Attachment the opener named", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { rows: SHARED_FILE_ROWS });
+  const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
+
+  expect(resolver.resolve(path, { attachmentKey: "RGRPDF24" })).toEqual(
+    ROUGIER,
+  );
+  expect(resolver.resolve(path)).toMatchObject({ attachmentKey: "RGREARL8" });
+});
+
+// A name left over from an earlier open must not rename the file now shown.
+it("resolves by the path alone when the named Attachment keeps another file", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { rows: SHARED_FILE_ROWS });
+
+  expect(
+    resolver.resolve(`${VAULT_DIR}/attachments/rougier-2014.pdf`, {
+      attachmentKey: "PDFSTR22",
+    }),
+  ).toMatchObject({ attachmentKey: "RGREARL8" });
+  expect(
+    resolver.resolve(`${VAULT_DIR}/attachments/rougier-2014.pdf`, {
+      attachmentKey: "ZZZZZZZZ",
+    }),
+  ).toMatchObject({ attachmentKey: "RGREARL8" });
+});
+
 it("reports each file several attachments name, with the one it kept and the ones it dropped", () => {
   const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
   const { index, collisions } = buildPathIndex(
@@ -288,6 +393,7 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
   await expect.poll(() => reads.state).toBe("degraded");
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
+  expect(resolver.lookup("RGRPDF24")).toEqual({ kind: "pending" });
 
   // The database recovers: the build it was waiting on lands and says so.
   const announced = nextAnnouncement(resolver);
@@ -295,6 +401,38 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
   await announced;
 
   expect(resolver.resolve(path)).toEqual(ROUGIER);
+});
+
+// `indexed` is what a caller waits on to know lookups answer for real; waiting
+// on it must not be what builds the index, or it could not tell a warmed
+// resolver from one nobody asked.
+it("settles indexed once the first index lands, and builds nothing itself", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver, queries } = await setup(stack, { prime: false });
+  // Every build asks the query client for the index, as it starts.
+  const builds = vi.spyOn(queries, "ask");
+
+  const indexed = resolver.indexed;
+  expect(builds).not.toHaveBeenCalled();
+
+  resolver.warm();
+  expect(builds).toHaveBeenCalledOnce();
+  await indexed;
+  expect(resolver.lookup("RGRPDF24")).toMatchObject({ kind: "resolved" });
+});
+
+it("builds the first index when warmed, before any lookup", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { prime: false });
+
+  const announced = nextAnnouncement(resolver);
+  resolver.warm();
+  await announced;
+
+  expect(resolver.lookup("RGRPDF24")).toEqual({
+    ...ROUGIER,
+    absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
+  });
 });
 
 it("announces the first index to a caller that was told pending", async () => {
@@ -398,16 +536,6 @@ it("rebuilds after the resolved Zotero paths changed", async () => {
   });
 });
 
-/** Settles on the next `resolutions-changed`. */
-function nextAnnouncement(resolver: AttachmentResolver): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  const off = resolver.on("resolutions-changed", () => {
-    off();
-    resolve();
-  });
-  return promise;
-}
-
 /** A `linked_file` row of the shape `getAttachmentPage` returns. */
 function linkedAttachment({
   itemID,
@@ -438,112 +566,10 @@ function linkedAttachment({
   };
 }
 
-interface SetupOptions {
-  platform?: NodeJS.Platform;
-  baseAttachmentPath?: string | null;
-  /** The rows each database open holds, in open order; `null` fails that open. */
-  seeds?: (string | null)[];
-  rows?: string;
-  /** Build the first index before the test runs. @default true */
-  prime?: boolean;
-}
-
-async function setup(stack: AsyncDisposableStack, options: SetupOptions = {}) {
-  const seeds = options.seeds ?? [options.rows ?? FIXTURE_ROWS];
-  const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
-  let held: PromiseWithResolvers<void> | null = null;
-  let waiting = false;
-  let failing = false;
-  let failures = 0;
-  const reads = stack.use(
-    inProcessReadsService(open, {
-      wrap: (client) => ({
-        ...client,
-        AttachmentPathIndex: ((
-          ...args: Parameters<typeof client.AttachmentPathIndex>
-        ) =>
-          Stream.unwrap(
-            Effect.promise(async () => {
-              if (held !== null) {
-                waiting = true;
-                await held.promise;
-              }
-              if (failing) {
-                failures += 1;
-                return Stream.fail(
-                  new DbUnavailable({ message: "the read failed" }),
-                ) as Stream.Stream<unknown, unknown>;
-              }
-              return client.AttachmentPathIndex(...args) as Stream.Stream<
-                unknown,
-                unknown
-              >;
-            }),
-          )) as typeof client.AttachmentPathIndex,
-      }),
-    }),
-  );
-  // Settle the lazy adapter's first source event before testing index events.
-  // A missing source is left unopened for the failure scenario below.
-  if (seeds[0] !== null) {
-    const { reads: initial } = await reads.ready;
-    await Effect.runPromise(initial.Libraries({}));
-    await vi.waitFor(() => {
-      if (reads.state !== "ready")
-        throw new Error(`reads state is ${reads.state}, not ready`);
-    });
-  }
-  let now = Temporal.Now.instant();
-  const queries = stack.use(new QueryClientService({ now: () => now }));
-
-  const prefEvents = createNanoEvents<ZoteroPrefEvents>();
-  const zoteroPref = {
-    dataDir: DATA_DIR,
-    baseAttachmentPath: options.baseAttachmentPath ?? null,
-    on: <K extends keyof ZoteroPrefEvents>(event: K, cb: ZoteroPrefEvents[K]) =>
-      prefEvents.on(event, cb),
-  };
-
-  const resolver = new AttachmentResolver({
-    reads,
-    queries,
-    zoteroPref,
-    platform: options.platform ?? "linux",
-  });
-  stack.use(resolver);
-  await resolver.ready;
-  if (options.prime ?? true) {
-    const announced = nextAnnouncement(resolver);
-    resolver.resolve("/");
-    await announced;
-  }
-  return {
-    resolver,
-    reads,
-    zoteroPref,
-    prefEvents,
-    /** Makes every later path index read fail, until set back. */
-    failReads: (on: boolean) => {
-      failing = on;
-    },
-    /** How many path index reads failed. */
-    get failures() {
-      return failures;
-    },
-    /** Moves the failure cooldown clock forward from the real time. */
-    advance: (seconds: number) => {
-      now = now.add({ seconds });
-    },
-    /** Holds the next path index read until `release`. */
-    gate: () => {
-      held = Promise.withResolvers<void>();
-      const gated = held;
-      return {
-        get waiting() {
-          return waiting;
-        },
-        release: () => gated.resolve(),
-      };
-    },
-  };
+/** The resolver over {@link FIXTURE_ROWS}, unless the case seeds its own. */
+function setup(
+  stack: AsyncDisposableStack,
+  options: ResolverHarnessOptions = {},
+) {
+  return resolverHarness(stack, { rows: FIXTURE_ROWS, ...options });
 }

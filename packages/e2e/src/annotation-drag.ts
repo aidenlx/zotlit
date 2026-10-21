@@ -153,6 +153,13 @@ export async function verifyAnnotationDrag(
     ) as string;
     expect(text).toContain("![[zotlit-excerpt-");
     expect(text.split("FDRFQ7C2")).toHaveLength(2);
+    // The one mention of the Annotation is its Durable Annotation Link.
+    expect(text).toContain(
+      "Page [2](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)",
+    );
+    // The default template cites the Rougier paper, at the page, after the quote.
+    expect(text).toContain(" [@rougierTenSimpleRules2014, {p. 2}]");
+    expect(text).not.toContain("file://");
     // The callout stands as its own block, even where the drop splits a line.
     const prefix = "LEFT RIGHT".slice(0, capture.directPosition);
     const suffix = "LEFT RIGHT".slice(capture.directPosition);

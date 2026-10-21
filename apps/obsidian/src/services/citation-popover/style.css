@@ -10,6 +10,13 @@
   max-height: min(60vh, 420px);
 }
 
+/* A popover that holds one status line alone — an item or an annotation it
+   cannot show — has no action row to make room for, so it fits the line
+   rather than stretching one sentence across Obsidian's 450px. */
+:where(.zt-citation-popover-content):has(> [role="status"]:only-child) {
+  width: fit-content;
+}
+
 /* The action row sits on the side of its own entry the pointer came from: the
    popover's placement decides which, and each block reads it off the class the
    popover stamps. A popover above the target keeps DOM order, which puts the

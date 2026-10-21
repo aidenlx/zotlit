@@ -143,11 +143,20 @@ export async function verifyAnnotationInsert(
       if (mode === "escape" || mode === "switch" || mode === "close") {
         expect(text).toBe("before TARGET after");
       } else if (mode === "disabled") {
-        expect(text).toContain("zt-annotation=FDRFQ7C2");
+        // The placeholder points back with the Durable Annotation Link.
+        expect(text).toContain(
+          "[Zotero](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)",
+        );
+        expect(text).not.toContain("file://");
         expect(text).not.toContain("![[");
       } else {
         expect(text).toContain("![[");
         expect(text).toContain("zotlit-excerpt-");
+        // The default template cites the Rougier paper, at the Annotation's
+        // page, after the embedded excerpt.
+        expect(text).toMatch(
+          /\]\] \[@rougierTenSimpleRules2014, \{p\. \d+\}\]/,
+        );
         expect(text.split("zotlit-excerpt-")).toHaveLength(2);
         expect(
           await obEvalUntil(

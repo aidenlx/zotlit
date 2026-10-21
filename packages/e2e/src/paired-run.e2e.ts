@@ -7230,7 +7230,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
+          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
           { expected: "true" },
         ),
       ).toBe(true);
@@ -7302,7 +7302,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `String(${note}.editor.getValue().includes('> [!note]')&&${note}.editor.getValue().includes('zt-annotation=${key}'))`,
+          `String(${note}.editor.getValue().includes('> [!note]')&&/zotero:\\/\\/open\\/library\\/items\\/\\w+\\?annotation=${key}\\b/.test(${note}.editor.getValue()))`,
           { expected: "true" },
         ),
       ).toBe(true);

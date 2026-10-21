@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defaults } from "@/services/settings/schema";
 
 import {
+  annotationHoverIntent,
   citationHoverIntent,
   hoverEditingMode,
   hoverPreferences,
@@ -150,5 +151,74 @@ describe("hoverEditingMode", () => {
     expect(hoverEditingMode({ surface: "editor", editorMode: "source" })).toBe(
       "source",
     );
+  });
+});
+
+describe("annotationHoverIntent", () => {
+  /** Obsidian's Page preview row for ZotLit citations, as one hover reads it. */
+  const pagePreview = (requiresMod: boolean) => () => requiresMod;
+
+  it("shows the annotation popover under the Citation Popover", () => {
+    expect(
+      annotationHoverIntent(gesture(), hover(), pagePreview(true)),
+    ).toEqual({ kind: "popover" });
+  });
+
+  it("shows nothing while the Hover action is off", () => {
+    expect(
+      annotationHoverIntent(
+        gesture(),
+        hover({ action: "off" }),
+        pagePreview(false),
+      ),
+    ).toEqual({ kind: "nothing", reason: "hover-off" });
+  });
+
+  it("holds a mode whose Require Mod is on back until Mod is held, under the Citation Popover", () => {
+    expect(
+      annotationHoverIntent(
+        gesture({ mode: "source" }),
+        hover(),
+        pagePreview(false),
+      ),
+    ).toEqual({ kind: "nothing", reason: "needs-mod" });
+    expect(
+      annotationHoverIntent(
+        gesture({ mode: "source", mod: true }),
+        hover(),
+        pagePreview(false),
+      ),
+    ).toEqual({ kind: "popover" });
+  });
+
+  // A link names no note to preview, so Page Preview answers with the popover,
+  // gated as Obsidian's Page preview settings gate a citation's preview.
+  it("follows Obsidian's Page preview row under Page Preview, not the Require Mod toggles", () => {
+    const action = hover({ action: "page-preview" });
+    // Reading view's Require Mod is off; the Page preview row asks for Mod.
+    expect(annotationHoverIntent(gesture(), action, pagePreview(true))).toEqual(
+      { kind: "nothing", reason: "needs-mod" },
+    );
+    expect(
+      annotationHoverIntent(gesture({ mod: true }), action, pagePreview(true)),
+    ).toEqual({ kind: "popover" });
+    // Source mode's Require Mod is on; the Page preview row does not ask.
+    expect(
+      annotationHoverIntent(
+        gesture({ mode: "source" }),
+        action,
+        pagePreview(false),
+      ),
+    ).toEqual({ kind: "popover" });
+  });
+
+  it("ignores a pen or a finger", () => {
+    expect(
+      annotationHoverIntent(
+        gesture({ pointerType: "pen" }),
+        hover(),
+        pagePreview(false),
+      ),
+    ).toEqual({ kind: "nothing", reason: "not-a-mouse" });
   });
 });

@@ -36,7 +36,8 @@ import { createCitationPopoverActions } from "./actions";
 import { citationPopoverBlocks } from "./blocks";
 import type { CitationPopoverBlock } from "./blocks";
 import { CitationPopoverContent } from "./content";
-import { CitationHoverPopover } from "./popover";
+import { HoverVisits } from "./visits";
+import type { HoverVisit } from "./visits";
 
 const logger = getLogger("citation-popover");
 
@@ -74,13 +75,13 @@ export interface WorkHoverRequest extends Pick<
 
 type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
 
-interface PopoverVisit {
-  popover: CitationHoverPopover;
-  window: Window;
-  subscriptions: DisposableStack;
+/** What one hovered target's popover reads and shows. */
+interface CitationVisitState {
   reading: AbortController | null;
   content: ReactNode;
 }
+
+type PopoverVisit = HoverVisit<CitationVisitState>;
 
 /**
  * Shows what a hovered citation cites: each work's formatted bibliography entry
@@ -100,7 +101,10 @@ interface PopoverVisit {
  */
 export class CitationPopover extends Service {
   readonly #deps;
-  readonly #visits = new Map<HoverParent, PopoverVisit>();
+  readonly #visits = new HoverVisits<CitationVisitState>(() => ({
+    reading: null,
+    content: null,
+  }));
   #closed = false;
   ready: Promise<void>;
 
@@ -114,69 +118,49 @@ export class CitationPopover extends Service {
     await using stack = new AsyncDisposableStack();
     stack.defer(() => {
       this.#closed = true;
-      for (const { popover } of this.#visits.values()) popover.hide();
+      this.#visits.hideAll();
     });
     this.commit(stack.move());
   }
 
   show(request: CitationHoverRequest): void {
-    this.#show(request);
+    void this.#show(request);
   }
 
-  showWork(request: WorkHoverRequest): void {
-    this.#show(request);
+  /**
+   * @returns settles once the hover's first read has drawn, or has been
+   *   dropped because the pointer moved on or the popover hid. A hover needs
+   *   not wait on it.
+   */
+  showWork(request: WorkHoverRequest): Promise<void> {
+    return this.#show(request);
   }
 
   /** Closes the owner's visit, including a card still waiting to open. */
   hide(parent: HoverParent, targetEl?: HTMLElement): void {
-    const popover = this.#visits.get(parent)?.popover;
-    if (popover && (!targetEl || popover.targetEl === targetEl)) popover.hide();
+    this.#visits.hide(parent, targetEl);
   }
 
-  #show(request: PopoverRequest): void {
-    if (this.#closed) return;
+  #show(request: PopoverRequest): Promise<void> {
+    if (this.#closed) return Promise.resolve();
     const deps = this.#deps;
-    const { hoverParent, targetEl } = request;
-    let visit = this.#visits.get(hoverParent);
-    if (visit && visit.window !== targetEl.win) {
-      visit.popover.hide();
-      visit = undefined;
-    }
-    if (!visit) {
-      const popover = new CitationHoverPopover(hoverParent, targetEl);
-      const opened: PopoverVisit = {
-        popover,
-        window: targetEl.win,
-        subscriptions: new DisposableStack(),
-        reading: null,
-        content: null,
-      };
-      this.#visits.set(hoverParent, opened);
-      popover.register(() => {
-        opened.reading?.abort();
-        opened.subscriptions.dispose();
-        this.#visits.delete(hoverParent);
-      });
-      visit = opened;
-    } else {
-      visit.reading?.abort();
-      visit.subscriptions.dispose();
-      visit.subscriptions = new DisposableStack();
-      // Clear the old work and its actions before moving the card.
-      visit.content = null;
-      visit.popover.render(null);
-      visit.popover.retarget(targetEl);
-    }
-    const currentVisit = visit;
-    const { popover, subscriptions } = visit;
-    const draw = (): void => {
-      currentVisit.reading?.abort();
+    const currentVisit = this.#visits.open(
+      request.hoverParent,
+      request.targetEl,
+    );
+    const { popover, subscriptions, state } = currentVisit;
+    subscriptions.defer(() => state.reading?.abort());
+    const read = (): Promise<void> => {
+      state.reading?.abort();
       const reading = new AbortController();
-      currentVisit.reading = reading;
-      void fill(deps, currentVisit, {
+      state.reading = reading;
+      return fill(deps, currentVisit, {
         request,
         signal: reading.signal,
       });
+    };
+    const draw = (): void => {
+      void read();
     };
     subscriptions.defer(deps.bibliographyRender.on("invalidated", draw));
     if (!("work" in request) || request.work.kind === "citekey") {
@@ -209,7 +193,7 @@ export class CitationPopover extends Service {
         ),
       );
     }
-    draw();
+    return read();
   }
 }
 
@@ -252,7 +236,7 @@ async function fill(
     return;
   }
   if (signal.aborted) return;
-  if (read.unavailable === "database" && visit.content) {
+  if (read.unavailable === "database" && visit.state.content) {
     showFailure(visit);
     return;
   }
@@ -303,7 +287,7 @@ async function fill(
     hide: () => popover.hide(),
     switchProfile: (path) => requestProfileSwitch(deps.app, path),
   });
-  visit.content = (
+  visit.state.content = (
     <CitationPopoverContent
       blocks={blocks}
       note={note}
@@ -313,7 +297,7 @@ async function fill(
       unavailable={unavailable}
     />
   );
-  const shown = popover.render(visit.content);
+  const shown = popover.render(visit.state.content);
   logger.debug("Citation popover entries read", {
     path: "sourcePath" in request ? request.sourcePath : undefined,
     blocks: blocks.length,
@@ -516,7 +500,7 @@ function showFailure(visit: PopoverVisit): void {
       <div role="status" data-citation-lookup-status="failed">
         {m.citation_popover_database_unavailable()}
       </div>
-      {visit.content}
+      {visit.state.content}
     </>,
   );
 }

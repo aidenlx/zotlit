@@ -57,6 +57,7 @@ export {
 } from "./queries/item-ref";
 export {
   ANNOTATION_ANCHOR_KEY,
+  ATTACHMENT_ANCHOR_KEY,
   formatAnnotationFragment,
   formatAnnotationSubpath,
   parseAnnotationSubpath,
@@ -76,6 +77,8 @@ export {
   annotationOpenUri,
   attachmentOpenUri,
   itemSelectUri,
+  parseAnnotationOpenUri,
+  type AnnotationOpenUriOptions,
 } from "./lib/zt-uri";
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {

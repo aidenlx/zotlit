@@ -1007,9 +1007,11 @@ describe("createNote", () => {
       embed: markdown.includes("!["),
       disabledMessage: markdown.includes(m.excerpt_image_import_disabled()),
       unavailableMessage: markdown.includes(m.excerpt_image_unavailable()),
-      pdfLink: markdown.includes(
-        "file:///zotero/storage/RGRPDF24/paper.pdf#page=1&zt-annotation=",
+      // The placeholder names its Annotation by the Durable Annotation Link.
+      sourceLink: markdown.includes(
+        "[Zotero](zotero://open/library/items/RGRPDF24?annotation=",
       ),
+      fileLink: markdown.includes("file://"),
     };
   }
 
@@ -1018,7 +1020,8 @@ describe("createNote", () => {
     wikiEmbed: false,
     embed: false,
     [message]: true,
-    pdfLink: true,
+    sourceLink: true,
+    fileLink: false,
   });
   const notified = (...summaries: ExcerptSummary[]) => ({
     noticesAtCreate: summaries,
@@ -1200,7 +1203,10 @@ describe("createNote", () => {
       expect(r.current).toContain("User introduction");
       expect(r.current).toContain("User conclusion");
       expect(r.current).toContain(m.excerpt_image_unavailable());
-      expect(r.current).toContain("file:///zotero/storage/RGRPDF24/paper.pdf");
+      expect(r.current).toContain(
+        "[Zotero](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=1)",
+      );
+      expect(r.current).not.toContain("file://");
       expect(r.current).not.toContain("zotlit-excerpt-");
       expect(r.notices).toEqual([{ zotero: 0, unchecked: 0, unavailable: 2 }]);
     },

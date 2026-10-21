@@ -353,7 +353,7 @@ async function mount(
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     literatureNotes,
-    readers,
+    opener: readers,
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});

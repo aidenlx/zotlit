@@ -1,5 +1,4 @@
 import { getLanguage, Plugin, requestUrl, View } from "obsidian";
-import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import { handlerCheckedFlags, printableCliHandler } from "@/lib/cli-rejection";
@@ -20,10 +19,7 @@ import { addAnnotationHistoryActions } from "./services/annotation-repository/ac
 import type { HistorySurface } from "./services/annotation-repository/actions";
 import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
-import {
-  addAttachmentOpenActions,
-  createPdfReader,
-} from "./services/attachment-open/actions";
+import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
@@ -66,13 +62,17 @@ import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
+import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
 import {
   citationPresentationFileMenu,
   registerCitationPresentation,
 } from "./views/citation-presentation/register";
-import { registerCitationSuggest } from "./views/citation-suggest/register";
+import {
+  registerAnnotationSuggest,
+  registerCitationSuggest,
+} from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
@@ -87,7 +87,6 @@ import {
   registerQueryFileView,
 } from "./views/query-view/register";
 import { literatureNotes } from "./views/query-view/table-notes";
-import { tableReaders } from "./views/query-view/table-readers";
 import type { QueryViewDeps } from "./views/query-view/view";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
@@ -365,21 +364,14 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
-      settings: services.settings,
+      opener: services.targetOpener,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
       registerFileLinkCapture({
-        // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
-        vaultBasePath: (
-          this.app.vault.adapter as FileSystemAdapter
-        ).getBasePath(),
+        opener: services.targetOpener,
         attachments: services.attachmentResolver,
         settings: services.settings,
-        reader: createPdfReader({
-          app: this.app,
-          settings: services.settings,
-        }),
       }),
     );
     const updateAll = () =>
@@ -420,6 +412,22 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
       useLedger: services.useLedger,
     });
+    registerAnnotationSuggest(this, {
+      app: this.app,
+      query: services.query,
+      annotations: services.annotationRepository,
+      noteFeature: services.noteFeature,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      useLedger: services.useLedger,
+      notify: (message) => void new BaseNotice(message),
+      commentRenderer: (owner, sourcePath) =>
+        createCommentRenderer({
+          app: this.app,
+          component: owner,
+          getSourcePath: () => sourcePath,
+        }),
+    });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
@@ -430,6 +438,7 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       settings: services.settings,
       zoteroPref: services.zoteroPref,
+      opener: services.targetOpener,
       showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
     });
 
@@ -449,6 +458,7 @@ export default class ZotLitPlugin extends Plugin {
         noteIndex: services.noteIndex,
         batchImport: services.batchImport,
         liveUpdate: services.localServer,
+        opener: services.targetOpener,
       }),
     );
 
@@ -479,12 +489,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         zoteroReads: services.zoteroReads,
       }),
-      readers: tableReaders({
-        app: this.app,
-        reads: services.zoteroReads,
-        zoteroPref: services.zoteroPref,
-        settings: services.settings,
-      }),
+      opener: services.targetOpener,
     };
     registerAnnotView(this, {
       ...queryViewDeps,
@@ -527,9 +532,9 @@ export default class ZotLitPlugin extends Plugin {
         noteIndex: services.noteIndex,
         reads: services.zoteroReads,
         zoteroPref: services.zoteroPref,
-        settings: services.settings,
         citationLookup: services.citationLookup,
         useLedger: services.useLedger,
+        opener: services.targetOpener,
         notify: (message) => new BaseNotice(message),
       }),
       lookup: services.itemLookup,

@@ -11,7 +11,9 @@ import { isLanguageTag } from "@/lib/language-tag";
 import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import { defaults } from "@/services/settings/schema";
 import type { HoverAction } from "@/services/settings/schema";
+import { annotationTriggerError } from "@/views/citation-suggest/annotation-trigger";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
@@ -51,6 +53,17 @@ export function citationsPageItems(
             key: "citation.show-citekey-in-suggester",
           },
         },
+        {
+          id: "settings_citation_annotation_trigger",
+          name: m.settings_citation_annotation_trigger_name(),
+          desc: m.settings_citation_annotation_trigger_desc(),
+          control: {
+            type: "text",
+            key: "citation.annotation-trigger",
+            placeholder: defaults["citation.annotation-trigger"],
+            validate: annotationTriggerError,
+          },
+        },
       ],
     },
     {
@@ -69,6 +82,12 @@ export function citationsPageItems(
           name: m.settings_citation_wikilink_citations_name(),
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
+        },
+        {
+          id: "settings_citation_annotation_links",
+          name: m.settings_citation_annotation_links_name(),
+          desc: m.settings_citation_annotation_links_desc(),
+          control: { type: "toggle", key: "citation.annotation-links" },
         },
       ],
     },
@@ -101,6 +120,14 @@ export function citationsPageItems(
           name: m.settings_citation_open_as_links_name(),
           desc: m.settings_citation_open_as_links_desc(),
           control: { type: "toggle", key: "citation.open-as-links" },
+        },
+        {
+          id: "settings_citation_open_annotation_links",
+          name: m.settings_citation_open_annotation_links_name(),
+          desc: m.settings_citation_open_annotation_links_desc({
+            setting: m.settings_reader_open_file_links_name(),
+          }),
+          control: { type: "toggle", key: "citation.open-annotation-links" },
         },
       ],
     },

@@ -19,7 +19,11 @@ import {
   createPdfReader,
   resolveLiteratureNoteAttachments,
 } from "./actions";
-import type { AttachmentOpenDeps, AttachmentOpenLookupDeps } from "./actions";
+import type {
+  AttachmentOpenDeps,
+  AttachmentOpenLookupDeps,
+  PdfReaderDeps,
+} from "./actions";
 
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
@@ -233,7 +237,7 @@ describe("open-pdf command", () => {
 describe("createPdfReader", () => {
   /** The hook the reader hands back to its caller once a file is on screen. */
   function onOpenedOf(deps: AttachmentOpenLookupDeps): () => void {
-    createPdfReader(deps);
+    createPdfReader(deps as unknown as PdfReaderDeps);
     const [, options] = vi.mocked(createObsidianAttachmentReader).mock
       .calls[0]!;
     const onOpened = options?.onOpened;

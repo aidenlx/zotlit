@@ -101,6 +101,44 @@ export function citationHoverIntent(
   return { kind: "popover", citekeys };
 }
 
+export type AnnotationHoverIntent =
+  | { kind: "popover" }
+  | { kind: "nothing"; reason: HoverSuppression };
+
+/**
+ * What one hovered Durable Annotation Link shows: the annotation popover, or
+ * nothing. The one Hover Action governs it as it governs a citation.
+ *
+ * A link names no Literature Note, so Page Preview has no page to preview and
+ * answers with the popover. Its Mod gate is then the one a citation's preview
+ * has: Obsidian's Page preview row for ZotLit citations, which
+ * `pagePreviewRequiresMod` reads. Under the Citation Popover the Require Mod
+ * toggle of the mode gates it, as it gates a citation.
+ *
+ * @param pagePreviewRequiresMod whether that Page preview row asks for Mod,
+ *   read only under Page Preview.
+ */
+export function annotationHoverIntent(
+  gesture: CitationHoverGesture,
+  hover: HoverPreferences,
+  pagePreviewRequiresMod: () => boolean,
+): AnnotationHoverIntent {
+  if (hover.action === "off") {
+    return { kind: "nothing", reason: "hover-off" };
+  }
+  if (gesture.pointerType !== undefined && gesture.pointerType !== "mouse") {
+    return { kind: "nothing", reason: "not-a-mouse" };
+  }
+  const requiresMod =
+    hover.action === "page-preview"
+      ? pagePreviewRequiresMod()
+      : hover.requireMod[gesture.mode];
+  if (requiresMod && !gesture.mod) {
+    return { kind: "nothing", reason: "needs-mod" };
+  }
+  return { kind: "popover" };
+}
+
 /** The editing mode one surface's hovers are gated by. */
 export function hoverEditingMode({
   surface,

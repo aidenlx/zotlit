@@ -4,13 +4,16 @@ import { Keymap, Menu, SuggestModal } from "obsidian";
 import type { App, PaneType } from "obsidian";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { attachmentOpenUri } from "@zotlit/db";
+import { ATTACHMENT_ANCHOR_KEY, attachmentOpenUri } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtBox, showMenuAtButton } from "@/lib/menu";
 import type { MenuAnchor } from "@/lib/menu";
-import { BaseNotice } from "@/lib/notice";
+import type {
+  ReaderOutcome,
+  TargetReader,
+} from "@/services/attachment-open/open-target";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { ZoteroOpenableAttachment } from "@/services/citation-index/service";
 import { menuSections, raiseMenu } from "@/services/menu-events";
@@ -27,7 +30,7 @@ export interface AttachmentReader<T extends OpenableRow> {
   /** Icon a picker row gets. */
   icon: string;
   /** Open one Attachment, honoring a Mod-click/Mod-Enter's new-pane request. */
-  open: (attachment: T, pane: PaneType | boolean) => void | Promise<void>;
+  open: (attachment: T, pane: PaneType | boolean) => unknown;
   /**
    * Nothing qualified. Omit to leave the click inert — a reader whose caller
    * already hides its own control over an empty list (the Zotero readers)
@@ -41,7 +44,10 @@ export function withFixedPane<T extends OpenableRow>(
   reader: AttachmentReader<T>,
   pane: PaneType | boolean,
 ): AttachmentReader<T> {
-  return { ...reader, open: (attachment) => reader.open(attachment, pane) };
+  return {
+    ...reader,
+    open: (attachment) => reader.open(attachment, pane),
+  };
 }
 
 /**
@@ -135,7 +141,8 @@ export const zoteroAttachmentReader: AttachmentReader<ZoteroOpenableAttachment> 
  * path absent from `fileMap`, or (via Obsidian's external-file fall-through) a
  * `file:`-prefixed path `lstat` finds nothing at — so that `null` is the one
  * signal a Zotero library moving or deleting an Attachment between the read
- * that offered it and the click needs to be caught by.
+ * that offered it and the click needs to be caught by. The reader reports it
+ * and shows nothing: the caller decides what a missing file means.
  *
  * @param onOpened runs once the file is on screen, and only then — a missing
  * file leaves it unrun, so a caller can hang follow-up UI off a real open.
@@ -143,28 +150,42 @@ export const zoteroAttachmentReader: AttachmentReader<ZoteroOpenableAttachment> 
 export function createObsidianAttachmentReader(
   app: App,
   { onOpened }: { onOpened?: () => void } = {},
-): AttachmentReader<ObsidianOpenableAttachment> {
+): TargetReader {
   return {
-    icon: "file-text",
-    onEmpty: () => new BaseNotice(m.notice_no_pdf_attachment()),
-    async open(attachment, pane) {
+    async open(attachment, pane): Promise<ReaderOutcome> {
       const file = app.vault.getFileByPath(attachment.openPath);
       if (!file) {
-        logger.warn("Obsidian did not resolve the Attachment's open path", {
+        logger.debug("Obsidian did not resolve the Attachment's open path", {
           openPath: attachment.openPath,
         });
-        new BaseNotice(m.notice_pdf_file_missing());
-        return;
+        return "file-missing";
       }
       // Obsidian's PDF view reads `#page=N` and the rest of its subpath
-      // grammar off `eState.subpath`; an absent subpath opens at the start.
-      const leaf = app.workspace.getLeaf(pane);
-      await (attachment.subpath
-        ? leaf.openFile(file, { eState: { subpath: attachment.subpath } })
-        : leaf.openFile(file));
+      // grammar off `eState.subpath`; an absent page opens at the start.
+      await app.workspace.getLeaf(pane).openFile(file, {
+        eState: { subpath: namingAttachment(attachment) },
+      });
       onOpened?.();
+      return "opened";
     },
   };
+}
+
+/**
+ * The subpath an open carries: where to land, and the Attachment it opens.
+ * Two Attachments can keep one file, and the PDF view's binding names its
+ * Attachment from this rather than from the path when the open names one.
+ * Appended rather than re-serialised, so the keys Obsidian reads by name keep
+ * the spelling they were written in.
+ *
+ * @see apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md
+ */
+function namingAttachment({
+  subpath,
+  indexedKey,
+}: ObsidianOpenableAttachment): string {
+  const named = `${ATTACHMENT_ANCHOR_KEY}=${encodeURIComponent(indexedKey)}`;
+  return subpath ? `${subpath}&${named}` : `#${named}`;
 }
 
 /**

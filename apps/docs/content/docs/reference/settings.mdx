@@ -213,16 +213,25 @@ Open this page from <SettingsPath page={m.settings_page_citations()} />.
 
 ### Citation suggestions
 
-| Label                                                      | Key                                  | Control | Default | Dependency                                                    | Storage |
-| ---------------------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_suggester_name()} />    | `citation.editor-suggester`          | Toggle  | On      | None                                                          | Synced  |
-| <UiLabel name={m.settings_citation_at_trigger_name()} />   | `citation.at-trigger`                | Toggle  | Off     | <UiLabel name={m.settings_citation_suggester_name()} /> is on | Synced  |
-| <UiLabel name={m.settings_citation_show_citekey_name()} /> | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                                          | Synced  |
+| Label                                                            | Key                                  | Control | Default | Dependency                                                    | Storage |
+| ---------------------------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_suggester_name()} />          | `citation.editor-suggester`          | Toggle  | On      | None                                                          | Synced  |
+| <UiLabel name={m.settings_citation_at_trigger_name()} />         | `citation.at-trigger`                | Toggle  | Off     | <UiLabel name={m.settings_citation_suggester_name()} /> is on | Synced  |
+| <UiLabel name={m.settings_citation_show_citekey_name()} />       | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                                          | Synced  |
+| <UiLabel name={m.settings_citation_annotation_trigger_name()} /> | `citation.annotation-trigger`        | Text    | `[>`    | None                                                          | Synced  |
 
 <Callout type="info">
   <UiLabel name={m.settings_citation_at_trigger_name()} /> is visible only when
   <UiLabel name={m.settings_citation_suggester_name()} /> is on.
 </Callout>
+
+<UiLabel name={m.settings_citation_annotation_trigger_name()} /> is the text
+that opens the annotation suggester. Leave it empty to turn the suggester off.
+It cannot contain spaces or `@`, and it cannot overlap the citation triggers
+`[@` and `【@` or Obsidian's link trigger `[[`: ZotLit rejects such a trigger
+with <UiLabel name={m.settings_citation_annotation_trigger_citation()} />. See
+[Quote an annotation while
+typing](/docs/how-to/insert-citations#quote-annotations).
 
 ### Citation sources
 
@@ -230,6 +239,7 @@ Open this page from <SettingsPath page={m.settings_page_citations()} />.
 | ---------------------------------------------------------------- | ----------------------------- | ------- | ------- | ---------- | ------- |
 | <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | `citation.pandoc-citations`   | Toggle  | On      | None       | Synced  |
 | <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | `citation.wikilink-citations` | Toggle  | Off     | None       | Synced  |
+| <UiLabel name={m.settings_citation_annotation_links_name()} />   | `citation.annotation-links`   | Toggle  | On      | None       | Synced  |
 
 <UiLabel name={m.settings_citation_pandoc_citations_name()} />: Include Pandoc
 citations such as `@doe2024` in the references sidebar and ZotLit's in-text
@@ -241,6 +251,16 @@ in-text features. Heading links, block links, and invalid citation fragments
 stay as links. This setting does not change export.
 
 Both settings can be off. ZotLit's internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <SettingsPath page={m.settings_page_advanced()} />.
+
+<UiLabel name={m.settings_citation_annotation_links_name()} />: Let ZotLit
+handle the durable annotation links in your notes, the `zotero://open` links
+that name one annotation. Hovering one shows the annotation, as
+<UiLabel name={m.settings_citation_hover_action_name()} /> sets, and selecting
+one can open it in Obsidian. When off, ZotLit shows nothing on hover in any
+mode, and a selected link opens in Zotero, as it does without ZotLit. The
+setting does not change the links ZotLit writes or the
+<UiLabel name={m.settings_citation_annotation_trigger_name()} />. See [Zotero
+open links](/docs/reference/protocol-links#zotero-open-links).
 
 ### Graph view
 
@@ -261,10 +281,11 @@ view](/docs/how-to/explore-citations-in-graph).
 
 ### In-text citations
 
-| Label                                                        | Key                       | Control | Default | Dependency                                                                  | Storage |
-| ------------------------------------------------------------ | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_show_formatted_name()} /> | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
-| <UiLabel name={m.settings_citation_open_as_links_name()} />  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
+| Label                                                               | Key                              | Control | Default | Dependency                                                                                                                              | Storage |
+| ------------------------------------------------------------------- | -------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_show_formatted_name()} />        | `citation.show-formatted`        | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text                                                             | Synced  |
+| <UiLabel name={m.settings_citation_open_as_links_name()} />         | `citation.open-as-links`         | Toggle  | Off     | Active citation source                                                                                                                  | Synced  |
+| <UiLabel name={m.settings_citation_open_annotation_links_name()} /> | `citation.open-annotation-links` | Toggle  | On      | <UiLabel name={m.settings_citation_annotation_links_name()} /> is on; <UiLabel name={m.settings_reader_open_file_links_name()} /> is on | Synced  |
 
 <UiLabel name={m.settings_citation_show_formatted_name()} />: Show citations in
 Live Preview and reading view with the selected citation and references style.
@@ -278,6 +299,18 @@ so you can edit it.
 
 The navigation setting also controls the four open-under-cursor commands. <UiLabel name={m.settings_citation_hover_action_name()} /> owns hover on its own. While this setting is off, Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
 
+<UiLabel name={m.settings_citation_open_annotation_links_name()} />: Open the
+PDF in Obsidian with the annotation selected when you select a durable
+annotation link in a note. When off, the link opens in Zotero, and hovering it
+still shows the annotation. It takes effect only while
+<UiLabel name={m.settings_citation_annotation_links_name()} /> and
+<SettingsPath
+  page={m.settings_page_reader()}
+  setting={m.settings_reader_open_file_links_name()}
+/>
+are on. The page label on an annotation view card is not a link in a note, so it
+keeps opening the PDF in Obsidian.
+
 ### Hover
 
 | Label                                                        | Key                     | Control                                                                                                                                                                                                 | Default                                                       | Dependency                                                                                                                 | Storage |
@@ -290,6 +323,8 @@ citation or literature note link shows. Page preview follows the Page preview
 plugin settings.
 
 One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the bibliography entry of every cited item. <UiLabel name={m.settings_citation_hover_action_page_preview()} /> shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. <UiLabel name={m.settings_citation_hover_action_off()} /> adds no ZotLit hover result.
+
+A durable annotation link shows its annotation under both <UiLabel name={m.settings_citation_hover_action_popover()} /> and <UiLabel name={m.settings_citation_hover_action_page_preview()} />. Under <UiLabel name={m.settings_citation_hover_action_page_preview()} />, it waits for Ctrl (Windows) or Command (macOS) exactly when the Page preview plugin's <UiLabel name={m.hover_source_citekey()} /> row asks for it, as a citation does.
 
 #### Require modifier key
 

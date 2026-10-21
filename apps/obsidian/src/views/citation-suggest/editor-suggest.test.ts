@@ -1,3 +1,4 @@
+import { Text } from "@codemirror/state";
 import type { App, Editor, EditorSuggestContext, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -15,10 +16,10 @@ import {
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
+import { placeInsertion } from "@/views/annot-view/async-insert";
 
 import {
   CitationEditorSuggest,
-  padCitationInsert,
   resolveCitationInsert,
   resolveCitationTrigger,
 } from "./editor-suggest";
@@ -426,62 +427,29 @@ describe("resolveCitationTrigger", () => {
   });
 });
 
-describe("padCitationInsert", () => {
-  it("ends a bracketed citation at its closing bracket, with the cursor after it", () => {
-    for (const next of ["", ".", " "]) {
-      expect(padCitationInsert("[@smith2024]", { next })).toEqual({
-        text: "[@smith2024]",
-        cursor: 12,
-      });
-    }
-  });
+describe("a placed citation and the triggers", () => {
+  /** The line after `citation` lands at the end of `line`, and the cursor ch. */
+  const placeAtEnd = (line: string, citation: string) => {
+    const { insert, cursor } = placeInsertion(citation, {
+      kind: "citation",
+      doc: Text.of([line]),
+      range: { from: line.length, to: line.length },
+    });
+    return { line: `${line}${insert}`, cursor: line.length + cursor };
+  };
 
   it("keeps an unpadded bracketed citation from re-matching either trigger", () => {
-    const line = "see [@smith2024]";
+    const placed = placeAtEnd("see ", "[@smith2024]");
+    expect(placed.line).toBe("see [@smith2024]");
     expect(
-      resolveCitationTrigger(line, line.length, { atTrigger: true }),
+      resolveCitationTrigger(placed.line, placed.cursor, { atTrigger: true }),
     ).toBeNull();
   });
 
-  it("appends the space before a non-space character", () => {
-    expect(padCitationInsert("@smith2024", { next: "." })).toEqual({
-      text: "@smith2024 ",
-      cursor: 11,
-    });
-  });
-
-  it("reuses a space already at the insert position, moving the cursor past it", () => {
-    expect(padCitationInsert("@smith2024", { next: " " })).toEqual({
-      text: "@smith2024",
-      cursor: 11,
-    });
-  });
-
-  it("parts the citation from a word or punctuation before it with one space, the cursor following it", () => {
-    expect(
-      padCitationInsert("(Matuschak and Nielsen 2019)", {
-        previous: ".",
-        next: "",
-      }),
-    ).toEqual({ text: " (Matuschak and Nielsen 2019) ", cursor: 30 });
-    expect(
-      padCitationInsert("[@smith2024]", { previous: "e", next: "." }),
-    ).toEqual({ text: " [@smith2024]", cursor: 13 });
-  });
-
-  it("adds no space before at a line start, after a space, or inside an opening bracket or quote", () => {
-    for (const previous of ["", " ", "\t", "(", "[", "“", '"']) {
-      expect(padCitationInsert("[@smith2024]", { previous, next: "" })).toEqual(
-        { text: "[@smith2024]", cursor: 12 },
-      );
-    }
-  });
-
   it("keeps the padded alternate format from re-matching the At Trigger", () => {
-    const padded = padCitationInsert("@smith2024", { next: "" });
-    const line = `see ${padded.text}`;
+    const placed = placeAtEnd("see ", "@smith2024");
     expect(
-      resolveCitationTrigger(line, 4 + padded.cursor, { atTrigger: true }),
+      resolveCitationTrigger(placed.line, placed.cursor, { atTrigger: true }),
     ).toBeNull();
   });
 });

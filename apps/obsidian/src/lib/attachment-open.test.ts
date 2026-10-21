@@ -183,7 +183,9 @@ describe("createObsidianAttachmentReader", () => {
     return { app, openFile };
   }
 
-  it("opens the resolved vault file once the disk file is confirmed", async () => {
+  // Two Attachments can keep one file, so every open names the one it means,
+  // and the reader binds that one rather than the one the path chooses.
+  it("opens the resolved vault file, naming the Attachment it opens", async () => {
     const absolutePath = join(dir, "Doe 2024.pdf");
     await writeFile(absolutePath, "");
     const file = new TFile();
@@ -198,12 +200,14 @@ describe("createObsidianAttachmentReader", () => {
       absolutePath,
     };
 
-    await reader.open(attachment, false);
+    await expect(reader.open(attachment, false)).resolves.toBe("opened");
 
-    expect(openFile).toHaveBeenCalledWith(file);
+    expect(openFile).toHaveBeenCalledWith(file, {
+      eState: { subpath: "#zt-attachment=ATCH2345" },
+    });
   });
 
-  it("lands on the page a subpath names", async () => {
+  it("lands on the page a subpath names, naming the Attachment beside it", async () => {
     const absolutePath = join(dir, "Doe 2024.pdf");
     await writeFile(absolutePath, "");
     const file = new TFile();
@@ -222,23 +226,20 @@ describe("createObsidianAttachmentReader", () => {
     );
 
     expect(openFile).toHaveBeenCalledWith(file, {
-      eState: { subpath: "#page=7" },
+      eState: { subpath: "#page=7&zt-attachment=ATCH2345" },
     });
   });
 
-  it("does not open when Obsidian resolves no file for the open path — the missing-file signal, whether the path never existed or Zotero moved it away since the read", async () => {
-    const absolutePath = join(dir, "Doe 2024.pdf");
-    await writeFile(absolutePath, "");
+  // Whoever opened it decides what a missing file means — Zotero opens the
+  // Attachment in its stead, or the caller says the file is gone — so the
+  // reader only reports it.
+  it("reports a missing file and opens nothing when Obsidian resolves no file for the open path, whether the path never existed or Zotero moved it away since the read", async () => {
     const { app, openFile } = fakeApp(() => null);
     const reader = createObsidianAttachmentReader(app);
-    const attachment: ObsidianOpenableAttachment = {
-      indexedKey: "ATCH2345",
-      label: "Doe 2024.pdf",
-      openPath: "papers/Doe 2024.pdf",
-      absolutePath,
-    };
 
-    await reader.open(attachment, false);
+    await expect(reader.open(row("Doe 2024.pdf"), false)).resolves.toBe(
+      "file-missing",
+    );
 
     expect(openFile).not.toHaveBeenCalled();
   });

@@ -177,6 +177,19 @@ export class Component {
 
   registerEvent(_ref: unknown): void {}
 
+  /** As Obsidian's: the listener goes when the component unloads. */
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+    this.register(() => element.removeEventListener(type, callback, options));
+  }
+
   addChild<T extends Component>(child: T): T {
     this.#children.push(child);
     if (this.#loaded) child.load();
@@ -426,9 +439,11 @@ export class TFolder extends TAbstractFile {
 
 /**
  * Minimal WorkspaceLeaf shell. Only the prototype matters here: ZotLit patches
- * `setEphemeralState` on it to read an Annotation Anchor off an open.
+ * `setViewState` and `setEphemeralState` on it to read an Annotation Anchor
+ * off an open.
  */
 export class WorkspaceLeaf {
+  async setViewState(_viewState: unknown, _eState?: unknown): Promise<void> {}
   setEphemeralState(_state: unknown): void {}
 }
 
@@ -693,6 +708,11 @@ export abstract class EditorSuggest<T> {
   context: EditorSuggestContext | null = null;
   limit = 0;
   readonly app: App;
+  /** The popup's container; a bare element outside a DOM environment. */
+  suggestEl: HTMLElement =
+    typeof document === "undefined"
+      ? ({ addClass: () => {} } as unknown as HTMLElement)
+      : document.createElement("div");
 
   constructor(app: App) {
     this.app = app;

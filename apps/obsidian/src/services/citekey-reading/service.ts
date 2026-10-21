@@ -2,8 +2,13 @@
 // citations show formatted in the reading view, navigate like links, and are
 // rewritten in place while Obsidian shows their section.
 
-import { MarkdownRenderChild, MarkdownView, setTooltip } from "obsidian";
-import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
+import { MarkdownRenderChild, setTooltip } from "obsidian";
+import type {
+  App,
+  MarkdownPostProcessorContext,
+  MarkdownView,
+  Plugin,
+} from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -11,6 +16,7 @@ import { renderProfileRecovery } from "@/lib/profile-recovery";
 import {
   LiveSections,
   isDraftMarkdown,
+  markdownViewOf,
   rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
@@ -451,13 +457,7 @@ export class CitekeyReading extends Service<void> {
    * of its own — belongs to none, and hover stays silent there.
    */
   #viewOf(element: HTMLElement): MarkdownView | null {
-    for (const leaf of this.#app.workspace.getLeavesOfType("markdown")) {
-      const { view } = leaf;
-      if (view instanceof MarkdownView && view.containerEl.contains(element)) {
-        return view;
-      }
-    }
-    return null;
+    return markdownViewOf(this.#app, element);
   }
 
   /** A reading view holds what a post-processor produced until it renders again. */

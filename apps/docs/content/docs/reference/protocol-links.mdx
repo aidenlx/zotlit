@@ -1,14 +1,17 @@
 ---
 title: "Protocol links"
-description: "Every obsidian://zotlit/* action, its parameters, and usage for scripting workflows."
+description: "Every obsidian://zotlit/* action and its parameters, and the Zotero open links ZotLit opens in Obsidian's reader."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 This page documents every `obsidian://zotlit/*` protocol action. These deep links allow ZotLit Companion, the Zotero add-on, and external tools such as scripts and launchers to trigger ZotLit operations in Obsidian.
+
+It also documents which `zotero://` links ZotLit opens in Obsidian's reader when you click them in a note. See [Zotero open links](#zotero-open-links).
 
 ## Common parameters
 
@@ -238,6 +241,42 @@ The PDF opens whether the file sits inside the vault or in Zotero's storage fold
 | `open-attachment`  |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
 
 `profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none. `paneType` belongs to the actions that put something on screen: `open`, `update`, `explore`, and `open-attachment`. Every other action ends in a notice or a confirmation modal rather than an opened pane, so it takes none.
+
+## Zotero open links [#zotero-open-links]
+
+Every annotation ZotLit writes into a note links back with its durable link. That link is Zotero's own open link, naming the attachment and the annotation by their Zotero keys:
+
+```
+zotero://open/library/items/<attachmentKey>?annotation=<annotationKey>&page=<pageLabel>
+```
+
+A group library has `groups/<groupID>` in place of `library`. `page` is the annotation's printed page label, and the link omits it when there is none. The template field is [`zt.backlink`](/docs/reference/templates/data#annotation-template).
+
+The link appears wherever ZotLit writes an annotation: <UiLabel name={m.annot_view_menu_insert()} /> on an annotation view card, a card dragged from the annotation view, a query block, or the Query View, and the default annotation template. The placeholder for an unavailable excerpt image links back the same way.
+
+### Opened in Obsidian [#zotero-open-links-captured]
+
+While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} />, <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_annotation_links_name()} />, and <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_open_annotation_links_name()} /> are on, which is the default, ZotLit opens a durable annotation link in Obsidian's reader. The PDF opens with the annotation selected and scrolled into view. This applies to a link clicked in Live Preview, in Reading view, or in a Properties value.
+
+When Zotero no longer has the annotation, the PDF opens on the annotation's page alone. If that annotation's page label differs from the PDF's page number, the page jump can miss.
+
+### Passed to Zotero [#zotero-open-links-passed]
+
+ZotLit hands the link to Zotero, unchanged, in these cases:
+
+| Case                                                                       | Result                                             |
+| -------------------------------------------------------------------------- | -------------------------------------------------- |
+| The PDF is not on this computer, or ZotLit does not know the attachment    | Zotero opens the annotation.                       |
+| <UiLabel name={m.settings_reader_open_file_links_name()} /> is off         | Zotero opens the annotation.                       |
+| <UiLabel name={m.settings_citation_annotation_links_name()} /> is off      | Zotero opens the annotation. Hover shows nothing.  |
+| <UiLabel name={m.settings_citation_open_annotation_links_name()} /> is off | Zotero opens the annotation. Hover still shows it. |
+| You right-click the link and choose **Open in default browser**            | Zotero opens the annotation.                       |
+| A `zotero://open` link with no `annotation` parameter                      | Zotero handles it. ZotLit never captures it.       |
+| A `zotero://select` link                                                   | Zotero handles it. ZotLit never captures it.       |
+
+### Older file links [#zotero-open-links-file-links]
+
+Notes written by an earlier ZotLit link an annotation to the attachment file instead, in the form `file:///…/paper.pdf#page=N&zt-annotation=<key>`. These links keep opening in Obsidian's reader on the annotation, as before. They hold the file path of the computer that wrote them, so they open nothing on a computer whose Zotero storage folder sits elsewhere. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian#file-links).
 
 ## See also
 

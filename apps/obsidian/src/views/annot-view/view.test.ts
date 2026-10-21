@@ -209,8 +209,9 @@ async function openSidebar(
       requestSaveLayout: () => Promise.resolve(),
       leftSplit: {},
       rightSplit: {},
+      getMostRecentLeaf: () => null,
     },
-    metadataCache: { on: () => ({}) },
+    metadataCache: { on: () => ({}), getFileCache: () => null },
   });
   const repository = emitter();
   const deps = {
@@ -233,7 +234,7 @@ async function openSidebar(
       readerTarget: null,
       on: () => () => {},
     },
-    pdfReaders: { on: () => () => {}, sessionForPath: () => null },
+    pdfReaders: { on: () => () => {}, sessionFor: () => null },
     query: { run, on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
