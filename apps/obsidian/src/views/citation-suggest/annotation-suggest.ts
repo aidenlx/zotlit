@@ -1,6 +1,6 @@
 // The Annotation Suggester: a trigger in the editor opens a search over the
 // annotations in Library Scope, beside the Citation Suggester.
-import { EditorSuggest } from "obsidian";
+import { Component, EditorSuggest } from "obsidian";
 import type {
   Editor,
   EditorPosition,
@@ -14,6 +14,7 @@ import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
   appendExcerptText,
   pageLocator,
@@ -28,11 +29,19 @@ import { resolveAnnotationTrigger } from "./annotation-trigger";
 export interface AnnotationSuggestDeps extends AnnotationInsertDeps {
   query: Pick<QueryService, "run">;
   settings: Pick<SettingsService, "current">;
+  /**
+   * The comment renderer every annotation surface shares, which draws a
+   * comment as the Markdown the note will hold. `owner` holds the rendered
+   * comments; links in them resolve against `sourcePath`.
+   */
+  commentRenderer: (owner: Component, sourcePath: string) => CommentRenderer;
 }
 
 export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
   readonly #deps: AnnotationSuggestDeps;
   #searchController?: AbortController;
+  /** Holds the comments the open popup's rows render; unloaded as it closes. */
+  #rows: { owner: Component; renderComment: CommentRenderer } | null = null;
 
   constructor(deps: AnnotationSuggestDeps) {
     super(deps.app);
@@ -86,11 +95,24 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
 
   override close(): void {
     this.#searchController?.abort();
+    this.#rows?.owner.unload();
+    this.#rows = null;
     super.close();
   }
 
   override renderSuggestion(hit: AnnotationHit, el: HTMLElement): void {
-    renderAnnotationHit(hit, el);
+    if (this.#rows === null) {
+      const owner = new Component();
+      owner.load();
+      this.#rows = {
+        owner,
+        renderComment: this.#deps.commentRenderer(
+          owner,
+          this.context?.file?.path ?? "",
+        ),
+      };
+    }
+    renderAnnotationHit(hit, el, this.#rows.renderComment);
   }
 
   override selectSuggestion(hit: AnnotationHit): void {
@@ -114,28 +136,35 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
 
 /**
  * One result: the quote with its color, the comment, the page and paper. The
- * quote and the comment are Zotero's stored rich text, drawn as the
- * Annotation View and the Annotation Popover draw an excerpt.
+ * quote is Zotero's stored rich text, drawn as the Annotation View and the
+ * Annotation Popover draw an excerpt; the comment goes through the comment
+ * renderer they share, so it reads as the Markdown the note will hold.
  */
-export function renderAnnotationHit(hit: AnnotationHit, el: HTMLElement): void {
+export function renderAnnotationHit(
+  hit: AnnotationHit,
+  el: HTMLElement,
+  renderComment: CommentRenderer,
+): void {
   el.addClass("zt:flex", "zt:gap-2");
   const swatch = el.createDiv({
     cls: "zt:mt-1 zt:w-1 zt:shrink-0 zt:self-stretch zt:rounded-sm zt:bg-(--zt-annot-color)",
   });
   if (hit.color) swatch.style.setProperty("--zt-annot-color", hit.color);
   const body = el.createDiv({ cls: "zt:min-w-0 zt:flex-1" });
-  const quote = hit.text ?? hit.comment;
-  if (quote) appendExcerptText(body, quote, "zt:m-0 zt:line-clamp-3");
-  else
+  if (hit.text) appendExcerptText(body, hit.text, "zt:m-0 zt:line-clamp-3");
+  if (hit.comment)
+    renderComment(
+      body.createDiv({
+        cls: hit.text
+          ? "zt:line-clamp-2 zt:text-sm zt:text-muted-foreground"
+          : "zt:line-clamp-3",
+      }),
+      hit.comment,
+    );
+  if (!hit.text && !hit.comment)
     body.createDiv({
       text: m.workbench_annotation_type({ type: hit.type ?? "" }),
     });
-  if (hit.text && hit.comment)
-    appendExcerptText(
-      body,
-      hit.comment,
-      "zt:m-0 zt:line-clamp-2 zt:text-sm zt:text-muted-foreground",
-    );
   const meta = [
     hit.pageLabel === null || hit.pageLabel === ""
       ? null
