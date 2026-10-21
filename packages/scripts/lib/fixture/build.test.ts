@@ -2005,6 +2005,8 @@ describe("the generated Obsidian vault", () => {
       "profile-examples/profile-import-replacement-v1.md",
       "profile-examples/profile-import-replacement-v2.md",
       "profile-examples/profile-import-unavailable-style.md",
+      "query-files/Annotation formulas.zotquery",
+      "query-files/Formula lab.zotquery",
       "query-files/Lab annotations.zotquery",
       "query-files/Lab overview.md",
       "query-files/Reading annotations.zotquery",
