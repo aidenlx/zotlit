@@ -307,6 +307,13 @@ describe("a one-line insertion", () => {
     );
   });
 
+  // A one-line template renders with the line break that ends its source.
+  it("drops the rendered text's own edge line breaks", () => {
+    expect(insertAt("As shown here", { at: 9, text: `${QUOTE}\n` })).toBe(
+      `As shown ${QUOTE} |here`,
+    );
+  });
+
   it("reads the text after it as the insert lands, not as it starts", () => {
     using held = holdAt("As shown [>q] here", { from: 9, to: 13 });
     // The space after the range goes while the text is prepared.

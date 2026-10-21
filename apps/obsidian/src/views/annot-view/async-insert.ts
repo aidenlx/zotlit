@@ -125,7 +125,7 @@ export function placeInsertion(
           : doc.sliceString(from - 1, from),
       next,
     });
-  if (!isBlockText(text)) return placeInline(text, next);
+  if (!isBlockText(text)) return placeInline(trimLineBreaks(text), next);
   const block = trimLineBreaks(text);
   const isBlank = (line: number) =>
     line < 1 || line > doc.lines || doc.line(line).text.trim() === "";
