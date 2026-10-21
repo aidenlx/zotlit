@@ -30,7 +30,7 @@ Run these from the repo root. `build` / `test` / `lint` go through turbo, which 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
-| `pnpm test`                       | `turbo run test`: Vitest in each package that defines a `test` script.                                                      |
+| `pnpm test`                       | `turbo run test` behind the Memory Gate: Vitest in each package that defines a `test` script.                              |
 | `pnpm lint` / `pnpm lint:fix`     | Type-aware `oxlint` over the whole tree after dependencies build. **A clean run is the typecheck.**                          |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
 | `pnpm review` / `pnpm review:fix` | Obsidian guideline scan of `apps/obsidian`, release-time only (see below).                                                  |
@@ -44,7 +44,7 @@ oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.
 ### Testing
 
 - **E2E-first:** A test in `packages/e2e` is the primary proof that a feature works. During development, iterate on typecheck and single test files, and walk the change through the running app (`/obsidian-debug`). When the walkthrough passes, encode it as an e2e test — the repeatable artifact of that proof.
-- **Final gate:** Run the affected End-to-end Run cases when the work is complete. `pnpm verify --release` runs the full suite for releases; run it yourself for changes to shared startup or lifecycle behavior across features, or an explicit full-run request. ZotLit Query CLI changes use `pnpm e2e:query`; other focused selections are described in `packages/e2e/AGENTS.md`. Prevent system sleep during desktop tests. The End-to-end Run tools take the desktop lock themselves; for a manual app session, run it under `pnpm desktop-lock -- <command>` (see `packages/e2e/AGENTS.md`).
+- **Final gate:** Run the affected End-to-end Run cases when the work is complete. `pnpm verify --release` runs the full suite for releases; run it yourself for changes to shared startup or lifecycle behavior across features, or an explicit full-run request. ZotLit Query CLI changes use `pnpm e2e:query`; other focused selections are described in `packages/e2e/AGENTS.md`. Prevent system sleep during desktop tests. The End-to-end Run tools take the Desktop Slot themselves; for a manual app session, run it under `pnpm desktop-slot run --for <duration> -- <command>`. Exit 75 means blocked at admission, not a test failure (see `packages/e2e/AGENTS.md`).
 - **Consumer suites:** A production change runs its package's full suite and the suites of the packages that consume it, not only the tests named for the change. A test elsewhere can read what the change touched, such as statement parameters.
 - **Writing a test:** Read [Testing strategy](policies/testing-strategy.md) before adding or changing a test: which tier, which mocks, and what earns a regression test.
 

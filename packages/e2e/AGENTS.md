@@ -45,14 +45,18 @@ The suite talks to Obsidian's CLI socket directly, so the `obsidian` command nee
 
 The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:dev`), never the production build: the Scope Case assertion reads `zotlit:library-scope`, a CLI command registered only under `__DEV__` and absent from production plugin bundles.
 
-## Desktop lock
+## Desktop Slot
 
-One process at a time drives the desktop Obsidian and its Paired Zotero, across all worktrees and sessions. `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker`, and `measure:query` take the desktop lock themselves and wait while another process holds it. A `pnpm e2e` run without a reachable Obsidian skips its tests without the lock. The waiter prints the holder's pid, command, and worktree.
+One process at a time drives the desktop Obsidian and its Paired Zotero, across all clones, worktrees, and sessions on the machine ([ADR 0077](../../docs/adr/0077-desktop-admission-is-an-exclusive-slot-plus-a-memory-gate.md)). `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker`, `measure:query`, the desktop step of `pnpm verify --release`, and `pnpm fixture open|dev` take the Desktop Slot themselves. A `pnpm e2e` run without a reachable Obsidian skips its tests without the slot. `pnpm desktop-slot --help` has the full contract; code: `packages/scripts/lib/desktop-slot.ts`.
 
-- The lock is `zotlit-desktop.lock` in the git common dir (`git rev-parse --git-common-dir`), shared by every worktree of the clone. A lock whose holder process is gone is taken over. The owner record holds the process start time from `ps`, so a holder whose pid the system gave to a new process also counts as gone.
-- The holder exports `ZOTLIT_DESKTOP_LOCK`; a ZotLit tool started under it reuses the lock.
-- For a manual session on the desktop app (an `/obsidian-debug` walk, a series of `git commit` runs), hold the lock with `pnpm desktop-lock -- <command>`. The exit code is the command's.
-- Code: `packages/scripts/lib/desktop-lock.ts`.
+- **Queue:** a waiter joins the Desktop Queue, first in, first out; only its head claims the slot. The waiter prints the holder and its position when they change and every 5 min. The next waiter clears the ticket of a dead waiter and takes over from a dead holder (pid gone, or its start time changed).
+- **Admission Deadline:** one deadline covers the queue, the slot, and the Memory Gate: 9 min by default, `--wait <duration>` for `pnpm desktop-slot run`, `ZOTLIT_DESKTOP_WAIT` for the other tools. At the deadline the waiter prints one block that names the holder and the waiters ahead, and exits 75; the Vitest process of `pnpm e2e` exits 75 too. Report it as blocked by the Desktop Slot, held by the process the block names, not as a test failure.
+- **Lease:** admission starts a Lease: `pnpm e2e` 20 min, `e2e:worker` 10 min, `measure:query` 2 h, and 30 min for both desktop runs of `pnpm verify --release`. `ZOTLIT_DESKTOP_LEASE=<duration>` overrides these defaults. A manual hold and `pnpm fixture open|dev` must state `--for <duration>`, up to 60 min. No Lease exceeds 2 h. When the Lease ends, the holder ends its own run and exits 76. The head waiter evicts a holder still alive 2 min after its Lease: SIGTERM to its process group, then SIGKILL.
+- **Nested reuse:** the holder exports `ZOTLIT_DESKTOP_SLOT`; a ZotLit tool started under it reuses the hold, inside the same Lease.
+- **Manual session:** wrap an `/obsidian-debug` walk or a series of `git commit` runs in `pnpm desktop-slot run --for <duration> -- <command>`. The command runs in its own process group, which the Lease ends. The exit code is the command's.
+- **Commands:** `pnpm desktop-slot status` shows the holder with its Lease end (and whether it is overdue), the waiters with their deadlines, and the Memory Gate's last start; `--json` prints it for scripts. `pnpm desktop-slot extend <duration>` moves the Lease end of the hold that `ZOTLIT_DESKTOP_SLOT` or `--token` names, only while no one waits. `pnpm desktop-slot evict <token|pid>` ends the current holder by the eviction path.
+- **Memory Gate:** after it claims the slot, a holder passes the Memory Gate: macOS memory pressure is normal, or Windows and Linux commit at most 1.25x physical memory, and 30 s have passed since the last admitted start. Root `pnpm test`, the Test step of `pnpm verify`, and a bare `vitest run` also pass it, once per top-level run; nested runs see `ZOTLIT_MEMORY_GATE_ADMITTED` and skip it. `ZOTLIT_MEMORY_GATE=off` skips the gate.
+- **State:** `/tmp/zotlit-desktop-<uid>/` (`%TEMP%\zotlit-desktop` on Windows), shared by every clone and cleared on reboot. `ZOTLIT_DESKTOP_DIR` overrides it.
 
 ## Isolation
 

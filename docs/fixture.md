@@ -162,7 +162,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 1. Open a finite Paired Run:
 
    ```sh
-   pnpm fixture open [scope-case] [--purge]
+   pnpm fixture open --for <duration> [scope-case] [--purge]
    ```
 
    The command builds the Obsidian and Zotero extensions in parallel. It then rebuilds the Fixture, synchronizes and opens the Development Vault, and starts Paired Zotero. This order puts the selected HTTP port in the profile before Zotero starts. For an existing Development Vault, it copies the generated `data.json` and reloads ZotLit. It stores the Fixture profile and data-directory Device Overrides in vault-scoped local storage, then verifies that ZotLit opened the Fixture database. It also verifies that the companion loaded in Zotero before it reports readiness. A successful command then exits and leaves both applications open.
@@ -170,7 +170,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 2. For a live development session, start a supervised Paired Run:
 
    ```sh
-   pnpm fixture dev [scope-case] [--purge]
+   pnpm fixture dev --for <duration> [scope-case] [--purge]
    ```
 
    This command keeps the Obsidian and Zotero watchers running after readiness. Press `Ctrl-C` to stop both watchers and Paired Zotero. The Development Vault stays open in Obsidian. If a watcher or Paired Zotero stops unexpectedly, the command stops the remaining processes and exits with an error.
@@ -190,13 +190,15 @@ The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavai
 
 The open and dev commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
+Both commands hold the Desktop Slot while they run, so they wait for an End-to-end Run or another manual session on the desktop Obsidian to finish. Each must state `--for <duration>`, the Lease of that hold, up to 60 min. When the Lease of `dev` ends, it stops both watchers and Paired Zotero and exits 76. Exit 75 means another holder kept the slot past the Admission Deadline; `pnpm desktop-slot status` names it.
+
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
 
 ### Trial the Pandoc export cases
 
 Use these cases to compare the built-in and native export workflows in one Paired Run:
 
-1. Start a clean Paired Run with `pnpm fixture open --purge`.
+1. Start a clean Paired Run with `pnpm fixture open --for 10m --purge`.
 2. In Obsidian, open **Settings → ZotLit → Citations → Formatting**. Under **Native Pandoc workflow**, select **Save integration files**. Save `zotlit-cite.lua` and `zotlit.yaml` in one workflow folder.
 3. In Paired Zotero, export the Items cited by `pandoc-export-success.md` as Better CSL JSON. Save the bibliography as `references.json`. Leave the Item cited by `pandoc-export-missing-bibliography.md` out of this file.
 4. Open each note in Obsidian and run **ZotLit: Export note with citations**. Record the output file or the complete failure message.
@@ -221,7 +223,7 @@ Keep Obsidian and Paired Zotero open during this trial. Save the outputs and fai
 The Zotero Local API stays shut until a command asks for it. Pass `--local-api` to `build`, `open`, or `dev`:
 
 ```sh
-pnpm fixture open --local-api
+pnpm fixture open --for 10m --local-api
 ```
 
 That build sets `extensions.zotero.httpServer.localAPI.enabled` to `true` and gives the Fixture profile a free Zotero HTTP port. Paired Zotero serves the API on that port, and ZotLit reads the same number back from the profile through its Device Override, so both applications name one port and the shipped `23119` stays free for the machine's own Zotero. The build and the ready report print the base URL.
@@ -231,7 +233,7 @@ Reads need no key. By default, a Paired Run with `--local-api` seeds one remembe
 Use the opt-out when the dialog is part of the test:
 
 ```sh
-pnpm fixture open --local-api --no-grant-local-api-writes
+pnpm fixture open --for 10m --local-api --no-grant-local-api-writes
 ```
 
 This form leaves Zotero without the Fixture key and invalidates the Development Vault's held record. The next user-initiated authorization opens Zotero's dialog.
@@ -243,7 +245,7 @@ Use this trial to measure both effects on one Fixture:
 1. Start a Paired Run with the API open, and record the Zotero HTTP port from the ready report:
 
    ```sh
-   pnpm fixture open --local-api --no-grant-local-api-writes
+   pnpm fixture open --for 10m --local-api --no-grant-local-api-writes
    ```
 
 2. Read from a terminal. Replace `<port>` with the reported port:
@@ -370,7 +372,7 @@ pnpm fixture build --vault-case fresh
 Name a Vault Case on a Paired Run:
 
 ```sh
-pnpm fixture open --vault-case upgrader
+pnpm fixture open --for 10m --vault-case upgrader
 ```
 
 Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. Every open seeds the case vault with the bundle from `apps/obsidian/dist-dev`, so a new dev build always reaches the vault. The `select` command changes only the Scope Case; rebuild to change the Vault Case.

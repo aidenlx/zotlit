@@ -15,7 +15,7 @@ export default defineConfig({
           name: "desktop",
           include: ["src/**/*.e2e.ts"],
           exclude: ["src/paired-run.e2e.ts"],
-          globalSetup: ["./src/desktop-lock-setup.ts"],
+          globalSetup: ["./src/desktop-slot-setup.ts"],
         },
       },
       {
@@ -23,8 +23,8 @@ export default defineConfig({
         test: {
           name: "paired",
           include: ["src/paired-run.e2e.ts"],
-          // The lock comes first: Paired Zotero starts only for its holder.
-          globalSetup: ["./src/desktop-lock-setup.ts", "./src/paired-setup.ts"],
+          // The slot comes first: Paired Zotero starts only for its holder.
+          globalSetup: ["./src/desktop-slot-setup.ts", "./src/paired-setup.ts"],
         },
       },
     ],

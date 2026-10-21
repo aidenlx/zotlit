@@ -12,11 +12,7 @@
     },
     "e2e": {
       "env": ["WEB_WORKBENCH_ENABLED"],
-      "passThroughEnv": [
-        "ZOTLIT_DESKTOP_LOCK",
-        "ZOTLIT_E2E_RESULTS",
-        "ZOTLIT_E2E_REQUIRED"
-      ]
+      "passThroughEnv": ["ZOTLIT_E2E_RESULTS", "ZOTLIT_E2E_REQUIRED"]
     }
   }
 }

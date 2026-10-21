@@ -1,6 +1,14 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalPassThroughEnv": ["AI_AGENT"],
+  "globalPassThroughEnv": [
+    "AI_AGENT",
+    "ZOTLIT_DESKTOP_DIR",
+    "ZOTLIT_DESKTOP_LEASE",
+    "ZOTLIT_DESKTOP_SLOT",
+    "ZOTLIT_DESKTOP_WAIT",
+    "ZOTLIT_MEMORY_GATE",
+    "ZOTLIT_MEMORY_GATE_ADMITTED"
+  ],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]

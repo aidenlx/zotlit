@@ -10,7 +10,17 @@
 // Format, lint and the generated-artifact checks always cover the whole tree.
 import { $ } from "zx";
 
+import {
+  MEMORY_GATE_ADMITTED_ENV,
+  passMemoryGateOrExit,
+} from "@zotlit/config/memory-gate";
+
 import { affectedBase } from "#affected-base";
+import {
+  acquireDesktopSlotOrExit,
+  automatedLease,
+  DEFAULT_LEASE_MS,
+} from "#desktop-slot";
 import { getWorkspaceRoot } from "#package-roots";
 
 const release = process.argv.includes("--release");
@@ -21,11 +31,8 @@ const base = release ? undefined : await affectedBase(root);
 // `--affected` selects the changed packages and their dependents since
 // TURBO_SCM_BASE. Without a base, every package.
 const scope = base ? ["--affected"] : [];
-const sh = $({
-  cwd: root,
-  stdio: "inherit",
-  env: base ? { ...process.env, TURBO_SCM_BASE: base } : process.env,
-});
+const env = base ? { ...process.env, TURBO_SCM_BASE: base } : process.env;
+const sh = $({ cwd: root, stdio: "inherit", env });
 
 await step("Format", () => sh`pnpm exec oxfmt --check`);
 
@@ -67,21 +74,45 @@ await step(
 // Each Vitest package runs its own worker pool, so a few packages at a time
 // keep a starved worker from tripping its wall-clock timeout. The hosted
 // runner has 4 vCPU: one package at a time there.
+// The step passes the Memory Gate once; each package's Vitest then skips it.
 await step("Test", async () => {
-  await sh`pnpm exec turbo run test ${scope} --concurrency=${ci ? 1 : 2}`;
-  await sh`pnpm test:eval-runtime`;
+  const admitted = await passMemoryGateOrExit();
+  const gated = sh({
+    env: admitted ? { ...env, [MEMORY_GATE_ADMITTED_ENV]: "1" } : env,
+  });
+  await gated`pnpm exec turbo run test ${scope} --concurrency=${ci ? 1 : 2}`;
+  await gated`pnpm test:eval-runtime`;
 });
 
 if (release) {
+  await desktopChecks();
+  await step("Obsidian guideline review", () => sh`pnpm review`);
+}
+
+/**
+ * One Desktop Slot hold covers both desktop runs: one wait in the Desktop
+ * Queue and one Memory Gate pass, which the nested runs reuse through the
+ * environment. At the Admission Deadline this exits 75, outside `step`.
+ */
+async function desktopChecks(): Promise<void> {
+  using _slot = ci
+    ? undefined
+    : await acquireDesktopSlotOrExit({
+        cwd: root,
+        command: "pnpm verify --release",
+        leaseMs: automatedLease(
+          DEFAULT_LEASE_MS.e2e + DEFAULT_LEASE_MS.e2eWorker,
+        ),
+      });
   await step("End-to-end Run", async () => {
     if (ci) {
       console.log("End-to-end Run is desktop-only and ran in pnpm release.");
       return;
     }
+    // The hold put its token and the Memory Gate mark in process.env.
     await sh({ env: { ...process.env, ZOTLIT_E2E_REQUIRED: "1" } })`pnpm e2e`;
-    await sh`pnpm e2e:worker`;
+    await sh({ env: { ...process.env } })`pnpm e2e:worker`;
   });
-  await step("Obsidian guideline review", () => sh`pnpm review`);
 }
 
 async function step(name: string, run: () => Promise<unknown>): Promise<void> {

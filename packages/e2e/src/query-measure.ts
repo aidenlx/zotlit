@@ -37,7 +37,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { acquireDesktopLock } from "@zotlit/scripts/desktop-lock";
+import {
+  acquireDesktopSlotOrExit,
+  automatedLease,
+  DEFAULT_LEASE_MS,
+  formatDuration,
+} from "@zotlit/scripts/desktop-slot";
 import {
   buildFixture,
   discardFixture,
@@ -418,7 +423,11 @@ if (!(await isObsidianReachable(workspaceRoot))) {
   );
   process.exit(1);
 }
-using _desktopLock = await acquireDesktopLock({ cwd: workspaceRoot });
+using _desktopSlot = await acquireDesktopSlotOrExit({
+  cwd: workspaceRoot,
+  command: "measure:query",
+  leaseMs: automatedLease(DEFAULT_LEASE_MS.measureQuery),
+});
 
 let vaultId = "";
 
@@ -1023,6 +1032,10 @@ const notes: string[] = [
   "Queries run in Electron utility processes. The measurement vault uses the E2E window setup: background throttling is disabled and focus is emulated without moving OS focus. Execution slices and encoding steps retain the spec's 16 ms p99 / 32 ms maximum limits. Renderer timer gaps (4 ms sampling) are an additional check against those limits. All limit=all runs write complete JSON files and return small receipts. These measurements include worker transfer and export publication. Fixture startup and initial search indexing finish before timing begins.",
 ];
 const measured = rawTiers.map((raw) => toTier(raw, notes));
+// The wall-clock time calibrates the measurement's Desktop Slot Lease.
+notes.push(
+  `Wall-clock duration: ${Temporal.Now.instant().since(startedAt).total("minutes").toFixed(1)} min, within a Desktop Slot Lease of ${formatDuration(_desktopSlot.owner.lease)}.`,
+);
 if (failure) {
   notes.push(
     `The run stopped early, in tier ${rawTiers.length} of ${tiers.length}: ${failure.message}`,

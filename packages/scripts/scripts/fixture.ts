@@ -2,6 +2,7 @@
 
 // Builds, re-scopes, stops, and discards the Fixture.
 
+import type { DesktopSlot } from "#desktop-slot";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import yargs from "yargs";
@@ -13,6 +14,15 @@ import {
   localBridgeOrigin,
 } from "@zotlit/workbench/bridge";
 
+import {
+  acquireDesktopSlotOrExit,
+  EXIT_LEASE_ENDED,
+  formatDuration,
+  KILL_AFTER_MS,
+  LeaseUsageError,
+  MANUAL_LEASE_CAP_MS,
+  parseManualLease,
+} from "#desktop-slot";
 import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import {
   buildFixture,
@@ -98,7 +108,46 @@ function pairedRunBuilder(y: Argv) {
       default: false,
     })
     .option("local-api", localApiOption)
-    .option("grant-local-api-writes", grantLocalApiWritesOption);
+    .option("grant-local-api-writes", grantLocalApiWritesOption)
+    .option("for", {
+      describe: `the Lease of the Desktop Slot this Paired Run holds, up to ${formatDuration(MANUAL_LEASE_CAP_MS)} (required), such as --for 30m; see pnpm desktop-slot --help`,
+      type: "string",
+    });
+}
+
+/**
+ * Hold the Desktop Slot for a Paired Run until this process exits. A missing
+ * or oversized `--for` exits 2. When the Lease of a live session ends, the
+ * session stops its watchers and Paired Zotero as on SIGTERM, then exits 76.
+ */
+async function holdDesktopSlot(
+  mode: "open" | "dev",
+  lease: string | undefined,
+): Promise<DesktopSlot> {
+  let leaseMs: number;
+  try {
+    leaseMs = parseManualLease(lease);
+  } catch (error) {
+    if (!(error instanceof LeaseUsageError)) throw error;
+    console.error(`fixture: ${error.message}`);
+    process.exit(2);
+  }
+  return await acquireDesktopSlotOrExit({
+    cwd: workspaceRoot,
+    command: `pnpm fixture ${mode}`,
+    leaseMs,
+    manual: true,
+    onLeaseEnd: (owner) => {
+      console.error(
+        `Desktop Slot: the Lease of ${formatDuration(owner.lease)} ended at ${owner.leaseEndsAt}; stopping the Paired Run (exit ${EXIT_LEASE_ENDED}).`,
+      );
+      process.exitCode = EXIT_LEASE_ENDED;
+      // The slot's own handler is one listener; a running session adds another.
+      if (process.listenerCount("SIGTERM") < 2) process.exit(EXIT_LEASE_ENDED);
+      process.emit("SIGTERM", "SIGTERM");
+      setTimeout(() => process.exit(EXIT_LEASE_ENDED), KILL_AFTER_MS).unref();
+    },
+  });
 }
 
 /**
@@ -231,6 +280,7 @@ const cli = yargs(hideBin(process.argv))
     "prepare and open a finite Paired Run",
     pairedRunBuilder,
     async (argv) => {
+      using _slot = await holdDesktopSlot("open", argv.for);
       await runPairedRun(
         {
           mode: "open",
@@ -249,6 +299,7 @@ const cli = yargs(hideBin(process.argv))
     "prepare and supervise a live Paired Run",
     pairedRunBuilder,
     async (argv) => {
+      using _slot = await holdDesktopSlot("dev", argv.for);
       await runPairedRun(
         {
           mode: "dev",

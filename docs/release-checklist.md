@@ -19,7 +19,7 @@ Do not repeat these by hand.
 2. Open a Paired Run with the Zotero Local API:
 
    ```sh
-   pnpm fixture open --local-api
+   pnpm fixture open --for 10m --local-api
    ```
 
    The ready report names the Development Vault and its id, the Live Updates port, the Zotero HTTP port, the Zotero RDP port, and the Zotero Local API base URL. The steps below write `<vault-id>`, `<port>`, and `<rdp-port>` for those values. Each one is chosen per run.

@@ -114,7 +114,7 @@ The two P9 caveats: `net.request` through `@electron/remote` carries the same Ch
 1. Start a Paired Run with the Zotero Local API open:
 
    ```sh
-   pnpm fixture open --local-api
+   pnpm fixture open --for 10m --local-api
    ```
 
    The command needs desktop Obsidian running with **Settings → General → Advanced → Command line interface** enabled. See [The Fixture](fixture.md).
