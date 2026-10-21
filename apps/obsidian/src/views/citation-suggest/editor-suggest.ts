@@ -18,7 +18,10 @@ import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/rend
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit, SearchSession } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
-import { placeInsertion } from "@/views/annot-view/async-insert";
+import {
+  isCitationCloser,
+  placeInsertion,
+} from "@/views/annot-view/async-insert";
 
 import { readDocumentCitedKeys } from "./document-citations";
 import type { CitationSuggestDeps } from "./register";
@@ -348,6 +351,5 @@ export function resolveCitationTrigger(
 }
 
 function closingBracketAt(line: string, ch: number): boolean {
-  const next = line.charAt(ch);
-  return next === "]" || next === "】";
+  return isCitationCloser(line.charAt(ch));
 }

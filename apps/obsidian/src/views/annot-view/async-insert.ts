@@ -49,6 +49,14 @@ function placeInline(
 const OPENERS = new Set("([{“‘\"'「『（【");
 
 /**
+ * Whether `char` closes a bracketed citation: where a placed citation ends
+ * with no space after it, and where a Citation Suggester trigger stops.
+ */
+export function isCitationCloser(char: string | undefined): boolean {
+  return char === "]" || char === "】";
+}
+
+/**
  * A citation with the spaces it needs around it, and where the cursor goes in
  * it, as an offset from its start.
  *
@@ -71,8 +79,7 @@ function placeCitation(
     !OPENERS.has(around.previous)
       ? " "
       : "";
-  const last = citation.at(-1);
-  if (last === "]" || last === "】") {
+  if (isCitationCloser(citation.at(-1))) {
     const insert = `${lead}${citation}`;
     return { insert, cursor: insert.length };
   }

@@ -75,8 +75,11 @@ function fixture() {
   };
 }
 
-/** An insertion held over `from`–`to` of a note reading `doc`. */
-function holdAt(doc: string, from: number, to = from) {
+/** An insertion held over `from`–`to` (`from` alone when absent) of a note reading `doc`. */
+function holdAt(
+  doc: string,
+  { from, to = from }: { from: number; to?: number },
+) {
   const cm = stateEditor({ doc });
   const editor = { cm } as Editor;
   const info = { editor, file: { path: "t.md" } as TFile } as MarkdownFileInfo;
@@ -186,8 +189,11 @@ describe("captured asynchronous insertion", () => {
 
 describe("a multi-line insertion", () => {
   const CALLOUT = "> [!note] Page 1\n>\n> A quote.";
-  const insertAt = (doc: string, at: number, text = CALLOUT) => {
-    using held = holdAt(doc, at);
+  const insertAt = (
+    doc: string,
+    { at, text = CALLOUT }: { at: number; text?: string },
+  ) => {
+    using held = holdAt(doc, { from: at });
     expect(held.target.commit(text)).toBe(true);
     return held.cm.state.doc.toString();
   };
@@ -225,21 +231,23 @@ describe("a multi-line insertion", () => {
     },
     { where: "an empty document", doc: "", at: 0, expected: CALLOUT },
   ])("stands as its own block at $where", ({ doc, at, expected }) => {
-    expect(insertAt(doc, at)).toBe(expected);
+    expect(insertAt(doc, { at })).toBe(expected);
   });
 
   it("drops the rendered text's own edge line breaks", () => {
-    expect(insertAt("A sentence.", 11, `\n${CALLOUT}\n`)).toBe(
+    expect(insertAt("A sentence.", { at: 11, text: `\n${CALLOUT}\n` })).toBe(
       `A sentence.\n\n${CALLOUT}`,
     );
   });
 
   it("keeps a one-line insertion inline", () => {
-    expect(insertAt("A sentence.", 2, "short ")).toBe("A short sentence.");
+    expect(insertAt("A sentence.", { at: 2, text: "short " })).toBe(
+      "A short sentence.",
+    );
   });
 
   it("leaves the cursor at the end of the block", () => {
-    using held = holdAt("A\nB", 2);
+    using held = holdAt("A\nB", { from: 2 });
     held.target.commit(CALLOUT);
     expect(held.withCursor()).toBe(`A\n\n${CALLOUT}\n\n|B`);
   });
@@ -248,8 +256,11 @@ describe("a multi-line insertion", () => {
 describe("a one-line insertion", () => {
   const QUOTE = "“a quote” [Zotero](zotero://open)";
   /** The note after `text` lands at `at`, with `|` where the cursor rests. */
-  const insertAt = (doc: string, at: number, text = QUOTE) => {
-    using held = holdAt(doc, at);
+  const insertAt = (
+    doc: string,
+    { at, text = QUOTE }: { at: number; text?: string },
+  ) => {
+    using held = holdAt(doc, { from: at });
     expect(held.target.commit(text)).toBe(true);
     return held.withCursor();
   };
@@ -282,20 +293,22 @@ describe("a one-line insertion", () => {
   ])(
     "leaves one space after it $where, so typing goes on past it",
     ({ doc, at, expected }) => {
-      expect(insertAt(doc, at)).toBe(expected);
+      expect(insertAt(doc, { at })).toBe(expected);
     },
   );
 
   it("runs straight into closing punctuation", () => {
-    expect(insertAt("As shown.", 8)).toBe(`As shown${QUOTE}|.`);
+    expect(insertAt("As shown.", { at: 8 })).toBe(`As shown${QUOTE}|.`);
   });
 
   it("adds no space after text that already ends in one", () => {
-    expect(insertAt("As shown here", 9, "@key ")).toBe("As shown @key |here");
+    expect(insertAt("As shown here", { at: 9, text: "@key " })).toBe(
+      "As shown @key |here",
+    );
   });
 
   it("reads the text after it as the insert lands, not as it starts", () => {
-    using held = holdAt("As shown [>q] here", 9, 13);
+    using held = holdAt("As shown [>q] here", { from: 9, to: 13 });
     // The space after the range goes while the text is prepared.
     held.cm.dispatch({ changes: { from: 13, to: 14 } });
     held.target.commit(QUOTE);
@@ -314,7 +327,7 @@ describe("a citation insertion", () => {
       trigger = false,
     }: { doc: string; from: number; to?: number; trigger?: boolean },
   ) => {
-    using held = holdAt(doc, from, to);
+    using held = holdAt(doc, { from, to });
     expect(
       held.target.commit(citation, {
         kind: "citation",
@@ -349,7 +362,7 @@ describe("a citation insertion", () => {
     expect(cite("[@smith2024]", { doc: "See ", from: 4 })).toBe(
       "See [@smith2024]|",
     );
-    using held = holdAt("See ", 4);
+    using held = holdAt("See ", { from: 4 });
     held.target.commit("“a quote” [@smith2024]");
     expect(held.withCursor()).toBe("See “a quote” [@smith2024] |");
   });
