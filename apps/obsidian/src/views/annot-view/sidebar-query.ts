@@ -9,6 +9,7 @@ import { annotationColorsForName, annotationColorToName } from "@zotlit/db";
 import type { MatchTree } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { visibleText } from "@/services/item-query/visible-text";
 import {
   directionLabel,
   groupOptions,
@@ -185,14 +186,14 @@ function colorCondition(color: string): string {
 }
 
 /**
- * The search text as a condition: the same text in the highlighted text, the
- * comment without its markup, a tag or the page label, in any case.
+ * The search text as a condition: the same text in the visible text of the
+ * highlighted text or the comment, a tag or the page label, in any case.
  */
 function searchCondition(query: string): string {
   const needle = JSON.stringify(query.toLowerCase());
   return [
-    `text.lower().contains(${needle})`,
-    `comment.replace(/<[^>]*>/g, " ").lower().contains(${needle})`,
+    `${visibleText("text")}.lower().contains(${needle})`,
+    `${visibleText("comment")}.lower().contains(${needle})`,
     `!tags.filter(value.lower().contains(${needle})).isEmpty()`,
     `pageLabel.lower().contains(${needle})`,
   ].join(" || ");
