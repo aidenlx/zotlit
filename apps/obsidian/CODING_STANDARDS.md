@@ -10,6 +10,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [CLI text](policies/cli-text.md)
 - [File operations](policies/file-ops.md)
 - [Hover popovers](policies/hover-popover.md)
+- [Keyboard scope](policies/keyboard-scope.md)
 - [Local storage](policies/local-storage.md)
 - [Pop-out windows](policies/popout-windows.md)
 - [Tailwind-first](policies/tailwind-first.md)

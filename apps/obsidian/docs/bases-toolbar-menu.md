@@ -216,6 +216,7 @@ What a popup control owes the keyboard, the screen reader and the pointer. `Sele
 
 - **Opening.** ArrowDown and ArrowUp open it from the trigger. A printable key opens it searching for that key, with the first match highlighted. Space and Enter are the button's press.
 - **Shutting.** Escape, a pick, and a press outside shut it. So does focus leaving the popup by keyboard, Shift+Tab back onto the trigger included, since an open popup's scope goes on taking the arrows and Enter. A press on the trigger is the popover's own toggle.
+- **Claiming keys.** An open popup claims its keys on an Obsidian Scope, so the surface beneath needs no exception for it ([keyboard scope](../policies/keyboard-scope.md)).
 - **Focus back.** A popup that shuts while it holds focus hands focus to its trigger. The browser restores focus only for the first popover of a stack, so a popup inside the Sort, Group or Filter popover does this itself, from a capture-phase `beforetoggle` listener (the Chooser unmounts its session in its own listener).
 - **Names.** A combobox trigger carries `aria-controls` for the list box while the popup is open. The list box takes its name through `aria-labelledby`, since an `aria-label` on a container is a hover tooltip ([tooltips](../policies/tooltips.md)).
 - **Placement.** The popup flips in both axes: `position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline`.
