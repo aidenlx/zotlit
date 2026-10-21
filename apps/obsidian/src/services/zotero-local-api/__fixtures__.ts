@@ -736,15 +736,15 @@ export function localApiClient(
       ? null
       : { serverID: SERVER_ID, key: options.key },
   );
+  // Mutable, so a test can move the port the way a new profile does.
+  const zoteroPref = {
+    httpPort: PORT as number | null,
+    on: <K extends keyof ZoteroPrefEvents>(event: K, cb: ZoteroPrefEvents[K]) =>
+      prefEvents.on(event, cb),
+  };
   const client = new ZoteroLocalApiClient({
     fetch,
-    zoteroPref: {
-      httpPort: PORT,
-      on: <K extends keyof ZoteroPrefEvents>(
-        event: K,
-        cb: ZoteroPrefEvents[K],
-      ) => prefEvents.on(event, cb),
-    },
+    zoteroPref,
     localServer: {
       on: <K extends keyof LocalServerEvents>(
         event: K,
@@ -756,7 +756,14 @@ export function localApiClient(
       options.probeDeadline ?? (() => new AbortController().signal),
     now: options.now ?? (() => NOW),
   });
-  return { client, requests, credentials, prefEvents, serverEvents };
+  return {
+    client,
+    requests,
+    credentials,
+    zoteroPref,
+    prefEvents,
+    serverEvents,
+  };
 }
 
 /** The Companion's Freshness Signal, as the Local Server delivers it. */
