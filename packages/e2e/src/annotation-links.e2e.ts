@@ -395,6 +395,27 @@ async function searchAndInsert(
   return JSON.parse(reply) as SearchOutcome;
 }
 
+/** The settings that decide what ZotLit does with a Durable Annotation Link. */
+interface LinkSettings {
+  "citation.annotation-links"?: boolean;
+  "citation.open-annotation-links"?: boolean;
+}
+
+/**
+ * Eval code, inside an evaluation's `cleanup` block with `s` bound to
+ * ZotLit's services, that changes the annotation link settings to `changes`
+ * and puts each one back on the stack first.
+ */
+function applyLinkSettings(changes: LinkSettings): string {
+  return Object.entries(changes)
+    .map(
+      ([key, value]) => `{const was=s.settings.current[${JSON.stringify(key)}];
+        cleanup.defer(()=>s.settings.update({[${JSON.stringify(key)}]:was}));
+        s.settings.update({[${JSON.stringify(key)}]:${JSON.stringify(value)}});}`,
+    )
+    .join("\n");
+}
+
 interface Scenario {
   /** The note's Markdown; {@link FILE_URL} becomes the PDF's own `file://` URL. */
   note: string;
@@ -408,6 +429,8 @@ interface Scenario {
   gesture: keyof typeof LINK_IN | "external" | "chip";
   /** Turn `reader.open-file-links` off for this scenario. */
   captureOff?: boolean;
+  /** The annotation link settings to change for this scenario. */
+  linkSettings?: LinkSettings;
   /** The reader state that ends the wait early, when a landing is expected. */
   lands?: ReaderState;
   /** The Attachment the reader must name for a landing; the Rougier PDF's own by default. */
@@ -428,6 +451,7 @@ async function follow({
   url,
   gesture,
   captureOff = false,
+  linkSettings = {},
   lands,
   bound = annotationAttachment.key,
   reads = false,
@@ -475,6 +499,7 @@ async function follow({
         const fileUrl=require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href;
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
         if(${captureOff})s.settings.update({'reader.open-file-links':false});
+        ${applyLinkSettings(linkSettings)}
         ${gesture === "chip" ? "" : showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
         // The ledger records a read as the reader names its Attachment, so
         // the reader is asked which one it holds as each read lands.
@@ -759,6 +784,12 @@ interface HoverOutcome {
   image: boolean;
   /** The superscript the popover drew from the quote's rich text, if any. */
   sup: string | null;
+  /**
+   * The text of the popover a second hover over the same link opened, in the
+   * same view, once annotation links were turned on again; only for a
+   * scenario that asks.
+   */
+  restored?: string;
 }
 
 /** The link a hover that shows nothing is read against: one that shows a popover. */
@@ -777,6 +808,18 @@ interface HoverScenario {
   pagePreviewMod?: boolean;
   /** Turn `citation.pandoc-citations` off for this scenario. */
   pandocOff?: boolean;
+  /** The annotation link settings to change for this scenario. */
+  linkSettings?: LinkSettings;
+  /**
+   * The annotation link settings to change once the note is open, so the
+   * editor that hovers is one that was built before the change.
+   */
+  afterOpen?: LinkSettings;
+  /**
+   * After the hover that shows nothing, turn annotation links on again and
+   * hover the same link in the same view, as {@link HoverOutcome.restored}.
+   */
+  restore?: boolean;
   /** Wait for a decoded Excerpt Image as well as the text. */
   image?: boolean;
   /** Hold Ctrl or Command through the hover. */
@@ -802,6 +845,9 @@ async function hover({
   hoverAction,
   pagePreviewMod,
   pandocOff = false,
+  linkSettings = {},
+  afterOpen = {},
+  restore = false,
   image = false,
   mod = false,
   absent = hoverAction === "off",
@@ -829,6 +875,7 @@ async function hover({
         const url=${JSON.stringify(url)};
         ${hoverAction === undefined ? "" : `s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}});`}
         ${pandocOff ? "s.settings.update({'citation.pandoc-citations':false});" : ""}
+        ${applyLinkSettings(linkSettings)}
         ${
           pagePreviewMod === undefined
             ? ""
@@ -839,6 +886,7 @@ async function hover({
         pagePreview['zotlit-citekey']=${pagePreviewMod};`
         }
         ${showNote(JSON.stringify(note), gesture)}
+        ${applyLinkSettings(afterOpen)}
         ${linkTarget(gesture)}
         cleanup.defer(()=>view.hoverPopover?.hide());
         link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
@@ -848,7 +896,10 @@ async function hover({
           // hovered later in a split under the Citation Popover. Every hover
           // popover waits the same opening delay, so once the control's has
           // opened, one the first hover had started would have opened too.
-          s.settings.update({'citation.hover-action':'popover'});
+          // Annotation links go back on before that delay ends, which holds
+          // only because both hover gates act at the mouseover itself, never
+          // as the delay ends.
+          s.settings.update({'citation.hover-action':'popover','citation.annotation-links':true});
           const control=app.workspace.getLeaf('split','vertical');
           cleanup.adopt(control,(leaf)=>leaf.detach());
           await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});
@@ -857,6 +908,16 @@ async function hover({
           controlLink.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:controlLink.ownerDocument.defaultView}));
           await until(()=>opened(control.view),()=>'The control hover opened no popover');
           outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false,sup:null};
+          if(${restore}){
+            // The control step turned annotation links on again; the view
+            // that showed nothing now answers the same link, found afresh
+            // since Live Preview may draw it anew as the editor reconfigures.
+            control.view.hoverPopover?.hide();
+            ${linkTarget(gesture)}
+            link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
+            const again=await until(()=>opened(view),()=>'The same link opened no popover once annotation links were on again');
+            outcome.restored=await until(()=>again.hoverEl.querySelector('.zt-citation-popover-content')?.textContent,()=>'The restored popover never filled');
+          }
         }else{
           const popover=await until(()=>opened(view),()=>'No popover opened over the link');
           const content=()=>popover.hoverEl.isConnected?popover.hoverEl.querySelector('.zt-citation-popover-content'):null;
@@ -1236,6 +1297,32 @@ describe.skipIf(!reachable)("Annotation links", () => {
       });
     }, 120000);
 
+    it.each([
+      ["while ZotLit treats no annotation links", "citation.annotation-links"],
+      [
+        "while annotation links are set to open in Zotero",
+        "citation.open-annotation-links",
+      ],
+    ] as const)(
+      "%s",
+      async (_, key) => {
+        const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+
+        const outcome = await follow({
+          note: noteWith(url),
+          url,
+          gesture: "reading",
+          linkSettings: { [key]: false },
+        });
+
+        expect(outcome).toMatchObject({
+          reader: null,
+          passed: [expect.objectContaining({ url })],
+        });
+      },
+      120000,
+    );
+
     // Obsidian's own "Open in default browser" item calls `window.open` with
     // this target, which is the whole of that gesture as Capture sees it.
     it("for Obsidian's explicit external target", async () => {
@@ -1374,6 +1461,37 @@ describe.skipIf(!reachable)("Annotation links", () => {
 
       expect(outcome.text).toContain(FIRST_PAGE.text);
     }, 120000);
+
+    // Opening is a click's setting alone: the hover stays while a click goes
+    // to Zotero.
+    it("while annotation links are set to open in Zotero", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "live-preview",
+        linkSettings: { "citation.open-annotation-links": false },
+      });
+
+      expect(outcome.text).toContain(FIRST_PAGE.text);
+    }, 120000);
+
+    // The setting changes under a note already open: the editor drops its
+    // hover and takes it back without being opened again.
+    it.each(["live-preview", "reading"] as const)(
+      "with nothing while ZotLit treats no annotation links, and again once they are back, in %s",
+      async (gesture) => {
+        const outcome = await hover({
+          url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+          gesture,
+          afterOpen: { "citation.annotation-links": false },
+          restore: true,
+          absent: true,
+        });
+
+        expect(outcome.popover).toBe(false);
+        expect(outcome.restored).toContain(FIRST_PAGE.text);
+      },
+      120000,
+    );
 
     it("with nothing for a Zotero link that names no Annotation", async () => {
       const outcome = await hover({

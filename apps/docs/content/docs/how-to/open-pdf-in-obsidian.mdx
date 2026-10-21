@@ -51,6 +51,8 @@ File links work for any link in your vault that points at a PDF in your Zotero l
 
 To open one link in your system app anyway, right-click it and choose **Open in default browser**. An annotation link then opens in Zotero. To turn the whole behavior off, clear <UiLabel name={m.settings_reader_open_file_links_name()} /> in **Settings → ZotLit → Reader**.
 
+To send annotation links alone to Zotero, clear <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_open_annotation_links_name()} />. Hovering an annotation link still shows the annotation. To have ZotLit leave annotation links alone entirely, with no hover, clear <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_annotation_links_name()} />.
+
 ## What you get
 
 When the item has one PDF, it opens straight away. When it has several, ZotLit asks which one to open; the picker lists them by file name and its search box reads <UiLabel name={m.modal_select_pdf_placeholder()} />.

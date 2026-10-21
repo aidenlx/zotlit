@@ -7,6 +7,7 @@ import {
   resolverHarness,
 } from "@/services/attachment-resolver/__fixtures__";
 import type { ResolverHarnessOptions } from "@/services/attachment-resolver/__fixtures__";
+import { defaults } from "@/services/settings/schema";
 
 import { createTargetOpener } from "./open-target";
 import type { NativeOpener, ReaderOutcome } from "./open-target";
@@ -90,6 +91,7 @@ export async function openerHarness(
       },
     },
     native: native ?? ((url) => void handed.push(url)),
+    settings: { current: defaults },
     vaultBasePath: VAULT,
     platform: "linux",
   });
