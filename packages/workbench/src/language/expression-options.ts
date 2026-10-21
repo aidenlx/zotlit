@@ -13,6 +13,12 @@ import type {
 import { matchScore } from "./matching";
 import type { Span } from "./span";
 
+/**
+ * The namespace a Filter Expression reads a vault property under:
+ * `vault.<name>`. ZotLit Query never reads it; the host answers it.
+ */
+export const VAULT_SEGMENT = "vault";
+
 /** A field of the Query Dataset, read by its name. */
 export interface ExpressionField {
   /** The name a Filter Expression reads it by. */

@@ -28,6 +28,7 @@ export type {
   ExpressionReceiver,
   ExpressionVocabulary,
 } from "./filter-expression-completion";
+export { VAULT_SEGMENT } from "./expression-options";
 export { datasetVocabulary } from "./expression-vocabulary";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {

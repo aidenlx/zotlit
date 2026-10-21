@@ -6,15 +6,15 @@
 import { FORMULA_SEGMENT } from "@zotlit/item-query";
 import type { ContextRecord, QueryDataset } from "@zotlit/item-query";
 
-import { datasetCustomFields } from "./expression-options";
+import { datasetCustomFields, VAULT_SEGMENT } from "./expression-options";
 import type { ExpressionVocabulary } from "./expression-options";
 import { datasetReceiver } from "./expression-receiver";
 import { datasetExpressionFields } from "./filter-expression-completion";
 
 /**
- * The vocabulary of an expression over `engine`. It keeps nothing between
- * calls, so a host keeps the vocabulary while what it reads stays the same,
- * and a receiver's planned members outlive a keystroke.
+ * The vocabulary of an expression over `engine`. It keeps nothing that a
+ * host's input changes, so a host keeps the vocabulary while what it reads
+ * stays the same, and a receiver's planned members outlive a keystroke.
  */
 export function datasetVocabulary(
   engine: QueryDataset<any>,
@@ -52,7 +52,7 @@ export function datasetVocabulary(
       named(name, `${FORMULA_SEGMENT}.${name}`),
     ),
     ...(vault && {
-      vault: vault.map((name) => named(name, `vault.${name}`)),
+      vault: vault.map((name) => named(name, `${VAULT_SEGMENT}.${name}`)),
     }),
     ...(custom && { custom: datasetCustomFields(engine, custom) }),
   };
