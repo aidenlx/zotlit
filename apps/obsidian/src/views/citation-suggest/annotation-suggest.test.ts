@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import type { App, Editor, EditorSuggestContext } from "obsidian";
 import { describe, expect, it } from "vitest";
 
@@ -102,11 +103,13 @@ describe("AnnotationEditorSuggest", () => {
     run: AnnotationSuggestDeps["query"]["run"] = async () => ({
       kind: "cancelled",
     }),
+    commentRenderer?: AnnotationSuggestDeps["commentRenderer"],
   ) {
     const suggest = new AnnotationEditorSuggest({
       app: {} as App,
       settings: { current: settings as Settings | undefined },
       query: { run },
+      commentRenderer,
     } as AnnotationSuggestDeps);
     return { suggest, [Symbol.dispose]: () => suggest.close() };
   }
@@ -175,7 +178,7 @@ describe("AnnotationEditorSuggest", () => {
                 indexedKey: key,
                 attachmentIndexedKey: "PDF",
                 itemIndexedKey: "PAPER",
-                values: {},
+                values: { comment: key },
               })),
             },
           ],
@@ -213,6 +216,50 @@ describe("AnnotationEditorSuggest", () => {
     query.release("figure");
 
     await expect(closing).resolves.toEqual([]);
+  });
+
+  /**
+   * The suggester over {@link gatedQuery}, drawing each row it finds. Obsidian's
+   * Markdown renderer, which draws a row's comment, stands outside the test:
+   * `live` holds every comment drawn and not yet let go.
+   */
+  function drawing() {
+    const query = gatedQuery();
+    const live = new Set<string>();
+    const h = setup({}, query.run, () => (el, html) => {
+      live.add(html);
+      el.setText(html);
+      return () => live.delete(html);
+    });
+    const show = async (word: string) => {
+      query.release(word);
+      const hits = await h.suggest.getSuggestions({
+        query: word,
+        file: null,
+      } as unknown as EditorSuggestContext);
+      for (const hit of hits)
+        h.suggest.renderSuggestion(hit, document.createElement("div"));
+    };
+    return { ...h, live, show };
+  }
+
+  it("lets go of the comments of the rows a new search replaces", async () => {
+    using h = drawing();
+    await h.show("fig");
+    expect([...h.live].toSorted()).toEqual(["fig-1", "fig-2"]);
+
+    await h.show("table");
+
+    expect([...h.live].toSorted()).toEqual(["table-1", "table-2"]);
+  });
+
+  it("lets go of every drawn comment as it closes", async () => {
+    using h = drawing();
+    await h.show("fig");
+
+    h.suggest.close();
+
+    expect([...h.live]).toEqual([]);
   });
 });
 
