@@ -57,6 +57,7 @@ export {
 } from "./queries/item-ref";
 export {
   ANNOTATION_ANCHOR_KEY,
+  ATTACHMENT_ANCHOR_KEY,
   formatAnnotationFragment,
   formatAnnotationSubpath,
   parseAnnotationSubpath,
