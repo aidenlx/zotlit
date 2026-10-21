@@ -40,8 +40,18 @@ export interface AnnotationSuggestDeps extends AnnotationInsertDeps {
 export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
   readonly #deps: AnnotationSuggestDeps;
   #searchController?: AbortController;
-  /** Holds the comments the open popup's rows render; unloaded as it closes. */
-  #rows: { owner: Component; renderComment: CommentRenderer } | null = null;
+  /** The hits the latest search returned, which the popup draws next. */
+  #incoming: readonly AnnotationHit[] = [];
+  /**
+   * The rows the popup shows: the hits they draw and a stack that holds each
+   * row's drawn comment and the component that owns them. A new result set
+   * disposes it, and so does closing the popup.
+   */
+  #rows: {
+    hits: readonly AnnotationHit[];
+    stack: DisposableStack;
+    renderComment: CommentRenderer;
+  } | null = null;
 
   constructor(deps: AnnotationSuggestDeps) {
     super(deps.app);
@@ -85,34 +95,51 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     this.#searchController?.abort();
     const controller = new AbortController();
     this.#searchController = controller;
-    return (
+    const hits =
       (await searchAnnotations(this.#deps.query, context.query, {
         signal: controller.signal,
         limit: this.limit,
-      })) ?? []
-    );
+      })) ?? [];
+    if (!controller.signal.aborted) this.#incoming = hits;
+    return hits;
   }
 
   override close(): void {
     this.#searchController?.abort();
-    this.#rows?.owner.unload();
+    this.#rows?.stack.dispose();
     this.#rows = null;
+    this.#incoming = [];
     super.close();
   }
 
   override renderSuggestion(hit: AnnotationHit, el: HTMLElement): void {
-    if (this.#rows === null) {
-      const owner = new Component();
-      owner.load();
-      this.#rows = {
-        owner,
-        renderComment: this.#deps.commentRenderer(
-          owner,
-          this.context?.file?.path ?? "",
-        ),
-      };
+    // The first row of a new result set replaces every row of the last one,
+    // so the comments those rows drew go with them.
+    if (
+      this.#rows === null ||
+      (this.#rows.hits !== this.#incoming && this.#incoming.includes(hit))
+    ) {
+      this.#rows?.stack.dispose();
+      this.#rows = this.#openRows(this.#incoming);
     }
-    renderAnnotationHit(hit, el, this.#rows.renderComment);
+    const { stack, renderComment } = this.#rows;
+    stack.defer(renderAnnotationHit(hit, el, renderComment));
+  }
+
+  #openRows(hits: readonly AnnotationHit[]) {
+    const stack = new DisposableStack();
+    const owner = stack.adopt(new Component(), (component) =>
+      component.unload(),
+    );
+    owner.load();
+    return {
+      hits,
+      stack,
+      renderComment: this.#deps.commentRenderer(
+        owner,
+        this.context?.file?.path ?? "",
+      ),
+    };
   }
 
   override selectSuggestion(hit: AnnotationHit): void {
@@ -139,12 +166,14 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
  * quote is Zotero's stored rich text, drawn as the Annotation View and the
  * Annotation Popover draw an excerpt; the comment goes through the comment
  * renderer they share, so it reads as the Markdown the note will hold.
+ *
+ * @returns the cleanup of the drawn comment, a no-op for a row without one.
  */
 export function renderAnnotationHit(
   hit: AnnotationHit,
   el: HTMLElement,
   renderComment: CommentRenderer,
-): void {
+): () => void {
   el.addClass("zt:flex", "zt:gap-2");
   const swatch = el.createDiv({
     cls: "zt:mt-1 zt:w-1 zt:shrink-0 zt:self-stretch zt:rounded-sm zt:bg-(--zt-annot-color)",
@@ -152,15 +181,16 @@ export function renderAnnotationHit(
   if (hit.color) swatch.style.setProperty("--zt-annot-color", hit.color);
   const body = el.createDiv({ cls: "zt:min-w-0 zt:flex-1" });
   if (hit.text) appendExcerptText(body, hit.text, "zt:m-0 zt:line-clamp-3");
-  if (hit.comment)
-    renderComment(
-      body.createDiv({
-        cls: hit.text
-          ? "zt:line-clamp-2 zt:text-sm zt:text-muted-foreground"
-          : "zt:line-clamp-3",
-      }),
-      hit.comment,
-    );
+  const cleanup = hit.comment
+    ? renderComment(
+        body.createDiv({
+          cls: hit.text
+            ? "zt:line-clamp-2 zt:text-sm zt:text-muted-foreground"
+            : "zt:line-clamp-3",
+        }),
+        hit.comment,
+      )
+    : () => {};
   if (!hit.text && !hit.comment)
     body.createDiv({
       text: m.workbench_annotation_type({ type: hit.type ?? "" }),
@@ -176,4 +206,5 @@ export function renderAnnotationHit(
       cls: "zt:truncate zt:text-xs zt:text-faint",
       text: meta.join(" · "),
     });
+  return cleanup;
 }

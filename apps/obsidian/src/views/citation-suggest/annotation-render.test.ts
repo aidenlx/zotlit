@@ -1,13 +1,19 @@
 // @vitest-environment happy-dom
 // An Annotation Suggester row draws Zotero's stored rich text as the
 // Annotation View does, never as literal markup.
+import type { App, EditorSuggestContext } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { QueryService } from "@/services/item-query/service";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 
 import type { AnnotationHit } from "./annotation-search";
-import { renderAnnotationHit } from "./annotation-suggest";
+import {
+  AnnotationEditorSuggest,
+  renderAnnotationHit,
+} from "./annotation-suggest";
+import type { AnnotationSuggestDeps } from "./annotation-suggest";
 
 const hit: AnnotationHit = {
   key: "ANN2HGHT",
@@ -78,5 +84,78 @@ describe("renderAnnotationHit", () => {
       m.workbench_annotation_type({ type: "image" }),
     );
     expect(el.textContent).not.toContain("image");
+  });
+});
+
+describe("AnnotationEditorSuggest rows", () => {
+  /**
+   * A suggester whose search finds one commented annotation per query word,
+   * and whose comment renderer counts the comments still drawn.
+   */
+  function setup() {
+    const live = new Set<string>();
+    const run: QueryService["run"] = async (request) => {
+      if (request.from === "items")
+        return {
+          kind: "result",
+          result: { rows: [{ indexedKey: "PAPER" }] },
+        } as never;
+      const words =
+        /contains\("([^"]*)"\)/.exec(request.filter ?? "")?.[1] ?? "";
+      return {
+        kind: "result",
+        result: {
+          groups: [
+            {
+              value: "PAPER",
+              rows: [`${words}-1`, `${words}-2`].map((key) => ({
+                indexedKey: key,
+                attachmentIndexedKey: "PDF",
+                itemIndexedKey: "PAPER",
+                values: { comment: key },
+              })),
+            },
+          ],
+        },
+      } as never;
+    };
+    const suggest = new AnnotationEditorSuggest({
+      app: {} as App,
+      settings: { current: undefined },
+      query: { run },
+      commentRenderer: (): CommentRenderer => (el, html) => {
+        live.add(html);
+        el.setText(html);
+        return () => live.delete(html);
+      },
+    } as unknown as AnnotationSuggestDeps);
+    const show = async (query: string) => {
+      const hits = await suggest.getSuggestions({
+        query,
+        file: null,
+      } as unknown as EditorSuggestContext);
+      for (const hit of hits)
+        suggest.renderSuggestion(hit, document.createElement("div"));
+    };
+    return { live, show, suggest };
+  }
+
+  it("lets go of the comments of the rows a new search replaces", async () => {
+    const h = setup();
+    await h.show("fig");
+    expect([...h.live].toSorted()).toEqual(["fig-1", "fig-2"]);
+
+    await h.show("table");
+
+    expect([...h.live].toSorted()).toEqual(["table-1", "table-2"]);
+  });
+
+  it("lets go of every drawn comment as it closes", async () => {
+    const h = setup();
+    await h.show("fig");
+
+    h.suggest.close();
+
+    expect([...h.live]).toEqual([]);
   });
 });
