@@ -22,6 +22,19 @@ export const run = {
   offlineZotero: createServer((socket) => socket.destroy()),
 };
 
+/**
+ * The `obsidian-vault.ts` option that points a vault's Fixture profile at the
+ * offline endpoint. Every vault open on the shared Fixture passes it: the
+ * shipped port 23119 belongs to whatever Zotero the developer runs, and an
+ * open without it rewrites the profile the run's vault reads.
+ */
+export function offlineZoteroPortArg(): string {
+  const address = run.offlineZotero.address();
+  if (address === null || typeof address === "string")
+    throw new Error("Offline Zotero endpoint did not receive a TCP port");
+  return `--zotero-http-port=${address.port}`;
+}
+
 let initPromise: Promise<void> | null = null;
 let refCount = 0;
 
@@ -36,13 +49,10 @@ async function bootstrap(): Promise<void> {
     run.offlineZotero.once("error", reject);
     run.offlineZotero.listen(0, "127.0.0.1", resolve);
   });
-  const address = run.offlineZotero.address();
-  if (address === null || typeof address === "string")
-    throw new Error("Offline Zotero endpoint did not receive a TCP port");
   const created = await runVaultScript([
     "open",
     e2eVaultPath,
-    `--zotero-http-port=${address.port}`,
+    offlineZoteroPortArg(),
   ]);
   run.vaultId = created.stdout.trim().split("\n")[0]!.trim();
   await obEval(run.vaultId, "app.vault.setConfig('nativeMenus',false);true");

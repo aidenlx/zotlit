@@ -205,6 +205,8 @@ export class ZoteroLocalApiClient extends Service<void> {
   #probing: Promise<void> | null = null;
   /** A Freshness Signal that arrived while that probe ran, still to announce. */
   #moved = false;
+  /** The resolved paths moved while that probe ran, so it asked the old port. */
+  #stale = false;
   /**
    * The one authorization request in flight, and the gestures waiting on it, so
    * two presses of Allow editing raise one dialog between them.
@@ -717,12 +719,15 @@ export class ZoteroLocalApiClient extends Service<void> {
     });
     stack.defer(
       this.#localServer.on("db/updated", () => {
-        void this.#reprobe("freshness signal", true);
+        void this.#reprobe("freshness signal", { moved: true });
       }),
     );
     stack.defer(
       this.#zoteroPref.on("resolved-changed", () => {
-        void this.#reprobe("resolved paths changed", true);
+        void this.#reprobe("resolved paths changed", {
+          moved: true,
+          stale: true,
+        });
       }),
     );
     this.commit(stack.move());
@@ -739,17 +744,37 @@ export class ZoteroLocalApiClient extends Service<void> {
    *
    * A signal that lands while a probe is already running is coalesced into it
    * rather than dropped, so a Freshness Signal always reaches the partition it
-   * invalidates however it is timed against the probe.
+   * invalidates however it is timed against the probe. A move of the resolved
+   * paths is the exception: the probe in flight read the port before the move,
+   * so its answer is about another Zotero, and one more probe runs before the
+   * probe settles for everyone waiting on it.
    *
-   * @param moved whether the trigger itself says this source's records changed,
-   *   which is only ever true of the source that is standing.
+   * @param trigger.moved whether the trigger itself says this source's records
+   *   changed, which is only ever true of the source that is standing.
+   * @param trigger.stale whether the trigger moved the port a running probe
+   *   asked.
    */
-  async #reprobe(reason: string, moved = false, silent = false): Promise<void> {
+  async #reprobe(
+    reason: string,
+    {
+      moved = false,
+      silent = false,
+      stale = false,
+    }: { moved?: boolean; silent?: boolean; stale?: boolean } = {},
+  ): Promise<void> {
     this.#moved ||= moved;
     const running = this.#probing;
-    if (running) return await running;
+    if (running) {
+      this.#stale ||= stale;
+      return await running;
+    }
     const before = this.#serverID;
-    const probing = this.#probe(reason, silent).finally(() => {
+    const probing = (async () => {
+      do {
+        this.#stale = false;
+        await this.#probe(reason, silent);
+      } while (this.#stale);
+    })().finally(() => {
       this.#probing = null;
     });
     this.#probing = probing;
@@ -962,11 +987,9 @@ export class ZoteroLocalApiClient extends Service<void> {
       failure.kind === "incompatible-zotero" ||
       failure.kind === "server-changed"
     ) {
-      const probing = this.#reprobe(
-        `a write met ${failure.kind}`,
-        false,
+      const probing = this.#reprobe(`a write met ${failure.kind}`, {
         silent,
-      );
+      });
       if (silent) await probing;
     }
     if (failure.kind === "unauthorized") {

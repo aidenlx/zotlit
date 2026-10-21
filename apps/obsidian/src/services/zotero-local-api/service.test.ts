@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import {
   annotationPage,
@@ -610,6 +610,39 @@ it("announces a Freshness Signal that arrived while a probe was running", async 
   await probing;
 
   await expect(announced).resolves.toBeUndefined();
+});
+
+// Linking a vault to a Zotero profile moves the port while a probe that
+// started on the old one is still out: its answer is about a Zotero this
+// session no longer talks to.
+it("probes the new port when the resolved paths move while a probe is running", async () => {
+  await using stack = new AsyncDisposableStack();
+  const held = Promise.withResolvers<Response>();
+  const reached = Promise.withResolvers<void>();
+  let probes = 0;
+  const { client, requests, zoteroPref, prefEvents } = await setup(stack, {
+    root: () => {
+      probes += 1;
+      if (probes > 1) unreachable();
+      reached.resolve();
+      return held.promise;
+    },
+  });
+
+  const probing = client.probe();
+  await reached.promise;
+  zoteroPref.httpPort = PORT + 1;
+  prefEvents.emit("resolved-changed");
+  held.resolve(localApiDisabled());
+  await probing;
+
+  await vi.waitFor(() =>
+    expect(client.state).toEqual({
+      kind: "unavailable",
+      failure: { kind: "unreachable" },
+    }),
+  );
+  expect(requests.map(({ url }) => Number(url.port))).toEqual([PORT, PORT + 1]);
 });
 
 it("holds the source it has while a second probe runs, and joins one in flight", async () => {
