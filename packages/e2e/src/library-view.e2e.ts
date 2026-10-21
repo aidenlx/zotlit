@@ -15,6 +15,10 @@ import {
 } from "@zotlit/scripts/fixture";
 import type { FixtureItem } from "@zotlit/scripts/fixture";
 
+import {
+  annotationOpenKeys,
+  annotationOpenSubpath,
+} from "./annotation-open-subpath.ts";
 import { keepRendering } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
@@ -1482,12 +1486,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const anchored = pdfAnnotations.find(
       (annotation) => "pageIndex" in annotation.position,
     )!;
+    // A middle click opens a new tab, as the Table case does.
     expect(
-      await inLibrary(
-        `const proto=Object.getPrototypeOf(app.workspace.getMostRecentLeaf());const native=proto.setEphemeralState;let subpath=null;proto.setEphemeralState=function(state){if(typeof state?.subpath==='string')subpath=state.subpath;return native.call(this,state);};try{/* A middle click opens a new tab, as the Table case does. */const link=${child("annotation", anchored.key)};link.dispatchEvent(new link.ownerDocument.defaultView.MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}));return await until('the PDF opens at the Annotation',()=>subpath,10000);}finally{proto.setEphemeralState=native;}`,
+      JSON.parse(
+        await inLibrary(
+          annotationOpenSubpath(
+            `const link=${child("annotation", anchored.key)};link.dispatchEvent(new link.ownerDocument.defaultView.MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}));`,
+          ),
+        ),
       ),
-    ).toBe(
-      `#page=${(anchored.position as { pageIndex: number }).pageIndex + 1}&zt-annotation=${anchored.key}`,
+    ).toEqual(
+      annotationOpenKeys({
+        page: (anchored.position as { pageIndex: number }).pageIndex + 1,
+        annotation: anchored.key,
+        attachment: pdf.key,
+      }),
     );
 
     expect(
