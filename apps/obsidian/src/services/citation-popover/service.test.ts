@@ -279,7 +279,7 @@ describe("source-less Citation Popover", () => {
       bibliographyRender: { readBibliography, on: () => () => undefined },
     } as never);
 
-    service.showWork({
+    void service.showWork({
       event: new MouseEvent("mouseover"),
       hoverParent: { hoverPopover: null },
       targetEl: document.createElement("span"),
@@ -360,7 +360,7 @@ function workHarness() {
     show(
       work: WorkHoverRequest["work"] = { kind: "item", indexedKey: "ABCD2345" },
     ) {
-      service.showWork({
+      void service.showWork({
         event: new MouseEvent("mouseover"),
         hoverParent: { hoverPopover: null },
         targetEl: element,
@@ -368,9 +368,12 @@ function workHarness() {
         open,
       });
     },
-    /** Hovers `work` under one parent the harness keeps, on a target of its own. */
-    showUnder(work: WorkHoverRequest["work"]) {
-      service.showWork({
+    /**
+     * Hovers `work` under one parent the harness keeps, on a target of its
+     * own; settles once that hover's first read drew or was dropped.
+     */
+    showUnder(work: WorkHoverRequest["work"]): Promise<void> {
+      return service.showWork({
         event: new MouseEvent("mouseover"),
         hoverParent: parent,
         targetEl: document.createElement("span"),
@@ -604,16 +607,13 @@ describe("source-less presentation updates", () => {
     ]);
     const first = Promise.withResolvers<BibliographyRenderResult | null>();
     run.readBibliography.mockReturnValueOnce(first.promise);
-    run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
+    const stale = run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
     await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
 
-    run.showUnder({ kind: "item", indexedKey: "EFGH2345" });
-    await vi.waitFor(async () =>
-      expect((await run.shown()).textContent).toContain("Second work"),
-    );
+    await run.showUnder({ kind: "item", indexedKey: "EFGH2345" });
+    expect((await run.shown()).textContent).toContain("Second work");
     first.resolve(null);
-    await first.promise;
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await stale;
 
     const shown = await run.shown();
     expect(shown.textContent).toContain("Second work");

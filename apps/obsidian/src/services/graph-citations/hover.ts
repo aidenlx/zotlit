@@ -154,7 +154,7 @@ function hoverNode(
     return true;
   }
   logger.debug("Graph node shows its entry", { id, work: node.work });
-  deps.citationPopover.showWork({
+  void deps.citationPopover.showWork({
     event: evt,
     hoverParent: members.engine,
     targetEl: stand.take(position, id),

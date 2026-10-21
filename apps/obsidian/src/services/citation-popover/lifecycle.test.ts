@@ -140,7 +140,7 @@ function harness() {
       owner = parent,
     ) {
       await act(async () => {
-        service.showWork({
+        void service.showWork({
           event: new MouseEvent("mouseover"),
           hoverParent: owner,
           targetEl,

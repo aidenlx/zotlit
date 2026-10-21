@@ -124,11 +124,16 @@ export class CitationPopover extends Service {
   }
 
   show(request: CitationHoverRequest): void {
-    this.#show(request);
+    void this.#show(request);
   }
 
-  showWork(request: WorkHoverRequest): void {
-    this.#show(request);
+  /**
+   * @returns settles once the hover's first read has drawn, or has been
+   *   dropped because the pointer moved on or the popover hid. A hover needs
+   *   not wait on it.
+   */
+  showWork(request: WorkHoverRequest): Promise<void> {
+    return this.#show(request);
   }
 
   /** Closes the owner's visit, including a card still waiting to open. */
@@ -136,8 +141,8 @@ export class CitationPopover extends Service {
     this.#visits.hide(parent, targetEl);
   }
 
-  #show(request: PopoverRequest): void {
-    if (this.#closed) return;
+  #show(request: PopoverRequest): Promise<void> {
+    if (this.#closed) return Promise.resolve();
     const deps = this.#deps;
     const currentVisit = this.#visits.open(
       request.hoverParent,
@@ -145,14 +150,17 @@ export class CitationPopover extends Service {
     );
     const { popover, subscriptions, state } = currentVisit;
     subscriptions.defer(() => state.reading?.abort());
-    const draw = (): void => {
+    const read = (): Promise<void> => {
       state.reading?.abort();
       const reading = new AbortController();
       state.reading = reading;
-      void fill(deps, currentVisit, {
+      return fill(deps, currentVisit, {
         request,
         signal: reading.signal,
       });
+    };
+    const draw = (): void => {
+      void read();
     };
     subscriptions.defer(deps.bibliographyRender.on("invalidated", draw));
     if (!("work" in request) || request.work.kind === "citekey") {
@@ -185,7 +193,7 @@ export class CitationPopover extends Service {
         ),
       );
     }
-    draw();
+    return read();
   }
 }
 
