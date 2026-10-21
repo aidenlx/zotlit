@@ -43,7 +43,11 @@ async function harness(
           return () => undefined;
         },
       },
-      annotationPopover: { show: (request) => shown.push(request) },
+      annotationPopover: {
+        show: async (request) => {
+          shown.push(request);
+        },
+      },
     }),
   );
   await service.ready;

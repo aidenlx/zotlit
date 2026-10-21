@@ -17,21 +17,115 @@ const trimLineBreaks = (text: string) => text.replaceAll(/^\n+|\n+$/g, "");
  * callout, once the line breaks at its edges are set aside. One-line text
  * lands inline.
  */
-export function isBlockText(text: string): boolean {
+function isBlockText(text: string): boolean {
   return trimLineBreaks(text).includes("\n");
 }
 
 /**
- * A block gets the line breaks it needs to stand apart from the text around
- * the range. Without them a callout dropped at the end of a sentence joins
- * that sentence's line. Inline text lands as it is.
+ * Characters inline text may run straight into: punctuation that closes the
+ * sentence or the bracket the text sits in.
  */
-function placeText(
-  doc: Text,
-  { from, to }: { from: number; to: number },
+const CLOSERS = new Set(".,;:!?)]}。，、；：！？）】」』》");
+
+/**
+ * Inline text with the space it needs after it, and where the cursor goes in
+ * it, as an offset from its start. One space follows the text, so neither the
+ * word after it nor what the researcher types next is glued to it: a space
+ * already there is reused, and the cursor rests past the space either way.
+ * Closing punctuation after the range, or text that ends in a space, needs
+ * none.
+ */
+function placeInline(
   text: string,
-): string {
-  if (!isBlockText(text)) return text;
+  next: string,
+): { insert: string; cursor: number } {
+  if (/\s$/u.test(text)) return { insert: text, cursor: text.length };
+  if (next === " ") return { insert: text, cursor: text.length + 1 };
+  const insert = CLOSERS.has(next) ? text : `${text} `;
+  return { insert, cursor: insert.length };
+}
+
+/** The characters a citation may follow directly: it opens what it is in. */
+const OPENERS = new Set("([{“‘\"'「『（【");
+
+/**
+ * Whether `char` closes a bracketed citation: where a placed citation ends
+ * with no space after it, and where a Citation Suggester trigger stops.
+ */
+export function isCitationCloser(char: string | undefined): boolean {
+  return char === "]" || char === "】";
+}
+
+/**
+ * A citation with the spaces it needs around it, and where the cursor goes in
+ * it, as an offset from its start.
+ *
+ * After it: one space, reusing a space already there with the cursor past
+ * it. The space keeps an alternate-format `@key` from re-matching a trigger.
+ * A bracketed citation ends at its closing bracket instead, which no trigger
+ * matches, so punctuation typed next follows it directly: `[@key].`
+ *
+ * Before it: one space where it would stick to a word or punctuation
+ * (`source. [@key]`). A line start, whitespace, or an opening bracket or
+ * quote needs none, and neither does a trigger the researcher typed there.
+ */
+function placeCitation(
+  citation: string,
+  around: { previous: string | null; next: string },
+): { insert: string; cursor: number } {
+  const lead =
+    around.previous !== null &&
+    around.previous.trim() !== "" &&
+    !OPENERS.has(around.previous)
+      ? " "
+      : "";
+  if (isCitationCloser(citation.at(-1))) {
+    const insert = `${lead}${citation}`;
+    return { insert, cursor: insert.length };
+  }
+  return {
+    insert: `${lead}${citation}${around.next === " " ? "" : " "}`,
+    cursor: lead.length + citation.length + 1,
+  };
+}
+
+/**
+ * What the inserted text is, which decides how it is placed: an annotation
+ * or quote by default, or a citation. A citation over a trigger the
+ * researcher typed (`replacesTrigger`) takes no space before it.
+ */
+export type Placement =
+  | { kind?: "annotation" }
+  | { kind: "citation"; replacesTrigger?: boolean };
+
+/**
+ * The text that lands over `range` of `doc`, and where the cursor goes in it,
+ * as an offset from its start. A citation is placed by its own rule (see
+ * {@link placeCitation}). Other one-line text lands inline (see
+ * {@link placeInline}). A block gets the line breaks it needs to stand apart
+ * from the text around the range: without them a callout dropped at the end
+ * of a sentence joins that sentence's line. The cursor rests at its end.
+ *
+ * The one owner of placement: {@link captureInsertion} commits through it,
+ * and an editor that writes synchronously calls it directly.
+ */
+export function placeInsertion(
+  text: string,
+  options: { doc: Text; range: { from: number; to: number } } & Placement,
+): { insert: string; cursor: number } {
+  const { doc, range } = options;
+  const { from, to } = range;
+  const next = doc.sliceString(to, to + 1);
+  if (options.kind === "citation")
+    return placeCitation(text, {
+      previous: options.replacesTrigger
+        ? null
+        : from === doc.lineAt(from).from
+          ? ""
+          : doc.sliceString(from - 1, from),
+      next,
+    });
+  if (!isBlockText(text)) return placeInline(trimLineBreaks(text), next);
   const block = trimLineBreaks(text);
   const isBlank = (line: number) =>
     line < 1 || line > doc.lines || doc.line(line).text.trim() === "";
@@ -49,7 +143,8 @@ function placeText(
       : isBlank(end.number + 1)
         ? ""
         : "\n";
-  return `${before}${block}${after}`;
+  const insert = `${before}${block}${after}`;
+  return { insert, cursor: insert.length };
 }
 
 /**
@@ -145,18 +240,18 @@ export function captureInsertion(options: {
     range: (): { from: number; to: number } | null =>
       cm.state.field(marker, false) ?? null,
     /**
-     * @param options.cursor where the cursor lands in inline text, as an
-     *   offset from its start; the end of the text when absent. A block
-     *   always leaves the cursor at its end.
+     * Land `text` over the held range, placed against the note as it stands
+     * now, by the rule for what it is (see {@link placeInsertion}). Answers
+     * whether it landed.
      */
-    commit(text: string, options?: { cursor?: number }): boolean {
+    commit(text: string, placement: Placement = {}): boolean {
       if (!valid()) return false;
       const range = cm.state.field(marker)!;
-      const insert = placeText(cm.state.doc, range, text);
-      const cursor =
-        options?.cursor !== undefined && !isBlockText(text)
-          ? options.cursor
-          : insert.length;
+      const { insert, cursor } = placeInsertion(text, {
+        ...placement,
+        doc: cm.state.doc,
+        range,
+      });
       cm.dispatch({
         changes: { ...range, insert },
         selection: { anchor: range.from + cursor },

@@ -160,14 +160,15 @@ const WAITS = `
   };`;
 
 /**
- * Opens an empty draft `leaf` in Live Preview, as eval code that runs inside
- * an `await using cleanup` block: the layout, the note, and the leaf are
- * each restored on that stack, registered before the step that can fail.
+ * Opens a draft `leaf` in Live Preview whose last line reads `line`, as eval
+ * code that runs inside an `await using cleanup` block: the layout, the note,
+ * and the leaf are each restored on that stack, registered before the step
+ * that can fail.
  */
-const DRAFT = `
+const draft = (line: string) => `
   const layout=app.workspace.getLayout();
   cleanup.defer(()=>app.workspace.changeLayout(layout));
-  const file=await app.vault.create(${JSON.stringify(NOTE)},'# Draft\\n\\n');
+  const file=await app.vault.create(${JSON.stringify(NOTE)},${JSON.stringify(`# Draft\n\n${line}`)});
   cleanup.defer(()=>app.vault.delete(file));
   const leaf=app.workspace.getLeaf('tab');
   // An insertion is an edit the view saves later; saving it first keeps
@@ -176,12 +177,80 @@ const DRAFT = `
   await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});`;
 
 /**
+ * A one-line annotation template: the quote, its citation, and the durable
+ * link, the shape a researcher writes to quote inside a sentence.
+ */
+const INLINE_ANNOTATION =
+  "{{ zt.text }} {{ zt.citation }} [Zotero]({{ zt.backlink }})";
+
+/** What {@link INLINE_ANNOTATION} renders for `annotation`. */
+function inlineOf(annotation: {
+  key: string;
+  text?: string | null;
+  pageLabel: string;
+}): string {
+  return `${annotation.text} ${citationOf(annotation)} [Zotero](${durableLink(annotation.key, annotation.pageLabel)})`;
+}
+
+/**
+ * Eval code, inside an `await using cleanup` block after {@link WAITS}, that
+ * makes the default Literature Note Profile render annotations through
+ * {@link INLINE_ANNOTATION} until the block ends. A built-in Default gets a
+ * document of its own, deleted on that stack; an existing one is restored.
+ * Either way the templates reload afterwards.
+ */
+const INLINE_PROFILE = `
+  const services=app.plugins.plugins.zotlit.services;
+  const profilePath=services.profile.defaultDocumentPath;
+  const existing=app.vault.getFileByPath(profilePath);
+  const original=existing?await app.vault.read(existing):services.profile.getBuiltInSource();
+  const header=${JSON.stringify("--- zotlit:annotation ---")};
+  if(!original.includes(header))throw new Error('The default profile has no annotation section');
+  if(!original.includes('{%'))throw new Error('The default profile does not render through Liquid');
+  const inline=original.slice(0,original.indexOf(header)+header.length)+${JSON.stringify(`\n${INLINE_ANNOTATION}\n`)};
+  if(existing){
+    cleanup.defer(async()=>{await app.vault.modify(existing,original);await services.template.refresh();});
+    await app.vault.modify(existing,inline);
+  }else{
+    const folder=profilePath.slice(0,profilePath.lastIndexOf('/'));
+    if(folder&&!app.vault.getFolderByPath(folder)){
+      cleanup.defer(async()=>{const made=app.vault.getFolderByPath(folder);if(made&&made.children.length===0)await app.vault.delete(made);});
+      await app.vault.createFolder(folder);
+    }
+    cleanup.defer(async()=>{const made=app.vault.getFileByPath(profilePath);if(made)await app.vault.delete(made);await services.template.refresh();});
+    await app.vault.create(profilePath,inline);
+  }
+  await services.template.refresh();
+  await until(()=>services.template.getLoadedDocumentSource(profilePath)?.includes(${JSON.stringify(INLINE_ANNOTATION)}),()=>'The inline annotation template did not load');`;
+
+/**
+ * Where an insert lands and what follows it: the draft's last line reads
+ * `line` with the cursor at `ch`; `inline` renders through
+ * {@link INLINE_ANNOTATION}; `then` is typed once the insert lands.
+ */
+interface InsertAt {
+  line?: string;
+  ch?: number;
+  inline?: boolean;
+  then?: string;
+}
+
+/** Eval code that types `then` at the cursor of `editor`, when given. */
+const typeAfter = (then: string | undefined) =>
+  then === undefined
+    ? ""
+    : `editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(then)}),{userEvent:'input.type'});`;
+
+/**
  * Inserts the Annotation `annotationKey` of the Rougier Item into an empty
  * draft the way a reader does: its card's "More options" menu in the
  * Annotation View, then "Insert into note". Answers the draft's text once the
  * insertion lands, from a vault already restored.
  */
-async function insertFromCard(annotationKey: string): Promise<string> {
+async function insertFromCard(
+  annotationKey: string,
+  { line = "", ch = 0, inline = false, then }: InsertAt = {},
+): Promise<string> {
   const card = `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`;
   const reply = await obEval(
     run.vaultId,
@@ -190,19 +259,23 @@ async function insertFromCard(annotationKey: string): Promise<string> {
       let text;
       {
         await using cleanup=new AsyncDisposableStack();
-        ${DRAFT}
+        ${inline ? INLINE_PROFILE : ""}
+        ${draft(line)}
         const sidebar=app.workspace.getRightLeaf(false);
         cleanup.adopt(sidebar,(leaf)=>leaf.detach());
         await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
         await app.workspace.revealLeaf(sidebar);
         app.workspace.setActiveLeaf(leaf,{focus:true});
-        leaf.view.editor.setCursor({line:leaf.view.editor.lastLine(),ch:0});
+        const editor=leaf.view.editor;
+        editor.setCursor({line:editor.lastLine(),ch:${ch}});
         const more=await until(()=>sidebar.view.contentEl.querySelector(${JSON.stringify(`${card} [aria-label="More options"]`)}),()=>'The Annotation card did not render');
         more.click();
         const item=await until(()=>[...activeDocument.querySelectorAll('.menu-item')].find((el)=>el.textContent.trim()==='Insert into note'),()=>'The card menu offers no "Insert into note"');
         await ${MENU_READY};
         item.click();
-        text=await until(()=>{const value=leaf.view.editor.getValue();return value.includes(${JSON.stringify(annotationKey)})&&value;},()=>'Nothing was inserted: '+JSON.stringify(leaf.view.editor.getValue()));
+        await until(()=>editor.getValue().includes(${JSON.stringify(annotationKey)}),()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
+        ${typeAfter(then)}
+        text=editor.getValue();
       }
       return JSON.stringify(text);
     })()`,
@@ -229,6 +302,7 @@ interface SearchOutcome {
 async function searchAndInsert(
   typed: string,
   choose: string,
+  { line = "", ch = 0, inline = false, then }: InsertAt = {},
 ): Promise<SearchOutcome> {
   const reply = await obEval(
     run.vaultId,
@@ -241,11 +315,12 @@ async function searchAndInsert(
       let outcome;
       {
         await using cleanup=new AsyncDisposableStack();
-        ${DRAFT}
+        ${inline ? INLINE_PROFILE : ""}
+        ${draft(line)}
         cleanup.defer(()=>annotations.close());
         app.workspace.setActiveLeaf(leaf,{focus:true});
         const editor=leaf.view.editor;
-        editor.setCursor({line:editor.lastLine(),ch:0});
+        editor.setCursor({line:editor.lastLine(),ch:${ch}});
         editor.focus();
         editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(typed)}),{userEvent:'input.type'});
         const query=${JSON.stringify(typed)}.slice(${JSON.stringify(typed)}.indexOf('[>')+2);
@@ -255,7 +330,9 @@ async function searchAndInsert(
         const citationOpen=!!citations?.isOpen;
         row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));
         row.dispatchEvent(new MouseEvent('click',{bubbles:true}));
-        const text=await until(()=>{const value=editor.getValue();return !value.includes('[>')&&value.includes('zotero://')&&value;},()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
+        await until(()=>{const value=editor.getValue();return !value.includes('[>')&&value.includes('zotero://');},()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
+        ${typeAfter(then)}
+        const text=editor.getValue();
         outcome={text,rows:shown,citationOpen};
       }
       return JSON.stringify(outcome);
@@ -705,6 +782,62 @@ describe.skipIf(!reachable)("Annotation links", () => {
     );
     expect(outcome.text).not.toContain("[>");
   }, 120000);
+
+  // A one-line template quotes inside a sentence: the insert stands one
+  // space apart from the word after it, runs straight into closing
+  // punctuation, and leaves a space at a line end, where typing goes on.
+  const PLACEMENTS = [
+    {
+      where: "before a word",
+      line: "As argued here",
+      ch: 10,
+      then: undefined,
+      expected: `As argued ${inlineOf(FIRST_PAGE)} here`,
+    },
+    {
+      where: "before closing punctuation",
+      line: "As argued .",
+      ch: 10,
+      then: undefined,
+      expected: `As argued ${inlineOf(FIRST_PAGE)}.`,
+    },
+    {
+      where: "at a line end, typing on after the space",
+      line: "As argued ",
+      ch: 10,
+      then: "next",
+      expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
+    },
+  ] as const;
+
+  it.each(PLACEMENTS)(
+    "places a one-line Annotation from its card $where",
+    async ({ line, ch, then, expected }) => {
+      const text = await insertFromCard(FIRST_PAGE.key, {
+        line,
+        ch,
+        inline: true,
+        then,
+      });
+
+      expect(text).toBe(`# Draft\n\n${expected}`);
+    },
+    120000,
+  );
+
+  it.each(PLACEMENTS)(
+    "places a one-line Annotation from the Annotation Suggester $where",
+    async ({ line, ch, then, expected }) => {
+      const outcome = await searchAndInsert(
+        "[>MESSAGE tag:visualization color:blue",
+        FIRST_PAGE.text!,
+        { line, ch, inline: true, then },
+      );
+
+      expect(outcome.text).toBe(`# Draft\n\n${expected}`);
+    },
+    120000,
+  );
 
   // The page chip of an Annotation View card opens the Annotation its
   // backlink names the way a followed link does, so it opens Obsidian's

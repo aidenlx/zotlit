@@ -121,34 +121,9 @@ function setup(
 }
 
 describe("insertAnnotation", () => {
-  it("replaces the trigger text with the rendered annotation and one trailing space", async () => {
+  it("replaces the trigger text with the rendered annotation", async () => {
     const inline = `“an exact match” [Zotero](${LINK})`;
     using h = setup("As shown [>exact] here", { rendered: inline });
-    await h.insert(9, 17);
-    expect(h.text()).toBe(`As shown ${inline} here`);
-  });
-
-  it("leaves the cursor after the space it reuses, so typing goes on past it", async () => {
-    const inline = `“an exact match” [Zotero](${LINK})`;
-    using h = setup("As shown [>exact] here", { rendered: inline });
-    await h.insert(9, 17);
-    expect(h.text().slice(h.cursor())).toBe("here");
-  });
-
-  it("adds the space where none follows", async () => {
-    const inline = `“an exact match” [Zotero](${LINK})`;
-    using h = setup("As shown [>exact]", { rendered: inline });
-    await h.insert(9, 17);
-    expect(h.text()).toBe(`As shown ${inline} `);
-  });
-
-  it("reads the space after the trigger text as the insert lands, not as it starts", async () => {
-    const inline = `“an exact match” [Zotero](${LINK})`;
-    using h = setup("As shown [>exact] here", {
-      rendered: inline,
-      // The space after the trigger text goes while the template renders.
-      whileRendering: (cm) => cm.dispatch({ changes: { from: 17, to: 18 } }),
-    });
     await h.insert(9, 17);
     expect(h.text()).toBe(`As shown ${inline} here`);
   });
@@ -167,7 +142,7 @@ describe("insertAnnotation", () => {
     );
   });
 
-  it("sets a rendered callout apart as a block, with no trailing space", async () => {
+  it("sets a rendered callout apart as a block", async () => {
     const callout = `> [!note] Page [4](${LINK})\n> an exact match\n`;
     using h = setup("Before\n[>exact]\nAfter", { rendered: callout });
     await h.insert(7, 15);
@@ -180,6 +155,17 @@ describe("insertAnnotation", () => {
     using h = setup("[>exact]", { rendered: "quote" });
     await h.insert(0, 8);
     expect(h.record).toHaveBeenCalledWith("ART2FULL", "cited");
+  });
+
+  it("records no Use when an edit over the trigger text drops the insert", async () => {
+    using h = setup("As shown [>exact] here", {
+      rendered: "quote",
+      whileRendering: (cm) =>
+        cm.dispatch({ changes: { from: 9, to: 17, insert: "typed" } }),
+    });
+    expect(await h.insert(9, 17)).toEqual({ kind: "settled" });
+    expect(h.text()).toBe("As shown typed here");
+    expect(h.record).not.toHaveBeenCalled();
   });
 
   it("answers unavailable and leaves the trigger text when the annotation is gone", async () => {

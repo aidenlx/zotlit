@@ -9,8 +9,8 @@ import type { SearchHit } from "@/services/item-lookup/service";
 import { readDocumentCitedKeys } from "./document-citations";
 import {
   commitCitationInsert,
-  padCitationInsert,
   resolveCitationInsert,
+  writeCitation,
 } from "./editor-suggest";
 import type { CitationSuggestDeps } from "./register";
 
@@ -85,22 +85,10 @@ export class InsertCitationModal extends ItemSearchModal {
       new BaseNotice(outcome.message);
       return;
     }
-    const editor = this.#editor;
-    const padded = padCitationInsert(outcome.text, {
-      previous:
-        from.ch === 0 ? "" : editor.getLine(from.line).charAt(from.ch - 1),
-      next: editor.getLine(to.line).charAt(to.ch),
-    });
     commitCitationInsert(this.#deps, {
       indexedKey: hit.item.indexedKey,
       text: outcome.text,
-      insert: () => {
-        editor.replaceRange(padded.text, from, to);
-        editor.setCursor(
-          editor.offsetToPos(editor.posToOffset(from) + padded.cursor),
-        );
-        return true;
-      },
+      insert: () => writeCitation(this.#editor, outcome.text, { from, to }),
     });
   }
 }
