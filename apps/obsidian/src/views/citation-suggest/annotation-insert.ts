@@ -7,9 +7,8 @@ import type { AnnotationRepository } from "@/services/annotation-repository/serv
 import type { NoteFeature } from "@/services/note-feature";
 import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import { captureInsertion, isBlockText } from "@/views/annot-view/async-insert";
+import { captureInsertion } from "@/views/annot-view/async-insert";
 import { prepareAndCommit } from "@/views/annot-view/drag-insert";
-import type { InsertionTarget } from "@/views/annot-view/drag-insert";
 
 import type { AnnotationHit } from "./annotation-search";
 
@@ -22,22 +21,6 @@ export interface AnnotationInsertDeps {
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   useLedger: Pick<UseLedger, "record">;
   notify: (message: string | DocumentFragment) => void;
-}
-
-/**
- * The text that lands for `rendered`, and where the cursor goes in it: one
- * line gets a single trailing space, reusing one that follows already, and
- * the cursor lands past that space so typing goes on after it; a block such
- * as the default callout already stands apart on lines of its own.
- */
-function padInline(
-  rendered: string,
-  next: string,
-): { text: string; cursor?: number } {
-  if (isBlockText(rendered)) return { text: rendered };
-  return next === " "
-    ? { text: rendered, cursor: rendered.length + 1 }
-    : { text: `${rendered} ` };
 }
 
 /**
@@ -91,25 +74,12 @@ export async function insertAnnotation(
     });
     return { kind: "unavailable" };
   }
-  const target: InsertionTarget = {
-    ...held,
-    commit(text) {
-      // The text after the range as it stands now, which edits made during
-      // the read and the render may have changed.
-      const at = held.range();
-      const next =
-        at === null ? "" : editor.cm.state.doc.sliceString(at.to, at.to + 1);
-      const padded = padInline(text, next);
-      if (!held.commit(padded.text, padded)) return false;
-      deps.useLedger.record(hit.itemKey, "cited");
-      return true;
-    },
-  };
-  await prepareAndCommit(deps, {
+  const landed = await prepareAndCommit(deps, {
     annotation,
     snapshot: { source: list.source, sourceScope },
-    target,
+    target: held,
     notePath: file.path,
   });
+  if (landed) deps.useLedger.record(hit.itemKey, "cited");
   return { kind: "settled" };
 }
