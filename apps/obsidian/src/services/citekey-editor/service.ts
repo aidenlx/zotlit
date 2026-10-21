@@ -24,6 +24,7 @@ import type { CitationText } from "@/services/citation-text/service";
 import {
   CITEKEY_HOVER_SOURCE,
   hoverPreferences,
+  pagePreviewRequiresMod,
 } from "@/services/citekey-navigation";
 import type {
   HoverPreferences,
@@ -182,6 +183,7 @@ export class CitekeyEditor extends Service<void> {
     this.#plugin.registerEditorExtension(
       annotationLinkHoverExtension({
         hoverPreferences: () => this.#hover,
+        pagePreviewRequiresMod: () => pagePreviewRequiresMod(this.#app),
         showAnnotation: (request) => this.#annotationPopover.show(request),
       }),
     );

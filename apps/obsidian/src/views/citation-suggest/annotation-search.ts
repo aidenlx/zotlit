@@ -1,12 +1,18 @@
 // The Annotation Suggester's search: ZotLit Query over the Zotero database,
 // so it answers with Zotero closed. The query text reads in the Library
 // View's search grammar, with `color:` and `paper:` beside `tag:`.
+//
+// Search across papers reads the database alone, so an annotation Zotero has
+// not yet written there is missing from the results until it has. Selection
+// reads the live annotation repository (`annotation-insert.ts`), the Local API
+// while Zotero runs, so what lands holds the latest edits.
 import { getLogger } from "@/lib/log";
 import type {
   QueryViewRow,
   QueryViewValue,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
+import { visibleText } from "@/services/item-query/visible-text";
 import { searchTokens } from "@/views/library/search";
 
 const logger = getLogger(["views", "annotation-suggest"]);
@@ -54,7 +60,7 @@ const quote = (value: string) => JSON.stringify(value);
  * The filter an annotation must pass, its fields read through `field`: on
  * the annotations dataset the field itself, inside an Item's
  * `annotations.filter(...)` the field of `value`. Every word must be in the
- * text or the comment, in any case; every tag must be on it; one of the
+ * visible text of the text or the comment, in any case; every tag must be on it; one of the
  * colors, a palette name or a `#` hex, must be its color.
  */
 function annotationConditions(
@@ -67,7 +73,7 @@ function annotationConditions(
     .filter(Boolean)
     .map(
       (word) =>
-        `(${field("text")}.lower().contains(${quote(word)}) || ${field("comment")}.lower().contains(${quote(word)}))`,
+        `(${visibleText(field("text"))}.lower().contains(${quote(word)}) || ${visibleText(field("comment"))}.lower().contains(${quote(word)}))`,
     );
   for (const tag of terms.tag)
     conditions.push(`${field("tags")}.contains(${quote(tag)})`);

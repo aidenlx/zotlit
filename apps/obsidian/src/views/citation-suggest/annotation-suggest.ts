@@ -1,6 +1,6 @@
 // The Annotation Suggester: a trigger in the editor opens a search over the
 // annotations in Library Scope, beside the Citation Suggester.
-import { EditorSuggest } from "obsidian";
+import { Component, EditorSuggest } from "obsidian";
 import type {
   Editor,
   EditorPosition,
@@ -14,6 +14,7 @@ import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
   appendExcerptText,
   pageLocator,
@@ -28,11 +29,29 @@ import { resolveAnnotationTrigger } from "./annotation-trigger";
 export interface AnnotationSuggestDeps extends AnnotationInsertDeps {
   query: Pick<QueryService, "run">;
   settings: Pick<SettingsService, "current">;
+  /**
+   * The comment renderer every annotation surface shares, which draws a
+   * comment as the Markdown the note will hold. `owner` holds the rendered
+   * comments; links in them resolve against `sourcePath`.
+   */
+  commentRenderer: (owner: Component, sourcePath: string) => CommentRenderer;
 }
 
 export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
   readonly #deps: AnnotationSuggestDeps;
   #searchController?: AbortController;
+  /** The hits the latest search returned, which the popup draws next. */
+  #incoming: readonly AnnotationHit[] = [];
+  /**
+   * The rows the popup shows: the hits they draw and a stack that holds each
+   * row's drawn comment and the component that owns them. A new result set
+   * disposes it, and so does closing the popup.
+   */
+  #rows: {
+    hits: readonly AnnotationHit[];
+    stack: DisposableStack;
+    renderComment: CommentRenderer;
+  } | null = null;
 
   constructor(deps: AnnotationSuggestDeps) {
     super(deps.app);
@@ -76,21 +95,51 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     this.#searchController?.abort();
     const controller = new AbortController();
     this.#searchController = controller;
-    return (
+    const hits =
       (await searchAnnotations(this.#deps.query, context.query, {
         signal: controller.signal,
         limit: this.limit,
-      })) ?? []
-    );
+      })) ?? [];
+    if (!controller.signal.aborted) this.#incoming = hits;
+    return hits;
   }
 
   override close(): void {
     this.#searchController?.abort();
+    this.#rows?.stack.dispose();
+    this.#rows = null;
+    this.#incoming = [];
     super.close();
   }
 
   override renderSuggestion(hit: AnnotationHit, el: HTMLElement): void {
-    renderAnnotationHit(hit, el);
+    // The first row of a new result set replaces every row of the last one,
+    // so the comments those rows drew go with them.
+    if (
+      this.#rows === null ||
+      (this.#rows.hits !== this.#incoming && this.#incoming.includes(hit))
+    ) {
+      this.#rows?.stack.dispose();
+      this.#rows = this.#openRows(this.#incoming);
+    }
+    const { stack, renderComment } = this.#rows;
+    stack.defer(renderAnnotationHit(hit, el, renderComment));
+  }
+
+  #openRows(hits: readonly AnnotationHit[]) {
+    const stack = new DisposableStack();
+    const owner = stack.adopt(new Component(), (component) =>
+      component.unload(),
+    );
+    owner.load();
+    return {
+      hits,
+      stack,
+      renderComment: this.#deps.commentRenderer(
+        owner,
+        this.context?.file?.path ?? "",
+      ),
+    };
   }
 
   override selectSuggestion(hit: AnnotationHit): void {
@@ -114,28 +163,38 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
 
 /**
  * One result: the quote with its color, the comment, the page and paper. The
- * quote and the comment are Zotero's stored rich text, drawn as the
- * Annotation View and the Annotation Popover draw an excerpt.
+ * quote is Zotero's stored rich text, drawn as the Annotation View and the
+ * Annotation Popover draw an excerpt; the comment goes through the comment
+ * renderer they share, so it reads as the Markdown the note will hold.
+ *
+ * @returns the cleanup of the drawn comment, a no-op for a row without one.
  */
-export function renderAnnotationHit(hit: AnnotationHit, el: HTMLElement): void {
+export function renderAnnotationHit(
+  hit: AnnotationHit,
+  el: HTMLElement,
+  renderComment: CommentRenderer,
+): () => void {
   el.addClass("zt:flex", "zt:gap-2");
   const swatch = el.createDiv({
     cls: "zt:mt-1 zt:w-1 zt:shrink-0 zt:self-stretch zt:rounded-sm zt:bg-(--zt-annot-color)",
   });
   if (hit.color) swatch.style.setProperty("--zt-annot-color", hit.color);
   const body = el.createDiv({ cls: "zt:min-w-0 zt:flex-1" });
-  const quote = hit.text ?? hit.comment;
-  if (quote) appendExcerptText(body, quote, "zt:m-0 zt:line-clamp-3");
-  else
+  if (hit.text) appendExcerptText(body, hit.text, "zt:m-0 zt:line-clamp-3");
+  const cleanup = hit.comment
+    ? renderComment(
+        body.createDiv({
+          cls: hit.text
+            ? "zt:line-clamp-2 zt:text-sm zt:text-muted-foreground"
+            : "zt:line-clamp-3",
+        }),
+        hit.comment,
+      )
+    : () => {};
+  if (!hit.text && !hit.comment)
     body.createDiv({
       text: m.workbench_annotation_type({ type: hit.type ?? "" }),
     });
-  if (hit.text && hit.comment)
-    appendExcerptText(
-      body,
-      hit.comment,
-      "zt:m-0 zt:line-clamp-2 zt:text-sm zt:text-muted-foreground",
-    );
   const meta = [
     hit.pageLabel === null || hit.pageLabel === ""
       ? null
@@ -147,4 +206,5 @@ export function renderAnnotationHit(hit: AnnotationHit, el: HTMLElement): void {
       cls: "zt:truncate zt:text-xs zt:text-faint",
       text: meta.join(" · "),
     });
+  return cleanup;
 }

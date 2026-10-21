@@ -3,7 +3,7 @@
 // `hover-link` the Page preview core plugin answers.
 
 import { Keymap } from "obsidian";
-import type { HoverParent, Workspace } from "obsidian";
+import type { App, HoverParent, Workspace } from "obsidian";
 
 import { CITEKEY_HOVER_SOURCE, hoverEditingMode } from "./hover";
 import type { CitationHoverGesture } from "./hover";
@@ -75,4 +75,33 @@ export function triggerCitekeyHover(
   link: CitekeyHoverLink,
 ): void {
   workspace.trigger("hover-link", { ...link, source: CITEKEY_HOVER_SOURCE });
+}
+
+/** The Page preview core plugin, as far as its Mod gate reads it. */
+interface PagePreviewPlugin {
+  /** The toggles of its settings rows, by hover source; absent until changed. */
+  options: Record<string, boolean>;
+}
+
+/**
+ * Whether Obsidian's Page preview settings make a hover under the citekey
+ * source wait for Mod: the row's own toggle once the researcher changed it,
+ * else the default the source registered. This is the gate Obsidian puts on a
+ * citation's page preview, and every ZotLit hover that answers under Page
+ * Preview reads it here. With the core plugin off its rows keep no toggle, and
+ * the source's default stands.
+ *
+ * Mirrors the core plugin's own `onHoverLink`, verified against Obsidian
+ * 1.14.4.
+ */
+export function pagePreviewRequiresMod(app: App): boolean {
+  const plugin = app.internalPlugins.getEnabledPluginById(
+    "page-preview",
+  ) as PagePreviewPlugin | null;
+  const options = plugin?.options ?? {};
+  if (Object.hasOwn(options, CITEKEY_HOVER_SOURCE))
+    return options[CITEKEY_HOVER_SOURCE]!;
+  return (
+    app.workspace.hoverLinkSources[CITEKEY_HOVER_SOURCE]?.defaultMod ?? true
+  );
 }

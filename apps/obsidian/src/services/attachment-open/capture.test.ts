@@ -219,7 +219,9 @@ describe("decideFileLinkCapture, for a Durable Annotation Link", () => {
   // The fragment carries no library segment of its own, so both keys travel as
   // Indexed Keys — the form an Annotation Record's key already takes.
   it("names a group-library Attachment and Annotation by their Indexed Keys", () => {
-    const { located, ctx } = durable();
+    const { located, ctx } = durable({
+      resolution: { ...RESOLVED_ROUGIER, attachmentKey: "RGRGRUP9g4200309" },
+    });
     expect(
       decideFileLinkCapture(
         "zotero://open/groups/4200309/items/RGRGRUP9?annotation=FDRFQ7C2&page=2",
@@ -251,6 +253,16 @@ describe("decideFileLinkCapture, for a Durable Annotation Link", () => {
 
   it("leaves the link to Zotero while the resolver cannot answer yet", () => {
     const { ctx } = durable({ location: { kind: "pending" } });
+    expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
+  });
+
+  // Two Attachments name one file, and the path stands for the other one.
+  // Obsidian's reader binds the file to that one and would show its
+  // Annotations, never the one the link names, so Zotero opens the link.
+  it("leaves the link to Zotero when its file stands for another Attachment", () => {
+    const { ctx } = durable({
+      resolution: { ...RESOLVED_ROUGIER, attachmentKey: "RGRCOPY1" },
+    });
     expect(decideFileLinkCapture(DURABLE, ctx)).toEqual({ kind: "pass" });
   });
 

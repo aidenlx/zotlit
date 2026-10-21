@@ -1,6 +1,7 @@
 // The reading-mode surface of annotation hover: a rendered Durable Annotation
 // Link shows the Annotation it names, as the Hover Action asks.
 
+import { MarkdownRenderChild } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import { parseAnnotationOpenUri } from "@zotlit/db";
@@ -12,6 +13,7 @@ import {
   annotationHoverIntent,
   hoverGesture,
   hoverPreferences,
+  pagePreviewRequiresMod,
 } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
@@ -38,13 +40,19 @@ export interface AnnotationLinkReadingDeps {
  * Hover Action names.
  *
  * Obsidian raises no `hover-link` for an external link, so a post-processor
- * puts the listener on the link itself, where it goes with the link when the
- * section renders again. The Hover Action is read per hover, so a settings
- * change needs no render.
+ * puts the listener on the link itself. A render child of the section owns
+ * the listener: Obsidian unloads it with the section, and this service
+ * unloads every child it still holds when it goes, so a section that stays
+ * rendered no longer reaches the service. The Hover Action is read per hover,
+ * so a settings change needs no render.
  */
 export class AnnotationLinkReading extends Service<void> {
   readonly #deps;
   #hover: HoverPreferences = hoverPreferences(defaults);
+  /** The render children holding a section's hover listeners. */
+  readonly #sections = new Set<MarkdownRenderChild>();
+  /** Set once the service goes; the post-processor stays registered after. */
+  #disposed = false;
   ready: Promise<void>;
 
   constructor(deps: AnnotationLinkReadingDeps) {
@@ -63,20 +71,38 @@ export class AnnotationLinkReading extends Service<void> {
       }),
     );
     plugin.registerMarkdownPostProcessor((el, ctx) => this.#process(el, ctx));
+    stack.defer(() => {
+      this.#disposed = true;
+      for (const section of [...this.#sections]) section.unload();
+    });
     this.commit(stack.move());
   }
 
   #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
-    if (isDraftMarkdown(el)) return;
+    if (this.#disposed || isDraftMarkdown(el)) return;
+    let section: MarkdownRenderChild | null = null;
     for (const anchor of el.querySelectorAll<HTMLAnchorElement>(
       LINK_SELECTOR,
     )) {
       const link = parseAnnotationOpenUri(anchor.getAttribute("href") ?? "");
       if (link === null) continue;
-      anchor.addEventListener("mouseover", (event) => {
+      section ??= this.#hold(el, ctx);
+      section.registerDomEvent(anchor, "mouseover", (event) => {
         this.#hoverAt(event, anchor, { link, sourcePath: ctx.sourcePath });
       });
     }
+  }
+
+  /** A render child on the section, which its listeners go with. */
+  #hold(
+    el: HTMLElement,
+    ctx: MarkdownPostProcessorContext,
+  ): MarkdownRenderChild {
+    const section = new MarkdownRenderChild(el);
+    section.register(() => this.#sections.delete(section));
+    this.#sections.add(section);
+    ctx.addChild(section);
+    return section;
   }
 
   #hoverAt(
@@ -94,6 +120,7 @@ export class AnnotationLinkReading extends Service<void> {
     const intent = annotationHoverIntent(
       hoverGesture(event, { surface: "reading" }),
       this.#hover,
+      () => pagePreviewRequiresMod(this.#deps.app),
     );
     if (intent.kind === "nothing") {
       logger.trace("Annotation link hover suppressed", {
@@ -113,7 +140,7 @@ export class AnnotationLinkReading extends Service<void> {
     logger.trace("Annotation link shows its annotation", {
       annotationKey: link.annotationKey,
     });
-    this.#deps.annotationPopover.show({
+    void this.#deps.annotationPopover.show({
       event,
       hoverParent,
       targetEl: anchor,

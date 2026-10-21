@@ -106,6 +106,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         info,
         ...(at !== undefined && { range: { from: at, to: at } }),
         isCurrent: () => info.file === file && info.editor === editor,
+        workspace: deps.app.workspace,
       });
       const { doc, selection } = editor.cm.state;
       const start = at ?? selection.main.from;
@@ -128,8 +129,10 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
       commitCitationInsert(deps, {
         indexedKey,
         text: outcome.text,
-        insert: () =>
-          insertion.commit(padCitationInsert(outcome.text, around).text),
+        insert: () => {
+          const padded = padCitationInsert(outcome.text, around);
+          return insertion.commit(padded.text, padded);
+        },
       });
     },
     copyCitationKey: async (indexedKey) => {

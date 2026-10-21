@@ -74,6 +74,7 @@ function setup(uses: Record<string, number> = {}) {
   return {
     service,
     search,
+    sqlite: scenario.sqlite,
     async [Symbol.asyncDispose]() {
       await service[Symbol.asyncDispose]();
       await reads[Symbol.asyncDispose]();
@@ -108,6 +109,32 @@ describe("searchAnnotations", () => {
       COMMENTED.toSorted(),
     );
     expect(await h.search("use it")).toEqual(["RULESANN"]);
+  });
+
+  // Zotero stores rich text with its reader's inline tags. A search reads
+  // what the researcher sees: H<sub>2</sub>O reads "H2O", and the tag names
+  // are no words of it.
+  it("matches the visible text of rich text, not its markup", async () => {
+    await using h = setup();
+    h.sqlite.exec(`
+      update itemAnnotations set text = 'Water is H<sub>2</sub>O', comment = 'A <b>key</b>stone'
+      where itemID = (select itemID from items where key = 'RULESANN');
+    `);
+    expect(await h.search("h2o")).toEqual(["RULESANN"]);
+    expect(await h.search("keystone")).toEqual(["RULESANN"]);
+    expect(await h.search("sub")).toEqual([]);
+  });
+
+  // Only the four tags the reader renders are markup; any other angle bracket
+  // is text the researcher reads, as the card and the copied comment keep it.
+  it("keeps the literal angle brackets of a comparison", async () => {
+    await using h = setup();
+    h.sqlite.exec(`
+      update itemAnnotations set text = 'Significant at p < 0.05 and q > 0.1', comment = 'Holds for n<30 and m>2'
+      where itemID = (select itemID from items where key = 'RULESANN');
+    `);
+    expect(await h.search("0.05")).toEqual(["RULESANN"]);
+    expect(await h.search("n<30")).toEqual(["RULESANN"]);
   });
 
   it("needs every word, each in the text or the comment", async () => {

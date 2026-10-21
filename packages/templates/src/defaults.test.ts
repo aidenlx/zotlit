@@ -99,6 +99,32 @@ describe("Liquid default templates via the facade", () => {
     );
   });
 
+  // The quote goes into a draft already cited, with the page as locator.
+  it("cites the paper after the quote", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", annotationLiquid, "liquid");
+
+    expect(
+      facade.render("annotation", {
+        pageLabel: "iv",
+        backlink: DURABLE,
+        imgLink: null,
+        text: "Highlighted text",
+        comment: "My comment",
+        citation: "[@smith2020, {p. iv}]",
+      }),
+    ).toBe(
+      [
+        `> [!note] Page [iv](${DURABLE})`,
+        ">",
+        "> Highlighted text [@smith2020, {p. iv}]",
+        ">",
+        "> My comment",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("keeps the durable link when the attachment file is unresolvable", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotationLiquid, "liquid");
@@ -380,6 +406,17 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
         imgLink: null,
         text: "plain",
         comment: null,
+      },
+    ],
+    [
+      "with a citation",
+      {
+        pageLabel: "5",
+        backlink: PAGE_FIVE,
+        imgLink: () => "[[ANNOT.png]]",
+        text: "cited",
+        comment: "a comment",
+        citation: "[@smith2020, {p. 5}]",
       },
     ],
     [

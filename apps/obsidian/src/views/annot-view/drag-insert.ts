@@ -143,16 +143,13 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
         const current = getInsertionEditor(deps.app);
         return current?.editor === editor && current.file === info.file;
       },
+      workspace,
     });
     using cleanup = new DisposableStack();
     cleanup.defer(() => {
       if (pending === target) pending = null;
     });
     pending = target;
-    const changed = workspace.on("active-leaf-change", () => {
-      if (!target.valid()) target.cancel();
-    });
-    cleanup.defer(() => workspace.offref(changed));
     await prepareAndCommit(deps, {
       annotation,
       snapshot,
@@ -279,17 +276,11 @@ async function insertDrop(
     info,
     range: { from: position, to: position },
     isCurrent: () => info.file === file && info.editor === editor,
+    workspace: deps.app.workspace,
   });
   options.current(target);
   using cleanup = new DisposableStack();
   cleanup.defer(() => options.settled(target));
-  const validate = () => {
-    if (!target.valid()) target.cancel();
-  };
-  const activeChanged = deps.app.workspace.on("active-leaf-change", validate);
-  cleanup.defer(() => deps.app.workspace.offref(activeChanged));
-  const layoutChanged = deps.app.workspace.on("layout-change", validate);
-  cleanup.defer(() => deps.app.workspace.offref(layoutChanged));
   await prepareAndCommit(deps, {
     annotation: options.annotation,
     snapshot: options.snapshot,

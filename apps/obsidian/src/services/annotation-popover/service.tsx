@@ -94,21 +94,32 @@ export class AnnotationPopover extends Service {
     this.commit(stack.move());
   }
 
-  show(request: AnnotationHoverRequest): void {
-    if (this.#closed) return;
+  /**
+   * Opens the popover for one hovered link and reads what it names.
+   *
+   * @returns settles once that first read has drawn, or has been dropped
+   *   because a newer read or a hide superseded it. A hover needs not wait
+   *   on it.
+   */
+  show(request: AnnotationHoverRequest): Promise<void> {
+    if (this.#closed) return Promise.resolve();
     const visit = this.#visits.open(request.hoverParent, request.targetEl);
     // A read still running when the target moves or the popover hides draws
     // nothing.
     visit.subscriptions.defer(() => visit.state.generation++);
-    this.#follow(visit, request.sourcePath, request.link);
+    return this.#follow(visit, request.sourcePath, request.link);
   }
 
-  /** Holds the link's list for the visit and draws it now and on every change. */
+  /**
+   * Holds the link's list for the visit and draws it now and on every change.
+   *
+   * @returns the first draw.
+   */
   #follow(
     visit: Visit,
     sourcePath: string,
     link: AnnotationOpenUriOptions,
-  ): void {
+  ): Promise<void> {
     const deps = this.#deps;
     const { popover, subscriptions } = visit;
     const attachmentKey = formatIndexedKey(link.attachmentKey, link.groupID);
@@ -121,10 +132,10 @@ export class AnnotationPopover extends Service {
     // Released last: letting a held list go announces a change, which the
     // subscription below must no longer answer.
     subscriptions.use(deps.annotations.hold([attachmentKey]));
-    const draw = (): void => {
+    const draw = (): Promise<void> => {
       const generation = ++visit.state.generation;
       const current = (): boolean => visit.state.generation === generation;
-      void deps.annotations
+      return deps.annotations
         .read(attachmentKey)
         .then((list) => {
           if (!current()) return;
@@ -180,10 +191,10 @@ export class AnnotationPopover extends Service {
     };
     subscriptions.defer(
       deps.annotations.on("annotations-changed", (changed) => {
-        if (changed === attachmentKey) draw();
+        if (changed === attachmentKey) void draw();
       }),
     );
-    draw();
+    return draw();
   }
 }
 

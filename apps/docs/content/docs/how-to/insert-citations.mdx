@@ -103,9 +103,11 @@ The annotation suggester searches the annotations in your library scope and inse
 
   </Step>
   <Step>
-    Press `Enter` on an annotation. It replaces what you typed, rendered through the [annotation template](/docs/reference/templates/defaults#annotation-template) of the note's [profile](/docs/how-to/use-different-templates). The default template writes a callout with the quote, your comment, and the page label linked back to the annotation through a [durable Zotero link](/docs/reference/protocol-links#zotero-open-links). A template that renders one line gets a space after it, so you can keep typing.
+    Press `Enter` on an annotation. It replaces what you typed, rendered through the [annotation template](/docs/reference/templates/defaults#annotation-template) of the note's [profile](/docs/how-to/use-different-templates). The default template writes a callout with the quote, its citation, your comment, and the page label linked back to the annotation through a [durable Zotero link](/docs/reference/protocol-links#zotero-open-links). A template that renders one line gets a space after it, so you can keep typing.
   </Step>
 </Steps>
+
+The search reads the Zotero database, so an annotation you just added or changed in Zotero can take a moment to show in the results. The quote you choose is read again from Zotero while it runs, so the inserted text holds your latest edits.
 
 Annotations of the papers with the most recent activity come first, in the same order as [<UiLabel name={m.library_view_recent()} /> in the Library View](/docs/how-to/use-library-view#recent). Within a paper, annotations follow their order in the PDF.
 

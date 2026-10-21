@@ -93,7 +93,9 @@ function setup(
   const read = vi.fn(async (_key: string) => annotations);
   const record = vi.fn();
   const deps = {
-    app: {} as App,
+    app: {
+      workspace: { on: () => ({}), offref: () => {} },
+    } as unknown as App,
     annotations: { read },
     noteFeature: { prepareAnnotationInsert: prepare },
     zoteroPref: { dataDir: "/zotero" },
@@ -113,6 +115,7 @@ function setup(
     read,
     record,
     text: () => cm.state.doc.toString(),
+    cursor: () => cm.state.selection.main.head,
     [Symbol.dispose]: () => cm.destroy(),
   };
 }
@@ -123,6 +126,13 @@ describe("insertAnnotation", () => {
     using h = setup("As shown [>exact] here", { rendered: inline });
     await h.insert(9, 17);
     expect(h.text()).toBe(`As shown ${inline} here`);
+  });
+
+  it("leaves the cursor after the space it reuses, so typing goes on past it", async () => {
+    const inline = `“an exact match” [Zotero](${LINK})`;
+    using h = setup("As shown [>exact] here", { rendered: inline });
+    await h.insert(9, 17);
+    expect(h.text().slice(h.cursor())).toBe("here");
   });
 
   it("adds the space where none follows", async () => {

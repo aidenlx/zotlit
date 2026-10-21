@@ -87,7 +87,7 @@ In a Profile document: the Annotation Section, the final section after the stand
 {% bq %}
 [!note] {% if zt.pageLabel and zt.pageLabel != "" %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
 
-{{ zt.imgLink | embed }}{{ zt.text }}
+{{ zt.imgLink | embed }}{{ zt.text }}{% if zt.citation %} {{ zt.citation }}{% endif %}
 {% if zt.comment %}
 
 {{ zt.comment }}
@@ -95,12 +95,12 @@ In a Profile document: the Annotation Section, the final section after the stand
 {% endbq %}
 ```
 
-Rendered output for an annotation on page 42 with an image excerpt, highlighted text, and a comment:
+Rendered output for an annotation on page 42 of a paper with the citation key `smith2024`, with an image excerpt, highlighted text, and a comment:
 
 ```markdown
 > [!note] Page [42](zotero://open/library/items/ABCD2345?annotation=ANNX2345&page=42)
 >
-> ![[excerpt.png]]The highlighted passage
+> ![[excerpt.png]]The highlighted passage [@smith2024, {p. 42}]
 >
 > My thoughts on this
 ```
@@ -111,6 +111,7 @@ Rendered output for an annotation on page 42 with an image excerpt, highlighted 
 | Page label   | `Page [{{ zt.pageLabel }}]({{ zt.backlink }})` in the callout title: the page label, linked to the annotation's durable Zotero link, [`zt.backlink`](/docs/reference/templates/data#annotation-template). Click it and the PDF opens on this annotation, in Obsidian's reader when this computer holds the PDF. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links). An annotation with no page label shows `Zotero` as the link text. |
 | Image        | `{{ zt.imgLink \| embed }}`: embeds a prepared image or ink excerpt. A failed refresh keeps a verified previous image, or returns an unavailable-image explanation and source link. Collapses to `""` for other annotation types.                                                                                                                                                                                                                            |
 | Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Citation     | `{{ zt.citation }}`: the paper's citation with this annotation's page as its locator, rendered through the [citation text](#citation-text) template. Left out for an annotation on a standalone PDF or on a paper with no citation key.                                                                                                                                                                                                                      |
 | Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                                                                                                                                                                                                                                                                                    |
 
 The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.

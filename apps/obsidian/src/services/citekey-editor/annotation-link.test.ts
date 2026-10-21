@@ -104,7 +104,7 @@ describe("annotationLinkHoverExtension", () => {
    */
   function linkView(
     requests: AnnotationHoverRequest[],
-    { preferences = hover(), live = true } = {},
+    { preferences = hover(), live = true, pagePreviewRequiresMod = true } = {},
   ) {
     const view = new EditorView({
       parent: document.body,
@@ -120,6 +120,7 @@ describe("annotationLinkHoverExtension", () => {
           ),
           annotationLinkHoverExtension({
             hoverPreferences: () => preferences,
+            pagePreviewRequiresMod: () => pagePreviewRequiresMod,
             showAnnotation: (request) => requests.push(request),
           }),
         ],
@@ -156,16 +157,26 @@ describe("annotationLinkHoverExtension", () => {
     });
   });
 
-  it("shows it under Page Preview too", () => {
+  it("shows it under Page Preview, as Obsidian's Page preview row gates it", () => {
     const requests: AnnotationHoverRequest[] = [];
+    {
+      using view = linkView(requests, {
+        preferences: hover({ action: "page-preview" }),
+        pagePreviewRequiresMod: true,
+      });
+      linkText(view).dispatchEvent(
+        new MouseEvent("mouseover", { bubbles: true }),
+      );
+    }
+    expect(requests).toEqual([]);
+
     using view = linkView(requests, {
       preferences: hover({ action: "page-preview" }),
+      pagePreviewRequiresMod: false,
     });
-
     linkText(view).dispatchEvent(
       new MouseEvent("mouseover", { bubbles: true }),
     );
-
     expect(requests).toHaveLength(1);
   });
 

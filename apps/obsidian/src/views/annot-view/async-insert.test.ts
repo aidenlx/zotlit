@@ -1,10 +1,42 @@
 // @vitest-environment happy-dom
 import { history, undo } from "@codemirror/commands";
-import type { Editor, MarkdownFileInfo, TFile } from "obsidian";
+import type {
+  Editor,
+  EventRef,
+  MarkdownFileInfo,
+  TFile,
+  Workspace,
+} from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { stateEditor } from "./__fixtures__/editor";
 import { captureInsertion } from "./async-insert";
+
+/** The workspace events a held insertion listens to, triggered by hand. */
+function fakeWorkspace() {
+  const listeners = new Map<string, Set<() => void>>();
+  const on = (name: string, callback: () => void) => {
+    const set = listeners.get(name) ?? new Set();
+    set.add(callback);
+    listeners.set(name, set);
+    return { name, callback } as unknown as EventRef;
+  };
+  return {
+    on: on as Workspace["on"],
+    offref(ref: EventRef) {
+      const { name, callback } = ref as unknown as {
+        name: string;
+        callback: () => void;
+      };
+      listeners.get(name)?.delete(callback);
+    },
+    trigger(name: string) {
+      for (const callback of listeners.get(name) ?? []) callback();
+    },
+    listening: () =>
+      [...listeners.values()].reduce((count, set) => count + set.size, 0),
+  };
+}
 
 function fixture() {
   const cm = stateEditor({
@@ -18,13 +50,23 @@ function fixture() {
     file: { path: "target.md" } as TFile,
   } as MarkdownFileInfo;
   let current = true;
-  const target = captureInsertion({ editor, info, isCurrent: () => current });
+  const workspace = fakeWorkspace();
+  const target = captureInsertion({
+    editor,
+    info,
+    isCurrent: () => current,
+    workspace,
+  });
   return {
     cm,
     info,
     target,
+    workspace,
     switchEditor: () => {
       current = false;
+    },
+    returnToEditor: () => {
+      current = true;
     },
     [Symbol.dispose]() {
       target[Symbol.dispose]();
@@ -70,6 +112,22 @@ describe("captured asynchronous insertion", () => {
       expect(f.cm.state.doc.toString()).toBe("before TARGET after");
     },
   );
+  it.each(["active-leaf-change", "layout-change"])(
+    "stays cancelled once a %s leaves another note current, even after the researcher returns",
+    (event) => {
+      using f = fixture();
+      f.switchEditor();
+      f.workspace.trigger(event);
+      f.returnToEditor();
+      expect(f.target.commit("late")).toBe(false);
+      expect(f.cm.state.doc.toString()).toBe("before TARGET after");
+    },
+  );
+  it("stops listening to the workspace once it settles", () => {
+    using f = fixture();
+    expect(f.target.commit("text")).toBe(true);
+    expect(f.workspace.listening()).toBe(0);
+  });
   it("maps an explicit drop position independently of the selection", () => {
     using f = fixture();
     using target = captureInsertion({
@@ -77,6 +135,7 @@ describe("captured asynchronous insertion", () => {
       info: f.info,
       isCurrent: () => true,
       range: { from: 19, to: 19 },
+      workspace: f.workspace,
     });
     f.cm.dispatch({ changes: { from: 0, insert: "prefix " } });
     expect(target.commit(" DROP")).toBe(true);
@@ -89,6 +148,7 @@ describe("captured asynchronous insertion", () => {
       info: f.info,
       isCurrent: () => true,
       range: { from: 7, to: 7 },
+      workspace: f.workspace,
     });
     f.cm.dispatch({ changes: { from: 7, insert: "overlap" } });
     expect(target.commit(" DROP")).toBe(false);
@@ -110,6 +170,7 @@ describe("a multi-line insertion", () => {
       info,
       isCurrent: () => true,
       range: { from: at, to: at },
+      workspace: fakeWorkspace(),
     });
     expect(target.commit(text)).toBe(true);
     const result = cm.state.doc.toString();

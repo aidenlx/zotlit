@@ -82,7 +82,7 @@ views:
         "comment != null",
         { or: ['colorName == "yellow"', 'colorName == "blue"'] },
         'tags.containsAny("figure", "method")',
-        'text.lower().contains("fig \\"2\\"") || comment.replace(/<[^>]*>/g, " ").lower().contains("fig \\"2\\"") || !tags.filter(value.lower().contains("fig \\"2\\"")).isEmpty() || pageLabel.lower().contains("fig \\"2\\"")',
+        'text.replace(/<\\/?(?:b|i|sub|sup)>/gi, "").lower().contains("fig \\"2\\"") || comment.replace(/<\\/?(?:b|i|sub|sup)>/gi, "").lower().contains("fig \\"2\\"") || !tags.filter(value.lower().contains("fig \\"2\\"")).isEmpty() || pageLabel.lower().contains("fig \\"2\\"")',
       ],
     });
   });

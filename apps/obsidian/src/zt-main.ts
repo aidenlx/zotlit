@@ -66,6 +66,7 @@ import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
+import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
 import {
@@ -432,6 +433,12 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       useLedger: services.useLedger,
       notify: (message) => void new BaseNotice(message),
+      commentRenderer: (owner, sourcePath) =>
+        createCommentRenderer({
+          app: this.app,
+          component: owner,
+          getSourcePath: () => sourcePath,
+        }),
     });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,

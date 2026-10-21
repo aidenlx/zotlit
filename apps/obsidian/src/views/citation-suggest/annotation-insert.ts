@@ -7,7 +7,7 @@ import type { AnnotationRepository } from "@/services/annotation-repository/serv
 import type { NoteFeature } from "@/services/note-feature";
 import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import { captureInsertion } from "@/views/annot-view/async-insert";
+import { captureInsertion, isBlockText } from "@/views/annot-view/async-insert";
 import { prepareAndCommit } from "@/views/annot-view/drag-insert";
 import type { InsertionTarget } from "@/views/annot-view/drag-insert";
 
@@ -25,13 +25,19 @@ export interface AnnotationInsertDeps {
 }
 
 /**
- * The text that lands for `rendered`: one line gets a single trailing space,
- * unless one follows already, so typing goes on after it; a block such as the
- * default callout already stands apart on lines of its own.
+ * The text that lands for `rendered`, and where the cursor goes in it: one
+ * line gets a single trailing space, reusing one that follows already, and
+ * the cursor lands past that space so typing goes on after it; a block such
+ * as the default callout already stands apart on lines of its own.
  */
-function padInline(rendered: string, next: string): string {
-  if (rendered.replaceAll(/^\n+|\n+$/g, "").includes("\n")) return rendered;
-  return next === " " ? rendered : `${rendered} `;
+function padInline(
+  rendered: string,
+  next: string,
+): { text: string; cursor?: number } {
+  if (isBlockText(rendered)) return { text: rendered };
+  return next === " "
+    ? { text: rendered, cursor: rendered.length + 1 }
+    : { text: `${rendered} ` };
 }
 
 /**
@@ -66,7 +72,13 @@ export async function insertAnnotation(
 ): Promise<AnnotationInsertOutcome> {
   const { editor, file } = info;
   if (!editor || !file) return { kind: "settled" };
-  using held = captureInsertion({ editor, info, isCurrent, range });
+  using held = captureInsertion({
+    editor,
+    info,
+    isCurrent,
+    range,
+    workspace: deps.app.workspace,
+  });
   const sourceScope = deps.zoteroPref.dataDir;
   const list = await deps.annotations.read(hit.attachmentKey);
   if (!held.valid()) return { kind: "settled" };
@@ -87,7 +99,8 @@ export async function insertAnnotation(
       const at = held.range();
       const next =
         at === null ? "" : editor.cm.state.doc.sliceString(at.to, at.to + 1);
-      if (!held.commit(padInline(text, next))) return false;
+      const padded = padInline(text, next);
+      if (!held.commit(padded.text, padded)) return false;
       deps.useLedger.record(hit.itemKey, "cited");
       return true;
     },
