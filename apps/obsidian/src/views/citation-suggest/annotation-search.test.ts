@@ -125,6 +125,18 @@ describe("searchAnnotations", () => {
     expect(await h.search("sub")).toEqual([]);
   });
 
+  // Only the four tags the reader renders are markup; any other angle bracket
+  // is text the researcher reads, as the card and the copied comment keep it.
+  it("keeps the literal angle brackets of a comparison", async () => {
+    await using h = setup();
+    h.sqlite.exec(`
+      update itemAnnotations set text = 'Significant at p < 0.05 and q > 0.1', comment = 'Holds for n<30 and m>2'
+      where itemID = (select itemID from items where key = 'RULESANN');
+    `);
+    expect(await h.search("0.05")).toEqual(["RULESANN"]);
+    expect(await h.search("n<30")).toEqual(["RULESANN"]);
+  });
+
   it("needs every word, each in the text or the comment", async () => {
     await using h = setup();
     expect(await h.search("rule use")).toEqual(["RULESANN"]);
