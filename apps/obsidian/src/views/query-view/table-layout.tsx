@@ -19,6 +19,11 @@ import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
+import { zoteroUri } from "@/services/attachment-open/open-target";
+import type {
+  OpenTarget,
+  TargetOpener,
+} from "@/services/attachment-open/open-target";
 import type {
   QueryViewRequest,
   QueryViewRow,
@@ -36,8 +41,6 @@ import { CellContent, recordCells, searchFinds } from "./record-rows";
 import { NO_RESULTS } from "./results";
 import { TableHeader, sizedMark } from "./table-header";
 import type { LiteratureNotes, VaultHost } from "./table-notes";
-import { zoteroReaderUri } from "./table-readers";
-import type { ReaderTarget, TableReaders } from "./table-readers";
 import { cellText } from "./value-text";
 import { VaultEditCell, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
@@ -92,7 +95,7 @@ export interface TableChildSource {
 export interface ChildRowContext {
   readonly parent: TableRecord;
   /** The text `children` as a link that opens `target` in its reader. */
-  readonly link: (target: ReaderTarget, children: ReactNode) => ReactNode;
+  readonly link: (target: OpenTarget, children: ReactNode) => ReactNode;
 }
 
 function text(value: QueryViewValue | undefined): string {
@@ -474,8 +477,8 @@ export function ReaderLink({
   target,
   children,
 }: {
-  readers: TableReaders;
-  target: ReaderTarget;
+  readers: Pick<TargetOpener, "open">;
+  target: OpenTarget;
   children: ReactNode;
 }) {
   const open = (event: MouseEvent) => {
@@ -487,7 +490,7 @@ export function ReaderLink({
   return (
     <a
       className="internal-link zt:flex zt:min-w-0 zt:items-center zt:gap-1.5"
-      href={zoteroReaderUri(target) ?? undefined}
+      href={zoteroUri(target) ?? undefined}
       data-query-open={target.kind}
       onClick={(event) => open(event.nativeEvent)}
       onAuxClick={(event) => {
@@ -565,7 +568,7 @@ function ChildRows({
   columns: number;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
-  readers: TableReaders;
+  readers: Pick<TargetOpener, "open">;
 }) {
   const state = expanded.get(id(parent));
   if (!state) return null;
@@ -648,7 +651,7 @@ function ChildRow({
   columns: number;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
-  readers: TableReaders;
+  readers: Pick<TargetOpener, "open">;
 }) {
   const link: ChildRowContext["link"] = (target, children) => (
     <ReaderLink readers={readers} target={target}>
@@ -809,7 +812,7 @@ function ItemRow({
   host: VaultHost | null;
   expanded: ReadonlyMap<string, ChildState>;
   toggle: (record: TableRecord) => void;
-  readers: TableReaders;
+  readers: Pick<TargetOpener, "open">;
   gestures: ItemRowGestures | undefined;
 }) {
   const row = useItemRow(gestures, record.key);

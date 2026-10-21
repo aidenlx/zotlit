@@ -589,7 +589,7 @@ function pluginData(stored?: unknown) {
       },
     },
     literatureNotes,
-    readers: { open: () => Promise.resolve() },
+    opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
   } as unknown as LibraryViewDeps;
   /** Zotero's database changes to hold `items`, and says so. */
   const change = (items: readonly SeedItem[]) => {
@@ -3125,7 +3125,7 @@ describe("Reading Card", () => {
   it("lists the files, which open in their reader, the Zotero notes, which link to Zotero, and the tags as chips", async () => {
     const { deps, change } = pluginData();
     const open = vi.fn(() => Promise.resolve());
-    Object.assign(deps, { readers: { open } });
+    Object.assign(deps, { opener: { open } });
     const view = await openTab(deps);
     await act(async () => {
       change(FILLED);

@@ -14,7 +14,7 @@ import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
-import type { AttachmentOpenLookupDeps } from "@/services/attachment-open/actions";
+import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
 import {
@@ -34,7 +34,7 @@ import { lastEditor } from "./last-note";
 const logger = getLogger(["library-view", "item-actions"]);
 
 export type ItemActionsDeps = NoteResultDeps &
-  AttachmentOpenLookupDeps &
+  AttachmentOpenDeps &
   Pick<CitationSuggestDeps, "citationLookup" | "useLedger"> & {
     noteFeature: CitationSuggestDeps["noteFeature"];
     /** Show a short message to the researcher. */

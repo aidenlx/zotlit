@@ -32,6 +32,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
 import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 import { libraryLabel } from "@/services/library-scope/label";
 import type { LibraryScope } from "@/services/library-scope/scope";
@@ -42,7 +43,6 @@ import {
   ReaderLink,
   ZoteroNoteLink,
 } from "@/views/query-view/table-layout";
-import type { TableReaders } from "@/views/query-view/table-readers";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 
@@ -457,8 +457,8 @@ export class ReadingCard extends Component {
     return this.#deps.items;
   }
 
-  get readers(): TableReaders {
-    return this.#deps.readers;
+  get readers(): Pick<TargetOpener, "open"> {
+    return this.#deps.opener;
   }
 
   get host(): ReadingCardHost {

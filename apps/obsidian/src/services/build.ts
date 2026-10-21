@@ -1,3 +1,5 @@
+import type { FileSystemAdapter } from "obsidian";
+
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { nodeFetch } from "@/lib/node-fetch";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
@@ -22,6 +24,9 @@ import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
+import { createPdfReader } from "./attachment-open/actions";
+import { openWithSystem } from "./attachment-open/capture";
+import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { createChineseSegmenterService } from "./chinese-segmenter/service";
 import { CitationLookup } from "./citation-index/lookup-service";
@@ -199,6 +204,20 @@ export function buildServices(
           reads: zoteroReads,
           queries: queryClient,
           zoteroPref,
+        }),
+    })
+    .useValue({
+      // Every ZotLit gesture that opens an Attachment, and File Link Capture
+      // for a link Obsidian rendered, decides through this one opener.
+      targetOpener: ({ attachmentResolver, settings }) =>
+        createTargetOpener({
+          attachments: attachmentResolver,
+          reader: createPdfReader({ app: plugin.app, settings }),
+          native: openWithSystem,
+          // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
+          vaultBasePath: (
+            plugin.app.vault.adapter as FileSystemAdapter
+          ).getBasePath(),
         }),
     })
     .use({

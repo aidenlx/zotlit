@@ -10,9 +10,8 @@ import {
   isChildItemFields,
   parseIndexedKey,
 } from "@zotlit/db";
-import type { AnnotViewAttachment, Attachment } from "@zotlit/db";
+import type { AnnotViewAttachment } from "@zotlit/db";
 
-import { openAttachments } from "@/lib/attachment-open";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
@@ -25,10 +24,6 @@ import type {
   AnnotationSource,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
-import {
-  createPdfReader,
-  toObsidianOpenable,
-} from "@/services/attachment-open/actions";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
@@ -600,22 +595,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
   async #openPdf(): Promise<void> {
     const active = selectActiveAttachment(this.#store.getState());
     if (!active) return;
-    let attachment: Attachment | null;
-    try {
-      const { reads } = await this.#deps.reads.ready;
-      ({ attachment } = await Effect.runPromise(
-        reads.AnnotationsOfAttachment({ attachmentKey: active.indexedKey }),
-      ));
-    } catch (error) {
-      logger.warn("Failed to read the attachment to open", {
-        attachmentKey: active.indexedKey,
-        error,
-      });
-      return;
-    }
-    openAttachments(
-      attachment ? toObsidianOpenable([attachment], this.#deps) : [],
-      { reader: createPdfReader(this.#deps), app: this.#deps.app },
+    await this.#deps.opener.open(
+      { kind: "attachment", attachmentKey: active.indexedKey },
+      false,
     );
   }
 

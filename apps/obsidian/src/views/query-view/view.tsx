@@ -88,7 +88,6 @@ import { resultTable } from "./table";
 import type { ResultTable } from "./table";
 import { TableLayout } from "./table-layout";
 import type { LiteratureNotes, VaultHost } from "./table-notes";
-import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
 import { useVaultPropertyNames, vaultText } from "./vault-cell";
@@ -114,8 +113,6 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** What the Table's Literature Note Property reads and does. */
   literatureNotes: LiteratureNotes;
-  /** The Table's Attachment and Annotation links. */
-  readers: TableReaders;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -573,11 +570,10 @@ export class QueryView extends Component implements HistorySurface {
    * child rows, which read the Libraries the view reads, as a child lives in
    * its parent's Library; their notes; and the readers their links open.
    */
-  get tableDeps(): Pick<
-    QueryViewDeps,
-    "query" | "literatureNotes" | "readers"
-  > {
-    const { query, literatureNotes, readers } = this.#deps;
+  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> & {
+    readers: QueryViewDeps["opener"];
+  } {
+    const { query, literatureNotes, opener: readers } = this.#deps;
     return {
       query: {
         on: (...args) => query.on(...args),

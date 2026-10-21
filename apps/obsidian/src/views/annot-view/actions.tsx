@@ -1,5 +1,5 @@
 import { Menu } from "obsidian";
-import type { App } from "obsidian";
+import type { App, PaneType } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
@@ -20,6 +20,7 @@ import type {
   TextField,
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
+import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type {
   ExcerptDisplayDemand,
   ExcerptDisplayService,
@@ -232,12 +233,19 @@ export interface AnnotActions {
     target: ExcerptImageTarget,
   ): Promise<ExcerptRequest | null>;
   getBacklink(annot: AnnotationRecord): string | undefined;
+  /**
+   * Open the Annotation where it was made, from its page chip: Obsidian's
+   * reader where this device holds the PDF, Zotero otherwise.
+   */
+  onOpenPage(annot: AnnotationRecord, pane: PaneType | boolean): void;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
 }
 
 export interface AnnotActionDeps {
   app: App;
+  /** Opens an Annotation at its page. */
+  opener: Pick<TargetOpener, "open">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<ExcerptDisplayService, "open">;
   excerptImageRequest: AnnotActions["excerptImageRequest"];
@@ -730,6 +738,19 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   return {
     getBacklink,
+    onOpenPage(annot, pane) {
+      void deps.opener.open(
+        {
+          kind: "annotation",
+          attachmentKey: annot.parentKey,
+          annotationKey: annot.key,
+          pageIndex:
+            "pageIndex" in annot.position ? annot.position.pageIndex : null,
+          pageLabel: annot.pageLabel,
+        },
+        pane,
+      );
+    },
     openExcerptImage: () => deps.excerptDisplay.open(),
     excerptImageRequest: deps.excerptImageRequest,
     onOpenTags,
@@ -862,6 +883,7 @@ export const NOOP_ACTIONS: AnnotActions = {
   openExcerptImage: () => NOOP_DEMAND,
   excerptImageRequest: async () => null,
   getBacklink: () => undefined,
+  onOpenPage: () => {},
   renderComment: () => () => {},
 };
 

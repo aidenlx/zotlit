@@ -10,7 +10,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtBox, showMenuAtButton } from "@/lib/menu";
 import type { MenuAnchor } from "@/lib/menu";
-import { BaseNotice } from "@/lib/notice";
+import type {
+  ReaderOutcome,
+  TargetReader,
+} from "@/services/attachment-open/open-target";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { ZoteroOpenableAttachment } from "@/services/citation-index/service";
 import { menuSections, raiseMenu } from "@/services/menu-events";
@@ -22,26 +25,12 @@ const SECTION = menuSections("zotlit:attachments-menu");
 /** One row a picker offers, whichever reader it opens through. */
 type OpenableRow = ObsidianOpenableAttachment | ZoteroOpenableAttachment;
 
-/** What one call to {@link AttachmentReader.open} asks beyond the Attachment and pane. */
-export interface AttachmentOpenOptions {
-  /** The file was not there to open. Replaces the reader's missing-file notice. */
-  onMissing?: () => void;
-}
-
 /** Where an Attachment opens, and how — the selection policy stays written once and shared by both. */
 export interface AttachmentReader<T extends OpenableRow> {
   /** Icon a picker row gets. */
   icon: string;
-  /**
-   * Open one Attachment, honoring a Mod-click/Mod-Enter's new-pane request.
-   * A reader that finds no file at the open itself runs `onMissing` in place
-   * of its own notice, for a caller with somewhere else to send the link.
-   */
-  open: (
-    attachment: T,
-    pane: PaneType | boolean,
-    options?: AttachmentOpenOptions,
-  ) => void | Promise<void>;
+  /** Open one Attachment, honoring a Mod-click/Mod-Enter's new-pane request. */
+  open: (attachment: T, pane: PaneType | boolean) => unknown;
   /**
    * Nothing qualified. Omit to leave the click inert — a reader whose caller
    * already hides its own control over an empty list (the Zotero readers)
@@ -57,8 +46,7 @@ export function withFixedPane<T extends OpenableRow>(
 ): AttachmentReader<T> {
   return {
     ...reader,
-    open: (attachment, _pane, ...options) =>
-      reader.open(attachment, pane, ...options),
+    open: (attachment) => reader.open(attachment, pane),
   };
 }
 
@@ -153,7 +141,8 @@ export const zoteroAttachmentReader: AttachmentReader<ZoteroOpenableAttachment> 
  * path absent from `fileMap`, or (via Obsidian's external-file fall-through) a
  * `file:`-prefixed path `lstat` finds nothing at — so that `null` is the one
  * signal a Zotero library moving or deleting an Attachment between the read
- * that offered it and the click needs to be caught by.
+ * that offered it and the click needs to be caught by. The reader reports it
+ * and shows nothing: the caller decides what a missing file means.
  *
  * @param onOpened runs once the file is on screen, and only then — a missing
  * file leaves it unrun, so a caller can hang follow-up UI off a real open.
@@ -161,19 +150,15 @@ export const zoteroAttachmentReader: AttachmentReader<ZoteroOpenableAttachment> 
 export function createObsidianAttachmentReader(
   app: App,
   { onOpened }: { onOpened?: () => void } = {},
-): AttachmentReader<ObsidianOpenableAttachment> {
+): TargetReader {
   return {
-    icon: "file-text",
-    onEmpty: () => new BaseNotice(m.notice_no_pdf_attachment()),
-    async open(attachment, pane, options) {
+    async open(attachment, pane): Promise<ReaderOutcome> {
       const file = app.vault.getFileByPath(attachment.openPath);
       if (!file) {
-        logger.warn("Obsidian did not resolve the Attachment's open path", {
+        logger.debug("Obsidian did not resolve the Attachment's open path", {
           openPath: attachment.openPath,
         });
-        if (options?.onMissing) options.onMissing();
-        else new BaseNotice(m.notice_pdf_file_missing());
-        return;
+        return "file-missing";
       }
       // Obsidian's PDF view reads `#page=N` and the rest of its subpath
       // grammar off `eState.subpath`; an absent page opens at the start.
@@ -181,6 +166,7 @@ export function createObsidianAttachmentReader(
         eState: { subpath: namingAttachment(attachment) },
       });
       onOpened?.();
+      return "opened";
     },
   };
 }

@@ -8,10 +8,7 @@ import type {
 } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createObsidianAttachmentReader,
-  openAttachments,
-} from "@/lib/attachment-open";
+import { openAttachments } from "@/lib/attachment-open";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
 import { defaults } from "@/services/settings/schema";
@@ -25,7 +22,7 @@ vi.mock("./profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
 }));
 
-// `createPdfReader` stays real, so the chord still exercises the reader the
+// The picker's reader stays real, so the chord still exercises the reader the
 // plugin builds; only the database lookup behind it is stubbed.
 vi.mock("@/services/attachment-open/actions", async (importOriginal) => ({
   ...(await importOriginal<
@@ -37,10 +34,6 @@ vi.mock("@/services/attachment-open/actions", async (importOriginal) => ({
 vi.mock("@/lib/attachment-open", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/attachment-open")>()),
   openAttachments: vi.fn(),
-  createObsidianAttachmentReader: vi.fn(() => ({
-    icon: "file-text",
-    open: vi.fn(),
-  })),
 }));
 
 beforeEach(() => vi.clearAllMocks());
@@ -182,7 +175,9 @@ describe("QuickSwitchModal PDF chord", () => {
     deps: QuickSwitchDeps;
     modal: QuickSwitchModal;
     getNotesByItemKey: ReturnType<typeof vi.fn>;
+    open: ReturnType<typeof vi.fn>;
   } {
+    const open = vi.fn(() => Promise.resolve({ kind: "reader" }));
     onPlatform(true);
     const getNotesByItemKey = vi.fn().mockReturnValue([]);
     const deps = {
@@ -193,8 +188,9 @@ describe("QuickSwitchModal PDF chord", () => {
       settings: { current: {} },
       reads: { acquireRead: vi.fn() },
       zoteroPref: { dataDir: null, baseAttachmentPath: null },
+      opener: { open },
     } as unknown as QuickSwitchDeps;
-    return { deps, modal: new QuickSwitchModal(deps), getNotesByItemKey };
+    return { deps, modal: new QuickSwitchModal(deps), getNotesByItemKey, open };
   }
 
   it("resolves the Item's Attachments instead of its note on Shift+Enter", async () => {
@@ -221,7 +217,7 @@ describe("QuickSwitchModal PDF chord", () => {
   });
 
   it("honors Mod+Shift+Enter's new-pane request, however many Attachments resolve", async () => {
-    const { modal } = pdfDeps();
+    const { modal, open } = pdfDeps();
     const opened = { indexedKey: "ATCH1" };
     vi.mocked(resolveLiteratureNoteAttachments).mockResolvedValue([
       opened,
@@ -235,9 +231,10 @@ describe("QuickSwitchModal PDF chord", () => {
 
     const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
     void reader.open(opened as never, false);
-    const baseOpen = vi.mocked(createObsidianAttachmentReader).mock.results[0]!
-      .value.open;
-    expect(baseOpen).toHaveBeenCalledWith(opened, true);
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      { kind: "attachment", attachmentKey: "ATCH1" },
+      true,
+    );
   });
 });
 
