@@ -24,7 +24,12 @@ export function popupScope(
   return (keys) => {
     const scope = new Scope(app.scope);
     let pushed = true;
+    // The Scope stands on the stack of one window, so a field that moves to
+    // another hands the keys back; it pushes again there when a popup opens.
+    let unwatch: (() => void) | undefined;
     const release = () => {
+      unwatch?.();
+      unwatch = undefined;
       if (pushed) app.keymap.popScope(scope);
       pushed = false;
     };
@@ -42,8 +47,10 @@ export function popupScope(
       release();
       return undefined;
     });
-    // Onto the stack of the window that has focus, which is the field's.
+    // Onto the stack of the window that has focus, which is the field's: a
+    // popup opens only in a focused field.
     app.keymap.pushScope(scope);
+    unwatch = keys.view.dom.onWindowMigrated(release);
     return release;
   };
 }

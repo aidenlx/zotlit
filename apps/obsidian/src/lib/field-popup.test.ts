@@ -14,13 +14,21 @@ function setup({ accepts = true, closes = true } = {}) {
     pushScope: (scope: Scope) => stack.push(scope),
     popScope: (scope: Scope) => stack.splice(stack.indexOf(scope), 1),
   } as unknown as Keymap;
+  const migrated: (() => void)[] = [];
   const keys = {
-    view: null,
+    view: {
+      dom: {
+        onWindowMigrated: (listener: () => void) => {
+          migrated.push(listener);
+          return () => migrated.splice(migrated.indexOf(listener), 1);
+        },
+      },
+    },
     accept: vi.fn(() => accepts),
     close: vi.fn(() => closes),
   } as unknown as FieldPopupKeys;
   const release = popupScope({ scope: new Scope(), keymap })(keys);
-  return { stack, keys, release };
+  return { stack, keys, release, migrated };
 }
 
 /** The test double's Scope, which records its handlers. */
@@ -83,4 +91,12 @@ it("gives the keymap back before Shift-Tab moves focus", () => {
   expect(press(stack[0]!, "Tab", { shift: true })).toBeUndefined();
   expect(stack).toHaveLength(0);
   expect(keys.accept).not.toHaveBeenCalled();
+});
+
+it("pops the Scope when the field moves to another window", () => {
+  const { stack, migrated } = setup();
+  expect(migrated).toHaveLength(1);
+  migrated[0]!();
+  expect(stack).toHaveLength(0);
+  expect(migrated).toHaveLength(0);
 });
