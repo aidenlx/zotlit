@@ -35,7 +35,7 @@ import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
-import { matchRows } from "@/views/template-workbench/theme";
+import { matchRows, onKeymap } from "@/views/template-workbench/theme";
 
 import {
   expressionVocabulary,
@@ -296,7 +296,7 @@ export function FilterEditor({
     );
   return (
     <WorkbenchHostProvider host={host}>
-      <WorkbenchThemeProvider theme={filterTheme}>
+      <WorkbenchThemeProvider theme={onKeymap(filterTheme, app)}>
         {sections.length > 1 ? (
           sections.map(([section, heading, value]) => (
             <FoldSection

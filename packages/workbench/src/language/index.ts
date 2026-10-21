@@ -47,11 +47,14 @@ export {
 export type { TemplateToken } from "./highlight";
 export { embeddedTemplates } from "./embedded";
 export { signatureAt } from "./signature-hint";
-export {
-  FIELD_POPUP_ATTRIBUTE,
-  SIGNATURE_HINT_CLASS,
-  signatureHint,
-} from "./signature-hint-tooltip";
+export { SIGNATURE_HINT_CLASS, signatureHint } from "./signature-hint-tooltip";
+export { fieldPopup, fieldPopupKeyHost, syntaxCompletion } from "./field-popup";
+export type {
+  FieldPopup,
+  FieldPopupKeyHost,
+  FieldPopupKeys,
+  FieldPopupRelease,
+} from "./field-popup";
 export type {
   HintParameter,
   HintSignature,

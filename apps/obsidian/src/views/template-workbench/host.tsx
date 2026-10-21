@@ -35,6 +35,7 @@ import type {
 
 import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
+import { obsidianPopupKeys } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
@@ -347,6 +348,8 @@ export function createTemplateWorkbenchHost(
           }),
         })),
         templateCompletion(read, templateCompletionPresentation),
+        // The list's keys, on the keymap as Obsidian's suggesters take them.
+        obsidianPopupKeys(app),
         templateHover(read, hoverParent),
         extractPartial ? extractPartialMenu(read, extractPartial) : [],
       ];

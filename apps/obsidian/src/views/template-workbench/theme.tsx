@@ -1,4 +1,6 @@
 import "./theme.css";
+import type { App } from "obsidian";
+
 // Shared authoring controls inherit Obsidian's surfaces and editor typography.
 import {
   expressionOption,
@@ -11,6 +13,7 @@ import {
   captionIcon,
   selectionControl,
 } from "@/components/obsidian/selection-control";
+import { obsidianPopupKeys } from "@/lib/field-popup";
 import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
@@ -630,3 +633,27 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
   },
 };
+
+const keyedThemes = new WeakMap<WorkbenchTheme, WeakMap<App, WorkbenchTheme>>();
+
+/**
+ * `theme` with the keys of each expression field's completion list and
+ * Signature Hint on `app`'s keymap, as Obsidian's own suggesters take them.
+ * One theme per pair, so a render hands the editor the same extension.
+ */
+export function onKeymap<T extends WorkbenchTheme>(theme: T, app: App): T {
+  let byApp = keyedThemes.get(theme);
+  if (!byApp) keyedThemes.set(theme, (byApp = new WeakMap()));
+  let keyed = byApp.get(app);
+  if (!keyed) {
+    keyed = {
+      ...theme,
+      expressionExtension: [
+        theme.expressionExtension ?? [],
+        obsidianPopupKeys(app),
+      ],
+    };
+    byApp.set(app, keyed);
+  }
+  return keyed as T;
+}
