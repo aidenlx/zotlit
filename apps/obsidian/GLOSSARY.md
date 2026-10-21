@@ -186,6 +186,18 @@ _Avoid_: agent template workbench (names the audience, not the thing), template 
 Suggestions for fields, local variables, and language constructs at the position being edited in a Template. Accepting a suggestion completes an expression or inserts a Template Snippet.
 _Avoid_: Citation Suggester (a separate feature), field picker (the explicit field discovery surface)
 
+**Expression Completion**:
+Suggestions at the position being edited in a Filter Expression, wherever Obsidian edits one: a Formula, a Query View's filter condition, or a Match condition. It offers the Query Dataset's fields, `this.item` and `this.attachment` where the view has a Query Context, `formula.<name>` and `vault.<name>` where the expression may read them, the names a list method binds, and the language's functions, methods and properties; after `.` it offers what the receiver's type has, or every method when the type is unknown. Each entry shows its signature and description.
+_Avoid_: formula autocomplete, Bases completion (Obsidian's own, for `.base` files), Template Completion (the Template counterpart)
+
+**Signature Hint**:
+The tooltip that names the function or method whose arguments are being typed in a Filter Expression, with its parameters and types, the parameter under the caret marked, and its description.
+_Avoid_: docstring tooltip, parameter hint, argument help
+
+**Expression Colors**:
+The colors a Filter Expression shows in every editor Obsidian hosts: properties and paths, functions, values, strings, operators, punctuation and regular expressions each with the code color Obsidian defines for that kind of token, the palette a `.base` file draws from, so a community theme's code colors apply. The scheme is derived from Bases and compatible with it, not dependent on it, and colors some token kinds that a `.base` file leaves plain.
+_Avoid_: Bases colors (theirs, not ours), syntax theme
+
 **Workbench Guide**:
 The Template Workbench's built-in usage guide, disclosed in tiers: a quickstart and topic index by default, one topic section on demand. Together with command help it is the home of every workbench tooling fact — value lists come from the same registries the commands use, so the guide cannot drift from the code.
 _Avoid_: manual, skill documentation (the guide lives in the workbench, the skill points at it)
