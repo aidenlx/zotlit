@@ -498,8 +498,12 @@ async function follow({
             await within(read,end,'The reader never drew its last read');
             if(read===binding.refreshed)break;
           }
-          // Obsidian's own page jump and the Landing's scroll frame follow.
-          await until(()=>JSON.stringify(observe().reader)===lands,()=>'The reader did not land: '+JSON.stringify(observe()));
+          // Obsidian's own page jump and the Landing's scroll frame follow,
+          // and so do the Marks: the read settles on data, but PDF.js clears a
+          // page as it renders and the binding paints it again on the page's
+          // render event. A Landing on the page alone selects nothing, so the
+          // wait asks for the Marks as well as the page.
+          await until(()=>{const now=observe();return now.drawn&&JSON.stringify(now.reader)===lands;},()=>'The reader did not land: '+JSON.stringify(observe()));
         }
         outcome={...observe(),...(${reads}?{reads}:{})};
       }
