@@ -144,7 +144,10 @@ export async function loadTemplateData(
   if (selected.kind !== "source") return selected;
   const { source } = selected;
   if (root === "filename") {
-    const { itemTags, itemCollections } = itemFacets(source);
+    const { itemTags, itemCollections } = itemFacets(
+      source,
+      source.item.itemID,
+    );
     return {
       kind: "data",
       data: buildFilenameContext({

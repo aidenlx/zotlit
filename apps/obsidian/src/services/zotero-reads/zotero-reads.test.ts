@@ -356,6 +356,22 @@ describe("ZoteroReads operations", () => {
     expect(ctx.notes.map((n) => n.key)).toEqual(["NTE22345"]);
   });
 
+  it("ItemFacets returns the tags and collections NoteSource gives each item", async () => {
+    const { open } = fixtureOpener();
+    const [facets, source] = await withReads(open, (reads) =>
+      Effect.all([
+        reads.ItemFacets({ libraryID: 1, itemIDs: [1, 999] }),
+        reads.NoteSource({ itemID: 1 }),
+      ]),
+    );
+    expect(facets.tagsByItemID.get(1)).toEqual(source!.tagsByItemID.get(1));
+    expect(facets.collectionsByItemID.get(1)).toEqual(
+      source!.collectionsByItemID.get(1),
+    );
+    expect(facets.tagsByItemID.get(999) ?? []).toEqual([]);
+    expect(facets.collectionsByItemID.get(999) ?? []).toEqual([]);
+  });
+
   it("NoteSource takes the caller's username over the signed-in account", async () => {
     const { open } = fixtureOpener();
     const source = await withReads(open, (reads) =>

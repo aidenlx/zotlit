@@ -339,14 +339,17 @@ export async function runBatchUpdate(
         );
         // Each Item keeps its own result and prepared destination. Overlap
         // rows need a choice; the fallback also covers unmatched Items.
-        const itemsByID = new Map(
-          creationItems.map((item) => [item.itemID, item]),
+        const selections = await deps.noteFeature.resolveCreationProfiles(
+          creationItems,
+          { headless: profile, signal: controls.signal },
         );
         for (const action of creations()) {
-          const selection = await deps.noteFeature.resolveCreationProfile({
-            headless: profile,
-            item: itemsByID.get(action.itemID),
-          });
+          // An Item the Snapshot no longer holds has no Match to test.
+          const selection =
+            selections.get(action.itemID) ??
+            (await deps.noteFeature.resolveCreationProfile({
+              headless: profile,
+            }));
           action.origin =
             selection.problem && selection.problem.kind !== "overlap"
               ? "affected"

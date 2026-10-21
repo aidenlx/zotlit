@@ -1,3 +1,4 @@
+import { chunk } from "@std/collections/chunk";
 import { basename, dirname, join } from "node:path/posix";
 import { getFrontMatterInfo } from "obsidian";
 import type { CachedMetadata, TFile } from "obsidian";
@@ -42,6 +43,7 @@ import type {
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
+import { yieldToMain } from "@/lib/yield-to-main";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
@@ -55,7 +57,8 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { selectProfileByMatch } from "@/services/profile-selection";
+import { selectProfilesByMatch } from "@/services/profile-selection";
+import type { MatchSelection } from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
@@ -82,6 +85,12 @@ import type {
 } from "./frontmatter";
 import { prepareAnnotationInsert } from "./insert-annotation";
 import type { AnnotationInsertOptions } from "./insert-annotation";
+
+/**
+ * Items a batch prepares per worker read before the renderer yields; it bounds
+ * the reply and the run of path renders between yields.
+ */
+const ITEMS_PER_SLICE = 500;
 
 const logger = getLogger("note-feature");
 
@@ -194,6 +203,14 @@ export interface CreationProfileSources {
   asked?: ProfileSelector;
   /** The source Item supplies its Library, type, Tags, and Collections. */
   item?: Item;
+}
+
+/** The sources of many Items' creation Profiles, which their Items supply. */
+export interface BatchCreationProfileSources extends Omit<
+  CreationProfileSources,
+  "item"
+> {
+  signal?: AbortSignal;
 }
 
 /** Manual choice, explicit operation input, Profile Match, then Default. */
@@ -362,6 +379,14 @@ export interface NoteFeature {
   resolveCreationProfile(
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
+  /**
+   * {@link NoteFeature.resolveCreationProfile} for many Items, by itemID. Their
+   * Profile Matches are tested together, a slice of Items per query.
+   */
+  resolveCreationProfiles(
+    items: readonly Item[],
+    sources?: BatchCreationProfileSources,
+  ): Promise<ReadonlyMap<number, CreationProfileSelection>>;
   prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
   prepareBatchCreationProfiles(
     items: readonly Item[],
@@ -515,10 +540,17 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
     resolveCompanionNote: (indexedKey, options) =>
       resolveCompanionNote(ctx, indexedKey, options),
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
-    prepareCreationProfiles: (item) =>
-      prepareCreationProfiles(ctx, item, { create: createAtGate }),
+    resolveCreationProfiles: (items, sources) =>
+      resolveCreationProfiles(ctx, items, sources),
+    prepareCreationProfiles: async (item) => [
+      ...(
+        await prepareCreationProfiles(ctx, [item], {
+          create: createAtGate,
+        })
+      ).get(item.itemID)!,
+    ],
     prepareBatchCreationProfiles: (items, options) =>
-      prepareBatchCreationProfiles(ctx, items, {
+      prepareCreationProfiles(ctx, items, {
         create: createAtGate,
         ...options,
       }),
@@ -597,79 +629,13 @@ async function resolveCompanionNote(
   return { outcome: "existing", files: [file, ...files.slice(1)], keptProfile };
 }
 
+/**
+ * Each Profile's creation preview for each of `items`, by itemID. The facets
+ * the note paths render from are read a slice of Items at a time under one
+ * Snapshot, and the renderer yields between slices. A path one Item takes is
+ * reserved, so a later Item of the batch gets its own.
+ */
 async function prepareCreationProfiles(
-  ctx: NoteFeatureDeps,
-  item: Item,
-  options: {
-    create: (
-      item: Item,
-      options: CreateNoteInternalOptions,
-    ) => Promise<CreateNoteResult>;
-    reservedPaths?: Map<ProfileSelector, Set<string>>;
-  },
-): Promise<PreparedCreationProfile[]> {
-  await Promise.all([
-    ctx.settings.loaded,
-    ctx.profile.ready,
-    ctx.template.ready,
-    ctx.noteIndex.whenIndexed(),
-  ]);
-  let source: NoteSource | null;
-  {
-    await using lease = await ctx.zoteroReads.acquireRead();
-    source = await readNoteSource(lease.reads, item.itemID);
-  }
-  const { itemTags, itemCollections } = source
-    ? itemFacets(source)
-    : { itemTags: [], itemCollections: [] };
-  return selectableProfiles(ctx).map((profile) => {
-    const { selector } = profile;
-    let preparedPath: { path: string; canSuffix: boolean } | undefined;
-    let unavailable: string | undefined;
-    try {
-      let reserved = options.reservedPaths?.get(selector);
-      if (options.reservedPaths && !reserved) {
-        reserved = new Set();
-        options.reservedPaths.set(selector, reserved);
-      }
-      const document = resolveProfileDocument(ctx, profile);
-      if (document === null)
-        throw new Error(
-          m.notice_literature_note_template_missing({
-            document: profile.document!,
-          }),
-        );
-      preparedPath = resolveNotePath(ctx, item, {
-        itemTags,
-        itemCollections,
-        settings: profile.settings,
-        document,
-        reservedPaths: reserved,
-      });
-      reserved?.add(preparedPath.path);
-      logger.debug("Prepared Profile creation path", {
-        indexedKey: item.indexedKey,
-        selector,
-        path: preparedPath.path,
-      });
-    } catch (error) {
-      unavailable = error instanceof Error ? error.message : String(error);
-      logger.debug("Profile creation preview is unavailable", {
-        indexedKey: item.indexedKey,
-        selector,
-        error,
-      });
-    }
-    return {
-      ...profilePreview(profile, preparedPath?.path),
-      unavailable,
-      create: (reporting) =>
-        options.create(item, { ...reporting, profile: selector, preparedPath }),
-    };
-  });
-}
-
-async function prepareBatchCreationProfiles(
   ctx: NoteFeatureDeps,
   items: readonly Item[],
   options: {
@@ -680,19 +646,101 @@ async function prepareBatchCreationProfiles(
     signal?: AbortSignal;
   },
 ): Promise<ReadonlyMap<number, readonly PreparedCreationProfile[]>> {
-  const reservedPaths = new Map<ProfileSelector, Set<string>>();
+  await Promise.all([
+    ctx.settings.loaded,
+    ctx.profile.ready,
+    ctx.template.ready,
+    ctx.noteIndex.whenIndexed(),
+  ]);
+  const profiles = selectableProfiles(ctx).map((profile) => ({
+    profile,
+    document: resolveProfileDocument(ctx, profile),
+    reserved: new Set<string>(),
+  }));
   const plans = new Map<number, readonly PreparedCreationProfile[]>();
-  for (const item of items) {
+  await using lease = await ctx.zoteroReads.acquireRead();
+  for (const slice of chunk(items, ITEMS_PER_SLICE)) {
     options.signal?.throwIfAborted();
-    plans.set(
-      item.itemID,
-      await prepareCreationProfiles(ctx, item, {
-        create: options.create,
-        reservedPaths,
-      }),
-    );
+    const facets = await readItemFacets(lease.reads, slice);
+    for (const item of slice) {
+      const { itemTags, itemCollections } = itemFacets(facets, item.itemID);
+      plans.set(
+        item.itemID,
+        profiles.map(({ profile, document, reserved }) => {
+          const { selector } = profile;
+          let preparedPath: { path: string; canSuffix: boolean } | undefined;
+          let unavailable: string | undefined;
+          try {
+            if (document === null)
+              throw new Error(
+                m.notice_literature_note_template_missing({
+                  document: profile.document!,
+                }),
+              );
+            preparedPath = resolveNotePath(ctx, item, {
+              itemTags,
+              itemCollections,
+              settings: profile.settings,
+              document,
+              reservedPaths: reserved,
+            });
+            reserved.add(preparedPath.path);
+            logger.debug("Prepared Profile creation path", {
+              indexedKey: item.indexedKey,
+              selector,
+              path: preparedPath.path,
+            });
+          } catch (error) {
+            unavailable =
+              error instanceof Error ? error.message : String(error);
+            logger.debug("Profile creation preview is unavailable", {
+              indexedKey: item.indexedKey,
+              selector,
+              error,
+            });
+          }
+          return {
+            ...profilePreview(profile, preparedPath?.path),
+            unavailable,
+            create: (reporting) =>
+              options.create(item, {
+                ...reporting,
+                profile: selector,
+                preparedPath,
+              }),
+          };
+        }),
+      );
+    }
+    await yieldToMain();
   }
   return plans;
+}
+
+/** The tags and collections of `items`, one read for each Library they span. */
+async function readItemFacets(
+  reads: ZoteroReadsApi,
+  items: readonly Item[],
+): Promise<Pick<NoteSource, "tagsByItemID" | "collectionsByItemID">> {
+  const libraries = await Promise.all(
+    [...Map.groupBy(items, ({ libraryID }) => libraryID)].map(
+      ([libraryID, members]) =>
+        Effect.runPromise(
+          reads.ItemFacets({
+            libraryID,
+            itemIDs: members.map(({ itemID }) => itemID),
+          }),
+        ),
+    ),
+  );
+  return {
+    tagsByItemID: new Map(
+      libraries.flatMap(({ tagsByItemID }) => [...tagsByItemID]),
+    ),
+    collectionsByItemID: new Map(
+      libraries.flatMap(({ collectionsByItemID }) => [...collectionsByItemID]),
+    ),
+  };
 }
 
 function selectableProfiles(ctx: NoteFeatureDeps): ResolvedProfile[] {
@@ -720,65 +768,115 @@ function profilePreview(
   };
 }
 
-/** The operation fixes this result; subsequent operations read the current registry. */
+/**
+ * The creation Profile of each of `items`, by itemID. An asked or headless
+ * Profile applies to all of them; otherwise each Item's Profile Match decides,
+ * tested for the whole batch at once. The operation fixes this result;
+ * subsequent operations read the current registry.
+ */
+async function resolveCreationProfiles(
+  ctx: NoteFeatureDeps,
+  items: readonly Item[],
+  sources: BatchCreationProfileSources = {},
+): Promise<ReadonlyMap<number, CreationProfileSelection>> {
+  await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
+  const given = givenCreationProfile(ctx, sources);
+  if (given) return new Map(items.map(({ itemID }) => [itemID, given]));
+  const matches = await selectProfilesByMatch(ctx.profile.profiles, items, {
+    query: ctx.query,
+    signal: sources.signal,
+  });
+  return new Map(
+    items.map((item, index) => [
+      item.itemID,
+      matchedCreationProfile(ctx, item, matches[index]),
+    ]),
+  );
+}
+
+/** {@link resolveCreationProfiles} for one Item, or for none. */
 async function resolveCreationProfile(
   ctx: NoteFeatureDeps,
-  sources: CreationProfileSources = {},
+  { item, ...sources }: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
+  if (item)
+    return (await resolveCreationProfiles(ctx, [item], sources)).get(
+      item.itemID,
+    )!;
   await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
-  const shouldAsk = ctx.profile.profiles.length > 0;
-  const stopped = (
-    problem: CreationSelectionProblem,
-  ): CreationProfileSelection => {
-    logger.debug("Creation Profile selection stopped ({kind})", {
-      kind: problem.kind,
-      indexedKey: sources.item?.indexedKey,
-    });
-    return {
-      selector: DEFAULT_PROFILE,
-      source: "bound",
-      shouldAsk: true,
-      problem,
-    };
+  return (
+    givenCreationProfile(ctx, sources) ?? matchedCreationProfile(ctx, undefined)
+  );
+}
+
+function stoppedCreationProfile(
+  problem: CreationSelectionProblem,
+  item: Item | undefined,
+): CreationProfileSelection {
+  logger.debug("Creation Profile selection stopped ({kind})", {
+    kind: problem.kind,
+    indexedKey: item?.indexedKey,
+  });
+  return {
+    selector: DEFAULT_PROFILE,
+    source: "bound",
+    shouldAsk: true,
+    problem,
   };
+}
+
+/** The Profile the caller asked for, or the headless one, when given. */
+function givenCreationProfile(
+  ctx: NoteFeatureDeps,
+  sources: Omit<CreationProfileSources, "item">,
+): CreationProfileSelection | undefined {
+  const shouldAsk = ctx.profile.profiles.length > 0;
   for (const source of ["asked", "headless"] as const) {
     const selector = sources[source];
     if (selector === undefined) continue;
     if (!ctx.profile.resolveProfile(selector))
-      return stopped({ kind: "invalid-selector", source, selector });
+      return stoppedCreationProfile(
+        { kind: "invalid-selector", source, selector },
+        undefined,
+      );
     logger.debug("Resolved creation Profile {selector} from {source}", {
       selector,
       source,
-      indexedKey: sources.item?.indexedKey,
     });
     return { selector, source, shouldAsk };
   }
-  if (sources.item) {
-    const result = await selectProfileByMatch(
-      ctx.profile.profiles,
-      sources.item,
-      ctx.query,
+  return undefined;
+}
+
+/** The Profile an Item's Match selects; with no Match known, the Default. */
+function matchedCreationProfile(
+  ctx: NoteFeatureDeps,
+  item: Item | undefined,
+  result?: MatchSelection,
+): CreationProfileSelection {
+  const shouldAsk = ctx.profile.profiles.length > 0;
+  if (result?.outcome === "overlap")
+    return stoppedCreationProfile(
+      { kind: "overlap", candidates: result.candidates },
+      item,
     );
-    if (result.outcome === "overlap")
-      return stopped({ kind: "overlap", candidates: result.candidates });
-    // With no Match known, the researcher chooses the Profile.
-    if (result.outcome === "failed")
-      return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk: true };
-    if (result.outcome === "matched") {
-      logger.debug("Profile Match selected {selector}", {
-        selector: result.profile.id,
-        indexedKey: sources.item.indexedKey,
-      });
-      return {
-        selector: result.profile.id,
-        source: "match",
-        shouldAsk: false,
-        reason: m.profile_match_selected(result.reason),
-      };
-    }
+  // With no Match known, the researcher chooses the Profile.
+  if (result?.outcome === "failed")
+    return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk: true };
+  if (result?.outcome === "matched") {
+    logger.debug("Profile Match selected {selector}", {
+      selector: result.profile.id,
+      indexedKey: item?.indexedKey,
+    });
+    return {
+      selector: result.profile.id,
+      source: "match",
+      shouldAsk: false,
+      reason: m.profile_match_selected(result.reason),
+    };
   }
   logger.debug("Creation Profile selection uses Default", {
-    indexedKey: sources.item?.indexedKey,
+    indexedKey: item?.indexedKey,
     shouldAsk,
   });
   return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk };
@@ -878,7 +976,7 @@ async function createNote(
   });
   if (!source) throw new Error(`Zotero item not found: ${item.indexedKey}`);
   // The filename renders from the Snapshot's Item, as the body does.
-  const { itemTags, itemCollections } = itemFacets(source);
+  const { itemTags, itemCollections } = itemFacets(source, source.item.itemID);
   let { path, canSuffix } =
     options.preparedPath ??
     resolveNotePath(ctx, source.item, {

@@ -228,6 +228,13 @@ function makeDeps(
         source: "bound",
         shouldAsk: false,
       }),
+      resolveCreationProfiles: async (items: readonly { itemID: number }[]) =>
+        new Map(
+          items.map(({ itemID }) => [
+            itemID,
+            { selector: "default", source: "bound", shouldAsk: false },
+          ]),
+        ),
     },
     createProfile: vi.fn(),
     importProfile: vi.fn(),
@@ -557,11 +564,15 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
     current: { ...defaults, "note.last-used-profile": books },
   });
   using settingsUpdate = vi.spyOn(deps.settings, "update");
-  deps.noteFeature.resolveCreationProfile = vi.fn(async () => ({
-    selector: books,
-    source: "headless" as const,
-    shouldAsk: true,
-  }));
+  deps.noteFeature.resolveCreationProfiles = vi.fn(
+    async (items: readonly { itemID: number }[]) =>
+      new Map(
+        items.map(({ itemID }) => [
+          itemID,
+          { selector: books, source: "headless" as const, shouldAsk: true },
+        ]),
+      ),
+  ) as typeof deps.noteFeature.resolveCreationProfiles;
   deps.noteFeature.prepareBatchCreationProfiles = vi.fn<
     typeof deps.noteFeature.prepareBatchCreationProfiles
   >(
@@ -798,12 +809,12 @@ function mixedBatch() {
       },
     },
   };
-  const resolveCreationProfile = vi.fn(
-    async ({ item }: { item?: { itemID: number } }) =>
-      selections[item!.itemID]!,
+  const resolveCreationProfiles = vi.fn(
+    async (items: readonly { itemID: number }[]) =>
+      new Map(items.map(({ itemID }) => [itemID, selections[itemID]!])),
   );
-  deps.noteFeature.resolveCreationProfile =
-    resolveCreationProfile as typeof deps.noteFeature.resolveCreationProfile;
+  deps.noteFeature.resolveCreationProfiles =
+    resolveCreationProfiles as typeof deps.noteFeature.resolveCreationProfiles;
   const created: { itemID: number; selector: ProfileSelector }[] = [];
   const plansFor = (itemID: number): PreparedCreationProfile[] =>
     (["default", BOOKS, ARTICLES] as const).map((selector) => ({
@@ -847,7 +858,7 @@ function mixedBatch() {
     key in notes ? [{ path: notes[key] } as TFile] : [];
   itemsIn(new Map([1, 2, 3, 4, 5, 6, 7, 8].map((id) => [id, USER_LIBRARY_ID])));
   vi.mocked(chooseBatchProfile).mockReset();
-  return { deps, resolveCreationProfile, created, updated, selections };
+  return { deps, resolveCreationProfiles, created, updated, selections };
 }
 
 async function classifyMixedBatch(deps: BatchUpdateDeps) {
@@ -877,17 +888,16 @@ const DEFAULT_LABEL = () => m.settings_profile_default_name();
 
 describe("mixed batch", () => {
   it("prepares each new row from its own selection and keeps the fallback to unmatched rows", async () => {
-    const { deps, resolveCreationProfile, created, updated } = mixedBatch();
+    const { deps, resolveCreationProfiles, created, updated } = mixedBatch();
     const { modal, tasks, choices, choice, run, onItemSettled } =
       await classifyMixedBatch(deps);
 
-    expect(resolveCreationProfile).toHaveBeenCalledTimes(5);
-    expect(
-      resolveCreationProfile.mock.calls.map(([sources]) => sources),
-    ).toEqual(
+    // One call resolves every new row (#1642).
+    expect(resolveCreationProfiles).toHaveBeenCalledTimes(1);
+    expect(resolveCreationProfiles.mock.calls[0]![0]).toEqual(
       [1, 2, 3, 4, 5].map((itemID) => ({
-        headless: undefined,
-        item: { itemID, indexedKey: `ITEM${itemID}` },
+        itemID,
+        indexedKey: `ITEM${itemID}`,
       })),
     );
     expect(tasks).toMatchObject([
@@ -1065,9 +1075,9 @@ describe("mixed batch", () => {
   });
 
   it("stops a creation whose Profile was removed after the preview and keeps the others frozen", async () => {
-    const { deps, created, resolveCreationProfile } = mixedBatch();
+    const { deps, created, resolveCreationProfiles } = mixedBatch();
     const { tasks, run, onItemSettled } = await classifyMixedBatch(deps);
-    resolveCreationProfile.mockClear();
+    resolveCreationProfiles.mockClear();
 
     // Articles disappears between preview and run; the rows keep the
     // destinations they showed, and no selection is computed again.
@@ -1090,7 +1100,7 @@ describe("mixed batch", () => {
         message: m.notice_literature_note_profile_unknown({ stamp: ARTICLES }),
       },
     });
-    expect(resolveCreationProfile).not.toHaveBeenCalled();
+    expect(resolveCreationProfiles).not.toHaveBeenCalled();
     expect(tasks[1]).toMatchObject({ id: 2, path: "Articles/Item 2.md" });
   });
 });

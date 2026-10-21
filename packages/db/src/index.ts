@@ -115,6 +115,7 @@ export {
   getAllTagNames,
   getLibraryTagNames,
   resolveItemTags,
+  resolveItemTagsByIDs,
   type TagMemo,
 } from "./queries/tags";
 export { getRelatedKeysByItemID } from "./queries/item-relations";

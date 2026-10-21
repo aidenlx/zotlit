@@ -244,6 +244,14 @@ export const NoteSourceSchema = Schema.Struct({
 });
 type _NoteSource = Expect<Equals<typeof NoteSourceSchema.Type, NoteSource>>;
 
+const ItemFacetsSchema = Schema.Struct({
+  tagsByItemID: TagsByItemID,
+  collectionsByItemID: Schema.ReadonlyMap(
+    Schema.Number,
+    Schema.Array(TemplateCollectionSchema),
+  ),
+});
+
 export const AnnotationSourcesSchema = Schema.Struct({
   annotations: Schema.Array(AnnotationSchema),
   attachments: Schema.Array(AttachmentSchema),
@@ -557,6 +565,19 @@ export class ZoteroReads extends RpcGroup.make(
       ...snapshot,
     },
     success: Schema.NullOr(NoteSourceSchema),
+    error: ReadError,
+  }),
+  /**
+   * The tags and collections of a Library's items, which a note path renders
+   * from. An unknown item has neither.
+   */
+  Rpc.make("ItemFacets", {
+    payload: {
+      libraryID: Schema.Number,
+      itemIDs: Schema.Array(Schema.Number),
+      ...snapshot,
+    },
+    success: ItemFacetsSchema,
     error: ReadError,
   }),
   /** The annotation template bundle for annotations named by key. */

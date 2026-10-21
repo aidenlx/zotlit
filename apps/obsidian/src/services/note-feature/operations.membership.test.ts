@@ -435,6 +435,73 @@ describe("Profile document matches at creation preparation", () => {
     ).toBe("overlap");
   });
 
+  // #1642: a batch tests its Matches together instead of one query per Item.
+  it("resolves a batch across Libraries and query slices as it resolves each Item", async () => {
+    await using f = await harness({
+      [books]: 'tags.contains("Read")',
+      [papers]: 'library == "group:118"',
+    });
+    const digits = "23456789ABCDEFGH";
+    const synthetic = Array.from({ length: 520 }, (_, index) =>
+      item({
+        itemID: 1000 + index,
+        libraryID: 1,
+        groupID: null,
+        // A valid item key: the index in hex, spelled in key characters.
+        key: `SYN${index
+          .toString(16)
+          .padStart(5, "0")
+          .replaceAll(/./g, (digit) => digits[Number.parseInt(digit, 16)]!)}`,
+        itemType: "book",
+      }),
+    );
+    f.client.$client.exec(
+      synthetic
+        .map(({ itemID, key }) => {
+          const row = `insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values (${itemID}, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${key}');`;
+          return itemID % 3 === 0
+            ? `${row} insert into itemTags (itemID, tagID, type) values (${itemID}, 1, 0);`
+            : row;
+        })
+        .join("\n"),
+    );
+    const unknown = item({
+      itemID: 9999,
+      libraryID: 1,
+      groupID: null,
+      key: "GNE22222",
+      itemType: "book",
+    });
+    const items = [personalBook, groupBook, article, ...synthetic, unknown];
+
+    const batch = await f.feature.resolveCreationProfiles(items);
+
+    for (const entry of items)
+      expect(batch.get(entry.itemID)).toEqual(
+        await f.feature.resolveCreationProfile({ item: entry }),
+      );
+    expect(batch.get(groupBook.itemID)).toMatchObject({ selector: papers });
+    expect(
+      synthetic.filter(({ itemID }) => batch.get(itemID)?.selector === books)
+        .length,
+    ).toBe(synthetic.filter(({ itemID }) => itemID % 3 === 0).length);
+    // An Item the database lacks has no Match known, so its Profile is asked.
+    expect(batch.get(unknown.itemID)).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+    });
+    const headless = await f.feature.resolveCreationProfiles(items, {
+      headless: books,
+    });
+    expect([...headless.keys()]).toEqual(items.map(({ itemID }) => itemID));
+    expect(
+      new Set(
+        [...headless.values()].map(({ selector, source }) => source + selector),
+      ),
+    ).toEqual(new Set([`headless${books}`]));
+  });
+
   it("distinguishes absent, catch-all, and evaluable empty-any registry states", async () => {
     await using f = await harness({
       [books]: undefined,

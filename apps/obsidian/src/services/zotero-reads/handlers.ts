@@ -38,6 +38,7 @@ import {
   getZoteroDatabaseIdentity,
   isChildItemFields,
   resolveIndexedKeyLibrary,
+  resolveItemTagsByIDs,
 } from "@zotlit/db";
 import type { Attachment, GroupIDMemo, Item, TagMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -445,6 +446,35 @@ export function handlersLayer(options?: HandlersOptions) {
                   ? (payload.username ?? null)
                   : (memos.username ?? null),
             });
+          }),
+
+        ItemFacets: (payload) =>
+          withClient(payload.snapshot, (client) => {
+            const memos =
+              (payload.snapshot !== undefined &&
+                pinned.get(payload.snapshot)?.memos) ||
+              noteMemos();
+            return {
+              tagsByItemID: resolveItemTagsByIDs(
+                client,
+                payload.itemIDs,
+                memos.tagMemo,
+              ),
+              collectionsByItemID: new Map(
+                [
+                  ...memos.collectionCache.byItemIDs(
+                    client,
+                    payload.libraryID,
+                    payload.itemIDs,
+                  ),
+                ].map(([itemID, collections]) => [
+                  itemID,
+                  // Spread keeps the enumerable fields and drops the string
+                  // coercion.
+                  collections.map((collection) => ({ ...collection })),
+                ]),
+              ),
+            };
           }),
 
         AnnotationSources: (payload) =>

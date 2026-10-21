@@ -119,12 +119,17 @@ interface NoteTarget {
   file: TFile;
 }
 
-/** The item's own tags and collections in `source`, for its note filename. */
-export function itemFacets(source: NoteSource): {
+/**
+ * An item's own tags and collections, for its note filename, out of a read
+ * that holds them by item: a {@link NoteSource}, or the facets of many items.
+ */
+export function itemFacets(
+  source: Pick<NoteSource, "tagsByItemID" | "collectionsByItemID">,
+  itemID: number,
+): {
   itemTags: readonly ItemTag[];
   itemCollections: TemplateCollection[];
 } {
-  const { itemID } = source.item;
   return {
     itemTags: source.tagsByItemID.get(itemID) ?? [],
     itemCollections: (source.collectionsByItemID.get(itemID) ?? []).map(
