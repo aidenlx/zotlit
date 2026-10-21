@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import {
   afterAll,
@@ -25,7 +26,7 @@ import {
   inject,
 } from "vitest";
 
-import { ANNOTATIONS, ATTACHMENTS } from "@zotlit/scripts/fixture";
+import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/scripts/fixture";
 
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { keepRendering } from "./background-throttling.ts";
@@ -7513,32 +7514,68 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(await update()).toEqual({ diagnostic: null });
         expect(managed(await read())).toContain(sorted);
 
-        // A note that holds the earlier static listing, one callout per
-        // Annotation with a plain page label, gets the block on its next full
-        // update.
-        const listing = [
+        // A note ZotLit wrote before Mark Landing, with a static listing of
+        // one callout per Annotation under a plain page label, gets the block
+        // on its next full update. The Fixture no longer seeds that note
+        // (#1647), so write the one it held.
+        const item = ITEMS.find(({ key: candidate }) => candidate === itemKey)!;
+        const attachments = ATTACHMENTS.filter(
+          ({ parentItemID }) => parentItemID === item.itemID,
+        );
+        const attachmentIDs = new Set(attachments.map(({ itemID }) => itemID));
+        // What the note holds below the managed region: its citations, then
+        // its Attachment links.
+        const outside = [
+          `This note rests on ${item
+            .literatureNoteCitations!.map((citation) => `[@${citation}]`)
+            .join(" ")}.`,
+          "",
+          ...attachments
+            .filter(({ sourceAsset }) => sourceAsset !== null)
+            .map(
+              ({ path }) =>
+                `[${path!}](${pathToFileURL(join(environment!.vaultPath, path!)).href})`,
+            ),
+        ].join("\n");
+        const legacy = [
+          "---",
+          `title: ${JSON.stringify(item.title)}`,
+          `zotero-key: ${item.key}`,
+          `citekey: ${item.citationKey!}`,
+          "---",
+          `# ${item.title}`,
+          "",
+          "%%zt-managed%%",
           "## Annotations",
-          ...ANNOTATIONS.filter(
-            ({ parentItemID }) => parentItemID === attachment.itemID,
+          ...ANNOTATIONS.filter(({ parentItemID }) =>
+            attachmentIDs.has(parentItemID),
           ).flatMap(({ pageLabel, text, comment }) => [
             "",
-            `> [!note] Page ${pageLabel ?? ""}`,
+            `> [!note] Page ${pageLabel}`,
             ">",
+            // An image Annotation holds neither text nor a comment.
             `> ${text ?? comment ?? ""}`,
             "",
           ]),
+          "%%/zt-managed%%",
+          "",
+          outside,
+          "",
         ].join("\n");
-        const current = await read();
-        const listingText = current.replace(managed(current), `${listing}\n`);
-        expect(managed(listingText)).toContain("[!note]");
-        await obEval(
-          vaultId!,
-          `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(listingText)});return true;})()`,
-        );
+        // The note holds the legacy text exactly, so the update starts from it.
+        expect(
+          await obEval(
+            vaultId!,
+            `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(created)});const legacy=${JSON.stringify(legacy)};await app.vault.modify(file,legacy);return String((await app.vault.read(file))===legacy);})()`,
+          ),
+        ).toBe("true");
         expect(await update()).toEqual({ diagnostic: null });
-        const migrated = managed(await read());
+        const migratedText = await read();
+        const migrated = managed(migratedText);
         expect(migrated).toContain(block);
         expect(migrated).not.toContain("[!note]");
+        expect(migratedText).toContain(`# ${item.title}\n`);
+        expect(migratedText.split("%%/zt-managed%%")[1]).toContain(outside);
       }, 240000);
     },
   );
