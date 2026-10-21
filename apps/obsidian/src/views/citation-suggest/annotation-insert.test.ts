@@ -1,74 +1,69 @@
-import type { EditorView } from "@codemirror/view";
 // @vitest-environment happy-dom
-// Choosing an Annotation Suggester result: the trigger text gives way to the
-// annotation rendered through the user's template.
+// Choosing an Annotation Suggester result whose insert does not land: the
+// Annotation is gone, or an edit took the trigger text while it rendered.
+// Where the text goes and how it is spaced is `captureInsertion`'s, tested in
+// `views/annot-view/async-insert.test.ts`; a landed insert and its Use are
+// proven in the running app by `packages/e2e/src/annotation-links.e2e.ts`.
+import type { EditorView } from "@codemirror/view";
 import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  AnnotationList,
-  AnnotationRecord,
-} from "@/services/annotation-repository/service";
+import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
+import { UseLedger } from "@/services/use-ledger/service";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { insertAnnotation } from "./annotation-insert";
 import type { AnnotationHit } from "./annotation-search";
 
+/** The Fixture's highlight on the Rougier PDF, as the search finds it. */
 const hit: AnnotationHit = {
-  key: "ANN2HGHT",
-  attachmentKey: "PDF2LIVE",
-  itemKey: "ART2FULL",
+  key: "PUPR5FG5",
+  attachmentKey: "RGRPDF24",
+  itemKey: "RUGIER24",
   type: "highlight",
-  text: "an exact match",
+  text: "Identify Your Message",
   comment: null,
-  color: "#ffd400",
-  pageLabel: "4",
-  title: "Exact Matching in Literature Review",
-  citationKey: "smith2020",
+  color: "#2ea8e5",
+  pageLabel: "1",
+  title: "Ten Simple Rules for Better Figures",
+  citationKey: "rougier2014",
 };
 
-const record: AnnotationRecord = {
-  key: "ANN2HGHT",
-  parentKey: "PDF2LIVE",
-  type: "highlight",
-  color: "#ffd400",
-  comment: null,
-  text: "an exact match",
-  pageLabel: "4",
-  sortIndex: "00000|000000|00000",
-  tags: [],
-  version: null,
-  lock: null,
-  position: { kind: "pdf-rects", pageIndex: 3, rects: [[1, 2, 3, 4]] },
-};
+/** Obsidian's workspace and per-vault storage, the host the insert runs in. */
+function host(): App {
+  let stored: unknown;
+  return {
+    loadLocalStorage: () => stored,
+    saveLocalStorage: (_key: string, value: unknown) => {
+      stored = structuredClone(value);
+    },
+    workspace: {
+      on: () => ({ e: { offref: () => {} } }),
+      offref: () => {},
+      onLayoutReady: () => {},
+    },
+    metadataCache: { on: () => ({ e: { offref: () => {} } }) },
+  } as unknown as App;
+}
 
-const list: AnnotationList = {
-  source: {
-    kind: "zotero-db",
-    database: { userID: null, localUserKey: null, serverID: null },
-    libraryID: 1,
-    libraryRevision: null,
-  },
-  annotations: [record],
-};
-
-const LINK = "zotero://open/library/items/PDF2LIVE?annotation=ANN2HGHT&page=4";
-
-function setup(
+/**
+ * The insert over the real Annotation repository of the Fixture's Rougier
+ * Annotations and a real Use Ledger. The template render stands in for the
+ * Literature Note Profile's: `whileRendering` is an edit the researcher makes
+ * while it runs.
+ */
+async function harness(
+  stack: AsyncDisposableStack,
   doc: string,
-  {
-    rendered,
-    annotations = list,
-    whileRendering,
-  }: {
-    rendered: string;
-    annotations?: AnnotationList | null;
-    /** An edit the researcher makes while the template renders. */
-    whileRendering?: (cm: EditorView) => void;
-  },
+  { whileRendering }: { whileRendering?: (cm: EditorView) => void } = {},
 ) {
+  const { repository } = await repositorySetup(stack);
+  const app = host();
+  const useLedger = stack.use(new UseLedger({ app }));
+  await useLedger.ready;
   const cm = stateEditor({ doc });
+  stack.defer(() => cm.destroy());
   const editor = {
     cm,
     getValue: () => cm.state.doc.toString(),
@@ -80,7 +75,7 @@ function setup(
   const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(async () => {
     whileRendering?.(cm);
     return {
-      text: rendered,
+      text: "quote",
       summary: {
         zotero: 0,
         unchecked: 0,
@@ -90,98 +85,51 @@ function setup(
       } as never,
     };
   });
-  const read = vi.fn(async (_key: string) => annotations);
-  const record = vi.fn();
-  const deps = {
-    app: {
-      workspace: { on: () => ({}), offref: () => {} },
-    } as unknown as App,
-    annotations: { read },
-    noteFeature: { prepareAnnotationInsert: prepare },
-    zoteroPref: { dataDir: "/zotero" },
-    useLedger: { record },
-    notify: () => {},
-  };
-  const insert = (from: number, to: number) =>
-    insertAnnotation(deps, {
-      hit,
-      info,
-      isCurrent: () => true,
-      range: { from, to },
-    });
+  const insert = (target: AnnotationHit, from: number, to: number) =>
+    insertAnnotation(
+      {
+        app,
+        annotations: repository,
+        noteFeature: { prepareAnnotationInsert: prepare },
+        zoteroPref: { dataDir: "/zotero" },
+        useLedger,
+        notify: () => {},
+      },
+      { hit: target, info, isCurrent: () => true, range: { from, to } },
+    );
   return {
     insert,
     prepare,
-    read,
-    record,
+    useLedger,
     text: () => cm.state.doc.toString(),
-    cursor: () => cm.state.selection.main.head,
-    [Symbol.dispose]: () => cm.destroy(),
   };
 }
 
 describe("insertAnnotation", () => {
-  it("replaces the trigger text with the rendered annotation", async () => {
-    const inline = `“an exact match” [Zotero](${LINK})`;
-    using h = setup("As shown [>exact] here", { rendered: inline });
-    await h.insert(9, 17);
-    expect(h.text()).toBe(`As shown ${inline} here`);
-  });
-
-  it("adds no space before a trigger the researcher typed after a word", async () => {
-    using h = setup("word[>exact]", { rendered: "quote" });
-    await h.insert(4, 12);
-    expect(h.text()).toBe("wordquote ");
-  });
-
-  it("renders from the database list it reads, in the scope of the Zotero data folder", async () => {
-    using h = setup("[>exact]", { rendered: "quote" });
-    await h.insert(0, 8);
-    expect(h.read).toHaveBeenCalledWith("PDF2LIVE");
-    expect(h.prepare).toHaveBeenCalledWith(
-      expect.objectContaining({
-        annotation: record,
-        source: list.source,
-        sourceScope: "/zotero",
-        notePath: "Draft.md",
-      }),
-    );
-  });
-
-  it("sets a rendered callout apart as a block", async () => {
-    const callout = `> [!note] Page [4](${LINK})\n> an exact match\n`;
-    using h = setup("Before\n[>exact]\nAfter", { rendered: callout });
-    await h.insert(7, 15);
-    expect(h.text()).toBe(
-      `Before\n\n> [!note] Page [4](${LINK})\n> an exact match\n\nAfter`,
-    );
-  });
-
-  it("records a Use of the paper once the text lands", async () => {
-    using h = setup("[>exact]", { rendered: "quote" });
-    await h.insert(0, 8);
-    expect(h.record).toHaveBeenCalledWith("ART2FULL", "cited");
-  });
-
   it("records no Use when an edit over the trigger text drops the insert", async () => {
-    using h = setup("As shown [>exact] here", {
-      rendered: "quote",
+    await using stack = new AsyncDisposableStack();
+    const h = await harness(stack, "As shown [>message] here", {
       whileRendering: (cm) =>
-        cm.dispatch({ changes: { from: 9, to: 17, insert: "typed" } }),
+        cm.dispatch({ changes: { from: 9, to: 19, insert: "typed" } }),
     });
-    expect(await h.insert(9, 17)).toEqual({ kind: "settled" });
+
+    expect(await h.insert(hit, 9, 19)).toEqual({ kind: "settled" });
+
+    expect(h.prepare).toHaveBeenCalledOnce();
     expect(h.text()).toBe("As shown typed here");
-    expect(h.record).not.toHaveBeenCalled();
+    expect(h.useLedger.current).toEqual({});
   });
 
   it("answers unavailable and leaves the trigger text when the annotation is gone", async () => {
-    using h = setup("[>exact]", {
-      rendered: "quote",
-      annotations: { ...list, annotations: [] },
+    await using stack = new AsyncDisposableStack();
+    const h = await harness(stack, "[>message]");
+
+    expect(await h.insert({ ...hit, key: "GONE2345" }, 0, 10)).toEqual({
+      kind: "unavailable",
     });
-    expect(await h.insert(0, 8)).toEqual({ kind: "unavailable" });
-    expect(h.text()).toBe("[>exact]");
-    expect(h.record).not.toHaveBeenCalled();
+
+    expect(h.text()).toBe("[>message]");
     expect(h.prepare).not.toHaveBeenCalled();
+    expect(h.useLedger.current).toEqual({});
   });
 });
