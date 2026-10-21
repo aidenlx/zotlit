@@ -669,7 +669,7 @@
   "annot_view_color_gray": "Gray",
   "annot_view_color_plum": "Plum",
   "annot_view_page": "p. {page}",
-  "annot_view_open_page": "Open in Zotero",
+  "annot_view_open_page": "Open annotation in PDF",
   "annot_view_unsupported_type": "Unsupported annotation type: {type}",
   "annot_view_menu_copy_backlink": "Copy backlink",
   "annot_view_menu_copy_text": "Copy annotation text",

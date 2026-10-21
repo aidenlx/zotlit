@@ -51,6 +51,14 @@ function durableLink(
 
 const LINK_TEXT = "the quoted passage";
 
+/**
+ * The citation the default annotation template writes after a quote of the
+ * Rougier Item: its citation key, with the Annotation's page as locator.
+ */
+function citationOf(annotation: { pageLabel: string }): string {
+  return `[@${annotationItem.citationKey}, p. ${annotation.pageLabel}]`;
+}
+
 /** A note quoting one passage, ending on an empty line that holds no link. */
 function noteWith(url: string, properties = ""): string {
   return `${properties}# Draft\n\nAs Rougier argues, [${LINK_TEXT}](${url}).\n`;
@@ -254,8 +262,12 @@ interface Scenario {
   note: string;
   /** The link the gesture follows; {@link FILE_URL} is replaced as in `note`. */
   url: string;
-  /** Where the link is clicked, or `external` for Obsidian's open-in-default-app target. */
-  gesture: keyof typeof LINK_IN | "external";
+  /**
+   * Where the link is clicked, `external` for Obsidian's open-in-default-app
+   * target, or `chip` for the page chip of the Annotation's card in the
+   * Annotation View, which carries the link as its backlink.
+   */
+  gesture: keyof typeof LINK_IN | "external" | "chip";
   /** Turn `reader.open-file-links` off for this scenario. */
   captureOff?: boolean;
   /** The reader state that ends the wait early, when a landing is expected. */
@@ -279,7 +291,17 @@ async function follow({
   const follow =
     gesture === "external"
       ? `window.open(url,'_external');`
-      : `${linkTarget(gesture)}
+      : gesture === "chip"
+        ? `const sidebar=app.workspace.getRightLeaf(false);
+        cleanup.adopt(sidebar,(leaf)=>leaf.detach());
+        await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+        await app.workspace.revealLeaf(sidebar);
+        const card='.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(new URL(url).searchParams.get('annotation'))+']';
+        const link=await until(()=>sidebar.view.contentEl.querySelector(card+' a.zt-annot-page-chip'),()=>'The card drew no page chip');
+        link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+        const box=link.getBoundingClientRect();
+        link.dispatchEvent(new MouseEvent('click',{clientX:box.left+box.width/2,clientY:box.top+box.height/2,bubbles:true,cancelable:true,button:0,view:link.ownerDocument.defaultView}));`
+        : `${linkTarget(gesture)}
         const init={clientX:x,clientY:y,bubbles:true,cancelable:true,button:0,view:link.ownerDocument.defaultView};
         link.dispatchEvent(new MouseEvent('mousedown',{...init,buttons:1}));link.dispatchEvent(new MouseEvent('mouseup',init));link.dispatchEvent(new MouseEvent('click',init));`;
   const reply = await obEval(
@@ -308,7 +330,7 @@ async function follow({
         const fileUrl=require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href;
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
         if(${captureOff})s.settings.update({'reader.open-file-links':false});
-        ${showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
+        ${gesture === "chip" ? "" : showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
         if(lands===null){
@@ -435,7 +457,10 @@ describe.skipIf(!reachable)("Annotation links", () => {
 
   // The system handler would hand a passed link to the real Zotero on this
   // computer. ZotLit patches `window.open` once, as it loads, so it is
-  // reloaded over a recorder that keeps every `zotero:` URL instead.
+  // reloaded over a recorder that keeps every `zotero:` URL instead. A
+  // `zotero:` anchor in the Annotation View would navigate on its own, past
+  // `window.open`: a capture-phase listener stops that navigation and records
+  // nothing, so a chip that skips `window.open` fails its case in silence.
   //
   // Capture warms the Attachment index as it installs, so it answers before
   // any PDF is open; a lookup that still answered `pending` would hand every
@@ -445,7 +470,7 @@ describe.skipIf(!reachable)("Annotation links", () => {
     expect(
       await obEval(
         run.vaultId,
-        `(async()=>{await app.plugins.disablePlugin('zotlit');const s=window.__ztLinks={native:window.open,passed:[]};window.open=function(url,target,features){if(String(url).startsWith('zotero:')){s.passed.push({url:String(url),target:target??null});return null;}return s.native.apply(this,arguments);};await app.plugins.enablePlugin('zotlit');const timeout=new Promise((resolve)=>setTimeout(()=>resolve('not indexed'),20000));return await Promise.race([app.plugins.plugins.zotlit.services.attachmentResolver.indexed.then(()=>'indexed'),timeout]);})()`,
+        `(async()=>{await app.plugins.disablePlugin('zotlit');const s=window.__ztLinks={native:window.open,passed:[],stopAnchor:(e)=>{const a=e.target?.closest?.('a[href^="zotero:"]');if(a?.closest('.workspace-leaf-content[data-type="zotero-annotation-view"]'))e.preventDefault();}};window.addEventListener('click',s.stopAnchor,true);window.open=function(url,target,features){if(String(url).startsWith('zotero:')){s.passed.push({url:String(url),target:target??null});return null;}return s.native.apply(this,arguments);};await app.plugins.enablePlugin('zotlit');const timeout=new Promise((resolve)=>setTimeout(()=>resolve('not indexed'),20000));return await Promise.race([app.plugins.plugins.zotlit.services.attachmentResolver.indexed.then(()=>'indexed'),timeout]);})()`,
         60000,
       ),
       "the Attachment index is built with no lookup asking for it",
@@ -455,7 +480,7 @@ describe.skipIf(!reachable)("Annotation links", () => {
   afterAll(async () => {
     await obEval(
       run.vaultId,
-      `(async()=>{const s=window.__ztLinks;if(!s)return true;await app.plugins.disablePlugin('zotlit');window.open=s.native;delete window.__ztLinks;await app.plugins.enablePlugin('zotlit');return true;})()`,
+      `(async()=>{const s=window.__ztLinks;if(!s)return true;await app.plugins.disablePlugin('zotlit');window.removeEventListener('click',s.stopAnchor,true);window.open=s.native;delete window.__ztLinks;await app.plugins.enablePlugin('zotlit');return true;})()`,
     );
   }, 120000);
 
@@ -535,6 +560,7 @@ describe.skipIf(!reachable)("Annotation links", () => {
     const inserted = await insertFromCard(FIRST_PAGE.key);
 
     expect(inserted).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
+    expect(inserted).toContain(`${FIRST_PAGE.text} ${citationOf(FIRST_PAGE)}`);
     expect(inserted).not.toContain("file://");
     expect(inserted).not.toContain("zt-annotation=");
 
@@ -564,7 +590,22 @@ describe.skipIf(!reachable)("Annotation links", () => {
     expect(outcome.rows).toEqual([expect.stringContaining(FIRST_PAGE.text!)]);
     expect(outcome.text).toContain(FIRST_PAGE.text!);
     expect(outcome.text).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
+    expect(outcome.text).toContain(
+      `${FIRST_PAGE.text} ${citationOf(FIRST_PAGE)}`,
+    );
     expect(outcome.text).not.toContain("[>");
+  }, 120000);
+
+  // The page chip of an Annotation View card follows the same link a note
+  // holds, through the same capture, so it opens Obsidian's reader where
+  // this computer holds the PDF.
+  it("opens the reader on the Annotation from its card's page chip", async () => {
+    const url = durableLink(SECOND_PAGE.key, SECOND_PAGE.pageLabel);
+    const lands = { page: 2, selected: [SECOND_PAGE.key] };
+
+    const outcome = await follow({ note: "", url, gesture: "chip", lands });
+
+    expect(outcome).toMatchObject({ reader: lands, passed: [] });
   }, 120000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps
@@ -609,6 +650,22 @@ describe.skipIf(!reachable)("Annotation links", () => {
       },
       120000,
     );
+
+    it("from a card's page chip while the reader's open-file-links setting is off", async () => {
+      const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+
+      const outcome = await follow({
+        note: "",
+        url,
+        gesture: "chip",
+        captureOff: true,
+      });
+
+      expect(outcome).toMatchObject({
+        reader: null,
+        passed: [expect.objectContaining({ url })],
+      });
+    }, 120000);
 
     it("while the reader's open-file-links setting is off", async () => {
       const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);

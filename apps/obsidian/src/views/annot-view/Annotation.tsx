@@ -1124,9 +1124,9 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
  * colour" has to say.
  *
  * The chip is the card's drag handle. Where a note is open to take it, the
- * drag rides on it; where the Annotation has a backlink, its click opens the
- * page in Zotero, and otherwise the click falls through to the card's own
- * selection.
+ * drag rides on it; where the Annotation has a backlink, its click follows
+ * that Durable Annotation Link as a note's link is followed, and otherwise the
+ * click falls through to the card's own selection.
  */
 function PageChip({
   type,
@@ -1174,8 +1174,18 @@ function PageChip({
         href={backlink}
         draggable
         onDragStart={onDragStart}
-        // Opening the page in Zotero is its own verb, not the card's selection.
-        onClick={(e) => e.stopPropagation()}
+        // Following the link is its own verb, not the card's selection. It
+        // goes through `window.open` with the pane a Mod-click asks for, as
+        // Obsidian follows a link in a note, so File Link Capture opens it in
+        // Obsidian's reader where this computer holds the PDF and hands it to
+        // Zotero otherwise. The anchor's own navigation would reach the
+        // system handler alone.
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const pane = Keymap.isModEvent(e.nativeEvent);
+          window.open(backlink, typeof pane === "string" ? pane : "");
+        }}
         {...tooltipAttrs(m.annot_view_open_page())}
       >
         {marks}

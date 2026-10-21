@@ -691,7 +691,7 @@
   "annot_view_color_gray": "灰色",
   "annot_view_color_plum": "梅红色",
   "annot_view_page": "第{page}页",
-  "annot_view_open_page": "在 Zotero 中打开",
+  "annot_view_open_page": "在 PDF 中打开标注",
   "annot_view_unsupported_type": "不支持的标注类型：{type}",
   "annot_view_menu_copy_backlink": "复制反向链接",
   "annot_view_menu_copy_text": "复制标注文本",
