@@ -144,13 +144,13 @@ it("inserts a row's citation into the note active last before the Library View, 
   env.activate(env.library);
 
   await env.actions.insertCitation(KEY);
-  expect(second.text()).toBe("[@vaswani2017] LEFT RIGHT");
+  expect(second.text()).toBe("[@vaswani2017]LEFT RIGHT");
   expect(first.text()).toBe("LEFT RIGHT");
   expect(env.record).toHaveBeenCalledExactlyOnceWith(KEY, "cited");
 
   env.close(second);
   await env.actions.insertCitation(KEY);
-  expect(first.text()).toBe("[@vaswani2017] LEFT RIGHT");
+  expect(first.text()).toBe("[@vaswani2017]LEFT RIGHT");
   expect(env.record).toHaveBeenCalledTimes(2);
 });
 
@@ -165,7 +165,7 @@ it("inserts into the note that was active last before the plugin loaded", async 
   });
 
   await env.actions.insertCitation(KEY);
-  expect(draft.text()).toBe("[@vaswani2017] LEFT RIGHT");
+  expect(draft.text()).toBe("[@vaswani2017]LEFT RIGHT");
 });
 
 it("inserts into a new tab that became active before it opened its note", async () => {
@@ -181,7 +181,7 @@ it("inserts into a new tab that became active before it opened its note", async 
   env.activate(env.library);
 
   await env.actions.insertCitation(KEY);
-  expect(fresh.text()).toBe("[@vaswani2017] LEFT RIGHT");
+  expect(fresh.text()).toBe("[@vaswani2017]LEFT RIGHT");
   expect(earlier.text()).toBe("LEFT RIGHT");
 });
 
@@ -194,7 +194,7 @@ it("passes over a note in Reading view, which shows no editor, and says where it
   env.activate(env.library);
 
   await env.actions.insertCitation(KEY);
-  expect(editing.text()).toBe("[@vaswani2017] LEFT RIGHT");
+  expect(editing.text()).toBe("[@vaswani2017]LEFT RIGHT");
 
   env.close(editing);
   await env.actions.insertCitation(KEY);
@@ -204,7 +204,7 @@ it("passes over a note in Reading view, which shows no editor, and says where it
   );
 });
 
-it("parts a dropped or inserted citation from the words around it with a space, and adds none at a line start", async () => {
+it("parts a dropped or inserted citation from the word before it with a space, and adds none at a line start", async () => {
   const env = setup();
   const draft = env.note("Draft.md");
   env.activate(draft);
@@ -217,13 +217,13 @@ it("parts a dropped or inserted citation from the words around it with a space, 
   expect(draft.text()).toBe("LEFT [@vaswani2017] RIGHT");
   // Dropped at the start of the line.
   await env.actions.insertCitation(KEY, target(0));
-  expect(draft.text()).toBe("[@vaswani2017] LEFT [@vaswani2017] RIGHT");
+  expect(draft.text()).toBe("[@vaswani2017]LEFT [@vaswani2017] RIGHT");
   // Inserted at the cursor, at the end of the line.
   const { cm } = view.editor;
   cm.dispatch({ selection: { anchor: cm.state.doc.length } });
   await env.actions.insertCitation(KEY);
   expect(draft.text()).toBe(
-    "[@vaswani2017] LEFT [@vaswani2017] RIGHT [@vaswani2017] ",
+    "[@vaswani2017]LEFT [@vaswani2017] RIGHT [@vaswani2017]",
   );
   expect(env.record).toHaveBeenCalledTimes(3);
   expect(env.record).toHaveBeenLastCalledWith(KEY, "cited");

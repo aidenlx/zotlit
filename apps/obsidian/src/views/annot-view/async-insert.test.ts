@@ -302,3 +302,91 @@ describe("a one-line insertion", () => {
     expect(held.withCursor()).toBe(`As shown ${QUOTE} |here`);
   });
 });
+
+describe("a citation insertion", () => {
+  /** The note after `citation` lands over `from`–`to`, with `|` at the cursor. */
+  const cite = (
+    citation: string,
+    {
+      doc,
+      from,
+      to = from,
+      trigger = false,
+    }: { doc: string; from: number; to?: number; trigger?: boolean },
+  ) => {
+    using held = holdAt(doc, from, to);
+    expect(
+      held.target.commit(citation, {
+        kind: "citation",
+        replacesTrigger: trigger,
+      }),
+    ).toBe(true);
+    return held.withCursor();
+  };
+
+  it.each([
+    { where: "a line end", doc: "See ", at: 4, expected: "See [@smith2024]|" },
+    {
+      where: "punctuation",
+      doc: "See .",
+      at: 4,
+      expected: "See [@smith2024]|.",
+    },
+    {
+      where: "a space",
+      doc: "See  more",
+      at: 4,
+      expected: "See [@smith2024]| more",
+    },
+  ])(
+    "ends a bracketed citation at its closing bracket before $where",
+    ({ doc, at, expected }) => {
+      expect(cite("[@smith2024]", { doc, from: at })).toBe(expected);
+    },
+  );
+
+  it("leaves no space after a bracketed citation at a line end, where an annotation gets one", () => {
+    expect(cite("[@smith2024]", { doc: "See ", from: 4 })).toBe(
+      "See [@smith2024]|",
+    );
+    using held = holdAt("See ", 4);
+    held.target.commit("“a quote” [@smith2024]");
+    expect(held.withCursor()).toBe("See “a quote” [@smith2024] |");
+  });
+
+  it("appends a space to an unbracketed citation, before punctuation too", () => {
+    expect(cite("@smith2024", { doc: "See .", from: 4 })).toBe(
+      "See @smith2024 |.",
+    );
+  });
+
+  it("reuses a space already after it, moving the cursor past it", () => {
+    expect(cite("@smith2024", { doc: "See  more", from: 4 })).toBe(
+      "See @smith2024 |more",
+    );
+  });
+
+  it("parts the citation from a word or punctuation before it with one space", () => {
+    expect(
+      cite("(Matuschak and Nielsen 2019)", { doc: "Source.", from: 7 }),
+    ).toBe("Source. (Matuschak and Nielsen 2019) |");
+    expect(cite("[@smith2024]", { doc: "the.", from: 3 })).toBe(
+      "the [@smith2024]|.",
+    );
+  });
+
+  it.each(["", " ", "\t", "(", "[", "“", '"'])(
+    "adds no space before it after %j",
+    (previous) => {
+      expect(
+        cite("[@smith2024]", { doc: previous, from: previous.length }),
+      ).toBe(`${previous}[@smith2024]|`);
+    },
+  );
+
+  it("adds no space before a trigger the researcher typed after a word", () => {
+    expect(
+      cite("[@smith2024]", { doc: "word[@smi", from: 4, to: 9, trigger: true }),
+    ).toBe("word[@smith2024]|");
+  });
+});

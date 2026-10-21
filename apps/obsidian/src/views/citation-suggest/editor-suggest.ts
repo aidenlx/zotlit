@@ -1,3 +1,4 @@
+import { Text } from "@codemirror/state";
 import { regex } from "arkregex";
 import { EditorSuggest, Keymap } from "obsidian";
 import type {
@@ -17,6 +18,7 @@ import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/rend
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit, SearchSession } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
+import { placeInsertion } from "@/views/annot-view/async-insert";
 
 import { readDocumentCitedKeys } from "./document-citations";
 import type { CitationSuggestDeps } from "./register";
@@ -149,24 +151,45 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       new BaseNotice(outcome.message);
       return;
     }
-    const line = context.editor.getLine(context.end.line);
-    const padded = padCitationInsert(outcome.text, {
-      next: line.charAt(context.end.ch),
-    });
     commitCitationInsert(this.#deps, {
       indexedKey: hit.item.indexedKey,
       text: outcome.text,
-      insert: () => {
-        context.editor.replaceRange(padded.text, context.start, context.end);
-        context.editor.setCursor(
-          context.editor.offsetToPos(
-            context.editor.posToOffset(context.start) + padded.cursor,
-          ),
-        );
-        return true;
-      },
+      insert: () =>
+        writeCitation(context.editor, outcome.text, {
+          from: context.start,
+          to: context.end,
+          replacesTrigger: true,
+        }),
     });
   }
+}
+
+/**
+ * Write `citation` over `from`–`to` of `editor`, placed by the citation rule
+ * of {@link placeInsertion} against the note as it stands now, and leave the
+ * cursor where that rule puts it. `replacesTrigger` where the range is a
+ * trigger the researcher typed.
+ */
+export function writeCitation(
+  editor: Editor,
+  citation: string,
+  options: {
+    from: EditorPosition;
+    to: EditorPosition;
+    replacesTrigger?: boolean;
+  },
+): boolean {
+  const { from, to } = options;
+  const start = editor.posToOffset(from);
+  const { insert, cursor } = placeInsertion(citation, {
+    kind: "citation",
+    replacesTrigger: options.replacesTrigger,
+    doc: Text.of(editor.getValue().split("\n")),
+    range: { from: start, to: editor.posToOffset(to) },
+  });
+  editor.replaceRange(insert, from, to);
+  editor.setCursor(editor.offsetToPos(start + cursor));
+  return true;
 }
 
 /**
@@ -185,72 +208,6 @@ export function commitCitationInsert(
   if (text.length === 0 || !insert()) return false;
   deps.useLedger.record(indexedKey, "cited");
   return true;
-}
-
-/** Editor-insert payload for a citation: replacement text plus cursor offset. */
-export interface PaddedCitationInsert {
-  /** Text replacing the trigger range (or selection). */
-  text: string;
-  /** Cursor position after the insert, as an offset from the replacement start. */
-  cursor: number;
-}
-
-/**
- * Pad an editor citation insert with its single trailing space: the document
- * always reads `citation` + one space at the cursor, reusing a space already
- * present at the insert position instead of doubling it. The space keeps the
- * inserted citation from re-matching a trigger — an alternate-format `@key`
- * at a word boundary would otherwise re-open the suggester.
- *
- * A bracketed citation ends at its closing bracket instead, which no trigger
- * matches, so punctuation typed next follows it directly: `[@key].`
- *
- * Where the insert lands at a place the researcher did not type a trigger,
- * as a drop or an insert at the cursor does, the caller names the character
- * before it too: a citation never sticks to the word or punctuation before
- * it (`source. [@key]`). A line start, a space, or an opening bracket or
- * quote needs no space.
- *
- * @param around.next - the document character at the insert position (`""`
- *   at line end).
- * @param around.previous - the document character before the insert
- *   position (`""` at line start); absent where the researcher typed the
- *   trigger there, which adds no space before.
- */
-export function padCitationInsert(
-  citation: string,
-  around: { next: string; previous?: string },
-): PaddedCitationInsert {
-  const lead = needsLeadingSpace(around.previous) ? " " : "";
-  if (closingBracketAt(citation, citation.length - 1))
-    return {
-      text: `${lead}${citation}`,
-      cursor: lead.length + citation.length,
-    };
-  return {
-    text: `${lead}${citation}${around.next === " " ? "" : " "}`,
-    cursor: lead.length + citation.length + 1,
-  };
-}
-
-/** The characters a citation may follow directly: it opens what it is in. */
-const OPENERS = new Set([
-  "(",
-  "[",
-  "{",
-  "“",
-  "‘",
-  '"',
-  "'",
-  "「",
-  "『",
-  "（",
-  "【",
-]);
-
-function needsLeadingSpace(previous: string | undefined): boolean {
-  if (previous === undefined || previous === "") return false;
-  return previous.trim() !== "" && !OPENERS.has(previous);
 }
 
 /** What selecting a suggestion does: insert `text`, or show `message`. */
