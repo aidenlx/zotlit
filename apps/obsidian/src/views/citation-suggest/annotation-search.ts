@@ -1,6 +1,11 @@
 // The Annotation Suggester's search: ZotLit Query over the Zotero database,
 // so it answers with Zotero closed. The query text reads in the Library
 // View's search grammar, with `color:` and `paper:` beside `tag:`.
+//
+// Search across papers reads the database alone, so an annotation Zotero has
+// not yet written there is missing from the results until it has. Selection
+// reads the live annotation repository (`annotation-insert.ts`), the Local API
+// while Zotero runs, so what lands holds the latest edits.
 import { getLogger } from "@/lib/log";
 import type {
   QueryViewRow,

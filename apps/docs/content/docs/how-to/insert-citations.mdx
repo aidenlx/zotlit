@@ -107,6 +107,8 @@ The annotation suggester searches the annotations in your library scope and inse
   </Step>
 </Steps>
 
+The search reads the Zotero database, so an annotation you just added or changed in Zotero can take a moment to show in the results. The quote you choose is read again from Zotero while it runs, so the inserted text holds your latest edits.
+
 Annotations of the papers with the most recent activity come first, in the same order as [<UiLabel name={m.library_view_recent()} /> in the Library View](/docs/how-to/use-library-view#recent). Within a paper, annotations follow their order in the PDF.
 
 The trigger is the <UiLabel name={m.settings_citation_annotation_trigger_name()} /> setting in <SettingsPath page={m.settings_page_citations()} />. Clear it to turn the annotation suggester off.
