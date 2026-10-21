@@ -150,6 +150,13 @@ export default defineConfig({
       rules: { "zotlit-tests/no-class-assertion": "error" },
     },
     {
+      // A unit test asserts what an element does; its classes and markup
+      // belong in the End-to-end Run (policies/testing-strategy.md).
+      files: ["**/*.test.{ts,tsx}"],
+      jsPlugins: [join(import.meta.dirname, "oxlint-plugin-tests.ts")],
+      rules: { "zotlit-tests/no-markup-assertion": "error" },
+    },
+    {
       // Tests and build scripts can inspect the generated schema.
       files: [
         "**/*.{test,spec}.{ts,tsx,js,jsx}",
