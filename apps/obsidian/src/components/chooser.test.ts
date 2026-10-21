@@ -12,7 +12,7 @@ import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { shimPopover } from "./__fixtures__/popover";
-import { Chooser, useChooserPage } from "./chooser";
+import { Chooser } from "./chooser";
 import type { ChooserRow } from "./chooser-logic";
 
 vi.mock("obsidian", async (importOriginal) => ({
@@ -164,69 +164,3 @@ function pressKey(scope: unknown, key: string): unknown {
     .find((handler) => handler.key === key && !handler.modifiers?.length)
     ?.func(new KeyboardEvent("keydown", { key }));
 }
-
-/** A Chooser whose page holds a text field. */
-function mountPage(app: App) {
-  host = document.body.appendChild(document.createElement("div"));
-  function Opener() {
-    const { openPage } = useChooserPage();
-    return h(
-      "button",
-      { type: "button", "data-open": "", onClick: () => openPage("edit") },
-      "Edit",
-    );
-  }
-  render(
-    h(AppContext, {
-      value: app,
-      children: h(Chooser, {
-        value: [],
-        onValueChange: () => {},
-        children: [
-          h(Chooser.Trigger, { key: "trigger" }, "Tags"),
-          h(Chooser.Popup, {
-            key: "popup",
-            children: [
-              h(Opener, { key: "opener" }),
-              h(Chooser.Page, {
-                key: "page",
-                children: () =>
-                  h("div", {
-                    role: "textbox",
-                    contentEditable: true,
-                    tabIndex: 0,
-                    "data-field": "",
-                  }),
-              }),
-            ],
-          }),
-        ],
-      }),
-    }),
-    host,
-  );
-  const element = host.querySelector<HTMLElement>("[popover]")!;
-  return {
-    popup: element,
-    shim: shimPopover(element),
-    page: () => element.querySelector("[data-chooser-page]"),
-    field: () => element.querySelector<HTMLElement>("[data-field]")!,
-  };
-}
-
-// A field's own popup, such as an expression editor's completion list,
-// pushes a Scope above the Chooser's while it stands (see
-// `lib/field-popup.ts`), so the Chooser's Escape only ever meets a page.
-it("steps back from a page on Escape", async () => {
-  const app = editorApp();
-  const { popup, shim, page, field } = mountPage(app);
-  await shim.open();
-  await act(() => popup.querySelector<HTMLElement>("[data-open]")!.click());
-  expect(page()).not.toBeNull();
-  field().focus();
-
-  await act(() => {
-    expect(pressKey(app.scopes[0]!, "Escape")).toBe(false);
-  });
-  expect(page()).toBeNull();
-});

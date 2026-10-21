@@ -8,7 +8,7 @@ import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { byItem } from "./e2e-run-query-types.ts";
 import type { ItemQueryReport } from "./e2e-run-query-types.ts";
 import { cliCommand, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { PAGE, TRUSTED } from "./page-gestures.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
@@ -220,9 +220,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // cannot show.
       const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
       // What one field of a surface offers as it is typed in: the list
-      // drawn in the surface's root, in Obsidian's suggestion skin, its
-      // middle on top past the surface's edge where it reaches past it.
-      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;const field=content.cmTile.root.view;field.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));await until('list placed and measured',()=>list.style.top!=='-10000px'&&list.getBoundingClientRect().width>0,5000);const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null}};};const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();const delivered=(type)=>new Promise(r=>win.addEventListener(type,r,{once:true,capture:true}));return {key:async(keyCode)=>{const up=delivered('keyup');contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;},click:async(el)=>{const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};const up=delivered('mouseup');contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await up;}};};const picked=(list)=>[...list.querySelectorAll('li')].findIndex(li=>li.getAttribute('aria-selected')==='true');const ready=async(input,list)=>{const end=Date.now()+2000;while(Date.now()<end){await input.key('Down');if(picked(list)>0){await input.key('Up');await until('first row picked again',()=>picked(list)===0);return;}}throw new Error('Timed out: the list takes keys');};`;
+      // drawn in the surface's root, in Obsidian's suggestion skin with its
+      // signature and description cells, its middle on top past the
+      // surface's edge where it reaches past it.
+      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;const field=content.cmTile.root.view;field.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));await until('list placed and measured',()=>list.style.top!=='-10000px'&&list.getBoundingClientRect().width>0,5000);const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null,note:row.querySelector('.suggestion-note')?.textContent??null}};};${TRUSTED}const picked=(list)=>[...list.querySelectorAll('li')].findIndex(li=>li.getAttribute('aria-selected')==='true');const ready=async(input,list)=>{const end=Date.now()+2000;while(Date.now()<end){await input.key('Down');if(picked(list)>0){await input.key('Up');await until('first row picked again',()=>picked(list)===0);return;}}throw new Error('Timed out: the list takes keys');};`;
 
       // A new Formula: `mi` offers `min()`, which Enter writes with the
       // caret between its parentheses. In it, `ti` offers `title`, which
@@ -243,7 +244,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         offered: {
           skin: true,
           shown: true,
-          first: { label: "min", type: "min(…) → number" },
+          first: {
+            label: "min",
+            type: "min(…) → number",
+            note: "The smallest number among the arguments, or null when no argument is a number.",
+          },
         },
         accepted: { doc: "min()", caret: 4 },
         tabbed: { doc: "min(title)", list: false, focus: true },
@@ -256,10 +261,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         offered: {
           skin: true,
           shown: true,
-          first: { label: "title", type: "string" },
+          first: { label: "title", type: "string", note: "Title" },
         },
         apart: { hintAbove: true, listBelow: true },
         after: { doc: "title.length > 0 && max(title", open: true },
+      });
+    },
+    120000,
+  );
+
+  it.each(["main", "popout"] as const)(
+    "closes only a chooser page's menu on Escape, and then steps back from the page, in the %s window",
+    async (host) => {
+      // The view menu's Configure view page of the Fixture's Query File:
+      // its "…" opens the page menu. Escape closes the menu and keeps the
+      // page; Escape again steps back to the rows, the popup still open.
+      // The eval restores the layout before it answers.
+      const escapes = JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}${TRUSTED}await using cleanup=new AsyncDisposableStack();const layout=app.workspace.getLayout();cleanup.defer(()=>app.workspace.changeLayout(layout));const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());cleanup.defer(()=>{for(const popup of (leaf.view?.contentEl?.doc??document).querySelectorAll('[popover]:popover-open'))popup.hidePopover();});await leaf.openFile(app.vault.getFileByPath('query-files/Reading list.zotquery'));app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('popout focused',()=>leaf.view.contentEl.doc.hasFocus(),5000);" : ""}const el=leaf.view.contentEl;const input=trusted(el.win);await until('the window takes keys',()=>activeWindow===el.win);await input.click(await until('View menu',()=>el.querySelector('[data-query-view-menu]')));const popup=await until('view menu opens',()=>el.doc.querySelector('[data-query-view-list]:popover-open'));const row=await until('a view row',()=>popup.querySelector('[data-query-view-row]'));row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const page=await until('Configure view',()=>popup.querySelector('[data-query-configure-view]')?.closest('[data-chooser-page]'));await input.click(page.querySelector('[data-chooser-page-menu]'));const menu=await until('page menu opens',()=>page.querySelector('[role="menu"]:popover-open'));await input.key('Escape');await until('Escape closes the menu',()=>!menu.matches(':popover-open'));await new Promise(r=>setTimeout(r,200));const first={menu:menu.matches(':popover-open'),page:!!popup.querySelector('[data-chooser-page]'),open:popup.matches(':popover-open')};await input.key('Escape');await until('Escape leaves the page',()=>!popup.querySelector('[data-chooser-page]'));const second={open:popup.matches(':popover-open')};return JSON.stringify({first,second});})()`,
+        ),
+      );
+      expect(escapes).toEqual({
+        first: { menu: false, page: true, open: true },
+        second: { open: true },
       });
     },
     120000,
