@@ -20,8 +20,11 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "arkregex": "catalog:",
+    "oxc-parser": "^0.129.0",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
+    "postcss": "^8.5.23",
     "tsdown": "catalog:",
     "typescript": "catalog:"
   }

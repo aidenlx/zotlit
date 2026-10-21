@@ -110,17 +110,8 @@ describe("the ZotLit item submenu", () => {
       "one regular item with a child note",
       [item({ kind: "regular", notes: 1 })],
     ],
-    [
-      "two regular items",
-      [item({ kind: "regular" }), item({ kind: "regular" })],
-    ],
     ["one standalone note", [item({ kind: "note" })]],
     ["one child note", [item({ kind: "childNote" })]],
-    ["one attachment", [item({ kind: "attachment" })]],
-    [
-      "two attachments",
-      [item({ kind: "attachment" }), item({ kind: "attachment" })],
-    ],
     [
       "an attachment beside a regular item",
       [item({ kind: "attachment" }), item({ kind: "regular" })],

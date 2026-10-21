@@ -13,7 +13,7 @@ import {
 
 import { themeHook } from "@/lib/theme-hooks";
 
-import { CODE_PANE_CLASS, codePane } from "./editor-extension";
+import { codePane } from "./editor-extension";
 
 let view: EditorView | null = null;
 const onWindowMigrated = Object.getOwnPropertyDescriptor(
@@ -153,15 +153,6 @@ describe("code panes", () => {
     });
     return { dispose, move: (win: Window) => migrate?.(win) };
   }
-  it("puts the code class on the editor element", () => {
-    migrationHost();
-    view = new EditorView({
-      state: EditorState.create({ doc: "", extensions: [codePane] }),
-      parent: document.body,
-    });
-    expect(view.dom.classList.contains(CODE_PANE_CLASS)).toBe(true);
-  });
-
   it("moves editor styles to its new document and releases the native listener", () => {
     const host = migrationHost();
     view = new EditorView({

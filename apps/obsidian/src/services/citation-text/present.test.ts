@@ -11,7 +11,6 @@ import {
 import { rendered } from "./__fixtures__";
 import {
   citationContent,
-  citationElement,
   citationState,
   citationStateHooks,
   citedWorks,
@@ -346,31 +345,5 @@ describe("sectionCoordinates", () => {
 
   it("names no coordinate at all for a section Obsidian places nowhere", () => {
     expect(sectionCoordinates([citation("[@a]")], null)).toEqual([undefined]);
-  });
-});
-
-describe("citationElement", () => {
-  it("wraps the source text in the class themes reach", () => {
-    expect(citationElement(document, "Zeta (2020)").outerHTML).toBe(
-      '<span class="zt-citation">Zeta (2020)</span>',
-    );
-  });
-
-  it("shows a formatted citation through the shared renderer", () => {
-    const content = citationElement(document, {
-      text: {
-        content: [
-          { t: "Str", c: "Zeta" },
-          { t: "Space" },
-          { t: "Emph", c: [{ t: "Str", c: "(2020)" }] },
-        ],
-        citations: [],
-      },
-      serials: [],
-    });
-
-    expect(content.outerHTML).toBe(
-      '<span class="zt-citation">Zeta <em>(2020)</em></span>',
-    );
   });
 });

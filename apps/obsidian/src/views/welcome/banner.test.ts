@@ -142,49 +142,6 @@ function dismissButton(el: HTMLElement): HTMLElement {
   return button;
 }
 
-it("shows the setup steps while setup is incomplete, with no Companion step", async () => {
-  const { deps } = await setup();
-  const el = await open(deps);
-  expect(heading(el, m.welcome_step_connect_title())).toBe(true);
-  expect(heading(el, m.welcome_step_folder_title())).toBe(true);
-  expect(heading(el, m.welcome_step_library_title())).toBe(true);
-  // ZotLit Companion is named at the action that needs it, not here.
-  expect(el.textContent).not.toContain("Companion");
-});
-
-it("opens a documentation link in the browser", async () => {
-  const { deps } = await setup();
-  const el = await open(deps);
-  const opened = vi.spyOn(window, "open").mockReturnValue(null);
-  cleanup.defer(() => opened.mockRestore());
-  await act(() => helpLink(el, "Getting started")?.click());
-  expect(opened.mock.calls).toEqual([["https://zotlit.aidenlx.site/docs"]]);
-});
-
-it("leaves out the Connect step while ZotLit cannot read the Zotero data folder, which the Library View says itself", async () => {
-  const { deps } = await setup();
-  Object.assign(deps.reads, { state: "degraded" });
-  const el = await open(deps);
-  expect(heading(el, m.welcome_step_connect_title())).toBe(false);
-  expect(heading(el, m.welcome_step_folder_title())).toBe(true);
-});
-
-it("goes away on dismissal, and stays away when the view opens again", async () => {
-  const { deps, settings } = await setup();
-  const el = await open(deps);
-  await act(() => dismissButton(el).click());
-  expect(el.textContent).toBe("");
-  expect(settings.current?.["welcome.dismissed"]).toBe(true);
-  expect((await open(deps)).textContent).toBe("");
-});
-
-it("shows nothing once the library is connected and the literature-notes folder exists", async () => {
-  const { deps, host } = await setup();
-  host.vault.addFile("literatures/Paper.md", "");
-  const el = await open(deps);
-  expect(el.textContent).toBe("");
-});
-
 it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal acknowledges it", async () => {
   const { deps, host, settings } = await setup({
     "welcome.dismissed": true,

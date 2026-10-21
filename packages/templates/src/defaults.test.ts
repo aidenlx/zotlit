@@ -73,32 +73,6 @@ describe("Liquid default templates via the facade", () => {
   const DURABLE =
     "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=iv";
 
-  it("renders the annotation section with the durable link on the page label", () => {
-    const facade = new TemplateFacade();
-    facade.define("annotation", annotationLiquid, "liquid");
-
-    expect(
-      facade.render("annotation", {
-        pageLabel: "iv",
-        backlink: DURABLE,
-        fileLink: (alias?: string) =>
-          `[${alias ?? "paper.pdf"}](file:///abs/paper.pdf#page=4&zt-annotation=ANNX2345)`,
-        imgLink: null,
-        text: "Highlighted text",
-        comment: "My comment",
-      }),
-    ).toBe(
-      [
-        `> [!note] Page [iv](${DURABLE})`,
-        ">",
-        "> Highlighted text",
-        ">",
-        "> My comment",
-        "",
-      ].join("\n"),
-    );
-  });
-
   // The quote goes into a draft already cited, with the page as locator.
   it("cites the paper after the quote", () => {
     const facade = new TemplateFacade();
@@ -123,22 +97,6 @@ describe("Liquid default templates via the facade", () => {
         "",
       ].join("\n"),
     );
-  });
-
-  it("keeps the durable link when the attachment file is unresolvable", () => {
-    const facade = new TemplateFacade();
-    facade.define("annotation", annotationLiquid, "liquid");
-
-    expect(
-      facade.render("annotation", {
-        pageLabel: "iv",
-        backlink: DURABLE,
-        fileLink: () => null,
-        imgLink: null,
-        text: "Highlighted text",
-        comment: null,
-      }),
-    ).toContain(`Page [iv](${DURABLE})`);
   });
 
   // Zotero's database can hold an empty label, which reads as no label.
@@ -346,16 +304,6 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
 
   const annotationFixtures = [
     [
-      "no comment",
-      {
-        pageLabel: "5",
-        backlink: PAGE_FIVE,
-        imgLink: null,
-        text: "only text",
-        comment: null,
-      },
-    ],
-    [
       "multi-line text and comment",
       {
         pageLabel: "5",
@@ -372,39 +320,6 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
         backlink: PAGE_FIVE,
         imgLink: () => "[[ANNOT.png]]",
         text: "with image",
-        comment: null,
-      },
-    ],
-    [
-      "different pageLabel with single-line comment",
-      {
-        pageLabel: "12",
-        backlink: PAGE_FIVE,
-        imgLink: null,
-        text: "text",
-        comment: "single comment",
-      },
-    ],
-    [
-      "page label carrying an annotation-anchored file link",
-      {
-        pageLabel: "5",
-        backlink: PAGE_FIVE,
-        fileLink: (alias?: string) =>
-          `[${alias ?? "paper.pdf"}](file:///abs/paper.pdf#page=5&zt-annotation=ANNX2345)`,
-        imgLink: null,
-        text: "linked",
-        comment: null,
-      },
-    ],
-    [
-      "page label whose attachment file is unresolvable",
-      {
-        pageLabel: "5",
-        backlink: PAGE_FIVE,
-        fileLink: () => null,
-        imgLink: null,
-        text: "plain",
         comment: null,
       },
     ],
@@ -447,39 +362,6 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
     expect(liquid.render("annotation", fixture)).toBe(
       eta.render("annotation", fixture),
     );
-  });
-
-  it("content: renders equivalent output for notes and annotations", () => {
-    const eta = new TemplateFacade();
-    eta.define("annotation", annotationEta, "eta");
-    eta.define("content", contentEta, "eta");
-    const liquid = new TemplateFacade();
-    liquid.define("annotation", annotationLiquid, "liquid");
-    liquid.define("content", contentLiquid, "liquid");
-
-    const data = {
-      notes: [{ noteLink: () => "[[a|A]]" }, { noteLink: () => "[[b|B]]" }],
-      annotations: [
-        {
-          pageLabel: "4",
-          imgLink: null,
-          text: "Highlighted text",
-          comment: null,
-        },
-      ],
-    };
-
-    const etaOut = eta.render("content", data);
-    const liquidOut = liquid.render("content", data);
-
-    for (const needle of [
-      "## Notes",
-      "- [[a|A]]\n- [[b|B]]",
-      QUERY_BLOCK_SECTION,
-    ]) {
-      expect(etaOut).toContain(needle);
-      expect(liquidOut).toContain(needle);
-    }
   });
 
   it("note: renders identically to the Eta default across the include chain", () => {

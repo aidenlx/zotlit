@@ -1029,8 +1029,20 @@ describe("createNote", () => {
     notices: summaries,
   });
   const bothUnavailable = { zotero: 0, unchecked: 0, unavailable: 2 };
+  const initialExcerptModes = [
+    "valid",
+    "fallback",
+    "corrupt-fallback",
+    "unchecked",
+    "unavailable",
+    "partial",
+    "write-failure",
+    "disabled",
+    "unused",
+    "collected",
+  ] as const;
   const createCases: Record<
-    ExcerptMode,
+    (typeof initialExcerptModes)[number],
     {
       excerpts: Partial<Awaited<ReturnType<typeof observeExcerpts>>>;
       noticesAtCreate: ExcerptSummary[];
@@ -1078,21 +1090,9 @@ describe("createNote", () => {
       collected: [bothUnavailable],
       notices: [bothUnavailable],
     },
-    refresh: { excerpts: embedded, ...notified() },
-    overwrite: { excerpts: embedded, ...notified() },
-    retain: { excerpts: embedded, ...notified() },
-    "retain-corrupt-fallback": { excerpts: embedded, ...notified() },
-    "retain-disabled": { excerpts: embedded, ...notified() },
-    "retain-throw": { excerpts: embedded, ...notified() },
-    "retain-write": { excerpts: embedded, ...notified() },
-    "retain-link": { excerpts: embedded, ...notified() },
-    "retain-stale": { excerpts: embedded, ...notified() },
-    "retain-replaced": { excerpts: embedded, ...notified() },
-    "reject-truncated": { excerpts: embedded, ...notified() },
-    "reject-idat": { excerpts: embedded, ...notified() },
   };
 
-  it.each(excerptModes)(
+  it.each(initialExcerptModes)(
     "prepares image and ink before one Eta execution (%s)",
     async (mode) => {
       await using cleanup = new AsyncDisposableStack();

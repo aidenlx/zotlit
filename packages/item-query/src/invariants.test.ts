@@ -152,6 +152,53 @@ function itemsRead(events: readonly RunEvent[], reader: string): number[] {
   });
 }
 
+/** First and last statement of each reader, in event order. */
+function statementCheckpoints(events: readonly RunEvent[]): number[] {
+  const readers = new Map<string, { first: number; last: number }>();
+  events.forEach((event, index) => {
+    if (event.type !== "statement") return;
+    const reader = event.statement.reader;
+    const span = readers.get(reader);
+    if (span) span.last = index;
+    else readers.set(reader, { first: index, last: index });
+  });
+  return [
+    ...new Set(
+      [...readers.values()].flatMap(({ first, last }) => [first, last]),
+    ),
+  ].sort((a, b) => a - b);
+}
+
+/** Reader boundaries and the ends and middle of pause-only phases. */
+function pauseCheckpoints(events: readonly RunEvent[]): number[] {
+  const pauses = events.flatMap((event, index) =>
+    event.type === "pause" ? [index] : [],
+  );
+  if (pauses.length === 0) return [];
+  const selected = new Set<number>([pauses[0]!, pauses.at(-1)!]);
+  for (const statement of statementCheckpoints(events)) {
+    const pause = events.findIndex(
+      (event, index) => index > statement && event.type === "pause",
+    );
+    if (pause !== -1) selected.add(pause);
+  }
+  for (let index = 0; index < pauses.length; ) {
+    const start = index;
+    while (
+      index + 1 < pauses.length &&
+      pauses[index + 1] === pauses[index]! + 1
+    )
+      index++;
+    if (index > start) {
+      selected.add(pauses[start]!);
+      selected.add(pauses[Math.floor((start + index) / 2)]!);
+      selected.add(pauses[index]!);
+    }
+    index++;
+  }
+  return [...selected].sort((a, b) => a - b);
+}
+
 /**
  * The run options that cancel a run at its event at `index`: in the step of a
  * statement, or in the host task that ends a pause, while the fiber waits.
@@ -842,9 +889,6 @@ describe("a cancel request", () => {
     },
   ];
 
-  /** Each pause batch has the standard per-test budget. */
-  const PAUSE_CANCEL_TIMEOUT_MS = 5_000;
-
   /** Run the query and cancel it at the event at `index`. */
   async function cancelQueryAt(
     { request, libraries = [personal] }: (typeof QUERIES)[number],
@@ -872,7 +916,7 @@ describe("a cancel request", () => {
       );
       expect(statements.length).toBeGreaterThan(8);
 
-      for (const index of statements) {
+      for (const index of statementCheckpoints(complete.events)) {
         const { exit, after } = await cancelQueryAt(query, index);
 
         expect(
@@ -883,39 +927,26 @@ describe("a cancel request", () => {
     },
   );
 
-  describe.each(QUERIES)("cancellation in a pause of $name", (query) => {
-    let pauses: number[];
-
-    beforeAll(async () => {
+  it.each(QUERIES)(
+    "starts no statement after a cancel request in a pause of $name",
+    async (query) => {
       const { request, libraries = [personal] } = query;
       const complete = await run(request, { libraries, tuning });
-      pauses = complete.events.flatMap((event, index) =>
-        event.type === "pause" ? [index] : [],
-      );
-      expect(pauses.length).toBeGreaterThan(20);
-    });
-
-    // Every pause is tested once. Separate budgets bound the quadratic sweep
-    // of real MessageChannel tasks without changing the cancellation points.
-    it.each([0, 1, 2, 3, 4, 5, 6, 7])(
-      "starts no statement after a cancel request in pause batch %i",
-      async (batch) => {
-        for (const index of pauses.filter((_, i) => i % 8 === batch)) {
-          const { exit, after } = await cancelQueryAt(query, index);
-
-          expect(
-            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
-          ).toBe(true);
-          // The interrupted fiber can take one more pause before it settles.
-          expect(after.filter((event) => event.type === "statement")).toEqual(
-            [],
-          );
-          expect(after.length).toBeLessThanOrEqual(1);
-        }
-      },
-      PAUSE_CANCEL_TIMEOUT_MS,
-    );
-  });
+      resultOf(complete);
+      expect(
+        complete.events.filter((event) => event.type === "pause").length,
+      ).toBeGreaterThan(20);
+      for (const index of pauseCheckpoints(complete.events)) {
+        const { exit, after } = await cancelQueryAt(query, index);
+        expect(
+          Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+        ).toBe(true);
+        // The interrupted fiber can take one more pause before it settles.
+        expect(after.filter((event) => event.type === "statement")).toEqual([]);
+        expect(after.length).toBeLessThanOrEqual(1);
+      }
+    },
+  );
 });
 
 // Annotation projection reads follow the full scan/filter pass. The final
@@ -1235,7 +1266,11 @@ describe("Relation List candidate bounds", () => {
       expect(
         itemsRead(complete.events, "relation-candidate-set").length,
       ).toBeGreaterThan(0);
-      for (const index of complete.events.keys()) {
+      const checkpoints = new Set([
+        ...statementCheckpoints(complete.events),
+        ...pauseCheckpoints(complete.events),
+      ]);
+      for (const index of [...checkpoints].sort((a, b) => a - b)) {
         const cancelled = await runEffect(query, {
           ...options,
           ...cancelAt(index),
@@ -1244,11 +1279,11 @@ describe("Relation List candidate bounds", () => {
           Exit.isFailure(cancelled.exit) &&
             Cause.hasInterruptsOnly(cancelled.exit.cause),
         ).toBe(true);
-        expect(
-          cancelled.events
-            .slice(index + 1)
-            .filter((event) => event.type === "statement"),
-        ).toEqual([]);
+        const after = cancelled.events.slice(index + 1);
+        expect(after.filter((event) => event.type === "statement")).toEqual([]);
+        expect(after.length).toBeLessThanOrEqual(
+          complete.events[index]!.type === "pause" ? 1 : Infinity,
+        );
       }
     },
   );

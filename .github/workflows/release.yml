@@ -1,22 +1,74 @@
 name: Release
 
+# Publishes each app whose version on `main` (stable) or `next` (beta) has no
+# release yet. Pull requests run no checks: `pnpm verify` gates every push
+# locally, so this workflow is where GitHub checks code. The `verify` job runs
+# the release gate on the merged tree before anything publishes, and it is the
+# one check a push that skips its hooks cannot skip. See ADR 0076.
+#
+# Every push enters the plan job, which stops in seconds when both versions
+# are already released. A failed verify leaves the version unpublished: land
+# the fix, then re-run this workflow with workflow_dispatch.
 on:
   push:
     branches: [main, next]
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
+  contents: read
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
+  # Tag existence is the idempotency gate: a version that already has its
+  # release is skipped, so the toolchain setup and every later job run only
+  # for a new version.
+  plan:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      obsidian: ${{ steps.plan.outputs.obsidian }}
+      zotero: ${{ steps.plan.outputs.zotero }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Find unreleased versions
+        id: plan
+        run: |
+          unreleased() {
+            if gh release view "$1" >/dev/null 2>&1; then echo false; else echo true; fi
+          }
+          obsidian="$(node -p "require('./apps/obsidian/package.json').version")"
+          zotero="$(node -p "require('./apps/zotero/package.json').version")"
+          echo "obsidian=$(unreleased "$obsidian")" >> "$GITHUB_OUTPUT"
+          echo "zotero=$(unreleased "zt-$zotero")" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: plan
+    if: needs.plan.outputs.obsidian == 'true' || needs.plan.outputs.zotero == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          lfs: true
+
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Release gate
+        run: pnpm verify --release
+
   obsidian:
+    needs: [plan, verify]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    if: needs.plan.outputs.obsidian == 'true'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -33,24 +85,10 @@ jobs:
           echo "tag=$version" >> "$GITHUB_OUTPUT"
           echo "res_tag=res-$version" >> "$GITHUB_OUTPUT"
 
-      # Tag existence is the idempotency gate: re-running on the same version is
-      # a no-op. Runs before the toolchain setup below so a re-run on an
-      # already-released version skips it instead of paying for it.
-      - name: Check release exists
-        id: gate
-        run: |
-          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: ./.github/actions/setup-workspace
-        if: steps.gate.outputs.exists == 'false'
 
       - name: Resolve prerelease flag
         id: prerelease
-        if: steps.gate.outputs.exists == 'false'
         run: |
           prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
             "require('semver').prerelease('${{ steps.meta.outputs.version }}') !== null")"
@@ -60,7 +98,6 @@ jobs:
       # its own line; a stable build links to Stable Docs. Baked into main.js
       # through the DOCS_SITE_URL build variable (see apps/obsidian/vite.config.ts).
       - name: Build
-        if: steps.gate.outputs.exists == 'false'
         env:
           DOCS_SITE_URL: ${{ steps.prerelease.outputs.prerelease == 'true' && 'https://zotlit-beta.aidenlx.site' || 'https://zotlit.aidenlx.site' }}
         run: pnpm turbo run build --filter=@zotlit/obsidian
@@ -69,7 +106,6 @@ jobs:
       # directory so the base locale — which ships bundled inside main.js — is
       # skipped once and every later step globs one place.
       - name: Stage resources
-        if: steps.gate.outputs.exists == 'false'
         run: |
           pnpm turbo run generate:language-packs --filter=@zotlit/obsidian
           mkdir -p apps/obsidian/dist/resources
@@ -86,7 +122,6 @@ jobs:
       # gate: while the plugin tag is absent no installed build can name this
       # version, so a retry may re-upload assets over a partial earlier run.
       - name: Create Resource Release
-        if: steps.gate.outputs.exists == 'false'
         run: |
           if ! gh release view "${{ steps.meta.outputs.res_tag }}" >/dev/null 2>&1; then
             notes=$(printf '%s\n\n%s\n%s' \
@@ -107,7 +142,6 @@ jobs:
       # composes, so a missed or corrupted upload fails the run loudly — before
       # the plugin release exists, which keeps the failure free of cleanup.
       - name: Verify resources
-        if: steps.gate.outputs.exists == 'false'
         run: |
           download_dir="$(mktemp -d)"
           for resource in apps/obsidian/dist/resources/*; do
@@ -130,7 +164,6 @@ jobs:
           done
 
       - name: Create release
-        if: steps.gate.outputs.exists == 'false'
         run: |
           notes=$(printf '%s\n\n%s' \
             "ZotLit Obsidian plugin v${{ steps.meta.outputs.version }}" \
@@ -145,7 +178,6 @@ jobs:
             apps/obsidian/dist/styles.css
 
       - name: Attest provenance
-        if: steps.gate.outputs.exists == 'false'
         uses: actions/attest@v4
         with:
           subject-path: |
@@ -155,6 +187,13 @@ jobs:
             apps/obsidian/dist/resources/*
 
   zotero:
+    needs: [plan, verify]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    if: needs.plan.outputs.zotero == 'true'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -174,31 +213,16 @@ jobs:
           # product); this companion release points at that same entry.
           echo "changelog=$(node -p "require('./apps/obsidian/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Tag existence is the idempotency gate: re-running on the same version is
-      # a no-op. Runs before the toolchain setup below so a re-run on an
-      # already-released version skips it instead of paying for it.
-      - name: Check release exists
-        id: gate
-        run: |
-          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: ./.github/actions/setup-workspace
-        if: steps.gate.outputs.exists == 'false'
 
       - name: Resolve prerelease flag
         id: prerelease
-        if: steps.gate.outputs.exists == 'false'
         run: |
           prerelease="$(pnpm --filter @zotlit/scripts exec node -p \
             "require('semver').prerelease('${{ steps.meta.outputs.version }}') !== null")"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Build
-        if: steps.gate.outputs.exists == 'false'
         run: pnpm turbo run build --filter=@zotlit/zotero
 
       # Requires a pre-existing `zotero-release` host with its manifests (bootstrap
@@ -207,21 +231,18 @@ jobs:
       # Build because turbo may restore dist/** from cache, dropping
       # pre-existing files.
       - name: Download current update manifests
-        if: steps.gate.outputs.exists == 'false'
         run: gh release download zotero-release --pattern 'update*.json' --dir apps/zotero/dist
 
       # Replaces a channel entry only when this version is gt the existing one.
       # Emits `attest` scoped to files this run actually built.
       - name: Build update manifests
         id: updates
-        if: steps.gate.outputs.exists == 'false'
         run: node apps/zotero/scripts/build-update-json.ts
 
       # `--latest=false`: Zotero ships via update.json, not the repo's "Latest"
       # release pointer, which is left to the Obsidian plugin (the headline
       # product) so a stable dual release resolves "Latest" deterministically.
       - name: Create release
-        if: steps.gate.outputs.exists == 'false'
         run: |
           notes=$(printf '%s\n\n%s' \
             "ZotLit Zotero companion v${{ steps.meta.outputs.version }}" \
@@ -236,7 +257,6 @@ jobs:
       # The `zotero-release` tag is permanent: prerelease, never "Latest". Uses `edit`
       # to enforce the pre-existence invariant from the Download step.
       - name: Refresh update channel
-        if: steps.gate.outputs.exists == 'false'
         run: |
           notes="apps/zotero/dist/release-host-notes.md"
           gh release edit zotero-release \
@@ -251,7 +271,6 @@ jobs:
       # Scoped to files this run actually built: the XPI and any channel
       # manifest the version-gate rewrote.
       - name: Attest provenance
-        if: steps.gate.outputs.exists == 'false'
         uses: actions/attest@v4
         with:
           subject-path: ${{ steps.updates.outputs.attest }}

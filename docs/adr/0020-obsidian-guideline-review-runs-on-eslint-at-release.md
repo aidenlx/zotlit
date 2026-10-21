@@ -1,5 +1,7 @@
 # Obsidian guideline review runs on ESLint at release
 
+> Amended 2026-10-21 by [ADR 0076](0076-checks-run-before-push-and-ci-runs-only-to-release.md): `plugin-review.yml` is gone. `release.ts` still gates locally, through `pnpm verify --release`. The backstop is the `verify` job in `release.yml`, which runs the same gate after merge and before anything publishes.
+
 Obsidian publishes its plugin developer guidelines as `eslint-plugin-obsidianmd`
 and nothing else. oxlint has no equivalent for checks like "this API needs a
 newer `minAppVersion`", "detaching leaves in `onunload` leaks", or "this

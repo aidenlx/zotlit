@@ -8,27 +8,6 @@ import {
 } from "./tree-state";
 import type { TreeState } from "./tree-state";
 
-describe("initialTreeState", () => {
-  it("returns a fresh empty state with no anchor by default", () => {
-    const state = initialTreeState();
-    expect(state).toEqual<TreeState>({
-      anchorKey: null,
-      filterQuery: "",
-      expanded: new Set(),
-      noteRootExpanded: null,
-      preFilterExpanded: null,
-      filterCollapsed: new Set(),
-    });
-  });
-
-  it("accepts a persisted anchorKey", () => {
-    const state = initialTreeState("annot-1");
-    expect(state.anchorKey).toBe("annot-1");
-    expect(state.expanded.size).toBe(0);
-    expect(state.filterQuery).toBe("");
-  });
-});
-
 describe("toggleNode", () => {
   it("toggles the key in expanded when not filtering", () => {
     const state = initialTreeState();

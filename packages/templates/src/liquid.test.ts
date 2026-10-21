@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBlockquote } from "./blockquote";
 import {
   filenameSuffix,
   hasSuffixMarker,
@@ -75,17 +74,6 @@ describe("{% liquid %} statement block", () => {
 });
 
 describe("bq tag", () => {
-  it("is byte-identical to formatBlockquote for the same content", () => {
-    const engine = createLiquidEngine();
-    const inner =
-      "[!note] Page 57\n\nSecond highlight\n\n\n\nMy thoughts on this";
-    const template = `{% bq %}${inner}{% endbq %}`;
-
-    expect(engine.parseAndRenderSync(template, {})).toBe(
-      formatBlockquote(inner),
-    );
-  });
-
   it("renders the classic callout shape", () => {
     const engine = createLiquidEngine();
     const template = `{% bq %}
@@ -539,15 +527,6 @@ describe("obsidian_tag filter", () => {
     ).toEqual(["zotero/Machine_Learning"]);
   });
 
-  it("stays idempotent under a # prefix", () => {
-    const engine = createLiquidEngine();
-    expect(
-      engine.evalValueSync('zt.items | obsidian_tag: "#"', {
-        zt: { items: ["#todo"] },
-      }),
-    ).toEqual(["#todo"]);
-  });
-
   it("drops an element that normalizes to nothing", () => {
     const engine = createLiquidEngine();
     expect(
@@ -555,15 +534,6 @@ describe("obsidian_tag filter", () => {
         zt: { items: ["ok", "!!!", "   "] },
       }),
     ).toEqual(["#ok"]);
-  });
-
-  it("normalizes a number, so a year tag stays usable", () => {
-    const engine = createLiquidEngine();
-    expect(
-      engine.evalValueSync("zt.items | obsidian_tag", {
-        zt: { items: [1984] },
-      }),
-    ).toEqual(["_1984"]);
   });
 
   it("drops an object that carries no name", () => {

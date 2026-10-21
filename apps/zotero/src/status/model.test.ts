@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { WalCheckpointStatus } from "@/notify/freshness";
 
-import {
-  databaseIconState,
-  databaseStatusMenuModel,
-  manualOutcomeMessages,
-} from "./model.js";
+import { databaseStatusMenuModel } from "./model.js";
 
 const NOW = new Date("2026-08-20T08:00:00Z");
 
@@ -78,51 +74,5 @@ describe("databaseStatusMenuModel", () => {
       timestampArgs: undefined,
       writeEnabled: true,
     });
-  });
-});
-
-describe("databaseIconState", () => {
-  it("agrees with the menu model on every state", () => {
-    const cases: WalCheckpointStatus[] = [
-      activeStatus(),
-      activeStatus(null, false),
-      activeStatus({ at: new Date("2026-08-20T07:55:00Z"), result: "failed" }),
-      activeStatus({ at: new Date("2026-08-20T07:55:00Z"), result: "done" }),
-      { active: false, reason: "not-wal", lastRun: null },
-      { active: false, reason: "probe-failed", lastRun: null },
-    ];
-    for (const status of cases) {
-      expect(databaseIconState(status)).toBe(
-        databaseStatusMenuModel(status, NOW).iconState,
-      );
-    }
-  });
-});
-
-describe("manualOutcomeMessages", () => {
-  it.each([
-    [
-      "done",
-      {
-        title: "zotlit-database-write-done-title",
-        message: "zotlit-database-write-done-message",
-      },
-    ],
-    [
-      "in-use",
-      {
-        title: "zotlit-database-write-in-use-title",
-        message: "zotlit-database-write-in-use-message",
-      },
-    ],
-    [
-      "failed",
-      {
-        title: "zotlit-database-write-failed-title",
-        message: "zotlit-database-write-failed-message",
-      },
-    ],
-  ] as const)("maps %s to its progress-window copy", (outcome, expected) => {
-    expect(manualOutcomeMessages(outcome)).toEqual(expected);
   });
 });

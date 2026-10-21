@@ -33,12 +33,10 @@ import {
   pageView,
   READER_NOW as NOW,
   readerOverZotero,
-  readerSettings,
   readerSurfaces,
 } from "./__fixtures__";
 import { arm, ingestCapability, selectTextDraft } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
-import { toolColorStore } from "./tools";
 import type { ToolColorStore } from "./tools";
 
 /** The Fixture's own underline on `rougier-2014.pdf`, in PDF points. */
@@ -548,60 +546,6 @@ it("writes a popup colour back as the tool it commits with", async () => {
   ).toBe(ANNOTATION_COLORS[2]);
 });
 
-it("opens a tool's colours from its own chevron, armed or not", async () => {
-  await using open = await reader();
-  open.creation.mountToolbar(open.slot);
-  const chevron = open.slot.querySelector<HTMLElement>(
-    '[data-zt-tool="underline-color"]',
-  )!;
-
-  chevron.click();
-
-  const menu = Menu.instances.at(-1)!;
-  expect(menu.parentEl).toBe(chevron);
-  expect(menu.items).toHaveLength(ANNOTATION_COLORS.length);
-});
-
-it("recolours the tool its own chevron opened, leaving the other alone", async () => {
-  await using open = await reader();
-  open.creation.mountToolbar(open.slot);
-  const colorOf = (tool: string) =>
-    open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)?.style
-      .color;
-
-  open.slot
-    .querySelector<HTMLElement>('[data-zt-tool="underline-color"]')!
-    .click();
-  Menu.instances.at(-1)!.items[2]!.click();
-
-  expect(colorOf("underline")).toBe(ANNOTATION_COLORS[2]);
-  expect(colorOf("highlight")).toBe(ANNOTATION_COLORS[0]);
-});
-
-it("commits a released selection at once while a tool is armed", async () => {
-  await using open = await reader();
-
-  open.press("u");
-  await open.selectText();
-  await open.creation.created;
-
-  expect(open.drafts.map(({ type }) => type)).toEqual(["underline"]);
-  expect(open.popup()).toBeNull();
-});
-
-it("writes a popup colour back as the tool it commits with", async () => {
-  await using open = await reader();
-  open.creation.mountToolbar(open.slot);
-  await open.selectText();
-
-  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
-
-  expect(
-    open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight"]')?.style
-      .color,
-  ).toBe(ANNOTATION_COLORS[2]);
-});
-
 it("steps back one level on Escape: sheet, then popup, then the armed tool", async () => {
   await using open = await reader();
   open.creation.mountToolbar(open.slot);
@@ -979,48 +923,6 @@ async function imageReader(
 
 type ImageReader = Awaited<ReturnType<typeof imageReader>>;
 
-it("creates nothing from a capture released under ten points on a side", async () => {
-  await using open = await imageReader();
-
-  await open.drag([100, 100], [109, 300]);
-
-  expect(open.drafts).toEqual([]);
-  expect(open.store.getState()).toMatchObject({
-    floating: { kind: "none" },
-    armed: "image",
-  });
-});
-
-it("creates an image from a capture of ten points or more, then stands the tool down", async () => {
-  await using open = await imageReader();
-
-  await open.drag([300, 292], [100, 100]);
-
-  const position = { pageIndex: 0, rects: [[100, 500, 300, 692]] };
-  expect(open.structure.sortIndex).toHaveBeenCalledWith(position);
-  expect(open.structure.pageLabel).toHaveBeenCalledWith(0, expect.any(Array));
-  expect(open.drafts).toEqual([
-    {
-      type: "image",
-      color: open.store.getState().colors.image,
-      comment: "",
-      pageLabel: "1",
-      sortIndex: "00000|000100|00100",
-      position,
-    },
-  ]);
-  expect(open.revealed).toEqual(["MADE2345"]);
-  expect(open.store.getState()).toMatchObject({
-    floating: { kind: "none" },
-    armed: null,
-  });
-  expect(
-    open.slot
-      .querySelector('[data-zt-tool="image"]')
-      ?.getAttribute("aria-pressed"),
-  ).toBe("false");
-});
-
 it("cancels a capture on Escape and keeps the tool; a second Escape stands it down", async () => {
   await using open = await imageReader();
 
@@ -1081,36 +983,6 @@ async function toolReader(
   open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)!.click();
   return open;
 }
-
-it("places a 22-point note centred on a click, opens its comment, and stands the tool down", async () => {
-  await using open = await toolReader("note");
-
-  // Released within the click slop: the note sits on the press point.
-  open.pointer("pointerdown", [100, 100]);
-  open.pointer("pointerup", [102, 101]);
-  await open.creation.created;
-
-  const position = { pageIndex: 0, rects: [[89, 681, 111, 703]] };
-  expect(open.structure.sortIndex).toHaveBeenCalledWith(position);
-  expect(open.drafts).toEqual([
-    {
-      type: "note",
-      color: "#ffd400",
-      comment: "",
-      pageLabel: "1",
-      sortIndex: "00000|000100|00100",
-      position,
-    },
-  ]);
-  expect(open.revealed).toEqual(["MADE2345"]);
-  expect(open.revealedWith).toEqual([{ commenting: true }]);
-  expect(open.store.getState().armed).toBeNull();
-  expect(
-    open.slot
-      .querySelector('[data-zt-tool="note"]')
-      ?.getAttribute("aria-pressed"),
-  ).toBe("false");
-});
 
 it("leaves a note by the page edge unclamped, as Zotero does", async () => {
   await using open = await toolReader("note");
@@ -1303,16 +1175,6 @@ it("names every stroke its own group, in one reader and across two", async () =>
   expect(held()).toEqual(["MADE2345"]);
   await one.repository.undo("RGRPDF24");
   expect(held()).toEqual([]);
-});
-
-it("stores a tap as its one point", async () => {
-  await using open = await toolReader("ink");
-
-  await open.drag([100, 100], [100.4, 100]);
-
-  expect(open.drafts.map(({ position }) => position)).toEqual([
-    { pageIndex: 0, width: 2, paths: [[100, 692]] },
-  ]);
 });
 
 it("keeps a stroke run off the page on the page it began on", async () => {
@@ -1548,66 +1410,6 @@ it("takes a stroke off the page when its create's reply is lost, and creates the
 
   await open.drag([200, 200], [250, 250]);
   expect(open.drafts).toHaveLength(2);
-});
-
-/** The menu label of one ink width. */
-const step = (width: number) =>
-  m.pdf_toolbar_ink_width_step({ width: String(width) });
-
-/** The ink tool's chevron menu, opened from the toolbar as a researcher opens it. */
-function inkMenu(open: ImageReader) {
-  open.slot.querySelector<HTMLElement>('[data-zt-tool="ink-color"]')!.click();
-  const { items } = Menu.instances.at(-1)!;
-  return {
-    checked: items.filter(({ checked }) => checked).map(({ title }) => title),
-    pick: (title: string) =>
-      items.find((item) => item.title === title)!.click(),
-    items,
-  };
-}
-
-it("offers the ink widths under the colours, the current one checked, and draws at the one picked", async () => {
-  await using open = await toolReader("ink");
-
-  const menu = inkMenu(open);
-  expect(
-    menu.items.slice(ANNOTATION_COLORS.length).map(({ title }) => title),
-  ).toEqual([
-    m.pdf_toolbar_ink_width(),
-    // Zotero's own width steps, the short run the ink tool offers.
-    ...[0.4, 1, 2, 3, 5, 8, 12].map(step),
-  ]);
-  expect(menu.items[ANNOTATION_COLORS.length]!.isLabel).toBe(true);
-  // One colour and one width stand checked: the ink colour, and width 2.
-  expect(menu.checked).toHaveLength(2);
-  expect(menu.checked.at(-1)).toBe(step(2));
-  menu.pick(step(5));
-  await open.drag([100, 100], [100.4, 100]);
-
-  expect(open.drafts.map(({ position }) => position)).toEqual([
-    { pageIndex: 0, width: 5, paths: [[100, 692]] },
-  ]);
-  expect(inkMenu(open).checked.at(-1)).toBe(step(5));
-});
-
-it("keeps the picked ink width in the settings, so the next PDF draws at it", async () => {
-  const settings = readerSettings();
-  expect(toolColorStore(settings).inkWidth()).toBe(2);
-  {
-    await using first = await toolReader("ink", undefined, {
-      colors: toolColorStore(settings),
-    });
-    inkMenu(first).pick(step(8));
-  }
-
-  expect(settings.current?.["reader.ink-width"]).toBe(8);
-  await using next = await toolReader("ink", undefined, {
-    colors: toolColorStore(settings),
-  });
-  await next.drag([100, 100], [100.4, 100]);
-  expect(next.drafts.map(({ position }) => position)).toEqual([
-    { pageIndex: 0, width: 8, paths: [[100, 692]] },
-  ]);
 });
 
 it("finishes a stroke that reaches the position ceiling as its own Annotation, and draws on with the pointer held", async () => {

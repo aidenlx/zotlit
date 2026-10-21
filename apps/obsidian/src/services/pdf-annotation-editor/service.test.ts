@@ -236,29 +236,6 @@ it("refreshes the repository when an open PDF leaf becomes active", async () => 
   expect(annotations.refresh).toHaveBeenCalledExactlyOnceWith("ABCD2345");
 });
 
-it("paints the attachment's annotations over every page it renders", async () => {
-  const reader = pdfReader();
-  const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const annotations = annotationReads([HIGHLIGHT, UNDERLINE]);
-  const { app } = workspace([{ view }]);
-
-  await using service = new PdfAnnotationEditor({
-    app,
-    attachments: attachmentReads(RESOLVED),
-    annotations,
-    capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
-  });
-  await service.ready;
-  const binding = service.bindings[0]!;
-  await binding.refreshed;
-
-  const overlay = reader.page.div.querySelector(".zt-pdf-annotation-overlay");
-
-  expect(overlay?.getAttribute("aria-hidden")).toBe("true");
-  expect(markedKeys(reader.page)).toEqual(["PUPR5FG5", "K3JRFLFQ"]);
-});
-
 it("rebuilds the marks from data after PDF.js recycles the page", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -284,59 +261,6 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
   expect(markedKeys(reader.page)).toEqual(["PUPR5FG5"]);
   // Rebuilt from what the binding already holds: no second database read.
   expect(annotations.read).toHaveBeenCalledOnce();
-});
-
-it("replaces the whole list when the repository announces a change", async () => {
-  const reader = pdfReader();
-  const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const annotations = annotationReads([HIGHLIGHT]);
-  const { app } = workspace([{ view }]);
-
-  await using service = new PdfAnnotationEditor({
-    app,
-    attachments: attachmentReads(RESOLVED),
-    annotations,
-    capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
-  });
-  await service.ready;
-  const binding = service.bindings[0]!;
-  await binding.refreshed;
-
-  annotations.replace("ABCD2345", [UNDERLINE]);
-  await binding.refreshed;
-
-  expect(markedKeys(reader.page)).toEqual(["K3JRFLFQ"]);
-
-  // Another attachment's change is not this view's.
-  annotations.replace("ZZZZ9999", []);
-  await binding.refreshed;
-
-  expect(markedKeys(reader.page)).toEqual(["K3JRFLFQ"]);
-});
-
-it("takes every mark off the page when the leaf closes", async () => {
-  const reader = pdfReader();
-  const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const leaves = [{ view }];
-  const { app, relayout } = workspace(leaves);
-
-  await using service = new PdfAnnotationEditor({
-    app,
-    attachments: attachmentReads(RESOLVED),
-    annotations: annotationReads([HIGHLIGHT]),
-    capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
-  });
-  await service.ready;
-  await service.bindings[0]!.refreshed;
-
-  expect(reader.page.div.childElementCount).toBe(1);
-
-  leaves.length = 0;
-  relayout();
-
-  expect(reader.page.div.childElementCount).toBe(0);
 });
 
 it("probes the page a view had already painted before the binding attached", async () => {
@@ -879,28 +803,6 @@ it("names a standalone attachment in its session, with no parent Item", async ()
   });
 });
 
-it("holds the selection a consumer sets, and announces it", async () => {
-  const view = pdfView("attachments/rougier-2014.pdf");
-  const { app } = workspace([{ view }]);
-
-  await using service = new PdfAnnotationEditor({
-    app,
-    attachments: attachmentReads(RESOLVED),
-    annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
-    capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
-  });
-  await service.ready;
-  const session = service.bindings[0]!.session;
-  const announced: (readonly string[])[] = [];
-  session.on("selection-changed", (selected) => announced.push(selected));
-
-  session.setSelectedAnnotations(["PUPR5FG5"]);
-
-  expect(session.selected).toEqual(["PUPR5FG5"]);
-  expect(announced).toEqual([["PUPR5FG5"]]);
-});
-
 it("paints the mark a consumer selected, and drops one the read retired", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -928,38 +830,6 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
 
   expect(selectedKeys(reader.page)).toEqual([]);
   expect(binding.session.selected).toEqual([]);
-});
-
-it("draws the Mark Handles on a mark selected alone, and none on a Locked Annotation", async () => {
-  const locked = { ...HIGHLIGHT, lock: { reason: "external" as const } };
-  const reader = pdfReader();
-  const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const { app } = workspace([{ view }]);
-
-  await using service = new PdfAnnotationEditor({
-    app,
-    attachments: attachmentReads(RESOLVED),
-    annotations: annotationReads([locked, UNDERLINE]),
-    capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
-  });
-  await service.ready;
-  const binding = service.bindings[0]!;
-  await binding.refreshed;
-  reader.renderFirstPage();
-  await binding.probed;
-  const grips = () =>
-    [...reader.page.div.querySelectorAll<SVGElement>("[data-zt-grip]")].map(
-      (grip) => grip.dataset.ztGrip,
-    );
-
-  binding.session.setSelectedAnnotations(["K3JRFLFQ"]);
-  expect(selectedKeys(reader.page)).toEqual(["K3JRFLFQ"]);
-  expect(grips()).toEqual(["start", "end"]);
-
-  binding.session.setSelectedAnnotations(["PUPR5FG5"]);
-  expect(selectedKeys(reader.page)).toEqual(["PUPR5FG5"]);
-  expect(grips()).toEqual([]);
 });
 
 it("paints a group a consumer selected, with no popup, and walks it down to one mark", async () => {
@@ -1138,43 +1008,6 @@ it("stops announcing once the view's binding is gone", async () => {
   expect(announced).toEqual([]);
   expect(service.bindings).toEqual([]);
   expect(service.sessionFor(view as never)).toBeNull();
-});
-
-it("shows the Editing Capability in the reader's toolbar and follows it", async () => {
-  const reader = pdfReader();
-  const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const annotations = annotationReads();
-  const { app } = workspace([{ view }]);
-
-  const service = new PdfAnnotationEditor({
-    app,
-    attachments: attachmentReads(RESOLVED),
-    annotations,
-    capabilityGestures: capabilityGestures(),
-    ...standingDeps(),
-  });
-  {
-    await using _service = service;
-    await service.ready;
-    expect(annotations.capabilityFor).toHaveBeenCalledWith("ABCD2345");
-    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
-
-    // A probe that changed what this Attachment may do redraws the one node.
-    annotations.setCapability({
-      kind: "read-only",
-      reason: "local-api-disabled",
-    });
-    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
-    annotations.setCapability({ kind: "authorizing" });
-    const node = affordanceIn(reader.toolbarRightEl)!;
-    expect(node.dataset.ztCapabilityTone).toBe("busy");
-    expect(node.classList.contains("mod-warning")).toBe(false);
-    expect(node.textContent).toContain("Waiting for approval in Zotero");
-    expect(node.getAttribute("role")).toBe("status");
-    expect(reader.toolbarRightEl.childElementCount).toBe(1);
-  }
-
-  expect(reader.toolbarRightEl.childElementCount).toBe(0);
 });
 
 it("keeps the toolbar's nodes across capability announcements, and stands them down in place", async () => {

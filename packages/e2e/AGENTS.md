@@ -8,12 +8,12 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 - `pnpm e2e:query` (root) — builds dependencies and runs only the ZotLit Query CLI cases, including cancellation.
 - For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/<area>.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
-- Worker responsiveness: `pnpm e2e:worker` requires desktop Obsidian and passes only when the unchanged refresh, changed-Item rebuild, and rejected-snapshot cases all execute. The commit hook runs it for the paths listed in `lefthook.yml`. Its worker timer detects stalls that sequential search p99 can hide.
+- Worker responsiveness: `pnpm e2e:worker` requires desktop Obsidian and passes only when the unchanged refresh, changed-Item rebuild, and rejected-snapshot cases all execute. `pnpm verify --release` runs it after the full End-to-end Run on the desktop. Its worker timer detects stalls that sequential search p99 can hide.
 
 - `pnpm --filter @zotlit/e2e measure:query` — the release-time measurement of ZotLit Query (see below).
 - `pnpm --filter @zotlit/e2e test` — unit tests of the measurement record (`src/**/*.test.ts`, `vitest.unit.config.ts`). They touch no Obsidian.
 
-The End-to-end Run and the measurement drive a real Electron app and stay out of `pnpm test` / CI: the `test` script runs the unit tests alone.
+The End-to-end Run and the measurement drive a real Electron app. The `test` script runs the unit tests alone. `pnpm verify --release` requires the full End-to-end Run, including the Paired Run, followed by worker responsiveness on the desktop. GitHub Actions skips the desktop checks; `pnpm release` runs them before the version commit.
 
 ## End-to-end Run layout
 
@@ -40,7 +40,7 @@ The default reporter prints suite progress, the run's evidence folder, and the f
 
 ## Requirements
 
-Needs desktop Obsidian running locally with the CLI enabled (Settings → General → Advanced → "Command line interface"). The app and installer must match the exact version pair in `src/vault-script.ts`; a mismatch fails before Fixture setup. Without a reachable Obsidian, `pnpm e2e` skips its tests cleanly and exits 0.
+Needs desktop Obsidian running locally with the CLI enabled (Settings → General → Advanced → "Command line interface"). The app and installer must match the exact version pair in `src/vault-script.ts`; a mismatch fails before Fixture setup. Without a reachable Obsidian, `pnpm e2e` skips its tests cleanly and exits 0. Set `ZOTLIT_E2E_REQUIRED=1` to require Obsidian and fail instead; `pnpm verify --release` sets this variable.
 
 The suite talks to Obsidian's CLI socket directly, so the `obsidian` command need not be registered. Run `packages/scripts/scripts/obsidian-cli.ts version` to verify that Obsidian answers.
 
@@ -48,7 +48,7 @@ The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:
 
 ## Desktop lock
 
-One process at a time drives the desktop Obsidian and its Paired Zotero, across all worktrees and sessions. `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker` (and so the commit hook), and `measure:query` take the desktop lock themselves and wait while another process holds it. A `pnpm e2e` run without a reachable Obsidian skips its tests without the lock. The waiter prints the holder's pid, command, and worktree.
+One process at a time drives the desktop Obsidian and its Paired Zotero, across all worktrees and sessions. `pnpm e2e` (each Vitest project's first global setup), `pnpm e2e:worker`, and `measure:query` take the desktop lock themselves and wait while another process holds it. A `pnpm e2e` run without a reachable Obsidian skips its tests without the lock. The waiter prints the holder's pid, command, and worktree.
 
 - The lock is `zotlit-desktop.lock` in the git common dir (`git rev-parse --git-common-dir`), shared by every worktree of the clone. A lock whose holder process is gone is taken over. The owner record holds the process start time from `ps`, so a holder whose pid the system gave to a new process also counts as gone.
 - The holder exports `ZOTLIT_DESKTOP_LOCK`; a ZotLit tool started under it reuses the lock.

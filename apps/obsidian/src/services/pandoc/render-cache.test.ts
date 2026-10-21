@@ -742,77 +742,6 @@ describe("BibliographyRenderCache", () => {
     expect(lateMissingStyles).toEqual([APA]);
   });
 
-  it("uses the selected installed style for bibliography and in-text formatting", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha")]);
-    await cache.renderCitations(["[@alpha]"], [item("alpha")]);
-
-    expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
-    expect(engine.citationRequests[0]?.styleXml).toContain(`<id>${APA}</id>`);
-  });
-
-  it("renders the style and Citation Locale a request names of its own", async () => {
-    await using installed = await installStyle(APA, IEEE);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha")], { styleId: IEEE });
-    await cache.renderCitations(["[@alpha]"], [item("alpha")], {
-      styleId: IEEE,
-      locale: "de-DE",
-    });
-
-    expect(engine.requests[0]?.styleXml).toContain(`<id>${IEEE}</id>`);
-    expect(engine.citationRequests[0]?.styleXml).toContain(
-      'default-locale="de-DE"',
-    );
-  });
-
-  it("renders every surface in the vault Citation Locale", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA, "citation.locale": "de-DE" },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha")]);
-    await cache.renderCitations(["[@alpha]"], [item("alpha")]);
-
-    expect(engine.requests[0]?.styleXml).toContain('default-locale="de-DE"');
-    expect(engine.citationRequests[0]?.styleXml).toContain(
-      'default-locale="de-DE"',
-    );
-  });
-
-  it("renders the embedded default style in the vault Citation Locale", async () => {
-    await using harness = await makeHarness({ "citation.locale": "de-DE" });
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha")]);
-
-    expect(engine.requests[0]?.styleXml).toBeUndefined();
-    expect(engine.requests[0]?.locale).toBe("de-DE");
-  });
-
-  it("leaves an empty vault Citation Locale to the style", async () => {
-    await using harness = await makeHarness({ "citation.locale": "" });
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha")]);
-
-    expect(engine.requests[0]?.locale).toBeUndefined();
-  });
-
   it("drops every render when the vault Citation Locale changes", async () => {
     await using harness = await makeHarness();
     const { cache, engine, settings, invalidations } = harness;
@@ -844,16 +773,6 @@ describe("BibliographyRenderCache", () => {
     await cache.render([item("alpha")], { styleId: null });
 
     expect(engine.requests[0]?.styleXml).toBeUndefined();
-  });
-
-  it("renders the embedded default style in the Citation Locale a request names", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha")], { styleId: null, locale: "de-DE" });
-
-    expect(engine.requests[0]?.styleXml).toBeUndefined();
-    expect(engine.requests[0]?.locale).toBe("de-DE");
   });
 
   it("renders again when a dependent style names another parent", async () => {

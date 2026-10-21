@@ -159,41 +159,6 @@ describe("the web host", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(anchor));
   });
 
-  it("offers a searchable picker and resolves the option chosen", async () => {
-    let answer!: Promise<string | null>;
-    act(() => {
-      answer = host.suggester({
-        title: "Choose a paper",
-        groups: [
-          {
-            label: "Samples",
-            options: [
-              { id: "a", label: "Attention is all you need", hint: "2017" },
-              { id: "b", label: "Deep residual learning" },
-            ],
-          },
-        ],
-        selected: "b",
-      });
-    });
-    await act(async () => {});
-    expect(texts('[role="option"]')).toEqual([
-      "Attention is all you need2017",
-      "Deep residual learning",
-    ]);
-    const option = document.querySelector<HTMLElement>('[role="option"]')!;
-    act(() => {
-      option.dispatchEvent(
-        new PointerEvent("pointerdown", {
-          bubbles: true,
-          pointerType: "mouse",
-        }),
-      );
-      option.click();
-    });
-    await expect(answer).resolves.toBe("a");
-  });
-
   it("keeps the existing host bound to the latest insertion selection", () => {
     const existing = host;
     act(() =>

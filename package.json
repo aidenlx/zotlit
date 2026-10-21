@@ -19,9 +19,10 @@
     "e2e:worker": "node packages/e2e/src/verify-worker.ts",
     "test": "turbo run test",
     "test:eval-runtime": "node --test skills/zotlit-query/evals/*.test.mjs",
-    "lint": "turbo run //#lint:repo //#lint:messages",
+    "lint": "turbo run //#lint:repo //#lint:messages //#lint:test-gates",
     "lint:fix": "turbo run //#lint:repo -- --fix",
     "lint:repo": "oxlint",
+    "lint:test-gates": "node packages/scripts/scripts/check-test-gates.ts",
     "lint:messages": "node packages/scripts/scripts/check-messages.ts",
     "review": "turbo run //#review:plugin",
     "review:plugin": "eslint",
@@ -30,6 +31,7 @@
     "format:fix": "oxfmt",
     "quality": "pnpm lint && pnpm format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
+    "verify": "node packages/scripts/scripts/verify.ts",
     "prepare": "lefthook install || exit 0"
   },
   "dependencies": {

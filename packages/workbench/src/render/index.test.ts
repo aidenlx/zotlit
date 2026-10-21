@@ -101,27 +101,6 @@ describe("Sample Items", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it("ships four current-contract item types", () => {
-    expect(
-      SAMPLE_ITEMS.map((sample) => [
-        sample.provenance.kind === "sample" ? sample.provenance.id : null,
-        sample.item.itemType,
-        sample.contractVersion,
-        sample.provenance.kind === "sample" ? sample.provenance.source : null,
-      ]),
-    ).toEqual([
-      ["journal-article", "journalArticle", CONTRACT_VERSION, "fixture-vault"],
-      [
-        "conference-paper",
-        "conferencePaper",
-        CONTRACT_VERSION,
-        "fixture-vault",
-      ],
-      ["book", "book", CONTRACT_VERSION, "maintainer-library"],
-      ["thesis", "thesis", CONTRACT_VERSION, "migrated-library"],
-    ]);
-  });
-
   it("validates every root against the current contract artifacts", () => {
     const ajv = new Ajv2020({ strict: true });
     const note = ajv.compile(noteSchema);

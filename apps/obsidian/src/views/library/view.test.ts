@@ -982,25 +982,6 @@ it("lists the libraries in the Library Scope with their Collections, each counti
   ]);
 });
 
-it("draws a clock for Recent, a library for My Library, a group for a group library and a folder for a Collection, each as decoration", async () => {
-  const { deps } = pluginData();
-  const view = await openTab(deps);
-  const icons = [
-    ...view.contentEl.querySelectorAll<HTMLElement>("[data-library-node]"),
-  ].map((node) => {
-    const icon = node.querySelector("[data-library-icon]");
-    return `${node.querySelector("[data-library-label]")!.textContent}: ${icon?.getAttribute("data-library-icon")} ${icon?.getAttribute("aria-hidden")}`;
-  });
-  expect(icons).toEqual([
-    "Recent: clock true",
-    "My Library: library true",
-    "Reading list: folder true",
-    "Thesis: folder true",
-    "Lab: users true",
-    "Thesis: folder true",
-  ]);
-});
-
 it("opens a Collection to its subcollections, each counted alone", async () => {
   const { deps } = pluginData();
   const view = await openTab(deps);
@@ -1218,18 +1199,6 @@ it("names the tree and the facets for a screen reader, with no tooltip over them
   expect(accessibleName(pane.querySelector("[role=group]")!)).toBe(
     m.library_view_facets_label(),
   );
-});
-
-it("puts the tree toggle in the search box's row, so it takes no row of its own", async () => {
-  const { deps } = pluginData();
-  const view = await openTab(deps);
-  const toggle = view.contentEl.querySelector<HTMLElement>(
-    "[data-library-tree-toggle]",
-  )!;
-  const row = toggle.closest<HTMLElement>("[data-library-search-row]");
-  expect(row?.contains(searchBox(view))).toBe(true);
-  // A control, its name is its tooltip.
-  expect(toggle.getAttribute("aria-label")).toBe(m.library_view_show_tree());
 });
 
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
@@ -1527,70 +1496,6 @@ it("reads only the Library Scope on Recent while the tree shows every Library", 
     mode: "selected",
     libraries: [PERSONAL, LAB],
   });
-});
-
-it("opens on the Papers Layout with Sort and Save as query file alone, in the heading, and no toolbar row of the Query View's own", async () => {
-  const { deps } = pluginData();
-  const view = await openTab(deps);
-  await act(() => view.query.settled);
-  expect(view.query.state.getState().view?.type).toBe("papers");
-  const toolbars = view.contentEl.querySelectorAll('[role="toolbar"]');
-  expect(toolbars).toHaveLength(1);
-  const toolbar = toolbars[0]!;
-  expect(toolbar.closest("[data-library-heading]")).not.toBeNull();
-  expect(accessibleName(toolbar)).toBe(m.library_view_heading_tools());
-  expect(
-    [...toolbar.querySelectorAll(":scope > button")].map(
-      (button) =>
-        button.getAttribute("data-query-toolbar") ??
-        [...button.attributes]
-          .map(({ name }) => name)
-          .find((name) => name.startsWith("data-query-")),
-    ),
-  ).toEqual(["sort", "data-query-save-as"]);
-});
-
-it("scrolls the rows alone, under the search box and the heading with its tools", async () => {
-  const { deps } = pluginData({
-    node: MY_LIBRARY,
-    facets: [],
-    search: "",
-    sort: [],
-  });
-  const view = await openTab(deps);
-  /**
-   * The elements from `el` up to the tab's column that scroll what they
-   * hold. The column scrolls only where the Welcome View banner and the
-   * list's least height do not fit in the tab together.
-   */
-  const column = view.contentEl.querySelector("[data-library-column]")!;
-  expect(column).not.toBeNull();
-  const scrollers = (el: Element) => {
-    const found: Element[] = [];
-    for (
-      let at: Element | null = el;
-      at && at !== column;
-      at = at.parentElement
-    )
-      if (/(^|\s)zt:overflow(-y)?-(auto|scroll)(\s|$)/.test(at.className))
-        found.push(at);
-    return found;
-  };
-  const firstRow = view.contentEl.querySelector("[data-query-papers-row]")!;
-  expect(firstRow).not.toBeNull();
-  // One scroll container holds the rows: the layout's own.
-  const scroll = scrollers(firstRow);
-  expect(scroll).toHaveLength(1);
-  expect(scroll[0]!.matches("[data-query-layout]")).toBe(true);
-  // What sits above the rows stays put: none of it is in a scroll container.
-  for (const pinned of [
-    searchBox(view),
-    view.contentEl.querySelector("[data-library-header]")!,
-    view.contentEl.querySelector('[role="toolbar"]')!,
-  ]) {
-    expect(pinned).not.toBeNull();
-    expect(scrollers(pinned)).toEqual([]);
-  }
 });
 
 /** The Items the list shows, by Indexed Key, in order. */
@@ -3258,32 +3163,6 @@ describe("Reading Card", () => {
     expect(pairs(view, "fields")?.[0]?.[1]).toContain(
       "Ada Author11; Ada Author12",
     );
-  });
-
-  it("starts the Item type with its icon, a book for a book and an envelope for a letter", async () => {
-    const { deps, change } = pluginData();
-    const view = await openTab(deps);
-    await act(async () => {
-      change(
-        FILLED.map((item) =>
-          item.key === C ? { ...item, itemType: "book" } : item,
-        ),
-      );
-      await view.query.settled;
-    });
-    const typeIcon = () =>
-      card(view)
-        .querySelector(
-          '[data-library-card-part="type"] [data-library-card-type-icon]',
-        )
-        ?.getAttribute("data-library-card-type-icon");
-    await select(view, C);
-    expect(
-      card(view).querySelector('[data-library-card-part="type"]')!.textContent,
-    ).toBe("Book");
-    expect(typeIcon()).toBe("book");
-    await select(view, D);
-    expect(typeIcon()).toBe("mail");
   });
 
   it("shows a letter's year under its title, and its full date, URL and other filled fields in a letter's order", async () => {

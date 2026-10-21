@@ -1,7 +1,11 @@
 import { describe, it } from "node:test";
 import { RuleTester } from "oxlint/plugins-dev";
 
-import { noClassAssertion } from "./oxlint-plugin-tests.ts";
+import {
+  noClassAssertion,
+  noSourceText,
+  noInternalMock,
+} from "./oxlint-plugin-tests.ts";
 
 RuleTester.describe = describe;
 RuleTester.it = it;
@@ -50,4 +54,54 @@ tester.run("no-class-assertion", noClassAssertion, {
       errors: ztClass,
     },
   ],
+});
+
+// Failure modes: path constructors and templates hide source extensions;
+// fixtures remain valid inputs; raw imports read source without a filesystem.
+tester.run("no-source-text", noSourceText, {
+  valid: [
+    'readFile("./fixtures/source.ts", "utf8")',
+    'readFileSync(join(root, "__fixtures__", "tsconfig.json"))',
+    'readFile(new URL("./test-fixtures/config.yml", import.meta.url))',
+    'readFileSync("./__snapshots__/output.md")',
+    'readFile("./data.json")',
+    'readFile("ts")',
+    "readFile(runtimePath)",
+    'import data from "./data.json"',
+  ],
+  invalid: [
+    'readFile("./source.ts", "utf8")',
+    'fs.readFileSync(join(root, "src", "view.tsx"))',
+    'fs.promises.readFile(new URL("../turbo.json", import.meta.url))',
+    "readFile(`${root}/README.md`)",
+    'readFile(root + "/tsconfig.lib.json")',
+    'readFile(join(root, "package.json"))',
+    'readFile("./fixtures-not/source.ts")',
+    ...["mts", "cts", "js", "mjs", "cjs", "yml", "yaml", "mdx", "css"].map(
+      (extension) => `readFile("./file.${extension}")`,
+    ),
+    'import source from "./source.ts?raw"',
+  ].map((code) => ({ code, errors: [{ messageId: "sourceText" }] })),
+});
+
+// Failure modes: every internal alias, both mock APIs, and Vitest's typed
+// import form must be checked while external boundaries stay available.
+tester.run("no-internal-mock", noInternalMock, {
+  valid: [
+    'vi.mock("obsidian")',
+    'vi.mock("node:fs")',
+    'vi.doMock("fs/promises")',
+    'vi.mock("third-party")',
+    'vi.spyOn(service, "read")',
+    'other.mock("./module")',
+  ],
+  invalid: [
+    'vi.mock("./module")',
+    'vi.doMock("../module")',
+    'vi.mock("#module")',
+    'vi.mock("@/module")',
+    'vi.mock("@zotlit/db")',
+    'vi.mock(import("./module"))',
+    'vi["doMock"](`@/module`)',
+  ].map((code) => ({ code, errors: [{ messageId: "internalMock" }] })),
 });

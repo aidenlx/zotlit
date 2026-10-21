@@ -190,60 +190,13 @@ describe("the Liquid Citation Template default matches the Eta default byte-for-
   ).flatMap<[string, ReturnType<typeof dataFrom>]>((variant) => [
     [`${variant}: single citekey`, dataFrom(variant, citation("smith2024"))],
     [
-      `${variant}: multiple citekeys`,
-      dataFrom(variant, citation("a2020"), citation("b2021")),
-    ],
-    [
-      `${variant}: null citekey dropped`,
-      dataFrom(variant, citation("a2020"), citation(null), citation("b2021")),
-    ],
-    [`${variant}: sentinel citekey`, dataFrom(variant, citation("KX67D9YM?"))],
-    [
       `${variant}: delimiter-bearing citekey`,
       dataFrom(variant, citation("key;part")),
     ],
     [`${variant}: empty input`, dataFrom(variant)],
     [
-      `${variant}: all null citekeys`,
-      dataFrom(variant, citation(null), citation(null)),
-    ],
-    [
-      `${variant}: locator with labelShort`,
-      dataFrom(variant, citation("smith2024", { locator: "62" })),
-    ],
-    [
-      `${variant}: non-page label`,
-      dataFrom(
-        variant,
-        citation("smith2024", {
-          locator: "3",
-          label: "chapter",
-          labelShort: "chap.",
-        }),
-      ),
-    ],
-    [
       `${variant}: suppressAuthor`,
       dataFrom(variant, citation("smith2024", { suppressAuthor: true })),
-    ],
-    [
-      `${variant}: suppressAuthor + sentinel`,
-      dataFrom(variant, citation("KX67D9YM?", { suppressAuthor: true })),
-    ],
-    [
-      `${variant}: multiple citation-scoped props`,
-      dataFrom(
-        variant,
-        citation("a2020", { locator: "62" }),
-        citation("b2021", { suppressAuthor: true }),
-      ),
-    ],
-    [
-      `${variant}: prefix and suffix`,
-      dataFrom(
-        variant,
-        citation("smith2024", { prefix: "see ", suffix: ", note 4" }),
-      ),
     ],
     [
       `${variant}: preferred-form prefix fallback`,

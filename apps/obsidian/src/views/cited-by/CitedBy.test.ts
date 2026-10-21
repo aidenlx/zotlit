@@ -572,54 +572,6 @@ describe("CitedBy", () => {
     expect(warning?.textContent).toContain("Preview unavailable");
   });
 
-  it("owns the Backlinks-style result presentation", async () => {
-    const { container } = await render({});
-    const result = container.querySelector("[data-cited-by-result]");
-    const results = container.querySelector("[data-cited-by-results]");
-    const header = result?.querySelector("[data-cited-by-source-header]");
-    const open = result?.querySelector("[data-source]");
-    const occurrence = result?.querySelector("[data-occurrence]");
-
-    expect(result).not.toBeNull();
-    expect(
-      result?.matches(".tree-item, .search-result") ||
-        result?.querySelector(
-          ".tree-item-self, .tree-item-inner, .tree-item-flair, .search-result-file-matches, .search-result-file-match",
-        ),
-    ).toBeFalsy();
-    expect(results?.classList).toContain("zt:px-3");
-    expect(header?.classList).toContain("zt:p-(--nav-item-padding)");
-    expect(header?.classList).toContain("zt:pe-0");
-    expect(header?.classList).toContain("zt:items-center");
-    expect(open?.classList).toContain("zt:size-5");
-    expect(open?.classList).not.toContain("clickable-icon");
-    expect(occurrence?.classList).toContain("zt:hover:bg-(--text-selection)");
-    expect(result?.querySelector("mark")?.classList).toContain(
-      "zt:bg-(--text-highlight-bg)",
-    );
-  });
-
-  it("renders every occurrence as a search-result card", async () => {
-    const { container } = await render({});
-    const card = container.querySelector("[data-occurrence]");
-    const cards = container.querySelector("[data-cited-by-cards]");
-
-    expect(card?.parentElement).toBe(cards);
-    expect(cards?.classList).toContain("zt:bg-(--search-result-background)");
-    expect(cards?.classList).toContain(
-      "zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border)]",
-    );
-    expect(cards?.classList).toContain("zt:rounded-(--radius-s)");
-    expect(card?.classList).toContain(
-      "zt:border-(--background-modifier-border)",
-    );
-    expect(card?.classList).toContain("zt:hover:bg-(--text-selection)");
-    expect(card?.classList).toContain("zt:focus-visible:bg-(--text-selection)");
-    expect(card?.classList).toContain(
-      "zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
-    );
-  });
-
   it("highlights the citation inside its surrounding context", async () => {
     const { container } = await render({});
     const card = container.querySelector("[data-occurrence]");
@@ -819,15 +771,6 @@ describe("CitedBy", () => {
     await act(async () => Promise.resolve());
     expect(expanded()).toEqual(["true", "true"]);
     expect(toggle.classList).not.toContain("is-active");
-  });
-
-  it("drops the counts row and the expand all / collapse all pair", async () => {
-    const { container } = await render({});
-    expect(container.textContent).not.toContain("Expand all");
-    expect(container.textContent).not.toContain("Collapse all");
-    expect(
-      container.querySelectorAll("[data-cited-by-collapse-results]"),
-    ).toHaveLength(1);
   });
 
   it("activates the toolbar toggle from the keyboard", async () => {

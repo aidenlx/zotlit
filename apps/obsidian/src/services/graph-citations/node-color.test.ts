@@ -84,18 +84,6 @@ describe("readNodeColors", () => {
     expect(document.body.children).toHaveLength(0);
   });
 
-  it("exposes the literal theme properties", () => {
-    expect(themeProperty.graphLiteratureNote).toBe(
-      "--zt-graph-literature-note-color",
-    );
-    expect(themeProperty.graphCitedWorkNode).toBe(
-      "--zt-graph-cited-work-node-color",
-    );
-    expect(themeProperty.graphCitationLink).toBe(
-      "--zt-graph-citation-link-color",
-    );
-  });
-
   /**
    * No suite here loads ZotLit's stylesheet, which is the state a graph that
    * was open before ZotLit loaded is drawn in: Obsidian inserts a plugin's

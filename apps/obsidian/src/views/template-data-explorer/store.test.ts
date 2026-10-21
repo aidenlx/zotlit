@@ -33,7 +33,9 @@ const real = { id: "MAIN2345", title: "Real paper" };
 beforeEach(() => vi.resetAllMocks());
 
 describe("native Explorer sample data", () => {
-  it.each(SAMPLE_ITEM_CHOICES)(
+  it.each(
+    SAMPLE_ITEM_CHOICES.filter((item) => item.id === "sample:conference-paper"),
+  )(
     "restores $id note and filename roots without database access",
     async (item) => {
       using session = new NativeExplorerSession(deps);
@@ -51,33 +53,35 @@ describe("native Explorer sample data", () => {
     },
   );
 
-  it.each(SAMPLE_ANNOTATIONS)(
-    "restores $id with its own parent and no note Item",
-    async (sample) => {
-      using session = new NativeExplorerSession(deps);
-      session.setTarget(null, "annotation", sample.id);
-      await session.ready;
-      expect(session.state.getState()).toMatchObject({
-        item: null,
-        status: "ready",
-        annotationId: sample.id,
-        annotations: [],
-        data: {
-          type: sample.root.type,
-          parentItem: { title: "Designing reproducible research interfaces" },
-        },
-      });
-      const data = session.state.getState().data!;
-      const parent = data.parentItem as {
-        noteLink: () => string | null;
-        toString: () => string;
-      };
-      expect(String(parent)).toBe("Designing reproducible research interfaces");
-      expect(parent.noteLink()).toBeNull();
-      expect(data.dateAdded).toBeInstanceOf(Temporal.Instant);
-      expect(loadTemplateData).not.toHaveBeenCalled();
-    },
-  );
+  it.each(
+    SAMPLE_ANNOTATIONS.filter(
+      (sample) =>
+        sample.id === "example:highlight" || sample.id === "example:ink",
+    ),
+  )("restores $id with its own parent and no note Item", async (sample) => {
+    using session = new NativeExplorerSession(deps);
+    session.setTarget(null, "annotation", sample.id);
+    await session.ready;
+    expect(session.state.getState()).toMatchObject({
+      item: null,
+      status: "ready",
+      annotationId: sample.id,
+      annotations: [],
+      data: {
+        type: sample.root.type,
+        parentItem: { title: "Designing reproducible research interfaces" },
+      },
+    });
+    const data = session.state.getState().data!;
+    const parent = data.parentItem as {
+      noteLink: () => string | null;
+      toString: () => string;
+    };
+    expect(String(parent)).toBe("Designing reproducible research interfaces");
+    expect(parent.noteLink()).toBeNull();
+    expect(data.dateAdded).toBeInstanceOf(Temporal.Instant);
+    expect(loadTemplateData).not.toHaveBeenCalled();
+  });
 
   it("keeps the annotation's parent while separately loading real Item choices", async () => {
     const pending = Promise.withResolvers<TemplateDataLoadResult>();

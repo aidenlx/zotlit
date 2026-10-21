@@ -190,10 +190,6 @@ describe("Template Workbench host", () => {
       modal.renderSuggestion(option, el);
       return el;
     });
-    expect(rows.map((el) => el.className)).toEqual([
-      "mod-complex zt-workbench-suggestion zt:@container",
-      "mod-complex zt-workbench-suggestion zt:@container",
-    ]);
     expect(
       rows.map((el) => el.querySelector(".suggestion-title")!.textContent),
     ).toEqual(["APA", "IEEE"]);
@@ -321,9 +317,6 @@ describe("Template Workbench typing popup", () => {
       expect(document.body.contains(popup)).toBe(true);
       expect(input.contains(popup)).toBe(false);
       const rows = [...popup.querySelectorAll("li")];
-      expect(rows.map((row) => row.className)).toEqual(
-        rows.map(() => "suggestion-item mod-complex"),
-      );
       const row = rows.find(
         (row) =>
           row.querySelector(".cm-completionLabel")!.textContent === "title",

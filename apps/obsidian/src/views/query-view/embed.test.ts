@@ -172,24 +172,6 @@ it("shows a placeholder named after the file in a note preview", async () => {
   expect(run).not.toHaveBeenCalled();
 });
 
-it("saves a toolbar change to the file, and another embed of it follows", async () => {
-  const { embed, host } = setup();
-  const first = await embed("notes/Lab.md");
-  const second = await embed("notes/Plain.md");
-
-  await act(async () => {
-    first.view.document.renameView(0, "Yellow ones");
-    await first.view.flush();
-  });
-
-  expect(host.text(FILE_PATH)).toContain("name: Yellow ones");
-  expect(viewName(first.el)).toBe("Yellow ones");
-  await act(async () => {
-    await second.view.settled;
-  });
-  expect(viewName(second.el)).toBe("Yellow ones");
-});
-
 it("saves through an open tab of the file, so the tab shows the change", async () => {
   const { embed, host } = setup();
   const tab = host.openInEditor(host.file(FILE_PATH));

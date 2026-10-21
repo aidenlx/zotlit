@@ -11,10 +11,11 @@ import { getWorkspaceRoot } from "#package-roots";
  * Phase 1 of the release pipeline: local, interactive version bump.
  *
  * Bumps `apps/{app}/package.json#version` (the sole version source), runs the
- * derived sync side-effects, refreshes the lockfile, gates on `pnpm quality`
- * (aborts loudly if lint/format fails), and lands a single release commit. It
- * performs **no tagging, no push, no GitHub release** — CI (`release.yml`)
- * cuts tags/releases on merge to the line the PR targets (`main` = stable,
+ * derived sync side-effects, refreshes the lockfile, gates on
+ * `pnpm verify --release`, and lands a single release commit on a release
+ * branch, then pushes it, opens the PR and offers to merge it. It performs
+ * **no tagging, no GitHub release** — CI (`release.yml`) verifies and cuts
+ * tags/releases on merge to the line the PR targets (`main` = stable,
  * `next` = beta), keyed on package version.
  *
  * The release line is inferred from the **version** picked, not the branch:
@@ -159,32 +160,18 @@ async function completeRelease(): Promise<void> {
   stagedPaths.add(join(workspaceRoot, "pnpm-lock.yaml"));
   s.stop("Lockfile refreshed");
 
-  s.start("Quality check");
-  const quality = await $({ cwd: workspaceRoot, nothrow: true })`pnpm quality`;
-  if (quality.exitCode !== 0) {
-    s.stop("Quality check failed", 1);
-    p.cancel(
-      `Quality check failed — fix lint/format errors before releasing:\n${quality.stdout}${quality.stderr}`,
-    );
+  // The full gate, Obsidian guideline review included, runs before the version
+  // commit exists. `release.yml` runs it again on the merged tree before it
+  // publishes. See ADR 0076.
+  p.log.step("Release gate (pnpm verify --release)");
+  const verify = await $({
+    cwd: workspaceRoot,
+    nothrow: true,
+    stdio: "inherit",
+  })`pnpm verify --release`;
+  if (verify.exitCode !== 0) {
+    p.cancel("Release gate failed — fix the errors above before releasing.");
     process.exit(1);
-  }
-  s.stop("Quality passed");
-
-  // Obsidian's community review rejects guideline violations, so the plugin is
-  // scanned here rather than after merge — `release.yml` only runs once the
-  // version commit has already landed. oxlint (in `pnpm quality` above) owns
-  // general hygiene; this is the Obsidian-specific pass. See ADR 0020.
-  if (bumps.some((b) => b.app.name === "obsidian")) {
-    s.start("Plugin review");
-    const review = await $({ cwd: workspaceRoot, nothrow: true })`pnpm review`;
-    if (review.exitCode !== 0) {
-      s.stop("Plugin review failed", 1);
-      p.cancel(
-        `Obsidian guideline violations — fix these before releasing:\n${review.stdout}${review.stderr}`,
-      );
-      process.exit(1);
-    }
-    s.stop("Plugin review passed");
   }
 
   const branchName = `release/${prTarget}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
@@ -217,8 +204,28 @@ async function completeRelease(): Promise<void> {
   s.stop("Pushed");
 
   const openPr = await p.confirm({ message: `Open a PR to ${prTarget}?` });
-  if (!p.isCancel(openPr) && openPr) {
-    await openPR(branchName, commitMsg, prTarget);
+  const prUrl =
+    !p.isCancel(openPr) && openPr
+      ? await openPR(branchName, commitMsg, prTarget)
+      : undefined;
+
+  // Pull requests run no checks (ADR 0076), so the PR is ready to merge as
+  // soon as it exists. Merging starts `release.yml`.
+  let merged = false;
+  if (prUrl) {
+    const merge = await p.confirm({
+      message: `Merge the PR into ${prTarget} now? release.yml then verifies and publishes.`,
+    });
+    if (!p.isCancel(merge) && merge) {
+      s.start("Merging");
+      await $({ cwd: workspaceRoot })`gh pr merge ${prUrl} --merge`;
+      // The API call leaves the local checkout and the pre-push hook alone.
+      await $({
+        cwd: workspaceRoot,
+      })`gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/${branchName}`;
+      s.stop(`Merged into ${prTarget}, removed origin/${branchName}`);
+      merged = true;
+    }
   }
 
   // The release branch now lives on origin (the PR references it); drop the local
@@ -231,12 +238,13 @@ async function completeRelease(): Promise<void> {
 
   p.outro(
     [
-      `Released ${summary} on branch ${branchName}.`,
-      `On merge to ${prTarget}, release.yml cuts the tag(s) and GitHub release(s).`,
+      merged
+        ? `Merged ${summary} into ${prTarget}. release.yml verifies the merged tree, then cuts the tag(s) and GitHub release(s).`
+        : `Released ${summary} on branch ${branchName}. On merge to ${prTarget}, release.yml verifies the merged tree, then cuts the tag(s) and GitHub release(s).`,
       ...(isStableGraduation
         ? [
             "",
-            "After the PR merges to main, sync back:",
+            `${merged ? "Now" : "After the PR merges to main,"} sync back:`,
             "  git checkout next && git pull && git merge main",
             "  pnpm release  # pick preminor to start the next beta cycle",
           ]
@@ -245,11 +253,12 @@ async function completeRelease(): Promise<void> {
   );
 }
 
+/** @returns the new PR's URL when `gh` created it. */
 async function openPR(
   branch: string,
   title: string,
   base: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const hasGh = await $({
     cwd: workspaceRoot,
     nothrow: true,
@@ -265,19 +274,20 @@ async function openPR(
     s.stop("PR created");
     const prUrl = created.stdout.trim();
     if (prUrl) p.log.info(`PR: ${prUrl}`);
-  } else {
-    const rootPkg = JSON.parse(
-      await readFile(join(workspaceRoot, "package.json"), "utf-8"),
-    ) as { repository?: { url?: string } | string };
-    const repoUrl =
-      typeof rootPkg.repository === "string"
-        ? rootPkg.repository
-        : rootPkg.repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "");
-    const prUrl = repoUrl
-      ? `${repoUrl}/compare/${base}...${branch}?expand=1`
-      : `https://github.com — open a PR from ${branch} to ${base}`;
-    p.log.info(`Open a PR: ${prUrl}`);
+    return prUrl || undefined;
   }
+  const rootPkg = JSON.parse(
+    await readFile(join(workspaceRoot, "package.json"), "utf-8"),
+  ) as { repository?: { url?: string } | string };
+  const repoUrl =
+    typeof rootPkg.repository === "string"
+      ? rootPkg.repository
+      : rootPkg.repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "");
+  const prUrl = repoUrl
+    ? `${repoUrl}/compare/${base}...${branch}?expand=1`
+    : `https://github.com — open a PR from ${branch} to ${base}`;
+  p.log.info(`Open a PR: ${prUrl}`);
+  return undefined;
 }
 
 /**

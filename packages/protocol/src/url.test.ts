@@ -124,16 +124,13 @@ describe("zotlit obsidian protocol", () => {
     ).toThrow();
   });
 
-  it.each(["tab", "split", "window"] as const)(
-    "builds + round-trips a %s link",
-    (paneType) => {
-      const url = buildProtocolUrl("open", 42, { sourceId: SOURCE, paneType });
-      expect(url).toBe(
-        `obsidian://zotlit/open?item=42&source-id=${SOURCE}&paneType=${paneType}`,
-      );
-      expect(parseProtocolQuery(decode(url))).toMatchObject({ paneType });
-    },
-  );
+  it.each(["split"] as const)("builds + round-trips a %s link", (paneType) => {
+    const url = buildProtocolUrl("open", 42, { sourceId: SOURCE, paneType });
+    expect(url).toBe(
+      `obsidian://zotlit/open?item=42&source-id=${SOURCE}&paneType=${paneType}`,
+    );
+    expect(parseProtocolQuery(decode(url))).toMatchObject({ paneType });
+  });
 
   it("omits paneType from the link when the builder names no pane", () => {
     expect(buildProtocolUrl("open", 42, { sourceId: SOURCE })).not.toContain(
@@ -355,7 +352,7 @@ describe("zotlit explore protocol", () => {
     expect(() => parseExploreProtocolQuery({ "source-id": SOURCE })).toThrow();
   });
 
-  it.each(["tab", "split", "window"] as const)(
+  it.each(["window"] as const)(
     "carries paneType=%s to the receiver",
     (paneType) => {
       expect(

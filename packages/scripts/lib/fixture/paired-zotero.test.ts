@@ -5,11 +5,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  getManagedBetterBibtexLayout,
   getManagedZoteroLayout,
   getZoteroBinary,
   installBetterBibtex,
-  PINNED_BETTER_BIBTEX_VERSION,
   PINNED_ZOTERO_VERSION,
   resolveZoteroApp,
   ZOTERO_APP_ENV,
@@ -25,27 +23,6 @@ afterEach(() => {
 });
 
 describe("managed Better BibTeX", () => {
-  it("pins the official release and checksum in the macOS cache", () => {
-    const home = "/Users/fixture";
-    const archive = `zotero-better-bibtex-${PINNED_BETTER_BIBTEX_VERSION}.xpi`;
-
-    expect(getManagedBetterBibtexLayout({ home, platform: "darwin" })).toEqual({
-      addonId: "better-bibtex@iris-advies.com",
-      archivePath: join(
-        home,
-        "Library",
-        "Caches",
-        "zotlit",
-        "better-bibtex",
-        PINNED_BETTER_BIBTEX_VERSION,
-        archive,
-      ),
-      downloadUrl: `https://github.com/retorquere/zotero-better-bibtex/releases/download/v${PINNED_BETTER_BIBTEX_VERSION}/${archive}`,
-      sha256:
-        "84c4b5b05ffac9a9c7e2ff79663612486f7781690dd59b12a1e62aecdcfa7c27",
-    });
-  });
-
   it("installs the verified XPI under the add-on id", async () => {
     const scratch = join(
       await getWorkspaceRoot(import.meta.dirname),
