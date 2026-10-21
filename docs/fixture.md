@@ -90,6 +90,14 @@ unrun baseline, not a pass.
 
 `query-files/Reading list.zotquery` is a Query File with one Table view of the Items, sorted by title. Open it to expand an Item into its Attachments and Annotations, and to create a Literature Note from the "Literature note" column.
 
+`query-files/Formula lab.zotquery` and `query-files/Annotation formulas.zotquery` are for manual checks of the Filter Expression editor: Expression Colors, Syntax Fault underlines, Expression Completion, and the Signature Hint. Formula lab holds 21 Formulas over the Items, each with a Display Name. They use text methods, regular expressions, dates and durations, number rounding with `min` and `max`, `filter`, `map`, and `reduce` with `value`, `index`, and `acc`, `if`, `firstAuthor` members, and Formulas that read other Formulas. Its six views show the Formulas in groups and test nested `and`, `or`, and `not` groups. These groups mix typed condition rows with expression rows, and some conditions read `formula.*`, `vault.*`, or `vault["…"]`. Annotation formulas shows nine Formulas over the Annotations in the List layout. Every view returns rows, and no Formula has a Fault on the Fixture data. Open the filter or a Formula's property page, then try these checks:
+
+- Type `title.` in a condition to see the text methods, or `firstAuthor.` to see the record members.
+- Type `tags.filter(` or `tags.reduce(` to see the Signature Hint, then `value.` inside the call to see completion for the lambda parameter.
+- Type `formula.` or `vault.` in a condition, or `vault[` or `custom[` to see the quoted keys.
+- Change `formula.decade` to `(date.year / 10).floor(` to see the Syntax Fault underline. Change `formula.decadeLabel` to read `formula.nope` to see an unknown-name Fault in the Formula and in the column header.
+- Switch a typed row, such as "Year is on or after 1950", to an expression with its `<>` button to see its Expression Colors.
+
 The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:
 
 | File | Purpose |
