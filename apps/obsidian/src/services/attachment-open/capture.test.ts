@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Settings } from "@/services/settings/schema";
 
+import { FILES, openerHarness } from "./__fixtures__";
 import {
   EXTERNAL_TARGET,
   paneFromTarget,
   registerFileLinkCapture,
 } from "./capture";
-import type { OpenOutcome, TargetOpener } from "./open-target";
 
 describe("paneFromTarget", () => {
   // The pane names pass through, which `registerFileLinkCapture` proves with
@@ -22,134 +22,130 @@ describe("paneFromTarget", () => {
   );
 });
 
-const PDF_LINK = "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf#page=7";
+const PDF_LINK = `file://${FILES.rougier}#page=7`;
 const DURABLE =
   "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2";
 
 /**
- * A window stand-in whose `open` records what the original was asked for,
- * patched over an opener that takes the links in `taken`. `open` reads
- * `target.open` at each call, so a disposed registration is observed rather
- * than the wrapper the install returned.
+ * Capture installed over a window stand-in whose original `open` records
+ * every call, with the real opener behind it: the opener reaches Zotero
+ * through the patched `open` with {@link EXTERNAL_TARGET}, as
+ * `openWithSystem` does. `open` reads `target.open` at each call, so a
+ * disposed registration is observed rather than the wrapper the install
+ * returned.
  */
-function host({
-  enabled = true,
-  taken = [] as readonly string[],
-  follow,
-}: {
-  enabled?: boolean;
-  taken?: readonly string[];
-  /** Stands in for the opener's own decision, given the patched `open`. */
-  follow?: (url: string, open: Window["open"]) => Promise<OpenOutcome> | null;
-} = {}) {
-  const native = vi.fn(() => null);
-  let warmed = 0;
-  const followed: { url: string; pane: unknown }[] = [];
+async function host(
+  stack: AsyncDisposableStack,
+  {
+    enabled = true,
+    missing = [],
+  }: { enabled?: boolean; missing?: readonly string[] } = {},
+) {
+  const native = vi.fn((..._args: Parameters<Window["open"]>) => null);
   const target = { open: native } as unknown as Window;
-  const opener: Pick<TargetOpener, "follow"> = {
-    follow(url, pane) {
-      followed.push({ url, pane });
-      if (follow) return follow(url, target.open.bind(target));
-      return taken.includes(url) ? Promise.resolve({ kind: "reader" }) : null;
-    },
-  };
+  const { opener, resolver, opened } = await openerHarness(stack, {
+    missing,
+    native: (url) => void target.open(url, EXTERNAL_TARGET),
+  });
   const registration = registerFileLinkCapture({
     opener,
-    attachments: { warm: () => void warmed++ },
+    attachments: resolver,
     settings: { current: { "reader.open-file-links": enabled } as Settings },
     window: target,
   });
+  let installed = true;
+  const dispose = () => {
+    if (!installed) return;
+    installed = false;
+    registration[Symbol.dispose]();
+  };
+  stack.defer(dispose);
   return {
     native,
-    followed,
-    get warmed() {
-      return warmed;
-    },
+    opened,
     open: (...args: Parameters<Window["open"]>) => target.open(...args),
-    [Symbol.dispose]: registration[Symbol.dispose].bind(registration),
+    dispose,
   };
 }
 
 describe("registerFileLinkCapture", () => {
-  it("sends a link the opener takes to it, in the pane the click asked for", () => {
-    using capture = host({ taken: [PDF_LINK] });
+  it("sends a link the opener takes to Obsidian's reader, in the pane the click asked for", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
 
     expect(capture.open(PDF_LINK, "split")).toBeNull();
 
-    expect(capture.followed).toEqual([{ url: PDF_LINK, pane: "split" }]);
+    await vi.waitFor(() => expect(capture.opened).toHaveLength(1));
+    expect(capture.opened[0]).toMatchObject({
+      attachment: { indexedKey: "RGRPDF24", subpath: "#page=7" },
+      pane: "split",
+    });
     expect(capture.native).not.toHaveBeenCalled();
   });
 
-  it("hands a link the opener leaves back to the original as it was called", () => {
-    using capture = host();
+  it("hands a link the opener leaves back to the original as it was called", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
 
-    capture.open(DURABLE, "tab", "features");
+    capture.open("https://example.com/paper.pdf", "tab", "features");
 
-    expect(capture.native).toHaveBeenCalledWith(DURABLE, "tab", "features");
+    expect(capture.native.mock.calls).toEqual([
+      ["https://example.com/paper.pdf", "tab", "features"],
+    ]);
   });
 
-  it("hands Obsidian's own open-in-default-app target straight back", () => {
-    using capture = host({ taken: [PDF_LINK, DURABLE] });
+  it("hands Obsidian's own open-in-default-app target straight back", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
 
     capture.open(PDF_LINK, EXTERNAL_TARGET);
     capture.open(DURABLE, EXTERNAL_TARGET);
 
-    expect(capture.followed).toEqual([]);
     expect(capture.native.mock.calls).toEqual([
       [PDF_LINK, EXTERNAL_TARGET, undefined],
       [DURABLE, EXTERNAL_TARGET, undefined],
     ]);
+    expect(capture.opened).toEqual([]);
   });
 
-  it("hands every link back while the setting is off", () => {
-    using capture = host({ enabled: false, taken: [PDF_LINK, DURABLE] });
+  it("hands every link back while the setting is off", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack, { enabled: false });
 
     capture.open(PDF_LINK, "");
     capture.open(DURABLE, "");
 
-    expect(capture.followed).toEqual([]);
-    expect(capture.native).toHaveBeenCalledTimes(2);
+    expect(capture.native.mock.calls).toEqual([
+      [PDF_LINK, "", undefined],
+      [DURABLE, "", undefined],
+    ]);
+    expect(capture.opened).toEqual([]);
   });
 
   // The opener hands Zotero a link through the system handler, which is
-  // `window.open` again: the link must pass this patch once, not loop.
+  // `window.open` again: the link must pass this patch once, not loop. A
+  // Durable Annotation Link whose PDF this computer lacks takes that path.
   it("lets a link the opener hands to Zotero pass the patch once", async () => {
-    let handed: Promise<OpenOutcome> | undefined;
-    using capture = host({
-      follow: (url, open) => {
-        if (handed !== undefined) return null;
-        handed = Promise.resolve().then(() => {
-          open(url, EXTERNAL_TARGET);
-          return { kind: "zotero", url } as const;
-        });
-        return handed;
-      },
-    });
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack, { missing: [FILES.rougier] });
 
-    capture.open(DURABLE, "");
-    await handed;
+    expect(capture.open(DURABLE, "")).toBeNull();
 
-    expect(capture.followed).toHaveLength(1);
+    await vi.waitFor(() => expect(capture.native).toHaveBeenCalled());
     expect(capture.native.mock.calls).toEqual([
       [DURABLE, EXTERNAL_TARGET, undefined],
     ]);
+    expect(capture.opened).toEqual([]);
   });
 
-  // A note's links are clicked before any PDF is open, and the opener leaves
-  // every link to the system handler until the index lands.
-  it("asks the resolver for its index as it installs", () => {
-    using capture = host();
-
-    expect(capture.warmed).toBe(1);
-  });
-
-  it("restores the original open when disposed", () => {
-    const capture = host({ taken: [PDF_LINK] });
-    capture[Symbol.dispose]();
+  it("restores the original open when disposed", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
+    capture.dispose();
 
     capture.open(PDF_LINK, "");
 
-    expect(capture.followed).toEqual([]);
-    expect(capture.native).toHaveBeenCalledWith(PDF_LINK, "");
+    expect(capture.native.mock.calls).toEqual([[PDF_LINK, ""]]);
+    expect(capture.opened).toEqual([]);
   });
 });

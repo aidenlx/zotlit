@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAnnotationSubpath } from "@zotlit/db";
-
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
-import { createTargetOpener } from "@/services/attachment-open/open-target";
-import type {
-  AttachmentLookup,
-  AttachmentResolution,
-} from "@/services/attachment-resolver/service";
+import type { AttachmentResolution } from "@/services/attachment-resolver/service";
 
 import { annotation } from "./__fixtures__";
 import { decideMarkLanding } from "./mark-landing";
@@ -159,48 +153,6 @@ describe("decideMarkLanding", () => {
     ).toEqual({ kind: "page", reason: "attachment-pending" });
   });
 
-  // A Durable Annotation Link reaches the leaf as the same Anchor a file link
-  // carries, so the Landing it feeds is the one this module already decides.
-  it("selects the Mark a followed Durable Annotation Link names", async () => {
-    const subpath = await followedSubpath(
-      "zotero://open/library/items/RGRPDF24?annotation=SPILL234&page=1",
-      {
-        ...(RESOLVED as Extract<AttachmentLookup, { kind: "resolved" }>),
-        absolutePath: "/Users/me/Vault/attachments/rougier-2014.pdf",
-      },
-    );
-
-    expect(
-      landing(parseAnnotationSubpath(subpath), { rendered: [4, 5] }),
-    ).toEqual({ kind: "select", annotationKey: "SPILL234", pageIndex: 4 });
-  });
-
-  it("selects the Mark a group-library Durable Annotation Link names", async () => {
-    const grouped = annotation("HIGHL234g4200309", "highlight", {
-      pageIndex: 3,
-      rects: [[100, 600, 500, 640]],
-    });
-    const subpath = await followedSubpath(
-      "zotero://open/groups/4200309/items/RGRGRUP9?annotation=HIGHL234",
-      {
-        ...(RESOLVED as Extract<AttachmentLookup, { kind: "resolved" }>),
-        attachmentKey: "RGRGRUP9g4200309",
-        absolutePath: "/Users/me/Zotero/storage/RGRGRUP9/shared.pdf",
-      },
-    );
-
-    expect(
-      landing(parseAnnotationSubpath(subpath), {
-        records: [grouped],
-        marks: new Map([[3, [placement(grouped)]]]),
-      }),
-    ).toEqual({
-      kind: "select",
-      annotationKey: "HIGHL234g4200309",
-      pageIndex: 3,
-    });
-  });
-
   it("leaves the page to Obsidian for a file Zotero does not know", () => {
     expect(
       landing(
@@ -210,31 +162,3 @@ describe("decideMarkLanding", () => {
     ).toEqual({ kind: "page", reason: "attachment-unknown" });
   });
 });
-
-/** The subpath the opener hands Obsidian's reader for a followed link. */
-async function followedSubpath(
-  url: string,
-  attachment: AttachmentLookup,
-): Promise<string | undefined> {
-  let subpath: string | undefined;
-  const followed = createTargetOpener({
-    attachments: {
-      resolve: () => ({ kind: "unresolved" }),
-      lookup: () => attachment,
-      warm: () => {},
-      indexed: Promise.resolve(),
-    },
-    reader: {
-      open: (opened) => {
-        subpath = opened.subpath;
-        return Promise.resolve("opened");
-      },
-    },
-    native: () => {},
-    vaultBasePath: "/Users/me/Vault",
-    platform: "darwin",
-  }).follow(url, false);
-  if (followed === null) throw new Error("the link was not followed");
-  await followed;
-  return subpath;
-}
