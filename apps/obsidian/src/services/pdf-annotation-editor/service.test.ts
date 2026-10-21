@@ -6,7 +6,7 @@ import {
   TExternalFile,
   WorkspaceLeaf,
 } from "obsidian";
-import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
@@ -1483,7 +1483,9 @@ it("binds the Attachment a cold open names, once, before its ephemeral state arr
   });
   const open: { view: unknown }[] = [];
   const { app, relayout } = workspace(open);
-  const native = vi
+  // Declared before the service, so the service is disposed, and its patch
+  // removed, before the native method is restored.
+  using _native = vi
     .spyOn(WorkspaceLeaf.prototype, "setViewState")
     .mockImplementation(async function (
       this: WorkspaceLeaf,
@@ -1495,7 +1497,6 @@ it("binds the Attachment a cold open names, once, before its ephemeral state arr
       relayout();
       if (eState) this.setEphemeralState(eState);
     });
-  onTestFinished(() => native.mockRestore());
   const attachments = attachmentReads(RESOLVED);
   attachments.resolve.mockImplementation(((
     _path: string,

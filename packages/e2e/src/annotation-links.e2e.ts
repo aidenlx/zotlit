@@ -88,6 +88,11 @@ interface Outcome {
   passed: { url: string; target: string | null }[];
   /** The text of every notice on screen. */
   notices: string[];
+  /**
+   * The Attachment the Rougier PDF's reader held each time the follow
+   * recorded a read of the paper, in order; only for a scenario that asks.
+   */
+  reads?: (string | null)[];
 }
 
 /** The rendered link to `url` in the markdown view `view`, as eval code. */
@@ -359,6 +364,8 @@ interface Scenario {
   lands?: ReaderState;
   /** The Attachment the reader must name for a landing; the Rougier PDF's own by default. */
   bound?: string;
+  /** Report the reads the follow recorded, as {@link Outcome.reads}. */
+  reads?: boolean;
 }
 
 /**
@@ -375,6 +382,7 @@ async function follow({
   captureOff = false,
   lands,
   bound = annotationAttachment.key,
+  reads = false,
 }: Scenario): Promise<Outcome> {
   const follow =
     gesture === "external"
@@ -419,6 +427,13 @@ async function follow({
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
         if(${captureOff})s.settings.update({'reader.open-file-links':false});
         ${gesture === "chip" ? "" : showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
+        // The ledger records a read as the reader names its Attachment, so
+        // the reader is asked which one it holds as each read lands.
+        const reads=[];
+        cleanup.defer(s.useLedger.on('changed',()=>{
+          const [newest]=Object.entries(s.useLedger.uses).sort(([,a],[,b])=>b-a)[0]??[];
+          if(s.useLedger.get(newest)?.kind==='read')reads.push(s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
+        }));
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
         if(lands===null){
@@ -437,7 +452,7 @@ async function follow({
           // Obsidian's own page jump and the Landing's scroll frame follow.
           await until(()=>JSON.stringify(observe().reader)===lands,()=>'The reader did not land: '+JSON.stringify(observe()));
         }
-        outcome=observe();
+        outcome={...observe(),...(${reads}?{reads}:{})};
       }
       return JSON.stringify(outcome);
     })()`,
@@ -909,9 +924,13 @@ describe.skipIf(!reachable)("Annotation links", () => {
       gesture: "reading",
       lands,
       bound: SHARED.attachmentKey,
+      reads: true,
     });
 
     expect(outcome).toMatchObject({ reader: lands, passed: [] });
+    // The reader held the named Attachment from its first read: the path's
+    // own Attachment was never bound, nor read.
+    expect(outcome.reads).toEqual([SHARED.attachmentKey]);
   }, 180000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps

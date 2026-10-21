@@ -10,6 +10,7 @@
 
 import { around } from "monkey-around";
 import { WorkspaceLeaf } from "obsidian";
+import type { ViewState } from "obsidian";
 
 import {
   ANNOTATION_ANCHOR_KEY,
@@ -81,7 +82,7 @@ export function registerAnnotationAnchorCapture(
   deps: AnnotationAnchorCaptureDeps,
 ): Disposable {
   const host = WorkspaceLeaf.prototype as unknown as {
-    setViewState: (viewState: unknown, eState?: unknown) => Promise<void>;
+    setViewState: (viewState: ViewState, eState?: unknown) => Promise<void>;
     setEphemeralState: (state: unknown) => void;
   };
   return disposable(
@@ -89,10 +90,10 @@ export function registerAnnotationAnchorCapture(
       setViewState: (native) =>
         function (
           this: WorkspaceLeaf,
-          viewState: unknown,
+          viewState: ViewState,
           eState?: unknown,
         ): Promise<void> {
-          hold(this, viewTypeOf(viewState), eState);
+          hold(this, viewState.type, eState);
           return native.call(this, viewState, eState);
         },
       setEphemeralState: (native) =>
@@ -136,7 +137,7 @@ function navigationSubpathOf(state: unknown): string | null {
  */
 function hold(
   leaf: WorkspaceLeaf,
-  viewType: unknown,
+  viewType: string,
   state: unknown,
 ): ParsedAnnotationSubpath | null {
   const subpath = navigationSubpathOf(state);
@@ -147,19 +148,12 @@ function hold(
   return anchor;
 }
 
-/** The view type a `setViewState` call opens. */
-function viewTypeOf(viewState: unknown): unknown {
-  return typeof viewState === "object" && viewState !== null
-    ? (viewState as { type?: unknown }).type
-    : undefined;
-}
-
 /**
  * The Anchor one subpath carries, for a view showing a PDF: an Annotation to
  * land on, the Attachment the open named, or both.
  */
 function anchorOf(
-  viewType: unknown,
+  viewType: string,
   subpath: string,
 ): ParsedAnnotationSubpath | null {
   if (
