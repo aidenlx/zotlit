@@ -567,6 +567,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The two themes give the code colors different values.
     expect(colors.light.property.code).not.toBe(colors.dark.property.code);
 
+    // One line of expression reads as a native text input: the field fills
+    // the row's input-high box, and its text and caret sit at the centre of
+    // it. Wrapped text grows the box, as a textarea does.
+    type Alignment = Record<
+      "text" | "caret" | "field" | "line" | "box",
+      number
+    >;
+    const aligned = JSON.parse(
+      await inPopover(
+        `const row=section('view').querySelector('[data-condition-row]');const field=row.querySelector('[data-part="expression"]');const box=()=>field.closest('[data-part="statement"]');const centre=el=>{const r=el.getBoundingClientRect();return r.top+r.height/2;};const height=el=>el.getBoundingClientRect().height;const measure=async(text)=>{write(row,text);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const view=field.querySelector('.cm-content').cmTile.root.view;const line=field.querySelector('.cm-line');const caret=view.coordsAtPos(0);return {text:centre(line)-centre(box()),caret:(caret.top+caret.bottom)/2-centre(box()),field:height(field)-height(box()),line:parseFloat(getComputedStyle(line).lineHeight)-parseFloat(getComputedStyle(field).lineHeight),box:height(box())};};const one=await measure('title.contains("fig")');const wrapped=await measure('title.contains("fig") || '.repeat(12)+'true');return JSON.stringify({one,wrapped,input:parseFloat(getComputedStyle(field).getPropertyValue('--input-height'))});`,
+      ),
+    ) as { one: Alignment; wrapped: Alignment; input: number };
+    expect(aligned.one.box).toBeCloseTo(aligned.input, 0);
+    expect(Math.abs(aligned.one.field)).toBeLessThanOrEqual(1);
+    expect(Math.abs(aligned.one.text)).toBeLessThanOrEqual(1);
+    expect(Math.abs(aligned.one.caret)).toBeLessThanOrEqual(1);
+    // The text reads at the field's own line height, not CodeMirror's.
+    expect(Math.abs(aligned.one.line)).toBeLessThanOrEqual(0.5);
+    expect(aligned.wrapped.box).toBeGreaterThan(aligned.input + 10);
+    expect(Math.abs(aligned.wrapped.field)).toBeLessThanOrEqual(1);
+
     // A syntax error names the tokens the filter lacks once, with the place
     // in the filter: the hint that lists them again stays out. The fault sits
     // at the ")" after the condition, so the view shows it above the cards.

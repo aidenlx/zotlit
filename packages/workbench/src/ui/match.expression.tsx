@@ -104,7 +104,10 @@ export interface MatchExpressionInputProps {
  * theme where it renders, so a host that wraps it in
  * `WorkbenchThemeProvider` gets the Match editor's look; the `data-*`
  * attributes go on that part. The editor draws no focus outline and no
- * padding, so the part owns both: it must show `:focus-within`.
+ * padding, so the part owns both: it must show `:focus-within`. The part
+ * also sets the box height: a part as tall as the host's text inputs reads
+ * like one, as the editor stands at its vertical centre while the text is
+ * shorter than the box.
  */
 export function MatchExpressionInput({
   value,
@@ -189,10 +192,13 @@ export function MatchExpressionInput({
               : null,
           ),
           // CodeMirror's base theme is unlayered CSS, so it outranks a
-          // host's layered utilities on these parts.
+          // host's layered utilities on these parts. The text takes the
+          // part's font and line height, as a textarea takes its own, and
+          // the field is `lines` of that line tall before it grows.
           EditorView.theme({
             "&.cm-focused": { outline: "none" },
-            ".cm-content": { minHeight: `${lines * 1.5}em`, padding: "0" },
+            ".cm-scroller": { fontFamily: "inherit", lineHeight: "inherit" },
+            ".cm-content": { minHeight: `${lines}lh`, padding: "0" },
             ".cm-line": { padding: "0" },
           }),
           placeholder ? placeholderText(placeholder) : [],
@@ -273,5 +279,18 @@ export function MatchExpressionInput({
       ),
     });
   }, [invalid, label]);
-  return <div ref={host} {...part("expression")} {...data} />;
+  // A column that centres the editor: one line stands where a text input's
+  // text stands, and wrapped text grows the box.
+  return (
+    <div
+      ref={host}
+      {...part("expression")}
+      {...data}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+      }}
+    />
+  );
 }

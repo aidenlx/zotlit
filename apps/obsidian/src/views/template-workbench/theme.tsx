@@ -252,12 +252,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       chips:
         "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:w-max zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
       chip: "multi-select-pill",
-      // A CodeMirror field drawn as an Obsidian text input; the editor hook
-      // scopes the template token colors to it.
+      // A CodeMirror field drawn as an Obsidian text input, at least as tall
+      // as one; the editor hook scopes the template token colors to it.
       expression: cn(
         themeHook.templateEditor,
         editorBox,
-        "zt:w-full zt:min-w-0 zt:cursor-text zt:font-mono zt:text-sm zt:leading-normal zt:[transition:var(--input-transition)]",
+        "zt:min-h-(--input-height) zt:w-full zt:min-w-0 zt:cursor-text zt:font-mono zt:text-sm zt:leading-normal zt:[transition:var(--input-transition)]",
         "zt:hover:bg-(--background-modifier-form-field-hover) zt:not-focus-within:not-has-[[aria-invalid=true]]:hover:border-border-hover zt:has-[[aria-invalid=true]]:border-(--text-error)",
         "zt:[&_.cm-placeholder]:text-(--text-faint)",
       ),
