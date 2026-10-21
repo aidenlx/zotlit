@@ -7339,11 +7339,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           vaultId!,
           `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const notes=[];for(const note of services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)})){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
         );
-        // The Fixture's Literature Note holds the earlier static listing.
-        const listingNote = fixtureNotes.find(({ text }) =>
-          text.includes("[!note]"),
-        )!;
-        expect(listingNote).toBeDefined();
+        expect(fixtureNotes.map(({ path }) => path)).toContain(
+          "literatures/rougierTenSimpleRules2014.md",
+        );
         let created = "";
         cleanup.defer(async () => {
           await obEval(
@@ -7515,12 +7513,27 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(await update()).toEqual({ diagnostic: null });
         expect(managed(await read())).toContain(sorted);
 
-        // A note that holds the earlier static listing gets the block on its
-        // next full update.
-        expect(managed(listingNote.text)).toContain("[!note]");
+        // A note that holds the earlier static listing, one callout per
+        // Annotation with a plain page label, gets the block on its next full
+        // update.
+        const listing = [
+          "## Annotations",
+          ...ANNOTATIONS.filter(
+            ({ parentItemID }) => parentItemID === attachment.itemID,
+          ).flatMap(({ pageLabel, text, comment }) => [
+            "",
+            `> [!note] Page ${pageLabel ?? ""}`,
+            ">",
+            `> ${text ?? comment ?? ""}`,
+            "",
+          ]),
+        ].join("\n");
+        const current = await read();
+        const listingText = current.replace(managed(current), `${listing}\n`);
+        expect(managed(listingText)).toContain("[!note]");
         await obEval(
           vaultId!,
-          `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(listingNote.text)});return true;})()`,
+          `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(listingText)});return true;})()`,
         );
         expect(await update()).toEqual({ diagnostic: null });
         const migrated = managed(await read());
