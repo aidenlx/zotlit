@@ -111,10 +111,10 @@ describe("AnnotationPopover", () => {
   });
 
   // The pointer moves on to a second link before the first link's read
-  // answers, and the first read lands last. Through the repository, a held
-  // database read holds back the next one too, so the order cannot be
-  // reversed there: the reads are held here, each answering with the list
-  // the repository read for its Attachment.
+  // answers, and the first read lands last. Holding the first hover's
+  // database read under the real repository held the second hover's read
+  // too, so the order is not reversed there: the reads are held here, each
+  // answering with the list the repository read for its Attachment.
   it("keeps the newer link when the first hover's read lands after it", async () => {
     await using stack = new AsyncDisposableStack();
     const { repository } = await setup(stack);
