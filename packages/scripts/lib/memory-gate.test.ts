@@ -160,3 +160,24 @@ it("opens on each OS's reading up to its limit", () => {
     "memory committed at 1.50x physical, above 1.25x",
   );
 });
+
+it("documents itself under --help and rejects a missing command with exit 2", async () => {
+  const cli = async (...args: string[]) => {
+    const child = spawn(process.execPath, [SCRIPT, ...args], {
+      env: { ...process.env, [DESKTOP_DIR_ENV]: dir },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => (output += String(chunk)));
+    child.stderr.on("data", (chunk: Buffer) => (output += String(chunk)));
+    const [code] = await once(child, "exit");
+    return { code: code as number | null, output };
+  };
+  const help = await cli("--help");
+  expect(help.code).toBe(0);
+  expect(help.output).toContain(`${MEMORY_GATE_ENV}=off`);
+  expect(help.output).toContain(String(EXIT_ADMISSION_BLOCKED));
+  const missing = await cli();
+  expect(missing.code).toBe(2);
+  expect(missing.output).toContain("-- <command>");
+});

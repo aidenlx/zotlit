@@ -1,28 +1,69 @@
 #!/usr/bin/env node
 
-// Runs a command once the Memory Gate admits it:
-//
-//   node packages/scripts/scripts/memory-gate.ts -- <command> [args...]
-//
-// Root `pnpm test` runs `turbo run test` through it, so the whole run passes
-// the gate once and each package's Vitest skips it. ZOTLIT_MEMORY_GATE=off
-// skips the gate. The exit code is the command's, or 128 plus the signal
-// number when a signal ends the command.
+// Runs a command once the Memory Gate admits it. Root `pnpm test` runs
+// `turbo run test` through it, so the whole run passes the gate once and each
+// package's Vitest skips it. `--help` prints the contract.
 
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
 import {
+  ADMISSION_DEADLINE_MS,
+  DESKTOP_DIR_ENV,
+  DESKTOP_WAIT_ENV,
+  desktopStateDir,
+  EXIT_ADMISSION_BLOCKED,
   MEMORY_GATE_ADMITTED_ENV,
+  MEMORY_GATE_ENV,
   passMemoryGateOrExit,
 } from "@zotlit/config/memory-gate";
 
-const argv = process.argv.slice(2);
-const [command, ...args] = argv[0] === "--" ? argv.slice(1) : argv;
-if (!command) {
-  console.error("Usage: memory-gate.ts -- <command> [args...]");
-  process.exit(2);
+const EXIT_USAGE = 2;
+
+const epilogue = `The Memory Gate admits a heavy run while the OS reports memory to spare and no gated run has started in the last 30 s (ADR 0077). It holds nothing once it admits.
+
+Exit codes:
+  ${EXIT_ADMISSION_BLOCKED}   the Admission Deadline passed with the gate still closed; blocked, not a failure.
+  ${EXIT_USAGE}    usage error, such as a missing command.
+  otherwise the command's code, or 128 plus the signal number.
+
+Environment:
+${[
+  [`${MEMORY_GATE_ENV}=off`, "skip the gate"],
+  [MEMORY_GATE_ADMITTED_ENV, "set on the command; a gate nested in it skips"],
+  [
+    DESKTOP_WAIT_ENV,
+    `the Admission Deadline (default ${ADMISSION_DEADLINE_MS / 60_000} min)`,
+  ],
+  [DESKTOP_DIR_ENV, `the state directory (now ${desktopStateDir()})`],
+]
+  .map(([name, meaning]) => `  ${name!.padEnd(30)}${meaning}`)
+  .join("\n")}`;
+
+function usage(message: string): never {
+  console.error(`memory-gate: ${message}`);
+  process.exit(EXIT_USAGE);
 }
+
+const argv = await yargs(hideBin(process.argv))
+  .scriptName("memory-gate")
+  .usage("node packages/scripts/scripts/memory-gate.ts -- <command> [args...]")
+  .parserConfiguration({ "populate--": true })
+  .epilogue(epilogue)
+  .strict()
+  .version(false)
+  .wrap(null)
+  .fail((message, error) => {
+    if (error) throw error;
+    usage(message);
+  })
+  .parseAsync();
+const [command, ...args] = ((argv["--"] as unknown[] | undefined) ?? []).map(
+  String,
+);
+if (!command) usage("name the command after: -- <command> [args...]");
 
 const admitted = await passMemoryGateOrExit();
 const options = {

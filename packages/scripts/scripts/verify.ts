@@ -11,6 +11,7 @@
 import { $ } from "zx";
 
 import {
+  EXIT_ADMISSION_BLOCKED,
   MEMORY_GATE_ADMITTED_ENV,
   passMemoryGateOrExit,
 } from "@zotlit/config/memory-gate";
@@ -20,6 +21,7 @@ import {
   acquireDesktopSlotOrExit,
   automatedLease,
   DEFAULT_LEASE_MS,
+  EXIT_LEASE_ENDED,
 } from "#desktop-slot";
 import { getWorkspaceRoot } from "#package-roots";
 
@@ -125,6 +127,12 @@ async function step(name: string, run: () => Promise<unknown>): Promise<void> {
       console.error(error.message);
     }
     console.error(`\n✖ ${name} failed`);
-    process.exit(1);
+    // Blocked at admission, or the Lease ended: not a failure, so the caller
+    // sees the same code the desktop run exited with.
+    const code =
+      error instanceof Error && "exitCode" in error ? error.exitCode : 1;
+    process.exit(
+      code === EXIT_ADMISSION_BLOCKED || code === EXIT_LEASE_ENDED ? code : 1,
+    );
   }
 }

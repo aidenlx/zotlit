@@ -15,6 +15,7 @@
 // gate. The gate holds nothing after it admits. Ported from vattention/vatt-repo
 // `scripts/memory-gate.ts`.
 
+import { regex } from "arkregex";
 import { execFile } from "node:child_process";
 import {
   mkdirSync,
@@ -61,7 +62,7 @@ export function desktopStateDir(): string {
 }
 
 const UNIT_MS = { ms: 1, s: 1000, m: 60_000, min: 60_000, h: 3_600_000 };
-const DURATION = /^(\d+(?:\.\d+)?)(ms|s|min|m|h)$/;
+const DURATION = regex("^(?<count>\\d+(?:\\.\\d+)?)(?<unit>ms|s|min|m|h)$");
 
 /**
  * @param text a duration such as `300ms`, `90s`, `20m`, or `2h`.
@@ -75,9 +76,8 @@ export function parseDuration(text: string): number {
       `"${text}" is not a duration; write it as 300ms, 90s, 20m, or 2h.`,
     );
   }
-  return Math.round(
-    Number(match[1]) * UNIT_MS[match[2] as keyof typeof UNIT_MS],
-  );
+  const { count, unit } = match.groups;
+  return Math.round(Number(count) * UNIT_MS[unit]);
 }
 
 /** The Admission Deadline wait: DESKTOP_WAIT_ENV, else ADMISSION_DEADLINE_MS. */
@@ -113,8 +113,14 @@ export function windowsVerdict(os: {
 
 /** @param meminfo the text of `/proc/meminfo`. */
 export function linuxVerdict(meminfo: string): string | undefined {
-  const kib = (name: string) =>
-    Number(new RegExp(`^${name}:\\s+(\\d+)`, "m").exec(meminfo)?.[1] ?? 0);
+  // Lines such as `MemTotal:       16303928 kB`.
+  const sizes = new Map(
+    meminfo.split("\n").map((line) => {
+      const [name = "", size = ""] = line.split(":");
+      return [name, Number.parseInt(size.trim(), 10)] as const;
+    }),
+  );
+  const kib = (name: string) => sizes.get(name) || 0;
   const total = kib("MemTotal");
   return commitVerdict(
     total - kib("MemAvailable") + kib("SwapTotal") - kib("SwapFree"),

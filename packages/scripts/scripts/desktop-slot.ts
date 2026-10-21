@@ -17,13 +17,12 @@ import {
 } from "@zotlit/config/memory-gate";
 
 import {
-  acquireDesktopSlot,
+  acquireDesktopSlotOrExit,
   ADMISSION_DEADLINE_MS,
   DEFAULT_LEASE_MS,
   DESKTOP_LEASE_ENV,
   DESKTOP_SLOT_ENV,
   DESKTOP_WAIT_ENV,
-  DesktopSlotBlockedError,
   describeHolder,
   describeWaiters,
   EVICTION_GRACE_MS,
@@ -39,7 +38,7 @@ import {
   parseDuration,
   parseManualLease,
   readDesktopSlotStatus,
-  updateDesktopSlotOwner,
+  recordDesktopSlotGroup,
 } from "#desktop-slot";
 
 const EXIT_USAGE = 2;
@@ -92,7 +91,7 @@ async function run(
   }
   if (command.length === 0) usage("name the command after --.");
   let leaseOver = false;
-  const slot = await acquireDesktopSlot({
+  const slot = await acquireDesktopSlotOrExit({
     command: command.join(" "),
     leaseMs,
     manual: true,
@@ -107,10 +106,6 @@ async function run(
       signalGroup("SIGTERM");
       setTimeout(() => signalGroup("SIGKILL"), KILL_AFTER_MS).unref();
     },
-  }).catch((error: unknown) => {
-    if (!(error instanceof DesktopSlotBlockedError)) throw error;
-    console.error(error.message);
-    process.exit(EXIT_ADMISSION_BLOCKED);
   });
 
   const posix = process.platform !== "win32";
@@ -126,9 +121,6 @@ async function run(
     } catch {
       // The group is gone.
     }
-  }
-  if (posix && child.pid !== undefined) {
-    await updateDesktopSlotOwner(slot.owner.token, { pgid: child.pid });
   }
   // The command no longer shares the terminal's group, so pass every signal on.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
@@ -159,6 +151,11 @@ async function run(
         : (code ?? 128 + (signal ? constants.signals[signal] : 0)),
     );
   });
+  // After the listeners: a command that exits during this write still reports
+  // its exit code.
+  if (posix && child.pid !== undefined) {
+    await recordDesktopSlotGroup(slot.owner.token, child.pid);
+  }
 }
 
 function groupAlive(pgid: number): boolean {

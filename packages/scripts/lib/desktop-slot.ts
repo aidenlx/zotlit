@@ -15,6 +15,7 @@
 // waits. The holder ends its own work when its Lease ends; the head waiter
 // evicts a holder that outlives its Lease by the grace period.
 
+import { regex } from "arkregex";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
@@ -148,6 +149,11 @@ export interface SlotOwner extends Omit<QueueTicket, "seq"> {
    * group with its caller; eviction then signals the pid alone.
    */
   pgid?: number;
+  /**
+   * When the group's leader `pgid` started, as `ps` reports it. The group of a
+   * dead holder is ended only while its leader still has this start.
+   */
+  pgidStart?: string;
   /** A manual hold; its extensions stay within MANUAL_LEASE_CAP_MS. */
   manual?: boolean;
 }
@@ -236,7 +242,7 @@ export async function acquireDesktopSlot(
   const self = await processInfo(process.pid);
   const start = now();
   const deadline = start + waitMs;
-  const ticket = await enqueue(dir, {
+  let ticket = await enqueue(dir, {
     token: randomUUID(),
     pid: process.pid,
     processStart: self.start,
@@ -255,15 +261,27 @@ export async function acquireDesktopSlot(
     for (;;) {
       const waiters = await liveTickets(dir, ticket.token);
       const position = waiters.findIndex((each) => each.token === ticket.token);
+      if (position === -1) {
+        // Another waiter reaped it, or someone removed it.
+        await mkdir(join(dir, QUEUE), { recursive: true });
+        ticket = await enqueue(dir, record);
+        log(
+          `Desktop Slot: this waiter's ticket was removed; joining the back of the Desktop Queue.`,
+        );
+        continue;
+      }
       const holder = await readOwner(dir);
       if (position === 0) {
-        const claimedAt = now();
+        // Until the Memory Gate admits this run, its Lease has not started:
+        // the gate wait ends by the deadline, so this end is an upper bound.
         const claim: SlotOwner = {
           ...record,
-          admittedAt: isoOf(claimedAt),
+          admittedAt: isoOf(now()),
           lease: leaseMs,
-          leaseEndsAt: isoOf(claimedAt + leaseMs),
-          ...(self.pgid === process.pid ? { pgid: self.pgid } : {}),
+          leaseEndsAt: isoOf(deadline + leaseMs),
+          ...(self.pgid === process.pid
+            ? { pgid: self.pgid, pgidStart: self.start }
+            : {}),
           ...(options.manual ? { manual: true } : {}),
         };
         if (await tryClaim(dir, claim)) {
@@ -274,6 +292,11 @@ export async function acquireDesktopSlot(
           log(
             `Desktop Slot: pid ${holder.pid} (${holder.command}) is gone; taking over ${slotPath(dir)}.`,
           );
+          await endOrphanGroup(holder, {
+            ownPgid: self.pgid,
+            killAfterMs,
+            log,
+          });
           await takeOver(dir, holder);
           continue;
         }
@@ -458,18 +481,26 @@ export async function evictDesktopSlot(options: {
     const until = epochMs() + waitMs;
     while (epochMs() < until && (await holds())) await delay(100);
   }
+  // A holder that was already gone may have left its command running.
+  await endOrphanGroup(owner, { ownPgid: self.pgid, killAfterMs, log });
   await takeOver(dir, owner);
   return owner;
 }
 
-/** Rewrite the holder's record, when `token` still holds the slot. */
-export async function updateDesktopSlotOwner(
+/**
+ * Record `pgid` as the process group eviction signals, when `token` still
+ * holds the slot.
+ */
+export async function recordDesktopSlotGroup(
   token: string,
-  patch: Partial<SlotOwner>,
+  pgid: number,
   dir: string = desktopStateDir(),
 ): Promise<void> {
+  const { start } = await processInfo(pgid);
   const owner = await readOwner(dir);
-  if (owner?.token === token) await writeOwner(dir, { ...owner, ...patch });
+  if (owner?.token === token) {
+    await writeOwner(dir, { ...owner, pgid, pgidStart: start });
+  }
 }
 
 export function describeHolder(owner: SlotOwner, now: number): string {
@@ -691,6 +722,9 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** `ps -o pgid= -o lstart=`: the group, then a start such as `Wed Oct 21 21:49:58 2026`. */
+const PS_LINE = regex("^\\s*(?<pgid>\\d+)\\s+(?<start>.+?)\\s*$");
+
 /**
  * When `pid` started and its process group, as `ps` reports them; empty when
  * `ps` cannot tell (no `ps`, no process).
@@ -704,8 +738,10 @@ async function processInfo(
       ["-o", "pgid=", "-o", "lstart=", "-p", String(pid)],
       { env: { ...process.env, LC_ALL: "C" } },
     );
-    const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(stdout);
-    return match ? { pgid: Number(match[1]), start: match[2] } : {};
+    const match = PS_LINE.exec(stdout);
+    return match
+      ? { pgid: Number(match.groups.pgid), start: match.groups.start }
+      : {};
   } catch {
     return {};
   }
@@ -743,6 +779,55 @@ async function signalHolder(
     } catch {
       // Gone already.
     }
+  }
+}
+
+function groupAlive(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * End the process group of a dead holder, which keeps driving the desktop when
+ * the holder was killed and its command lives on: SIGTERM, then SIGKILL after
+ * `killAfterMs`. A group whose leader's start differs from the record, or
+ * cannot be read, is never signalled.
+ */
+async function endOrphanGroup(
+  holder: SlotOwner,
+  {
+    ownPgid,
+    killAfterMs,
+    log,
+  }: {
+    ownPgid: number | undefined;
+    killAfterMs: number;
+    log: (message: string) => void;
+  },
+): Promise<void> {
+  const { pgid, pgidStart } = holder;
+  if (pgid === undefined || pgidStart === undefined || pgid === ownPgid) return;
+  const { start } = await processInfo(pgid);
+  if (start === undefined || start !== pgidStart) return;
+  log(
+    `Desktop Slot: the process group ${pgid} of pid ${holder.pid} (${holder.command}) is still running; ending it.`,
+  );
+  for (const [signal, waitMs] of [
+    ["SIGTERM", killAfterMs],
+    ["SIGKILL", 0],
+  ] as const) {
+    if (!groupAlive(pgid)) return;
+    try {
+      process.kill(-pgid, signal);
+    } catch {
+      return;
+    }
+    const until = epochMs() + waitMs;
+    while (epochMs() < until && groupAlive(pgid)) await delay(100);
   }
 }
 
