@@ -7230,7 +7230,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.sessionForPath(${JSON.stringify(attachmentPath)}))`,
+          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
           { expected: "true" },
         ),
       ).toBe(true);

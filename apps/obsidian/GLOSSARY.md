@@ -344,12 +344,16 @@ _Avoid_: file link (ambiguous with a vault link), local link, attachment link (c
 Zotero's own open link to one Annotation, `zotero://open/library/items/<attachment key>?annotation=<annotation key>&page=<page label>` (`groups/<id>` in place of `library` for a group Library). Names the Attachment and the Annotation by their keys, so it works on any device that holds the PDF, and Zotero opens it anywhere ZotLit does not. An Annotation's Backlink is one, and so is every annotation link in an imported Zotero Child Note. Its `page` is a printed page label, not a page number.
 _Avoid_: annotation backlink (in prose), zotero link, deep link
 
+**Open Target**:
+What one ZotLit gesture or followed link opens: an Attachment, or one Annotation in it, named by its Indexed Key. It opens in Obsidian's PDF view when it names an Obsidian-Openable Attachment whose file is on this device, and in Zotero otherwise; every ZotLit surface that opens an Attachment decides by this one rule, and an explicit "Open in Zotero" bypasses it.
+_Avoid_: reader target (see Reader Session), table reader, PDF target
+
 **File Link Capture**:
-Sending a clicked Attachment File Link or Durable Annotation Link to Obsidian's PDF view instead of the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off. A Durable Annotation Link the system handler keeps opens in Zotero.
+Taking a clicked Attachment File Link or Durable Annotation Link as an Open Target instead of handing it to the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off. A Durable Annotation Link the system handler keeps opens in Zotero, and one names its own Attachment even where another Attachment keeps the same file.
 _Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
 
 **Annotation Anchor**:
-The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment. Obsidian reads the rest of that fragment and ignores this key, so the `#page=N` beside it still lands on its own.
+The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment — and, for an open ZotLit makes, the opened Attachment beside it (`zt-attachment`), since two Attachments can keep one file. Obsidian reads the rest of that fragment and ignores these keys, so the `#page=N` beside them still lands on its own.
 _Avoid_: annotation id (that is Obsidian's PDF-native one), annotation param, deep link, annotation target (see Reader Session)
 
 **Mark Landing**:

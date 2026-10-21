@@ -1,38 +1,38 @@
 // File Link Capture: a clicked Attachment File Link, or a Durable Annotation
 // Link, reaches Obsidian's own PDF view instead of the system handler, when it
-// names an Obsidian-Openable Attachment.
+// names an Obsidian-Openable Attachment. The patch is the opener's entry point
+// for links Obsidian rendered; which links it takes is the opener's to decide.
 
 import { around } from "monkey-around";
-import { fileURLToPath } from "node:url";
 import type { PaneType } from "obsidian";
 
-import {
-  formatAnnotationSubpath,
-  formatIndexedKey,
-  parseAnnotationOpenUri,
-} from "@zotlit/db";
-
-import type { AttachmentReader } from "@/lib/attachment-open";
 import { disposable } from "@/lib/disposables";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type {
-  AttachmentLocation,
-  AttachmentResolution,
-} from "@/services/attachment-resolver/service";
+import { BaseNotice } from "@/lib/notice";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
 import type { SettingsService } from "@/services/settings/service";
 
-import type { ObsidianOpenableAttachment } from "./resolve";
-import { filename, obsidianOpenPath } from "./resolve";
+import type { TargetOpener } from "./open-target";
 
 const logger = getLogger("attachment-open");
 
 /**
  * The target Obsidian's own "Open in default browser" context-menu item passes
  * to `window.open`. Capture hands it straight back, so that item stays the
- * per-link way out of Obsidian's reader.
+ * per-link way out of Obsidian's reader, and the opener hands Zotero a link
+ * through it, past this patch.
  */
-const EXTERNAL_TARGET = "_external";
+export const EXTERNAL_TARGET = "_external";
+
+/**
+ * The system handler, reached past File Link Capture: Obsidian sends a
+ * non-web link to it whatever the target, and Capture hands `_external` back
+ * untouched, so a link the opener gives to Zotero is never captured again.
+ */
+export function openWithSystem(url: string): void {
+  window.open(url, EXTERNAL_TARGET);
+}
 
 /** What `window.open`'s second argument says about where the click wanted the file. */
 export function paneFromTarget(target: string | undefined): PaneType | boolean {
@@ -46,148 +46,11 @@ export function paneFromTarget(target: string | undefined): PaneType | boolean {
   }
 }
 
-/** What Capture needs to judge one clicked URL, with no Obsidian objects in it. */
-export interface FileLinkCaptureContext {
-  resolve: (absolutePath: string) => AttachmentResolution;
-  /** The file an Attachment keeps, by its Indexed Key, for a Durable Annotation Link. */
-  locate: (attachmentKey: string) => AttachmentLocation;
-  vaultBasePath: string;
-  platform: NodeJS.Platform;
-}
-
-/**
- * Either ZotLit takes the click, naming the Attachment exactly as every other
- * ZotLit reader gesture names one, or the original `window.open` runs
- * untouched. `passWhenMissing` marks a link the original can still serve when
- * the reader finds no file: Zotero opens a Durable Annotation Link anywhere.
- */
-export type FileLinkCapture =
-  | { kind: "pass" }
-  | {
-      kind: "capture";
-      attachment: ObsidianOpenableAttachment;
-      passWhenMissing?: true;
-    };
-
-const PASS: FileLinkCapture = { kind: "pass" };
-
-/**
- * Decide one clicked URL. A link ZotLit cannot name as an Obsidian-Openable
- * Attachment passes through, including while the resolver answers `pending` —
- * Capture does not claim a link it cannot yet identify.
- */
-export function decideFileLinkCapture(
-  url: string,
-  ctx: FileLinkCaptureContext,
-): FileLinkCapture {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return PASS;
-  }
-  if (parsed.protocol === "zotero:") return decideDurableLinkCapture(url, ctx);
-  if (parsed.protocol !== "file:") return PASS;
-
-  let absolutePath: string;
-  try {
-    absolutePath = fileURLToPath(parsed);
-  } catch {
-    return PASS;
-  }
-  return captureAt(absolutePath, parsed.hash, ctx);
-}
-
-/** A printed page label that also reads as a 1-based page number. */
-const PAGE_NUMBER_RE = /^[1-9]\d*$/;
-
-/**
- * Decide a `zotero://open` link that names an Annotation. It names the
- * Attachment by key, so the resolver locates the file first. A file this
- * computer does not hold leaves the link to Zotero — the reason the link is
- * durable at all — and the reader finds that out as it opens, so the capture
- * says to hand the link back then. Anything short of a valid Annotation key is
- * Zotero's alone, `zotero://select` included.
- *
- * The link's `page` is a printed label, which Obsidian's own jump reads as a
- * page number. It is carried only when it reads as one; the Annotation's own
- * page wins over it whenever the reader can place the Annotation.
- *
- * @see apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md
- */
-function decideDurableLinkCapture(
-  url: string,
-  ctx: FileLinkCaptureContext,
-): FileLinkCapture {
-  const link = parseAnnotationOpenUri(url);
-  if (link === null) return PASS;
-
-  const attachmentKey = formatIndexedKey(link.attachmentKey, link.groupID);
-  const location = ctx.locate(attachmentKey);
-  if (location.kind !== "located") {
-    logger.debug("Durable Annotation Link left to Zotero", {
-      attachmentKey: link.attachmentKey,
-      groupID: link.groupID,
-      reason: location.kind,
-    });
-    return PASS;
-  }
-
-  const page =
-    link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
-      ? Number(link.pageLabel)
-      : null;
-  const capture = captureAt(
-    location.absolutePath,
-    formatAnnotationSubpath({
-      page,
-      annotation: formatIndexedKey(link.annotationKey, link.groupID),
-    }),
-    ctx,
-  );
-  if (capture.kind !== "capture") return capture;
-  // Two Attachments can name one file. Obsidian's reader binds the file to
-  // the Attachment its path resolves to and shows that one's Annotations, so
-  // a link to the other one goes to Zotero, which opens it by its key.
-  if (capture.attachment.indexedKey !== attachmentKey) {
-    logger.debug("Durable Annotation Link left to Zotero", {
-      attachmentKey,
-      reason: "path-names-another-attachment",
-      pathAttachmentKey: capture.attachment.indexedKey,
-    });
-    return PASS;
-  }
-  return { ...capture, passWhenMissing: true };
-}
-
-/** Claim the file at `absolutePath` when it is an Obsidian-Openable Attachment. */
-function captureAt(
-  absolutePath: string,
-  subpath: string,
-  ctx: FileLinkCaptureContext,
-): FileLinkCapture {
-  const resolution = ctx.resolve(absolutePath);
-  if (resolution.kind !== "resolved" || !resolution.openable) return PASS;
-
-  return {
-    kind: "capture",
-    attachment: {
-      indexedKey: resolution.attachmentKey,
-      label: filename(absolutePath),
-      openPath: obsidianOpenPath(absolutePath, ctx.vaultBasePath, ctx.platform),
-      absolutePath,
-      ...(subpath ? { subpath } : {}),
-    },
-  };
-}
-
 export interface FileLinkCaptureDeps {
-  /** The vault's own directory, for telling an in-vault Attachment from one outside. */
-  vaultBasePath: string;
-  attachments: Pick<AttachmentResolver, "resolve" | "locate" | "warm">;
+  /** Decides which links ZotLit takes, and opens them. */
+  opener: Pick<TargetOpener, "follow">;
+  attachments: Pick<AttachmentResolver, "warm">;
   settings: Pick<SettingsService, "current">;
-  /** Where a captured link opens — the same reader every other ZotLit gesture uses. */
-  reader: AttachmentReader<ObsidianOpenableAttachment>;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
   window?: Window;
 }
@@ -202,10 +65,9 @@ export interface FileLinkCaptureDeps {
  * global `window.open`, which is why `activeWindow` exists at all, so the
  * click reaches this patch whichever window it happened in.
  *
- * The resolver builds its index on the first lookup and answers `pending`
- * until it lands, which hands a click to the system handler. A note's links
- * are clicked before any PDF asks for that index, so Capture asks for it as it
- * installs.
+ * The resolver builds its index on the first lookup, and the opener leaves
+ * every link to the system handler until it lands. A note's links are clicked
+ * before any PDF asks for that index, so Capture asks for it as it installs.
  *
  * @see apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md
  */
@@ -225,35 +87,17 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           ) {
             return native(url, target, features);
           }
-          const capture = decideFileLinkCapture(String(url), {
-            resolve: (path) => deps.attachments.resolve(path),
-            locate: (key) => deps.attachments.locate(key),
-            vaultBasePath: deps.vaultBasePath,
-            platform: process.platform,
-          });
-          if (capture.kind === "pass") return native(url, target, features);
-
-          logger.debug("Attachment File Link captured", {
-            attachmentKey: capture.attachment.indexedKey,
-            openPath: capture.attachment.openPath,
-            subpath: capture.attachment.subpath,
-          });
-          void deps.reader.open(
-            capture.attachment,
+          const followed = deps.opener.follow(
+            String(url),
             paneFromTarget(target),
-            capture.passWhenMissing
-              ? {
-                  // Decided at the open, not by a check ahead of it: the file
-                  // can go between the two.
-                  onMissing: () => {
-                    logger.debug("Durable Annotation Link handed to Zotero", {
-                      attachmentKey: capture.attachment.indexedKey,
-                    });
-                    native(url, target, features);
-                  },
-                }
-              : undefined,
           );
+          if (followed === null) return native(url, target, features);
+
+          logger.debug("Link captured", { url: String(url), target });
+          void followed.then((outcome) => {
+            if (outcome.kind === "file-missing")
+              new BaseNotice(m.notice_pdf_file_missing());
+          });
           return null;
         },
     }),

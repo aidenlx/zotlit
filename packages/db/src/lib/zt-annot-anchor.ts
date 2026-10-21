@@ -9,6 +9,12 @@ import { isIndexedKey } from "./zt-key";
 /** The fragment key an Annotation Anchor is written under. */
 export const ANNOTATION_ANCHOR_KEY = "zt-annotation";
 
+/**
+ * The fragment key the Attachment an open names is written under. Two
+ * Attachments can keep one file, and the file alone answers only one of them.
+ */
+export const ATTACHMENT_ANCHOR_KEY = "zt-attachment";
+
 /** Obsidian's own page key, which the Anchor rides beside. */
 const PAGE_KEY = "page";
 
@@ -22,12 +28,15 @@ export interface AnnotationFileLinkAnchor {
   page?: number | null;
   /** The Annotation's Indexed Key, written as the `zt-annotation` key. */
   annotation?: string | null;
+  /** The opened Attachment's Indexed Key, written as the `zt-attachment` key. */
+  attachment?: string | null;
 }
 
 /** Both halves of a fragment, as {@link parseAnnotationSubpath} read them. */
 export interface ParsedAnnotationSubpath {
   page: number | null;
   annotation: string | null;
+  attachment: string | null;
 }
 
 /**
@@ -42,11 +51,15 @@ export interface ParsedAnnotationSubpath {
 export function formatAnnotationFragment({
   page,
   annotation,
+  attachment,
 }: AnnotationFileLinkAnchor): string {
   const params = new URLSearchParams();
   if (isPageNumber(page)) params.set(PAGE_KEY, String(page));
   if (typeof annotation === "string" && isIndexedKey(annotation)) {
     params.set(ANNOTATION_ANCHOR_KEY, annotation);
+  }
+  if (typeof attachment === "string" && isIndexedKey(attachment)) {
+    params.set(ATTACHMENT_ANCHOR_KEY, attachment);
   }
   return params.toString();
 }
@@ -64,7 +77,7 @@ export function formatAnnotationSubpath(
 }
 
 /**
- * The page and the Anchor a fragment carries. Every other key — Obsidian's
+ * The page, the Anchor and the named Attachment a fragment carries. Every other key — Obsidian's
  * `offset`, `selection`, `height` and its own PDF-native `annotation` — is
  * left where it is, because Obsidian reads those by name itself.
  *
@@ -77,12 +90,15 @@ export function parseAnnotationSubpath(
     subpath?.startsWith("#") === true ? subpath.slice(1) : (subpath ?? ""),
   );
   const page = params.has(PAGE_KEY) ? Number(params.get(PAGE_KEY)) : null;
-  const annotation = params.get(ANNOTATION_ANCHOR_KEY);
   return {
     page: isPageNumber(page) ? page : null,
-    annotation:
-      annotation !== null && isIndexedKey(annotation) ? annotation : null,
+    annotation: indexedKeyOf(params.get(ANNOTATION_ANCHOR_KEY)),
+    attachment: indexedKeyOf(params.get(ATTACHMENT_ANCHOR_KEY)),
   };
+}
+
+function indexedKeyOf(value: string | null): string | null {
+  return value !== null && isIndexedKey(value) ? value : null;
 }
 
 /** A 1-based page number, which is the only page a fragment can name. */

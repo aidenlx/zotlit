@@ -17,9 +17,14 @@ import { activateAnnotView } from "@/views/annot-view/register";
 import {
   addAttachmentOpenActions,
   createPdfReader,
+  pdfPickerReader,
   resolveLiteratureNoteAttachments,
 } from "./actions";
-import type { AttachmentOpenDeps, AttachmentOpenLookupDeps } from "./actions";
+import type {
+  AttachmentOpenDeps,
+  AttachmentOpenLookupDeps,
+  PdfReaderDeps,
+} from "./actions";
 
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
@@ -230,10 +235,23 @@ describe("open-pdf command", () => {
   });
 });
 
+describe("pdfPickerReader", () => {
+  it("opens a picked row through the opener, by its key, in the pane asked for", async () => {
+    const open = vi.fn(() => Promise.resolve({ kind: "reader" as const }));
+
+    await pdfPickerReader({ open }).open(OPENABLE_FIXTURE[0]!, "tab");
+
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      { kind: "attachment", attachmentKey: "ATCH2345" },
+      "tab",
+    );
+  });
+});
+
 describe("createPdfReader", () => {
   /** The hook the reader hands back to its caller once a file is on screen. */
   function onOpenedOf(deps: AttachmentOpenLookupDeps): () => void {
-    createPdfReader(deps);
+    createPdfReader(deps as unknown as PdfReaderDeps);
     const [, options] = vi.mocked(createObsidianAttachmentReader).mock
       .calls[0]!;
     const onOpened = options?.onOpened;

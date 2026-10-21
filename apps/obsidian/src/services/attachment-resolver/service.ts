@@ -45,12 +45,15 @@ export type AttachmentResolution =
   | { kind: "pending" };
 
 /**
- * Where an Attachment named by its Indexed Key keeps its file: the reverse of
- * {@link AttachmentResolution}. `unresolved` covers an Attachment Zotero does
- * not hold and one whose row names no file, such as a web link.
+ * An Attachment named by its Indexed Key: the same answer
+ * {@link AttachmentResolution} gives for its file, with the file it keeps.
+ * `unresolved` covers an Attachment Zotero does not hold and one whose row
+ * names no file, such as a web link.
  */
-export type AttachmentLocation =
-  | { kind: "located"; absolutePath: string }
+export type AttachmentLookup =
+  | (Extract<AttachmentResolution, { kind: "resolved" }> & {
+      absolutePath: string;
+    })
   | { kind: "unresolved" }
   | { kind: "pending" };
 
@@ -73,9 +76,14 @@ const PATH_INDEX_KEY = ["attachment-resolver", "path-index"] as const;
 interface PathIndex {
   /** Resolution by the lookup key of an absolute path. */
   byPath: ReadonlyMap<string, AttachmentResolution>;
-  /** Absolute path by an Attachment's Indexed Key. */
-  byKey: ReadonlyMap<string, string>;
+  /** Every Attachment that names a file, by its Indexed Key. */
+  byKey: ReadonlyMap<string, AttachedFile>;
 }
+
+/** One Attachment and the file it names, as the key side of the index holds it. */
+export type AttachedFile = Extract<AttachmentLookup, { kind: "resolved" }> & {
+  pathKey: string;
+};
 
 export interface AttachmentResolverDeps {
   reads: Pick<ZoteroReadsService, "ready" | "on" | "acquireRead">;
@@ -148,33 +156,41 @@ export class AttachmentResolver extends Service<void> {
   /**
    * @param absolutePath the open file's absolute path, with no `file:` prefix
    *   and already through the vault adapter for an in-vault file.
+   * @param options.attachmentKey the Attachment the opener named, when it named
+   *   one. Two Attachments can keep one file and the path alone chooses one of
+   *   them, so the named one wins — but only while it keeps this very file: a
+   *   name carried over from an earlier open does not rename another file.
    * @returns `pending` while no index was built yet — the caller hears
    *   `resolutions-changed` once one is.
    */
-  resolve(absolutePath: string): AttachmentResolution {
+  resolve(
+    absolutePath: string,
+    { attachmentKey }: { attachmentKey?: string | null } = {},
+  ): AttachmentResolution {
     const index = this.#held();
     if (index === undefined) return PENDING;
-    return (
-      index.byPath.get(attachmentPathKey(absolutePath, this.#platform)) ??
-      UNRESOLVED
-    );
+    const pathKey = attachmentPathKey(absolutePath, this.#platform);
+    const named =
+      attachmentKey == null ? undefined : index.byKey.get(attachmentKey);
+    if (named !== undefined && named.pathKey === pathKey)
+      return resolutionOf(named);
+    return index.byPath.get(pathKey) ?? UNRESOLVED;
   }
 
   /**
-   * The file an Attachment keeps, for a caller that holds its key rather than
-   * a path: a `zotero://open` link. Nothing here checks that the file is on
-   * disk.
+   * An Attachment by its Indexed Key, for a caller that holds the key rather
+   * than a path: a `zotero://open` link, an Annotation card, a picker row.
+   * Nothing here checks that the file is on disk.
    *
-   * @param attachmentKey the Attachment's Indexed Key.
    * @returns `pending` while no index was built yet, as {@link resolve} does.
    */
-  locate(attachmentKey: string): AttachmentLocation {
+  lookup(attachmentKey: string): AttachmentLookup {
     const index = this.#held();
     if (index === undefined) return PENDING;
-    const absolutePath = index.byKey.get(attachmentKey);
-    return absolutePath === undefined
-      ? UNRESOLVED
-      : { kind: "located", absolutePath };
+    const named = index.byKey.get(attachmentKey);
+    if (named === undefined) return UNRESOLVED;
+    const { pathKey: _pathKey, ...lookup } = named;
+    return lookup;
   }
 
   /**
@@ -243,7 +259,7 @@ export class AttachmentResolver extends Service<void> {
       );
       // Read after the rows: a paths change during the read starts a new
       // build, which cancels this one.
-      const { index, locations, collisions } = buildPathIndex(slices.flat(), {
+      const { index, files, collisions } = buildPathIndex(slices.flat(), {
         dataDir: this.#zoteroPref.dataDir,
         baseAttachmentPath: this.#zoteroPref.baseAttachmentPath,
         platform: this.#platform,
@@ -256,7 +272,7 @@ export class AttachmentResolver extends Service<void> {
         paths: index.size,
         collisions: collisions.length,
       });
-      return { byPath: index, byKey: locations };
+      return { byPath: index, byKey: files };
     });
   }
 }
@@ -274,16 +290,17 @@ export type PathCollision = {
 };
 
 /**
- * @returns the lookup index, the file each Attachment keeps by its Indexed
- *   Key, and every file more than one Attachment named — the caller reports
- *   those, so the rule itself stays observable as data.
+ * @returns the lookup index, each Attachment with the file it keeps by its
+ *   Indexed Key — every one of them, the ones a shared file's path does not
+ *   choose included — and every file more than one Attachment named. The
+ *   caller reports those, so the rule itself stays observable as data.
  */
 export function buildPathIndex(
   attachments: readonly AttachmentWithParentKey[],
   { platform, serverID = null, ...pathContext }: PathIndexContext,
 ): {
   index: ReadonlyMap<string, AttachmentResolution>;
-  locations: ReadonlyMap<string, string>;
+  files: ReadonlyMap<string, AttachedFile>;
   collisions: PathCollision[];
 } {
   const located = attachments.flatMap((attachment) => {
@@ -297,20 +314,28 @@ export function buildPathIndex(
         };
   });
 
+  const files = new Map<string, AttachedFile>(
+    located.map(({ attachment, absolutePath, pathKey }) => [
+      attachment.indexedKey,
+      {
+        kind: "resolved",
+        attachmentKey: attachment.indexedKey,
+        serverID,
+        itemKey: attachment.parentIndexedKey,
+        openable: isPdfAttachment(attachment.contentType, absolutePath),
+        absolutePath,
+        pathKey,
+      },
+    ]),
+  );
   const index = new Map<string, AttachmentResolution>();
   const collisions: PathCollision[] = [];
   for (const [pathKey, entries] of Map.groupBy(located, (e) => e.pathKey)) {
     const ranked = entries.toSorted((a, b) =>
       byPreference(a.attachment, b.attachment),
     );
-    const { attachment: chosen, absolutePath: chosenPath } = ranked[0]!;
-    index.set(pathKey, {
-      kind: "resolved",
-      attachmentKey: chosen.indexedKey,
-      serverID,
-      itemKey: chosen.parentIndexedKey,
-      openable: isPdfAttachment(chosen.contentType, chosenPath),
-    });
+    const chosen = ranked[0]!.attachment;
+    index.set(pathKey, resolutionOf(files.get(chosen.indexedKey)!));
     if (ranked.length > 1) {
       collisions.push({
         pathKey,
@@ -319,13 +344,16 @@ export function buildPathIndex(
       });
     }
   }
-  const locations = new Map(
-    located.map(({ attachment, absolutePath }) => [
-      attachment.indexedKey,
-      absolutePath,
-    ]),
-  );
-  return { index, locations, collisions };
+  return { index, files, collisions };
+}
+
+/** What a path resolves to, from the key side's entry for its Attachment. */
+function resolutionOf({
+  absolutePath: _absolutePath,
+  pathKey: _pathKey,
+  ...resolution
+}: AttachedFile): AttachmentResolution {
+  return resolution;
 }
 
 /** The personal library first, then the lowest item ID, so two runs over the

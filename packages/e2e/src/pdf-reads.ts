@@ -56,7 +56,7 @@ export async function verifyPdfReads(
   );
   const opened = () =>
     run(
-      `await until('PDF and resolved Attachment',()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.path==='${path}');return (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0&&leaf.view.viewer.child.getPage(1)?.pdfPage&&s.pdfAnnotationEditor.sessionForPath('${path}')?.target?.attachmentKey==='${attachmentKey}';},20000);return true;`,
+      `await until('PDF and resolved Attachment',()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.path==='${path}');return (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0&&leaf.view.viewer.child.getPage(1)?.pdfPage&&s.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${path}')?.session?.target?.attachmentKey==='${attachmentKey}';},20000);return true;`,
     );
   const open = () =>
     run(`await app.workspace.openLinkText('${path}','',true);return true;`);
@@ -127,7 +127,7 @@ export async function verifyPdfReads(
   expect(
     await obJson(
       vaultId,
-      `JSON.stringify(${services}.pdfAnnotationEditor.sessionForPath('${path}').target)`,
+      `JSON.stringify(${services}.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${path}')?.session.target)`,
     ),
   ).toMatchObject({ attachmentKey, itemKey: null });
   await run(

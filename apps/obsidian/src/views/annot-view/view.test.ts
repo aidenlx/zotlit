@@ -184,8 +184,14 @@ async function openSidebar(
     query,
     attachmentsOf,
     listOf,
+    workspace,
+    pdfReaders,
   }: {
     readsState?: "ready" | "degraded";
+    /** Replaces members of the workspace the view reads. */
+    workspace?: Record<string, unknown>;
+    /** The open PDF views' Reader Sessions; none otherwise. */
+    pdfReaders?: Pick<AnnotViewDeps["pdfReaders"], "sessionFor">;
     query?: string;
     /** Each Item's attachments, by its key; `attachments` for every Item otherwise. */
     attachmentsOf?: (key: string) => AnnotViewAttachment[];
@@ -209,8 +215,10 @@ async function openSidebar(
       requestSaveLayout: () => Promise.resolve(),
       leftSplit: {},
       rightSplit: {},
+      getMostRecentLeaf: () => null,
+      ...workspace,
     },
-    metadataCache: { on: () => ({}) },
+    metadataCache: { on: () => ({}), getFileCache: () => null },
   });
   const repository = emitter();
   const deps = {
@@ -233,7 +241,7 @@ async function openSidebar(
       readerTarget: null,
       on: () => () => {},
     },
-    pdfReaders: { on: () => () => {}, sessionForPath: () => null },
+    pdfReaders: { on: () => () => {}, sessionFor: () => null, ...pdfReaders },
     query: { run, on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
@@ -327,6 +335,61 @@ it("shows the followed Attachment's Annotations through attachment == this.attac
   expect(view.snapshot.annotations?.map(({ key }) => key)).toEqual([
     "ANNOTBBB",
   ]);
+});
+
+// Two Attachments can keep one file, so two tabs on that one file can be two
+// Reader Sessions; the sidebar follows the tab, not the first session the
+// file has.
+it("follows the tab it is beside when two tabs show one file as two Attachments", async () => {
+  const shared = { ...PDF, indexedKey: "PDFBBBBB", itemID: 3 };
+  const tab = (attachmentKey: string) => ({
+    view: {},
+    session: {
+      target: { attachmentKey, itemKey: "ITEMAAAA" },
+      addSelectionSurface: () => () => {},
+      on: () => () => {},
+      source: "obsidian-pdf",
+      selected: [],
+    },
+  });
+  const first = tab("PDFAAAAA");
+  const second = tab("PDFBBBBB");
+  let recent = first;
+  const leafChanged: (() => void)[] = [];
+  const { view, run, settle } = await openSidebar([PDF, shared], undefined, {
+    workspace: {
+      getActiveFile: () => ({ path: "storage/shared.pdf" }),
+      getMostRecentLeaf: () => recent,
+      on: (event: string, cb: () => void) => {
+        if (event === "active-leaf-change") leafChanged.push(cb);
+        return {};
+      },
+    },
+    pdfReaders: {
+      sessionFor: (pdfView) =>
+        ([first, second].find((open) => open.view === pdfView)?.session ??
+          null) as never,
+    },
+  });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+  await act(() =>
+    view.setState({ followMode: "active-tab" }, { history: false }),
+  );
+  await settle();
+  expect(run.mock.calls.at(-1)![0].context).toMatchObject({
+    attachment: "PDFAAAAA",
+  });
+
+  recent = second;
+  await act(() => {
+    for (const cb of leafChanged) cb();
+  });
+  await settle();
+
+  expect(run.mock.calls.at(-1)![0].context).toMatchObject({
+    attachment: "PDFBBBBB",
+  });
 });
 
 function paneMenu(view: AnnotationView, source = "more-options"): Menu {

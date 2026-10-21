@@ -4,6 +4,7 @@
 // Annotation it names. The Annotation Suggester writes the same link from a
 // search at the cursor.
 
+import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ATTACHMENTS } from "@zotlit/scripts/fixture";
@@ -12,6 +13,7 @@ import {
   annotationAttachment,
   annotationItem,
   attachmentAnnotations,
+  e2eFixture,
   reachable,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
@@ -36,6 +38,12 @@ const COMMENTED = attachmentAnnotations.find(({ key }) => key === "HRK7BG32")!;
 const INK = attachmentAnnotations.find(({ key }) => key === "TYY6Z6ZF")!;
 /** A PDF the Fixture's Zotero holds a row for, and never a file. */
 const MISSING_PDF = ATTACHMENTS.find(({ key }) => key === "MISSNG22")!;
+
+/**
+ * A second Attachment of the Rougier PDF's own file, which the Fixture does
+ * not hold: the case that needs it adds it, with one Annotation of its own.
+ */
+const SHARED = { attachmentKey: "RGRSHRD2", annotationKey: "SHRDANN2" };
 
 /** Stands in a note for the Rougier PDF's own `file://` URL on this computer. */
 const FILE_URL = "%FILE_URL%";
@@ -349,6 +357,8 @@ interface Scenario {
   captureOff?: boolean;
   /** The reader state that ends the wait early, when a landing is expected. */
   lands?: ReaderState;
+  /** The Attachment the reader must name for a landing; the Rougier PDF's own by default. */
+  bound?: string;
 }
 
 /**
@@ -364,6 +374,7 @@ async function follow({
   gesture,
   captureOff = false,
   lands,
+  bound = annotationAttachment.key,
 }: Scenario): Promise<Outcome> {
   const follow =
     gesture === "external"
@@ -418,7 +429,7 @@ async function follow({
           // The reader's binding decides the Landing as it draws the read it
           // starts once it names the Attachment; a later read replaces the
           // promise, so the wait runs until the one awaited is the last.
-          const binding=await until(()=>s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'),()=>'No reader named the PDF\\'s Attachment');
+          const binding=await until(()=>s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'&&b.attachment.attachmentKey===${JSON.stringify(bound)}),()=>'No reader named the Attachment '+${JSON.stringify(bound)}+': '+JSON.stringify(s.pdfAnnotationEditor.bindings.map((b)=>b.attachment)));
           for(let read=binding.refreshed,end=deadline();;read=binding.refreshed){
             await within(read,end,'The reader never drew its last read');
             if(read===binding.refreshed)break;
@@ -433,6 +444,105 @@ async function follow({
     60000,
   );
   return JSON.parse(reply) as Outcome;
+}
+
+/**
+ * Adds {@link SHARED} to the Fixture's Zotero database the way Zotero keeps a
+ * second Attachment of one linked file: a copy of the Rougier PDF's
+ * Attachment row under its own key, and a copy of `annotationKey` as its
+ * one Annotation. Each row copies every column of its model but the id, the
+ * key and the parent. Disposing deletes the rows it wrote.
+ */
+function addSharedFileAttachment(
+  databasePath: string,
+  annotationKey: string,
+): Disposable {
+  using database = new DatabaseSync(databasePath);
+  const itemIDOf = (key: string) =>
+    Number(
+      (
+        database.prepare("select itemID from items where key = ?").get(key) as {
+          itemID: number;
+        }
+      ).itemID,
+    );
+  /** Inserts a copy of `table`'s row for `itemID`, with `set` in place. */
+  const copy = (
+    table: string,
+    itemID: number,
+    set: Record<string, string | number>,
+  ) => {
+    const columns = (
+      database.prepare(`pragma table_info(${table})`).all() as {
+        name: string;
+      }[]
+    ).map(({ name }) => name);
+    database
+      .prepare(
+        `insert into ${table} (${columns.join(", ")}) select ${columns.map((name) => (name in set ? "?" : name)).join(", ")} from ${table} where itemID = ?`,
+      )
+      .run(
+        ...columns.filter((name) => name in set).map((name) => set[name]!),
+        itemID,
+      );
+  };
+  const attachmentID = Number(
+    Object.values(
+      database.prepare("select max(itemID) + 1 from items").get()!,
+    )[0],
+  );
+  const annotationID = attachmentID + 1;
+
+  // One transaction: a failed write leaves no row behind.
+  database.exec("begin");
+  using rollback = new DisposableStack();
+  rollback.defer(() => database.exec("rollback"));
+  const source = itemIDOf(annotationAttachment.key);
+  copy("items", source, { itemID: attachmentID, key: SHARED.attachmentKey });
+  copy("itemAttachments", source, { itemID: attachmentID });
+  const annotation = itemIDOf(annotationKey);
+  copy("items", annotation, {
+    itemID: annotationID,
+    key: SHARED.annotationKey,
+  });
+  copy("itemAnnotations", annotation, {
+    itemID: annotationID,
+    parentItemID: attachmentID,
+  });
+  database.exec("commit");
+  rollback.move();
+
+  return {
+    [Symbol.dispose]() {
+      using database = new DatabaseSync(databasePath);
+      database.exec("begin");
+      for (const table of ["itemAnnotations", "itemAttachments", "items"])
+        database
+          .prepare(`delete from ${table} where itemID between ? and ?`)
+          .run(attachmentID, annotationID);
+      database.exec("commit");
+    },
+  };
+}
+
+/**
+ * Has ZotLit read the database again and waits, bounded, until its Attachment
+ * index answers `kind` for {@link SHARED}'s Attachment. Answers which
+ * Attachment the Rougier PDF's path names then.
+ */
+async function reindexed(kind: "resolved" | "unresolved"): Promise<string> {
+  const reply = await obEval(
+    run.vaultId,
+    `(async()=>{
+      ${WAITS}
+      const s=app.plugins.plugins.zotlit.services;
+      await s.zoteroReads.refresh();
+      await until(()=>s.attachmentResolver.lookup(${JSON.stringify(SHARED.attachmentKey)}).kind===${JSON.stringify(kind)},()=>'The Attachment index never answered ${kind} for ${SHARED.attachmentKey}');
+      return JSON.stringify(s.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).attachmentKey??null);
+    })()`,
+    60000,
+  );
+  return JSON.parse(reply) as string;
 }
 
 /** What a hover over one link left on screen, read before its cleanup ran. */
@@ -729,9 +839,9 @@ describe.skipIf(!reachable)("Annotation links", () => {
     120000,
   );
 
-  // The page chip of an Annotation View card follows the same link a note
-  // holds, through the same capture, so it opens Obsidian's reader where
-  // this computer holds the PDF.
+  // The page chip of an Annotation View card opens the Annotation its
+  // backlink names the way a followed link does, so it opens Obsidian's
+  // reader where this computer holds the PDF.
   it("opens the reader on the Annotation from its card's page chip", async () => {
     const url = durableLink(SECOND_PAGE.key, SECOND_PAGE.pageLabel);
     const lands = { page: 2, selected: [SECOND_PAGE.key] };
@@ -740,6 +850,54 @@ describe.skipIf(!reachable)("Annotation links", () => {
 
     expect(outcome).toMatchObject({ reader: lands, passed: [] });
   }, 120000);
+
+  // The chip is ZotLit's own gesture, not a note's file link, so the setting
+  // that keeps a note's links for the system handler leaves it alone.
+  it("opens the reader from a card's page chip while the reader's open-file-links setting is off", async () => {
+    const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+    const lands = { page: 1, selected: [FIRST_PAGE.key] };
+
+    const outcome = await follow({
+      note: "",
+      url,
+      gesture: "chip",
+      captureOff: true,
+      lands,
+    });
+
+    expect(outcome).toMatchObject({ reader: lands, passed: [] });
+  }, 120000);
+
+  // Two Attachments can keep one file, and its path names only one of them.
+  // A link to the other one opens Obsidian's reader all the same, bound to
+  // that Attachment and selecting its own Annotation, rather than going to
+  // Zotero.
+  it("opens the reader on the Annotation of the second Attachment of a shared PDF", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await reindexed("unresolved");
+    });
+    cleanup.use(
+      addSharedFileAttachment(e2eFixture.databasePath, FIRST_PAGE.key),
+    );
+    // The path still names the Fixture's own Attachment, so the link names
+    // the one the path does not choose.
+    expect(await reindexed("resolved")).toBe(annotationAttachment.key);
+    const url = durableLink(SHARED.annotationKey, FIRST_PAGE.pageLabel, {
+      attachmentKey: SHARED.attachmentKey,
+    });
+    const lands = { page: 1, selected: [SHARED.annotationKey] };
+
+    const outcome = await follow({
+      note: noteWith(url),
+      url,
+      gesture: "reading",
+      lands,
+      bound: SHARED.attachmentKey,
+    });
+
+    expect(outcome).toMatchObject({ reader: lands, passed: [] });
+  }, 180000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps
   // landing exactly as it did.
@@ -783,22 +941,6 @@ describe.skipIf(!reachable)("Annotation links", () => {
       },
       120000,
     );
-
-    it("from a card's page chip while the reader's open-file-links setting is off", async () => {
-      const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
-
-      const outcome = await follow({
-        note: "",
-        url,
-        gesture: "chip",
-        captureOff: true,
-      });
-
-      expect(outcome).toMatchObject({
-        reader: null,
-        passed: [expect.objectContaining({ url })],
-      });
-    }, 120000);
 
     it("while the reader's open-file-links setting is off", async () => {
       const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);

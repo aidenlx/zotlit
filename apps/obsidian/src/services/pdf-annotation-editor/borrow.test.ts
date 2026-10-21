@@ -266,7 +266,7 @@ it("leaves the reader session's own role untouched", async () => {
   // The binding stands on the reader's own session, and excerpt work reaches
   // the same document while it does.
   expect(binding.supported).toBe(true);
-  expect(binding.session).toBe(service.sessionForPath("paper.pdf"));
+  expect(binding.session).toBe(service.sessionFor(view as never));
   expect(binding.session.source).toBe("obsidian-pdf");
   expect(service.borrowDocument("/vault/paper.pdf")).not.toBeNull();
 });

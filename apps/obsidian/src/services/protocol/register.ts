@@ -38,9 +38,10 @@ import {
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import {
-  createPdfReader,
+  pdfPickerReader,
   toObsidianOpenable,
 } from "@/services/attachment-open/actions";
+import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { LocalServerService } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
@@ -74,6 +75,8 @@ export interface ProtocolDeps extends SingleUpdateDeps {
   zoteroPref: ZoteroPrefService;
   liveUpdate: LocalServerService;
   zoteroReads: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
+  /** Opens the Attachment `open-attachment` names. */
+  opener: Pick<TargetOpener, "open">;
 }
 
 /**
@@ -341,7 +344,7 @@ async function handleOpenAttachmentProtocol(
   const openable = toObsidianOpenable(attachments, deps);
 
   openAttachments(openable, {
-    reader: withPaneOverride(createPdfReader(deps), query.paneType),
+    reader: withPaneOverride(pdfPickerReader(deps.opener), query.paneType),
     app: deps.app,
   });
 }

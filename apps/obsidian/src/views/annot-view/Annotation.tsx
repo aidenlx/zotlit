@@ -1,4 +1,5 @@
 import { Keymap } from "obsidian";
+import type { PaneType } from "obsidian";
 import { useContext, useEffect, useMemo, useRef } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 
@@ -298,6 +299,7 @@ export function Annotation({
             page={annot.pageLabel}
             color={annot.color}
             backlink={actions.getBacklink(annot)}
+            onOpen={(pane) => actions.onOpenPage(annot, pane)}
             onDragStart={(e) => {
               // The ghost under the pointer is the whole card, held where the
               // pointer took it, rather than the chip alone.
@@ -1124,21 +1126,23 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
  * colour" has to say.
  *
  * The chip is the card's drag handle. Where a note is open to take it, the
- * drag rides on it; where the Annotation has a backlink, its click follows
- * that Durable Annotation Link as a note's link is followed, and otherwise the
- * click falls through to the card's own selection.
+ * drag rides on it; where the Annotation has a backlink, its click opens the
+ * Annotation where it was made, as its Durable Annotation Link would, and
+ * otherwise the click falls through to the card's own selection.
  */
 function PageChip({
   type,
   page,
   color,
   backlink,
+  onOpen,
   onDragStart,
 }: {
   type: ResolvedAnnotationTypeName;
   page: string | null;
   color: string | null;
   backlink?: string;
+  onOpen: (pane: PaneType | boolean) => void;
   onDragStart: (e: DragEvent<HTMLElement>) => void;
 }) {
   const display = useContext(CardDisplayContext);
@@ -1174,17 +1178,13 @@ function PageChip({
         href={backlink}
         draggable
         onDragStart={onDragStart}
-        // Following the link is its own verb, not the card's selection. It
-        // goes through `window.open` with the pane a Mod-click asks for, as
-        // Obsidian follows a link in a note, so File Link Capture opens it in
-        // Obsidian's reader where this computer holds the PDF and hands it to
-        // Zotero otherwise. The anchor's own navigation would reach the
-        // system handler alone.
+        // Opening the Annotation is its own verb, not the card's selection,
+        // in the pane a Mod-click asks for. The anchor's own navigation would
+        // reach the system handler alone.
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          const pane = Keymap.isModEvent(e.nativeEvent);
-          window.open(backlink, typeof pane === "string" ? pane : "");
+          onOpen(Keymap.isModEvent(e.nativeEvent));
         }}
         {...tooltipAttrs(m.annot_view_open_page())}
       >

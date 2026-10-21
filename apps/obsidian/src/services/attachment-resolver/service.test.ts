@@ -123,24 +123,28 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
   ]);
 });
 
-// The reverse lookup a durable `zotero://open` link needs: it names an
-// Attachment by its key, never by a path.
-it("locates the file an Attachment names by its Indexed Key", async () => {
+// The lookup a caller holding a key needs — a `zotero://open` link, a card, a
+// row — names an Attachment by its key, never by a path.
+it("looks an Attachment up by its Indexed Key, with its file and its openable verdict", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver } = await setup(stack, { baseAttachmentPath: null });
 
   expect(
-    ["RGRPDF24", "PDFSTR22", "LINKURL2", "IANPDF25", "ZZZZZZZZ"].map((key) =>
-      resolver.locate(key),
+    ["RGRPDF24", "HTMLSNAP", "LINKURL2", "IANPDF25", "ZZZZZZZZ"].map((key) =>
+      resolver.lookup(key),
     ),
   ).toEqual([
     {
-      kind: "located",
+      ...ROUGIER,
       absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
     },
     {
-      kind: "located",
-      absolutePath: `${DATA_DIR}/storage/PDFSTR22/sakimas-song.pdf`,
+      kind: "resolved",
+      serverID: null,
+      attachmentKey: "HTMLSNAP",
+      itemKey: "SAKIMA22",
+      openable: false,
+      absolutePath: `${DATA_DIR}/storage/HTMLSNAP/sakimas-song.html`,
     },
     // A web link names no file.
     { kind: "unresolved" },
@@ -150,7 +154,7 @@ it("locates the file an Attachment names by its Indexed Key", async () => {
   ]);
 });
 
-it("locates a group-library Attachment by its group's Indexed Key alone", async () => {
+it("looks a group-library Attachment up by its group's Indexed Key alone", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver } = await setup(stack, {
     rows: `
@@ -166,11 +170,15 @@ it("locates a group-library Attachment by its group's Indexed Key alone", async 
     `,
   });
 
-  expect(resolver.locate("RGRGRUP9g4200309")).toEqual({
-    kind: "located",
+  expect(resolver.lookup("RGRGRUP9g4200309")).toEqual({
+    kind: "resolved",
+    serverID: null,
+    attachmentKey: "RGRGRUP9g4200309",
+    itemKey: "RUGIERG9g4200309",
+    openable: true,
     absolutePath: `${DATA_DIR}/storage/RGRGRUP9/shared.pdf`,
   });
-  expect(resolver.locate("RGRGRUP9")).toEqual({ kind: "unresolved" });
+  expect(resolver.lookup("RGRGRUP9")).toEqual({ kind: "unresolved" });
 });
 
 it("leaves a base-directory attachment unresolved while the base pref is unset", async () => {
@@ -258,6 +266,62 @@ it("prefers the personal library, then the lowest item ID, when several attachme
   );
 });
 
+// Two Attachments of one file, as Zotero allows: the path answers one of them,
+// and a caller that already knows which one it opened says so.
+const SHARED_FILE_ROWS = `
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (40, 2, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RGREARL8'),
+      (41, 1, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RUGIERE8'),
+      (46, 1, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RUGIER24'),
+      (47, 2, '2025-02-04 12:00:00', '2025-02-04 12:00:00', 1, 'RGRPDF24'),
+      (21, 2, '2025-02-20 12:00:00', '2025-02-20 12:00:00', 1, 'PDFSTR22'),
+      (20, 1, '2025-02-20 12:00:00', '2025-02-20 12:00:00', 1, 'SAKIMA22');
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values
+      (40, 41, 2, 'application/pdf', '${VAULT_DIR}/attachments/rougier-2014.pdf'),
+      (47, 46, 2, 'application/pdf', '${VAULT_DIR}/attachments/rougier-2014.pdf'),
+      (21, 20, 0, 'application/pdf', 'storage:sakimas-song.pdf');
+`;
+
+it("answers the Attachment a shared file's path does not choose by its own key", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { rows: SHARED_FILE_ROWS });
+
+  expect(resolver.lookup("RGRPDF24")).toEqual({
+    ...ROUGIER,
+    absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
+  });
+});
+
+it("resolves a shared file to the Attachment the opener named", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { rows: SHARED_FILE_ROWS });
+  const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
+
+  expect(resolver.resolve(path, { attachmentKey: "RGRPDF24" })).toEqual(
+    ROUGIER,
+  );
+  expect(resolver.resolve(path)).toMatchObject({ attachmentKey: "RGREARL8" });
+});
+
+// A name left over from an earlier open must not rename the file now shown.
+it("resolves by the path alone when the named Attachment keeps another file", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver } = await setup(stack, { rows: SHARED_FILE_ROWS });
+
+  expect(
+    resolver.resolve(`${VAULT_DIR}/attachments/rougier-2014.pdf`, {
+      attachmentKey: "PDFSTR22",
+    }),
+  ).toMatchObject({ attachmentKey: "RGREARL8" });
+  expect(
+    resolver.resolve(`${VAULT_DIR}/attachments/rougier-2014.pdf`, {
+      attachmentKey: "ZZZZZZZZ",
+    }),
+  ).toMatchObject({ attachmentKey: "RGREARL8" });
+});
+
 it("reports each file several attachments name, with the one it kept and the ones it dropped", () => {
   const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
   const { index, collisions } = buildPathIndex(
@@ -338,7 +402,7 @@ it("answers pending, and keeps no index, while the database cannot be read", asy
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
   await expect.poll(() => reads.state).toBe("degraded");
   expect(resolver.resolve(path)).toEqual({ kind: "pending" });
-  expect(resolver.locate("RGRPDF24")).toEqual({ kind: "pending" });
+  expect(resolver.lookup("RGRPDF24")).toEqual({ kind: "pending" });
 
   // The database recovers: the build it was waiting on lands and says so.
   const announced = nextAnnouncement(resolver);
@@ -363,7 +427,7 @@ it("settles indexed once the first index lands, and builds nothing itself", asyn
   resolver.warm();
   expect(builds).toHaveBeenCalledOnce();
   await indexed;
-  expect(resolver.locate("RGRPDF24")).toMatchObject({ kind: "located" });
+  expect(resolver.lookup("RGRPDF24")).toMatchObject({ kind: "resolved" });
 });
 
 it("builds the first index when warmed, before any lookup", async () => {
@@ -374,8 +438,8 @@ it("builds the first index when warmed, before any lookup", async () => {
   resolver.warm();
   await announced;
 
-  expect(resolver.locate("RGRPDF24")).toEqual({
-    kind: "located",
+  expect(resolver.lookup("RGRPDF24")).toEqual({
+    ...ROUGIER,
     absolutePath: `${VAULT_DIR}/attachments/rougier-2014.pdf`,
   });
 });

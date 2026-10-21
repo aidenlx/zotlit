@@ -10,10 +10,10 @@ import type { Item } from "@zotlit/db";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import {
-  createPdfReader,
+  pdfPickerReader,
   resolveLiteratureNoteAttachments,
 } from "@/services/attachment-open/actions";
-import type { AttachmentOpenLookupDeps } from "@/services/attachment-open/actions";
+import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { createNoteInteractively } from "@/services/note-feature";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
@@ -87,13 +87,13 @@ async function openNote(
  * menu at — so several Attachments always fall to the Suggest modal picker.
  */
 export async function openItemPdf(
-  deps: AttachmentOpenLookupDeps,
+  deps: AttachmentOpenDeps,
   indexedKey: string,
   pane: PaneType | boolean,
 ): Promise<void> {
   const attachments = await resolveLiteratureNoteAttachments(deps, indexedKey);
   openAttachments(attachments, {
-    reader: withFixedPane(createPdfReader(deps), pane),
+    reader: withFixedPane(pdfPickerReader(deps.opener), pane),
     app: deps.app,
   });
 }

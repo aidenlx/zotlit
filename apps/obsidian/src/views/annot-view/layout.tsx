@@ -27,6 +27,7 @@ import {
   IDLE,
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
+import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
@@ -102,6 +103,11 @@ function controlOwnsKey(target: EventTarget | null): boolean {
  */
 export interface AnnotationsLayoutDeps {
   app: App;
+  /**
+   * Opens an Attachment or one Annotation in it — the page chip, and the
+   * Table's Attachment and Annotation links.
+   */
+  opener: Pick<TargetOpener, "open">;
   /** The database the Excerpt Image requests resolve through. */
   reads: Pick<ZoteroReadsService, "acquireRead">;
   /**
@@ -362,6 +368,7 @@ export class AnnotationsLayout extends Component {
 
     this.#actions = createAnnotActions({
       app: deps.app,
+      opener: deps.opener,
       excerptDisplay: deps.excerptDisplay,
       excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: deps.annotations,
