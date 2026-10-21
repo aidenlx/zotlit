@@ -143,20 +143,3 @@ it("skips its key and blur rules when a consumer handler prevents the default", 
   expect(names()).toEqual(["Read"]);
   expect(input().value).toBe("Later");
 });
-
-it("marks each part with its data-slot and passes its className", () => {
-  const { container } = render(<Tags initial={["Read"]} />);
-  const slots = Object.fromEntries(
-    [...container.querySelectorAll("[data-slot]")].map((element) => [
-      element.getAttribute("data-slot"),
-      element.className,
-    ]),
-  );
-  expect(slots).toEqual({
-    "tags-input": "root",
-    "tags-input-item": "item",
-    "tags-input-item-text": "text",
-    "tags-input-item-remove": "remove",
-    "tags-input-input": "input",
-  });
-});

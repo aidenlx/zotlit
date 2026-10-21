@@ -3,19 +3,21 @@
 // The one quality gate. GitHub runs no pull-request checks; see ADR 0076.
 //   (no flag)   the packages the branch changed since it left `next` or
 //               `main`, and their dependents. Lefthook runs this on every push.
-//   --release   every package, plus the Obsidian guideline review (ADR 0020).
+//   --release   every package, the desktop End-to-end Run and worker check,
+//               plus the Obsidian guideline review (ADR 0020).
 //               `release.ts` runs it before the version commit and
-//               `release.yml` before it publishes.
+//               `release.yml` before it publishes (desktop checks skip there).
 // Format, lint and the generated-artifact checks always cover the whole tree.
 import { $ } from "zx";
 
+import { affectedBase } from "#affected-base";
 import { getWorkspaceRoot } from "#package-roots";
 
 const release = process.argv.includes("--release");
 const ci = process.env.GITHUB_ACTIONS === "true";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
-const base = release ? undefined : await affectedBase();
+const base = release ? undefined : await affectedBase(root);
 // `--affected` selects the changed packages and their dependents since
 // TURBO_SCM_BASE. Without a base, every package.
 const scope = base ? ["--affected"] : [];
@@ -70,27 +72,16 @@ await step("Test", async () => {
   await sh`pnpm test:eval-runtime`;
 });
 
-if (release) await step("Obsidian guideline review", () => sh`pnpm review`);
-
-/**
- * The merge base with the nearer of `origin/next` and `origin/main`. A hotfix
- * branch off `main` then checks its own commits, not everything `next` gained.
- */
-async function affectedBase(): Promise<string | undefined> {
-  let base: { sha: string; distance: number } | undefined;
-  for (const line of ["origin/next", "origin/main"]) {
-    const mergeBase = await $({
-      cwd: root,
-      nothrow: true,
-    })`git merge-base HEAD ${line}`;
-    if (mergeBase.exitCode !== 0) continue;
-    const sha = mergeBase.stdout.trim();
-    const distance = Number(
-      (await $({ cwd: root })`git rev-list --count ${sha}..HEAD`).stdout,
-    );
-    if (!base || distance < base.distance) base = { sha, distance };
-  }
-  return base?.sha;
+if (release) {
+  await step("End-to-end Run", async () => {
+    if (ci) {
+      console.log("End-to-end Run is desktop-only and ran in pnpm release.");
+      return;
+    }
+    await sh({ env: { ...process.env, ZOTLIT_E2E_REQUIRED: "1" } })`pnpm e2e`;
+    await sh`pnpm e2e:worker`;
+  });
+  await step("Obsidian guideline review", () => sh`pnpm review`);
 }
 
 async function step(name: string, run: () => Promise<unknown>): Promise<void> {

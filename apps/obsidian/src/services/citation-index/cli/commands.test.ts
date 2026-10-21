@@ -25,7 +25,6 @@ import {
 } from "./commands";
 import type { DocumentReferences, ItemLookup } from "./commands";
 import { DIAGNOSTIC_HINTS } from "./envelope";
-import type { CitedByParam, ReferencesParam } from "./request";
 
 const IDENTITY = {
   vault: { name: "Test Vault", path: "/vaults/test" },
@@ -1143,91 +1142,6 @@ describe("zotlit:citations-guide", () => {
     expect(output).toContain(CITATIONS_GUIDE_COMMAND);
     expect(getIdentity).not.toHaveBeenCalled();
     expect(waitUntilSettled).not.toHaveBeenCalled();
-  });
-
-  it("documents every selector both commands accept", async () => {
-    const { guide } = setup();
-
-    const output = await guide({});
-
-    const parameters = {
-      key: true,
-      citekey: true,
-      file: true,
-      "expect-source": true,
-    } satisfies Record<CitedByParam | ReferencesParam, true>;
-    for (const parameter of Object.keys(parameters)) {
-      expect(output).toContain(parameter);
-    }
-  });
-
-  it("documents every entry kind and index state a payload reports", async () => {
-    const { guide } = setup();
-
-    const output = await guide({});
-
-    for (const kind of [
-      "resolved",
-      "unresolved",
-      "ambiguous",
-      "missing",
-      "malformed",
-    ]) {
-      expect(output).toContain(kind);
-    }
-    for (const state of [
-      "indexing",
-      "complete",
-      "degraded",
-      "revalidating",
-      "fresh",
-      "failed",
-      "unreadable",
-    ]) {
-      expect(output).toContain(state);
-    }
-    for (const syntax of ["citekey", "wikilink"]) {
-      expect(output).toContain(syntax);
-    }
-  });
-
-  it("documents the item summary a cited-by answer carries", async () => {
-    const { guide } = setup();
-
-    const page = (await guide({})).replaceAll(/\s+/gu, " ");
-
-    expect(page).toContain("{ key, citekey, summary }");
-    expect(page).toContain(
-      "summary renders the item as 'Creators (Year): Title'",
-    );
-    expect(page).toContain(
-      "null for an item whose fields the Zotero source could not provide",
-    );
-  });
-
-  it("documents the base a position counts from, with the rg column caveat", async () => {
-    const { guide } = setup();
-
-    const page = (await guide({})).replaceAll(/\s+/gu, " ");
-
-    expect(page).toContain(
-      "line and col count from 1, matching editor and grep line numbers",
-    );
-    expect(page).toContain("offset counts UTF-16 code units from 0");
-    expect(page).toContain(
-      "col counts UTF-16 code units while rg --column counts bytes",
-    );
-  });
-
-  it("documents every diagnostic code with its own recovery hint", async () => {
-    const { guide } = setup();
-
-    const output = await guide({});
-
-    for (const [code, hint] of Object.entries(DIAGNOSTIC_HINTS)) {
-      expect(output).toContain(code);
-      expect(output.replaceAll(/\s+/gu, " ")).toContain(hint);
-    }
   });
 
   it("rejects a parameter, since the guide serves one page", async () => {

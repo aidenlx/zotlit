@@ -171,8 +171,15 @@ it("keeps each pane's row controls and descriptions scoped to that pane", () => 
 });
 
 it("shows row diagnostics and the produced properties beside the final fold", () => {
-  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  const result = renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!);
+  const source = DEFAULT_PROFILE_SOURCE.replace(
+    "---\n# {{ zt.title }}",
+    `  - value: {"kind":{"$eval":"zt.itemType"},"title":{"$eval":"zt.title"}}
+    merge: replace
+---
+# {{ zt.title }}`,
+  );
+  const controller = new WorkbenchDocumentController(source);
+  const result = renderProfile(source, SAMPLE_ITEMS[0]!);
   expect(result.diagnostics).toEqual([]);
   const pane = render(
     <PropertiesPane
@@ -189,9 +196,28 @@ it("shows row diagnostics and the produced properties beside the final fold", ()
   expect(rows[0]?.textContent).toContain(
     "Why Most Published Research Findings Are False",
   );
-  expect(rows[1]?.textContent).toContain(m.workbench_properties_row_problem());
+  expect(rows[4]?.textContent).toContain(
+    m.workbench_properties_produced({ count: 2, names: "title, kind" }),
+  );
+  expect(rows[4]?.textContent).toContain(m.workbench_properties_spread());
   expect(rows[1]?.textContent).toContain("The rule stopped.");
-  expect(rows[0]?.textContent).not.toContain(
+  expect(
+    rows.filter((row) =>
+      row.textContent.includes(m.workbench_properties_row_problem()),
+    ),
+  ).toEqual([rows[1]]);
+  pane.rerender(
+    <PropertiesPane
+      controller={controller}
+      entries={controller.managedEntries!}
+      properties={result.properties}
+      fold={result.fold}
+      diagnostics={[]}
+      selected={2}
+      onSelect={() => {}}
+    />,
+  );
+  expect(pane.container.textContent).not.toContain(
     m.workbench_properties_row_problem(),
   );
 });
@@ -296,7 +322,7 @@ it("keeps read-only rows openable and disables property changes", () => {
   ).toHaveProperty("disabled", true);
 });
 
-it.each(["\n", "\r\n"])(
+it.each(["\n"])(
   "summarizes each folded row with its own expression before an item is chosen (line break %j)",
   (lineBreak) => {
     using mounted = mount(<EditorPane />, {

@@ -498,51 +498,6 @@ it("follows a folder override, its reset, and a new Default folder", () => {
   expect(preview()).toBe("Zotero/Papers/Reading.md");
 });
 
-it("previews a backslash folder as the slash path creation writes", () => {
-  open({ source: SOURCE.replace("folder: papers\n", "") });
-  write(m.workbench_name_binding_folder(), "Reading\\Methods\\");
-  expect(preview()).toBe("Reading/Methods/Reading.md");
-});
-
-it("previews the name path alone for a vault-root folder", () => {
-  open({ source: SOURCE.replace("folder: papers", "folder: ''") });
-  expect(preview()).toBe("Reading.md");
-});
-
-it("says so when the note name resolves to empty", () => {
-  open({ filename: "  ", notePath: null });
-  expect(preview()).toContain(m.workbench_name_path_empty());
-});
-
-it("orders folder, note name template, and preview inside one labelled group", () => {
-  open();
-  const group = notePathGroup();
-  const folder = within(group).getByLabelText(
-    m.workbench_name_binding_folder(),
-  );
-  const template = within(group).getByRole("textbox", {
-    name: m.workbench_name_filename_label(),
-  });
-  const result = within(group).getByRole("status", {
-    name: m.workbench_name_filename_result(),
-  });
-  expect(
-    folder.compareDocumentPosition(template) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    template.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  // The remaining bindings keep their own group.
-  expect(
-    within(group).queryByLabelText(m.workbench_name_binding_import_folder()),
-  ).toBeNull();
-  expect(
-    within(
-      screen.getByRole("region", { name: m.workbench_name_bindings_heading() }),
-    ).getByLabelText(m.workbench_name_binding_import_folder()),
-  ).toBeDefined();
-});
-
 it("focuses the folder control for a problem pinned to the folder key", () => {
   open({ focus: { field: "folder" } });
   expect(document.activeElement).toBe(

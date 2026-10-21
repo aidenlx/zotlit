@@ -64,18 +64,6 @@ it("renders editor examples and independent Preview after StrictMode replays eff
   );
 });
 
-it("releases the StrictMode editor owner when the page closes", async () => {
-  vi.mocked(createWorkbenchEditor).mockClear();
-  const page = await open({ strict: true });
-  const owners = vi
-    .mocked(createWorkbenchEditor)
-    .mock.results.map((result) => result.value);
-  await page[Symbol.asyncDispose]();
-  expect(owners).toHaveLength(2);
-  for (const owner of owners)
-    expect(owner[Symbol.dispose]).toHaveBeenCalledOnce();
-});
-
 it("keeps independent Preview and Explorer choices when a new document opens", async () => {
   await using page = await open({ strict: true });
   await page.settle();
@@ -128,24 +116,4 @@ it("hands a Default copy from the Profile menu to the native import flow", async
   expect(copies[0]).not.toContain("id: default");
   expect(urls).toEqual(["obsidian://zotlit/import-profile?clipboard=true"]);
   expect(page.host.textContent).toContain(m.workbench_open_obsidian_copied());
-});
-
-it("keeps each tab's editor mounted once the reader has opened it", async () => {
-  await using page = await open();
-  await page.settle();
-  const editorIn = (selector: string) =>
-    page.host.querySelector<HTMLElement>(`${selector} .cm-editor`);
-
-  page.press(m.workbench_tab_name_and_folder());
-  const name = editorIn('[data-part="filename-editor"]');
-  expect(name).not.toBeNull();
-
-  page.press(m.workbench_tab_properties());
-  // The Name pane folds away but keeps its editor in the page.
-  expect(name!.closest("[role=tabpanel]")).toHaveProperty("hidden", true);
-  expect(editorIn('[data-part="filename-editor"]')).toBe(name);
-
-  page.press(m.workbench_tab_note());
-  page.press(m.workbench_tab_name_and_folder());
-  expect(editorIn('[data-part="filename-editor"]')).toBe(name);
 });

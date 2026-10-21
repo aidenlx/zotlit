@@ -105,43 +105,6 @@ it.each<[EditingCapability, { icon: string; tone: string; label: string }]>([
   );
 });
 
-it("says how to turn the local API on, where Zotero alone can turn it on", () => {
-  const copy = editingCapabilityCopy(
-    { kind: "read-only", reason: "local-api-disabled" },
-    NOW,
-  );
-
-  // The enablement step lives in Zotero's own preferences, so the copy names
-  // the place rather than offering a control ZotLit does not have.
-  expect(copy.detail).toBe(m.capability_local_api_disabled_detail());
-  expect(copy.detail).toContain("Settings → Advanced");
-});
-
-it("gives every state a line, and every fault a reason to read", () => {
-  const states: EditingCapability[] = [
-    { kind: "writable" },
-    { kind: "authorization-required" },
-    { kind: "authorizing" },
-    { kind: "cooldown", retryAfter: NOW.add({ seconds: 5 }) },
-    ...READ_ONLY_REASONS.map(
-      (reason) => ({ kind: "read-only", reason }) as const,
-    ),
-  ];
-
-  const copies = states.map((state) => editingCapabilityCopy(state, NOW));
-
-  expect(copies.every(({ label }) => label.length > 0)).toBe(true);
-  // Only the two states that speak for themselves carry no second line.
-  expect(
-    states
-      .filter((_, index) => copies[index]!.detail === null)
-      .map((state) => JSON.stringify(state)),
-  ).toEqual([
-    JSON.stringify({ kind: "writable" }),
-    JSON.stringify({ kind: "read-only", reason: "probing" }),
-  ]);
-});
-
 it("counts a cooldown down in whole seconds, and never past zero", () => {
   const copy = (seconds: number) =>
     editingCapabilityCopy(

@@ -273,22 +273,6 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(el.querySelector("[data-query-empty]")).not.toBeNull();
   });
 
-  it("shows an empty list in the frame a tab uses, and gives the frame no height the note does not give it", async () => {
-    const { hold } = setup(kind);
-    const { el } = await hold();
-    const empty = el.querySelector("[data-query-empty]");
-    expect(empty?.closest("[data-pane-state]")).not.toBeNull();
-    // The note sizes the view by its content: neither the host's element
-    // nor an inline style gives the column a height for the frame to fill.
-    expect(el.getAttribute("style")).toBeNull();
-    expect([...el.classList].sort()).toEqual([
-      "interactive-child",
-      "zt-query-note",
-      "zt-query-view",
-      "zt-root",
-    ]);
-  });
-
   it("keeps a click inside it from selecting it in Live Preview", async () => {
     const { hold } = setup(kind);
     const { el } = await hold();

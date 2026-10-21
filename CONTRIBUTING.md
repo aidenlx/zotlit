@@ -39,7 +39,8 @@ counterpart line before merging a release PR.
 1. Check out `next` (for pre-releases and stable graduations) or `main` (for
    hotfixes only).
 2. Run `pnpm release` — the interactive script bumps the version, syncs
-   manifests, runs the release gate (`pnpm verify --release`), commits,
+   manifests, runs the release gate (`pnpm verify --release`, which includes
+   the End-to-end Run, so desktop Obsidian must be running), commits,
    pushes, opens a PR, and offers to merge it. The PR target is inferred from
    the version picked: a non-prerelease version on `next` targets `main` (stable
    graduation); a prerelease targets `next`; on `main`, all releases target

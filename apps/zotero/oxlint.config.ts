@@ -1,5 +1,6 @@
 import { defineConfig } from "oxlint";
 
+import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig from "@zotlit/config/oxlint";
 
 export default defineConfig({
@@ -18,6 +19,7 @@ export default defineConfig({
     ],
   },
   overrides: [
+    ...testBaselineOverrides("apps/zotero"),
     {
       files: ["src/prefs/index.ts"],
       rules: {

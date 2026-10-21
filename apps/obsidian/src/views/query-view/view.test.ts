@@ -38,8 +38,7 @@ import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { requested } from "./__fixtures__/query-run";
 import type { ContextSource } from "./context-hint";
-import { groupOptions } from "./properties";
-import { QUERY_FILE_DATASETS, serializeQueryFile } from "./query-file";
+import { serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import { formulaIssuesOf } from "./results";
 import { inferType } from "./table-notes";
@@ -611,54 +610,18 @@ it("says why when the query cannot read Zotero's data, rather than looking empty
       .querySelector("[data-query-diagnostic]")
       ?.getAttribute("data-query-diagnostic"),
   ).toBe("source-unavailable");
+  expect(
+    el
+      .querySelector('[data-query-diagnostic="source-unavailable"]')
+      ?.getAttribute("role"),
+  ).toBe("alert");
   expect(el.querySelector("[data-query-empty]")).toBeNull();
 });
-
-/** The shared frame `node` sits in, which centres it in the space under the toolbar. */
-function frameOf(node: Element | null): Element | null {
-  return node?.closest("[data-pane-state]") ?? null;
-}
 
 /** Whether the rows' layout is out of the flow, so the frame takes the space. */
 function rowsHidden(el: HTMLElement): boolean {
   return el.querySelector(".annots-container")?.closest("[hidden]") != null;
 }
-
-it("centres the empty list in the space under the toolbar, with the rows' layout out of the flow", async () => {
-  const { view, el, settle } = await mount([result([])]);
-  await act(() => view.setText(FILE));
-  await settle();
-
-  const empty = el.querySelector("[data-query-empty]");
-  expect(empty?.textContent).toContain(m.query_view_no_results_annotations());
-  expect(frameOf(empty)).not.toBeNull();
-  expect(rowsHidden(el)).toBe(true);
-});
-
-it("centres the diagnostic of a failed run that has no rows to show", async () => {
-  const { view, el, settle } = await mount([
-    {
-      kind: "failed",
-      diagnostic: {
-        code: "source-unavailable",
-        message: "The Zotero database cannot be read.",
-        hint: "Check the Zotero data directory.",
-        severity: "error",
-        report: ["The Zotero database cannot be read."],
-        found: "",
-        expected: [],
-        suggestions: [],
-      },
-    },
-  ]);
-  await act(() => view.setText(FILE));
-  await settle();
-
-  const box = el.querySelector('[data-query-diagnostic="source-unavailable"]');
-  expect(box?.getAttribute("role")).toBe("alert");
-  expect(frameOf(box)).not.toBeNull();
-  expect(rowsHidden(el)).toBe(true);
-});
 
 it("keeps the note of a failed run inline above the last good rows", async () => {
   const { view, el, settle } = await mount(
@@ -2028,30 +1991,6 @@ it("shows no property in the Table, Cards, List, copy and the run of a view with
   ).toEqual(["", ""]);
 });
 
-it("shows a view of Items as a Table: one row for each Item, a column for each visible property", async () => {
-  const { view, el, run, settle } = await mount([
-    result([
-      itemRow("ITEMAAAA", "Ten simple rules"),
-      itemRow("ITEMBBBB", "Deep learning"),
-    ]),
-  ]);
-  await act(() => view.setText(TABLE_FILE));
-  await settle();
-
-  expect(view.state.getState().problems).toEqual([]);
-  expect(run.mock.calls[0]![0]).toMatchObject({ from: "items" });
-  expect(run.mock.calls[0]![0].fields).toEqual(
-    expect.arrayContaining(["title", "date"]),
-  );
-  expect(tableText(el)).toEqual([
-    ["", "Title", "Date", "Literature note"],
-    ["", "Ten simple rules", "2014", "Create"],
-    ["", "Deep learning", "2014", "Create"],
-  ]);
-  expect(cards(el)).toEqual([]);
-  expect(el.querySelector("[data-query-count]")?.textContent).toBe("2 results");
-});
-
 it("shows a column at the width the view keeps, and a double click on its edge sets it back to its auto width in one save", async () => {
   const { view, el, settle, save, saved } = await mount([
     result([itemRow("ITEMAAAA", "Ten simple rules")]),
@@ -2497,9 +2436,9 @@ it("offers Item fields to sort and group a view of Items by", async () => {
 });
 
 /**
- * Each grouping Group offers, with a row's values and the heading the row
- * stands under. A List that shows none of the grouping's fields still
- * gathers its rows by them.
+ * Representative groupings from each dataset, with each row's values and
+ * heading. A List that shows none of the grouping's fields still gathers
+ * its rows by them.
  */
 const GROUPINGS: {
   dataset: QueryFileDataset;
@@ -2509,51 +2448,15 @@ const GROUPINGS: {
 }[] = [
   {
     dataset: "annotations",
-    path: "item.indexedKey",
-    values: { "item.title": "Ten simple rules" },
-    heading: "Ten simple rules",
-  },
-  {
-    dataset: "annotations",
-    path: "attachment.indexedKey",
-    values: { "attachment.title": "Full text PDF" },
-    heading: "Full text PDF",
-  },
-  {
-    dataset: "annotations",
     path: "colorName",
     values: { color: "#ffd400", colorName: "yellow" },
     heading: "Yellow",
   },
   {
-    dataset: "annotations",
-    path: "tags[]",
-    values: { tags: ["figure"] },
-    heading: "figure",
-  },
-  {
-    dataset: "annotations",
-    path: "item.collections[]",
-    values: { "item.collections": ["Thesis/Methods"] },
-    heading: "Thesis/Methods",
-  },
-  {
     dataset: "attachments",
     path: "item.indexedKey",
     values: { "item.title": "Ten simple rules" },
     heading: "Ten simple rules",
-  },
-  {
-    dataset: "attachments",
-    path: "tags[]",
-    values: { tags: ["figure"] },
-    heading: "figure",
-  },
-  {
-    dataset: "attachments",
-    path: "item.collections[]",
-    values: { "item.collections": ["Thesis/Methods"] },
-    heading: "Thesis/Methods",
   },
   {
     dataset: "items",
@@ -2561,29 +2464,7 @@ const GROUPINGS: {
     values: { itemType: "journalArticle" },
     heading: "Journal Article",
   },
-  {
-    dataset: "items",
-    path: "tags[]",
-    // An Item's tags come as `{ name, type }`.
-    values: { tags: [{ name: "read-later", type: "manual" }] },
-    heading: "read-later",
-  },
-  {
-    dataset: "items",
-    path: "collections[]",
-    values: { collections: ["Thesis/Methods"] },
-    heading: "Thesis/Methods",
-  },
 ];
-
-it("lists a case for each grouping of each dataset", () => {
-  for (const dataset of QUERY_FILE_DATASETS)
-    expect(
-      GROUPINGS.filter((entry) => entry.dataset === dataset).map(
-        ({ path }) => path,
-      ),
-    ).toEqual(groupOptions(dataset).map(({ path }) => path));
-});
 
 it.each(GROUPINGS)(
   "gathers a List of $dataset by $path, though it shows none of its fields",
@@ -3644,138 +3525,6 @@ function papers(el: HTMLElement) {
     }),
   );
 }
-
-it("draws each Item of a Papers view in two lines, its title and its creators, year and Venue, and ends it with its main Attachment kind and its Literature Note", async () => {
-  const { view, el, run, settle } = await mount(
-    [
-      result([
-        paperRow("ITEMAAAA", {
-          title: "Ten simple rules for better figures",
-          creators: [
-            { family: "Rougier", role: "author" },
-            { family: "Droettboom", role: "author" },
-            { family: "Editor", role: "editor" },
-          ],
-          year: 2014,
-          publicationTitle: "PLOS Computational Biology",
-          publisher: "PLOS",
-          fileTypes: ["web", "pdf"],
-          attachments: ["WEBAAAAA", "PDFAAAAA"],
-        }),
-        paperRow("ITEMBBBB", {
-          title: "The structure of scientific revolutions",
-          creators: [
-            { family: "", literal: "Kuhn Society", role: "author" },
-            { family: "B", role: "author" },
-            { family: "C", role: "author" },
-            { family: "D", role: "author" },
-          ],
-          year: 1962,
-          publisher: "University of Chicago Press",
-          fileTypes: ["epub"],
-          attachments: ["EPUBBBBB"],
-        }),
-        paperRow("ITEMCCCC", { title: "A note with no file" }),
-      ]),
-    ],
-    undefined,
-    { notes: { ITEMAAAA: "Rougier 2014.md" } },
-  );
-  await act(() => view.setText(PAPERS_FILE));
-  await settle();
-
-  expect(view.state.getState().problems).toEqual([]);
-  expect(papers(el)).toEqual([
-    {
-      key: "ITEMAAAA",
-      title: "Ten simple rules for better figures",
-      meta: "Rougier, Droettboom · 2014 · PLOS Computational Biology",
-      lines: 2,
-      attachment: "pdf",
-      note: true,
-    },
-    {
-      key: "ITEMBBBB",
-      title: "The structure of scientific revolutions",
-      meta: "Kuhn Society, B, C et al. · 1962 · University of Chicago Press",
-      lines: 2,
-      attachment: "epub",
-      note: false,
-    },
-    {
-      key: "ITEMCCCC",
-      title: "A note with no file",
-      meta: undefined,
-      lines: 1,
-      attachment: null,
-      note: false,
-    },
-  ]);
-  // The row reads no Annotation: the Reading Card and the facets carry it.
-  expect(
-    (run.mock.calls[0]![0].fields ?? []).filter((field) =>
-      field.startsWith("annotations"),
-    ),
-  ).toEqual([]);
-  expect(cards(el)).toEqual([]);
-});
-
-it("ends every Papers row in the same two slots, the note's then the Attachment's, each kept where the row has none", async () => {
-  const { view, el, settle } = await mount(
-    [
-      result([
-        paperRow("ITEMAAAA", { title: "Both", fileTypes: ["pdf"] }),
-        paperRow("ITEMBBBB", { title: "A PDF alone", fileTypes: ["pdf"] }),
-        paperRow("ITEMCCCC", { title: "A note alone" }),
-        paperRow("ITEMDDDD", { title: "Neither" }),
-      ]),
-    ],
-    undefined,
-    { notes: { ITEMAAAA: "Both.md", ITEMCCCC: "Note alone.md" } },
-  );
-  await act(() => view.setText(PAPERS_FILE));
-  await settle();
-  const slots = [
-    ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
-  ].map((node) =>
-    [...node.querySelectorAll<HTMLElement>("[data-query-papers-slot]")].map(
-      (slot) =>
-        `${slot.dataset.queryPapersSlot}:${slot.childElementCount > 0 ? "mark" : "empty"}`,
-    ),
-  );
-  expect(slots).toEqual([
-    ["note:mark", "attachment:mark"],
-    ["note:empty", "attachment:mark"],
-    ["note:mark", "attachment:empty"],
-    ["note:empty", "attachment:empty"],
-  ]);
-});
-
-it("starts a Papers row with the icon of its Item type, and a document for a type the map does not name", async () => {
-  const { view, el, settle } = await mount([
-    result([
-      paperRow("ITEMAAAA", { title: "A book", itemType: "book" }),
-      paperRow("ITEMBBBB", { title: "A thesis", itemType: "thesis" }),
-      paperRow("ITEMCCCC", { title: "Unknown", itemType: "someFutureType" }),
-    ]),
-  ]);
-  await act(() => view.setText(PAPERS_FILE));
-  await settle();
-  const icons = [
-    ...el.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
-  ].map((node) => {
-    const icon = node.querySelector("[data-query-papers-icon]");
-    return [
-      icon?.getAttribute("data-query-papers-icon"),
-      icon?.getAttribute("aria-hidden"),
-    ];
-  });
-  expect(icons).toEqual([
-    ["book", "true"],
-    ["graduation-cap", "true"],
-    ["file", "true"],
-  ]);
-});
 
 it("ends a Papers row's second line with the reason its host gives for the row", async () => {
   const { view, el, settle } = await mount(

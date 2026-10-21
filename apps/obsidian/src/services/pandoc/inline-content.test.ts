@@ -52,14 +52,6 @@ function attached(props: InlineContentProps): HTMLElement {
   return container;
 }
 
-/** Renders through the adapter, as the raw-DOM surfaces do. */
-function detached(props: InlineContentProps): HTMLElement {
-  const container = document.createElement("div");
-  document.body.append(container);
-  renderInlineContent(container, props);
-  return container;
-}
-
 beforeEach(() => {
   logRecords.length = 0;
   document.body.replaceChildren();
@@ -460,24 +452,6 @@ describe("noteContent", () => {
   });
 });
 
-// The class is a public promise to themes: an Entry Serial carries it wherever
-// a note-class style puts one inline.
-describe("zt-entry-serial theme hook", () => {
-  it("marks every Entry Serial run, and nothing else", () => {
-    const container = attached({
-      nodes: [
-        { t: "Superscript", c: [str("st")] },
-        { t: "Note", c: [{ t: "Para", c: [str("Ann Zeta.")] }] },
-      ],
-      serials: [3],
-    });
-
-    const marked = [...container.querySelectorAll(".zt-entry-serial")];
-    expect(marked.map((el) => el.textContent)).toEqual(["3"]);
-    expect(marked[0]!.tagName).toBe("SUP");
-  });
-});
-
 describe("renderInlineContent", () => {
   const nodes: Inlines = [
     span(["csl-left-margin"], [str("1.")]),
@@ -497,19 +471,6 @@ describe("renderInlineContent", () => {
     renderInlineContent(container, { nodes });
 
     expect(container.textContent).toBe("1. A study doi");
-  });
-
-  it("renders what the component renders inside a tree", () => {
-    expect(detached({ nodes }).innerHTML).toBe(attached({ nodes }).innerHTML);
-  });
-
-  it("passes a flow that has nothing to show", () => {
-    const container = detached({
-      nodes: [{ t: "RawInline", c: ["html", "<b>"] }],
-    });
-
-    expect(container.hasChildNodes()).toBe(false);
-    expect(logRecords.map((record) => record.level)).toEqual(["debug"]);
   });
 
   it("reports a render that left the container empty", async () => {

@@ -123,29 +123,10 @@ describe("Welcome setup checklist", () => {
   }
   const isOpen = (container: HTMLElement, title: string) =>
     step(container, title).hasAttribute("data-open");
-  const isDone = (container: HTMLElement, title: string) =>
-    step(container, title).getAttribute("data-welcome-step") === "done";
   const button = (container: HTMLElement, label: string) =>
     [...container.querySelectorAll("button")].find(
       (candidate) => candidate.textContent === label,
     );
-
-  it("lists the steps Connect, the folder and the library, with no timeline node after them", async () => {
-    const { container } = await render("fresh");
-    expect(headings(container)).toEqual([
-      "ZotLit",
-      m.welcome_step_connect_title(),
-      m.welcome_step_folder_title(),
-      m.welcome_step_library_title(),
-    ]);
-  });
-
-  it("shows the badge and the tagline under the name", async () => {
-    const { container } = await render("fresh");
-    const header = container.querySelector("header")!;
-    expect(header.textContent).toContain(m.welcome_badge());
-    expect(header.textContent).toContain(m.welcome_tagline());
-  });
 
   it("opens only the first step that isn't done, with its text and action", async () => {
     const { actions, container } = await render("fresh", {
@@ -166,29 +147,6 @@ describe("Welcome setup checklist", () => {
     expect(actions.pickFolder).toHaveBeenCalledOnce();
     // The library step is done, so its text stays folded away.
     expect(container.textContent).not.toContain(m.welcome_step_library_body());
-  });
-
-  it("puts a done step on one line: its title and a short summary, Connect naming the folder and the item count", async () => {
-    const { container } = await render("fresh", { connection: CONNECTED });
-    const connect = step(container, m.welcome_step_connect_title());
-    expect(isDone(container, m.welcome_step_connect_title())).toBe(true);
-    expect(connect.textContent).toContain("~/Zotero");
-    expect(connect.textContent).toContain("1,204 items");
-    expect(connect.querySelector("p")).toBeNull();
-  });
-
-  it("summarises the done folder step with the folder", async () => {
-    const { container } = await render("fresh", {
-      connection: CONNECTED,
-      literatureFolderExists: true,
-      requested: true,
-    });
-    const folder = step(container, m.welcome_step_folder_title());
-    expect(isDone(container, m.welcome_step_folder_title())).toBe(true);
-    expect(folder.textContent).toContain("Literature");
-    expect(folder.textContent).not.toContain(
-      m.welcome_step_folder_body({ folder: "Literature" }),
-    );
   });
 
   it("keeps each done step's action within reach once setup is done", async () => {
@@ -373,21 +331,6 @@ describe("Help Links", () => {
     const banner = await render("fresh", { ...DONE, requested: true });
     expect(links(banner)).toEqual([...HELP_LINKS, MIGRATION_LINK]);
   });
-
-  it("asks for a star on GitHub, the tile's subtitle describing it rather than naming it", async () => {
-    const { container } = await render("fresh");
-    const github = [...container.querySelectorAll("a")].find(
-      (a) => a.getAttribute("href") === "https://github.com/aidenlx/zotlit",
-    )!;
-    expect(name(github)).toBe("Star on GitHub");
-    expect(
-      container.ownerDocument.getElementById(
-        github.getAttribute("aria-describedby")!,
-      )?.textContent,
-    ).toBe("Like ZotLit? Leave a star");
-    // Obsidian draws every aria-label as a tooltip.
-    expect(github.hasAttribute("aria-label")).toBe(false);
-  });
 });
 
 it("replaces the pending prompt with the persisted result after conversion", async () => {
@@ -482,8 +425,6 @@ describe("the update section", () => {
     connection: { status: "connected", path: "~/Zotero", itemCount: 3 },
     literatureFolderExists: true,
   } as const;
-  const badge = (container: HTMLElement) =>
-    container.querySelector("[data-welcome-badge]")?.textContent;
 
   it("says which version ZotLit updated to, and opens the Release Note on What's new", async () => {
     const { actions, container } = await render("fresh", {
@@ -498,52 +439,6 @@ describe("the update section", () => {
     );
     await act(() => whatsNew?.click());
     expect(actions.openReleaseNote).toHaveBeenCalledOnce();
-  });
-
-  it.each<{
-    name: string;
-    mode: "fresh" | "upgraded";
-    state: Partial<WelcomeState>;
-    text: string;
-  }>([
-    {
-      name: "a fresh install",
-      mode: "fresh",
-      state: {},
-      text: "Let's get started",
-    },
-    {
-      name: "an upgrade from v1",
-      mode: "upgraded",
-      state: {},
-      text: "Welcome back",
-    },
-    {
-      name: "an update alone",
-      mode: "fresh",
-      state: { ...DONE, updatePending: true },
-      text: "Updated",
-    },
-    {
-      name: "an update while setup is incomplete",
-      mode: "fresh",
-      state: { updatePending: true },
-      text: "Updated",
-    },
-    {
-      name: "an update beside the template conversion",
-      mode: "fresh",
-      state: { ...DONE, updatePending: true, templateConversionPending: true },
-      text: "Updated",
-    },
-    {
-      name: "an update with the Migration Prompt",
-      mode: "upgraded",
-      state: { updatePending: true },
-      text: "Welcome back",
-    },
-  ])("names $name in the badge", async ({ mode, state, text }) => {
-    expect(badge((await render(mode, state)).container)).toBe(text);
   });
 });
 

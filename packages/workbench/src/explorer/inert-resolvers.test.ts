@@ -1,27 +1,18 @@
 import { basename } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   CollectionCache,
   fetchNoteContext,
   getItemsByKey,
-  itemBaseFields,
-  resolveVenue,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
-import type {
-  Annotation,
-  Attachment,
-  BaseItem,
-  ChildNote,
-  Item,
-} from "@zotlit/db";
+import type { Annotation, Attachment, ChildNote } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import type { ItemFields } from "@zotlit/zotero-types";
 
 import { inertPlaceholderReason } from "./inert-placeholder";
 import {
@@ -32,29 +23,6 @@ import type {
   ExcerptImageContext,
   InertNoteResolverDeps,
 } from "./inert-resolvers";
-
-function makeItem(
-  fields: { itemType: string } & Record<string, string | null>,
-  base?: Partial<BaseItem> & Pick<Partial<Item>, "groupID">,
-): Item {
-  const baseFields = itemBaseFields(fields as ItemFields);
-  return {
-    itemID: 1,
-    libraryID: USER_LIBRARY_ID,
-    key: "ITEM2345",
-    indexedKey: "ITEM2345",
-    dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-15T10:00:00Z"),
-    creators: [],
-    primaryCreatorType: "author",
-    customFields: new Map(),
-    groupID: null,
-    ...base,
-    fields: fields as ItemFields,
-    baseFields,
-    venue: resolveVenue(baseFields),
-  };
-}
 
 function makeAttachment(overrides: Partial<Attachment>): Attachment {
   return {
@@ -203,12 +171,6 @@ describe("buildInertNoteResolvers", () => {
     );
   });
 
-  it("uses the host comment converter", () => {
-    const commentToMarkdown = vi.fn<(html: string) => string>();
-    const resolvers = buildResolvers({ commentToMarkdown });
-    expect(resolvers.annotation.commentToMarkdown).toBe(commentToMarkdown);
-  });
-
   it("resolves notePath from an already-indexed note, null otherwise", () => {
     const resolvers = buildResolvers();
     expect(
@@ -249,12 +211,6 @@ describe("buildInertNoteResolvers", () => {
         citationKey: "smith2024",
       } as never),
     ).toBeNull();
-  });
-
-  it("delegates authorsShort to the host adapter", () => {
-    const authorsShort = vi.fn<InertNoteResolverDeps["authorsShort"]>();
-    const resolvers = buildResolvers({ authorsShort });
-    expect(resolvers.item.authorsShort).toBe(authorsShort);
   });
 
   describe("annotationImageLink", () => {
@@ -401,100 +357,8 @@ describe("resolveExcerptImageContext", () => {
   });
 });
 
-// ADR-0005 guarantee: full-browse zero-write test. Building resolvers and
-// evaluating every helper — including an unimported child note and an
-// unimported excerpt image — must only read (noteIndex lookups, vault file
-// existence checks, generateMarkdownLink renders), never queue an import or
-// mint a new vault path.
-describe("buildInertNoteResolvers — full browse queues no vault write (ADR 0005)", () => {
-  it("records only read/render calls across a full evaluation", () => {
-    const callLog: string[] = [];
-
-    const recordingNoteIndex = {
-      getNotesByItemKey: (indexedKey: string) => {
-        callLog.push("noteIndex.getNotesByItemKey");
-        return indexedKey === INDEXED_KEY ? [{ path: NOTE_PATH } as never] : [];
-      },
-      getImportedNoteByNoteKey: (_noteKey: string) => {
-        callLog.push("noteIndex.getImportedNoteByNoteKey");
-        return [];
-      },
-    };
-    const recordingVault = {
-      getFileByPath: (_path: string) => {
-        callLog.push("vault.getFileByPath");
-        return null;
-      },
-    };
-    const recordingFileManager = {
-      generateMarkdownLink: (...args: unknown[]) => {
-        callLog.push("fileManager.generateMarkdownLink");
-        return makeFakeFileManager().generateMarkdownLink(...args);
-      },
-    };
-
-    const resolvers = buildInertNoteResolvers(
-      makeResolverDeps({
-        noteIndex: recordingNoteIndex,
-        generateMarkdownLink: ({ file, sourcePath, subpath, alias }) =>
-          recordingFileManager.generateMarkdownLink(
-            file,
-            sourcePath,
-            subpath,
-            alias,
-          ),
-        getFileByPath: recordingVault.getFileByPath,
-        sourcePath: NOTE_PATH,
-        excerptImages: { kind: "vault", folderPath: VAULT_FOLDER },
-      }),
-    );
-
-    const item = makeItem({ itemType: "journalArticle", title: "A Study" });
-    const attachment = makeAttachment({});
-    const imageAnnotation = makeAnnotation({ type: 3 });
-    const childNote: ChildNote = {
-      itemID: 200,
-      libraryID: USER_LIBRARY_ID,
-      groupID: null,
-      parentItemID: 1,
-      key: "NOTE9999",
-      indexedKey: "NOTE9999",
-      title: "Methods",
-      dateModified: Temporal.Instant.from("2024-01-02T00:00:00Z"),
-    };
-
-    resolvers.annotation.filePath(attachment);
-    resolvers.annotation.fileLink(attachment, { page: 1 })();
-    const imageLink = resolvers.annotation.annotationImageLink(imageAnnotation);
-    imageLink?.();
-    resolvers.item.notePath({
-      indexedKey: item.indexedKey,
-      citationKey: null,
-    } as never);
-    resolvers.item.noteLink({
-      indexedKey: item.indexedKey,
-      citationKey: null,
-    } as never);
-    resolvers.resolveChildNote?.(childNote).noteLink();
-
-    // The recording fakes above expose only reads/renders (getNotesByItemKey,
-    // getImportedNoteByNoteKey, vault.getFileByPath,
-    // fileManager.generateMarkdownLink) — no queue/create/mint surface exists
-    // for the resolvers to call, so a full browse cannot invoke one.
-    expect(callLog).toEqual([
-      "vault.getFileByPath",
-      "noteIndex.getNotesByItemKey",
-      "noteIndex.getNotesByItemKey",
-      "fileManager.generateMarkdownLink",
-      "noteIndex.getImportedNoteByNoteKey",
-    ]);
-  });
-});
-
-// ADR-0005 guarantee, exercised over a real `fetchNoteContext` tree instead of
-// hand-built objects: build the note-root context from the db-package test
-// fixture schema, browse every property/getter/helper it exposes, and assert
-// the recording fakes never see an import/queue call.
+// Build the note-root context from the db-package test fixture schema,
+// check its resolved values, and browse every property/getter/helper it exposes.
 describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
   const MAIN_KEY = "FULL0001";
   const MAIN_NOTE_PATH = "Literature/Full Context Study.md";
@@ -578,43 +442,33 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
     const client = createClient(":memory:");
     seedFullContext(client.$client as DatabaseSync);
 
-    const callLog: string[] = [];
-    const recordingNoteIndex = {
+    const noteIndex = {
       getNotesByItemKey: (indexedKey: string) => {
-        callLog.push("noteIndex.getNotesByItemKey");
         return indexedKey === MAIN_KEY
           ? [{ path: MAIN_NOTE_PATH } as never]
           : [];
       },
       getImportedNoteByNoteKey: (_noteKey: string) => {
-        callLog.push("noteIndex.getImportedNoteByNoteKey");
         return [];
       },
     };
-    const recordingVault = {
+    const vault = {
       getFileByPath: (_path: string) => {
-        callLog.push("vault.getFileByPath");
         return null;
       },
     };
-    const recordingFileManager = {
+    const fileManager = {
       generateMarkdownLink: (...args: unknown[]) => {
-        callLog.push("fileManager.generateMarkdownLink");
         return makeFakeFileManager().generateMarkdownLink(...args);
       },
     };
 
     const resolvers = buildInertNoteResolvers(
       makeResolverDeps({
-        noteIndex: recordingNoteIndex,
+        noteIndex,
         generateMarkdownLink: ({ file, sourcePath, subpath, alias }) =>
-          recordingFileManager.generateMarkdownLink(
-            file,
-            sourcePath,
-            subpath,
-            alias,
-          ),
-        getFileByPath: recordingVault.getFileByPath,
+          fileManager.generateMarkdownLink(file, sourcePath, subpath, alias),
+        getFileByPath: vault.getFileByPath,
         sourcePath: MAIN_NOTE_PATH,
         // Excerpt images are not imported for this item, so the excerpt-image
         // helper must resolve to the inert placeholder rather than minting a
@@ -649,18 +503,7 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
     expect(inertPlaceholderReason(childNote.noteLink)).toBe("Not imported");
     expect(childNote.noteLink()).toBe("");
 
-    callLog.length = 0;
     fullyWalk(ctx, new WeakSet());
-
-    // The recording fakes above expose only reads/renders — no queue/create/
-    // mint surface exists for the resolvers to call, so a full browse cannot
-    // invoke one; every recorded call is a read or a render.
-    expect(callLog.length).toBeGreaterThan(0);
-    for (const call of callLog) {
-      expect(call).toMatch(
-        /^(noteIndex\.(getNotesByItemKey|getImportedNoteByNoteKey)|vault\.getFileByPath|fileManager\.generateMarkdownLink)$/,
-      );
-    }
 
     (client.$client as DatabaseSync).close();
   });

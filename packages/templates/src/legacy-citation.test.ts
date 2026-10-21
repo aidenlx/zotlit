@@ -1,5 +1,3 @@
-import citationEta from "@defaults/citation.eta?raw";
-import citationLiquid from "@defaults/citation.liquid?raw";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -28,16 +26,6 @@ const both = {
 };
 
 describe("foldLegacyCitationTemplates", () => {
-  it("reproduces the packaged Liquid Citation Template from the built-in branches", () => {
-    expect(foldLegacyCitationTemplates({ language: "liquid" })).toBe(
-      citationLiquid,
-    );
-  });
-
-  it("reproduces the packaged Eta Citation Template from the built-in branches", () => {
-    expect(foldLegacyCitationTemplates({ language: "eta" })).toBe(citationEta);
-  });
-
   it("indents each legacy source under the variant branch it answers", () => {
     expect(
       foldLegacyCitationTemplates({

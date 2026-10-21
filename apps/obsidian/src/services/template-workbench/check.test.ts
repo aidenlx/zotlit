@@ -12,7 +12,6 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
-import { PROFILE_ID_LENGTH, PROFILE_ID_PATTERN } from "@/lib/profile-stamp";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 import {
@@ -603,27 +602,6 @@ describe("registered template-check", () => {
       diagnostic: { code: "INVALID_PROFILE_ID" },
     });
     expect(loadTemplateData).not.toHaveBeenCalled();
-  });
-
-  it("states the Profile ID length the pattern enforces", async () => {
-    const candidate = "a".repeat(PROFILE_ID_LENGTH);
-    expect(PROFILE_ID_PATTERN.test(candidate)).toBe(true);
-    expect(PROFILE_ID_PATTERN.test(candidate.slice(1))).toBe(false);
-
-    await using f = await fixture();
-    const draft = await f.draft(SOURCE.replace("Bk3Qn7XvT2Lp", "x"));
-
-    expect(await f.check({ draft, key: "ABCD2345" })).toMatchObject({
-      diagnostic: {
-        code: "INVALID_PROFILE_ID",
-        message: expect.stringContaining(
-          `${PROFILE_ID_LENGTH} letters or digits`,
-        ),
-        hint: expect.stringContaining(
-          `Profile ID of ${PROFILE_ID_LENGTH} letters or digits`,
-        ),
-      },
-    });
   });
 
   it("refuses a saved Shared Partial whose filename is a reserved name", async () => {

@@ -19,7 +19,7 @@ pnpm release ── pnpm verify --release ── release branch ── PR ──
                                             tag exists? stop     pnpm verify --release
 ```
 
-`pnpm verify` checks format, the regenerated contract artifacts and template data page, lint, typecheck, snapshot size, and tests. Without a flag it scopes typecheck and tests with Turbo `--affected`, measured from the nearer of `origin/next` and `origin/main`. `--release` checks every package and adds `pnpm review`.
+`pnpm verify` checks format, the regenerated contract artifacts and template data page, lint, typecheck, snapshot size, and tests. Without a flag it scopes typecheck and tests with Turbo `--affected`, measured from the nearer of `origin/next` and `origin/main`. `--release` checks every package and adds `pnpm review`. On the desktop it also runs the full End-to-end Run and `pnpm e2e:worker`, and an unreachable Obsidian fails it. The hosted runner has no desktop, so `release.yml` skips that step and the End-to-end Run gates only the local `pnpm release`.
 
 `release.yml` runs on every push to `main` and `next`. Its `plan` job stops in seconds when both app versions already have releases. For a new version, the `verify` job runs `pnpm verify --release` on the merged tree before either publish job starts. That job is the check that a push which skips its hooks cannot skip, and it checks the tree that ships, which includes whatever the target line gained after the local run.
 
@@ -34,6 +34,7 @@ The local gate also has more capacity than the hosted runner. The runner had 4 v
 - A failed `verify` job leaves a version commit on its line with no release. The recovery is one step: land the fix, then run `release.yml` with `workflow_dispatch`. The tag gate makes the re-run publish only what is missing.
 - `release.ts` gates before the version commit exists, so the release PR needs no checks. The script offers to merge the PR as soon as it opens it.
 - Nothing on GitHub checks a feature PR. `git push --no-verify` skips the gate. Agents keep the hook on.
+- Hooks are the only gate before release, so a hook that fails on machine load teaches its bypass. The worker-responsiveness timing check left pre-commit for the release gate, where the machine is quiet.
 - The handoff tips for pull-request CI do not apply here: cancelling superseded runs and skipping drafts both save work that no longer runs. GitHub Actions parallel steps could make the `verify` job faster. That job runs once per release, so it stays sequential until its time matters.
 
 ## Considered Options

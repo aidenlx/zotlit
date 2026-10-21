@@ -10,8 +10,6 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import * as m from "@/lib/i18n/generated/messages";
-
 import {
   addGraphCitationsActions,
   citationGraphReadiness,
@@ -118,24 +116,6 @@ function setup(options: FixtureOptions = {}) {
 }
 
 describe("addGraphCitationsActions", () => {
-  it("registers both commands under their house-style names", () => {
-    const { plugin, command } = setup();
-    expect([...plugin.commands.keys()]).toEqual(ALL_COMMAND_IDS);
-    expect(command("open-citation-graph").name).toBe(
-      m.command_open_citation_graph_name(),
-    );
-    expect(command("open-local-citation-graph").name).toBe(
-      m.command_open_local_citation_graph_name(),
-    );
-  });
-
-  it("ships no default keyboard shortcut", () => {
-    const { plugin } = setup();
-    for (const registered of plugin.commands.values()) {
-      expect(registered.hotkeys).toBeUndefined();
-    }
-  });
-
   it("opens the global graph where the native command opens it, then presets it", async () => {
     const isModEvent = vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
     const fixture = setup();

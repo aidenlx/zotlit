@@ -26,7 +26,14 @@ export async function isObsidianReachable(
     [scriptPath(workspaceRoot), "status"],
     { windowsHide: true },
   ).catch(() => undefined);
-  if (!result?.stdout.trim().startsWith("ready ")) return false;
+  if (!result?.stdout.trim().startsWith("ready ")) {
+    if (process.env.ZOTLIT_E2E_REQUIRED === "1") {
+      throw new Error(
+        "End-to-end Run requires a running desktop Obsidian with the CLI enabled. Open a host vault and check with: node packages/scripts/scripts/obsidian-cli.ts version",
+      );
+    }
+    return false;
+  }
   const version = (await cli(["version"])).trim();
   if (version !== OBSIDIAN_VERSION) {
     throw new Error(

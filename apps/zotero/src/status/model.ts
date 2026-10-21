@@ -104,31 +104,26 @@ export function databaseStatusMenuModel(
   };
 }
 
-export function manualOutcomeMessages(outcome: VisibleManualOutcome): {
-  title:
-    | "zotlit-database-write-done-title"
-    | "zotlit-database-write-in-use-title"
-    | "zotlit-database-write-failed-title";
-  message:
-    | "zotlit-database-write-done-message"
-    | "zotlit-database-write-in-use-message"
-    | "zotlit-database-write-failed-message";
-} {
-  switch (outcome) {
-    case "done":
-      return {
-        title: "zotlit-database-write-done-title",
-        message: "zotlit-database-write-done-message",
-      };
-    case "in-use":
-      return {
-        title: "zotlit-database-write-in-use-title",
-        message: "zotlit-database-write-in-use-message",
-      };
-    case "failed":
-      return {
-        title: "zotlit-database-write-failed-title",
-        message: "zotlit-database-write-failed-message",
-      };
-  }
+const MANUAL_OUTCOME_MESSAGES = {
+  done: {
+    title: "zotlit-database-write-done-title",
+    message: "zotlit-database-write-done-message",
+  },
+  "in-use": {
+    title: "zotlit-database-write-in-use-title",
+    message: "zotlit-database-write-in-use-message",
+  },
+  failed: {
+    title: "zotlit-database-write-failed-title",
+    message: "zotlit-database-write-failed-message",
+  },
+} satisfies {
+  [Outcome in VisibleManualOutcome]: {
+    title: `zotlit-database-write-${Outcome}-title`;
+    message: `zotlit-database-write-${Outcome}-message`;
+  };
+};
+
+export function manualOutcomeMessages(outcome: VisibleManualOutcome) {
+  return MANUAL_OUTCOME_MESSAGES[outcome];
 }
