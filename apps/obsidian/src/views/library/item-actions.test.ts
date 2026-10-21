@@ -53,6 +53,9 @@ function workspaceFixture() {
     // value.
     iterateAllLeaves: (callback: (leaf: WorkspaceLeaf) => unknown) =>
       open.some((leaf) => callback(leaf)),
+    // The row actions here change no tab while an insert is held.
+    on: () => ({}),
+    offref: () => {},
   };
   /** The researcher makes `tab` the active tab. */
   const activate = (tab: Tab) => {
