@@ -27,26 +27,49 @@ function isBlockText(text: string): boolean {
  */
 const CLOSERS = new Set(".,;:!?)]}。，、；：！？）】」』》");
 
+/** The characters inserted text may follow directly: it opens what it is in. */
+const OPENERS = new Set("([{“‘\"'「『（【");
+
 /**
- * Inline text with the space it needs after it, and where the cursor goes in
- * it, as an offset from its start. One space follows the text, so neither the
- * word after it nor what the researcher types next is glued to it: a space
- * already there is reused, and the cursor rests past the space either way.
- * Closing punctuation after the range, or text that ends in a space, needs
- * none.
+ * The space inserted text needs before it: one where it would stick to a word
+ * or punctuation (`source. “a quote”`). A line start (`previous` is empty),
+ * whitespace, or an opening bracket or quote needs none, and neither does a
+ * trigger the researcher typed there (`previous` is `null`).
+ */
+function leadAfter(previous: string | null): string {
+  return previous !== null && previous.trim() !== "" && !OPENERS.has(previous)
+    ? " "
+    : "";
+}
+
+/**
+ * Inline text with the spaces it needs around it, and where the cursor goes
+ * in it, as an offset from its start.
+ *
+ * After it: one space, so neither the word after it nor what the researcher
+ * types next is glued to it. A space already there is reused, and the cursor
+ * rests past the space either way. Closing punctuation after the range, or
+ * text that ends in a space, needs none.
+ *
+ * Before it: the space {@link leadAfter} gives, and none for text that starts
+ * with a space.
  */
 function placeInline(
   text: string,
-  next: string,
+  around: { previous: string | null; next: string },
 ): { insert: string; cursor: number } {
-  if (/\s$/u.test(text)) return { insert: text, cursor: text.length };
-  if (next === " ") return { insert: text, cursor: text.length + 1 };
-  const insert = CLOSERS.has(next) ? text : `${text} `;
+  const lead = /^\s/u.test(text) ? "" : leadAfter(around.previous);
+  if (/\s$/u.test(text)) {
+    const insert = `${lead}${text}`;
+    return { insert, cursor: insert.length };
+  }
+  if (around.next === " ") {
+    const insert = `${lead}${text}`;
+    return { insert, cursor: insert.length + 1 };
+  }
+  const insert = `${lead}${text}${CLOSERS.has(around.next) ? "" : " "}`;
   return { insert, cursor: insert.length };
 }
-
-/** The characters a citation may follow directly: it opens what it is in. */
-const OPENERS = new Set("([{“‘\"'「『（【");
 
 /**
  * Whether `char` closes a bracketed citation: where a placed citation ends
@@ -65,20 +88,14 @@ export function isCitationCloser(char: string | undefined): boolean {
  * A bracketed citation ends at its closing bracket instead, which no trigger
  * matches, so punctuation typed next follows it directly: `[@key].`
  *
- * Before it: one space where it would stick to a word or punctuation
- * (`source. [@key]`). A line start, whitespace, or an opening bracket or
- * quote needs none, and neither does a trigger the researcher typed there.
+ * Before it: the space {@link leadAfter} gives (`source. [@key]`), as inline
+ * text gets.
  */
 function placeCitation(
   citation: string,
   around: { previous: string | null; next: string },
 ): { insert: string; cursor: number } {
-  const lead =
-    around.previous !== null &&
-    around.previous.trim() !== "" &&
-    !OPENERS.has(around.previous)
-      ? " "
-      : "";
+  const lead = leadAfter(around.previous);
   if (isCitationCloser(citation.at(-1))) {
     const insert = `${lead}${citation}`;
     return { insert, cursor: insert.length };
@@ -91,12 +108,13 @@ function placeCitation(
 
 /**
  * What the inserted text is, which decides how it is placed: an annotation
- * or quote by default, or a citation. A citation over a trigger the
+ * or quote by default, or a citation. One-line text over a trigger the
  * researcher typed (`replacesTrigger`) takes no space before it.
  */
-export type Placement =
-  | { kind?: "annotation" }
-  | { kind: "citation"; replacesTrigger?: boolean };
+export interface Placement {
+  kind?: "annotation" | "citation";
+  replacesTrigger?: boolean;
+}
 
 /**
  * The text that lands over `range` of `doc`, and where the cursor goes in it,
@@ -115,17 +133,16 @@ export function placeInsertion(
 ): { insert: string; cursor: number } {
   const { doc, range } = options;
   const { from, to } = range;
-  const next = doc.sliceString(to, to + 1);
-  if (options.kind === "citation")
-    return placeCitation(text, {
-      previous: options.replacesTrigger
-        ? null
-        : from === doc.lineAt(from).from
-          ? ""
-          : doc.sliceString(from - 1, from),
-      next,
-    });
-  if (!isBlockText(text)) return placeInline(trimLineBreaks(text), next);
+  const around = {
+    previous: options.replacesTrigger
+      ? null
+      : from === doc.lineAt(from).from
+        ? ""
+        : doc.sliceString(from - 1, from),
+    next: doc.sliceString(to, to + 1),
+  };
+  if (options.kind === "citation") return placeCitation(text, around);
+  if (!isBlockText(text)) return placeInline(trimLineBreaks(text), around);
   const block = trimLineBreaks(text);
   const isBlank = (line: number) =>
     line < 1 || line > doc.lines || doc.line(line).text.trim() === "";

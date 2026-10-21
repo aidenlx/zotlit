@@ -79,6 +79,8 @@ export async function insertAnnotation(
     snapshot: { source: list.source, sourceScope },
     target: held,
     notePath: file.path,
+    // The researcher typed the trigger where the text goes.
+    placement: { replacesTrigger: true },
   });
   if (landed) deps.useLedger.record(hit.itemKey, "cited");
   return { kind: "settled" };

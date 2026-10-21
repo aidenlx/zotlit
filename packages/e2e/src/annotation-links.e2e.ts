@@ -784,21 +784,28 @@ describe.skipIf(!reachable)("Annotation links", () => {
   }, 120000);
 
   // A one-line template quotes inside a sentence: the insert stands one
-  // space apart from the word after it, runs straight into closing
-  // punctuation, and leaves a space at a line end, where typing goes on.
-  const PLACEMENTS = [
+  // space apart from the words around it, runs straight into closing
+  // punctuation, and leaves a space at a line end, where typing goes on. A
+  // trigger typed straight after a word is where the researcher wanted it, so
+  // the Annotation Suggester adds no space before it (`suggested`).
+  const PLACEMENTS: {
+    where: string;
+    line: string;
+    ch: number;
+    then?: string;
+    expected: string;
+    suggested?: string;
+  }[] = [
     {
       where: "before a word",
       line: "As argued here",
       ch: 10,
-      then: undefined,
       expected: `As argued ${inlineOf(FIRST_PAGE)} here`,
     },
     {
       where: "before closing punctuation",
       line: "As argued .",
       ch: 10,
-      then: undefined,
       expected: `As argued ${inlineOf(FIRST_PAGE)}.`,
     },
     {
@@ -808,7 +815,15 @@ describe.skipIf(!reachable)("Annotation links", () => {
       then: "next",
       expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
     },
-  ] as const;
+    {
+      where: "right after a word",
+      line: "As argued",
+      ch: 9,
+      then: "next",
+      expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
+      suggested: `As argued${inlineOf(FIRST_PAGE)} next`,
+    },
+  ];
 
   it.each(PLACEMENTS)(
     "places a one-line Annotation from its card $where",
@@ -827,14 +842,14 @@ describe.skipIf(!reachable)("Annotation links", () => {
 
   it.each(PLACEMENTS)(
     "places a one-line Annotation from the Annotation Suggester $where",
-    async ({ line, ch, then, expected }) => {
+    async ({ line, ch, then, expected, suggested = expected }) => {
       const outcome = await searchAndInsert(
         "[>MESSAGE tag:visualization color:blue",
         FIRST_PAGE.text!,
         { line, ch, inline: true, then },
       );
 
-      expect(outcome.text).toBe(`# Draft\n\n${expected}`);
+      expect(outcome.text).toBe(`# Draft\n\n${suggested}`);
     },
     120000,
   );
