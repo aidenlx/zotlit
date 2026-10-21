@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   AttachmentLookup,
@@ -69,6 +69,8 @@ const ROWS = [ROUGIER, ROUGIER_COPY, STORED, EPUB, GROUPED];
 function attachments(rows: readonly Row[], { pending = false } = {}) {
   let indexed = !pending;
   const landed = Promise.withResolvers<void>();
+  // A wait nobody ends must not fail the run once a test has moved on.
+  landed.promise.catch(() => {});
   if (indexed) landed.resolve();
   const resolutionOf = (row: Row): AttachmentResolution => ({
     kind: "resolved",
@@ -113,6 +115,10 @@ function attachments(rows: readonly Row[], { pending = false } = {}) {
     index() {
       indexed = true;
       landed.resolve();
+    },
+    /** The first index fails, and the index stays unbuilt. */
+    fail() {
+      landed.reject(new Error("The Zotero database cannot be read"));
     },
   };
 }
@@ -295,6 +301,46 @@ describe("open", () => {
     await expect(outcome).resolves.toEqual({ kind: "reader" });
     expect(opened).toHaveLength(1);
     expect(handed).toEqual([]);
+  });
+
+  // An index that never comes must not swallow the click: past the wait, the
+  // target opens in Zotero, as it did while the index was pending.
+  it("opens in Zotero once the first index outlasts the wait", async () => {
+    vi.useFakeTimers();
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() => {
+      vi.useRealTimers();
+    });
+    const { opener, opened, handed } = setup({ pending: true });
+
+    const outcome = opener.open(
+      { kind: "attachment", attachmentKey: "RGRPDF24" },
+      false,
+    );
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(handed).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(outcome).resolves.toEqual({
+      kind: "zotero",
+      url: "zotero://open/library/items/RGRPDF24",
+    });
+    expect(opened).toEqual([]);
+    expect(handed).toEqual(["zotero://open/library/items/RGRPDF24"]);
+  });
+
+  it("opens in Zotero when the first index fails", async () => {
+    const { opener, opened, handed, resolver } = setup({ pending: true });
+
+    const outcome = opener.open(ANNOTATION, false);
+    resolver.fail();
+
+    await expect(outcome).resolves.toEqual({
+      kind: "zotero",
+      url: "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2",
+    });
+    expect(opened).toEqual([]);
+    expect(handed).toHaveLength(1);
   });
 
   it("opens nothing for a key that is no Indexed Key", async () => {

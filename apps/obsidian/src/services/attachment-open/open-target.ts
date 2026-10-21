@@ -85,14 +85,22 @@ export interface TargetOpenerDeps {
   vaultBasePath: string;
   /** @default process.platform */
   platform?: NodeJS.Platform;
+  /**
+   * How long a keyed open waits for the first Attachment index before it
+   * hands the target to Zotero.
+   *
+   * @default 5 seconds
+   */
+  indexWait?: Temporal.Duration;
 }
 
 export interface TargetOpener {
   /**
    * Open a target named by key. An Attachment that Obsidian's PDF view can
    * host, and whose file this device holds, opens there in `pane`; every other
-   * one opens in Zotero, which finds any Attachment by its key. Waits for the
-   * Attachment index while it is still being built.
+   * one opens in Zotero, which finds any Attachment by its key. Waits a
+   * bounded time for the Attachment index while it is still being built, and
+   * opens in Zotero once that wait ends or the index fails.
    */
   open(target: OpenTarget, pane: PaneType | boolean): Promise<OpenOutcome>;
   /**
@@ -117,6 +125,7 @@ export function createTargetOpener({
   native,
   vaultBasePath,
   platform = process.platform,
+  indexWait = Temporal.Duration.from({ seconds: 5 }),
 }: TargetOpenerDeps): TargetOpener {
   const openable = (
     file: { attachmentKey: string; absolutePath: string },
@@ -148,13 +157,23 @@ export function createTargetOpener({
     return { kind: "zotero", url };
   };
 
-  /** The index's answer for `attachmentKey`, waiting for the first index. */
+  /**
+   * The index's answer for `attachmentKey`, waiting a bounded time for the
+   * first index; still `pending` when that wait ends or the index fails.
+   */
   const lookup = async (attachmentKey: string): Promise<AttachmentLookup> => {
     const found = attachments.lookup(attachmentKey);
     if (found.kind !== "pending") return found;
     logger.debug("Target waits for the Attachment index", { attachmentKey });
     attachments.warm();
-    await attachments.indexed;
+    const waited = await indexedWithin(attachments.indexed, indexWait);
+    if (waited !== "indexed") {
+      logger.debug("Target gave up on the Attachment index", {
+        attachmentKey,
+        reason: waited,
+      });
+      return { kind: "pending" };
+    }
     return attachments.lookup(attachmentKey);
   };
 
@@ -269,6 +288,31 @@ export function createTargetOpener({
       return null;
     },
   };
+}
+
+/** Whether `indexed` settled within `wait`, failed, or outlasted it. */
+async function indexedWithin(
+  indexed: Promise<void>,
+  wait: Temporal.Duration,
+): Promise<"indexed" | "index-timeout" | "index-failed"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"index-timeout">((resolve) => {
+    timer = setTimeout(
+      () => resolve("index-timeout"),
+      wait.total("milliseconds"),
+    );
+  });
+  try {
+    return await Promise.race([
+      indexed.then(
+        () => "indexed" as const,
+        () => "index-failed" as const,
+      ),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
