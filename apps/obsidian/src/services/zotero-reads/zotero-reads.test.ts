@@ -356,20 +356,41 @@ describe("ZoteroReads operations", () => {
     expect(ctx.notes.map((n) => n.key)).toEqual(["NTE22345"]);
   });
 
-  it("ItemFacets returns the tags and collections NoteSource gives each item", async () => {
+  it("ItemFacets streams each item's own tags and collections in request order", async () => {
     const { open } = fixtureOpener();
-    const [facets, source] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.ItemFacets({ libraryID: 1, itemIDs: [1, 999] }),
-        reads.NoteSource({ itemID: 1 }),
-      ]),
+    const slices = await withReads(
+      open,
+      (reads) =>
+        Stream.runCollect(
+          reads.ItemFacets({
+            items: [
+              { itemID: 2, libraryID: 1 },
+              { itemID: 1, libraryID: 1 },
+              { itemID: 300, libraryID: 2 },
+              { itemID: 999, libraryID: 1 },
+            ],
+          }),
+        ),
+      { sliceSize: 2 },
     );
-    expect(facets.tagsByItemID.get(1)).toEqual(source!.tagsByItemID.get(1));
-    expect(facets.collectionsByItemID.get(1)).toEqual(
-      source!.collectionsByItemID.get(1),
-    );
-    expect(facets.tagsByItemID.get(999) ?? []).toEqual([]);
-    expect(facets.collectionsByItemID.get(999) ?? []).toEqual([]);
+    expect(
+      slices.map((slice) =>
+        slice.map(({ itemID, facets }) => ({
+          itemID,
+          tags: facets.tags.map(({ tag }) => tag.name),
+          collections: facets.collections.map(({ name }) => name),
+        })),
+      ),
+    ).toEqual([
+      [
+        { itemID: 2, tags: ["method"], collections: ["Reading"] },
+        { itemID: 1, tags: ["zt"], collections: ["Reading"] },
+      ],
+      [
+        { itemID: 300, tags: [], collections: [] },
+        { itemID: 999, tags: [], collections: [] },
+      ],
+    ]);
   });
 
   it("NoteSource takes the caller's username over the signed-in account", async () => {

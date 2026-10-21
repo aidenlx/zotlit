@@ -51,6 +51,49 @@ export interface NoteResolvers {
   resolveChildNote?: (note: ChildNote) => TemplateNoteLink;
 }
 
+/** An item's own tags and collections: what its note path renders from. */
+export interface ItemFacets {
+  readonly tags: readonly ItemTag[];
+  /** Plain records: a template build gives each its string coercion. */
+  readonly collections: readonly TemplateCollection[];
+}
+
+/**
+ * The {@link ItemFacets} of each of `items`, by itemID; an unknown item has
+ * none. Pass the memos a batch already holds, so a repeat item costs nothing.
+ */
+export function fetchItemFacets(
+  client: NodeDatabaseClient,
+  items: readonly Pick<Item, "itemID" | "libraryID">[],
+  memos: { tagMemo: TagMemo; collectionCache: CollectionCache },
+): Map<number, ItemFacets> {
+  const tags = resolveItemTagsByIDs(
+    client,
+    items.map(({ itemID }) => itemID),
+    memos.tagMemo,
+  );
+  const facets = new Map<number, ItemFacets>();
+  for (const [libraryID, members] of Map.groupBy(
+    items,
+    ({ libraryID }) => libraryID,
+  )) {
+    const collections = memos.collectionCache.byItemIDs(
+      client,
+      libraryID,
+      members.map(({ itemID }) => itemID),
+    );
+    for (const { itemID } of members)
+      facets.set(itemID, {
+        tags: tags.get(itemID) ?? [],
+        // Spread keeps the enumerable fields and drops the string coercion.
+        collections: (collections.get(itemID) ?? []).map((collection) => ({
+          ...collection,
+        })),
+      });
+  }
+  return facets;
+}
+
 /**
  * Every database row a Literature Note's `zt` root needs, as plain data: no
  * functions, and `Temporal.Instant` as the only class instance besides `Map`
@@ -128,27 +171,19 @@ export function fetchNoteSource(
     getRelatedKeysByItemID(client, item.itemID),
     { libraryID },
   );
-  const relatedItemIDs = relatedItems.map((related) => related.itemID);
-
-  const tagsByItemID = resolveItemTagsByIDs(
-    client,
-    [item.itemID, ...annotationIDs, ...relatedItemIDs],
-    tagMemo,
-  );
 
   // Collections resolve for the main item + related items only — annotations
   // are never collection members. Related items share the item's library.
+  const facets = fetchItemFacets(client, [item, ...relatedItems], {
+    tagMemo,
+    collectionCache,
+  });
+  const tagsByItemID = new Map([
+    ...resolveItemTagsByIDs(client, annotationIDs, tagMemo),
+    ...[...facets].map(([itemID, { tags }]) => [itemID, tags] as const),
+  ]);
   const collectionsByItemID = new Map(
-    [
-      ...collectionCache.byItemIDs(client, libraryID, [
-        item.itemID,
-        ...relatedItemIDs,
-      ]),
-    ].map(([itemID, collections]) => [
-      itemID,
-      // Spread keeps the enumerable fields and drops the string coercion.
-      collections.map((collection) => ({ ...collection })),
-    ]),
+    [...facets].map(([itemID, { collections }]) => [itemID, collections]),
   );
 
   // `zt.notes` lists eagerly; the import work it triggers stays lazy (queued on

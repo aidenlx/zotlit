@@ -11,6 +11,7 @@ import type {
 import { buildFilenameContext, toTemplateCollection } from "@zotlit/db";
 import type {
   Item,
+  ItemFacets,
   ItemTag,
   NoteResolvers,
   NoteSource,
@@ -119,23 +120,26 @@ interface NoteTarget {
   file: TFile;
 }
 
-/**
- * An item's own tags and collections, for its note filename, out of a read
- * that holds them by item: a {@link NoteSource}, or the facets of many items.
- */
-export function itemFacets(
-  source: Pick<NoteSource, "tagsByItemID" | "collectionsByItemID">,
-  itemID: number,
-): {
+/** An item's facets as its note filename reads them. */
+export function templateFacets(facets: ItemFacets): {
   itemTags: readonly ItemTag[];
   itemCollections: TemplateCollection[];
 } {
   return {
-    itemTags: source.tagsByItemID.get(itemID) ?? [],
-    itemCollections: (source.collectionsByItemID.get(itemID) ?? []).map(
-      toTemplateCollection,
-    ),
+    itemTags: facets.tags,
+    itemCollections: facets.collections.map(toTemplateCollection),
   };
+}
+
+/** The item's own tags and collections in `source`, for its note filename. */
+export function itemFacets(
+  source: NoteSource,
+): ReturnType<typeof templateFacets> {
+  const { itemID } = source.item;
+  return templateFacets({
+    tags: source.tagsByItemID.get(itemID) ?? [],
+    collections: source.collectionsByItemID.get(itemID) ?? [],
+  });
 }
 
 /**

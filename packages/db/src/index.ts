@@ -115,7 +115,6 @@ export {
   getAllTagNames,
   getLibraryTagNames,
   resolveItemTags,
-  resolveItemTagsByIDs,
   type TagMemo,
 } from "./queries/tags";
 export { getRelatedKeysByItemID } from "./queries/item-relations";
@@ -242,10 +241,12 @@ export {
   fetchAnnotationsTemplateData,
   fetchAttachmentSources,
   fetchNoteContext,
+  fetchItemFacets,
   fetchNoteSource,
   type AnnotationParent,
   type AnnotationResolvers,
   type AnnotationSources,
+  type ItemFacets,
   type NoteResolvers,
   type NoteSource,
 } from "./lib/context/note-context";

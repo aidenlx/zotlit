@@ -1,8 +1,6 @@
 // The one Profile whose Match holds for each Item. One Items query of ZotLit
-// Query reads up to a slice of Items at once and tests each Profile's Match as
-// a Formula, so a batch costs a query per slice rather than one per Item.
-import { chunk } from "@std/collections/chunk";
-
+// Query reads every Item of a batch and tests each Profile's Match as a
+// Formula; the query engine slices that work in the worker.
 import { formatIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
@@ -12,9 +10,6 @@ import type { QueryService } from "@/services/item-query/service";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 
 const logger = getLogger(["services", "profile-selection"]);
-
-/** Items one query tests; it bounds the filter text and the reply. */
-const ITEMS_PER_QUERY = 500;
 
 export type MatchSelection =
   | {
@@ -29,14 +24,15 @@ export type MatchSelection =
 
 type MatchItem = Pick<Item, "key" | "groupID">;
 
-/** The test of one Item against each filter. */
-type ItemMatches =
-  | {
-      kind: "result";
-      matched: readonly boolean[];
-      faults: readonly (Diagnostic | undefined)[];
-    }
-  | { kind: "missing" }
+/** Whether each filter holds for one Item, and each filter's Diagnostic. */
+interface ItemMatches {
+  matched: readonly boolean[];
+  faults: readonly (Diagnostic | undefined)[];
+}
+
+/** One query's test of many Items, by Indexed Key; a missing Item has none. */
+type BatchMatches =
+  | { kind: "result"; byKey: ReadonlyMap<string, ItemMatches> }
   | { kind: "failed"; diagnostic?: Diagnostic };
 
 /**
@@ -54,32 +50,41 @@ export async function selectProfilesByMatch(
       ? [{ profile, filter: profile.match.filter }]
       : [],
   );
-  const answers =
-    tested.length > 0
+  const answer =
+    tested.length > 0 && items.length > 0
       ? await testItemsMatches(query, items, {
           filters: tested.map(({ filter }) => filter),
           signal,
         })
       : undefined;
+  if (answer?.kind === "failed") {
+    logger.warn("Profile Matches could not be read for {count} Items", {
+      count: items.length,
+      answer,
+    });
+    return items.map(() => ({ outcome: "failed" }));
+  }
+  const missing = answer
+    ? items.filter(
+        ({ key, groupID }) => !answer.byKey.has(formatIndexedKey(key, groupID)),
+      )
+    : [];
+  if (missing.length > 0)
+    logger.warn("ZotLit Query did not find {count} Items to match", {
+      count: missing.length,
+      keys: missing.slice(0, 10).map(({ key }) => key),
+    });
+  const faults = answer?.byKey.values().next().value?.faults ?? [];
+  if (faults.some(Boolean))
+    logger.debug("Some Profile Matches could not be evaluated", { faults });
   return items.map((item): MatchSelection => {
     let held = new Set<LiteratureNoteProfile>();
-    const answer = answers?.get(formatIndexedKey(item.key, item.groupID));
     if (answer) {
-      if (answer.kind !== "result") {
-        logger.warn("Profile Matches could not be read for {key}", {
-          key: item.key,
-          answer,
-        });
-        return { outcome: "failed" };
-      }
-      if (answer.faults.some(Boolean))
-        logger.debug("Some Profile Matches could not be evaluated", {
-          key: item.key,
-          faults: answer.faults,
-        });
+      const row = answer.byKey.get(formatIndexedKey(item.key, item.groupID));
+      if (!row) return { outcome: "failed" };
       held = new Set(
         tested.flatMap(({ profile }, index) =>
-          answer.matched[index] ? [profile] : [],
+          row.matched[index] ? [profile] : [],
         ),
       );
     }
@@ -104,14 +109,20 @@ export async function testItemMatches(
   query: Pick<QueryService, "run">,
   item: MatchItem,
   filters: readonly string[],
-): Promise<ItemMatches> {
-  const answers = await testItemsMatches(query, [item], { filters });
-  return answers.get(formatIndexedKey(item.key, item.groupID))!;
+): Promise<
+  | ({ kind: "result" } & ItemMatches)
+  | { kind: "missing" }
+  | { kind: "failed"; diagnostic?: Diagnostic }
+> {
+  const answer = await testItemsMatches(query, [item], { filters });
+  if (answer.kind === "failed") return answer;
+  const row = answer.byKey.get(formatIndexedKey(item.key, item.groupID));
+  return row ? { kind: "result", ...row } : { kind: "missing" };
 }
 
 /**
- * {@link testItemMatches} for many Items, by Indexed Key: one Items query per
- * slice of {@link ITEMS_PER_QUERY} Items, over the Libraries the slice holds.
+ * {@link testItemMatches} for many Items in one Items query over the
+ * Libraries they belong to.
  */
 async function testItemsMatches(
   query: Pick<QueryService, "run">,
@@ -120,66 +131,52 @@ async function testItemsMatches(
     filters,
     signal = new AbortController().signal,
   }: { filters: readonly string[]; signal?: AbortSignal },
-): Promise<ReadonlyMap<string, ItemMatches>> {
+): Promise<BatchMatches> {
   // `!!` gives the truth a filter reads: null and an Error Value are false.
   const formulas = Object.fromEntries(
     filters.map((filter, index) => [`match${index}`, `!!(${filter})`]),
   );
-  const fields = Object.keys(formulas).map((name) => `formula.${name}`);
-  const answers = new Map<string, ItemMatches>();
-  for (const slice of chunk(items, ITEMS_PER_QUERY)) {
-    const indexedKeys = slice.map(({ key, groupID }) =>
-      formatIndexedKey(key, groupID),
-    );
-    const groupIDs = new Set(slice.map(({ groupID }) => groupID));
-    const outcome = await query.run(
-      {
-        from: "items",
-        // A literal list of Indexed Keys plans as a key lookup, not a scan.
-        filter: `${JSON.stringify(indexedKeys)}.contains(indexedKey)`,
-        fields,
-        formulas,
-        libraries: {
-          mode: "selected",
-          libraries: [...groupIDs].map((groupID) =>
+  const indexedKeys = items.map(({ key, groupID }) =>
+    formatIndexedKey(key, groupID),
+  );
+  const outcome = await query.run(
+    {
+      from: "items",
+      // A literal list of Indexed Keys plans as a key lookup, not a scan.
+      filter: `${JSON.stringify(indexedKeys)}.contains(indexedKey)`,
+      fields: Object.keys(formulas).map((name) => `formula.${name}`),
+      formulas,
+      libraries: {
+        mode: "selected",
+        libraries: [...new Set(items.map(({ groupID }) => groupID))].map(
+          (groupID) =>
             groupID === null
               ? { type: "personal" as const }
               : { type: "group" as const, groupID },
-          ),
-        },
+        ),
       },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (outcome.kind !== "result") {
-      const failed: ItemMatches =
-        outcome.kind === "failed"
-          ? { kind: "failed", diagnostic: outcome.diagnostic }
-          : { kind: "failed" };
-      for (const indexedKey of indexedKeys) answers.set(indexedKey, failed);
-      continue;
-    }
-    const faultsByName: Readonly<Record<string, Diagnostic | undefined>> =
-      outcome.result.formulaDiagnostics ?? {};
-    const faults = filters.map((_, index) => faultsByName[`match${index}`]);
-    const rows = new Map(
-      (outcome.result.rows ?? []).map((row) => [row.indexedKey, row]),
-    );
-    for (const indexedKey of indexedKeys) {
-      const row = rows.get(indexedKey);
-      answers.set(
-        indexedKey,
-        row
-          ? {
-              kind: "result",
-              matched: filters.map(
-                (_, index) => row.values[`formula.match${index}`] === true,
-              ),
-              faults,
-            }
-          : { kind: "missing" },
-      );
-    }
-  }
-  return answers;
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (outcome.kind === "cancelled") return { kind: "failed" };
+  if (outcome.kind === "failed")
+    return { kind: "failed", diagnostic: outcome.diagnostic };
+  const faultsByName: Readonly<Record<string, Diagnostic | undefined>> =
+    outcome.result.formulaDiagnostics ?? {};
+  const faults = filters.map((_, index) => faultsByName[`match${index}`]);
+  return {
+    kind: "result",
+    byKey: new Map(
+      (outcome.result.rows ?? []).map((row) => [
+        row.indexedKey,
+        {
+          matched: filters.map(
+            (_, index) => row.values[`formula.match${index}`] === true,
+          ),
+          faults,
+        },
+      ]),
+    ),
+  };
 }

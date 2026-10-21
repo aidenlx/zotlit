@@ -132,14 +132,6 @@ function createNoteFeature(deps: TestDeps) {
       know(args[0]);
       return feature.createNote(...args);
     },
-    prepareCreationProfiles: (item) => {
-      know(item);
-      return feature.prepareCreationProfiles(item);
-    },
-    prepareBatchCreationProfiles: (...args) => {
-      args[0].forEach(know);
-      return feature.prepareBatchCreationProfiles(...args);
-    },
   } satisfies NoteFeature;
 }
 import type { NoteFeature, UpdateScope } from "./operations";
@@ -362,7 +354,7 @@ describe("Profile source selection", () => {
     };
     stubIndexedKeyUpdate(updateContext());
     const feature = createNoteFeature(deps);
-    const plans = await feature.prepareBatchCreationProfiles([
+    const items = [
       makeItem({
         itemID: 1,
         key: "ABCD2345",
@@ -377,9 +369,17 @@ describe("Profile source selection", () => {
         title: "Two",
         citationKey: null,
       }),
-    ]);
-    const first = plans.get(1)!.find((plan) => plan.selector === id)!;
-    const second = plans.get(2)!.find((plan) => plan.selector === id)!;
+    ];
+    items.forEach((item) => seedItem(deps.db.client, item));
+    const plans = await feature.planCreations(
+      items.map((item) => item.indexedKey),
+    );
+    const first = plans
+      .get(items[0]!.indexedKey)!
+      .previews.find((plan) => plan.selector === id)!;
+    const second = plans
+      .get(items[1]!.indexedKey)!
+      .previews.find((plan) => plan.selector === id)!;
     expect(first.path).toBe("Reading/Paper.md");
     expect(second.path).not.toBe(first.path);
     expect(app.vault.create).not.toHaveBeenCalled();
@@ -457,15 +457,25 @@ describe("Profile source selection", () => {
     );
     await app.vault.create("Literature/Root.md", "Occupied");
     const feature = createNoteFeature(deps);
-    const [preview] =
-      await feature.prepareCreationProfiles(makeCreateGateItem());
+    const item = makeCreateGateItem();
+    seedItem(deps.db.client, item);
+    const [preview] = (await feature.planCreations([item.indexedKey])).get(
+      item.indexedKey,
+    )!.previews;
     expect(preview!.path).not.toBe("Literature/Root.md");
     const created = createdFile(await preview!.create());
     expect(created.path).toBe(preview!.path);
     expect(app.vault.contents.get("Literature/Root.md")).toBe("Occupied");
 
-    const otherItem = { ...makeCreateGateItem(), indexedKey: "PAPER234" };
-    const [second] = await feature.prepareCreationProfiles(otherItem);
+    const otherItem = {
+      ...makeCreateGateItem(),
+      key: "PAPER234",
+      indexedKey: "PAPER234",
+    };
+    seedItem(deps.db.client, otherItem);
+    const [second] = (await feature.planCreations([otherItem.indexedKey])).get(
+      otherItem.indexedKey,
+    )!.previews;
     await app.vault.create(second!.path!, "Arrived after preview");
     const otherCreated = createdFile(await second!.create());
     expect(otherCreated.path).not.toBe(second!.path);
@@ -484,10 +494,11 @@ describe("Profile source selection", () => {
       ...makeTemplate(),
       getLiteratureNoteTemplate: () => makeDocumentTemplate({ filename: "" }),
     };
-    const profiles =
-      await createNoteFeature(deps).prepareCreationProfiles(
-        makeCreateGateItem(),
-      );
+    const item = makeCreateGateItem();
+    seedItem(deps.db.client, item);
+    const profiles = (
+      await createNoteFeature(deps).planCreations([item.indexedKey])
+    ).get(item.indexedKey)!.previews;
     expect(profiles).toMatchObject([
       { selector: "default", path: "Literature/Root.md" },
       {
@@ -530,7 +541,10 @@ describe("Profile source selection", () => {
     );
     const feature = createNoteFeature(deps);
     using update = vi.spyOn(deps.settings, "update");
-    const profiles = await feature.prepareCreationProfiles(item);
+    seedItem(deps.db.client, item);
+    const profiles = (await feature.planCreations([item.indexedKey])).get(
+      item.indexedKey,
+    )!.previews;
     expect(
       profiles.map(({ selector, folder, citationStyle, document, path }) => ({
         selector,

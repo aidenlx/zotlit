@@ -19,10 +19,7 @@ export interface QuickSwitchDeps {
   reads: Pick<ZoteroReadsService, "acquireRead">;
   lookup: ItemLookup;
   noteIndex: NoteIndex;
-  noteFeature: Pick<
-    NoteFeature,
-    "createNote" | "resolveCreationProfile" | "prepareCreationProfiles"
-  >;
+  noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
   settings: SettingsService;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   /** Opens the PDF a result asks for. */

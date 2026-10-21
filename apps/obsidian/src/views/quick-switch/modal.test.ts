@@ -8,9 +8,16 @@ import type {
 } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Item } from "@zotlit/db";
+
 import { openAttachments } from "@/lib/attachment-open";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
+import type {
+  CreationProfileSelection,
+  PreparedCreationProfile,
+} from "@/services/note-feature";
+import type { CreationPlan } from "@/services/note-feature/operations";
 import { defaults } from "@/services/settings/schema";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
@@ -239,6 +246,18 @@ describe("QuickSwitchModal PDF chord", () => {
 });
 
 describe("QuickSwitchModal Profile creation", () => {
+  function creationPlans(
+    indexedKeys: readonly string[],
+    selection: CreationProfileSelection,
+    previews: readonly PreparedCreationProfile[],
+  ): ReadonlyMap<string, CreationPlan> {
+    return new Map(
+      indexedKeys.map((indexedKey) => [
+        indexedKey,
+        { item: { indexedKey } as Item, selection, previews },
+      ]),
+    );
+  }
   function creationDeps(existing?: TFile) {
     onPlatform(true);
     const books = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -279,12 +298,17 @@ describe("QuickSwitchModal Profile creation", () => {
           outcome: "created" as const,
           file: { path: "Literature/Paper.md" } as TFile,
         })),
-        resolveCreationProfile: vi.fn(async () => ({
-          selector: books,
-          source: "headless" as const,
-          shouldAsk: true,
-        })),
-        prepareCreationProfiles: vi.fn(async () => [preview]),
+        planCreations: vi.fn(async (keys: readonly string[]) =>
+          creationPlans(
+            keys,
+            {
+              selector: books,
+              source: "headless" as const,
+              shouldAsk: true,
+            },
+            [preview],
+          ),
+        ),
       },
       zoteroPref: { dataDir: null },
       settings: {
@@ -316,7 +340,7 @@ describe("QuickSwitchModal Profile creation", () => {
       active: true,
     });
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(deps.noteFeature.resolveCreationProfile).not.toHaveBeenCalled();
+    expect(deps.noteFeature.planCreations).not.toHaveBeenCalled();
     expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
   });
 
@@ -393,19 +417,28 @@ describe("QuickSwitchModal Profile creation", () => {
     });
   });
 
-  it("creates directly without loading picker previews when only Default is available", async () => {
-    const { modal, deps, openLinkText } = creationDeps();
-    deps.noteFeature.resolveCreationProfile.mockResolvedValue({
-      selector: "default",
-      source: "bound",
-      shouldAsk: false,
-    } as never);
+  it("creates directly without opening the picker when only Default is available", async () => {
+    const { modal, deps, preview, openLinkText } = creationDeps();
+    deps.noteFeature.planCreations.mockImplementation(async (keys) =>
+      creationPlans(
+        keys,
+        {
+          selector: "default",
+          source: "bound",
+          shouldAsk: false,
+        },
+        [preview],
+      ),
+    );
     await modal.onChooseSuggestion(
       { item: { indexedKey: "PAPER234" } } as never,
       {} as KeyboardEvent,
     );
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(deps.noteFeature.prepareCreationProfiles).not.toHaveBeenCalled();
+    expect(deps.noteFeature.planCreations).toHaveBeenCalledExactlyOnceWith(
+      ["PAPER234"],
+      {},
+    );
     expect(deps.noteFeature.createNote).toHaveBeenCalledWith(
       expect.any(Object),
       { profile: "default" },

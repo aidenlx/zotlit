@@ -16,6 +16,7 @@ import type {
   InteractiveCreationDeps,
   PreparedCreationProfile,
 } from "./index";
+import type { CreationPlan } from "./operations";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
@@ -54,6 +55,23 @@ function booksPreview(
   };
 }
 
+function creationPlans(
+  indexedKeys: readonly string[],
+  selection: CreationProfileSelection,
+  previews: readonly PreparedCreationProfile[],
+): ReadonlyMap<string, CreationPlan> {
+  return new Map(
+    indexedKeys.map((indexedKey) => [
+      indexedKey,
+      {
+        item: { indexedKey } as Item,
+        selection,
+        previews,
+      },
+    ]),
+  );
+}
+
 /** Deps whose selection and previews are fixed; the picker stays mocked. */
 function directDeps(
   selection: CreationProfileSelection,
@@ -63,8 +81,9 @@ function directDeps(
     app: {} as App,
     zoteroPref: { dataDir: null },
     noteFeature: {
-      resolveCreationProfile: vi.fn(async () => selection),
-      prepareCreationProfiles: vi.fn(async () => previews),
+      planCreations: vi.fn(async (keys: readonly string[]) =>
+        creationPlans(keys, selection, previews),
+      ),
       createNote: vi.fn(),
     },
   } as unknown as InteractiveCreationDeps;
@@ -103,12 +122,17 @@ it("creates a note from the New profile dialog's prepared callback without re-re
     createProfile,
     zoteroPref: { dataDir: null },
     noteFeature: {
-      resolveCreationProfile: async () => ({
-        selector: "default",
-        source: "bound",
-        shouldAsk: true,
-      }),
-      prepareCreationProfiles: vi.fn(async () => []),
+      planCreations: vi.fn(async (keys: readonly string[]) =>
+        creationPlans(
+          keys,
+          {
+            selector: "default",
+            source: "bound",
+            shouldAsk: true,
+          },
+          [],
+        ),
+      ),
       createNote: vi.fn(),
     },
   } as unknown as InteractiveCreationDeps;
@@ -123,7 +147,7 @@ it("creates a note from the New profile dialog's prepared callback without re-re
     useForNote: true,
   });
   expect(create).toHaveBeenCalledOnce();
-  expect(deps.noteFeature.prepareCreationProfiles).toHaveBeenCalledOnce();
+  expect(deps.noteFeature.planCreations).toHaveBeenCalledOnce();
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
 });
 
@@ -149,9 +173,10 @@ it("opens overlap with every candidate identity, a visible reason, and frozen pr
   expect(await createNoteInteractively(deps, item)).toMatchObject({
     path: "Books/Paper.md",
   });
-  expect(
-    deps.noteFeature.resolveCreationProfile,
-  ).toHaveBeenCalledExactlyOnceWith({ item });
+  expect(deps.noteFeature.planCreations).toHaveBeenCalledExactlyOnceWith(
+    [item.indexedKey],
+    {},
+  );
   expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
     deps.app,
     expect.objectContaining({
@@ -183,9 +208,10 @@ it.each([false, true])(
     await expect(
       createNoteInteractively(deps, item, { direct }),
     ).resolves.toMatchObject({ path: "Books/Paper.md" });
-    expect(
-      deps.noteFeature.resolveCreationProfile,
-    ).toHaveBeenCalledExactlyOnceWith({ item });
+    expect(deps.noteFeature.planCreations).toHaveBeenCalledExactlyOnceWith(
+      [item.indexedKey],
+      {},
+    );
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(preview.create).toHaveBeenCalledOnce();
     expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
@@ -220,9 +246,8 @@ it("creates directly under an explicit Profile, naming Default when it is the on
       direct: true,
     }),
   ).resolves.toMatchObject({ path: "Literature/Paper.md" });
-  expect(deps.noteFeature.resolveCreationProfile).toHaveBeenCalledWith({
+  expect(deps.noteFeature.planCreations).toHaveBeenCalledWith(["ABCD2345"], {
     headless: "default",
-    item: { indexedKey: "ABCD2345" },
   });
   expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
   expect(preview.create).toHaveBeenCalledOnce();
@@ -346,12 +371,17 @@ it("imports from the contextual picker without creating a note", async () => {
     importProfile,
     zoteroPref: { dataDir: null },
     noteFeature: {
-      resolveCreationProfile: async () => ({
-        selector: "default",
-        source: "bound",
-        shouldAsk: true,
-      }),
-      prepareCreationProfiles: async () => [],
+      planCreations: vi.fn(async (keys: readonly string[]) =>
+        creationPlans(
+          keys,
+          {
+            selector: "default",
+            source: "bound",
+            shouldAsk: true,
+          },
+          [],
+        ),
+      ),
       createNote: vi.fn(),
     },
   } as unknown as InteractiveCreationDeps;
