@@ -177,6 +177,19 @@ export class Component {
 
   registerEvent(_ref: unknown): void {}
 
+  /** As Obsidian's: the listener goes when the component unloads. */
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+    this.register(() => element.removeEventListener(type, callback, options));
+  }
+
   addChild<T extends Component>(child: T): T {
     this.#children.push(child);
     if (this.#loaded) child.load();

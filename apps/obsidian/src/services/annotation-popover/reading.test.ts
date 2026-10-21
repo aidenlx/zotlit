@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { MarkdownView } from "obsidian";
+import { Component, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
@@ -49,10 +49,15 @@ async function harness(
   await service.ready;
   const el = container.appendChild(document.createElement("div"));
   el.innerHTML = html;
+  // The children Obsidian hangs on the section, unloaded with it.
+  const section = new Component();
+  section.load();
+  stack.defer(() => section.unload());
   await process!(el, {
     sourcePath: "drafts/chapter.md",
-  } as MarkdownPostProcessorContext);
-  return { el, view, shown };
+    addChild: (child: Component) => section.addChild(child),
+  } as unknown as MarkdownPostProcessorContext);
+  return { el, view, shown, service, section };
 }
 
 const hover = (anchor: Element): void => {
@@ -110,6 +115,32 @@ describe("AnnotationLinkReading", () => {
       { "citation.hover-action": "off" },
     );
 
+    hover(el.querySelector("a")!);
+
+    expect(shown).toEqual([]);
+  });
+
+  it("stops answering hovers once the service is gone, though the section stays rendered", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { el, shown, service } = await harness(
+      stack,
+      `<p><a class="external-link" href="${HREF}">p. 1</a></p>`,
+    );
+
+    await service[Symbol.asyncDispose]();
+    hover(el.querySelector("a")!);
+
+    expect(shown).toEqual([]);
+  });
+
+  it("stops answering hovers once Obsidian unloads the section", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { el, shown, section } = await harness(
+      stack,
+      `<p><a class="external-link" href="${HREF}">p. 1</a></p>`,
+    );
+
+    section.unload();
     hover(el.querySelector("a")!);
 
     expect(shown).toEqual([]);
