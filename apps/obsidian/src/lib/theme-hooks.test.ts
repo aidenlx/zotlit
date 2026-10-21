@@ -50,3 +50,9 @@ it("promises the Text Draft hook by literal name", () => {
     textDraft: "zt-pdf-text-draft",
   });
 });
+
+it("promises the regular expression hook of the template editors by literal name", () => {
+  expect({ regexp: themeHook.templateRegexp }).toEqual({
+    regexp: "zt-template-regexp",
+  });
+});

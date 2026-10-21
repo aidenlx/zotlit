@@ -40,7 +40,10 @@ import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
 import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
-import { requested } from "@/views/query-view/__fixtures__/query-run";
+import {
+  fakeQuery,
+  requested,
+} from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
 
 import { nodeKey } from "./document";
@@ -562,7 +565,7 @@ function pluginData(stored?: unknown) {
         }),
     },
     libraryScope,
-    query: { run, on: () => () => {} },
+    query: fakeQuery(run),
     lookup: {
       openSession: () => ({
         search,

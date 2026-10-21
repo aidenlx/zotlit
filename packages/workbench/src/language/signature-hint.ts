@@ -1,0 +1,153 @@
+// What the Signature Hint of a Filter Expression editor names: the call
+// around the caret, the callee's signatures and the parameter at the caret.
+// The registry of `@zotlit/item-query` is the one source of the signatures,
+// so the hint names what evaluation checks. The tooltip is in
+// `signature-hint-tooltip.ts`.
+import type { SyntaxNode } from "@lezer/common";
+
+import { parser } from "@zotlit/filter-expression";
+import {
+  GLOBAL_FUNCTIONS,
+  IF_FUNCTION,
+  METHOD_ENTRIES,
+  parameterAt,
+  parameterTexts,
+  parameterTypeText,
+  resultText,
+} from "@zotlit/item-query";
+import type { FilterValueType, FunctionDefinition } from "@zotlit/item-query";
+
+import type { ExpressionReceiver } from "./expression-options";
+import type { Span } from "./span";
+
+/** One parameter as the hint names it. */
+export interface HintParameter {
+  readonly name: string;
+  /** The types it takes, its texts quoted and null, joined by ` | `. */
+  readonly type: string;
+  /** Whether a call can omit it. */
+  readonly optional: boolean;
+  /** Whether it takes every further argument. */
+  readonly rest: boolean;
+  /** `name: type`, `name?: type` or `...name: type`, as the reference writes it. */
+  readonly text: string;
+}
+
+/** One definition the callee can name. */
+export interface HintSignature {
+  /** The value type a method belongs to, `any` for every type, else null. */
+  readonly receiver: FilterValueType | "any" | null;
+  readonly parameters: readonly HintParameter[];
+  /** The index in `parameters` of the one at the caret, or -1 past the last. */
+  readonly active: number;
+  /** The type of the result, `any` when it varies. */
+  readonly returns: string;
+  readonly description: string;
+}
+
+export interface SignatureHintResult {
+  readonly callee: string;
+  /** One per definition; several when the receiver's type is not known. */
+  readonly signatures: readonly HintSignature[];
+}
+
+export interface SignatureHintOptions {
+  /**
+   * What a method call's receiver at `at` of `source` is, as the planner
+   * reads it where it stands; undefined, or no type, when it is not known.
+   * Without it, a method names every definition of its name.
+   */
+  readonly receiver?: (
+    source: string,
+    at: Span,
+  ) => Pick<ExpressionReceiver, "type"> | undefined;
+}
+
+type Definition = Pick<
+  FunctionDefinition,
+  "description" | "parameters" | "optional" | "rest"
+> & { readonly returns?: FunctionDefinition["returns"] };
+
+function signature(
+  receiver: HintSignature["receiver"],
+  definition: Definition,
+  argument: number,
+): HintSignature {
+  const at = parameterAt(definition, argument);
+  const parameters = parameterTexts(definition);
+  return {
+    receiver,
+    parameters: parameters.map(({ parameter, optional, rest, text }) => ({
+      name: parameter.name,
+      type: parameterTypeText(parameter),
+      optional,
+      rest,
+      text,
+    })),
+    active: parameters.findIndex(({ parameter }) => parameter === at),
+    returns: resultText(definition.returns),
+    description: definition.description,
+  };
+}
+
+/** The innermost call whose argument list holds `pos`. */
+function callAround(inner: SyntaxNode, pos: number): SyntaxNode | null {
+  for (let node: SyntaxNode | null = inner; node; node = node.parent) {
+    if (node.name !== "Call") continue;
+    const open = node.getChild("(");
+    const close = node.getChild(")");
+    if (open && open.to <= pos && (!close || pos <= close.from)) return node;
+  }
+  return null;
+}
+
+/**
+ * The Signature Hint at a position of a Filter Expression.
+ * @param text The Filter Expression.
+ * @param pos The caret's offset in `text`.
+ * @returns The call whose arguments hold `pos`, each definition its callee
+ *   can name, and in each the parameter the argument at `pos` fills. Null
+ *   outside a call's arguments and for a name the registry does not hold.
+ */
+export function signatureAt(
+  text: string,
+  pos: number,
+  { receiver: receiverOf }: SignatureHintOptions = {},
+): SignatureHintResult | null {
+  const tree = parser.parse(text);
+  const call = callAround(tree.resolveInner(pos, -1), pos);
+  if (!call) return null;
+  let argument = 0;
+  for (let child = call.firstChild; child; child = child.nextSibling)
+    if (child.name === "," && child.to <= pos) argument++;
+  const callee = call.firstChild!;
+  if (callee.name === "Identifier") {
+    const name = text.slice(callee.from, callee.to);
+    const definition = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
+    return definition
+      ? { callee: name, signatures: [signature(null, definition, argument)] }
+      : null;
+  }
+  if (callee.name !== "ObjectAccess") return null;
+  const name = callee.getChild("PropertyName");
+  const receiver = callee.firstChild;
+  if (!name || !receiver) return null;
+  const method = text.slice(name.from, name.to);
+  const named = METHOD_ENTRIES.filter(([, entryName]) => entryName === method);
+  const type = receiverOf?.(text, {
+    from: receiver.from,
+    to: receiver.to,
+  })?.type;
+  // A type's own method comes before the method of every value, as the
+  // evaluator looks them up.
+  const own =
+    named.find(([of]) => of === type) ?? named.find(([of]) => of === "any");
+  const chosen = type === undefined ? named : own ? [own] : [];
+  if (chosen.length === 0) return null;
+  return {
+    callee: method,
+    signatures: chosen.map(([of, , definition]) =>
+      signature(of, definition, argument),
+    ),
+  };
+}

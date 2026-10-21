@@ -46,9 +46,15 @@ it.each([false, true])(
       ),
     );
     const editor = host.querySelector<HTMLElement>('[contenteditable="true"]')!;
+    // A JSON-e expression names its root as a property, as a Filter
+    // Expression does; Liquid keeps its variable.
     expect(
-      host.querySelector(".zt-template-variable")?.textContent,
-    ).toBeTruthy();
+      [
+        ...host.querySelectorAll(
+          advanced ? ".zt-template-variable" : ".zt-template-property",
+        ),
+      ].some((token) => token.textContent === "zt"),
+    ).toBe(true);
     expect(
       [...host.querySelectorAll(".zt-template-keyword")].some(
         (token) => token.textContent === "$eval",

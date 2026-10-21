@@ -233,28 +233,29 @@ The Template Workbench View styles frontmatter and colors template source and Ma
 
 Liquid tokens keep their own colors inside YAML values and Markdown code spans and fences. Eta highlighting covers tag delimiters. Markdown hints mark headings, lists, and quotes in the note and annotation bodies, with normal text size and weight.
 
-| Class                              | Meaning                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `zt-template-editor`               | The element that holds one template editor pane.                         |
-| `zt-template-delimiter`            | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
-| `zt-template-keyword`              | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
-| `zt-template-variable`             | A variable or root name: `zt`, `it`.                                     |
-| `zt-template-property`             | A property name after a dot, or a JSON key.                              |
-| `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                 |
-| `zt-template-string`               | A string literal.                                                        |
-| `zt-template-value`                | A number, boolean, or null.                                              |
-| `zt-template-operator`             | An operator: `.`, `>`, `\|`.                                             |
-| `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets.                                   |
-| `zt-template-comment`              | Template comment text.                                                   |
-| `zt-template-invalid`              | Source the parser refuses.                                               |
-| `zt-template-frontmatter`          | A frontmatter line, including its opening and closing boundaries.        |
-| `zt-template-markdown-marker`      | A Markdown heading, list, or quote marker in a body.                     |
-| `zt-template-markdown-list-marker` | An additional class on a Markdown list marker.                           |
-| `zt-template-hover`                | The popover that explains the token under the pointer, in Obsidian only. |
+| Class                              | Meaning                                                                                                                                                                 |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zt-template-editor`               | The element that holds one template editor pane.                                                                                                                        |
+| `zt-template-delimiter`            | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`.                                                                                                |
+| `zt-template-keyword`              | A tag name or keyword: `if`, `for`, `endbq`, `in`.                                                                                                                      |
+| `zt-template-variable`             | A Liquid or Eta variable or root name: `zt`, `it`.                                                                                                                      |
+| `zt-template-property`             | A property name after a dot, or a JSON key. In a Filter Expression or a JSON-e expression, every name and path step, roots included: `zt` and `title` in `${zt.title}`. |
+| `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                                                                                                                |
+| `zt-template-string`               | A string literal.                                                                                                                                                       |
+| `zt-template-value`                | A number, boolean, or null, also in a JSON-e expression.                                                                                                                |
+| `zt-template-regexp`               | An additional class on a regular expression, which is also a value.                                                                                                     |
+| `zt-template-operator`             | An operator: `>`, `\|`, and `.` in Liquid.                                                                                                                              |
+| `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets. In a Filter Expression or a JSON-e expression, also `.`, `(` and `)`.                                                            |
+| `zt-template-comment`              | Template comment text.                                                                                                                                                  |
+| `zt-template-invalid`              | Source the parser refuses.                                                                                                                                              |
+| `zt-template-frontmatter`          | A frontmatter line, including its opening and closing boundaries.                                                                                                       |
+| `zt-template-markdown-marker`      | A Markdown heading, list, or quote marker in a body.                                                                                                                    |
+| `zt-template-markdown-list-marker` | An additional class on a Markdown list marker.                                                                                                                          |
+| `zt-template-hover`                | The popover that explains the token under the pointer, in Obsidian only.                                                                                                |
 
 ### Default appearance [#template-defaults]
 
-The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
+The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. A regular expression takes `--zt-template-regexp`, which is the value color by default. The hover popover is Obsidian's own `hover-popover`, sized to its text.
 
 Frontmatter takes `--text-muted`. Template tokens keep their colors inside frontmatter. Heading and quote markers take `--text-faint`; list markers take `--list-marker-color`. These roles change color only. All Template Workbench View panes keep their existing monospace font, code size, spacing, and background.
 
@@ -270,6 +271,22 @@ Set a custom property on the editor hook to recolor one kind of token in every p
   font-style: normal;
 }
 ```
+
+### Expression Colors [#expression-colors]
+
+A Filter Expression field uses the code color variables that Obsidian defines for `.base` files and for code blocks, one per kind of token: a Formula, a Query View filter condition, and a Match condition in the Template Workbench View. The colors are compatible with Bases, but they are not the same as how Obsidian draws a `.base` file, which leaves some of these tokens in `--code-normal`. Names and property paths take `--code-property`. The function or method a call names takes `--code-function`. Numbers, `true`, `false`, and `null` take `--code-value`. Strings take `--code-string`, operators `--code-operator`, punctuation `--code-punctuation`, and regular expressions `--code-important`. Other text takes `--code-normal`. A theme that sets these code colors recolors the expression fields too. A `--zt-template-<token>` override on `zt-template-editor` also reaches these fields, as it reaches the other panes.
+
+A Filter Expression and a JSON-e expression give every name `zt-template-property`, and `.`, `(` and `)` `zt-template-punctuation`. Thus an existing override of `.zt-template-variable` or `.zt-template-operator` no longer reaches these tokens in an expression. To restyle them, style `.zt-template-property` or `.zt-template-punctuation`.
+
+### Signature Hint [#signature-hint]
+
+While the caret is inside the parentheses of a function or method call in a Filter Expression field, a tooltip names the signature of the call, such as `slice(start: number, end?: number) → string`, with the parameter at the caret marked, and the description of the call beneath.
+
+| Class               | Meaning                                                            |
+| ------------------- | ------------------------------------------------------------------ |
+| `zt-signature-hint` | The tooltip that names the signature of the call around the caret. |
+
+In Obsidian, the tooltip takes the colors of a notice, `--notice-background` and `--notice-color`, as the hint of a formula in a `.base` file does. Style `zt-signature-hint` directly to change its text, size or spacing; set its background or border with `.cm-tooltip.zt-signature-hint`, which outranks the editor's own tooltip colors. The Template Workbench on this site emits the same class and keeps the editor's own tooltip look.
 
 ## CSS examples [#examples]
 

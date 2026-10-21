@@ -57,6 +57,7 @@ export function syntaxFault(input: string, tree: Tree): ExpressionSyntaxError {
   return {
     from,
     to,
+    span: underlined(tree, { from, to, opened }),
     found: from === input.length ? null : input.slice(from, to),
     expected: [...expected].sort((a, b) => {
       const word = (value: string) =>
@@ -65,6 +66,29 @@ export function syntaxFault(input: string, tree: Tree): ExpressionSyntaxError {
     }),
     opened,
   };
+}
+
+/** @see ExpressionSyntaxError.span */
+function underlined(
+  tree: Tree,
+  { from, to, opened }: Pick<ExpressionSyntaxError, "from" | "to" | "opened">,
+): ExpressionSyntaxError["span"] {
+  if (from < to) return { from, to };
+  if (opened) return { from: opened.from, to: Math.max(from, opened.to) };
+  let last: ExpressionSyntaxError["span"] = null;
+  // Nodes come in order of where they start, so none after this one starts
+  // before the fault.
+  const cursor = tree.cursor();
+  do {
+    if (cursor.from >= from) break;
+    const token =
+      !cursor.type.isError &&
+      cursor.from < cursor.to &&
+      cursor.to <= from &&
+      cursor.node.firstChild === null;
+    if (token) last = { from: cursor.from, to: cursor.to };
+  } while (cursor.next());
+  return last;
 }
 
 function tokenEnd(input: string, from: number): number {

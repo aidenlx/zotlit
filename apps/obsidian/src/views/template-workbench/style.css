@@ -91,12 +91,32 @@
   --zt-template-property: var(--text-normal);
   --zt-template-string: var(--text-muted);
   --zt-template-value: var(--text-muted);
+  --zt-template-regexp: var(--zt-template-value);
   --zt-template-punctuation: var(--text-muted);
   --zt-template-comment: var(--text-faint);
   --zt-template-invalid: var(--text-error);
   --zt-template-frontmatter: var(--text-muted);
   --zt-template-markdown-marker: var(--text-faint);
   --zt-template-markdown-list-marker: var(--list-marker-color);
+}
+/* Expression Colors: a Filter Expression field — a Formula, a Query View
+   filter condition, a Match condition — uses the code color variables
+   Obsidian defines for `.base` files (and Prism), one per token kind, so a
+   theme's code palette applies: compatible with Bases, not identical to its
+   rendering. The block earns its stylesheet as the custom properties
+   exposed for user snippets, rebound on that field. `:where()` keeps it at
+   the editor hook's own specificity, so a theme's later
+   `.zt-template-editor` rule wins. */
+.zt-template-editor:where([data-part="expression"]) {
+  color: var(--code-normal);
+  --zt-template-variable: var(--code-property);
+  --zt-template-property: var(--code-property);
+  --zt-template-filter: var(--code-function);
+  --zt-template-value: var(--code-value);
+  --zt-template-string: var(--code-string);
+  --zt-template-operator: var(--code-operator);
+  --zt-template-punctuation: var(--code-punctuation);
+  --zt-template-regexp: var(--code-important);
 }
 .zt-template-delimiter {
   color: var(--zt-template-delimiter);
@@ -121,6 +141,11 @@
 }
 .zt-template-value {
   color: var(--zt-template-value);
+}
+/* A regular expression also carries the value class. This rule has the same
+   specificity, so it must stay after `.zt-template-value` to win. */
+.zt-template-regexp {
+  color: var(--zt-template-regexp);
 }
 .zt-template-punctuation {
   color: var(--zt-template-punctuation);
@@ -172,6 +197,50 @@
 .zt-template-completion .suggestion-item.mod-complex .suggestion-note {
   font-size: var(--font-ui-small);
   white-space: normal;
+}
+/* The Signature Hint is a message surface, as the hint of a formula in a
+   `.base` file is: the signature in code type, the parameter at the caret
+   heavier, the description beneath in the interface type. A stylesheet, as
+   the workbench renders the tooltip and its children, DOM that carries no
+   utilities of this plugin; these are the public hook's defaults, which a
+   theme overrides on `.zt-signature-hint`. */
+.zt-signature-hint {
+  max-inline-size: min(28rem, calc(100vw - 20px));
+  padding: var(--size-4-1) var(--size-4-2);
+  border-radius: var(--radius-s);
+  box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
+  color: var(--notice-color);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.zt-signature-hint > div + div {
+  margin-block-start: var(--size-4-1);
+}
+.zt-signature-hint code {
+  font-family: var(--font-monospace);
+  font-weight: var(--font-medium);
+}
+.zt-signature-hint > div > code:first-child {
+  display: block;
+}
+.zt-signature-hint mark {
+  background: none;
+  color: inherit;
+  font-weight: var(--font-semibold);
+  text-decoration: underline;
+}
+/* The background, border and arrow must outrank CodeMirror's base theme,
+   which paints every tooltip with two classes (`.ͼ2 .cm-tooltip`); a theme
+   overrides them with `.cm-tooltip.zt-signature-hint`. */
+.cm-tooltip.zt-signature-hint {
+  border: none;
+  background-color: var(--notice-background);
+}
+.cm-tooltip.zt-signature-hint .cm-tooltip-arrow:before,
+.cm-tooltip.zt-signature-hint .cm-tooltip-arrow:after {
+  border-top-color: var(--notice-background);
 }
 /* Obsidian sizes a popover's content for a note page; a hover card fits its text. */
 .popover.hover-popover > .zt-template-hover {

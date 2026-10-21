@@ -14,7 +14,12 @@ import { Scheduler } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
-import { answer, answerView, QueryOutputError } from "./answer";
+import {
+  answer,
+  answerCustomFields,
+  answerView,
+  QueryOutputError,
+} from "./answer";
 import type { QueryWriter } from "./answer";
 import { diagnostic, failure } from "./contract";
 import { createTrace, finishTrace } from "./trace";
@@ -48,15 +53,17 @@ export function runQueryJob(
     const reply =
       "view" in job
         ? yield* answerView(job, { attachmentFiles: env.attachmentFiles })
-        : yield* answer(job, {
-            identity: env.identity,
-            attachmentFiles: env.attachmentFiles,
-            instrument: trace?.instrument,
-            onAnswerStep: job.measure
-              ? (ms: number) => answerSteps.push(ms)
-              : undefined,
-            openOutput: () => openStage(job.stagePath, stage),
-          });
+        : "customFields" in job
+          ? yield* answerCustomFields(job.command)
+          : yield* answer(job, {
+              identity: env.identity,
+              attachmentFiles: env.attachmentFiles,
+              instrument: trace?.instrument,
+              onAnswerStep: job.measure
+                ? (ms: number) => answerSteps.push(ms)
+                : undefined,
+              openOutput: () => openStage(job.stagePath, stage),
+            });
     if (!trace) return reply;
     return {
       ...reply,

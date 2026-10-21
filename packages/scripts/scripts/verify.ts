@@ -30,17 +30,20 @@ const sh = $({
 await step("Format", () => sh`pnpm exec oxfmt --check`);
 
 // The `zt` template contract and the template data page generate from TS
-// sources (ADR 0015), so a commit that changes the sources without the
-// regenerated output fails here. The contract generator imports the built
-// `@zotlit/zotero-types`; the page generator reads the contract source.
+// sources (ADR 0015), and the Functions and methods page from the Query
+// Schema of `@zotlit/item-query`, so a commit that changes the sources
+// without the regenerated output fails here. The contract generator imports
+// the built `@zotlit/zotero-types`; the Functions and methods generator reads
+// the schema file the `@zotlit/item-query` build writes.
 await step("Generated artifacts", async () => {
-  await sh`pnpm exec turbo run build --filter=@zotlit/zotero-types`;
+  await sh`pnpm exec turbo run build --filter=@zotlit/zotero-types --filter=@zotlit/item-query`;
   await sh`pnpm --filter @zotlit/db generate:contract`;
   await sh`pnpm --filter @zotlit/docs generate:template-data`;
+  await sh`pnpm --filter @zotlit/docs generate:query-functions`;
   const stale = (
     await $({
       cwd: root,
-    })`git status --porcelain -- packages/db/src/contract/generated apps/docs/content/docs/reference/templates/data.mdx`
+    })`git status --porcelain -- packages/db/src/contract/generated apps/docs/content/docs/reference/templates/data.mdx apps/docs/content/docs/reference/functions-and-methods.mdx`
   ).stdout.trim();
   if (stale) {
     throw new Error(

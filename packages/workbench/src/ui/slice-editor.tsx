@@ -6,7 +6,7 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { SuggestionSource } from "#/language/index";
-import { linter, setDiagnostics } from "@codemirror/lint";
+import { setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
@@ -29,6 +29,7 @@ import {
 } from "./source-diagnostics";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
+import { underlineOnlyLint } from "./underline-lint";
 
 import {
   workbenchSlice,
@@ -304,9 +305,7 @@ export function SliceEditor({
               ]
             : []),
           EditorView.lineWrapping,
-          linter(null, { tooltipFilter: () => [] }),
-          // CodeMirror still mounts an empty filtered tooltip.
-          EditorView.theme({ ".cm-tooltip-lint": { display: "none" } }),
+          underlineOnlyLint,
           problemGutter.current.extension,
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.

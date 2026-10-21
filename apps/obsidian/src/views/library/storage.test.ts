@@ -15,6 +15,7 @@ import {
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { SettingsService } from "@/services/settings/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
+import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
@@ -110,7 +111,7 @@ async function openLibrary() {
     app: { ...host.app, scope: undefined },
     reads: { on: off },
     libraryScope: { on: off },
-    query: { run: () => Promise.resolve(EMPTY), on: () => () => {} },
+    query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
     literatureNotes: noLiteratureNotes(),

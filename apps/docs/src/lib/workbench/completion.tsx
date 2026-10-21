@@ -6,7 +6,10 @@ import { useLayoutEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 
 import { suggestions } from "@zotlit/workbench/completion";
-import { applyTemplateCompletion } from "@zotlit/workbench/language";
+import {
+  applyTemplateCompletion,
+  fieldPopup,
+} from "@zotlit/workbench/language";
 import type {
   SuggestionResult,
   SuggestionSource,
@@ -18,143 +21,155 @@ import { m } from "@/paraglide/messages.js";
 
 /** The editor owns the query and keys; React owns the Command list and Base UI popup. */
 export function webCompletion(read: SuggestionSource) {
-  return Prec.highest(
-    ViewPlugin.fromClass(
-      class {
-        readonly #host = document.createElement("div");
-        readonly #root = createRoot(this.#host);
-        #result: SuggestionResult | null = null;
-        #active = 0;
-        constructor(readonly view: EditorView) {}
+  const list = ViewPlugin.fromClass(
+    class {
+      readonly #host = document.createElement("div");
+      readonly #root = createRoot(this.#host);
+      #result: SuggestionResult | null = null;
+      #active = 0;
+      constructor(readonly view: EditorView) {}
 
-        update(update: ViewUpdate) {
-          if (
-            update.transactions.some((tr) => tr.isUserEvent("input.pair-close"))
-          ) {
-            this.close();
-            return;
-          }
-          if (update.focusChanged && !this.view.hasFocus) {
-            this.close();
-            return;
-          }
-          if (
-            update.transactions.some((tr) => tr.isUserEvent("input.complete"))
-          )
-            return;
-          if (update.docChanged || update.selectionSet) {
-            const typed = update.transactions.some(
-              (tr) => tr.isUserEvent("input.type") || tr.isUserEvent("delete"),
-            );
-            if (typed || this.#result) this.open();
-          }
+      update(update: ViewUpdate) {
+        if (
+          update.transactions.some((tr) => tr.isUserEvent("input.pair-close"))
+        ) {
+          this.close();
+          return;
         }
-
-        open() {
-          const config = read(this.view.state.selection.main.head);
-          const { state } = this.view;
-          this.#result =
-            config && state.selection.main.empty && !this.view.composing
-              ? suggestions(
-                  state.doc.toString(),
-                  state.selection.main.head,
-                  config,
-                )
-              : null;
-          if (!this.#result?.options.length) this.#result = null;
-          this.#active = 0;
-          this.render();
+        if (update.focusChanged && !this.view.hasFocus) {
+          this.close();
+          return;
         }
-
-        close() {
-          this.#result = null;
-          this.render();
-        }
-
-        accept(index = this.#active) {
-          const result = this.#result;
-          const option = result?.options[index];
-          if (!result || !option || this.view.composing) return;
-          this.#result = null;
-          const more = applyTemplateCompletion(this.view, result, option);
-          this.view.focus();
-          if (more) this.open();
-          else this.render();
-        }
-
-        key(event: KeyboardEvent) {
-          if (event.isComposing || this.view.composing) return false;
-          if (event.ctrlKey && event.code === "Space") {
-            this.open();
-            return true;
-          }
-          const count = this.#result?.options.length;
-          if (!count) return false;
-          if (event.key === "Escape") {
-            this.close();
-            return true;
-          }
-          if (event.key === "Enter") {
-            this.accept();
-            return true;
-          }
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            this.#active =
-              (this.#active + (event.key === "ArrowDown" ? 1 : -1) + count) %
-              count;
-            this.render();
-            return true;
-          }
-          return false;
-        }
-
-        render() {
-          this.view.contentDOM.setAttribute("aria-autocomplete", "list");
-          if (this.#result)
-            this.view.contentDOM.setAttribute("aria-haspopup", "listbox");
-          if (!this.#result) {
-            this.view.contentDOM.removeAttribute("aria-haspopup");
-            this.view.contentDOM.removeAttribute("aria-activedescendant");
-            this.view.contentDOM.removeAttribute("aria-controls");
-          }
-          this.#root.render(
-            this.#result ? (
-              <CompletionPopup
-                view={this.view}
-                result={this.#result}
-                active={this.#active}
-                onSelect={(index) => {
-                  this.#active = index;
-                  this.render();
-                }}
-                onAccept={(index) => this.accept(index)}
-                onClose={() => this.close()}
-              />
-            ) : null,
+        if (update.transactions.some((tr) => tr.isUserEvent("input.complete")))
+          return;
+        if (update.docChanged || update.selectionSet) {
+          const typed = update.transactions.some(
+            (tr) => tr.isUserEvent("input.type") || tr.isUserEvent("delete"),
           );
+          if (typed || this.#result) this.open();
         }
+      }
 
-        destroy() {
-          // A parent React commit can destroy the editor; finish that commit first.
-          queueMicrotask(() => this.#root.unmount());
-          for (const attribute of [
-            "aria-autocomplete",
-            "aria-haspopup",
-            "aria-controls",
-            "aria-activedescendant",
-          ])
-            this.view.contentDOM.removeAttribute(attribute);
+      open() {
+        const config = read(this.view.state.selection.main.head);
+        const { state } = this.view;
+        this.#result =
+          config && state.selection.main.empty && !this.view.composing
+            ? suggestions(
+                state.doc.toString(),
+                state.selection.main.head,
+                config,
+              )
+            : null;
+        if (!this.#result?.options.length) this.#result = null;
+        this.#active = 0;
+        this.render();
+      }
+
+      /** Whether the list stands. */
+      get standing() {
+        return this.#result !== null;
+      }
+
+      close() {
+        this.#result = null;
+        this.render();
+      }
+
+      accept(index = this.#active) {
+        const result = this.#result;
+        const option = result?.options[index];
+        if (!result || !option || this.view.composing) return;
+        this.#result = null;
+        const more = applyTemplateCompletion(this.view, result, option);
+        this.view.focus();
+        if (more) this.open();
+        else this.render();
+      }
+
+      key(event: KeyboardEvent) {
+        if (event.isComposing || this.view.composing) return false;
+        if (event.ctrlKey && event.code === "Space") {
+          this.open();
+          return true;
         }
-      },
-      {
-        eventHandlers: {
-          keydown(event) {
-            return this.key(event);
-          },
+        const count = this.#result?.options.length;
+        if (!count) return false;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          this.#active =
+            (this.#active + (event.key === "ArrowDown" ? 1 : -1) + count) %
+            count;
+          this.render();
+          return true;
+        }
+        return false;
+      }
+
+      render() {
+        this.view.contentDOM.setAttribute("aria-autocomplete", "list");
+        if (this.#result)
+          this.view.contentDOM.setAttribute("aria-haspopup", "listbox");
+        if (!this.#result) {
+          this.view.contentDOM.removeAttribute("aria-haspopup");
+          this.view.contentDOM.removeAttribute("aria-activedescendant");
+          this.view.contentDOM.removeAttribute("aria-controls");
+        }
+        this.#root.render(
+          this.#result ? (
+            <CompletionPopup
+              view={this.view}
+              result={this.#result}
+              active={this.#active}
+              onSelect={(index) => {
+                this.#active = index;
+                this.render();
+              }}
+              onAccept={(index) => this.accept(index)}
+              onClose={() => this.close()}
+            />
+          ) : null,
+        );
+      }
+
+      destroy() {
+        // A parent React commit can destroy the editor; finish that commit first.
+        queueMicrotask(() => this.#root.unmount());
+        for (const attribute of [
+          "aria-autocomplete",
+          "aria-haspopup",
+          "aria-controls",
+          "aria-activedescendant",
+        ])
+          this.view.contentDOM.removeAttribute(attribute);
+      }
+    },
+    {
+      eventHandlers: {
+        keydown(event) {
+          return this.key(event);
         },
       },
-    ),
+    },
   );
+  // Tab, Enter and Escape are the keys every completion list shares.
+  return [
+    Prec.highest(list),
+    fieldPopup.of((view) => {
+      const shown = view.plugin(list);
+      return shown?.standing
+        ? {
+            accept: () => {
+              shown.accept();
+              return true;
+            },
+            close: () => {
+              shown.close();
+              return true;
+            },
+          }
+        : null;
+    }),
+  ];
 }
 
 function CompletionPopup({

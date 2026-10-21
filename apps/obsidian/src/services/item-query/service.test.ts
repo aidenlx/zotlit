@@ -1042,6 +1042,16 @@ it("describes all three Query Datasets once when from is omitted", async () => {
   expect(selected.datasets.annotations.fields).toContain("item.title");
 });
 
+it("names the custom fields of the active source for the expression editors", async () => {
+  using scenario = openScenarioDatabase({
+    storage: "temp-directory",
+    annotations: true,
+  });
+  const { service } = setup(scenario);
+  await using _owned = service;
+  expect(await service.customFieldNames(signal())).toContain("review.status");
+});
+
 it("returns Attachment rows and narrows the live schema to Attachments", async () => {
   using scenario = openScenarioDatabase({
     storage: "temp-directory",

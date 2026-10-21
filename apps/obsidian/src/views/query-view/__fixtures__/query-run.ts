@@ -1,10 +1,24 @@
-// A fake answer of ZotLit Query cut as the real one is: each row carries only
-// the fields its request names, so a view that asks for too little shows the
-// gap in a test.
+// A fake ZotLit Query for the Query View tests, and its answer cut as the real
+// one is: each row carries only the fields its request names, so a view that
+// asks for too little shows the gap in a test.
 import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
+import type { QueryViewDeps } from "@/views/query-view/view";
+
+/**
+ * The ZotLit Query a Query View reads in a test, answering by `run`; every
+ * other read answers nothing. A wider `QueryViewDeps["query"]` adds its read
+ * here.
+ */
+export const fakeQuery = (
+  run: QueryViewDeps["query"]["run"],
+): QueryViewDeps["query"] => ({
+  run,
+  on: () => () => {},
+  customFieldNames: async () => [],
+});
 
 /** `outcome` with each row's values cut to the fields `request` names. */
 export function requested(

@@ -1,12 +1,16 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
+import { ITEMS } from "@zotlit/item-query";
 import type { MatchTree } from "@zotlit/templates/facade";
+import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
+import { useCustomFieldNames } from "./custom-fields";
 import { useWorkbenchStore } from "./editor";
 import { ExampleActions } from "./example-state";
+import { schemaLocale } from "./explorer-sections";
 import { useWorkbenchHost } from "./host";
 import type { WorkbenchMatchResult } from "./host";
 import {
@@ -45,6 +49,8 @@ import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
+
+import { datasetVocabulary } from "#/language/expression-vocabulary";
 
 export type {
   ConditionControlProps,
@@ -147,9 +153,46 @@ export function MatchPane({
   const faulty = span
     ? filter?.leaves.find(({ from, to }) => span.from >= from && span.to <= to)
     : undefined;
-  const vocabulary = useMemo(
+  // The test's Fault, in the text of the condition it is in.
+  const placed = useMemo(
     () =>
-      filterVocabulary("items", {
+      filter && faulty && span
+        ? {
+            path: faulty.path,
+            fault: {
+              text: filter.text.slice(faulty.from, faulty.to),
+              span: {
+                from: span.from - faulty.from,
+                to: span.to - faulty.from,
+              },
+            },
+          }
+        : null,
+    [filter, faulty, span],
+  );
+  const locale = host.getLocale();
+  const { matchData } = host;
+  const readCustom = useCallback(
+    (signal: AbortSignal) => matchData.customFields(signal),
+    [matchData],
+  );
+  const custom = useCustomFieldNames(readCustom, {
+    revision: vocabularyRevision,
+  });
+  // What a condition reads: the fields of an Item, labelled as Zotero labels
+  // them, and the source's custom fields. A Profile binds no Query Context,
+  // has no Formulas and reads no vault property.
+  const schema = schemaLocale(locale);
+  const expression = useMemo(() => {
+    const labels = FIELD_LABELS[schema];
+    return datasetVocabulary(ITEMS, {
+      label: (path) => labels[path],
+      custom,
+    });
+  }, [schema, custom]);
+  const vocabulary = useMemo(
+    () => ({
+      ...filterVocabulary("items", {
         m,
         values,
         issue: (_, path) =>
@@ -158,8 +201,14 @@ export function MatchPane({
           placeKey(path) === placeKey(faulty.path)
             ? answer.message
             : null,
+        fault: (path) =>
+          placed && placeKey(path) === placeKey(placed.path)
+            ? placed.fault
+            : undefined,
       }),
-    [m, values, faulty, answer],
+      expression,
+    }),
+    [m, values, faulty, answer, placed, expression],
   );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
@@ -524,6 +573,13 @@ function Row<Row extends LabelledRow>({
   const host = useWorkbenchHost();
   const issue =
     stored === null ? null : (vocabulary.issue?.(condition, stored) ?? null);
+  const place = stored === null ? null : placeKey(stored);
+  const findFault = vocabulary.fault;
+  const fault = useMemo(
+    () => (stored === null ? undefined : findFault?.(stored)),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `place` stands for `stored`, a new array on each render
+    [findFault, place],
+  );
   const labelled = isExpression(condition)
     ? asLabelled(condition, vocabulary)
     : null;
@@ -559,6 +615,8 @@ function Row<Row extends LabelledRow>({
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
                 value={condition.text}
+                vocabulary={vocabulary.expression}
+                fault={fault}
                 onChange={(text) => onChange({ kind: "expression", text })}
               />
             ) : (
