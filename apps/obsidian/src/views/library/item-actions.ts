@@ -130,8 +130,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         indexedKey,
         text: outcome.text,
         insert: () => {
-          const padded = padCitationInsert(outcome.text, around);
-          return insertion.commit(padded.text, padded);
+          return insertion.commit(padCitationInsert(outcome.text, around).text);
         },
       });
     },

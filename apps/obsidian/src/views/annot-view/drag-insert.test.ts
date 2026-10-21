@@ -328,7 +328,7 @@ it("captures the tagged drop coordinates, maps later edits, and undoes once", as
   f.cm.dispatch({ selection: { anchor: f.cm.state.doc.length } });
   f.pending[0]!.resolve(result("EXCERPT"));
   await vi.waitFor(() =>
-    expect(f.cm.state.doc.toString()).toBe("user one EXCERPTtwo"),
+    expect(f.cm.state.doc.toString()).toBe("user one EXCERPT two"),
   );
   expect(undo(f.cm)).toBe(true);
   expect(f.cm.state.doc.toString()).toBe("user one two");
@@ -346,7 +346,7 @@ it("inserts where CodeMirror's own drop would when no exact position is under th
   expect(f.prepare).toHaveBeenCalledOnce();
   f.pending[0]!.resolve(result("EXCERPT"));
   await vi.waitFor(() =>
-    expect(f.cm.state.doc.toString()).toBe("one EXCERPTtwo"),
+    expect(f.cm.state.doc.toString()).toBe("one EXCERPT two"),
   );
   expect(f.notify).not.toHaveBeenCalled();
 });

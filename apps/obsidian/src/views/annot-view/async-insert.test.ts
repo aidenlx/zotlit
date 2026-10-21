@@ -75,6 +75,34 @@ function fixture() {
   };
 }
 
+/** An insertion held over `from`–`to` of a note reading `doc`. */
+function holdAt(doc: string, from: number, to = from) {
+  const cm = stateEditor({ doc });
+  const editor = { cm } as Editor;
+  const info = { editor, file: { path: "t.md" } as TFile } as MarkdownFileInfo;
+  const target = captureInsertion({
+    editor,
+    info,
+    isCurrent: () => true,
+    range: { from, to },
+    workspace: fakeWorkspace(),
+  });
+  return {
+    cm,
+    target,
+    /** The note, with `|` where the cursor rests. */
+    withCursor: () => {
+      const { doc: text, selection } = cm.state;
+      const head = selection.main.head;
+      return `${text.sliceString(0, head)}|${text.sliceString(head)}`;
+    },
+    [Symbol.dispose]() {
+      target[Symbol.dispose]();
+      cm.destroy();
+    },
+  };
+}
+
 describe("captured asynchronous insertion", () => {
   it("maps edits before the selection and creates one isolated undo step", async () => {
     using f = fixture();
@@ -159,23 +187,9 @@ describe("captured asynchronous insertion", () => {
 describe("a multi-line insertion", () => {
   const CALLOUT = "> [!note] Page 1\n>\n> A quote.";
   const insertAt = (doc: string, at: number, text = CALLOUT) => {
-    const cm = stateEditor({ doc });
-    const editor = { cm } as Editor;
-    const info = {
-      editor,
-      file: { path: "t.md" } as TFile,
-    } as MarkdownFileInfo;
-    using target = captureInsertion({
-      editor,
-      info,
-      isCurrent: () => true,
-      range: { from: at, to: at },
-      workspace: fakeWorkspace(),
-    });
-    expect(target.commit(text)).toBe(true);
-    const result = cm.state.doc.toString();
-    cm.destroy();
-    return result;
+    using held = holdAt(doc, at);
+    expect(held.target.commit(text)).toBe(true);
+    return held.cm.state.doc.toString();
   };
 
   it.each([
@@ -222,5 +236,68 @@ describe("a multi-line insertion", () => {
 
   it("keeps a one-line insertion inline", () => {
     expect(insertAt("A sentence.", 2, "short ")).toBe("A short sentence.");
+  });
+
+  it("leaves the cursor at the end of the block", () => {
+    using held = holdAt("A\nB", 2);
+    held.target.commit(CALLOUT);
+    expect(held.withCursor()).toBe(`A\n\n${CALLOUT}\n\n|B`);
+  });
+});
+
+describe("a one-line insertion", () => {
+  const QUOTE = "“a quote” [Zotero](zotero://open)";
+  /** The note after `text` lands at `at`, with `|` where the cursor rests. */
+  const insertAt = (doc: string, at: number, text = QUOTE) => {
+    using held = holdAt(doc, at);
+    expect(held.target.commit(text)).toBe(true);
+    return held.withCursor();
+  };
+
+  it.each([
+    {
+      where: "before a word",
+      doc: "As shown here",
+      at: 9,
+      expected: `As shown ${QUOTE} |here`,
+    },
+    {
+      where: "before a space, which it reuses",
+      doc: "As shown here",
+      at: 8,
+      expected: `As shown${QUOTE} |here`,
+    },
+    {
+      where: "at the end of a line",
+      doc: "As shown\nnext",
+      at: 8,
+      expected: `As shown${QUOTE}|\nnext`,
+    },
+    {
+      where: "at the end of the note",
+      doc: "As shown ",
+      at: 9,
+      expected: `As shown ${QUOTE}|`,
+    },
+    {
+      where: "before closing punctuation",
+      doc: "As shown.",
+      at: 8,
+      expected: `As shown${QUOTE}|.`,
+    },
+  ])("stands apart from the text after it $where", ({ doc, at, expected }) => {
+    expect(insertAt(doc, at)).toBe(expected);
+  });
+
+  it("adds no space after text that already ends in one", () => {
+    expect(insertAt("As shown here", 9, "@key ")).toBe("As shown @key |here");
+  });
+
+  it("reads the text after it as the insert lands, not as it starts", () => {
+    using held = holdAt("As shown [>q] here", 9, 13);
+    // The space after the range goes while the text is prepared.
+    held.cm.dispatch({ changes: { from: 13, to: 14 } });
+    held.target.commit(QUOTE);
+    expect(held.withCursor()).toBe(`As shown ${QUOTE} |here`);
   });
 });

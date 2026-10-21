@@ -17,21 +17,47 @@ const trimLineBreaks = (text: string) => text.replaceAll(/^\n+|\n+$/g, "");
  * callout, once the line breaks at its edges are set aside. One-line text
  * lands inline.
  */
-export function isBlockText(text: string): boolean {
+function isBlockText(text: string): boolean {
   return trimLineBreaks(text).includes("\n");
 }
 
 /**
- * A block gets the line breaks it needs to stand apart from the text around
- * the range. Without them a callout dropped at the end of a sentence joins
- * that sentence's line. Inline text lands as it is.
+ * Characters inline text may run straight into: punctuation that closes the
+ * sentence or the bracket the text sits in.
+ */
+const CLOSERS = new Set(".,;:!?)]}。，、；：！？）】」』》");
+
+/**
+ * Inline text with the space it needs after it, and where the cursor goes in
+ * it, as an offset from its start. A space follows where the character after
+ * the range would otherwise be glued to the text; a space already there is
+ * reused, and the cursor rests past it, so typing goes on after the space.
+ * A line end, closing punctuation, or text that ends in a space needs none.
+ */
+function placeInline(
+  text: string,
+  next: string,
+): { insert: string; cursor: number } {
+  if (/\s$/u.test(text)) return { insert: text, cursor: text.length };
+  if (next === " ") return { insert: text, cursor: text.length + 1 };
+  const glued = next !== "" && !/\s/u.test(next) && !CLOSERS.has(next);
+  const insert = glued ? `${text} ` : text;
+  return { insert, cursor: insert.length };
+}
+
+/**
+ * The text that lands over `{ from, to }` of `doc`, and where the cursor goes
+ * in it, as an offset from its start. One-line text lands inline (see
+ * {@link placeInline}). A block gets the line breaks it needs to stand apart
+ * from the text around the range: without them a callout dropped at the end
+ * of a sentence joins that sentence's line. The cursor rests at its end.
  */
 function placeText(
   doc: Text,
   { from, to }: { from: number; to: number },
   text: string,
-): string {
-  if (!isBlockText(text)) return text;
+): { insert: string; cursor: number } {
+  if (!isBlockText(text)) return placeInline(text, doc.sliceString(to, to + 1));
   const block = trimLineBreaks(text);
   const isBlank = (line: number) =>
     line < 1 || line > doc.lines || doc.line(line).text.trim() === "";
@@ -49,7 +75,8 @@ function placeText(
       : isBlank(end.number + 1)
         ? ""
         : "\n";
-  return `${before}${block}${after}`;
+  const insert = `${before}${block}${after}`;
+  return { insert, cursor: insert.length };
 }
 
 /**
@@ -145,18 +172,14 @@ export function captureInsertion(options: {
     range: (): { from: number; to: number } | null =>
       cm.state.field(marker, false) ?? null,
     /**
-     * @param options.cursor where the cursor lands in inline text, as an
-     *   offset from its start; the end of the text when absent. A block
-     *   always leaves the cursor at its end.
+     * Land `text` over the held range, placed against the note as it stands
+     * now: a block on lines of its own, inline text kept from gluing to what
+     * follows (see {@link placeText}). Answers whether it landed.
      */
-    commit(text: string, options?: { cursor?: number }): boolean {
+    commit(text: string): boolean {
       if (!valid()) return false;
       const range = cm.state.field(marker)!;
-      const insert = placeText(cm.state.doc, range, text);
-      const cursor =
-        options?.cursor !== undefined && !isBlockText(text)
-          ? options.cursor
-          : insert.length;
+      const { insert, cursor } = placeText(cm.state.doc, range, text);
       cm.dispatch({
         changes: { ...range, insert },
         selection: { anchor: range.from + cursor },

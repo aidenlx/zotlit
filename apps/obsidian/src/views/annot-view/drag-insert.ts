@@ -49,6 +49,7 @@ function fallbackText(annotation: AnnotationRecord): string {
  * the fallback text where the template cannot render, the notices of an
  * Excerpt Image summary or a profile error. Shared by every asynchronous
  * annotation insert: the card menu, a drop, and the Annotation Suggester.
+ * Answers whether text landed.
  */
 export async function prepareAndCommit(
   deps: Pick<AsyncInsertDeps, "app" | "noteFeature" | "notify">,
@@ -58,7 +59,7 @@ export async function prepareAndCommit(
     target: InsertionTarget;
     notePath: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   const { annotation, snapshot, target, notePath } = options;
   try {
     const result = await deps.noteFeature.prepareAnnotationInsert({
@@ -70,11 +71,11 @@ export async function prepareAndCommit(
       valid: target.valid,
     });
     if (!result && target.valid()) {
-      if (target.commit(fallbackText(annotation)))
-        deps.notify(m.annot_view_drag_unavailable());
-      return;
+      const landed = target.commit(fallbackText(annotation));
+      if (landed) deps.notify(m.annot_view_drag_unavailable());
+      return landed;
     }
-    if (!result || !target.commit(result.text)) return;
+    if (!result || !target.commit(result.text)) return false;
     const { summary } = result;
     if (summary.zotero || summary.unchecked || summary.unavailable)
       deps.notify(
@@ -83,22 +84,23 @@ export async function prepareAndCommit(
           notRefreshed: summary.notRefreshed ?? 0,
         }),
       );
+    return true;
   } catch (error) {
-    if (target.signal.aborted || !target.valid()) return;
+    if (target.signal.aborted || !target.valid()) return false;
     if (error instanceof ProfileAnnotationError) {
       deps.notify(
         error.diagnostic.code === "unknown-literature-note-profile"
           ? profileRecoveryNotice(deps.app, error.diagnostic)
           : error.message,
       );
-      target.commit(annotation.text ?? annotation.key);
-      return;
+      return target.commit(annotation.text ?? annotation.key);
     }
     logger.warn("Annotation insert failed", {
       annotationKey: annotation.key,
       error,
     });
     deps.notify(m.annot_view_insert_failed());
+    return false;
   }
 }
 
