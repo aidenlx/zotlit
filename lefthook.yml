@@ -42,8 +42,12 @@ commit-msg:
     ai-attribution:
       run: mise exec -- node packages/scripts/scripts/ai-attribution.ts message {1}
 
+# The quality gate: GitHub runs no pull-request checks, so this is where a
+# branch is checked before anyone sees it. See ADR 0076.
 pre-push:
   commands:
     ai-attribution:
       use_stdin: true
       run: mise exec -- node packages/scripts/scripts/ai-attribution.ts push {1}
+    verify:
+      run: mise exec -- node packages/scripts/scripts/verify.ts
