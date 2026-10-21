@@ -349,7 +349,7 @@ What one ZotLit gesture or followed link opens: an Attachment, or one Annotation
 _Avoid_: reader target (see Reader Session), table reader, PDF target
 
 **File Link Capture**:
-Taking a clicked Attachment File Link or Durable Annotation Link as an Open Target instead of handing it to the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off. A Durable Annotation Link the system handler keeps opens in Zotero, and one names its own Attachment even where another Attachment keeps the same file.
+Taking a clicked Attachment File Link or Durable Annotation Link as an Open Target instead of handing it to the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off, and every Durable Annotation Link once the user turns annotation links, or their opening, off. A Durable Annotation Link the system handler keeps opens in Zotero, and one names its own Attachment even where another Attachment keeps the same file.
 _Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
 
 **Annotation Anchor**:

@@ -256,7 +256,7 @@ The link appears wherever ZotLit writes an annotation: <UiLabel name={m.annot_vi
 
 ### Opened in Obsidian [#zotero-open-links-captured]
 
-While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> is on, which is the default, ZotLit opens a durable annotation link in Obsidian's reader. The PDF opens with the annotation selected and scrolled into view. This applies to a link clicked in Live Preview, in Reading view, or in a Properties value.
+While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} />, <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_annotation_links_name()} />, and <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_open_annotation_links_name()} /> are on, which is the default, ZotLit opens a durable annotation link in Obsidian's reader. The PDF opens with the annotation selected and scrolled into view. This applies to a link clicked in Live Preview, in Reading view, or in a Properties value.
 
 When Zotero no longer has the annotation, the PDF opens on the annotation's page alone. If that annotation's page label differs from the PDF's page number, the page jump can miss.
 
@@ -264,13 +264,15 @@ When Zotero no longer has the annotation, the PDF opens on the annotation's page
 
 ZotLit hands the link to Zotero, unchanged, in these cases:
 
-| Case                                                                    | Result                                       |
-| ----------------------------------------------------------------------- | -------------------------------------------- |
-| The PDF is not on this computer, or ZotLit does not know the attachment | Zotero opens the annotation.                 |
-| <UiLabel name={m.settings_reader_open_file_links_name()} /> is off      | Zotero opens the annotation.                 |
-| You right-click the link and choose **Open in default browser**         | Zotero opens the annotation.                 |
-| A `zotero://open` link with no `annotation` parameter                   | Zotero handles it. ZotLit never captures it. |
-| A `zotero://select` link                                                | Zotero handles it. ZotLit never captures it. |
+| Case                                                                       | Result                                             |
+| -------------------------------------------------------------------------- | -------------------------------------------------- |
+| The PDF is not on this computer, or ZotLit does not know the attachment    | Zotero opens the annotation.                       |
+| <UiLabel name={m.settings_reader_open_file_links_name()} /> is off         | Zotero opens the annotation.                       |
+| <UiLabel name={m.settings_citation_annotation_links_name()} /> is off      | Zotero opens the annotation. Hover shows nothing.  |
+| <UiLabel name={m.settings_citation_open_annotation_links_name()} /> is off | Zotero opens the annotation. Hover still shows it. |
+| You right-click the link and choose **Open in default browser**            | Zotero opens the annotation.                       |
+| A `zotero://open` link with no `annotation` parameter                      | Zotero handles it. ZotLit never captures it.       |
+| A `zotero://select` link                                                   | Zotero handles it. ZotLit never captures it.       |
 
 ### Older file links [#zotero-open-links-file-links]
 
