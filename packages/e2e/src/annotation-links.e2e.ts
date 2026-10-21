@@ -88,6 +88,11 @@ interface Outcome {
   passed: { url: string; target: string | null }[];
   /** The text of every notice on screen. */
   notices: string[];
+  /**
+   * The Attachment the Rougier PDF's reader held each time the follow
+   * recorded a read of the paper, in order; only for a scenario that asks.
+   */
+  reads?: (string | null)[];
 }
 
 /** The rendered link to `url` in the markdown view `view`, as eval code. */
@@ -359,6 +364,8 @@ interface Scenario {
   lands?: ReaderState;
   /** The Attachment the reader must name for a landing; the Rougier PDF's own by default. */
   bound?: string;
+  /** Report the reads the follow recorded, as {@link Outcome.reads}. */
+  reads?: boolean;
 }
 
 /**
@@ -375,6 +382,7 @@ async function follow({
   captureOff = false,
   lands,
   bound = annotationAttachment.key,
+  reads = false,
 }: Scenario): Promise<Outcome> {
   const follow =
     gesture === "external"
@@ -419,6 +427,13 @@ async function follow({
         const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
         if(${captureOff})s.settings.update({'reader.open-file-links':false});
         ${gesture === "chip" ? "" : showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
+        // The ledger records a read as the reader names its Attachment, so
+        // the reader is asked which one it holds as each read lands.
+        const reads=[];
+        cleanup.defer(s.useLedger.on('changed',()=>{
+          const [newest]=Object.entries(s.useLedger.uses).sort(([,a],[,b])=>b-a)[0]??[];
+          if(s.useLedger.get(newest)?.kind==='read')reads.push(s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
+        }));
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
         if(lands===null){
@@ -437,7 +452,7 @@ async function follow({
           // Obsidian's own page jump and the Landing's scroll frame follow.
           await until(()=>JSON.stringify(observe().reader)===lands,()=>'The reader did not land: '+JSON.stringify(observe()));
         }
-        outcome=observe();
+        outcome={...observe(),...(${reads}?{reads}:{})};
       }
       return JSON.stringify(outcome);
     })()`,
@@ -784,21 +799,28 @@ describe.skipIf(!reachable)("Annotation links", () => {
   }, 120000);
 
   // A one-line template quotes inside a sentence: the insert stands one
-  // space apart from the word after it, runs straight into closing
-  // punctuation, and leaves a space at a line end, where typing goes on.
-  const PLACEMENTS = [
+  // space apart from the words around it, runs straight into closing
+  // punctuation, and leaves a space at a line end, where typing goes on. A
+  // trigger typed straight after a word is where the researcher wanted it, so
+  // the Annotation Suggester adds no space before it (`suggested`).
+  const PLACEMENTS: {
+    where: string;
+    line: string;
+    ch: number;
+    then?: string;
+    expected: string;
+    suggested?: string;
+  }[] = [
     {
       where: "before a word",
       line: "As argued here",
       ch: 10,
-      then: undefined,
       expected: `As argued ${inlineOf(FIRST_PAGE)} here`,
     },
     {
       where: "before closing punctuation",
       line: "As argued .",
       ch: 10,
-      then: undefined,
       expected: `As argued ${inlineOf(FIRST_PAGE)}.`,
     },
     {
@@ -808,7 +830,15 @@ describe.skipIf(!reachable)("Annotation links", () => {
       then: "next",
       expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
     },
-  ] as const;
+    {
+      where: "right after a word",
+      line: "As argued",
+      ch: 9,
+      then: "next",
+      expected: `As argued ${inlineOf(FIRST_PAGE)} next`,
+      suggested: `As argued${inlineOf(FIRST_PAGE)} next`,
+    },
+  ];
 
   it.each(PLACEMENTS)(
     "places a one-line Annotation from its card $where",
@@ -827,14 +857,14 @@ describe.skipIf(!reachable)("Annotation links", () => {
 
   it.each(PLACEMENTS)(
     "places a one-line Annotation from the Annotation Suggester $where",
-    async ({ line, ch, then, expected }) => {
+    async ({ line, ch, then, expected, suggested = expected }) => {
       const outcome = await searchAndInsert(
         "[>MESSAGE tag:visualization color:blue",
         FIRST_PAGE.text!,
         { line, ch, inline: true, then },
       );
 
-      expect(outcome.text).toBe(`# Draft\n\n${expected}`);
+      expect(outcome.text).toBe(`# Draft\n\n${suggested}`);
     },
     120000,
   );
@@ -894,9 +924,13 @@ describe.skipIf(!reachable)("Annotation links", () => {
       gesture: "reading",
       lands,
       bound: SHARED.attachmentKey,
+      reads: true,
     });
 
     expect(outcome).toMatchObject({ reader: lands, passed: [] });
+    // The reader held the named Attachment from its first read: the path's
+    // own Attachment was never bound, nor read.
+    expect(outcome.reads).toEqual([SHARED.attachmentKey]);
   }, 180000);
 
   // The regression guard: the device-local link ZotLit wrote before keeps

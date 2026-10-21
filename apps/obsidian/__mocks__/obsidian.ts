@@ -439,9 +439,11 @@ export class TFolder extends TAbstractFile {
 
 /**
  * Minimal WorkspaceLeaf shell. Only the prototype matters here: ZotLit patches
- * `setEphemeralState` on it to read an Annotation Anchor off an open.
+ * `setViewState` and `setEphemeralState` on it to read an Annotation Anchor
+ * off an open.
  */
 export class WorkspaceLeaf {
+  async setViewState(_viewState: unknown, _eState?: unknown): Promise<void> {}
   setEphemeralState(_state: unknown): void {}
 }
 

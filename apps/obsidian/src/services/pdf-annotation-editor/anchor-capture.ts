@@ -2,12 +2,15 @@
 // readable: the leaf. `setViewState` hands the ephemeral state to the leaf, the
 // leaf hands it to the view, and Obsidian's PDF view keeps nothing once the
 // call returns — so a link click, a programmatic open, a deferred leaf
-// replaying its stored state and history all cross this one symbol.
+// replaying its stored state and history all cross `setEphemeralState`. Every
+// one of them that opens a view passes its ephemeral state to `setViewState`
+// first, where the Anchor is held before the view is bound.
 //
 // @see apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md
 
 import { around } from "monkey-around";
 import { WorkspaceLeaf } from "obsidian";
+import type { ViewState } from "obsidian";
 
 import {
   ANNOTATION_ANCHOR_KEY,
@@ -25,8 +28,8 @@ const logger = getLogger("pdf-annotation-editor");
 
 /**
  * The Anchor each leaf was last opened with, until the view that wanted it
- * drains it. Per leaf rather than per view, because the patch writes it before
- * the binding that reads it exists; the two are never alive at once.
+ * drains it. Per leaf rather than per view, because the patch writes it as
+ * `setViewState` starts, before the view it opens loads its file and is bound.
  *
  * The Anchor carries the Attachment the open named, when it named one, beside
  * the Annotation: two Attachments can keep one file, and the binding names
@@ -69,21 +72,33 @@ export interface AnnotationAnchorCaptureDeps {
  * that names no Annotation clears the Anchor waiting on it, so a plain
  * `#page=N` link stands the previous target down.
  *
+ * `setViewState` is patched too, to hold the Anchor before the view loads:
+ * Obsidian turns the leaf active, and fires `file-open`, before it hands the
+ * leaf its ephemeral state, so a cold PDF view is bound first. Held early, the
+ * Attachment the open named is the one that view binds, rather than the one
+ * its path chooses.
  */
 export function registerAnnotationAnchorCapture(
   deps: AnnotationAnchorCaptureDeps,
 ): Disposable {
   const host = WorkspaceLeaf.prototype as unknown as {
+    setViewState: (viewState: ViewState, eState?: unknown) => Promise<void>;
     setEphemeralState: (state: unknown) => void;
   };
   return disposable(
     around(host, {
+      setViewState: (native) =>
+        function (
+          this: WorkspaceLeaf,
+          viewState: ViewState,
+          eState?: unknown,
+        ): Promise<void> {
+          hold(this, viewState.type, eState);
+          return native.call(this, viewState, eState);
+        },
       setEphemeralState: (native) =>
         function (this: WorkspaceLeaf, state: unknown): void {
-          const subpath = navigationSubpathOf(state);
-          const anchor = subpath === null ? null : anchorOf(this, subpath);
-          if (subpath !== null && anchor === null) pending.delete(this);
-          if (anchor !== null) pending.set(this, anchor);
+          const anchor = hold(this, this.getViewState().type, state);
           native.call(this, state);
           if (anchor === null) return;
           logger.debug("An open carried an Annotation Anchor", {
@@ -116,11 +131,29 @@ function navigationSubpathOf(state: unknown): string | null {
 }
 
 /**
- * The Anchor one subpath carries, for a leaf showing a PDF: an Annotation to
+ * Hold the Anchor one ephemeral state carries for `leaf`, which shows a view
+ * of `viewType`, and answer it. A navigation that carries none clears the one
+ * waiting; a state that is no navigation leaves it.
+ */
+function hold(
+  leaf: WorkspaceLeaf,
+  viewType: string,
+  state: unknown,
+): ParsedAnnotationSubpath | null {
+  const subpath = navigationSubpathOf(state);
+  if (subpath === null) return null;
+  const anchor = anchorOf(viewType, subpath);
+  if (anchor === null) pending.delete(leaf);
+  else pending.set(leaf, anchor);
+  return anchor;
+}
+
+/**
+ * The Anchor one subpath carries, for a view showing a PDF: an Annotation to
  * land on, the Attachment the open named, or both.
  */
 function anchorOf(
-  leaf: WorkspaceLeaf,
+  viewType: string,
   subpath: string,
 ): ParsedAnnotationSubpath | null {
   if (
@@ -128,7 +161,7 @@ function anchorOf(
       subpath.includes(ANNOTATION_ANCHOR_KEY) ||
       subpath.includes(ATTACHMENT_ANCHOR_KEY)
     ) ||
-    leaf.getViewState().type !== PDF_VIEW_TYPE
+    viewType !== PDF_VIEW_TYPE
   ) {
     return null;
   }

@@ -17,6 +17,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import { captureInsertion } from "./async-insert";
+import type { Placement } from "./async-insert";
 
 const logger = getLogger(["views", "annot-view"]);
 const SOURCE_TAG = "application/x-zotlit-annotation";
@@ -49,7 +50,7 @@ function fallbackText(annotation: AnnotationRecord): string {
  * the fallback text where the template cannot render, the notices of an
  * Excerpt Image summary or a profile error. Shared by every asynchronous
  * annotation insert: the card menu, a drop, and the Annotation Suggester.
- * Answers whether text landed.
+ * Whatever lands is placed by `placement`. Answers whether text landed.
  */
 export async function prepareAndCommit(
   deps: Pick<AsyncInsertDeps, "app" | "noteFeature" | "notify">,
@@ -58,9 +59,10 @@ export async function prepareAndCommit(
     snapshot: AnnotationSnapshot;
     target: InsertionTarget;
     notePath: string;
+    placement?: Placement;
   },
 ): Promise<boolean> {
-  const { annotation, snapshot, target, notePath } = options;
+  const { annotation, snapshot, target, notePath, placement } = options;
   try {
     const result = await deps.noteFeature.prepareAnnotationInsert({
       annotation,
@@ -71,11 +73,11 @@ export async function prepareAndCommit(
       valid: target.valid,
     });
     if (!result && target.valid()) {
-      const landed = target.commit(fallbackText(annotation));
+      const landed = target.commit(fallbackText(annotation), placement);
       if (landed) deps.notify(m.annot_view_drag_unavailable());
       return landed;
     }
-    if (!result || !target.commit(result.text)) return false;
+    if (!result || !target.commit(result.text, placement)) return false;
     const { summary } = result;
     if (summary.zotero || summary.unchecked || summary.unavailable)
       deps.notify(
@@ -93,7 +95,7 @@ export async function prepareAndCommit(
           ? profileRecoveryNotice(deps.app, error.diagnostic)
           : error.message,
       );
-      return target.commit(annotation.text ?? annotation.key);
+      return target.commit(annotation.text ?? annotation.key, placement);
     }
     logger.warn("Annotation insert failed", {
       annotationKey: annotation.key,

@@ -128,6 +128,12 @@ describe("insertAnnotation", () => {
     expect(h.text()).toBe(`As shown ${inline} here`);
   });
 
+  it("adds no space before a trigger the researcher typed after a word", async () => {
+    using h = setup("word[>exact]", { rendered: "quote" });
+    await h.insert(4, 12);
+    expect(h.text()).toBe("wordquote ");
+  });
+
   it("renders from the database list it reads, in the scope of the Zotero data folder", async () => {
     using h = setup("[>exact]", { rendered: "quote" });
     await h.insert(0, 8);

@@ -276,13 +276,13 @@ describe("a one-line insertion", () => {
       where: "before a space, which it reuses",
       doc: "As shown here",
       at: 8,
-      expected: `As shown${QUOTE} |here`,
+      expected: `As shown ${QUOTE} |here`,
     },
     {
       where: "at the end of a line",
       doc: "As shown\nnext",
       at: 8,
-      expected: `As shown${QUOTE} |\nnext`,
+      expected: `As shown ${QUOTE} |\nnext`,
     },
     {
       where: "at the end of the note",
@@ -298,7 +298,33 @@ describe("a one-line insertion", () => {
   );
 
   it("runs straight into closing punctuation", () => {
-    expect(insertAt("As shown.", { at: 8 })).toBe(`As shown${QUOTE}|.`);
+    expect(insertAt("As shown.", { at: 8 })).toBe(`As shown ${QUOTE}|.`);
+  });
+
+  it("parts the text from a word or punctuation before it with one space", () => {
+    expect(insertAt("As argued", { at: 9 })).toBe(`As argued ${QUOTE} |`);
+    expect(insertAt("Source.", { at: 7 })).toBe(`Source. ${QUOTE} |`);
+  });
+
+  it.each(["", " ", "\t", "(", "[", "“", '"'])(
+    "adds no space before it after %j",
+    (previous) => {
+      expect(insertAt(previous, { at: previous.length })).toBe(
+        `${previous}${QUOTE} |`,
+      );
+    },
+  );
+
+  it("adds no space before a trigger the researcher typed after a word", () => {
+    using held = holdAt("word[>q]", { from: 4, to: 8 });
+    expect(held.target.commit(QUOTE, { replacesTrigger: true })).toBe(true);
+    expect(held.withCursor()).toBe(`word${QUOTE} |`);
+  });
+
+  it("adds no space before text that already starts with one", () => {
+    expect(insertAt("As argued", { at: 9, text: " @key" })).toBe(
+      "As argued @key |",
+    );
   });
 
   it("adds no space after text that already ends in one", () => {
