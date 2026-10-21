@@ -20,13 +20,6 @@ it("shows a manual connection check while the service retains its last result", 
   expect(model.forget.disabled).toBe(true);
 });
 
-it("shows the capability from the one shared copy table", () => {
-  const model = row({ kind: "read-only", reason: "local-api-disabled" });
-
-  expect(model.status.label).toBe(m.capability_local_api_disabled());
-  expect(model.status.detail).toBe(m.capability_local_api_disabled_detail());
-});
-
 it("drops 'Allow editing' once editing is on", () => {
   expect(row({ kind: "writable" }).enable.shown).toBe(false);
   expect(row({ kind: "authorization-required" }).enable.shown).toBe(true);

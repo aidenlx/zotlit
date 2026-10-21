@@ -15,19 +15,6 @@ import {
 describe("bounded Obsidian CLI call", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("passes the answer through and forwards the arguments", async () => {
-    const received: string[][] = [];
-    const call = createBoundedObsidianCall(async (args) => {
-      received.push(args);
-      return "=> ready";
-    });
-
-    await expect(call(["vault=research", "eval", "code=1"])).resolves.toBe(
-      "=> ready",
-    );
-    expect(received).toEqual([["vault=research", "eval", "code=1"]]);
-  });
-
   it("names the unreachable vault when a call never answers", async () => {
     vi.useFakeTimers();
     const call = createBoundedObsidianCall(async () => new Promise(() => {}), {

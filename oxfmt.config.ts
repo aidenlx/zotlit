@@ -16,5 +16,6 @@ export default defineConfig({
     "packages/pdf-structure/src/vendor/*.js",
     "packages/zotero-types/zotero-schema/**",
     "packages/workbench/src/samples/*.json",
+    "video/**",
   ],
 });

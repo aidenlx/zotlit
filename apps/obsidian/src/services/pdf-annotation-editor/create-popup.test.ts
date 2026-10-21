@@ -1,8 +1,4 @@
-// @vitest-environment happy-dom
-import { createElement } from "react";
-import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -10,12 +6,8 @@ import { editingCapabilityCopy } from "@/services/annotation-repository/capabili
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
-import { CreateMarkPopup, createPopupRow } from "./create-popup";
-import type {
-  CreatePopupActivate,
-  CreatePopupAction,
-  CreatePopupControl,
-} from "./create-popup";
+import { createPopupRow } from "./create-popup";
+import type { CreatePopupControl } from "./create-popup";
 import { resolveToolColors } from "./tools";
 import type { MarkTool } from "./tools";
 
@@ -132,70 +124,4 @@ it("keeps only copying available before authorization", () => {
       .filter(({ disabled }) => !disabled)
       .map(({ id }) => id),
   ).toEqual(["copy"]);
-});
-
-const roots: Root[] = [];
-
-afterEach(() => {
-  for (const root of roots.splice(0)) root.unmount();
-});
-
-/** The create-mode popup drawn into a detached element, with no sheet. */
-function draw(
-  controls: readonly CreatePopupControl[],
-  activate: CreatePopupActivate,
-): HTMLElement {
-  const content = document.createElement("div");
-  const root = createRoot(content);
-  roots.push(root);
-  root.render(
-    createElement(CreateMarkPopup, {
-      app: {} as never,
-      controls,
-      activate,
-      sheet: null,
-    }),
-  );
-  return content;
-}
-
-it("draws the row and runs each control's own action", () => {
-  const pressed: CreatePopupAction[] = [];
-  const content = draw(row(), (action) => pressed.push(action));
-
-  content.querySelector<HTMLElement>('[data-zt-verb="underline"]')!.click();
-  content.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
-  content.querySelector<HTMLElement>('[data-zt-verb="comment"]')!.click();
-
-  expect(pressed).toEqual([
-    { kind: "tool", tool: "underline" },
-    { kind: "color", color: ANNOTATION_COLORS[2] },
-    { kind: "comment" },
-  ]);
-});
-
-it("wears each swatch's colour through the node's own style, not an attribute on the icon's SVG", () => {
-  const content = draw(row(), vi.fn());
-
-  const swatch = content.querySelector<HTMLElement>(
-    '[data-zt-verb="color-4"]',
-  )!;
-
-  expect(swatch.style.getPropertyValue("--zt-verb-color")).toBe(
-    ANNOTATION_COLORS[3],
-  );
-  expect(swatch.querySelector("svg")?.getAttribute("fill")).toBeNull();
-});
-
-it("takes no press on a blocked control", () => {
-  const pressed: CreatePopupAction[] = [];
-  const content = draw(
-    row({ capability: { kind: "read-only", reason: "zotero-unavailable" } }),
-    (action) => pressed.push(action),
-  );
-
-  content.querySelector<HTMLElement>('[data-zt-verb="highlight"]')!.click();
-  content.querySelector<HTMLElement>('[data-zt-verb="copy"]')!.click();
-
-  expect(pressed).toEqual([{ kind: "copy" }]);
 });

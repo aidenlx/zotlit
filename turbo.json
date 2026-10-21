@@ -78,6 +78,9 @@
     "//#lint:repo": {
       "dependsOn": ["//#lint:repo:deps"]
     },
+    "//#lint:test-gates": {
+      "cache": false
+    },
     "//#lint:messages": {
       "cache": false
     },

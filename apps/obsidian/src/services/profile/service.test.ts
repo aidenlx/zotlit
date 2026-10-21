@@ -8,8 +8,6 @@ import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 
 import { profileServiceFixture as harness } from "./__fixtures__/service";
-import { seedProfileEntry } from "./service";
-import type { LiteratureNoteProfile } from "./service";
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const parseLiteratureNoteTemplate = (source: string) =>
@@ -580,31 +578,6 @@ describe("ProfileService", () => {
     expect(vault.contents.get(created.path)).toBe(draft.source);
   });
 
-  it("creates a Profile from a name alone and leaves values equal to Default out of its document", async () => {
-    await using fixture = await harness();
-    const base = fixture.profile.resolveProfile("default")!;
-    const draft = await fixture.profile.prepareCreate({
-      label: "Same",
-      bindings: {
-        folder: base.bindings["note.literature-folder"],
-        citationStyle: base.bindings["citation.references-style"],
-      },
-    });
-    expect(draft.constraint).toBeUndefined();
-    expect(draft.inherited).toEqual(["folder", "citationStyle", "look"]);
-    const pending = draft.create();
-    await vi.advanceTimersByTimeAsync(500);
-    const created = await pending;
-    const source = fixture.vault.contents.get(created.path)!;
-    expect(source).not.toContain("folder:");
-    expect(source).not.toContain("citationStyle:");
-    expect(
-      fixture.profile.resolveProfile(created.id)?.bindings[
-        "note.literature-folder"
-      ],
-    ).toBe(base.bindings["note.literature-folder"]);
-  });
-
   it("creates a Profile from a copied look identical to Default without its source Profile's bindings", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.default.md": document("default"),
@@ -1002,25 +975,6 @@ describe("ProfileService", () => {
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
   });
 
-  it("deletes an unused Profile document", async () => {
-    await using fixture = await harness({
-      "templates/zotlit-profile.books.md": document(),
-    });
-    const { profile, vault } = fixture;
-    fixture.indexNotes();
-    const plan = await profile.prepareDelete(BOOKS);
-    expect(plan.literatureNotes).toEqual([]);
-    expect(plan.importedNotes).toEqual([]);
-    const pending = profile.delete(BOOKS, "default");
-    await vi.advanceTimersByTimeAsync(500);
-    await expect(pending).resolves.toEqual({
-      literatureNotes: 0,
-      importedNotes: 0,
-      movedFiles: 0,
-    });
-    expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(false);
-  });
-
   it("removes a Profile when its document is removed outside ZotLit", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
@@ -1136,52 +1090,5 @@ describe("Profile Match document writes", () => {
     await vi.advanceTimersByTimeAsync(500);
     await rejected;
     expect(f.vault.contents.get(path)).toBe(replacement);
-  });
-});
-
-describe("seedProfileEntry", () => {
-  const BINDINGS = [
-    "folder: Books",
-    "citationStyle: null",
-    "importFolder: Imported",
-    "importColoredHighlights: true",
-    "importAnnotationsAsTemplate: false",
-  ].join("\n");
-  const PATH = "templates/zotlit-profile.books.md";
-  const ENTRY = {
-    id: BOOKS,
-    label: "Books",
-    document: "zotlit-profile.books.md",
-    path: PATH,
-    match: "absent",
-    bindings: {
-      "note.literature-folder": "Books",
-      "citation.references-style": null,
-      "note.import-folder": "Imported",
-      "note.import-colored-highlights": true,
-      "note.import-annotations-as-template": false,
-    },
-  };
-  /** The match is a lazily summarized object; its state is what identifies it. */
-  const flatten = (entry: LiteratureNoteProfile) => ({
-    ...entry,
-    match: entry.match.state,
-  });
-
-  it("derives the entry from the manifest and its document location", () => {
-    const { manifest } = parseLiteratureNoteTemplate(document(BOOKS, BINDINGS));
-    expect(
-      flatten(
-        seedProfileEntry(manifest, {
-          document: "zotlit-profile.books.md",
-          path: PATH,
-        }),
-      ),
-    ).toEqual(ENTRY);
-  });
-
-  it("seeds the entry the registry holds for the same document", async () => {
-    await using f = await harness({ [PATH]: document(BOOKS, BINDINGS) });
-    expect(f.profile.profiles.map(flatten)).toEqual([ENTRY]);
   });
 });

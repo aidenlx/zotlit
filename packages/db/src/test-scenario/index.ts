@@ -80,6 +80,8 @@ const COLUMNS_AFTER_USERDATA_125 = [
 
 const LOWEST_VERSIONS = { userdata: 125, compatibility: 7 } as const;
 
+let pristineBytes: Buffer | undefined;
+
 /**
  * Open a copy of the Fixture's pristine Zotero 10 database with the Item Query
  * scenario inserted. Zotero's lookup tables, triggers, and foreign keys are the
@@ -88,7 +90,9 @@ const LOWEST_VERSIONS = { userdata: 125, compatibility: 7 } as const;
 export function openScenarioDatabase(
   options: ScenarioDatabaseOptions = {},
 ): ScenarioDatabase {
-  const pristine = gunzipSync(readFileSync(pristineTemplatePath()));
+  const pristine = (pristineBytes ??= gunzipSync(
+    readFileSync(pristineTemplatePath()),
+  ));
 
   let sqlite: DatabaseSync;
   let path: string;

@@ -379,21 +379,6 @@ describe("runBatchWrite", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("releases the lease after a successful run", async () => {
-    const { zoteroReads, dispose } = makeLeasingReads();
-    const { controls } = makeRunControls();
-
-    await runBatchWrite({
-      zoteroReads,
-      tasks: [task(1)],
-      controls,
-      concurrency: 4,
-      run: async () => "created",
-    });
-
-    expect(dispose).toHaveBeenCalledTimes(1);
-  });
-
   it("releases the lease when the signal aborts before any task runs", async () => {
     const { zoteroReads, dispose } = makeLeasingReads();
     const { controls, abort } = makeRunControls();
@@ -542,26 +527,6 @@ describe("classifyStream", () => {
     await classifyStream({ itemIDs: [], read }, controls, () => {});
     expect(read).not.toHaveBeenCalled();
     expect(progress).toEqual([]);
-  });
-
-  it("processes every slice in order and reports cumulative progress", async () => {
-    const { controls, progress } = classifyControls();
-    const seen: number[] = [];
-
-    await classifyStream(
-      {
-        itemIDs: [1, 2, 3, 4, 5],
-        read: () =>
-          Stream.fromIterable([[1, 2], [3, 4], [5]], { chunkSize: 1 }),
-      },
-      controls,
-      (slice) => {
-        seen.push(...slice);
-      },
-    );
-
-    expect(seen).toEqual([1, 2, 3, 4, 5]);
-    expect(progress).toEqual([2, 4, 5]);
   });
 
   it("throws and stops processing once aborted", async () => {

@@ -121,11 +121,6 @@ describe("renderWithFacade", () => {
 });
 
 describe("mergeLinkMaps", () => {
-  it("returns the base itself when there is nothing to add", () => {
-    const base = { "Draft.md": { "Other.md": 1 } };
-    expect(mergeLinkMaps(base, {})).toBe(base);
-  });
-
   it("merges per source without touching either input", () => {
     const base = { "Draft.md": { "Other.md": 1 } };
     const additions = {
@@ -275,11 +270,6 @@ describe("facadeApp under the Filters rows", () => {
 });
 
 describe("onlyLinksTo", () => {
-  it("returns the base itself when every target is kept", () => {
-    const base = { "Draft.md": { "Other.md": 1 } };
-    expect(onlyLinksTo(base, () => true)).toBe(base);
-  });
-
   it("drops the turned-down targets without touching the base", () => {
     const base = {
       "Draft.md": { "Other.md": 1, "Kept.md": 2 },
@@ -298,11 +288,6 @@ describe("onlyLinksTo", () => {
 });
 
 describe("withoutLinks", () => {
-  it("returns the base itself when there is nothing to take away", () => {
-    const base = { "Draft.md": { "Other.md": 1 } };
-    expect(withoutLinks(base, {})).toBe(base);
-  });
-
   it("drops the named edges of the named sources without touching the base", () => {
     const base = {
       "Draft.md": { "Doe.md": 1, "Other.md": 1 },

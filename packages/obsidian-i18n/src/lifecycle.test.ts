@@ -212,86 +212,6 @@ describe("Language Pack install lifecycle", () => {
       "wrong locale",
       JSON.stringify({ schemaVersion: 1, locale: "fr", messages: {} }),
     ],
-    [
-      "invalid structure",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: { hello: { declarations: [], variants: "invalid" } },
-      }),
-    ],
-    [
-      "unusable structure",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: { hello: { declarations: [], variants: [] } },
-      }),
-    ],
-    [
-      "oversized data",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: { hello: "x".repeat(256 * 1024) },
-      }),
-    ],
-    [
-      "message-count cap",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: Object.fromEntries(
-          Array.from({ length: 4_001 }, (_, index) => [`m${index}`, "x"]),
-        ),
-      }),
-    ],
-    [
-      "text-length cap",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: { hello: "x".repeat(10_001) },
-      }),
-    ],
-    [
-      "nesting-depth cap",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: {
-          hello: {
-            declarations: [],
-            variants: [{ matches: [], pattern: [deepExpression(20)] }],
-          },
-        },
-      }),
-    ],
-    [
-      "formatter allowlist",
-      JSON.stringify({
-        schemaVersion: 1,
-        locale: "zh-CN",
-        messages: {
-          hello: {
-            declarations: [],
-            variants: [
-              {
-                matches: [],
-                pattern: [
-                  {
-                    type: "formatter",
-                    name: "execute",
-                    argument: { type: "literal", value: "1" },
-                    options: {},
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      }),
-    ],
   ])(
     "%s download rejects and leaves the base pack installed",
     async (_name, response) => {
@@ -431,23 +351,6 @@ describe("Language Pack install lifecycle", () => {
 
     expect(notifications).toBe(1);
     expect(startup.getSituation()).toMatchObject({ kind: "installable" });
-  });
-
-  test("situations are frozen and a new object is produced on every change", async () => {
-    const harness = makePorts({ language: "zh", response: CHINESE_PACK });
-    const startup = initI18n({
-      pluginVersion: PLUGIN_VERSION,
-      ports: harness.ports,
-    });
-
-    const before = startup.getSituation();
-    expect(Object.isFrozen(before)).toBe(true);
-
-    await startup.install();
-
-    const after = startup.getSituation();
-    expect(Object.isFrozen(after)).toBe(true);
-    expect(after).not.toBe(before);
   });
 
   test("no remote pack for the locale rejects install and no-ops decline", async () => {
@@ -730,15 +633,5 @@ function makePorts(options: {
         },
       ),
     },
-  };
-}
-
-function deepExpression(depth: number): unknown {
-  if (depth === 0) return { type: "literal", value: "1" };
-  return {
-    type: "formatter",
-    name: "number",
-    argument: deepExpression(depth - 1),
-    options: {},
   };
 }

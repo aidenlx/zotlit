@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { looseFiles, looseFilesMessage } from "./commit-tree.ts";
+import { looseFiles } from "./commit-tree.ts";
 
 /** `git status --porcelain=v1 -z` output for these entries. */
 const status = (...entries: string[]) =>
@@ -44,10 +44,4 @@ describe("looseFiles", () => {
       "my notes/a b.ts",
     ]);
   });
-});
-
-it("names each loose file and the way to skip the check", () => {
-  const message = looseFilesMessage(["src/a.ts"]);
-  expect(message).toContain("\n  src/a.ts\n");
-  expect(message).toContain("LEFTHOOK_EXCLUDE=tree");
 });

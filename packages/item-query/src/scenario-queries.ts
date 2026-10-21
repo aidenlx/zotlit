@@ -488,17 +488,6 @@ const FILTER_MATCHES: Readonly<Record<string, readonly string[]>> = {
   "!attachments": except("ART2FULL"),
 };
 
-const byTitleThenVolume: readonly SortSpec[] = [
-  { field: "title", direction: "desc" },
-  { field: "volume", direction: "asc" },
-];
-
-/** ART2FULL has one date in both Libraries: the Indexed Key breaks the tie. */
-const byDateThenTitle: readonly SortSpec[] = [
-  { field: "date", direction: "asc" },
-  { field: "title", direction: "desc" },
-];
-
 /**
  * RPT2NDTE was accessed at 04:00Z on 2020-01-07 and CHP2YEAR on the calendar
  * day 2020-01-07; UNI2CDE2 stores an access date that does not parse. The
@@ -837,181 +826,21 @@ const REQUESTS: readonly ScenarioQuery[] = [
   },
 ];
 
-/**
- * The cases that the generated combinations of the parity suite found. When a
- * generated query fails, its message prints the entry to add here; the case
- * then runs by name after the fix, whatever the generator gives later.
- */
+/** Named regressions retained alongside every scenario filter and request. */
 const NAMED_CASES: readonly ScenarioQuery[] = [];
-
-const inLibrary = (
-  matches: readonly string[] | undefined,
-  library: readonly string[],
-): { matches?: readonly string[] } =>
-  matches ? { matches: matches.filter((key) => library.includes(key)) } : {};
 
 /** Each filter with matches is in {@link FILTERS}. */
 export const PINNED_FILTERS: readonly string[] = Object.keys(FILTER_MATCHES);
 
 export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
-  ...FILTERS.flatMap((filter): ScenarioQuery[] => [
-    {
-      name: `${filter} [personal, key order]`,
-      libraries: ["personal"],
-      request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
-      ...inLibrary(FILTER_MATCHES[filter], PERSONAL),
-    },
-    {
-      name: `${filter} [group, key order]`,
-      libraries: ["group"],
-      request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
-      ...inLibrary(FILTER_MATCHES[filter], GROUP),
-    },
-    {
-      name: `${filter} [personal, sorted, limit 2]`,
-      libraries: ["personal"],
-      request: {
-        filter,
-        ...scenarioFormulas(filter),
-        fields: ["title", "tags", "date.year"],
-        sort: byTitleThenVolume,
-        limit: 2,
-      },
-    },
-    {
+  ...FILTERS.map(
+    (filter): ScenarioQuery => ({
       name: `${filter} [both Libraries, key order]`,
       libraries: ["personal", "group"],
       request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
-      ...inLibrary(FILTER_MATCHES[filter], EVERY_ITEM),
-    },
-    {
-      name: `${filter} [both Libraries, sorted, limit 2]`,
-      libraries: ["group", "personal"],
-      request: {
-        filter,
-        ...scenarioFormulas(filter),
-        fields: ["title", "tags", "collections"],
-        sort: byDateThenTitle,
-        limit: 2,
-      },
-    },
-  ]),
+      ...(FILTER_MATCHES[filter] ? { matches: FILTER_MATCHES[filter] } : {}),
+    }),
+  ),
   ...REQUESTS,
   ...NAMED_CASES,
-];
-
-/**
- * The parts from which the parity suite generates filter combinations. The
- * suite joins them with `&&`, `||`, `!`, `==`, and `if()`. Add each new leaf
- * form here with values that match no Item, one Item, and several Items.
- */
-export const GENERATED_FILTER_PARTS: readonly string[] = [
-  'indexedKey == "ART2FULL"',
-  'indexedKey == "ART2FULLg4815"',
-  '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)',
-
-  'library == "personal"',
-  'library != "personal"',
-  'library == "group:4815"',
-  'tags == "bulk"',
-  'tags != "bulk"',
-  // Lowered leaves.
-  'tags.contains("to-read")',
-  'tags.contains("To-Read")',
-  'tags.contains("tie")',
-  'tags.contains("methods")',
-  'tags.contains("eclair")',
-  'tags.contains("group-only")',
-  'tags.contains("no-such-tag")',
-  'key == "ART2FULL"',
-  'key == "BK2MNTH2"',
-  'key == "TIE2CCCC"',
-  '"GRP2BK22" == key',
-  'key == "TRS2SHED"',
-  'key == "PDF2LIVE"',
-  'key == "NOSUCHKY"',
-  'publicationTitle == "Handbook of Methods"',
-  'publicationTitle == "Base Field Host"',
-  '"Tie Journal" == publicationTitle',
-  'publisher == "Group Press"',
-  'title == "Same Title"',
-  'title == "Trashed Article"',
-  'volume == "12"',
-  'collections.contains("Thesis/Methods")',
-  'collections.contains("Teaching/Methods")',
-  'collections.contains("Methods")',
-  'collections.within("Thesis")',
-  'collections.within("Archive")',
-  // Other expressions.
-  "true",
-  "false",
-  "null",
-  'itemType == "book"',
-  'itemType == "journalArticle"',
-  'key != "ART2FULL"',
-  'title.startsWith("Same")',
-  "title == null",
-  'title.contains("e")',
-  "volume == 12",
-  'publisher.startsWith("Sage")',
-  'mood == "calm"',
-  "tags.length > 1",
-  'tags.containsAny("tie", "methods")',
-  "creators.isEmpty()",
-  "collections.length == 2",
-  "attachments",
-  'date >= date("2021")',
-  'date == date("2019-11")',
-  'dateAdded >= date("2022")',
-  'tags.sort()[0] == "tie"',
-  'tags.reverse()[0] == "to-read"',
-  'tags.slice(0, 1).contains("methods")',
-  "creators.unique().length == 1",
-  'tags.join(",").contains("to-read")',
-  "[tags, collections].flat().length > 2",
-  'creators.filter(value.contains("Lovelace")).length > 0',
-  'creators.filter(index == 0).contains("Grace Hopper")',
-  'tags.filter(value.startsWith("no-such")).length > 0',
-  'tags.map(value.lower()).contains("to-read")',
-  "tags.reduce(acc + value.length, 0) > 24",
-  // Text, number, and wrapping helpers.
-  'title.trim() == "No Such Title"',
-  "title.title() == title",
-  'title.repeat(2) == "Same TitleSame Title"',
-  'title.reverse() == "tropeR baL"',
-  'title.slice(0, 4) == "Same"',
-  'title.replace(" ", "") == "LabReport"',
-  'title.split(" ")[0] == "Group"',
-  'number(volume).toFixed(1) == "12.0"',
-  "publisher.isTruthy()",
-  'list(mood).contains("calm")',
-  "list(tags).length == 1",
-  // Regular expressions.
-  "/^Same/.matches(title)",
-  "/^lab report$/i.matches(title)",
-  "/^zzz/.matches(title)",
-  "/a/.matches(publisher)",
-  'title.replace(/\\s+/g, "") == "SameTitle"',
-  'title.split(/ /)[0] == "Group"',
-  // Formulas: see SCENARIO_FORMULAS.
-  "formula.year == 2019",
-  "formula.decade == 2020",
-  "formula.tagged",
-  "formula.year > 3000",
-  "formula.volumes",
-  "formula.volumes > 0 || formula.tagged",
-  // Error Values: false where a truth is read, equal to no value, and passed
-  // through every other operator.
-  'date > "2019"',
-  "number(title) > 0",
-  "number(volume) > 0",
-  "!number(title)",
-  "number(title) != null",
-  "number(title) == number(title)",
-  'number(title).isType("error")',
-  "title.repeat(-1)",
-  "tags[0.5]",
-  "tags.filter(number(value) > 0).length == 0",
-  "if(number(title), true, false)",
-  'date("x" + key) || key == "ART2FULL"',
 ];

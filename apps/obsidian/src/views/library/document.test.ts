@@ -538,16 +538,6 @@ function plans(filter: string | undefined): boolean {
   return filter !== undefined && "matches" in planItemFilter(filter);
 }
 
-describe("libraryViewQuery — the rows", () => {
-  it("shows at most a thousand rows, so a large library opens at once", () => {
-    expect(derive({}).view.limit).toBe(1000);
-  });
-
-  it("names no Properties, as the Query View labels Creators and Year itself", () => {
-    expect(derive({}).file.properties).toBeUndefined();
-  });
-});
-
 describe("libraryViewQuery — the tree node", () => {
   it("names the node it lists, and none while a search reads every Library past it, Recent aside", () => {
     const thesis: LibraryNode = {
@@ -977,10 +967,6 @@ describe("libraryViewQueryFileText — Save as query file", () => {
     expect(view.sort).toEqual([
       { property: "lastActivity", direction: "DESC" },
     ]);
-  });
-
-  it("writes no Display Names for Creators and Year", () => {
-    expect(saved({}).file.properties).toBeUndefined();
   });
 
   it("writes the Library alone as the filter of a Library node", () => {

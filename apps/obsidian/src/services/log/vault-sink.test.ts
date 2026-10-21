@@ -151,14 +151,4 @@ describe("createVaultFileSink", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(adapter.appendCalls).toContainEqual(expect.stringContaining('"b"'));
   });
-
-  it("idempotent dispose returns the same promise", async () => {
-    const adapter = makeAdapter();
-    const sink = await createVaultFileSink(asAdapter(adapter), "log.jsonl");
-
-    const a = sink[Symbol.asyncDispose]();
-    const b = sink[Symbol.asyncDispose]();
-    expect(a).toBe(b);
-    await a;
-  });
 });

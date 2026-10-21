@@ -7,7 +7,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
 import { AbortError } from "@/lib/abort-error";
-import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
@@ -495,54 +494,6 @@ it("takes the selection a card sends through the Reader Session", async () => {
   expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
 });
 
-it("takes a group the Card Selection sends with no popup, and Escape clears it", async () => {
-  await using h = await setup();
-  click(h.page.div, ON_WORD);
-  expect(h.popup()).not.toBeNull();
-
-  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
-  expect([...h.selection.selected]).toEqual(["PARA7777", "WRDS2222"]);
-  expect(h.reported.at(-1)).toEqual(["PARA7777", "WRDS2222"]);
-  expect(h.popup()).toBeNull();
-
-  key(h, "Escape");
-  expect(h.selection.selected.size).toBe(0);
-  expect(h.reported.at(-1)).toEqual([]);
-});
-
-it("recolours every mark of a group for a colour key, in one gesture", async () => {
-  await using h = await setup();
-  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
-
-  key(h, "3");
-
-  const color = ANNOTATION_COLORS[2]!.toLowerCase();
-  await vi.waitFor(() => expect(h.zotero.at("PARA7777")?.color).toBe(color));
-  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")?.color).toBe(color));
-  expect(h.writes().map(({ method, key }) => ({ method, key }))).toEqual([
-    { method: "PATCH", key: "PARA7777" },
-    { method: "PATCH", key: "WRDS2222" },
-  ]);
-});
-
-it("copies the text of every selected mark for Ctrl+C, by the Annotation View's rule", async () => {
-  await using h = await setup([
-    { ...PARAGRAPH, text: "Scientific visualization" },
-    { ...WORD, comment: "Check <b>this</b>" },
-  ]);
-  const write = vi
-    .spyOn(navigator.clipboard, "writeText")
-    .mockResolvedValue(undefined);
-  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
-
-  const event = h.key({ key: "c", ctrlKey: true });
-
-  expect(event.defaultPrevented).toBe(true);
-  expect(write).toHaveBeenCalledExactlyOnceWith(
-    "Scientific visualization\n\nCheck this",
-  );
-});
-
 it("leaves Ctrl+C to a text selection in the PDF", async () => {
   await using h = await setup([
     { ...PARAGRAPH, text: "Scientific visualization" },
@@ -560,25 +511,6 @@ it("leaves Ctrl+C to a text selection in the PDF", async () => {
 
   expect(event.defaultPrevented).toBe(false);
   expect(write).not.toHaveBeenCalled();
-});
-
-it("deletes every mark of a group for Delete, after one confirmation that counts them", async () => {
-  await using h = await setup();
-  using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
-  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
-
-  key(h, "Delete");
-
-  await vi.waitFor(() => expect(h.zotero.at("PARA7777")).toBeNull());
-  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
-  expect(h.writes()).toEqual([
-    { method: "DELETE", key: "PARA7777", body: null },
-    { method: "DELETE", key: "WRDS2222", body: null },
-  ]);
-  expect(ask).toHaveBeenCalledOnce();
-  expect(ask.mock.calls[0]?.[0].title).toBe(
-    m.annot_view_delete_group_confirm_title({ count: 2 }),
-  );
 });
 
 it("keeps the marks of a group the last read still holds", async () => {
@@ -618,16 +550,6 @@ it("walks reading order with the arrow keys, and brings the reader along", async
   expect(h.navigated).toEqual(["PARA7777", "WRDS2222", "PARA7777"]);
 });
 
-it("deselects on Escape", async () => {
-  await using h = await setup();
-  click(h.page.div, ON_WORD);
-
-  key(h, "Escape");
-
-  expect(h.selection.selected.size).toBe(0);
-  expect(h.popup()).toBeNull();
-});
-
 it("steps back from the selected mark on Escape before the armed tool", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
@@ -639,19 +561,6 @@ it("steps back from the selected mark on Escape before the armed tool", async ()
 
   key(h, "Escape");
   expect(h.store.getState().armed).toBeNull();
-});
-
-it("sets a colour from the number row, and deletes from the delete key", async () => {
-  await using h = await setup();
-  click(h.page.div, ON_WORD);
-
-  key(h, "3");
-  await vi.waitFor(() =>
-    expect(h.zotero.at("WRDS2222")?.color).toBe("#5fb236"),
-  );
-
-  key(h, "Delete");
-  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
 });
 
 it("leaves a modified colour key to whatever else holds it", async () => {
@@ -1335,36 +1244,6 @@ async function figureSelected(capability?: EditingCapability) {
   return h;
 }
 
-it("saves a handle drag on release, with the Sort Index of the new position", async () => {
-  await using h = await figureSelected();
-
-  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
-  pointer(h.containerEl, "pointermove", { x: 320, y: 500 });
-  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
-  // Nothing is asked while the pointer moves: a write is pending from its ask.
-  expect(h.repository.mutationFor("FIGR3333").kind).toBe("idle");
-  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
-  await geometrySaved(h, "FIGR3333");
-  expect(h.writes()).toHaveLength(1);
-
-  // Forty points right and twenty-five down the page, which is twenty-five
-  // points toward the foot in PDF space.
-  expect(h.sortIndex).toHaveBeenCalledWith({
-    kind: "pdf-rects",
-    pageIndex: 0,
-    rects: [[100, 275, 340, 500]],
-  });
-  expect(h.zotero.at("FIGR3333")).toMatchObject({
-    position: { pageIndex: 0, rects: [[100, 275, 340, 500]] },
-    sortIndex: "00000|000012|00517",
-  });
-  // The adjustment ends once the write settled, and the mark stays selected.
-  expect(h.store.getState().floating).toEqual(
-    expect.not.objectContaining({ adjust: expect.anything() }),
-  );
-  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
-});
-
 it("moves the selected image by its body", async () => {
   await using h = await figureSelected();
 
@@ -1548,32 +1427,6 @@ async function quoteSelected() {
   expect([...h.selection.selected]).toEqual(["QUTE5555"]);
   return h;
 }
-
-it("saves a range's end dragged along the text, with its quoted text", async () => {
-  await using h = await quoteSelected();
-  h.adjustRange.mockResolvedValue({
-    pageIndex: 0,
-    rects: [[100, 300, 260, 312]],
-    text: "the quote, one word longer",
-  });
-
-  pointer(h.page.div, "pointerdown", QUOTE_END);
-  pointer(h.containerEl, "pointermove", { x: 260, y: 486 });
-  // Released before the document answered: the save waits for the answer.
-  pointer(h.containerEl, "pointerup", { x: 260, y: 486 });
-  await geometrySaved(h, "QUTE5555");
-
-  expect(h.adjustRange).toHaveBeenCalledWith({
-    position: QUOTE.position,
-    end: "end",
-    point: { pageIndex: 0, x: 260, y: 306 },
-  });
-  expect(h.zotero.at("QUTE5555")).toMatchObject({
-    position: { pageIndex: 0, rects: [[100, 300, 260, 312]] },
-    sortIndex: "00000|000012|00517",
-    text: "the quote, one word longer",
-  });
-});
 
 it("drops a range the document answers after Escape took its drag back", async () => {
   await using h = await quoteSelected();

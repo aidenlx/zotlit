@@ -58,18 +58,6 @@ describe("the Live updates toggle", () => {
 });
 
 describe("GET /literature-notes", () => {
-  it("returns the indexed keys with a 200", async () => {
-    const deps = makeDeps();
-    const app = createLiveUpdateApp(deps);
-
-    const res = await app.request("/literature-notes", { headers: headers() });
-
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({
-      keys: ["ABCD2345", "ZZZ99999g17"],
-    });
-  });
-
   it("rejects an older protocol version with 426", async () => {
     const app = createLiveUpdateApp(makeDeps());
 

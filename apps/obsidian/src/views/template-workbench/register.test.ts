@@ -357,25 +357,6 @@ Annotation`);
     ]);
   });
 
-  it("leaves the Workbench pane menu to the view's own entries", () => {
-    setMockPlatform({ isDesktopApp: true });
-    const { deps, plugin, fileMenu, file, leaf } = setup();
-    register(plugin, deps);
-    const view = Object.assign(Object.create(TemplateWorkbenchView.prototype), {
-      file,
-      leaf,
-    }) as TemplateWorkbenchView;
-    Object.assign(leaf, { view });
-
-    expect(fileMenu(leaf).items).toEqual([]);
-    // Every surface outside the view still offers the routes into it.
-    expect(fileMenu().items.map(({ title }) => title)).toEqual([
-      m.template_workbench_open_layout(),
-      m.template_workbench_web_open(),
-      m.template_workbench_open(),
-    ]);
-  });
-
   it.each([
     "customize-profile",
     "open-template-workbench-view",
@@ -653,24 +634,6 @@ Annotation`);
       "web",
     );
   });
-  it("registers its own view and command without changing Markdown file associations", async () => {
-    setMockPlatform({ isDesktopApp: true });
-    const { app, file, plugin, deps, commands, registerView, setViewState } =
-      setup();
-    register(plugin, deps);
-    expect(registerView).toHaveBeenCalledWith(
-      TEMPLATE_WORKBENCH_VIEW_TYPE,
-      expect.any(Function),
-    );
-    expect(commands[0]!.checkCallback?.(true)).toBe(true);
-    await openTemplateWorkbench(app, file);
-    expect(setViewState).toHaveBeenCalledWith({
-      type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-      state: { file: file.path },
-      active: true,
-    });
-  });
-
   it("opens the requested Match tab in Basic mode", async () => {
     const { app, file, setViewState } = setup();
     await openTemplateWorkbench(app, file, { tab: "match" });

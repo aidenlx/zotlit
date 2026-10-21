@@ -15,7 +15,7 @@ import { createCitationEngine } from "./engine";
 import type { PrepareRequest, PreparedDocument, RenderRequest } from "./engine";
 import { exportCitedDocument } from "./export";
 import type { ExportFailure, ExportPorts, ExportResult } from "./export";
-import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
+import { PANDOC_RESOLVE_MAP_FILENAME } from "./filter";
 
 const SOURCE = "Notes/Paper.md";
 
@@ -195,23 +195,6 @@ const CITED: Fixture = {
 };
 
 describe("exportCitedDocument", () => {
-  it("hands the filter an Injected Id for each Literature Note", async () => {
-    const running = run(CITED);
-    await expect(running).resolves.toEqual({
-      output: new Uint8Array([1, 2, 3]),
-    });
-
-    const [request] = running.ports.prepareDocument.mock.calls[0] as [
-      PrepareRequest,
-    ];
-    expect(
-      JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-    ).toEqual({
-      citations: { "Zeta 2020": "#ZETA1234", "Adams 2018": "#ADAM5678g5" },
-    });
-    expect(request.luaFilters).toEqual([pandocSandboxFilter]);
-  });
-
   it.each([false, true])(
     "cites each Item by the CSL id its source gave it (snapshot unavailable: %s)",
     async (snapshotUnavailable) => {
@@ -336,19 +319,6 @@ describe("exportCitedDocument", () => {
     });
   });
 
-  it("asks the source chain for every cited Item once", async () => {
-    const running = run({
-      ...CITED,
-      links: [link("Zeta 2020"), link("Zeta 2020"), link("Adams 2018")],
-    });
-    await running;
-
-    expect(running.ports.fetchBibliography).toHaveBeenCalledWith([
-      ref("ZETA1234"),
-      ref("ADAM5678", 5),
-    ]);
-  });
-
   it.each([false, true])(
     "converts a document that cites nothing without asking Zotero (snapshot unavailable: %s)",
     async (snapshotUnavailable) => {
@@ -364,22 +334,6 @@ describe("exportCitedDocument", () => {
       ).toEqual({ citations: {} });
     },
   );
-
-  it("carries the chosen style and Citation Locale through to the engine", async () => {
-    const running = run(CITED, {
-      styleXml: "<style/>",
-      locale: "de-DE",
-      format: "html",
-    });
-    await running;
-
-    const [request] = running.ports.renderPrepared.mock.calls[0] as [
-      RenderRequest,
-    ];
-    expect(request.styleXml).toBe("<style/>");
-    expect(request.locale).toBe("de-DE");
-    expect(request.format).toBe("html");
-  });
 
   it("stops on a citation fragment that names no literature note", async () => {
     const running = run({

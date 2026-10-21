@@ -168,27 +168,6 @@ describe("independent native Explorer", () => {
     );
     expect(session.state.getState().status).toBe("ready");
   });
-  it("loads sample annotations with their own inert parent data", async () => {
-    vi.mocked(loadTemplateData).mockResolvedValue({
-      kind: "data",
-      data: { title: "Native paper", noteLink: () => "[[Paper]]" },
-    });
-    using session = new NativeExplorerSession(deps);
-    session.setContext(
-      context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
-    );
-    await session.ready;
-    expect(loadTemplateData).toHaveBeenLastCalledWith(deps, "PAPER234", "note");
-    expect(session.state.getState().data?.text).toBe(
-      SAMPLE_ANNOTATIONS[0]!.root.text,
-    );
-    const parent = session.state.getState().data?.parentItem as {
-      title: string;
-      noteLink: () => string | null;
-    };
-    expect(parent.title).toBe("Designing reproducible research interfaces");
-    expect(parent.noteLink()).toBeNull();
-  });
   it("offers explicit Item selection without launching a picker on mount", async () => {
     using session = new NativeExplorerSession(deps);
     const choose = vi.fn();

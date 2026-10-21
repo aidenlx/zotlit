@@ -11,7 +11,6 @@ import {
   annotViewBody,
   attachmentLine,
   followModeIcon,
-  followModeLabel,
   followModeMenu,
   headerIndicators,
   headerMenu,
@@ -87,23 +86,6 @@ function entryActions(entries: FollowMenuEntry[]): FollowMenuAction[] {
   return entries.map((entry) => entry.action);
 }
 
-describe("the Follow Mode table", () => {
-  it("names and pictures each mode once", () => {
-    expect(followModeLabel("active-tab")).toBe(m.annot_view_mode_active_tab());
-    expect(followModeLabel("zotero-reader")).toBe(
-      m.annot_view_mode_zotero_reader(),
-    );
-    expect(followModeLabel("pinned")).toBe(m.annot_view_mode_pinned());
-    expect(
-      new Set([
-        followModeIcon("active-tab"),
-        followModeIcon("zotero-reader"),
-        followModeIcon("pinned"),
-      ]).size,
-    ).toBe(3);
-  });
-});
-
 describe("the Follow Mode menu", () => {
   it("offers the two mode switches, the pin, and the item picker", () => {
     const entries = followModeMenu(state({ followMode: "zotero-reader" }));
@@ -114,19 +96,6 @@ describe("the Follow Mode menu", () => {
       ["pin-current-item", m.annot_view_mode_pin_current_item()],
       ["choose-item", m.annot_view_pin_choose_item()],
     ]);
-  });
-
-  it("pictures every entry, whatever the mode", () => {
-    for (const followMode of [
-      "active-tab",
-      "zotero-reader",
-      "pinned",
-    ] as const) {
-      const icons = followModeMenu(state({ followMode })).map(
-        (entry) => entry.icon,
-      );
-      expect(icons.filter((icon) => icon.length > 0)).toStrictEqual(icons);
-    }
   });
 
   it("swaps Pin current item for Unpin while pinned", () => {

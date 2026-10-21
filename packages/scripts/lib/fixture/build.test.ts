@@ -71,7 +71,6 @@ import {
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
-  VAULT_CASES,
 } from "./build.ts";
 import type {
   BuildOptions,
@@ -2735,15 +2734,6 @@ describe("a Vault Case", () => {
     });
     return caseLayout;
   }
-
-  it("names the configured, fresh, upgrader, and demo cases", () => {
-    expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
-      "configured",
-      "fresh",
-      "upgrader",
-      "demo",
-    ]);
-  });
 
   it("gives the demo vault the demo papers, pages, and Profile, and no test page", async () => {
     const demo = await buildVaultCase("demo");

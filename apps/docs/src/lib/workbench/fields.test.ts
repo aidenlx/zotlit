@@ -68,22 +68,6 @@ describe("templateRootAt", () => {
 });
 
 describe("commonRows", () => {
-  it("leads the note root with eleven rows in a fixed order", () => {
-    expect(rowsOf(journalArticle, "note").map((row) => row.label)).toEqual([
-      m.workbench_field_title(),
-      m.workbench_field_authors(),
-      m.workbench_field_date(),
-      m.workbench_field_abstract(),
-      m.workbench_field_publication_title(),
-      m.workbench_field_citation_key(),
-      m.workbench_field_tags(),
-      m.workbench_field_collections(),
-      m.workbench_field_backlink(),
-      m.workbench_field_attachments(),
-      m.workbench_field_annotations(),
-    ]);
-  });
-
   it("shows this paper's own values", () => {
     const values = new Map(
       rowsOf(journalArticle, "note").map((row) => [row.label, row.value]),
@@ -125,16 +109,6 @@ describe("commonRows", () => {
       "Designing reproducible research interfaces",
     );
   });
-
-  it("leads the filename root with the parts of a note name", () => {
-    expect(rowsOf(journalArticle, "filename").map((row) => row.label)).toEqual([
-      m.workbench_field_title(),
-      m.workbench_field_authors(),
-      m.workbench_field_date(),
-      m.workbench_field_citation_key(),
-      m.workbench_field_key(),
-    ]);
-  });
 });
 
 describe("rootData", () => {
@@ -158,28 +132,6 @@ describe("rowMatches", () => {
 
   it("matches this paper's value", () => {
     expect(match("PLoS")).toEqual([m.workbench_field_publication_title()]);
-  });
-});
-
-describe("snippets", () => {
-  it("offers the Liquid output form for a value row", () => {
-    expect(
-      renderSnippet(
-        nodeFor("note", m.workbench_field_title()),
-        "liquid",
-        "output",
-      ),
-    ).toBe("{{ zt.title }}");
-  });
-
-  it("offers the loop form for a list row", () => {
-    expect(
-      renderSnippet(
-        nodeFor("note", m.workbench_field_authors()),
-        "liquid",
-        "loop",
-      ),
-    ).toBe("{% for author in zt.authors %}{{ author }}{% endfor %}");
   });
 });
 

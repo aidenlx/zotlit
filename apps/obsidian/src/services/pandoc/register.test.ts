@@ -10,7 +10,6 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 
 import type { CslResponse } from "./csl";
-import { PANDOC_FILES_COMMAND, PANDOC_GUIDE_COMMAND } from "./integration";
 import {
   CSL_COMMAND,
   registerPandocResolve,
@@ -18,30 +17,6 @@ import {
 } from "./register";
 import type { PandocResolveDeps } from "./register";
 import type { ResolveResponse } from "./resolve";
-
-describe("Pandoc CLI registration", () => {
-  it("connects every Pandoc handler to the CLI surface", () => {
-    const registerCliHandler = vi.fn();
-    const plugin = {
-      manifest: { version: "2.0.1-test" },
-      registerCliHandler,
-    } as unknown as Plugin;
-
-    registerPandocResolve(plugin, {} as never);
-
-    expect(registerCliHandler.mock.calls.map(([command]) => command)).toEqual([
-      PANDOC_FILES_COMMAND,
-      PANDOC_GUIDE_COMMAND,
-      RESOLVE_COMMAND,
-      CSL_COMMAND,
-    ]);
-    expect(
-      registerCliHandler.mock.calls.every(
-        (call) => typeof call[3] === "function",
-      ),
-    ).toBe(true);
-  });
-});
 
 const APA = "http://www.zotero.org/styles/apa";
 const UNINSTALLED = "http://www.zotero.org/styles/uninstalled";

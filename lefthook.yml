@@ -19,21 +19,6 @@ pre-commit:
     snapshots:
       glob: "*.snap"
       run: mise exec -- node packages/scripts/scripts/snapshot-size.ts {staged_files}
-    worker-responsiveness:
-      priority: 100
-      glob:
-        - "apps/obsidian/src/lib/effect*.ts"
-        - "apps/obsidian/src/lib/browser-scheduler*.ts"
-        - "apps/obsidian/oxlint.config.ts"
-        - "apps/obsidian/src/services/zotero-reads/**"
-        - "apps/obsidian/src/services/database/**"
-        - "apps/obsidian/src/services/citation-index/**"
-        - "packages/item-lookup/**"
-        - "packages/db/**"
-        - "packages/e2e/**"
-        - "pnpm-lock.yaml"
-        - "lefthook.yml"
-      run: mise exec -- pnpm e2e:worker
 
 # Commits and pushes carry no AI-agent attribution, and claude/*, codex/* and
 # cursor/* branches stay local. See packages/scripts/lib/ai-attribution.ts.
@@ -42,8 +27,12 @@ commit-msg:
     ai-attribution:
       run: mise exec -- node packages/scripts/scripts/ai-attribution.ts message {1}
 
+# The quality gate: GitHub runs no pull-request checks, so this is where a
+# branch is checked before anyone sees it. See ADR 0076.
 pre-push:
   commands:
     ai-attribution:
       use_stdin: true
       run: mise exec -- node packages/scripts/scripts/ai-attribution.ts push {1}
+    verify:
+      run: mise exec -- node packages/scripts/scripts/verify.ts

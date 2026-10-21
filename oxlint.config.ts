@@ -2,6 +2,8 @@ import { defineConfig } from "oxlint";
 
 import baseConfig from "@zotlit/config/oxlint";
 
+import testBaseline from "./packages/config/oxlint-tests-baseline.json" with { type: "json" };
+
 export default defineConfig({
   extends: [baseConfig],
   ignorePatterns: [
@@ -21,6 +23,7 @@ export default defineConfig({
     "packages/scripts/lib/fixture/vault-plugins/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
+    "video/**",
   ],
   overrides: [
     {
@@ -28,6 +31,14 @@ export default defineConfig({
       plugins: ["vitest"],
       rules: {
         "typescript/no-floating-promises": "off",
+      },
+    },
+    {
+      // Entries may be deleted, never added.
+      files: testBaseline,
+      rules: {
+        "zotlit-tests/no-source-text": "off",
+        "zotlit-tests/no-internal-mock": "off",
       },
     },
     {

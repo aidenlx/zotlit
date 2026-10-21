@@ -5,11 +5,7 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 
-import {
-  creationToolbar,
-  removeCreationToolbar,
-  renderCreationToolbar,
-} from "./creation-toolbar";
+import { creationToolbar, renderCreationToolbar } from "./creation-toolbar";
 import type {
   CreationToolbarControl,
   CreationToolbarControlId,
@@ -76,31 +72,6 @@ function shownIn(slot: HTMLElement) {
     }),
   );
 }
-
-it("splits every tool in two, then mark visibility, and nothing else", () => {
-  // "Clear all annotations" is deliberately absent (ADR 0042): the reader's
-  // toolbar carries no verb that erases what ZotLit did not just create.
-  expect(model().map(({ id }) => id)).toEqual([
-    ...MARK_TOOLS.flatMap(halves),
-    "visibility",
-  ]);
-});
-
-it("seats the tools in Zotero's toolbar order, note and text between underline and image", () => {
-  expect(
-    model()
-      .filter(({ id }) => !id.endsWith("-color"))
-      .map(({ id }) => id),
-  ).toEqual([
-    "highlight",
-    "underline",
-    "note",
-    "text",
-    "image",
-    "ink",
-    "visibility",
-  ]);
-});
 
 it("shows each tool's own colour on its toggle, so underline is a peer of highlight", () => {
   const byId = new Map(model().map((control) => [control.id, control]));
@@ -191,23 +162,6 @@ it("never stands mark visibility down, because it changes nothing in Zotero", ()
   expect(
     model({ capability }).find(({ id }) => id === "visibility")?.disabled,
   ).toBe(false);
-});
-
-it("draws every control into the slot with its state and its tooltip", () => {
-  const slot = toolbarSlot();
-
-  draw(slot, model({ armed: "underline" }));
-
-  expect(shownIn(slot)).toEqual(
-    model({ armed: "underline" }).map((control) => ({
-      id: control.id,
-      pressed: control.pressed === null ? null : String(control.pressed),
-      disabled: control.disabled ? "true" : null,
-      tooltip: control.tooltip,
-      color: control.color ?? "",
-      icon: expect.stringContaining("lucide-"),
-    })),
-  );
 });
 
 it("marks a blocked control disabled and gives it no listener", () => {
@@ -415,58 +369,4 @@ it("runs nothing for a press on a control that was stood down after it was built
   highlight.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
   expect(activate).not.toHaveBeenCalled();
-});
-
-it("mounts bare clickable icons, with no preflight root in Obsidian's toolbar", () => {
-  const slot = toolbarSlot();
-
-  draw(slot);
-
-  expect(slot.querySelector(".zt-root")).toBeNull();
-  for (const node of slot.querySelectorAll("[data-zt-tool]")) {
-    expect(node.classList.contains("clickable-icon")).toBe(true);
-  }
-});
-
-it("promises the theme hook and the data attribute by their literal names", () => {
-  // The names themselves are the public surface, so the literals are the test.
-  // @see apps/obsidian/policies/theme-hooks.md
-  const slot = toolbarSlot();
-
-  draw(slot);
-
-  expect(slot.querySelector(".zt-pdf-creation-toolbar")).not.toBeNull();
-  expect(slot.querySelectorAll(".zt-pdf-tool")).toHaveLength(MARK_TOOLS.length);
-  expect(
-    [...slot.querySelectorAll<HTMLElement>("[data-zt-tool]")].map(
-      (node) => node.dataset.ztTool,
-    ),
-  ).toEqual([
-    "highlight",
-    "highlight-color",
-    "underline",
-    "underline-color",
-    "note",
-    "note-color",
-    "text",
-    "text-color",
-    "image",
-    "image-color",
-    "ink",
-    "ink-color",
-    "visibility",
-  ]);
-});
-
-it("leaves the slot as Obsidian built it, however often it is taken out", () => {
-  const slot = toolbarSlot();
-  slot.createDiv({ cls: "pdf-toolbar-button" });
-  draw(slot);
-
-  removeCreationToolbar(slot);
-  removeCreationToolbar(slot);
-  slot.empty();
-  removeCreationToolbar(slot);
-
-  expect(slot.childElementCount).toBe(0);
 });

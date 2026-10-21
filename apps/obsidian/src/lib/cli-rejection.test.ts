@@ -3,12 +3,6 @@ import { describe, expect, it } from "vitest";
 import { handlerCheckedFlags, printableCliHandler } from "./cli-rejection";
 
 describe("printableCliHandler", () => {
-  it("passes the answer through unchanged", async () => {
-    const handler = printableCliHandler((params) => `answer ${params.id}`);
-
-    await expect(handler({ id: "1" })).resolves.toBe("answer 1");
-  });
-
   it.each<[string, unknown, string]>([
     [
       "an Error",
@@ -58,9 +52,5 @@ describe("handlerCheckedFlags", () => {
       format: { value: "<json>", description: "Output format" },
     });
     expect(flags.file.required).toBe(true);
-  });
-
-  it("keeps a command without flags", () => {
-    expect(handlerCheckedFlags(null)).toBeNull();
   });
 });

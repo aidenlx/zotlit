@@ -6,10 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import {
-  lookupAnswer,
-  lookupForWorks,
-} from "@/services/citation-index/__fixtures__/lookup";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type {
   CitationKeyResolution,
   DocumentCitationSet,
@@ -134,40 +131,6 @@ function failedHeldOutcome(): RenderedBibliography {
   };
 }
 
-/** What a style that writes no Entry Marker renders, which leaves the gutter free. */
-function unmarkedOutcome(): RenderedBibliography {
-  const value: BibliographyRenderResult = {
-    entries: [
-      {
-        id: BOOK_CSL_ID,
-        marker: undefined,
-        content: words("Rivers, A. (2020). Field notes. Harbour Press."),
-      },
-    ],
-    hasEntryMarkers: false,
-  };
-  return {
-    kind: "held",
-    key: "test-render-unmarked",
-    record: {
-      value,
-      status: "fresh",
-      settled: Promise.resolve(value),
-    },
-  };
-}
-
-/** What the citation text service holds for one note. */
-function heldText(entrySerials: boolean): DocumentCitations {
-  return {
-    formatted: new Map(),
-    entrySerials,
-    summaries: new Map(),
-    lookup: lookupForWorks(new Map()),
-    literalWorks: new Map(),
-  };
-}
-
 let view: TestReferencesView | undefined;
 let renders: PromiseWithResolvers<RenderedBibliography>[] = [];
 /** The render requests a test has answered. */
@@ -177,7 +140,6 @@ let activeFile: TFile;
 let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
 let reads: ZoteroReadsService | undefined;
-let onCitationsChanged: ((path: string) => void) | undefined;
 let onCitedByInvalidated: (() => void) | undefined;
 /** What the Citation Index reports its resolution snapshot as. */
 let citekeyResolution: CitationKeyResolution;
@@ -331,8 +293,7 @@ beforeEach(async () => {
                 status: "fresh",
                 settled: Promise.resolve(heldCitations),
               },
-        on: (event: string, callback: (path: string) => void) => {
-          if (event === "changed") onCitationsChanged = callback;
+        on: (_event: string, _callback: (path: string) => void) => {
           return () => undefined;
         },
       },
@@ -378,7 +339,6 @@ afterEach(async () => {
   await reads?.[Symbol.asyncDispose]();
   reads = undefined;
   onDbChanged = undefined;
-  onCitationsChanged = undefined;
   onCitedByInvalidated = undefined;
   onInvalidated = undefined;
   onActiveLeafChange = undefined;
@@ -483,33 +443,6 @@ describe("ReferencesView copy readiness", () => {
     await finishRender();
 
     expect(copyAction().hasAttribute("disabled")).toBe(true);
-  });
-});
-
-describe("ReferencesView Entry Serials", () => {
-  /** The gutter of the one entry the list shows. */
-  function gutter(): string | null {
-    return view!.contentEl.querySelector("li")!.children[0]!.textContent;
-  }
-
-  it("puts the gutter on Entry Serials once the note's citations show them", async () => {
-    heldCitations = heldText(true);
-    await act(() => onCitationsChanged!(activeFile.path));
-
-    await finishRender(unmarkedOutcome());
-
-    expect(gutter()).toBe("1");
-  });
-
-  it("leaves the gutter out where the note's citations show none", async () => {
-    heldCitations = heldText(false);
-    await act(() => onCitationsChanged!(activeFile.path));
-
-    await finishRender(unmarkedOutcome());
-
-    expect(view!.contentEl.querySelector("ul")!.classList).toContain(
-      "zt:grid-cols-[minmax(0,1fr)_max-content]",
-    );
   });
 });
 

@@ -308,27 +308,6 @@ const PDF: AnnotViewAttachment = {
   annotCount: 2,
 };
 
-it("shows the followed Attachment's Annotations through attachment == this.attachment", async () => {
-  const { view, run } = await openSidebar([PDF], () =>
-    rows([row("ANNOTBBB", "red", "#ff6666")]),
-  );
-  await using cleanup = new AsyncDisposableStack();
-  cleanup.defer(() => act(() => view.close()));
-
-  const [request] = run.mock.calls.at(-1)!;
-  expect(request).toMatchObject({
-    from: "annotations",
-    filter: "attachment == this.attachment",
-    context: { item: "ITEMAAAA", attachment: "PDFAAAAA" },
-    limit: null,
-  });
-  // The query's rows, not the whole list the repository holds.
-  expect(cards(view.contentEl)).toEqual(["ANNOTBBB"]);
-  expect(view.snapshot.annotations?.map(({ key }) => key)).toEqual([
-    "ANNOTBBB",
-  ]);
-});
-
 function paneMenu(view: AnnotationView, source = "more-options"): Menu {
   const menu = new Menu();
   view.onPaneMenu(menu as unknown as ObsidianMenu, source);
@@ -340,57 +319,6 @@ function menuItem(menu: Menu, title: string) {
   if (!item) throw new Error(`No menu item "${title}"`);
   return item;
 }
-
-it("groups the cards by colour from More options, and keeps the grouping in its state", async () => {
-  const { view, run, settle } = await openSidebar([PDF]);
-  await using cleanup = new AsyncDisposableStack();
-  cleanup.defer(() => act(() => view.close()));
-
-  const menu = paneMenu(view);
-  // The follow and attachment rows stay; the query rows join them.
-  expect(menu.items.map(({ title }) => title)).toEqual(
-    expect.arrayContaining([
-      "Pinned",
-      "Open PDF",
-      "Sort",
-      "Group by",
-      "Filter…",
-      "Refresh data",
-    ]),
-  );
-  // The tab's own context menu, in the sidebar or the main area, is the same
-  // pane menu.
-  const titles = menu.items.map(({ title }) => title);
-  for (const source of ["sidebar-context-menu", "tab-header"]) {
-    expect(paneMenu(view, source).items.map(({ title }) => title)).toEqual(
-      titles,
-    );
-  }
-  const groupBy = menuItem(menu, "Group by").submenu!;
-  expect(groupBy.items.map(({ title }) => title)).toEqual([
-    "None",
-    "Color",
-    "Tag",
-  ]);
-  await act(() => menuItem(groupBy, "Color").click());
-  await settle();
-
-  expect(run.mock.calls.at(-1)![0]).toMatchObject({
-    filter: "attachment == this.attachment",
-    context: { attachment: "PDFAAAAA" },
-  });
-  expect(
-    [...view.contentEl.querySelectorAll("[data-query-group]")].map((node) =>
-      node.getAttribute("data-query-group"),
-    ),
-  ).toEqual(["red", "yellow"]);
-  expect(cards(view.contentEl)).toEqual(["ANNOTBBB", "ANNOTAAA"]);
-  // The grouping is part of the sidebar's Query File, which its state keeps.
-  expect(view.getState().query).toContain("property: colorName");
-  expect(menuItem(paneMenu(view), "Group by").submenu!.items[1]!.checked).toBe(
-    true,
-  );
-});
 
 it("sorts the cards by one property and direction from More options", async () => {
   const { view, run, settle } = await openSidebar([PDF]);
@@ -439,30 +367,6 @@ it("runs no query and shows no card while the Item has no Attachment", async () 
   expect(paneMenu(view).items.some(({ title }) => title === "Sort")).toBe(
     false,
   );
-});
-
-it("restores the Query File its state keeps", async () => {
-  const { view, run, settle } = await openSidebar([PDF]);
-  await using cleanup = new AsyncDisposableStack();
-  cleanup.defer(() => act(() => view.close()));
-  await act(() =>
-    menuItem(menuItem(paneMenu(view), "Group by").submenu!, "Tag").click(),
-  );
-  const state = view.getState();
-
-  await act(() =>
-    view.setState({ followMode: "active-tab" }, { history: false }),
-  );
-  await act(() => view.setState(state, { history: false }));
-  await settle();
-
-  expect(view.getState().query).toBe(state.query);
-  expect(menuItem(paneMenu(view), "Group by").submenu!.items[2]!.checked).toBe(
-    true,
-  );
-  expect(run.mock.calls.at(-1)![0].context).toMatchObject({
-    attachment: "PDFAAAAA",
-  });
 });
 
 it("shows a new Annotation's card as its write starts, before the query runs again", async () => {

@@ -19,9 +19,14 @@ export const gitConfig = {
   branch: "main",
 };
 
+const docsSourceBranches = {
+  production: "main",
+  beta: "next",
+} satisfies { production: "main"; beta: "next" };
+
 /** The repository branch that publishes each documentation line. */
 export function docsSourceBranch(docsLine: DocsLine) {
-  return docsLine === "beta" ? "next" : gitConfig.branch;
+  return docsSourceBranches[docsLine];
 }
 
 /** `owner/name`, the form GitHub's API and giscus both name the repository by. */

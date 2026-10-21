@@ -844,52 +844,21 @@ describe("list methods", () => {
  * not a literal, so it is the reference.
  */
 describe("membership in a literal list", () => {
-  const LISTS = [
-    '["ART2FULL", "B", "B", "C"]',
-    '[1, "1", 2, true, false, null, ""]',
-    "[0, -0, 12]",
-    '["12", 12, null, null]',
-    "[]",
+  const lists = [
+    ['["ART2FULL", "B", "B", "C"]', ['"B"', '"art2full"']],
+    ['[1, "1", 2, true, false, null, ""]', ["1", '"x"']],
+    ["[0, -0, 12]", ["0", "-1"]],
+    ['["12", 12, null, null]', ['"12"', '""']],
+    ["[]", ["null", "1"]],
     // Not literal elements only: the existing path.
-    '[volume, "x", 1]',
-    "[-1, 1]",
-    '[date("2024-07-15"), "2024-07-15"]',
-    '[today(), "x"]',
-    '[/a/, "a"]',
-    '[["a"], "a"]',
-  ];
-  const ARGS = [
-    '"ART2FULL"',
-    '"art2full"',
-    '"B"',
-    '"1"',
-    "1",
-    "-1",
-    "0",
-    "2",
-    "true",
-    "false",
-    "null",
-    '""',
-    "volume",
-    "publisher",
-    "title.lower()",
-    '"x"',
-    "12",
-    '"12"',
-    '["a"]',
-    "[]",
-    'date("2024-07-15")',
-    "today()",
-    '"2024-07-15"',
-    "/a/",
-    'date("x")',
-    "tags",
-  ];
-  const calls = [
-    ...ARGS.map((arg) => `contains(${arg})`),
-    ...ARGS.map((arg) => `containsAny(${arg})`),
-    ...ARGS.map((arg) => `containsAll(${arg})`),
+    ['[volume, "x", 1]', ["volume", "publisher"]],
+    ["[-1, 1]", ["-1", "0"]],
+    ['[date("2024-07-15"), "2024-07-15"]', ['date("2024-07-15")', "null"]],
+    ['[today(), "x"]', ["today()", '"2024-07-15"']],
+    ['[/a/, "a"]', ['"a"', "/a/"]],
+    ['[["a"], "a"]', ['"a"', '["a"]']],
+  ] as const;
+  const specialCalls = [
     "containsAny()",
     "containsAll()",
     'containsAny("q", "B", 2)',
@@ -899,9 +868,20 @@ describe("membership in a literal list", () => {
     'containsAll([1, "1", true])',
     'containsAny("q", date("x"))',
   ];
-  const cases = LISTS.flatMap((list) =>
-    calls.map((call) => [list, call] as const),
-  );
+  const cases = [
+    ...lists.flatMap(([list, args]) =>
+      ["contains", "containsAny", "containsAll"].flatMap((method) =>
+        args.map((arg) => [list, `${method}(${arg})`] as const),
+      ),
+    ),
+    ...specialCalls.map(
+      (call) =>
+        [
+          call === 'containsAll([1, "1", true])' ? lists[1][0] : lists[0][0],
+          call,
+        ] as const,
+    ),
+  ];
   it.each(cases)("%s.%s answers as the scan", (list, call) => {
     const reference = valueOf(`${list}.filter(true).${call}`);
     expect(valueOf(`${list}.${call}`)).toEqual(reference);

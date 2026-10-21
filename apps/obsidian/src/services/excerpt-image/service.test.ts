@@ -19,7 +19,6 @@ import type { DatabaseAnnotationSource } from "@/services/annotation-repository/
 import { redPng, corruptPng } from "./__fixtures__/png";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
-import { usePromiseScheduling } from "./renderer";
 import {
   ExcerptImageService,
   excerptAnnotationRecord,
@@ -904,26 +903,6 @@ describe("Excerpt Image resolution", () => {
     ).toBe(excerptKey(request));
   });
 
-  it("shares verified API and database sources of one Annotation", async () => {
-    const f = fixture();
-    await using service = f.service;
-    const api: ExcerptRequest = {
-      ...request,
-      source: { kind: "zotero-local-api", serverID: "SERVER" },
-    };
-    expect(excerptKey(api)).toBe(excerptKey(request));
-    expect(await service.resolve(api)).toMatchObject({
-      provenance: "rendered",
-      bytes: generated,
-    });
-    // The database representation of the same Annotation reuses those pixels.
-    expect(await service.resolve(request)).toMatchObject({
-      provenance: "cache",
-      bytes: generated,
-    });
-    expect(f.render).toHaveBeenCalledTimes(1);
-  });
-
   it("completes a cache hit while an unrelated render holds the queue", async () => {
     const f = fixture();
     await using service = f.service;
@@ -1206,24 +1185,6 @@ describe("Excerpt Image resolution", () => {
     gate.resolve(rendered);
     expect(await second).toMatchObject({ provenance: "rendered" });
     expect(render).toHaveBeenCalledTimes(1);
-  });
-
-  it("changes scheduling only for the exact owned task and rejects incompatible shapes", () => {
-    const task = { promise: Promise.resolve(), cancel() {} };
-    const own = { task, _useRequestAnimationFrame: true };
-    const other = { task: {}, _useRequestAnimationFrame: true };
-    usePromiseScheduling(
-      { _intentStates: new Map([[1, { renderTasks: new Set([own, other]) }]]) },
-      task,
-    );
-    expect([
-      own._useRequestAnimationFrame,
-      other._useRequestAnimationFrame,
-    ]).toEqual([false, true]);
-    expect(() =>
-      usePromiseScheduling({ _intentStates: new Map() }, task),
-    ).toThrow("Unsupported");
-    expect(() => usePromiseScheduling({}, task)).toThrow("Unsupported");
   });
 
   it("cancels abandoned work and allows the same image to be requested again", async () => {

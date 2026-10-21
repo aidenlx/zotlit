@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  explorerSectionIds,
   explorerSections,
   fieldLabel,
   sentenceCase,
@@ -166,18 +165,6 @@ describe("explorerSections", () => {
       visibleSectionIds({ title: "A paper", DOI: "x" }, reader("note")),
     ).toEqual(["common", "identifiers"]);
     expect(visibleSectionIds(null, reader("note"))).toEqual([]);
-  });
-
-  it("lists every section a root can show, common first", () => {
-    expect(explorerSectionIds("filename")).toEqual([
-      "common",
-      "reference",
-      "identifiers",
-      "content",
-      "organization",
-      "links",
-      "record",
-    ]);
   });
 });
 

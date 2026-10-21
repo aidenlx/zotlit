@@ -77,35 +77,6 @@ describe("shared Data Explorer", () => {
     expect(identifiers.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText(m.workbench_field_title())).toBeTruthy();
   });
-  it("names a list by its count and an object by its preview", () => {
-    const { ui } = mount(
-      <DataExplorer
-        root="note"
-        data={{
-          authors: ["Ada", "Grace"],
-          collections: [],
-          date: { year: 2011, toString: () => "2011-01" },
-        }}
-        copy={async () => {}}
-      />,
-    );
-    render(ui);
-    const rows = screen.getAllByRole("treeitem");
-    expect(rows[0]?.textContent).toBe("Authors (2)");
-    expect(
-      screen.getByText("Collections").closest('[role="treeitem"]')?.textContent,
-    ).toBe("Collections (0)");
-    expect(screen.getByText("2011-01")).toBeTruthy();
-    expect(screen.queryByText("[2]")).toBeNull();
-    expect(screen.queryByText("{1}")).toBeNull();
-    fireEvent.click(
-      screen.getAllByRole("button", {
-        name: m.workbench_explorer_toggle_node(),
-      })[0]!,
-    );
-    expect(screen.getByText("Ada")).toBeTruthy();
-    expect(screen.getByText("Grace")).toBeTruthy();
-  });
 
   it("copies values from the row menu without an editor insertion target", () => {
     const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();

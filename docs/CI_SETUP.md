@@ -20,6 +20,20 @@ The setup action records the effective Node and pnpm versions in
 `mise.toml` in its global hash. A toolchain change therefore invalidates cached
 tasks even when package source files are unchanged.
 
+## Release workflow
+
+Pull requests run no workflow. `pnpm verify` gates every push through the
+Lefthook pre-push hook ([ADR 0076](adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md)).
+
+`.github/workflows/release.yml` runs on every push to `main` and `next`, and on
+manual dispatch. The `plan` job reads both app versions and asks GitHub whether
+each tag has a release; it installs no toolchain. When both versions are
+released, the run stops there. Otherwise the `verify` job checks out
+submodules and Git LFS files, sets up the workspace, and runs
+`pnpm verify --release`. The publish jobs start only after it passes, and only
+for the app whose version is new. Workflow permissions are read-only; each
+publish job grants itself the write permissions it needs.
+
 ## Docs deployment
 
 `.github/workflows/docs-deploy.yml` deploys Stable Docs from `main` and

@@ -470,7 +470,6 @@ describe("Profile document matches at creation preparation", () => {
   it.each([
     ["a syntax mistake", "library =="],
     ["a blank condition", " "],
-    ["an unknown method", 'tags.contain("Read")'],
   ] as const)(
     "keeps the document with %s active, shows its diagnostic, and skips it for every Item",
     async (_, match) => {

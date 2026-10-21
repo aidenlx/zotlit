@@ -1,6 +1,5 @@
 import type { CliData, CliHandler } from "obsidian";
 
-import { DEFAULT_CITATION_VARIANT, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 // The Template Workbench commands and their response boundaries.
 import type {
   CitationTemplateData,
@@ -8,7 +7,6 @@ import type {
   ContractRoot,
   TemplateSlot,
 } from "@zotlit/db";
-import { nearMatches } from "@zotlit/item-query";
 import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 import type { RootVariableUse } from "@zotlit/templates/facade";
@@ -18,19 +16,13 @@ import {
   serializeTemplateData,
 } from "@zotlit/workbench/explorer";
 
-import { lineColumn } from "@/lib/cli-diagnostic";
 import type { CliRequest } from "@/lib/cli-params";
-import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileDiagnostic } from "@/services/profile/service";
-import { RESERVED_PARTIAL_NAMES } from "@/services/template/defaults";
-import {
-  InertTemplateError,
-  reportedFaultSpan,
-} from "@/services/template/errors";
+import { InertTemplateError } from "@/services/template/errors";
 import type {
   CitationTemplateStatus,
   CompileError,
@@ -53,7 +45,6 @@ import {
   envelope,
   faultDiagnostic,
   initFailedDiagnostic,
-  missingPartialDiagnostic,
   notSettledDiagnostic,
   rejectionDiagnostic,
   templateFaultDiagnostic,
@@ -61,8 +52,6 @@ import {
 import type {
   Diagnostic,
   DiagnosticCode,
-  FrontmatterEvalRow,
-  FrontmatterFieldRow,
   LiteratureNoteDocumentRow,
   LiteratureNoteProfileRow,
   WorkbenchCommand,
@@ -74,25 +63,10 @@ import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import {
   parseDataRequest,
   parseDocumentRenderRequest,
-  parseFrontmatterEvalRequest,
-  parseFrontmatterRemoveRequest,
-  parseFrontmatterReorderRequest,
-  parseFrontmatterSetRequest,
-  parseFrontmatterStatusRequest,
   parseGuideRequest,
-  parseRenderRequest,
-  parseSchemaRequest,
-  parseSourceRequest,
   parseStatusRequest,
   targetMismatch,
 } from "./request";
-import type { RenderRequest } from "./request";
-import { schemaAssets } from "./schema";
-import {
-  CITATION_TEMPLATE,
-  isPartialTemplate,
-  partialTemplateName,
-} from "./vocabulary";
 
 export type { WorkbenchIdentity } from "./envelope";
 
@@ -121,17 +95,8 @@ export const FRONTMATTER_REMOVE_COMMAND =
 export const FRONTMATTER_REORDER_COMMAND =
   "zotlit:frontmatter-reorder" as const satisfies WorkbenchCommand;
 
-/** The ad-hoc mode's single synthetic field key: `frontmatter-eval` never
- *  reports this key back, so any literal never collides with it. */
-const ADHOC_FIELD_KEY = "zotlit:frontmatter-eval/adhoc";
-
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
-
-/** A data load a render awaits, with the loaded shape left to the caller. */
-type RenderDataResult<T> =
-  | { kind: "data"; data: T }
-  | Exclude<TemplateDataLoadResult, { kind: "data" }>;
 
 interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
@@ -239,16 +204,8 @@ interface TemplateWorkbenchDeps {
 export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_STATUS_COMMAND
   | typeof TEMPLATE_DATA_COMMAND
-  | typeof TEMPLATE_SCHEMA_COMMAND
-  | typeof TEMPLATE_RENDER_COMMAND
   | typeof TEMPLATE_DOCUMENT_RENDER_COMMAND
-  | typeof TEMPLATE_GUIDE_COMMAND
-  | typeof TEMPLATE_SOURCE_COMMAND
-  | typeof FRONTMATTER_STATUS_COMMAND
-  | typeof FRONTMATTER_EVAL_COMMAND
-  | typeof FRONTMATTER_SET_COMMAND
-  | typeof FRONTMATTER_REMOVE_COMMAND
-  | typeof FRONTMATTER_REORDER_COMMAND,
+  | typeof TEMPLATE_GUIDE_COMMAND,
   CliHandler
 >;
 
@@ -307,153 +264,6 @@ export function createTemplateWorkbenchHandlers(
       }
       return await run(request.value, identity);
     };
-
-  /**
-   * Render `slot` the way production renders it — `filename` through the
-   * template service's own `renderFilename`, so the Workbench reports the
-   * single trimmed line note creation would use as a file name.
-   */
-  const renderSlot = (slot: TemplateSlot, data: object): string =>
-    slot === "filename"
-      ? deps.templates.renderFilename(data)
-      : deps.templates.render(slot, data);
-
-  /**
-   * The answering half of `template-render`, shared by both Templates it
-   * renders: the data-load failure, the bare Markdown a `format=markdown` call
-   * asks for, the success envelope, and the template fault. What differs above
-   * it — the Template's identity, the data it reads, and how it renders — the
-   * caller decides and hands over here, so an envelope or diagnostic change
-   * needs one edit.
-   */
-  const renderResponse = async <T>(
-    request: RenderRequest,
-    plan: {
-      echoed: object;
-      load: () => Promise<RenderDataResult<T>>;
-      render: (data: T) => string;
-    },
-  ): Promise<string> => {
-    const { echoed } = plan;
-    const result = await plan.load();
-    if (result.kind !== "data") {
-      return envelope(TEMPLATE_RENDER_COMMAND, {
-        ok: false,
-        ...echoed,
-        diagnostic: dataLoadDiagnostic(result, selectedObject(request)),
-      });
-    }
-    try {
-      const markdown = plan.render(result.data);
-      if (request.format === "markdown") return markdown;
-      return envelope(TEMPLATE_RENDER_COMMAND, {
-        ok: true,
-        ...echoed,
-        markdown,
-      });
-    } catch (error) {
-      return envelope(TEMPLATE_RENDER_COMMAND, {
-        ok: false,
-        ...echoed,
-        diagnostic: templateFaultDiagnostic(error, {
-          template: request.template,
-          compileErrors: deps.templates.compileErrors,
-        }),
-      });
-    }
-  };
-
-  /**
-   * Render the Citation Template. It is a Template Document, so its identity
-   * comes from the Citation Template status rather than from the Legacy
-   * Template File slots, which a converted vault no longer reports.
-   */
-  const renderCitation = (
-    request: RenderRequest,
-    identity: WorkbenchIdentity,
-  ): Promise<string> =>
-    renderResponse(request, {
-      echoed: {
-        request,
-        identity,
-        template: citationTemplateIdentity(
-          deps.templates.getCitationTemplateStatus(),
-        ),
-        warnings: rootVariableWarnings(
-          deps.templates.analyzeRootVariables(CITATION_TEMPLATE),
-        ),
-      },
-      load: () =>
-        deps.loadCitation(request, request.variant ?? DEFAULT_CITATION_VARIANT),
-      render: (data) => deps.templates.renderCitationData(data),
-    });
-
-  /**
-   * Render one Shared Partial as called from the root the request names: the
-   * note or annotation of one Zotero object, or one Citation set. A partial is
-   * a Template Document, so its identity comes from the partial the vault
-   * registered rather than from the Legacy Template File slots.
-   */
-  const renderPartial = (
-    request: RenderRequest,
-    name: string,
-    identity: WorkbenchIdentity,
-  ): Promise<string> => {
-    if (RESERVED_PARTIAL_NAMES.has(name)) {
-      return Promise.resolve(
-        envelope(TEMPLATE_RENDER_COMMAND, {
-          ok: false,
-          request,
-          identity,
-          diagnostic: reservedPartialNameDiagnostic(name),
-        }),
-      );
-    }
-    const document = deps.templates.getPartialDocument(name);
-    if (!document) {
-      const carrier = bundledPartialCarrier(
-        deps.literatureNotes?.getDocumentStatuses() ?? [],
-        name,
-      );
-      return Promise.resolve(
-        envelope(TEMPLATE_RENDER_COMMAND, {
-          ok: false,
-          request,
-          identity,
-          diagnostic:
-            carrier === null
-              ? missingPartialDiagnostic(
-                  name,
-                  `No Shared Partial named '${name}'.`,
-                )
-              : bundledPartialDiagnostic(name, carrier),
-        }),
-      );
-    }
-    const root = request.root ?? "note";
-    return renderResponse(request, {
-      echoed: {
-        request,
-        identity,
-        template: {
-          name: request.template,
-          language: document.language,
-          source: { kind: "vault" as const, path: document.path },
-        },
-        warnings: rootVariableWarnings(
-          deps.templates.analyzeRootVariables(name),
-        ),
-      },
-      load: () =>
-        root === "citation"
-          ? deps.loadCitation(
-              request,
-              request.variant ?? DEFAULT_CITATION_VARIANT,
-            )
-          : deps.loadData(selectedObject(request), root),
-      render: (data) => deps.templates.render(name, data as object),
-    });
-  };
 
   return {
     [TEMPLATE_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
@@ -593,49 +403,6 @@ export function createTemplateWorkbenchHandlers(
       },
     ),
 
-    [TEMPLATE_RENDER_COMMAND]: gated(
-      TEMPLATE_RENDER_COMMAND,
-      parseRenderRequest,
-      async (request, identity) => {
-        if (request.template === CITATION_TEMPLATE) {
-          return await renderCitation(request, identity);
-        }
-        if (isPartialTemplate(request.template)) {
-          return await renderPartial(
-            request,
-            partialTemplateName(request.template),
-            identity,
-          );
-        }
-        const slot = request.template;
-        const template = templateIdentity(
-          deps.templates.getTemplateFileStatuses(),
-          slot,
-        );
-        if (!template) {
-          return envelope(TEMPLATE_RENDER_COMMAND, {
-            ok: false,
-            request,
-            identity,
-            diagnostic: inactiveTemplateDiagnostic(slot),
-          });
-        }
-        return await renderResponse(request, {
-          echoed: {
-            request,
-            identity,
-            template,
-            warnings: rootVariableWarnings(
-              deps.templates.analyzeRootVariables(slot),
-            ),
-          },
-          load: () =>
-            deps.loadData(selectedObject(request), TEMPLATE_SLOT_ROOTS[slot]),
-          render: (data) => renderSlot(slot, data),
-        });
-      },
-    ),
-
     [TEMPLATE_DOCUMENT_RENDER_COMMAND]: gated(
       TEMPLATE_DOCUMENT_RENDER_COMMAND,
       parseDocumentRenderRequest,
@@ -730,318 +497,6 @@ export function createTemplateWorkbenchHandlers(
         });
       }
       return renderGuide(request.value);
-    },
-
-    [TEMPLATE_SCHEMA_COMMAND]: (params: CliData): string => {
-      const request = parseSchemaRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(TEMPLATE_SCHEMA_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-      return envelope(TEMPLATE_SCHEMA_COMMAND, {
-        ok: true,
-        pluginVersion: deps.pluginVersion,
-        schemas: schemaAssets(deps.pluginVersion),
-      });
-    },
-
-    [TEMPLATE_SOURCE_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseSourceRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(TEMPLATE_SOURCE_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-
-      const outcome = await deps.templates.waitUntilSettled(settleTimeoutMs);
-      if (outcome !== "settled") {
-        return envelope(TEMPLATE_SOURCE_COMMAND, {
-          ok: false,
-          diagnostic: settleDiagnostic(outcome),
-        });
-      }
-
-      const identity = await deps.getIdentity();
-      const template = templateIdentity(
-        deps.templates.getTemplateFileStatuses(),
-        request.value,
-      );
-      if (!template) {
-        return envelope(TEMPLATE_SOURCE_COMMAND, {
-          ok: false,
-          identity,
-          diagnostic: inactiveTemplateDiagnostic(request.value),
-        });
-      }
-      const source = await deps.templates.getTemplateSource(request.value);
-      return envelope(TEMPLATE_SOURCE_COMMAND, {
-        ok: true,
-        identity,
-        template,
-        source,
-      });
-    },
-
-    [FRONTMATTER_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseFrontmatterStatusRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(FRONTMATTER_STATUS_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-
-      const { fields, inertKeys, javascriptTemplatesEnabled } =
-        deps.frontmatter.read();
-
-      return envelope(FRONTMATTER_STATUS_COMMAND, {
-        ok: true,
-        identity: await deps.getIdentity(),
-        javascriptTemplatesEnabled,
-        fields: fields.map((field) => frontmatterFieldRow(field, inertKeys)),
-        reservedKeys: [...RESERVED_KEYS],
-      });
-    },
-
-    [FRONTMATTER_EVAL_COMMAND]: gated(
-      FRONTMATTER_EVAL_COMMAND,
-      parseFrontmatterEvalRequest,
-      async (request, identity) => {
-        const echoed = { request, identity };
-
-        if (request.adhoc) {
-          const { expr, language } = request.adhoc;
-          const gateOrCompileError = validateGateAndCompile(deps, {
-            expr,
-            language,
-            gateMessage:
-              "Evaluating a javascript expression requires the JavaScript Templates gate; this device has it disabled.",
-          });
-          if (gateOrCompileError) {
-            return envelope(FRONTMATTER_EVAL_COMMAND, {
-              ok: false,
-              ...echoed,
-              diagnostic: gateOrCompileError,
-            });
-          }
-
-          const result = await deps.loadData(request.key, "note");
-          if (result.kind !== "data") {
-            return envelope(FRONTMATTER_EVAL_COMMAND, {
-              ok: false,
-              ...echoed,
-              diagnostic: dataLoadDiagnostic(result, request.key),
-            });
-          }
-
-          const { values, errors } = deps.frontmatter.evaluate(
-            [{ key: ADHOC_FIELD_KEY, expr, language, merge: "replace" }],
-            result.data,
-          );
-          const error = errors[ADHOC_FIELD_KEY];
-          return envelope(FRONTMATTER_EVAL_COMMAND, {
-            ok: true,
-            ...echoed,
-            ...(error === undefined
-              ? { value: values[ADHOC_FIELD_KEY] }
-              : { error: { message: error } }),
-          });
-        }
-
-        const result = await deps.loadData(request.key, "note");
-        if (result.kind !== "data") {
-          return envelope(FRONTMATTER_EVAL_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: dataLoadDiagnostic(result, request.key),
-          });
-        }
-
-        const { fields } = deps.frontmatter.read();
-        const configured = fields.filter(
-          (field) => !RESERVED_KEYS.has(field.key),
-        );
-        const { values, errors, inertKeys } = deps.frontmatter.evaluate(
-          configured,
-          result.data,
-        );
-
-        const entries = configured.map((field) =>
-          frontmatterEvalRow(field, { values, errors, inertKeys }),
-        );
-        entries.push(...systemFrontmatterRows(result.data));
-
-        return envelope(FRONTMATTER_EVAL_COMMAND, {
-          ok: true,
-          ...echoed,
-          warnings: gateWarnings(inertKeys),
-          entries,
-        });
-      },
-    ),
-
-    [FRONTMATTER_SET_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseFrontmatterSetRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(FRONTMATTER_SET_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-      const { field } = request.value;
-      const echoed = {
-        request: request.value,
-        identity: await deps.getIdentity(),
-      };
-
-      if (RESERVED_KEYS.has(field)) {
-        return envelope(FRONTMATTER_SET_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: diagnostic(
-            "RESERVED_KEY",
-            `'${field}' is managed by ZotLit and cannot be used as a Managed Frontmatter field key.`,
-            { key: field },
-          ),
-        });
-      }
-
-      const { fields } = deps.frontmatter.read();
-      const existing = fields.find((candidate) => candidate.key === field);
-
-      const expr = request.value.expr ?? existing?.expr;
-      if (expr === undefined) {
-        return envelope(FRONTMATTER_SET_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: diagnostic(
-            "INVALID_SELECTOR",
-            "expr is required for a new field.",
-            { parameter: "expr" },
-          ),
-        });
-      }
-      const language = request.value.language ?? existing?.language ?? "liquid";
-      const merge = request.value.merge ?? existing?.merge ?? "replace";
-
-      const gateOrCompileError = validateGateAndCompile(deps, {
-        expr,
-        language,
-        gateMessage:
-          "Writing a javascript field requires the JavaScript Templates gate; this device has it disabled.",
-      });
-      if (gateOrCompileError) {
-        return envelope(FRONTMATTER_SET_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: gateOrCompileError,
-        });
-      }
-
-      const nextField: FrontmatterField = { key: field, expr, language, merge };
-      const nextFields = existing
-        ? fields.map((candidate) =>
-            candidate.key === field ? nextField : candidate,
-          )
-        : [...fields, nextField];
-      deps.frontmatter.write(nextFields);
-
-      const after = deps.frontmatter.read();
-      return envelope(FRONTMATTER_SET_COMMAND, {
-        ok: true,
-        ...echoed,
-        fields: after.fields.map((f) =>
-          frontmatterFieldRow(f, after.inertKeys),
-        ),
-      });
-    },
-
-    [FRONTMATTER_REMOVE_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseFrontmatterRemoveRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(FRONTMATTER_REMOVE_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-      const { field } = request.value;
-      const echoed = {
-        request: request.value,
-        identity: await deps.getIdentity(),
-      };
-
-      const { fields } = deps.frontmatter.read();
-      if (!fields.some((candidate) => candidate.key === field)) {
-        return envelope(FRONTMATTER_REMOVE_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: fieldNotFoundDiagnostic(field, fields),
-        });
-      }
-
-      deps.frontmatter.write(
-        fields.filter((candidate) => candidate.key !== field),
-      );
-
-      const after = deps.frontmatter.read();
-      return envelope(FRONTMATTER_REMOVE_COMMAND, {
-        ok: true,
-        ...echoed,
-        fields: after.fields.map((f) =>
-          frontmatterFieldRow(f, after.inertKeys),
-        ),
-      });
-    },
-
-    [FRONTMATTER_REORDER_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseFrontmatterReorderRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(FRONTMATTER_REORDER_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-      const { order } = request.value;
-      const echoed = {
-        request: request.value,
-        identity: await deps.getIdentity(),
-      };
-
-      const { fields } = deps.frontmatter.read();
-      const byKey = new Map(fields.map((field) => [field.key, field]));
-
-      const unknownKey = order.find((key) => !byKey.has(key));
-      if (unknownKey !== undefined) {
-        return envelope(FRONTMATTER_REORDER_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: fieldNotFoundDiagnostic(unknownKey, fields),
-        });
-      }
-
-      const permutationError = permutationDiagnostic([...byKey.keys()], order);
-      if (permutationError) {
-        return envelope(FRONTMATTER_REORDER_COMMAND, {
-          ok: false,
-          ...echoed,
-          diagnostic: permutationError,
-        });
-      }
-
-      // Every key in `order` was confirmed present in `byKey` above.
-      deps.frontmatter.write(order.map((key) => byKey.get(key)!));
-
-      const after = deps.frontmatter.read();
-      return envelope(FRONTMATTER_REORDER_COMMAND, {
-        ok: true,
-        ...echoed,
-        fields: after.fields.map((f) =>
-          frontmatterFieldRow(f, after.inertKeys),
-        ),
-      });
     },
   };
 }
@@ -1221,227 +676,6 @@ function manifestPathText(path: readonly (string | number)[]): string {
 }
 
 /**
- * The JS-gate check and compile-check `frontmatter-eval`'s ad-hoc branch and
- * `frontmatter-set` both run before evaluating or writing an expression:
- * refuse a `"javascript"` expression while the gate is off, then compile-check
- * whatever language is left. Returns the diagnostic to report, or `null` when
- * `expr` is safe to evaluate or write.
- */
-function validateGateAndCompile(
-  deps: TemplateWorkbenchDeps,
-  options: { expr: string; language: FrontmatterLanguage; gateMessage: string },
-): Diagnostic | null {
-  const { expr, language, gateMessage } = options;
-  if (language === "javascript" && !deps.templates.javascriptTemplatesEnabled) {
-    return diagnostic("ETA_OPT_IN_REQUIRED", gateMessage);
-  }
-  const compileError = deps.frontmatter.validateExpr(expr, language);
-  if (compileError === null) return null;
-  const at = reportedFaultSpan(compileError, expr);
-  if (at === undefined)
-    return diagnostic("EXPRESSION_COMPILE_ERROR", compileError);
-  const { line, column } = lineColumn(expr, at.from);
-  return faultDiagnostic(
-    "EXPRESSION_COMPILE_ERROR",
-    compileError.split("\n")[0]!.replace(/:$/, "."),
-    {
-      hint: `Correct the expression at expr:${line}:${column}, then evaluate it again.`,
-      at: { source: expr, span: { from: at.from, to: at.to }, name: "expr" },
-    },
-  );
-}
-
-/** `frontmatter-remove` and `frontmatter-reorder` both report this when a key
- *  they were given is not in the configured field set. */
-function fieldNotFoundDiagnostic(
-  key: string,
-  fields: readonly FrontmatterField[],
-): Diagnostic {
-  const nearest = nearMatches(
-    key,
-    fields.map((field) => field.key),
-  )[0];
-  return faultDiagnostic(
-    "FIELD_NOT_FOUND",
-    `'${key}' is not a configured Managed Frontmatter field.`,
-    {
-      details: { key },
-      ...(nearest === undefined
-        ? {}
-        : { hint: `Use the configured key '${nearest}'.` }),
-    },
-  );
-}
-
-/**
- * `frontmatter-reorder`'s permutation check: every configured key exactly
- * once. The caller has already confirmed every entry of `order` names a
- * configured key, so what remains to reject is a key `order` repeats, or a
- * configured key `order` omits. Returns `null` when `order` is an exact
- * permutation of `configuredKeys`.
- */
-function permutationDiagnostic(
-  configuredKeys: readonly string[],
-  order: readonly string[],
-): Diagnostic | null {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const key of order) {
-    if (seen.has(key)) duplicates.add(key);
-    seen.add(key);
-  }
-  if (duplicates.size > 0) {
-    return diagnostic(
-      "INVALID_SELECTOR",
-      `order lists ${quotedCommaList([...duplicates])} more than once.`,
-      { parameter: "order" },
-    );
-  }
-
-  const missing = configuredKeys.filter((key) => !order.includes(key));
-  if (missing.length > 0) {
-    return diagnostic(
-      "INVALID_SELECTOR",
-      `order is missing configured key${missing.length > 1 ? "s" : ""} ${quotedCommaList(missing)}.`,
-      { parameter: "order" },
-    );
-  }
-  return null;
-}
-
-/** `'a', 'b', 'c'` — a plain enumeration, unlike {@link quotedList}'s
- *  alternatives phrasing (`'a', 'b', or 'c'`): the keys named here are all
- *  present together (every duplicate, every missing key), not alternatives. */
-function quotedCommaList(names: readonly string[]): string {
-  return names.map((name) => `'${name}'`).join(", ");
-}
-
-/** A configured field's status row: its configuration, plus whether the
- *  JavaScript Templates gate currently leaves it inert. */
-function frontmatterFieldRow(
-  field: FrontmatterField,
-  inertKeys: readonly string[],
-): FrontmatterFieldRow {
-  return {
-    key: field.key,
-    expr: field.expr,
-    language: field.language,
-    merge: field.merge,
-    inert: inertKeys.includes(field.key),
-  };
-}
-
-/**
- * A configured field's `frontmatter-eval` row: its evaluated value, its own
- * runtime error, or `inert` when the JavaScript Templates gate left it
- * uncompiled — evaluating never reports more than one of those three.
- */
-function frontmatterEvalRow(
-  field: FrontmatterField,
-  evaluated: {
-    values: Readonly<Record<string, unknown>>;
-    errors: Readonly<Record<string, string>>;
-    inertKeys: readonly string[];
-  },
-): FrontmatterEvalRow {
-  const base = {
-    key: field.key,
-    source: "user" as const,
-    language: field.language,
-    merge: field.merge,
-  };
-  if (evaluated.inertKeys.includes(field.key)) return { ...base, inert: true };
-  const error = evaluated.errors[field.key];
-  if (error !== undefined) return { ...base, error: { message: error } };
-  return { ...base, value: evaluated.values[field.key] };
-}
-
-/**
- * The system row every literature note carries: `zotero-key`.
- */
-function systemFrontmatterRows(zt: object): FrontmatterEvalRow[] {
-  const { indexedKey } = zt as { indexedKey: string };
-  return [
-    {
-      key: FIELD_ZOTERO_KEY,
-      source: "system",
-      language: null,
-      merge: null,
-      value: indexedKey,
-    },
-  ];
-}
-
-/** The one warning `frontmatter-eval` answers with when the JavaScript
- *  Templates gate leaves fields inert: a real note operation would skip the
- *  same keys, so this warns before a caller drafts a field expression that
- *  would silently do nothing on this device. */
-function gateWarnings(inertKeys: readonly string[]): readonly string[] {
-  if (inertKeys.length === 0) return [];
-  return [
-    `JavaScript Templates are disabled on this device; these fields are inert and a real note operation would fail to write them: ${inertKeys.join(", ")}.`,
-  ];
-}
-
-/**
- * The root-variable warnings a render answers with: one string per read of a
- * root other than `zt`, the single root Template data lives under.
- *
- * @returns one warning string per non-`zt` root read; an empty array for
- *   `null` (an Eta template, whose source this static analysis cannot see).
- */
-function rootVariableWarnings(
-  uses: readonly RootVariableUse[] | null,
-): readonly string[] {
-  if (uses === null) return [];
-  return uses
-    .filter((use) => use.name !== "zt")
-    .map(
-      (use) =>
-        `line ${use.row}, col ${use.col}: '${use.path}' reads root variable '${use.name}', which is not defined — template data lives under 'zt.*' (write 'zt.${use.path}')`,
-    );
-}
-
-/**
- * The active Template a render answered from, as status reports it.
- *
- * @returns the active identity, or `undefined` when conversion retired the
- *   requested Literature Note slot.
- */
-function templateIdentity(
-  statuses: readonly TemplateFileStatus[],
-  name: TemplateSlot,
-):
-  | {
-      name: TemplateSlot;
-      language: TemplateFileStatus["winner"]["language"];
-      source: TemplateFileStatus["winner"]["source"];
-    }
-  | undefined {
-  const status = statuses.find((candidate) => candidate.name === name);
-  if (!status) return undefined;
-  return { name, ...status.winner };
-}
-
-/**
- * The active Citation Template a render answered from: the vault's
- * `zotlit-citation.md`, or the built-in source standing in for it.
- */
-function citationTemplateIdentity(status: CitationTemplateStatus): {
-  name: typeof CITATION_TEMPLATE;
-  language: CitationTemplateStatus["language"];
-  source: TemplateFileStatus["winner"]["source"];
-} {
-  return {
-    name: CITATION_TEMPLATE,
-    language: status.language,
-    source: status.customized
-      ? { kind: "vault", path: status.path }
-      : { kind: "embedded-default" },
-  };
-}
-
-/**
  * What a request selected, as a message names it: the Indexed Key, or the
  * example set standing in for one. A Legacy Template File slot takes no
  * example set, and a built-in example set is synthesized rather than looked
@@ -1451,58 +685,4 @@ function selectedObject(
   request: { key: string } | { example: string },
 ): string {
   return "key" in request ? request.key : request.example;
-}
-
-/**
- * The first installed Profile document whose manifest still carries `name`,
- * or null when none does. A manifest entry is a share transport, so a partial
- * found only there answers no render until it is unpacked into its own file.
- */
-function bundledPartialCarrier(
-  statuses: readonly LiteratureNoteTemplateStatus[],
-  name: string,
-): string | null {
-  for (const status of statuses) {
-    if (
-      status.validation.state === "valid" &&
-      status.validation.manifest.partials?.some(
-        (partial) => partial.name === name,
-      )
-    )
-      return status.reference;
-  }
-  return null;
-}
-
-/**
- * A partial the vault registers no document for because a Profile document
- * still carries it in its manifest, where nothing renders it.
- */
-function bundledPartialDiagnostic(name: string, reference: string): Diagnostic {
-  return diagnostic(
-    "BUNDLED_PARTIAL",
-    `No Shared Partial named '${name}': the Profile document '${reference}' still carries it in its manifest.`,
-    { template: name },
-  );
-}
-
-/**
- * A partial name another Template already answers to.
- *
- * @see RESERVED_PARTIAL_NAMES for which names those are and why.
- */
-function reservedPartialNameDiagnostic(name: string): Diagnostic {
-  return diagnostic(
-    "RESERVED_PARTIAL_NAME",
-    `'${name}' names another ZotLit Template, so no Shared Partial answers to it.`,
-    { parameter: "template" },
-  );
-}
-
-function inactiveTemplateDiagnostic(name: TemplateSlot): Diagnostic {
-  return diagnostic(
-    "INVALID_SELECTOR",
-    `Template '${name}' is not an active vault-global slot. Use template-status to list active slots and template-document-render for a Literature Note Template document.`,
-    { parameter: "template" },
-  );
 }

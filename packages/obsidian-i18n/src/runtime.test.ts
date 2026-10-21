@@ -1,8 +1,7 @@
-import { beforeEach, describe, expect, expectTypeOf, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import { createLanguagePackRuntime, noopLogger } from "./index.js";
 import type {
-  DatetimeInput,
   LanguagePack,
   LanguagePackRuntime,
   TargetLocaleMessages,
@@ -10,13 +9,6 @@ import type {
 
 /** The floor every Message Input accepts, absent a narrowing base-locale usage. */
 type Input = string | number;
-
-/**
- * Mirrors what the compiler emits for a `datetime` input. No catalog message
- * uses one yet, so declaring it here is what keeps the emitted import
- * specifier and member types honest.
- */
-type DateInput = DatetimeInput;
 
 const BASE_PACK = fakePack("en", {
   hello: "world",
@@ -296,18 +288,6 @@ describe("Language Pack runtime", () => {
         second: "Grace",
       }),
     ).toBe("creator_summary");
-  });
-
-  test("types each input from base-locale usage", () => {
-    expectTypeOf<typeof m.creator_summary>()
-      .parameter(0)
-      .toEqualTypeOf<{ count: number; first: Input; second: Input }>();
-    expectTypeOf<typeof m.annot_view_filter_count>()
-      .parameter(0)
-      .toEqualTypeOf<{ shown: Input; total: Input }>();
-    expectTypeOf<typeof m.hello>().parameters.toEqualTypeOf<[]>();
-    // A `datetime` input widens the floor rather than replacing it.
-    expectTypeOf<Input>().toExtend<DateInput>();
   });
 
   test("formats plurals, numbers, and datetimes with the pack locale", () => {

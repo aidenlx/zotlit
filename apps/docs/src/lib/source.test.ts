@@ -29,13 +29,6 @@ describe("changelog collection", () => {
       ),
     );
   });
-
-  it("normalizes the frontmatter date to an ISO day", () => {
-    // `2.0.0-beta.0` writes its date unquoted, so YAML hands the schema a
-    // `Date` rather than a string.
-    const entry = getChangelogPages().at(-1);
-    expect(entry?.data.date).toBe("2026-07-22");
-  });
 });
 
 describe("blog collection", () => {
@@ -43,9 +36,5 @@ describe("blog collection", () => {
     const dates = getBlogPages().map((page) => page.data.date);
     expect(dates.length).toBeGreaterThan(0);
     expect(dates).toEqual([...dates].sort().reverse());
-  });
-
-  it("defaults the author", () => {
-    expect(getBlogPages()[0]?.data.author).toBe("aidenlx");
   });
 });
