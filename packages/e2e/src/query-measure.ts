@@ -57,7 +57,7 @@ import {
 } from "@zotlit/scripts/fixture/spec";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { keepRendering, showBehind } from "./background-throttling.ts";
+import { prepareRunWindow, showBehind } from "./background-throttling.ts";
 import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
 import {
   DATASET_QUERY_SPECS,
@@ -427,6 +427,8 @@ using _desktopSlot = await acquireDesktopSlotOrExit({
   cwd: workspaceRoot,
   command: "measure:query",
   leaseMs: automatedLease(DEFAULT_LEASE_MS.measureQuery),
+  // Its timings mean nothing while another run competes for the CPU.
+  exclusive: true,
 });
 
 let vaultId = "";
@@ -999,7 +1001,7 @@ let environmentLines: string[] = [];
 try {
   const created = await runVaultScript(["create", vaultPath]);
   vaultId = created.stdout.trim().split("\n")[0]!.trim();
-  await keepRendering(vaultId);
+  await prepareRunWindow(vaultId);
   environmentLines = await environment();
   for (const items of tiers) {
     const raw: RawTier = {

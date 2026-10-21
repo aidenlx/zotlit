@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { discardFixture, getFixtureLayout } from "@zotlit/scripts/fixture";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import { annotationAttachment, workspaceRoot } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
@@ -107,7 +107,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     const created = await imageVaultScript(["create", imageVaultPath]);
     const imageVaultId = created.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(imageVaultId);
+    await prepareRunWindow(imageVaultId);
     await obEval(
       imageVaultId,
       "(async()=>{app.workspace.detachLeavesOfType('pdf');app.workspace.detachLeavesOfType('zotero-annotation-view');await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()",

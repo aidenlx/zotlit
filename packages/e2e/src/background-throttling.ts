@@ -25,7 +25,11 @@
 // Both settings belong to a window's `webContents` and last until Obsidian
 // restarts. A popout is its own window that inherits nothing, so the vault's
 // windows are covered again whenever the workspace opens one.
+//
+// Every vault window the run sets up passes through here, after each reload
+// too, so this also gives the window its in-memory clipboard.
 
+import { MEMORY_CLIPBOARD } from "./memory-clipboard.ts";
 import { obEval } from "./obsidian-cli.ts";
 
 /**
@@ -35,7 +39,7 @@ import { obEval } from "./obsidian-cli.ts";
  * behind them. A minimized window comes back from the Dock in front for the
  * length of the animation, so it stays transparent until it is restored and
  * ordered back. Restore a minimized window with this, not `restore()`.
- * `keepRendering` keeps a covered window rendering.
+ * `prepareRunWindow` keeps a covered window rendering.
  */
 export const showBehind = (win: string): string =>
   `((w)=>{if(process.platform!=='darwin'){w.showInactive();return;}if(!w.isMinimized()){w.showInactive();w.blur();return;}const opacity=w.getOpacity();w.setOpacity(0);w.once('restore',()=>{w.blur();setTimeout(()=>w.setOpacity(opacity),100);});w.showInactive();})(${win});`;
@@ -44,17 +48,20 @@ export const showBehind = (win: string): string =>
 const RESTORE = "__ztRestoreBackgroundThrottling";
 
 /**
- * Turns background throttling off for `vaultId`'s main window and every popout
- * it has or opens, shows each popout it opens behind other apps' windows and
- * without the OS focus, and moves
- * focus emulation to the window `window.focus()` or `electronWindow.focus()`
- * last raised, starting with the main window. Calling it again replaces the
- * earlier call's hooks.
+ * Prepares the vault window `vaultId` for a run, after it opens and after each
+ * reload. It installs the window's in-memory clipboard
+ * ({@link MEMORY_CLIPBOARD}), which stays for the life of the window. It turns
+ * background throttling off for the main window and every popout it has or
+ * opens, shows each popout it opens behind other apps' windows and without the
+ * OS focus, and moves focus emulation to the window `window.focus()` or
+ * `electronWindow.focus()` last raised, starting with the main window. Calling
+ * it again replaces the earlier call's hooks.
  */
-export async function keepRendering(vaultId: string): Promise<void> {
+export async function prepareRunWindow(vaultId: string): Promise<void> {
   const reply = await obEval(
     vaultId,
     `(async()=>{
+      ${MEMORY_CLIPBOARD};
       window.${RESTORE}?.();
       const remote=require('@electron/remote');
       const main=remote.getCurrentWebContents();

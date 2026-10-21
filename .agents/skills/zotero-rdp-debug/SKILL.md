@@ -17,7 +17,7 @@ below), run from the repo root.
 2. **Paired Run** — reuse a running one: the Fixture database admits one Zotero, so a second
    launch fails. Otherwise start one in the background — it keeps running after readiness
    (prerequisites: `docs/fixture.md`, "Run a Paired Run"):
-   `pnpm fixture dev --for <duration> > .scratch/fixture-dev.log 2>&1 &`. It holds the Desktop Slot for that Lease (up to 60 min), so it also wraps the walk; exit 75 in the log means blocked by the holder it names. Done when `zotero-rdp.ts 'Zotero.version'` prints a version — the
+   `pnpm fixture dev --for <duration> > .scratch/fixture-dev.log 2>&1 &`. It holds a Desktop Slot for that Lease (up to 60 min), so it also wraps the walk; exit 75 in the log means blocked by the holder it names. Done when `zotero-rdp.ts 'Zotero.version'` prints a version — the
    Fixture's Zotero, which can differ from the source checkout.
 3. **Probe** — evaluate until the runtime answers your question. Eval can also drive the app
    (open readers, select tabs, save items) and fires the same notifiers and observers as a

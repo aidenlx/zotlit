@@ -15,7 +15,7 @@ import {
   LITERATURE_NOTE_PROFILES,
 } from "@zotlit/scripts/fixture";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import { webWorkbenchEnabled } from "./e2e-run-fixture.ts";
 import {
@@ -79,7 +79,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "fresh",
     ]);
     const freshId = created.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(freshId);
+    await prepareRunWindow(freshId);
     await obEval(
       freshId,
       "app.saveLocalStorage('zotlit-profile-customization','native');true",

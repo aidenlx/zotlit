@@ -19,7 +19,7 @@ import {
   annotationOpenKeys,
   annotationOpenSubpath,
 } from "./annotation-open-subpath.ts";
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
   LIBRARY_HEADING,
@@ -833,7 +833,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true", tries: 120 },
       ),
     ).toBe(true);
-    await keepRendering(run.vaultId);
+    await prepareRunWindow(run.vaultId);
   }
 
   /** What the Library View shows that a reload must keep, once it settled. */

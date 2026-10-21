@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect } from "vitest";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { assertDevBundleFresh } from "./bundle-freshness.ts";
 import {
   e2eVaultPath,
@@ -48,7 +48,7 @@ async function bootstrap(): Promise<void> {
   ]);
   run.vaultId = created.stdout.trim().split("\n")[0]!.trim();
   await obEval(run.vaultId, "app.vault.setConfig('nativeMenus',false);true");
-  await keepRendering(run.vaultId);
+  await prepareRunWindow(run.vaultId);
   const serverPort = await availableLoopbackPort();
   await obEval(
     run.vaultId,

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-// The Desktop Slot from the command line: hold it around a manual session on
-// the desktop Obsidian, show who holds it, extend a Lease, or evict a holder.
+// The Desktop Slots from the command line: hold one (or all) around a manual
+// session on the desktop Obsidian, show who holds them, extend a Lease, or
+// evict a holder.
 // `--help` prints the contract.
 
 import { spawn } from "node:child_process";
@@ -22,6 +23,8 @@ import {
   DEFAULT_LEASE_MS,
   DESKTOP_LEASE_ENV,
   DESKTOP_SLOT_ENV,
+  DESKTOP_SLOTS_ENV,
+  DEFAULT_DESKTOP_SLOTS,
   DESKTOP_WAIT_ENV,
   describeHolder,
   describeWaiters,
@@ -43,22 +46,23 @@ import {
 
 const EXIT_USAGE = 2;
 
-const epilogue = `The Desktop Slot is exclusive use of the one desktop Obsidian app, across every clone and session on this machine (ADR 0077). A holder joins the Desktop Queue (first in, first out), claims the slot at its head, passes the Memory Gate, and then its Lease starts.
+const epilogue = `The one desktop Obsidian app has a pool of Desktop Slots, ${DEFAULT_DESKTOP_SLOTS} by default, shared by every clone and session on this machine (ADR 0077, ADR 0078). Each holder drives its own vault. A holder joins the Desktop Queue (first in, first out, no overtaking) and claims a slot at its head, once a slot is free and no holder from its own worktree (git toplevel) has one. An Exclusive Hold (run --exclusive; measure:query) claims every slot, once all are free, for work that needs the whole app, such as a screen capture. The holder then passes the Memory Gate, and its Lease starts.
 
 Exit codes:
   ${EXIT_ADMISSION_BLOCKED}   the Admission Deadline passed; blocked at admission, not a failure.
-       The message names the holder and the waiters ahead.
+       The message names every holder and the waiters ahead.
   ${EXIT_LEASE_ENDED}   the Lease ended; run ended the command's process group.
   ${EXIT_USAGE}    usage error, such as a missing --for or one over ${formatDuration(MANUAL_LEASE_CAP_MS)}.
   run otherwise exits with the command's code, or 128 plus the signal number.
 
-Admission Deadline: ${formatDuration(ADMISSION_DEADLINE_MS)} by default, for the queue, the slot, and the Memory Gate together.
+Admission Deadline: ${formatDuration(ADMISSION_DEADLINE_MS)} by default, for the queue, a slot, and the Memory Gate together.
 Leases: a manual hold states --for, up to ${formatDuration(MANUAL_LEASE_CAP_MS)}. Automated holders default to pnpm e2e ${formatDuration(DEFAULT_LEASE_MS.e2e)}, e2e:worker ${formatDuration(DEFAULT_LEASE_MS.e2eWorker)}, measure:query ${formatDuration(DEFAULT_LEASE_MS.measureQuery)}. No Lease exceeds ${formatDuration(MAX_LEASE_MS)}.
-A holder that outlives its Lease by ${formatDuration(EVICTION_GRACE_MS)} is evicted by the head waiter: SIGTERM to its process group, SIGKILL after ${formatDuration(KILL_AFTER_MS)}.
+A holder that outlives its Lease by ${formatDuration(EVICTION_GRACE_MS)} is evicted by the head waiter: SIGTERM to its process group, SIGKILL after ${formatDuration(KILL_AFTER_MS)}. An Exclusive Hold's Lease, extension, and eviction cover all its slots.
 Durations: 300ms, 90s, 20m, 2h.
 
 Environment:
   ${DESKTOP_SLOT_ENV}     the holder's token; a ZotLit tool the command starts reuses the hold, inside its Lease
+  ${DESKTOP_SLOTS_ENV}    the number of Desktop Slots, a positive integer (default ${DEFAULT_DESKTOP_SLOTS})
   ${DESKTOP_WAIT_ENV}     the Admission Deadline of an in-process holder (pnpm e2e, e2e:worker, measure:query)
   ${DESKTOP_LEASE_ENV}    the Lease of an automated holder, instead of its default
   ${DESKTOP_DIR_ENV}      the state directory (now ${desktopStateDir()})
@@ -80,7 +84,7 @@ function duration(text: string): number {
 async function run(
   command: string[],
   lease: string | undefined,
-  wait?: string,
+  { wait, exclusive }: { wait?: string; exclusive: boolean },
 ) {
   let leaseMs: number;
   try {
@@ -95,6 +99,7 @@ async function run(
     command: command.join(" "),
     leaseMs,
     manual: true,
+    exclusive,
     waitMs: wait === undefined ? undefined : duration(wait),
     // The command handles the signals; the slot is released after it exits.
     signals: false,
@@ -170,16 +175,19 @@ function groupAlive(pgid: number): boolean {
 async function status(json: boolean) {
   const now = Temporal.Now.instant().epochMilliseconds;
   const state = await readDesktopSlotStatus();
+  // The slots on disk are still listed.
+  if (state.slotCountError)
+    console.error(`Desktop Slot: ${state.slotCountError}`);
   if (json) {
     console.log(JSON.stringify(state, null, 2));
     return;
   }
-  const { holder, waiters } = state;
-  console.log(
-    holder
-      ? `Holder: ${describeHolder(holder, now)}${holder.alive ? "" : " (process gone)"}`
-      : "Holder: none; the Desktop Slot is free.",
-  );
+  const { slots, waiters } = state;
+  for (const { index, holder } of slots) {
+    console.log(
+      `Slot ${index + 1}: ${holder ? `${describeHolder(holder, now)}${holder.alive ? "" : " (process gone)"}` : "free"}`,
+    );
+  }
   console.log(
     waiters.length > 0
       ? `Desktop Queue:\n${describeWaiters(waiters)}`
@@ -195,7 +203,7 @@ await yargs(hideBin(process.argv))
   .usage("pnpm desktop-slot <command>")
   .command(
     "run",
-    "hold the Desktop Slot around a command: run --for <dur> [--wait <dur>] -- <command...>",
+    "hold a Desktop Slot around a command: run --for <dur> [--wait <dur>] [--exclusive] -- <command...>",
     (y) =>
       y
         .option("for", {
@@ -205,15 +213,24 @@ await yargs(hideBin(process.argv))
         .option("wait", {
           type: "string",
           describe: `the Admission Deadline (default ${formatDuration(ADMISSION_DEADLINE_MS)})`,
+        })
+        .option("exclusive", {
+          type: "boolean",
+          default: false,
+          describe:
+            "an Exclusive Hold: wait until every slot is free and hold them all, for a walk that needs the whole app, such as a screen capture",
         }),
     async (argv) => {
       const command = (argv["--"] as unknown[] | undefined) ?? [];
-      await run(command.map(String), argv.for, argv.wait);
+      await run(command.map(String), argv.for, {
+        wait: argv.wait,
+        exclusive: argv.exclusive,
+      });
     },
   )
   .command(
     "status",
-    "show the holder, the Desktop Queue, and the Memory Gate's last start",
+    "show each slot with its holder, worktree, Lease end, and whether it is an Exclusive Hold; then the Desktop Queue and the Memory Gate's last start",
     (y) =>
       y.option("json", {
         type: "boolean",
@@ -226,7 +243,7 @@ await yargs(hideBin(process.argv))
   )
   .command(
     "extend <duration>",
-    `move the end of the Lease to now plus <duration>; refused while anyone waits (cap ${formatDuration(MANUAL_LEASE_CAP_MS)} for a manual hold, ${formatDuration(MAX_LEASE_MS)} for any hold)`,
+    `move the end of the hold's Lease to now plus <duration>; refused while anyone waits (cap ${formatDuration(MANUAL_LEASE_CAP_MS)} for a manual hold, ${formatDuration(MAX_LEASE_MS)} for any hold)`,
     (y) =>
       y
         .positional("duration", { type: "string", demandOption: true })

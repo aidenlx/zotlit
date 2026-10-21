@@ -75,7 +75,7 @@ Write each call as one plain command with literal values: `<id>` is the vault ID
 
 ## Loop
 
-Hold the Desktop Slot for the walk: wrap it in `pnpm desktop-slot run --for <duration> -- …` (a script of the walk, or `sleep <seconds>` in the background while you make the calls). Exit 75 means blocked by the holder it names, not a failure.
+Hold a Desktop Slot for the walk: wrap it in `pnpm desktop-slot run --for <duration> -- …` (a script of the walk, or `sleep <seconds>` in the background while you make the calls). Exit 75 means blocked by the holder it names, not a failure.
 
 1. **Build** — the two build commands from Vault setup step 5. The second copies the
    bundle into this worktree's Development Vault; prefix it with `ZT_VAULT_CASE=<case>`

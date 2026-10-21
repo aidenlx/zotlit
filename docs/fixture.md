@@ -198,7 +198,7 @@ The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavai
 
 The open and dev commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
-Both commands hold the Desktop Slot while they run, so they wait for an End-to-end Run or another manual session on the desktop Obsidian to finish. Each must state `--for <duration>`, the Lease of that hold, up to 60 min. When the Lease of `dev` ends, it stops both watchers and Paired Zotero and exits 76. Exit 75 means another holder kept the slot past the Admission Deadline; `pnpm desktop-slot status` names it.
+Both commands hold a Desktop Slot while they run. They wait while another End-to-end Run or manual session from this worktree holds one, or while every slot is taken; runs in other worktrees take their own slots. Each must state `--for <duration>`, the Lease of that hold, up to 60 min. When the Lease of `dev` ends, it stops both watchers and Paired Zotero and exits 76. Exit 75 means the holders kept the slots past the Admission Deadline; `pnpm desktop-slot status` names them.
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
 

@@ -23,10 +23,12 @@ import {
 import {
   acquireDesktopSlot,
   DESKTOP_SLOT_ENV,
+  DESKTOP_SLOTS_ENV,
   DesktopSlotBlockedError,
   EXIT_ADMISSION_BLOCKED,
   EXIT_LEASE_ENDED,
   extendDesktopSlot,
+  holdDesktopMutex,
   readDesktopSlotStatus,
 } from "./desktop-slot.ts";
 
@@ -34,6 +36,7 @@ const MINUTE = 60_000;
 const ENV_KEYS = [
   DESKTOP_DIR_ENV,
   DESKTOP_SLOT_ENV,
+  DESKTOP_SLOTS_ENV,
   MEMORY_GATE_ENV,
   MEMORY_GATE_ADMITTED_ENV,
 ];
@@ -84,6 +87,8 @@ beforeEach(async () => {
   process.env[DESKTOP_DIR_ENV] = dir;
   // The Memory Gate has its own tests; here it would add a 30 s settle.
   process.env[MEMORY_GATE_ENV] = "off";
+  // One slot, unless a test says otherwise; children inherit it.
+  process.env[DESKTOP_SLOTS_ENV] = "1";
   delete process.env[DESKTOP_SLOT_ENV];
   delete process.env[MEMORY_GATE_ADMITTED_ENV];
 });
@@ -196,11 +201,68 @@ const HOLD = `await slot.acquireDesktopSlot({ command: "holder", leaseMs: 30 * 6
 console.log("held");
 setInterval(() => {}, 1000);`;
 
+/**
+ * A child in another worktree that holds a slot until a signal ends it,
+ * printing what it waits for and then "held".
+ */
+function holderIn(
+  worktree: string,
+  {
+    detached = false,
+    slots,
+    ...options
+  }: {
+    command?: string;
+    exclusive?: boolean;
+    leaseMs?: number;
+    /** Lead its own process group. */
+    detached?: boolean;
+    /** The number of slots this holder sees. */
+    slots?: number;
+  } = {},
+): ChildProcess {
+  return child(
+    `await slot.acquireDesktopSlot({ command: "holder", leaseMs: 30 * 60_000, pollMs: 10, worktree: ${JSON.stringify(worktree)}, log: (message) => console.log(message), ...${JSON.stringify(options)} });
+console.log("held");
+setInterval(() => {}, 1000);`,
+    // Not a child of an in-process holder: it takes its own slot.
+    {
+      [DESKTOP_SLOT_ENV]: "",
+      ...(slots === undefined ? {} : { [DESKTOP_SLOTS_ENV]: String(slots) }),
+    },
+    detached,
+  );
+}
+
+/** Wait as a holder in `worktree`, and expect the Admission Deadline. */
+async function blocked(options: {
+  worktree: string;
+  exclusive?: boolean;
+}): Promise<DesktopSlotBlockedError> {
+  const error = await acquireDesktopSlot({
+    ...IN_TEST,
+    ...options,
+    waitMs: 300,
+  }).then(
+    (slot) => slot.release(),
+    (error: unknown) => error,
+  );
+  expect(error).toBeInstanceOf(DesktopSlotBlockedError);
+  return error as DesktopSlotBlockedError;
+}
+
 /** A child that waits in the Desktop Queue, printing what it waits for. */
-function waiter(name: string, pollMs: number, trace: string): ChildProcess {
+function waiter(
+  name: string,
+  trace: string,
+  {
+    pollMs = 10,
+    ...options
+  }: { pollMs?: number; worktree?: string; exclusive?: boolean } = {},
+): ChildProcess {
   return child(
     `const { appendFileSync } = await import("node:fs");
-const held = await slot.acquireDesktopSlot({ command: ${JSON.stringify(name)}, leaseMs: 60_000, pollMs: ${pollMs}, log: (message) => console.log(message) });
+const held = await slot.acquireDesktopSlot({ command: ${JSON.stringify(name)}, leaseMs: 60_000, pollMs: ${pollMs}, log: (message) => console.log(message), ...${JSON.stringify(options)} });
 appendFileSync(${JSON.stringify(trace)}, ${JSON.stringify(name)} + "\\n");
 held.release();`,
     // Not a child of an in-process holder: it waits in the queue.
@@ -208,7 +270,12 @@ held.release();`,
   );
 }
 
-const OWNER = () => join(dir, "slot", "owner.json");
+const OWNER = () => join(dir, "slot-0", "owner.json");
+
+/** The pids of the holders, one per hold, in slot order. */
+async function holderPids(): Promise<number[]> {
+  return (await readDesktopSlotStatus()).holders.map((holder) => holder.pid);
+}
 
 const SCRIPT = new URL("../scripts/desktop-slot.ts", import.meta.url).pathname;
 
@@ -226,7 +293,7 @@ describe("a free slot", () => {
       command: "pnpm e2e",
       worktree: "/work/tree",
     });
-    const { holder } = await readDesktopSlotStatus();
+    const [holder] = (await readDesktopSlotStatus()).holders;
     expect(holder).toMatchObject({
       pid: process.pid,
       command: "pnpm e2e",
@@ -240,7 +307,7 @@ describe("a free slot", () => {
     ).toBe(30);
     expect(process.env[DESKTOP_SLOT_ENV]).toBe(holder!.token);
     slot.release();
-    expect((await readDesktopSlotStatus()).holder).toBeUndefined();
+    expect((await readDesktopSlotStatus()).holders).toEqual([]);
     expect(process.env[DESKTOP_SLOT_ENV]).toBeUndefined();
   });
 });
@@ -258,7 +325,7 @@ describe("the Desktop Queue", () => {
       ["second", 20],
       ["third", 5],
     ] as const) {
-      const each = waiter(name, pollMs, trace);
+      const each = waiter(name, trace, { pollMs });
       waiters.push(each);
       await printed(each, new RegExp(`position ${waiters.length} of`));
     }
@@ -273,7 +340,7 @@ describe("the Desktop Queue", () => {
   it("reaps the ticket of a dead waiter", async () => {
     const holder = child(HOLD);
     await printed(holder, "held");
-    const doomed = waiter("doomed", 10, join(dir, "trace"));
+    const doomed = waiter("doomed", join(dir, "trace"));
     await printed(doomed, /position 1 of/);
     doomed.kill("SIGKILL");
     await once(doomed, "exit");
@@ -302,7 +369,7 @@ describe("the Desktop Queue", () => {
         if (removed) ticketGone.resolve();
       },
     });
-    const behind = waiter("behind", 10, trace);
+    const behind = waiter("behind", trace);
     await printed(behind, /position 2 of/);
     const [own] = (await readDesktopSlotStatus()).waiters;
     expect(own?.pid).toBe(process.pid);
@@ -332,7 +399,7 @@ describe("the Desktop Queue", () => {
   it("gives up at the Admission Deadline, naming the holder and the waiters ahead", async () => {
     const holder = child(HOLD);
     await printed(holder, "held");
-    const ahead = waiter("ahead", 10, join(dir, "trace"));
+    const ahead = waiter("ahead", join(dir, "trace"));
     await printed(ahead, /position 1 of/);
 
     const error = await acquireDesktopSlot({ ...IN_TEST, waitMs: 200 }).then(
@@ -352,9 +419,205 @@ describe("the Desktop Queue", () => {
   });
 });
 
+describe("a pool of two Desktop Slots", () => {
+  beforeEach(() => {
+    process.env[DESKTOP_SLOTS_ENV] = "2";
+  });
+
+  it("admits holders from two worktrees at once, and a third once one releases", async () => {
+    const first = holderIn("/a");
+    await printed(first, "held");
+    const second = holderIn("/b");
+    await printed(second, "held");
+    expect(await holderPids()).toEqual([first.pid, second.pid]);
+
+    const trace = join(dir, "trace");
+    await writeFile(trace, "");
+    const third = waiter("third", trace, { worktree: "/c" });
+    await printed(third, /position 1 of/);
+    first.kill("SIGTERM");
+    expect((await once(third, "exit"))[0]).toBe(0);
+    expect(await readFile(trace, "utf8")).toBe("third\n");
+  });
+
+  it("makes a holder wait while another from its worktree holds a slot", async () => {
+    const same = holderIn("/a");
+    await printed(same, "held");
+    const error = await blocked({ worktree: "/a" });
+    expect(error.message).toContain(`pid ${same.pid} (holder)`);
+    expect(await holderPids()).toEqual([same.pid]);
+  });
+
+  it("lets no later waiter take a free slot past an Exclusive Hold at the head", async () => {
+    const holder = holderIn("/a");
+    await printed(holder, "held");
+    const trace = join(dir, "trace");
+    await writeFile(trace, "");
+    const exclusive = waiter("exclusive", trace, {
+      worktree: "/x",
+      exclusive: true,
+    });
+    await printed(exclusive, /position 1 of/);
+
+    const error = await blocked({ worktree: "/b" });
+    expect(error.message).toContain(`pid ${exclusive.pid} (exclusive)`);
+    expect(await holderPids()).toEqual([holder.pid]);
+
+    holder.kill("SIGTERM");
+    expect((await once(exclusive, "exit"))[0]).toBe(0);
+    expect(await readFile(trace, "utf8")).toBe("exclusive\n");
+  });
+
+  it("admits an Exclusive Hold once every slot is free, and it then keeps out single holders", async () => {
+    const holder = holderIn("/a");
+    await printed(holder, "held");
+    const exclusive = holderIn("/x", {
+      command: "exclusive",
+      exclusive: true,
+    });
+    await printed(exclusive, /position 1 of/);
+    expect(await holderPids()).toEqual([holder.pid]);
+
+    holder.kill("SIGTERM");
+    await printed(exclusive, "held");
+    const status = await readDesktopSlotStatus();
+    expect(status.holders).toMatchObject([
+      { pid: exclusive.pid, exclusive: true, slots: [0, 1] },
+    ]);
+    expect(status.slots.map((each) => each.holder?.pid)).toEqual([
+      exclusive.pid,
+      exclusive.pid,
+    ]);
+
+    const error = await blocked({ worktree: "/b" });
+    expect(error.message).toContain(`pid ${exclusive.pid} (exclusive)`);
+  });
+
+  it("evicts the overdue holder and leaves the other holder alone", async () => {
+    const overdue = holderIn("/a", { command: "overdue", detached: true });
+    const evicted = once(overdue, "exit");
+    await printed(overdue, "held");
+    const current = holderIn("/b", {
+      leaseMs: 2 * 60 * MINUTE,
+      detached: true,
+    });
+    await printed(current, "held");
+    const messages: string[] = [];
+    using slot = await acquireDesktopSlot({
+      ...IN_TEST,
+      worktree: "/c",
+      // Past the first holder's 30 min Lease and grace, inside the other's 2 h.
+      now: () => Temporal.Now.instant().add({ minutes: 33 }).epochMilliseconds,
+      log: (message) => messages.push(message),
+    });
+    expect((await evicted)[1]).toBe("SIGTERM");
+    expect(messages.join("\n")).toContain(`evicting pid ${overdue.pid}`);
+    expect(isAlive(current.pid!)).toBe(true);
+    const ascending = (a: number, b: number) => a - b;
+    expect((await holderPids()).toSorted(ascending)).toEqual(
+      [current.pid!, slot.owner.pid].toSorted(ascending),
+    );
+  });
+
+  it("keeps a holder that sees more slots out of an Exclusive Hold", async () => {
+    const exclusive = holderIn("/x", {
+      command: "exclusive",
+      exclusive: true,
+    });
+    await printed(exclusive, "held");
+    process.env[DESKTOP_SLOTS_ENV] = "3";
+    const error = await blocked({ worktree: "/b" });
+    expect(error.message).toContain(`pid ${exclusive.pid} (exclusive)`);
+    expect(await holderPids()).toEqual([exclusive.pid]);
+  });
+
+  it("makes an Exclusive Hold wait for a slot beyond the slots it sees", async () => {
+    // One at a time, so the last takes the third slot.
+    const holders: ChildProcess[] = [];
+    for (const worktree of ["/a", "/b", "/c"]) {
+      const each = holderIn(worktree, { slots: 3 });
+      await printed(each, "held");
+      holders.push(each);
+    }
+    const [first, second, third] = holders;
+    first!.kill("SIGTERM");
+    second!.kill("SIGTERM");
+    await Promise.all([once(first!, "exit"), once(second!, "exit")]);
+    expect(
+      (await readDesktopSlotStatus()).slots.map((each) => each.holder?.pid),
+    ).toEqual([undefined, undefined, third!.pid]);
+
+    const error = await blocked({ worktree: "/x", exclusive: true });
+    expect(error.message).toContain(`pid ${third!.pid} (holder)`);
+  });
+});
+
+describe("one Desktop Slot", () => {
+  it("makes a holder from another worktree wait", async () => {
+    const holder = holderIn("/a");
+    await printed(holder, "held");
+    await blocked({ worktree: "/b" });
+    expect(await holderPids()).toEqual([holder.pid]);
+  });
+});
+
+describe("the desktop mutex", () => {
+  it("lets a second holder in only after the first releases", async () => {
+    const released = join(dir, "released");
+    const first = track(
+      [
+        process.execPath,
+        "--input-type=module",
+        "-e",
+        `const slot = await import(${JSON.stringify(MODULE)});
+const { writeFileSync } = await import("node:fs");
+const held = await slot.holdDesktopMutex("registry.lock", { dir: ${JSON.stringify(dir)} });
+process.on("SIGTERM", () => { writeFileSync(${JSON.stringify(released)}, ""); held[Symbol.dispose](); process.exit(0); });
+console.log("held");
+setInterval(() => {}, 1000);`,
+      ],
+      { env: {} },
+    );
+    await printed(first, "held");
+    const second = holdDesktopMutex("registry.lock", { dir });
+    first.kill("SIGTERM");
+    using _held = await second;
+    // The first wrote this before it let go of the mutex.
+    expect(await exists(released)).toBe(true);
+  });
+
+  it("breaks a mutex older than its stale time", async () => {
+    const path = join(dir, "registry.lock");
+    await mkdir(path);
+    await writeFile(join(path, "dead-owner"), "");
+    const old = Temporal.Now.instant().epochMilliseconds / 1000 - 60;
+    await utimes(path, old, old);
+    using _held = await holdDesktopMutex("registry.lock", {
+      dir,
+      staleMs: 30_000,
+    });
+    expect(await exists(join(path, "dead-owner"))).toBe(false);
+  });
+
+  it("is left alone by an owner whose stale mutex another broke", async () => {
+    const path = join(dir, "registry.lock");
+    const stale = await holdDesktopMutex("registry.lock", { dir });
+    const old = Temporal.Now.instant().epochMilliseconds / 1000 - 60;
+    await utimes(path, old, old);
+    const current = await holdDesktopMutex("registry.lock", {
+      dir,
+      staleMs: 30_000,
+    });
+    stale[Symbol.dispose]();
+    expect(await exists(path)).toBe(true);
+    current[Symbol.dispose]();
+    expect(await exists(path)).toBe(false);
+  });
+});
+
 describe("a dead holder", () => {
   it("is taken over", async () => {
-    await mkdir(join(dir, "slot"));
+    await mkdir(join(dir, "slot-0"));
     const pid = await deadPid();
     await writeFile(
       OWNER(),
@@ -387,7 +650,7 @@ describe("a dead holder", () => {
         `sleep 60 & echo $! > ${pidFile}; wait`,
       );
       for (let attempt = 0; ; attempt++) {
-        const { holder } = await readDesktopSlotStatus();
+        const [holder] = (await readDesktopSlotStatus()).holders;
         if (holder?.pgid !== undefined && (await exists(pidFile))) {
           const sleep = Number(await readFile(pidFile, "utf8"));
           strays.add(holder.pgid);
@@ -433,7 +696,7 @@ describe("a dead holder", () => {
   });
 
   it("includes a holder whose pid now belongs to a new process, which is never signalled", async () => {
-    await mkdir(join(dir, "slot"));
+    await mkdir(join(dir, "slot-0"));
     const ended = Temporal.Now.instant().subtract({ hours: 3 }).toString();
     await writeFile(
       OWNER(),
@@ -460,9 +723,9 @@ describe("a dead holder", () => {
   });
 
   it("includes a claim that died before it wrote its record", async () => {
-    await mkdir(join(dir, "slot"));
+    await mkdir(join(dir, "slot-0"));
     const old = Temporal.Now.instant().epochMilliseconds / 1000 - 60;
-    await utimes(join(dir, "slot"), old, old);
+    await utimes(join(dir, "slot-0"), old, old);
     using slot = await acquireDesktopSlot(IN_TEST);
     expect(slot.owner.pid).toBe(process.pid);
   });
@@ -519,7 +782,7 @@ console.log("held");`,
     expect(error).toBeInstanceOf(DesktopSlotBlockedError);
     expect(messages.join("\n")).not.toContain("evicting");
     expect(isAlive(holder.pid!)).toBe(true);
-    expect((await readDesktopSlotStatus()).holder?.pid).toBe(holder.pid);
+    expect(await holderPids()).toEqual([holder.pid]);
   });
 
   it("extends while no one waits, and is refused while someone does", async () => {
@@ -534,7 +797,7 @@ console.log("held");`,
     expect(left).toBeGreaterThan(44);
     expect(left).toBeLessThanOrEqual(45);
 
-    const queued = waiter("queued", 10, join(dir, "trace"));
+    const queued = waiter("queued", join(dir, "trace"));
     await printed(queued, /position 1 of/);
     await expect(
       extendDesktopSlot({ token: slot.owner.token, byMs: MINUTE }),
@@ -647,6 +910,43 @@ process.exit(7);`,
     expect((await readDesktopSlotStatus()).waiters).toEqual([]);
     holder.kill("SIGTERM");
     await once(holder, "exit");
+  });
+
+  it("lists the slots on disk and names the error when the slot count is malformed", async () => {
+    using _slot = await acquireDesktopSlot(IN_TEST);
+    process.env[DESKTOP_SLOTS_ENV] = "zero";
+    const { code, stdout, stderr } = await cli("status");
+    expect(code).toBe(0);
+    expect(stdout).toContain(`Slot 1: pid ${process.pid}`);
+    expect(stderr).toContain(`${DESKTOP_SLOTS_ENV}=zero`);
+  });
+
+  it("takes every slot with --exclusive, so it waits while one slot is held", async () => {
+    process.env[DESKTOP_SLOTS_ENV] = "2";
+    const holder = holderIn("/a");
+    await printed(holder, "held");
+    const single = await cli(
+      "run",
+      "--for",
+      "1m",
+      "--wait",
+      "300ms",
+      "--",
+      "true",
+    );
+    expect(single.code).toBe(0);
+    const exclusive = await cli(
+      "run",
+      "--exclusive",
+      "--for",
+      "1m",
+      "--wait",
+      "300ms",
+      "--",
+      "true",
+    );
+    expect(exclusive.code).toBe(EXIT_ADMISSION_BLOCKED);
+    expect(exclusive.stderr).toContain(`pid ${holder.pid} (holder)`);
   });
 
   it("ends the command's whole process group at the Lease and exits 76", async () => {

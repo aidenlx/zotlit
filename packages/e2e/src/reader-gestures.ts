@@ -230,7 +230,7 @@ export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('p
 /**
  * Shows the vault's window if it is hidden or minimized, behind other apps'
  * windows, and leaves the OS focus where it is. A pointer gesture is hit-tested against the page as laid
- * out; `keepRendering` keeps a covered window laying it out.
+ * out; `prepareRunWindow` keeps a covered window laying it out.
  */
 export async function raiseWindow(vaultId: string): Promise<void> {
   expect(

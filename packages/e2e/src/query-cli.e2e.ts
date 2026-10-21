@@ -14,7 +14,7 @@ import {
 } from "@zotlit/scripts/fixture";
 import type { FixtureItem } from "@zotlit/scripts/fixture";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
   BYTE_ORDER_MARK,
@@ -940,7 +940,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     const created = await queryVaultScript(["create", queryVaultPath]);
     const queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(queryVaultId);
+    await prepareRunWindow(queryVaultId);
     const report = JSON.parse(
       await cliCommand(queryVaultId, "zotlit:query", {
         args: {
