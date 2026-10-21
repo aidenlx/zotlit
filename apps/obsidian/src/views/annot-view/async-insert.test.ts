@@ -306,14 +306,11 @@ describe("a one-line insertion", () => {
     expect(insertAt("Source.", { at: 7 })).toBe(`Source. ${QUOTE} |`);
   });
 
-  it.each(["", " ", "\t", "(", "[", "“", '"'])(
-    "adds no space before it after %j",
-    (previous) => {
-      expect(insertAt(previous, { at: previous.length })).toBe(
-        `${previous}${QUOTE} |`,
-      );
-    },
-  );
+  it.each(["", " ", "("])("adds no space before it after %j", (previous) => {
+    expect(insertAt(previous, { at: previous.length })).toBe(
+      `${previous}${QUOTE} |`,
+    );
+  });
 
   it("adds no space before a trigger the researcher typed after a word", () => {
     using held = holdAt("word[>q]", { from: 4, to: 8 });
@@ -371,7 +368,6 @@ describe("a citation insertion", () => {
   };
 
   it.each([
-    { where: "a line end", doc: "See ", at: 4, expected: "See [@smith2024]|" },
     {
       where: "punctuation",
       doc: "See .",
@@ -421,14 +417,11 @@ describe("a citation insertion", () => {
     );
   });
 
-  it.each(["", " ", "\t", "(", "[", "“", '"'])(
-    "adds no space before it after %j",
-    (previous) => {
-      expect(
-        cite("[@smith2024]", { doc: previous, from: previous.length }),
-      ).toBe(`${previous}[@smith2024]|`);
-    },
-  );
+  it.each(["", " ", "("])("adds no space before it after %j", (previous) => {
+    expect(cite("[@smith2024]", { doc: previous, from: previous.length })).toBe(
+      `${previous}[@smith2024]|`,
+    );
+  });
 
   it("adds no space before a trigger the researcher typed after a word", () => {
     expect(

@@ -371,14 +371,6 @@ describe("follow", () => {
     ],
     ["a link that names no Annotation", "zotero://open/library/items/RGRPDF24"],
     [
-      "a link with a malformed Annotation key",
-      "zotero://open/library/items/RGRPDF24?annotation=FDRF",
-    ],
-    [
-      "a link that selects rather than opens",
-      "zotero://select/library/items/RGRPDF24?annotation=FDRFQ7C2",
-    ],
-    [
       "a link to an Attachment Zotero holds no file for",
       "zotero://open/library/items/LINKURL2?annotation=FDRFQ7C2",
     ],

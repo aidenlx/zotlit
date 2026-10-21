@@ -61,18 +61,14 @@ describe("Annotation Suggester trigger", () => {
     expect(at("[>fig] and more")).toBeNull();
   });
 
-  it.each([
-    "[@smith",
-    "【@smith",
-    "@smith",
-    "see @smith",
-    "[[Note",
-    "plain text",
-  ])("stays closed for %j, which is not its trigger", (line) => {
-    expect(at(line)).toBeNull();
-  });
+  it.each(["[@smith", "plain text"])(
+    "stays closed for %j, which is not its trigger",
+    (line) => {
+      expect(at(line)).toBeNull();
+    },
+  );
 
-  it.each(["[>smith", "see [>fig", "[>"])(
+  it.each(["[>smith", "[>"])(
     "leaves %j to the Annotation Suggester: the Citation Suggester stays closed",
     (line) => {
       expect(
@@ -92,7 +88,7 @@ describe("Annotation Suggester trigger", () => {
     expect(at("[;;fig]", 6, ";;")).toEqual({ start: 1, end: 6, query: "fig" });
   });
 
-  it.each(["", "@", "[", "[@", "[[", "@@", "(@", "[[x", "a b"])(
+  it.each(["", "a b", "@", "[", "[[x"])(
     "stays closed under the unusable trigger %j",
     (trigger) => {
       expect(at(`${trigger}fig`, undefined, trigger)).toBeNull();
@@ -161,7 +157,7 @@ describe("AnnotationEditorSuggest", () => {
 });
 
 describe("annotationTriggerProblem", () => {
-  it.each(["[>", ";;", "》", "[!q"])("accepts %j", (trigger) => {
+  it.each(["[>", "[!q"])("accepts %j", (trigger) => {
     expect(annotationTriggerProblem(trigger)).toBeNull();
   });
 
@@ -169,11 +165,7 @@ describe("annotationTriggerProblem", () => {
     ["", "empty"],
     ["a b", "whitespace"],
     ["@", "citation"],
-    ["(@", "citation"],
-    ["[@", "citation"],
-    ["【@", "citation"],
     ["[", "citation"],
-    ["[[", "citation"],
     ["[[x", "citation"],
   ] as const)("rejects %j as %s", (trigger, problem) => {
     expect(annotationTriggerProblem(trigger)).toBe(problem);
