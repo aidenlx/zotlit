@@ -7,6 +7,7 @@ import type {
   CitationVariant,
   CiteRef,
   Item,
+  ItemFacets,
   NoteSource,
   NoteTemplateContext,
 } from "@zotlit/db";
@@ -43,6 +44,7 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
+import { classifyStream } from "@/services/batch-run";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
@@ -55,7 +57,8 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { selectProfileByMatch } from "@/services/profile-selection";
+import { selectProfilesByMatch } from "@/services/profile-selection";
+import type { MatchSelection } from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
@@ -72,6 +75,7 @@ import {
   buildNoteResolvers,
   itemFacets,
   resolveNotePath,
+  templateFacets,
   resolveRenderedNotePath,
 } from "./context";
 import type { NoteFeatureDeps } from "./context";
@@ -192,8 +196,21 @@ export interface CreationProfileSources {
   headless?: ProfileSelector;
   /** The user's manual choice for this operation. */
   asked?: ProfileSelector;
-  /** The source Item supplies its Library, type, Tags, and Collections. */
-  item?: Item;
+}
+
+export interface CreationPlanOptions extends CreationProfileSources {
+  /** Stops the plan at its next read; the plan then rejects. */
+  signal?: AbortSignal;
+}
+
+/** How one Indexed Key's note would be created. */
+export interface CreationPlan {
+  /** The Snapshot's Item; `undefined` when the Snapshot lacks the key. */
+  item: Item | undefined;
+  /** The Profile the sources or the Item's Profile Match select. */
+  selection: CreationProfileSelection;
+  /** Each selectable Profile's preview; none without an Item. */
+  previews: readonly PreparedCreationProfile[];
 }
 
 /** Manual choice, explicit operation input, Profile Match, then Default. */
@@ -359,14 +376,19 @@ export interface NoteFeature {
     indexedKey: string,
     options?: { profile?: ProfileSelector },
   ): Promise<CompanionNoteTarget>;
+  /** The creation Profile when no Item decides: the given or the Default. */
   resolveCreationProfile(
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
-  prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
-  prepareBatchCreationProfiles(
-    items: readonly Item[],
-    options?: { signal?: AbortSignal },
-  ): Promise<ReadonlyMap<number, readonly PreparedCreationProfile[]>>;
+  /**
+   * How each Indexed Key's note would be created, by key: its Item, its
+   * selected Profile, and each selectable Profile's preview. A batch costs one
+   * Match query and one facet stream, however many keys it holds.
+   */
+  planCreations(
+    indexedKeys: readonly string[],
+    options?: CreationPlanOptions,
+  ): Promise<ReadonlyMap<string, CreationPlan>>;
   prepareProfileNote(options: ProfileNotePreviewOptions): ProfileNotePreview;
   prepareProfileSwitch(file: TFile): Promise<PreparedProfileSwitch>;
   /** @see createNote */
@@ -515,13 +537,8 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
     resolveCompanionNote: (indexedKey, options) =>
       resolveCompanionNote(ctx, indexedKey, options),
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
-    prepareCreationProfiles: (item) =>
-      prepareCreationProfiles(ctx, item, { create: createAtGate }),
-    prepareBatchCreationProfiles: (items, options) =>
-      prepareBatchCreationProfiles(ctx, items, {
-        create: createAtGate,
-        ...options,
-      }),
+    planCreations: (indexedKeys, options) =>
+      planCreations(ctx, indexedKeys, { ...options, create: createAtGate }),
     prepareProfileNote: (options) =>
       prepareProfileNote(ctx, options, createAtGate),
     prepareProfileSwitch: (file) => prepareProfileSwitch(ctx, file),
@@ -597,42 +614,108 @@ async function resolveCompanionNote(
   return { outcome: "existing", files: [file, ...files.slice(1)], keptProfile };
 }
 
-async function prepareCreationProfiles(
+/**
+ * How each Indexed Key's note would be created: its Item in one Snapshot, the
+ * Profile its sources or its Profile Match select, and each selectable
+ * Profile's preview. The facets the paths render from stream from the worker,
+ * and the Matches of every Item are tested in one query. A path one Item takes
+ * is reserved, so a later Item of the batch gets its own. A key the Snapshot
+ * lacks has no Item and no previews; its Profile is the given or the Default.
+ */
+async function planCreations(
   ctx: NoteFeatureDeps,
-  item: Item,
-  options: {
+  indexedKeys: readonly string[],
+  options: CreationPlanOptions & {
     create: (
       item: Item,
       options: CreateNoteInternalOptions,
     ) => Promise<CreateNoteResult>;
-    reservedPaths?: Map<ProfileSelector, Set<string>>;
   },
-): Promise<PreparedCreationProfile[]> {
+): Promise<ReadonlyMap<string, CreationPlan>> {
+  const signal = options.signal ?? new AbortController().signal;
   await Promise.all([
     ctx.settings.loaded,
     ctx.profile.ready,
     ctx.template.ready,
     ctx.noteIndex.whenIndexed(),
   ]);
-  let source: NoteSource | null;
-  {
-    await using lease = await ctx.zoteroReads.acquireRead();
-    source = await readNoteSource(lease.reads, item.itemID);
-  }
-  const { itemTags, itemCollections } = source
-    ? itemFacets(source)
-    : { itemTags: [], itemCollections: [] };
-  return selectableProfiles(ctx).map((profile) => {
+  signal.throwIfAborted();
+  const shouldAsk = ctx.profile.profiles.length > 0;
+  const given = givenCreationProfile(ctx, options, shouldAsk);
+  await using lease = await ctx.zoteroReads.acquireRead();
+  const itemsByKey = await Effect.runPromise(
+    lease.reads.ItemsByIndexedKeys({ indexedKeys }),
+    { signal },
+  );
+  const items = indexedKeys.flatMap((key) => itemsByKey.get(key) ?? []);
+  const [previews, matches] = await Promise.all([
+    prepareCreationPreviews(ctx, items, {
+      reads: lease.reads,
+      create: options.create,
+      signal,
+    }),
+    given
+      ? undefined
+      : selectProfilesByMatch(ctx.profile.profiles, items, {
+          query: ctx.query,
+          signal,
+        }),
+  ]);
+  const matchByItemID = new Map(
+    items.map((item, index) => [item.itemID, matches?.[index]]),
+  );
+  return new Map(
+    indexedKeys.map((key) => {
+      const item = itemsByKey.get(key);
+      return [
+        key,
+        {
+          item,
+          selection:
+            given ??
+            matchedCreationProfile(item, {
+              result: item && matchByItemID.get(item.itemID),
+              shouldAsk,
+            }),
+          previews: (item && previews.get(item.itemID)) ?? [],
+        },
+      ];
+    }),
+  );
+}
+
+/**
+ * Each selectable Profile's preview for each of `items`, by itemID, rendered
+ * slice by slice as the worker streams the Items' facets.
+ */
+async function prepareCreationPreviews(
+  ctx: NoteFeatureDeps,
+  items: readonly Item[],
+  options: {
+    reads: ZoteroReadsApi;
+    create: (
+      item: Item,
+      options: CreateNoteInternalOptions,
+    ) => Promise<CreateNoteResult>;
+    signal: AbortSignal;
+  },
+): Promise<ReadonlyMap<number, readonly PreparedCreationProfile[]>> {
+  const profiles = selectableProfiles(ctx).map((profile) => ({
+    profile,
+    document: resolveProfileDocument(ctx, profile),
+    reserved: new Set<string>(),
+  }));
+  const itemsByID = new Map(items.map((item) => [item.itemID, item]));
+  const previews = new Map<number, readonly PreparedCreationProfile[]>();
+  const previewOf = (
+    item: Item,
+    facets: ItemFacets,
+    { profile, document, reserved }: (typeof profiles)[number],
+  ): PreparedCreationProfile => {
     const { selector } = profile;
     let preparedPath: { path: string; canSuffix: boolean } | undefined;
     let unavailable: string | undefined;
     try {
-      let reserved = options.reservedPaths?.get(selector);
-      if (options.reservedPaths && !reserved) {
-        reserved = new Set();
-        options.reservedPaths.set(selector, reserved);
-      }
-      const document = resolveProfileDocument(ctx, profile);
       if (document === null)
         throw new Error(
           m.notice_literature_note_template_missing({
@@ -640,18 +723,12 @@ async function prepareCreationProfiles(
           }),
         );
       preparedPath = resolveNotePath(ctx, item, {
-        itemTags,
-        itemCollections,
+        ...templateFacets(facets),
         settings: profile.settings,
         document,
         reservedPaths: reserved,
       });
-      reserved?.add(preparedPath.path);
-      logger.debug("Prepared Profile creation path", {
-        indexedKey: item.indexedKey,
-        selector,
-        path: preparedPath.path,
-      });
+      reserved.add(preparedPath.path);
     } catch (error) {
       unavailable = error instanceof Error ? error.message : String(error);
       logger.debug("Profile creation preview is unavailable", {
@@ -666,33 +743,33 @@ async function prepareCreationProfiles(
       create: (reporting) =>
         options.create(item, { ...reporting, profile: selector, preparedPath }),
     };
+  };
+  await classifyStream(
+    {
+      itemIDs: items.map(({ itemID }) => itemID),
+      read: (ids) =>
+        options.reads.ItemFacets({
+          items: ids.map((itemID) => ({
+            itemID,
+            libraryID: itemsByID.get(itemID)!.libraryID,
+          })),
+        }),
+    },
+    { signal: options.signal, onProgress: () => {} },
+    (slice) => {
+      for (const { itemID, facets } of slice) {
+        const item = itemsByID.get(itemID)!;
+        previews.set(
+          itemID,
+          profiles.map((profile) => previewOf(item, facets, profile)),
+        );
+      }
+    },
+  );
+  logger.debug("Prepared creation previews for {count} Items", {
+    count: items.length,
   });
-}
-
-async function prepareBatchCreationProfiles(
-  ctx: NoteFeatureDeps,
-  items: readonly Item[],
-  options: {
-    create: (
-      item: Item,
-      options: CreateNoteInternalOptions,
-    ) => Promise<CreateNoteResult>;
-    signal?: AbortSignal;
-  },
-): Promise<ReadonlyMap<number, readonly PreparedCreationProfile[]>> {
-  const reservedPaths = new Map<ProfileSelector, Set<string>>();
-  const plans = new Map<number, readonly PreparedCreationProfile[]>();
-  for (const item of items) {
-    options.signal?.throwIfAborted();
-    plans.set(
-      item.itemID,
-      await prepareCreationProfiles(ctx, item, {
-        create: options.create,
-        reservedPaths,
-      }),
-    );
-  }
-  return plans;
+  return previews;
 }
 
 function selectableProfiles(ctx: NoteFeatureDeps): ResolvedProfile[] {
@@ -720,67 +797,82 @@ function profilePreview(
   };
 }
 
-/** The operation fixes this result; subsequent operations read the current registry. */
+/**
+ * The creation Profile when no Item decides: the asked or headless one, or
+ * the Default. The operation fixes this result; subsequent operations read the
+ * current registry.
+ */
 async function resolveCreationProfile(
   ctx: NoteFeatureDeps,
   sources: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
   await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
   const shouldAsk = ctx.profile.profiles.length > 0;
-  const stopped = (
-    problem: CreationSelectionProblem,
-  ): CreationProfileSelection => {
-    logger.debug("Creation Profile selection stopped ({kind})", {
-      kind: problem.kind,
-      indexedKey: sources.item?.indexedKey,
-    });
-    return {
-      selector: DEFAULT_PROFILE,
-      source: "bound",
-      shouldAsk: true,
-      problem,
-    };
+  return (
+    givenCreationProfile(ctx, sources, shouldAsk) ??
+    matchedCreationProfile(undefined, { shouldAsk })
+  );
+}
+
+function stoppedCreationProfile(
+  problem: CreationSelectionProblem,
+  item: Item | undefined,
+): CreationProfileSelection {
+  logger.debug("Creation Profile selection stopped ({kind})", {
+    kind: problem.kind,
+    indexedKey: item?.indexedKey,
+  });
+  return {
+    selector: DEFAULT_PROFILE,
+    source: "bound",
+    shouldAsk: true,
+    problem,
   };
+}
+
+/** The Profile the caller asked for, or the headless one, when given. */
+function givenCreationProfile(
+  ctx: NoteFeatureDeps,
+  sources: CreationProfileSources,
+  shouldAsk: boolean,
+): CreationProfileSelection | undefined {
   for (const source of ["asked", "headless"] as const) {
     const selector = sources[source];
     if (selector === undefined) continue;
     if (!ctx.profile.resolveProfile(selector))
-      return stopped({ kind: "invalid-selector", source, selector });
+      return stoppedCreationProfile(
+        { kind: "invalid-selector", source, selector },
+        undefined,
+      );
     logger.debug("Resolved creation Profile {selector} from {source}", {
       selector,
       source,
-      indexedKey: sources.item?.indexedKey,
     });
     return { selector, source, shouldAsk };
   }
-  if (sources.item) {
-    const result = await selectProfileByMatch(
-      ctx.profile.profiles,
-      sources.item,
-      ctx.query,
+  return undefined;
+}
+
+/** The Profile an Item's Match selects; with no Match known, the Default. */
+function matchedCreationProfile(
+  item: Item | undefined,
+  { result, shouldAsk }: { result?: MatchSelection; shouldAsk: boolean },
+): CreationProfileSelection {
+  if (result?.outcome === "overlap")
+    return stoppedCreationProfile(
+      { kind: "overlap", candidates: result.candidates },
+      item,
     );
-    if (result.outcome === "overlap")
-      return stopped({ kind: "overlap", candidates: result.candidates });
-    // With no Match known, the researcher chooses the Profile.
-    if (result.outcome === "failed")
-      return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk: true };
-    if (result.outcome === "matched") {
-      logger.debug("Profile Match selected {selector}", {
-        selector: result.profile.id,
-        indexedKey: sources.item.indexedKey,
-      });
-      return {
-        selector: result.profile.id,
-        source: "match",
-        shouldAsk: false,
-        reason: m.profile_match_selected(result.reason),
-      };
-    }
-  }
-  logger.debug("Creation Profile selection uses Default", {
-    indexedKey: sources.item?.indexedKey,
-    shouldAsk,
-  });
+  // With no Match known, the researcher chooses the Profile.
+  if (result?.outcome === "failed")
+    return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk: true };
+  if (result?.outcome === "matched")
+    return {
+      selector: result.profile.id,
+      source: "match",
+      shouldAsk: false,
+      reason: m.profile_match_selected(result.reason),
+    };
   return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk };
 }
 

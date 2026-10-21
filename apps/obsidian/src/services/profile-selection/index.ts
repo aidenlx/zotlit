@@ -1,5 +1,5 @@
 export {
-  selectProfileByMatch,
+  selectProfilesByMatch,
   testItemMatches,
   type MatchSelection,
 } from "./select";

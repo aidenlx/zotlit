@@ -5,6 +5,7 @@ import {
   CollectionCache,
   fetchAnnotationSources,
   fetchAttachmentSources,
+  fetchItemFacets,
   fetchNoteSource,
   getAccountUserID,
   getAnnotationsByKey,
@@ -337,6 +338,13 @@ export function handlersLayer(options?: HandlersOptions) {
           Effect.flatMap(borrow(snapshot), (client) => read(client, f)),
         );
 
+      /**
+       * The memos a note read shares: the Snapshot's, so a batch under one
+       * Snapshot reads each item once, or fresh ones for an unpinned read.
+       */
+      const memosOf = (snapshot: SnapshotId | undefined): NoteMemos =>
+        (snapshot !== undefined && pinned.get(snapshot)?.memos) || noteMemos();
+
       /** Borrow for a stream's whole life and build the stream on the client. */
       const withClientStream = <A>(
         snapshot: SnapshotId | undefined,
@@ -425,10 +433,7 @@ export function handlersLayer(options?: HandlersOptions) {
 
         NoteSource: (payload) =>
           withClient(payload.snapshot, (client) => {
-            const memos =
-              (payload.snapshot !== undefined &&
-                pinned.get(payload.snapshot)?.memos) ||
-              noteMemos();
+            const memos = memosOf(payload.snapshot);
             const item = getItemsByID(client, [payload.itemID], {
               memo: memos.groupIdMemo,
             })[0];
@@ -444,6 +449,18 @@ export function handlersLayer(options?: HandlersOptions) {
                 "username" in payload
                   ? (payload.username ?? null)
                   : (memos.username ?? null),
+            });
+          }),
+
+        ItemFacets: ({ items, snapshot }) =>
+          withClientStream(snapshot, (client) => {
+            const memos = memosOf(snapshot);
+            return sliced(client, slicesOf(items), (c, slice) => {
+              const facets = fetchItemFacets(c, slice, memos);
+              return slice.map(({ itemID }) => ({
+                itemID,
+                facets: facets.get(itemID)!,
+              }));
             });
           }),
 

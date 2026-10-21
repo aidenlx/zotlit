@@ -356,6 +356,43 @@ describe("ZoteroReads operations", () => {
     expect(ctx.notes.map((n) => n.key)).toEqual(["NTE22345"]);
   });
 
+  it("ItemFacets streams each item's own tags and collections in request order", async () => {
+    const { open } = fixtureOpener();
+    const slices = await withReads(
+      open,
+      (reads) =>
+        Stream.runCollect(
+          reads.ItemFacets({
+            items: [
+              { itemID: 2, libraryID: 1 },
+              { itemID: 1, libraryID: 1 },
+              { itemID: 300, libraryID: 2 },
+              { itemID: 999, libraryID: 1 },
+            ],
+          }),
+        ),
+      { sliceSize: 2 },
+    );
+    expect(
+      slices.map((slice) =>
+        slice.map(({ itemID, facets }) => ({
+          itemID,
+          tags: facets.tags.map(({ tag }) => tag.name),
+          collections: facets.collections.map(({ name }) => name),
+        })),
+      ),
+    ).toEqual([
+      [
+        { itemID: 2, tags: ["method"], collections: ["Reading"] },
+        { itemID: 1, tags: ["zt"], collections: ["Reading"] },
+      ],
+      [
+        { itemID: 300, tags: [], collections: [] },
+        { itemID: 999, tags: [], collections: [] },
+      ],
+    ]);
+  });
+
   it("NoteSource takes the caller's username over the signed-in account", async () => {
     const { open } = fixtureOpener();
     const source = await withReads(open, (reads) =>

@@ -30,10 +30,7 @@ export interface InteractiveCreationDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
-  noteFeature: Pick<
-    NoteFeature,
-    "createNote" | "resolveCreationProfile" | "prepareCreationProfiles"
-  >;
+  noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
 }
 
@@ -50,20 +47,17 @@ export async function createNoteInteractively(
   item: Item,
   { direct = false, ...sources }: InteractiveCreationOptions = {},
 ): Promise<TFile | null> {
-  const selection = await deps.noteFeature.resolveCreationProfile({
-    ...sources,
-    item,
-  });
+  const [plans, styles] = await Promise.all([
+    deps.noteFeature.planCreations([item.indexedKey], sources),
+    deps.zoteroPref.dataDir ? listInstalledStyles(deps.zoteroPref.dataDir) : [],
+  ]);
+  const { selection, previews } = plans.get(item.indexedKey)!;
   if (!selection.shouldAsk && selection.source === "bound")
     return createNoteWithToast(deps.noteFeature, item, {
       profile: selection.selector,
       app: deps.app,
     });
 
-  const [previews, styles] = await Promise.all([
-    deps.noteFeature.prepareCreationProfiles(item),
-    deps.zoteroPref.dataDir ? listInstalledStyles(deps.zoteroPref.dataDir) : [],
-  ]);
   // The selection is fixed for this operation; a Profile that became
   // unavailable since asks for another choice instead of a different target.
   let problem = selection.problem;

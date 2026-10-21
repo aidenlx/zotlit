@@ -12,6 +12,7 @@ import type {
   getItemDisplayRefByID,
   Item,
   ItemBaseFields,
+  ItemFacets,
   ItemTag,
   Library,
   Note,
@@ -243,6 +244,12 @@ export const NoteSourceSchema = Schema.Struct({
   childNotes: Schema.Array(ChildNoteSchema),
 });
 type _NoteSource = Expect<Equals<typeof NoteSourceSchema.Type, NoteSource>>;
+
+const ItemFacetsSchema = Schema.Struct({
+  tags: Schema.Array(ItemTagSchema),
+  collections: Schema.Array(TemplateCollectionSchema),
+});
+type _ItemFacets = Expect<Equals<typeof ItemFacetsSchema.Type, ItemFacets>>;
 
 export const AnnotationSourcesSchema = Schema.Struct({
   annotations: Schema.Array(AnnotationSchema),
@@ -558,6 +565,23 @@ export class ZoteroReads extends RpcGroup.make(
     },
     success: Schema.NullOr(NoteSourceSchema),
     error: ReadError,
+  }),
+  /**
+   * The facets each item's note path renders from, one entry per requested
+   * item in request order; an unknown item has no tags or collections.
+   */
+  Rpc.make("ItemFacets", {
+    payload: {
+      items: Schema.Array(
+        Schema.Struct({ itemID: Schema.Number, libraryID: Schema.Number }),
+      ),
+      ...snapshot,
+    },
+    success: Schema.Array(
+      Schema.Struct({ itemID: Schema.Number, facets: ItemFacetsSchema }),
+    ),
+    error: ReadError,
+    stream: true,
   }),
   /** The annotation template bundle for annotations named by key. */
   Rpc.make("AnnotationSources", {
