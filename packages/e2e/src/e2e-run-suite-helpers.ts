@@ -11,7 +11,10 @@ import {
 } from "./e2e-run-fixture.ts";
 import { openProfilesSettings, unreadOf } from "./e2e-run-helpers.ts";
 import { run } from "./e2e-run-lifecycle.ts";
-import { selectItemSuggestion } from "./e2e-run-note-helpers.ts";
+import {
+  pressPromptKey,
+  selectItemSuggestion,
+} from "./e2e-run-note-helpers.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 
@@ -260,10 +263,7 @@ async function quickSwitchCreate(
     ),
   ).toBe(true);
   await selectItemSuggestion(targetVaultId, item.title, item.key);
-  await obEval(
-    targetVaultId,
-    "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-  );
+  await pressPromptKey(targetVaultId, "Enter");
 }
 
 export {

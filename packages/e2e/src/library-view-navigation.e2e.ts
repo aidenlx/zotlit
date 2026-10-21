@@ -28,6 +28,7 @@ import { activeTab, pdfOpened, unreadOf } from "./e2e-run-helpers.ts";
 import type { ActiveTab } from "./e2e-run-helpers.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import {
+  pressPromptKey,
   selectItemSuggestion,
   selectSuggestion,
 } from "./e2e-run-note-helpers.ts";
@@ -436,7 +437,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           { named: false, slow: delay > 0 },
         );
-      // Pinned, the Item picker pins the other Item.
+      // Pinned, the Item picker pins the other Item. The click must land on a
+      // row of the typed query's answer, which the picker shows once its
+      // results stop being aria-busy; it drops a click on an earlier row. The
+      // row is found by Indexed Key: another Item shares the title. This is
+      // selectItemSuggestion's rule, inside the one eval the step times.
       for (const [from, to] of [
         [items[0]!, items[1]!],
         [items[1]!, items[0]!],
@@ -444,7 +449,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         oneStep(
           `pinned, picker ${from.key} → ${to.key}, ${pace}`,
           await step(
-            `view.pinItem(${JSON.stringify(from.key)});await until('pinned',()=>view.getState().pinnedItemKey===${JSON.stringify(from.key)});app.commands.executeCommandById('zotlit:annot-view-pin-item');const input=await until('picker',()=>activeDocument.querySelector('.prompt .prompt-input'),5000);input.value=${JSON.stringify(to.title)};input.dispatchEvent(new Event('input',{bubbles:true}));const choice=await until('suggestion',()=>[...activeDocument.querySelectorAll('.prompt .suggestion-item')].find(n=>n.textContent.includes(${JSON.stringify(to.title)})),10000);`,
+            `view.pinItem(${JSON.stringify(from.key)});await until('pinned',()=>view.getState().pinnedItemKey===${JSON.stringify(from.key)});app.commands.executeCommandById('zotlit:annot-view-pin-item');const input=await until('picker',()=>activeDocument.querySelector('.prompt .prompt-input'),5000);input.value=${JSON.stringify(to.title)};input.dispatchEvent(new Event('input',{bubbles:true}));const choice=await until('suggestion',()=>[...activeDocument.querySelectorAll('.prompt .suggestion-item')].find(n=>!n.closest('[aria-busy]')&&n.dataset.indexedKey===${JSON.stringify(to.key)}),10000);`,
             "choice.click();",
             delay,
           ),
@@ -1310,10 +1315,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await selectSuggestion(run.vaultId, booksProfile.label)).toContain(
       booksProfile.label,
     );
-    await obEval(
-      run.vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(run.vaultId, "Enter");
     const written = await activeWhen(
       (shown) => shown.type === "markdown" && shown.key === unwrittenKey,
     );
@@ -1385,10 +1387,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     await selectItemSuggestion(run.vaultId, filed.title, filed.key);
-    await obEval(
-      run.vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,altKey:true,bubbles:true}));true",
-    );
+    await pressPromptKey(run.vaultId, "Enter", { altKey: true });
     expect(
       await obEvalUntil(
         run.vaultId,

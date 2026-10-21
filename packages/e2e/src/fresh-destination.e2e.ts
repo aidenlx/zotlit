@@ -19,6 +19,7 @@ import {
   clickModalButton,
   createFixtureNote,
   indexedNote,
+  pressPromptKey,
   selectItemSuggestion,
   selectSuggestion,
 } from "./e2e-run-note-helpers.ts";
@@ -194,17 +195,11 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     ).toBe(true);
     const kahneman = ITEMS.find(({ itemID }) => itemID === 61)!;
     await selectItemSuggestion(vaultId, kahneman.title, kahneman.key);
-    await obEval(
-      vaultId,
-      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(vaultId, "Enter");
     const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
     expect(choice).toContain("Books");
     expect(choice).toContain("books/Kahneman2011.md");
-    await obEval(
-      vaultId,
-      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await pressPromptKey(vaultId, "Enter");
     expect(
       await waitFor(async () =>
         (
