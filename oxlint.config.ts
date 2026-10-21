@@ -1,8 +1,6 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
-
-import testBaseline from "./packages/config/oxlint-tests-baseline.json" with { type: "json" };
+import baseConfig, { testBaselineOverrides } from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
@@ -33,14 +31,7 @@ export default defineConfig({
         "typescript/no-floating-promises": "off",
       },
     },
-    {
-      // Entries may be deleted, never added.
-      files: testBaseline,
-      rules: {
-        "zotlit-tests/no-source-text": "off",
-        "zotlit-tests/no-internal-mock": "off",
-      },
-    },
+    ...testBaselineOverrides(),
     {
       // The rule's own test cases hold the code it reports.
       files: ["packages/config/oxlint-plugin-tests.test.ts"],

@@ -16,14 +16,32 @@ const configFile = regex(
 const directive = regex(
   "^\\s*(?:oxlint|eslint)-disable(?:-next-line|-line)?\\b",
 );
-const rule = regex("\\bzotlit-tests/(?:no-source-text|no-internal-mock)\\b");
+const rule = regex(
+  "\\bzotlit-tests/(?:no-source-text|no-internal-mock|no-markup-assertion)\\b",
+);
 const disabledRule = regex(
-  "['\"](zotlit-tests/(?:no-source-text|no-internal-mock))['\"]\\s*\\]?\\s*:",
+  "['\"](zotlit-tests/(?:no-source-text|no-internal-mock|no-markup-assertion))['\"]\\s*\\]?\\s*:",
   "g",
 );
 const disabledSeverity = regex(
   "^\\s*(?:\\[\\s*)?(?:['\"](?:off|allow)['\"]|0\\b)",
 );
+
+/** Each baselined test file and the rules it is exempt from. */
+type Baseline = Record<string, string[]>;
+
+/** The rules every entry of the earlier flat list of paths was exempt from. */
+const flatBaselineRules = [
+  "zotlit-tests/no-internal-mock",
+  "zotlit-tests/no-source-text",
+];
+
+function parseBaseline(source: string): Baseline {
+  const parsed = JSON.parse(source) as Baseline | string[];
+  return Array.isArray(parsed)
+    ? Object.fromEntries(parsed.map((file) => [file, flatBaselineRules]))
+    : parsed;
+}
 
 /** Check the shrinking baseline and the places that can bypass the test rules. */
 export async function checkTestPolicy(
@@ -31,9 +49,9 @@ export async function checkTestPolicy(
   files: string[],
 ): Promise<string[]> {
   const errors: string[] = [];
-  const baseline = JSON.parse(
+  const baseline = parseBaseline(
     readFileSync(join(root, baselineFile), "utf8"),
-  ) as string[];
+  );
   const base = await affectedBase(root);
   const previous = base
     ? await $({
@@ -43,10 +61,22 @@ export async function checkTestPolicy(
       })`git show ${base}:${baselineFile}`
     : undefined;
   if (previous?.exitCode === 0) {
-    const allowed = new Set<string>(JSON.parse(previous.stdout));
-    for (const file of baseline)
-      if (!allowed.has(file))
-        errors.push(`${baselineFile}: added baseline entry ${file}`);
+    const allowed = parseBaseline(previous.stdout);
+    const knownRules = new Set(Object.values(allowed).flat());
+    const newRules = new Set<string>();
+    for (const [file, rules] of Object.entries(baseline))
+      for (const exempt of rules)
+        if (!knownRules.has(exempt)) newRules.add(exempt);
+        else if (!allowed[file]?.includes(exempt))
+          errors.push(
+            `${baselineFile}: added baseline entry ${file} (${exempt})`,
+          );
+    // A rule's first entries are its adoption: the files that break it when
+    // it lands. From then on they may be deleted, never added.
+    for (const adopted of newRules)
+      console.log(
+        `check-test-gates: ${adopted} is new to the baseline; skipping its growth check.`,
+      );
   } else {
     // A shallow clone has no base; the branch that introduces the baseline
     // has nothing to compare against.
@@ -54,7 +84,7 @@ export async function checkTestPolicy(
       `check-test-gates: ${base ? "no baseline at the merge base" : "no merge base"}; skipping baseline growth check.`,
     );
   }
-  for (const file of baseline)
+  for (const file of Object.keys(baseline))
     if (!existsSync(join(root, file)))
       errors.push(`${baselineFile}: missing file ${file}`);
 
