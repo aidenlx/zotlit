@@ -12,6 +12,7 @@ import {
   matchesNodeTest,
   projectCollection,
 } from "#test-gates";
+import { checkTestPolicy } from "#test-policy";
 
 const root = resolve(import.meta.dirname, "../../..");
 const gitFiles = execFileSync(
@@ -21,7 +22,7 @@ const gitFiles = execFileSync(
 )
   .split("\0")
   .filter((file) => file && existsSync(join(root, file)));
-const testFile = regex("\\.test\\.(?:[cm]?[jt]sx?)$");
+const testFile = regex("\\.(?:test\\.[cm]?[jt]sx?|e2e\\.ts)$");
 const tests = [
   ...new Set(gitFiles.filter((file) => testFile.test(file))),
 ].sort();
@@ -149,7 +150,7 @@ async function collectVitest(cwd: string, args: string[]) {
   }
 }
 
-// A package's test task and the root eval-runtime task are the test gates.
+// Package tests, the desktop e2e task and root eval-runtime are the test gates.
 for (const file of ["package.json", ...packageFiles]) {
   const manifest = JSON.parse(readFileSync(join(root, file), "utf8")) as {
     scripts?: Record<string, string>;
@@ -157,7 +158,12 @@ for (const file of ["package.json", ...packageFiles]) {
   const commands =
     file === "package.json"
       ? [manifest.scripts?.["test:eval-runtime"]]
-      : [manifest.scripts?.test];
+      : [
+          manifest.scripts?.test,
+          ...(file === "packages/e2e/package.json"
+            ? [manifest.scripts?.e2e]
+            : []),
+        ];
   for (const command of commands) {
     if (!command) continue;
     for (const segment of command.split("&&")) {
@@ -192,3 +198,11 @@ if (ungated.length) {
   console.log(
     `check-test-gates: ${tests.length} test files, all collected by a gate.`,
   );
+
+const policyErrors = await checkTestPolicy(root, gitFiles);
+if (policyErrors.length) {
+  console.error(
+    `Test policy violations (policies/testing-strategy.md):\n${policyErrors.map((error) => `  ${error}`).join("\n")}`,
+  );
+  process.exitCode = 1;
+}
