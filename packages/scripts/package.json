@@ -14,6 +14,7 @@
     "#obsidian-cdp": "./lib/obsidian-cdp.ts",
     "#obsidian-cli": "./lib/obsidian-cli.ts",
     "#obsidian-host-readiness": "./lib/obsidian-host-readiness.ts",
+    "#obsidian-vault-registry": "./lib/obsidian-vault-registry.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
     "#test-gates": "./lib/test-gates.ts",

@@ -42,6 +42,7 @@ const popovers = vi.hoisted(
 vi.mock("./popover", () => ({
   CitationHoverPopover: class {
     readonly render = vi.fn(() => true);
+    readonly retarget = vi.fn();
     readonly #cleanup: (() => void)[] = [];
     readonly hide = vi.fn(() => {
       for (const cleanup of this.#cleanup.splice(0).reverse()) cleanup();
@@ -278,7 +279,7 @@ describe("source-less Citation Popover", () => {
       bibliographyRender: { readBibliography, on: () => () => undefined },
     } as never);
 
-    service.showWork({
+    void service.showWork({
       event: new MouseEvent("mouseover"),
       hoverParent: { hoverPopover: null },
       targetEl: document.createElement("span"),
@@ -347,6 +348,7 @@ function workHarness() {
   } as never);
   const element = document.createElement("div");
   const root = createRoot(element);
+  const parent = { hoverPopover: null };
   return {
     db,
     citationLookup,
@@ -358,10 +360,23 @@ function workHarness() {
     show(
       work: WorkHoverRequest["work"] = { kind: "item", indexedKey: "ABCD2345" },
     ) {
-      service.showWork({
+      void service.showWork({
         event: new MouseEvent("mouseover"),
         hoverParent: { hoverPopover: null },
         targetEl: element,
+        work,
+        open,
+      });
+    },
+    /**
+     * Hovers `work` under one parent the harness keeps, on a target of its
+     * own; settles once that hover's first read drew or was dropped.
+     */
+    showUnder(work: WorkHoverRequest["work"]): Promise<void> {
+      return service.showWork({
+        event: new MouseEvent("mouseover"),
+        hoverParent: parent,
+        targetEl: document.createElement("span"),
         work,
         open,
       });
@@ -582,6 +597,27 @@ describe("source-less presentation updates", () => {
     expect(
       element.querySelector("[data-citation-popover-actions]"),
     ).not.toBeNull();
+  });
+
+  it("keeps the newer work when the pointer moved on before the first was read", async () => {
+    await using run = workHarness();
+    run.db.holds([
+      { itemID: 1, key: "ABCD2345", title: "First work" },
+      { itemID: 2, key: "EFGH2345", title: "Second work" },
+    ]);
+    const first = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography.mockReturnValueOnce(first.promise);
+    const stale = run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
+
+    await run.showUnder({ kind: "item", indexedKey: "EFGH2345" });
+    expect((await run.shown()).textContent).toContain("Second work");
+    first.resolve(null);
+    await stale;
+
+    const shown = await run.shown();
+    expect(shown.textContent).toContain("Second work");
+    expect(shown.textContent).not.toContain("First work");
   });
 
   it("retains the new Item data when an older render finishes later", async () => {

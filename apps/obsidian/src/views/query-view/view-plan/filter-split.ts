@@ -18,6 +18,7 @@ import type {
   FilterLeaf,
   FilterTree,
 } from "@zotlit/filter-expression";
+import type { PlacedFault, Span } from "@zotlit/workbench/language";
 
 import { allViewsDataset } from "@/views/query-view/query-file";
 import type {
@@ -47,16 +48,20 @@ export interface VaultCondition extends FilterLocation {
    * vault property it does not spell out.
    */
   readonly reads: readonly VaultRead[] | null;
+  /** The text of the condition it is a conjunct of, and where it starts there. */
+  readonly within: ConditionLeaf;
+}
+
+/** A fault in one condition, with its place in the condition's text. */
+export interface ConditionFault extends FilterLocation {
+  readonly fault: PlacedFault;
 }
 
 /** The Filter Expression ZotLit Query runs, and the condition a fault in it marks. */
 export interface EngineFilter {
   readonly text: string;
   /** The condition a fault at `span` marks; `null` where the span falls inside no one condition. */
-  locate(span: {
-    readonly from: number;
-    readonly to: number;
-  }): FilterLocation | null;
+  locate(span: Span): ConditionFault | null;
 }
 
 /** One view's filters, split between the vault and ZotLit Query. */
@@ -88,7 +93,16 @@ interface Conjunct {
   readonly vault: VaultCondition | undefined;
 }
 
-type Composed = ComposedFilter<FilterLocation & FilterLeaf>;
+/**
+ * The text of a leaf's condition, and where the leaf's text starts in it: a
+ * leaf may hold one conjunct of its condition alone.
+ */
+export interface ConditionLeaf {
+  readonly text: string;
+  readonly offset: number;
+}
+
+type Composed = ComposedFilter<FilterLocation & FilterLeaf & ConditionLeaf>;
 
 /** Split the filters of one view: the file's for all views of its dataset, then its own. */
 export function splitFilters(
@@ -117,7 +131,16 @@ export function splitFilters(
           const leaf = composed.leaves.find(
             (leaf) => leaf.from <= from && to <= leaf.to,
           );
-          return leaf ? { section: leaf.section, path: leaf.path } : null;
+          if (!leaf) return null;
+          const by = leaf.offset - leaf.from;
+          return {
+            section: leaf.section,
+            path: leaf.path,
+            fault: {
+              text: leaf.text,
+              span: { from: from + by, to: to + by },
+            },
+          };
         },
       };
     },
@@ -155,9 +178,17 @@ function splitSection(
 } {
   const vault: VaultCondition[] = [];
   const stranded: FilterLocation[] = [];
-  const at = <T extends FilterLeaf>(composed: ComposedFilter<T>): Composed => ({
+  // A leaf that is its whole condition is the text it spans.
+  const at = <T extends FilterLeaf & Partial<ConditionLeaf>>(
+    composed: ComposedFilter<T>,
+  ): Composed => ({
     text: composed.text,
-    leaves: composed.leaves.map((leaf) => ({ ...leaf, section })),
+    leaves: composed.leaves.map((leaf) => ({
+      ...leaf,
+      section,
+      text: leaf.text ?? composed.text.slice(leaf.from, leaf.to),
+      offset: leaf.offset ?? 0,
+    })),
   });
   // A leaf that keeps some of its conjuncts composes them alone, each one a
   // leaf at the leaf's path; `null` where it keeps none.
@@ -173,7 +204,7 @@ function splitSection(
     return joinComposed(
       kept.map(({ from, to }) => ({
         text: text.slice(from, to),
-        leaves: [{ path, from: 0, to: to - from }],
+        leaves: [{ path, from: 0, to: to - from, text, offset: from }],
       })),
       " && ",
     );
@@ -254,7 +285,13 @@ function leafConjuncts(
       from,
       to,
       vault: use.names
-        ? { section, path, text: text.slice(from, to), reads: use.reads }
+        ? {
+            section,
+            path,
+            text: text.slice(from, to),
+            reads: use.reads,
+            within: { text, offset: from },
+          }
         : undefined,
     };
   });

@@ -735,6 +735,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     expect(rows[0]).toBeNull();
     expect(rows[1]).toContain("contain");
+    /**
+     * The text each condition row underlines, once the second row's is
+     * `expected` or the wait ends: the editor draws its marks after the
+     * frame that shows the row.
+     */
+    const underlines = async (expected: string) => {
+      let marks: string[][] = [];
+      await waitFor(async () => {
+        marks = JSON.parse(
+          await obEval(
+            run.vaultId,
+            `(function(){return JSON.stringify(Array.from((${suite.activeWorkbenchContent})?.querySelectorAll('[data-condition-row]')??[]).map(row=>Array.from(row.querySelectorAll('.cm-lintRange-error')).map(n=>n.textContent)));})()`,
+          ),
+        ) as string[][];
+        return marks[1]?.join() === expected;
+      });
+      return marks;
+    };
+    // The row underlines the name ZotLit Query found wrong.
+    expect(await underlines("contain")).toEqual([[], ["contain"]]);
+    // A Syntax Fault is underlined in its row, with no test to wait for.
+    await suite.writeMatch(booksProfile, {
+      and: ['itemType == "book"', "title =="],
+    });
+    expect(await underlines("==")).toEqual([[], ["=="]]);
   });
 
   it("keeps per-Item matches in a mixed-Library batch with one unmatched-or-overlap fallback", async () => {

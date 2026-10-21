@@ -10,13 +10,14 @@
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { planItemFilter } from "@zotlit/item-query";
+import type { Span } from "@zotlit/workbench/language";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { FilterLocation } from "@/views/query-view/query-file";
 import type { ReaderDiagnosticSource } from "@/views/query-view/reader-diagnostic";
 import type { VaultValue } from "@/views/query-view/table-notes";
 
-import type { VaultCondition, VaultRead } from "./filter-split";
+import type { ConditionFault, VaultCondition, VaultRead } from "./filter-split";
 
 /** The Literature Notes a vault filter reads. */
 export interface VaultFilterNotes {
@@ -35,7 +36,8 @@ export type VaultFilter =
   | { readonly condition: string | null }
   | {
       readonly fault: {
-        readonly at: FilterLocation;
+        /** The condition, with the fault's place in its text where ZotLit Query names one. */
+        readonly at: FilterLocation | ConditionFault;
         readonly diagnostic: ReaderDiagnosticSource;
       };
     };
@@ -77,8 +79,9 @@ export function planVaultFilter({
     text: string;
     reads: readonly VaultRead[];
     at: FilterLocation;
+    within: VaultCondition["within"];
   }[] = [];
-  for (const { text, section, path, reads } of conditions) {
+  for (const { text, section, path, reads, within } of conditions) {
     if (reads === null)
       return fault(
         { section, path },
@@ -88,28 +91,42 @@ export function planVaultFilter({
           hint: m.query_view_vault_filter_mixed_hint(),
         },
       );
-    planned.push({ text, reads, at: { section, path } });
+    planned.push({ text, reads, at: { section, path }, within });
   }
   // Each text is planned once, however many notes hold the same values.
   const tests = new Map<string, boolean>();
   const holds = (value: (name: string) => unknown) => {
-    for (const { text, reads, at } of planned) {
+    for (const { text, reads, at, within } of planned) {
       const filled = substitute(text, reads, value);
-      let matched = tests.get(filled);
+      let matched = tests.get(filled.text);
       if (matched === undefined) {
-        const filter = planItemFilter(filled);
-        if ("code" in filter)
+        const filter = planItemFilter(filled.text);
+        if ("code" in filter) {
+          const span = filter.location?.span;
+          const place = span && filled.source(span);
           return {
-            at,
+            at: place
+              ? {
+                  ...at,
+                  fault: {
+                    text: within.text,
+                    span: {
+                      from: within.offset + place.from,
+                      to: within.offset + place.to,
+                    },
+                  },
+                }
+              : at,
             diagnostic: {
               code: filter.code,
               message: filter.message,
               hint: filter.hint,
             },
           };
+        }
         // The text reads no field of the Item, only the values put in it.
         matched = filter.matches({} as never);
-        tests.set(filled, matched);
+        tests.set(filled.text, matched);
       }
       if (!matched) return false;
     }
@@ -141,19 +158,47 @@ function fault(
   return { fault: { at: { section, path }, diagnostic } };
 }
 
-/** `text` with each vault property it reads replaced by its value. */
+/**
+ * `text` with each vault property it reads replaced by its value, and
+ * `source`, which gives the span of `text` that a span of the result comes
+ * from. A span that starts or ends in a value takes all of its read.
+ */
 function substitute(
   text: string,
   reads: readonly VaultRead[],
   value: (name: string) => unknown,
-): string {
+): { text: string; source(span: Span): Span } {
   let out = "";
   let last = 0;
+  // Each value put in, by where it stands in `out` and in `text`.
+  const values: { from: number; to: number; read: VaultRead }[] = [];
   for (const read of [...reads].sort((a, b) => a.from - b.from)) {
-    out += text.slice(last, read.from) + literal(value(read.name));
+    out += text.slice(last, read.from);
+    const from = out.length;
+    out += literal(value(read.name));
+    values.push({ from, to: out.length, read });
     last = read.to;
   }
-  return out + text.slice(last);
+  out += text.slice(last);
+  // Where `at` of the result is in `text`, or the start or the end of the
+  // read whose value `at` falls inside.
+  const back = (at: number, side: "from" | "to") => {
+    let shift = 0;
+    for (const put of values) {
+      if (at < put.from || (side === "to" && at === put.from)) break;
+      if (at < put.to || (side === "to" && at === put.to))
+        return put.read[side];
+      shift = put.read.to - put.to;
+    }
+    return at + shift;
+  };
+  return {
+    text: out,
+    source: ({ from, to }) => ({
+      from: back(from, "from"),
+      to: back(to, "to"),
+    }),
+  };
 }
 
 /**

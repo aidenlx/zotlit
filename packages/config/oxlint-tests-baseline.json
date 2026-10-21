@@ -1,85 +1,463 @@
-[
-  "apps/docs/src/lib/collections.test.ts",
-  "apps/docs/src/lib/workbench/render.test.ts",
-  "apps/docs/src/lib/workbench/web-preview.test.tsx",
-  "apps/docs/src/lib/workbench/workbench.test.tsx",
-  "apps/obsidian/src/lib/brand.test.ts",
-  "apps/obsidian/src/lib/obsidian-private/embed-registry.test.ts",
-  "apps/obsidian/src/lib/obsidian-private/metadata-type-manager.test.ts",
-  "apps/obsidian/src/lib/obsidian-private/property-values.test.ts",
-  "apps/obsidian/src/services/attachment-import/copy-security.test.ts",
-  "apps/obsidian/src/services/attachment-import/service.test.ts",
-  "apps/obsidian/src/services/attachment-open/actions.test.ts",
-  "apps/obsidian/src/services/attachment-open/menu.test.ts",
-  "apps/obsidian/src/services/chinese-segmenter/service.test.ts",
-  "apps/obsidian/src/services/citation-popover/content.test.ts",
-  "apps/obsidian/src/services/citation-popover/service.test.ts",
-  "apps/obsidian/src/services/citekey-editor/extension-parse.test.ts",
-  "apps/obsidian/src/services/citekey-editor/extension.test.ts",
-  "apps/obsidian/src/services/citekey-editor/service.test.ts",
-  "apps/obsidian/src/services/database/read-source-fallback.test.ts",
-  "apps/obsidian/src/services/database/read-source.test.ts",
-  "apps/obsidian/src/services/graph-citations/groups.test.ts",
-  "apps/obsidian/src/services/graph-citations/node-color.test.ts",
-  "apps/obsidian/src/services/graph-citations/rows.test.ts",
-  "apps/obsidian/src/services/graph-citations/saved-options.test.ts",
-  "apps/obsidian/src/services/graph-citations/service.test.ts",
-  "apps/obsidian/src/services/note-feature/actions.test.ts",
-  "apps/obsidian/src/services/note-feature/annotation-citation.test.ts",
-  "apps/obsidian/src/services/note-feature/companion-view.test.ts",
-  "apps/obsidian/src/services/note-feature/creation-view.test.ts",
-  "apps/obsidian/src/services/note-feature/insert-annotation.test.ts",
-  "apps/obsidian/src/services/note-feature/operations.membership.test.ts",
-  "apps/obsidian/src/services/note-feature/operations.test.ts",
-  "apps/obsidian/src/services/note-feature/switch-view.test.ts",
-  "apps/obsidian/src/services/note-feature/update-batch.test.ts",
-  "apps/obsidian/src/services/note-import/batch-import.test.ts",
-  "apps/obsidian/src/services/note-import/excerpts.test.ts",
-  "apps/obsidian/src/services/note-import/note-parser.test.ts",
-  "apps/obsidian/src/services/note-import/outcome-scope.test.ts",
-  "apps/obsidian/src/services/note-import/service.test.ts",
-  "apps/obsidian/src/services/note-index/service.test.ts",
-  "apps/obsidian/src/services/pandoc/inline-content.test.ts",
-  "apps/obsidian/src/services/pdf-annotation-editor/selection.test.ts",
-  "apps/obsidian/src/services/protocol/register.test.ts",
-  "apps/obsidian/src/services/service-base.test.ts",
-  "apps/obsidian/src/services/template-workbench/check.test.ts",
-  "apps/obsidian/src/services/template/migration-data.test.ts",
-  "apps/obsidian/src/services/wikilink-editor/hover.test.ts",
-  "apps/obsidian/src/services/wikilink-editor/theme-hooks.test.ts",
-  "apps/obsidian/src/setting-tab/ids.test.ts",
-  "apps/obsidian/src/setting-tab/profiles.test.ts",
-  "apps/obsidian/src/setting-tab/resources.test.ts",
-  "apps/obsidian/src/setting-tab/templates.test.ts",
-  "apps/obsidian/src/views/citation-presentation/modal.test.ts",
-  "apps/obsidian/src/views/citation-presentation/register.test.ts",
-  "apps/obsidian/src/views/note-preview/register.test.ts",
-  "apps/obsidian/src/views/note-preview/view.test.ts",
-  "apps/obsidian/src/views/pandoc-export/register.test.ts",
-  "apps/obsidian/src/views/query-view/table-notes.test.ts",
-  "apps/obsidian/src/views/query-view/table-readers.test.ts",
-  "apps/obsidian/src/views/quick-switch/modal.test.ts",
-  "apps/obsidian/src/views/references/References.test.ts",
-  "apps/obsidian/src/views/references/view.test.ts",
-  "apps/obsidian/src/views/template-data-explorer/profile-explorer.test.ts",
-  "apps/obsidian/src/views/template-data-explorer/register.test.ts",
-  "apps/obsidian/src/views/template-data-explorer/store.test.ts",
-  "apps/obsidian/src/views/template-data-explorer/view.test.ts",
-  "apps/obsidian/src/views/template-workbench/new-partial.test.ts",
-  "apps/obsidian/src/views/template-workbench/register.test.ts",
-  "apps/obsidian/src/views/template-workbench/view.test.ts",
-  "apps/zotero/scripts/vite-fluent-plugin.test.ts",
-  "apps/zotero/src/notify/freshness.test.ts",
-  "packages/obsidian-i18n/src/cli.test.ts",
-  "packages/obsidian-i18n/src/compiler.test.ts",
-  "packages/obsidian-i18n/src/vite.test.ts",
-  "packages/paraglide-vite/src/index.test.ts",
-  "packages/scripts/lib/fixture/build.test.ts",
-  "packages/scripts/lib/turbo-root-deps.test.ts",
-  "packages/templates/src/citation.test.ts",
-  "packages/templates/src/defaults.test.ts",
-  "packages/templates/src/facade.test.ts",
-  "packages/templates/src/index.test.ts",
-  "packages/templates/src/literature-note-template.test.ts",
-  "skills/zotlit-query/evals/run.test.mjs"
-]
+{
+  "apps/docs/src/lib/collections.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/docs/src/lib/workbench/expression-completion.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/docs/src/lib/workbench/frame.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/docs/src/lib/workbench/hover.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/docs/src/lib/workbench/json-e.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/docs/src/lib/workbench/render.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/docs/src/lib/workbench/web-editor.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/docs/src/lib/workbench/web-preview.test.tsx": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/docs/src/lib/workbench/workbench.test.tsx": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/lib/brand.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/lib/obsidian-private/embed-registry.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/lib/obsidian-private/metadata-type-manager.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/lib/obsidian-private/property-values.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/lib/pointer-drag.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/attachment-import/copy-security.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/attachment-import/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/attachment-open/actions.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/attachment-open/menu.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/chinese-segmenter/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/citation-popover/content.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/citation-popover/lifecycle.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/citation-popover/popover.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/citation-popover/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/citekey-editor/extension-parse.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/citekey-editor/extension.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/citekey-editor/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/citekey-navigation/citation.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/citekey-reading/render.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/citekey-reading/service.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/database/read-source-fallback.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/database/read-source.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/graph-citations/groups.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/graph-citations/node-color.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/graph-citations/rows.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/graph-citations/saved-options.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/graph-citations/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/item-lookup/render-hit.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/note-feature/actions.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/annotation-citation.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/companion-view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/creation-view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/insert-annotation.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/operations.membership.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/operations.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/switch-view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-feature/update-batch.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-import/batch-import.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-import/excerpts.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-import/note-marks.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/note-import/note-parser.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-import/outcome-scope.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-import/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/note-index/service.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/pandoc/inline-content.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/creation-toolbar.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/creation.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/mark-popup-host.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/render.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/selection.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/service.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/services/protocol/register.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/service-base.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/template-workbench/check.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/template/migration-data.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/wikilink-editor/hover.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/wikilink-editor/theme-hooks.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/services/wikilink-reading/service.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/setting-tab/create-profile-modal.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/setting-tab/ids.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/setting-tab/profile-destination-modal.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/setting-tab/profiles.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/setting-tab/resources.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/setting-tab/templates.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/annot-view/AnnotView.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/annot-view/Annotation.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/annot-view/editor-sheet.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/annot-view/layout.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/citation-presentation/modal.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/citation-presentation/register.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/cited-by/CitedBy.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/cited-by/view.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/library/view.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/note-preview/markdown.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/note-preview/register.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/note-preview/view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/pandoc-export/register.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/query-view/note-host.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/query-view/table-notes.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/query-view/view.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/quick-switch/modal.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/references/References.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/references/view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-data-explorer/profile-explorer.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-data-explorer/register.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-data-explorer/store.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-data-explorer/view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-workbench/editor-extension.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/template-workbench/host.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/template-workbench/hover.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/template-workbench/native-completion.test.ts": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "apps/obsidian/src/views/template-workbench/new-partial.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-workbench/register.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/obsidian/src/views/template-workbench/view.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-markup-assertion",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/zotero/scripts/vite-fluent-plugin.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "apps/zotero/src/notify/freshness.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/obsidian-i18n/src/cli.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/obsidian-i18n/src/compiler.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/obsidian-i18n/src/vite.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/paraglide-vite/src/index.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/scripts/lib/fixture/build.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/scripts/lib/turbo-root-deps.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/templates/src/citation.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/templates/src/defaults.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/templates/src/facade.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/templates/src/index.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/templates/src/literature-note-template.test.ts": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ],
+  "packages/workbench/src/ui/annotation.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "packages/workbench/src/ui/properties-tab.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "packages/workbench/src/ui/result-column.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "packages/workbench/src/ui/source-diagnostics.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "packages/workbench/src/ui/ui.test.tsx": ["zotlit-tests/no-markup-assertion"],
+  "packages/workbench/src/ui/workbench.test.tsx": [
+    "zotlit-tests/no-markup-assertion"
+  ],
+  "skills/zotlit-query/evals/run.test.mjs": [
+    "zotlit-tests/no-internal-mock",
+    "zotlit-tests/no-source-text"
+  ]
+}

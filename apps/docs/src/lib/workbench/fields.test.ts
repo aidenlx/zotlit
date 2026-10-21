@@ -45,7 +45,7 @@ describe("templateRootAt", () => {
   });
 
   it("reads the Annotation Section as the annotation root", () => {
-    const offset = source.indexOf("[!note] Page");
+    const offset = source.indexOf("[!note] ");
     // The note pane stops at the section header, so this is a caret only the
     // Advanced editor can put there — and it still switches the root.
     expect(offset).toBeGreaterThan(controller.sliceRange("note").to);

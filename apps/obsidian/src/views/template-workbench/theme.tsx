@@ -1,6 +1,11 @@
 import "./theme.css";
+import type { App } from "obsidian";
+
 // Shared authoring controls inherit Obsidian's surfaces and editor typography.
-import { templateHighlighting } from "@zotlit/workbench/language";
+import {
+  expressionOption,
+  templateHighlighting,
+} from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -8,11 +13,13 @@ import {
   captionIcon,
   selectionControl,
 } from "@/components/obsidian/selection-control";
+import { obsidianPopupKeys } from "@/lib/field-popup";
 import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
 
-import { codePane } from "./editor-extension";
+import { codePane, hostedEditor, popoverTooltips } from "./editor-extension";
+import { nativeCompletion } from "./native-completion";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
@@ -189,6 +196,12 @@ const previewNotice =
 export const templateWorkbenchTheme: WorkbenchTheme = {
   icon: (name) => <Icon name={templateWorkbenchIcons[name]} />,
   editorExtension: () => [templateHighlighting, codePane],
+  // The Match editor, the Filter popover and the Formula page all draw their
+  // expression editors under this theme, so each keeps working in a popout;
+  // they keep the text font the code pane would replace, and draw their
+  // tooltips above the popover or chooser page they sit in.
+  expressionExtension: [hostedEditor, popoverTooltips],
+  expressionCompletion: nativeCompletion(expressionOption),
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
@@ -239,12 +252,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       chips:
         "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:w-max zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
       chip: "multi-select-pill",
-      // A CodeMirror field drawn as an Obsidian text input; the editor hook
-      // scopes the template token colors to it.
+      // A CodeMirror field drawn as an Obsidian text input, at least as tall
+      // as one; the editor hook scopes the template token colors to it.
       expression: cn(
         themeHook.templateEditor,
         editorBox,
-        "zt:w-full zt:min-w-0 zt:cursor-text zt:font-mono zt:text-sm zt:leading-normal zt:[transition:var(--input-transition)]",
+        "zt:min-h-(--input-height) zt:w-full zt:min-w-0 zt:cursor-text zt:font-mono zt:text-sm zt:leading-normal zt:[transition:var(--input-transition)]",
         "zt:hover:bg-(--background-modifier-form-field-hover) zt:not-focus-within:not-has-[[aria-invalid=true]]:hover:border-border-hover zt:has-[[aria-invalid=true]]:border-(--text-error)",
         "zt:[&_.cm-placeholder]:text-(--text-faint)",
       ),
@@ -620,3 +633,27 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
   },
 };
+
+const keyedThemes = new WeakMap<WorkbenchTheme, WeakMap<App, WorkbenchTheme>>();
+
+/**
+ * `theme` with the keys of each expression field's completion list and
+ * Signature Hint on `app`'s keymap, as Obsidian's own suggesters take them.
+ * One theme per pair, so a render hands the editor the same extension.
+ */
+export function onKeymap<T extends WorkbenchTheme>(theme: T, app: App): T {
+  let byApp = keyedThemes.get(theme);
+  if (!byApp) keyedThemes.set(theme, (byApp = new WeakMap()));
+  let keyed = byApp.get(app);
+  if (!keyed) {
+    keyed = {
+      ...theme,
+      expressionExtension: [
+        theme.expressionExtension ?? [],
+        obsidianPopupKeys(app),
+      ],
+    };
+    byApp.set(app, keyed);
+  }
+  return keyed as T;
+}

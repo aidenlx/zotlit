@@ -240,6 +240,9 @@ export class LegacyTemplateConversionError extends Error {
 
 export const CONVERTED_DEFAULT_PROFILE_DOCUMENT = "zotlit-profile.default.md";
 
+/** The default Annotation section in Liquid, which every built-in Profile shares. */
+export const DEFAULT_ANNOTATION_LIQUID: string = annotationLiquid;
+
 export interface SynthesizedLiteratureNoteTemplateManifest {
   readonly id?: string;
   readonly name?: string;

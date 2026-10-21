@@ -1,0 +1,60 @@
+formulas:
+  excerpt: 'if(!text, "(" + type + ")", if(text.length > 48, text.slice(0, 46).trim() + "…", text))'
+  source: 'item.firstAuthor.family + " " + item.date.year.toString()'
+  colour: 'colorName.title()'
+  page: 'if(pageLabel && /^\d+$/.matches(pageLabel), number(pageLabel), null)'
+  hasComment: 'if(comment, comment.trim().length > 0, false)'
+  tagList: 'tags.map(value.replace(/-/g, " ")).join(", ")'
+  words: 'if(text, text.split(/\s+/).filter(value.length > 0).length, 0)'
+  addedOn: 'dateAdded.format("YYYY-MM-DD HH:mm")'
+  fileKind: 'attachment.fileType.lower()'
+properties:
+  formula.excerpt:
+    displayName: Excerpt
+  formula.source:
+    displayName: Source
+  formula.colour:
+    displayName: Colour
+  formula.page:
+    displayName: Page number
+  formula.hasComment:
+    displayName: Has comment
+  formula.tagList:
+    displayName: Tag list
+  formula.words:
+    displayName: Words
+  formula.addedOn:
+    displayName: Added on
+  formula.fileKind:
+    displayName: File kind
+views:
+  - type: list
+    name: Annotation formulas
+    from: annotations
+    order:
+      - formula.excerpt
+      - formula.source
+      - formula.colour
+      - formula.page
+      - formula.hasComment
+      - formula.tagList
+      - formula.words
+      - formula.addedOn
+      - formula.fileKind
+    limit: 100
+  - type: list
+    name: Tagged or ruled
+    from: annotations
+    filters:
+      and:
+        - 'item.date.year >= 2005'
+        - or:
+            - 'tags.containsAny("figure", "methodology", "visualization")'
+            - 'text && /rule \d+|definition/i.matches(text)'
+        - 'colorName != "red"'
+    order:
+      - formula.excerpt
+      - formula.source
+      - formula.colour
+      - formula.tagList
+    limit: 100

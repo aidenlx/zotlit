@@ -147,8 +147,12 @@ it("opens again with an empty search, every row and no highlight", async () => {
   expect(highlighted()).toBe("method");
 });
 
-/** A key through the Chooser's pushed scope, as the mock records it. */
-function pressKey(scope: unknown, key: string): void {
+/**
+ * A key through the Chooser's pushed scope, as the mock records it.
+ * @returns `false` when the Chooser took the key, which then reaches nothing
+ *   else.
+ */
+function pressKey(scope: unknown, key: string): unknown {
   const { handlers } = scope as {
     handlers: {
       modifiers: string[] | null;
@@ -156,7 +160,7 @@ function pressKey(scope: unknown, key: string): void {
       func: (event: KeyboardEvent) => unknown;
     }[];
   };
-  handlers
+  return handlers
     .find((handler) => handler.key === key && !handler.modifiers?.length)
     ?.func(new KeyboardEvent("keydown", { key }));
 }

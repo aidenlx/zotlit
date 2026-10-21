@@ -16,6 +16,7 @@ import {
   visibleSectionIds,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  NO_MATCH_DATA,
 } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
@@ -448,13 +449,8 @@ export class TemplateDataExplorerView extends ItemView {
           Promise.resolve(
             failedRender(renderIdentity(request), { code: "render-error" }),
           ),
-        matchData: {
-          tags: async () => [],
-          collections: async () => [],
-          libraries: async () => [],
-          // This view shows no Match.
-          matches: async () => ({ kind: "missing" }),
-        },
+        // This view shows no Match.
+        matchData: NO_MATCH_DATA,
         insertTarget: () => null,
       }),
     );

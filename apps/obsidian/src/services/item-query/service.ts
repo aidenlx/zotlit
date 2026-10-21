@@ -29,6 +29,7 @@ import type { CancellationEvent, QueryObserver } from "./trace";
 import type {
   QueryAnswer,
   QueryCommand,
+  QueryCustomFieldsCommand,
   QueryViewCommand,
 } from "./worker-protocol";
 
@@ -237,6 +238,25 @@ export class QueryService extends Service {
   }
 
   /**
+   * The custom fields of the active Zotero source, by name; none when the
+   * source cannot answer or `signal` aborts first.
+   * @throws The startup failure of the service, or an internal error.
+   */
+  async customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
+    const settled = await this.#settle(
+      this.#send({
+        command: QUERY_SCHEMA_COMMAND,
+        schema: false,
+        customFields: true,
+      }).pipe(Effect.map((answer) => answer.customFields ?? [])),
+      signal,
+    );
+    if (settled.done) return settled.value;
+    if (this.#startup) throw this.#startup.error;
+    return [];
+  }
+
+  /**
    * Run `job` as a fiber of the map under `id`, or under an unnamed key
    * without one; `signal` interrupts it. The fiber is uninterruptible outside
    * the waits of the job, so an answer that arrives wins a later cancel. The
@@ -321,7 +341,7 @@ export class QueryService extends Service {
    * job ends; a job that the worker cancelled interrupts.
    */
   #send(
-    command: QueryCommand | QueryViewCommand,
+    command: QueryCommand | QueryViewCommand | QueryCustomFieldsCommand,
     {
       id = randomUUID(),
       stagePath,

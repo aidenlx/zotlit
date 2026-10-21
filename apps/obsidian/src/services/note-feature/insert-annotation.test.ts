@@ -57,6 +57,10 @@ const card: AnnotationRecord = {
   position: { kind: "pdf-rects", pageIndex: 2, rects: [[1, 2, 30, 40]] },
 };
 
+/** The link Zotero itself writes for {@link card}: attachment, key, page label. */
+const DURABLE_LINK =
+  "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=3";
+
 async function fixture(mode: string) {
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
@@ -197,6 +201,8 @@ it.each([
     const names = await readdir(join(f.root, "Images"));
     expect(names).toHaveLength(1);
     expect(result?.text).toContain(`![[Images/${names[0]}]]`);
+    expect(result?.text).toContain(`Page [3](${DURABLE_LINK})`);
+    expect(result?.text).not.toContain("file://");
     expect(await readFile(join(f.root, "Images", names[0]!))).toEqual(redPng);
     expect(result?.summary).toEqual({ zotero, unchecked: 0, unavailable: 0 });
     expect(
@@ -216,7 +222,11 @@ it.each([
     await using f = await fixture(mode);
     const result = await prepareAnnotationInsert(f.ctx, f.options);
     expect(f.render).toHaveBeenCalledTimes(1);
-    expect(result?.text).toContain("zt-annotation=FDRFQ7C2");
+    // Both the page label and the unavailable excerpt's source link name the
+    // Annotation durably; nothing in the note is a path on this computer.
+    expect(result?.text).toContain(`Page [3](${DURABLE_LINK})`);
+    expect(result?.text).toContain(`[Zotero](${DURABLE_LINK})`);
+    expect(result?.text).not.toContain("file://");
     expect(result?.text).not.toContain("![[");
     expect(result?.summary.unavailable).toBe(1);
     expect(

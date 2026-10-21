@@ -14,24 +14,12 @@ import {
 import { themeHook } from "@/lib/theme-hooks";
 
 import { codePane } from "./editor-extension";
+import { windowMigration } from "./test-window-migration";
 
 let view: EditorView | null = null;
-const onWindowMigrated = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "onWindowMigrated",
-);
 afterEach(() => {
   view?.destroy();
   view = null;
-  if (onWindowMigrated) {
-    Object.defineProperty(
-      HTMLElement.prototype,
-      "onWindowMigrated",
-      onWindowMigrated,
-    );
-  } else {
-    Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
-  }
   Reflect.deleteProperty(navigator, "clipboard");
 });
 
@@ -140,43 +128,54 @@ describe("template token hooks", () => {
   });
 });
 
+/**
+ * A code pane in `document.body`, closed when its scope ends. Declared after
+ * the window-migration stub, it closes before the stub is restored.
+ */
+function codePaneEditor(doc: string) {
+  const editor = new EditorView({
+    state: EditorState.create({ doc, extensions: [codePane] }),
+    parent: document.body,
+  });
+  let open = true;
+  const close = () => {
+    if (open) editor.destroy();
+    open = false;
+  };
+  return { editor, close, [Symbol.dispose]: close };
+}
+
 describe("code panes", () => {
-  function migrationHost() {
-    let migrate: ((win: Window) => void) | null = null;
-    const dispose = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "onWindowMigrated", {
-      configurable: true,
-      value: (listener: (win: Window) => void) => {
-        migrate = listener;
-        return dispose;
-      },
-    });
-    return { dispose, move: (win: Window) => migrate?.(win) };
-  }
   it("moves editor styles to its new document and releases the native listener", () => {
-    const host = migrationHost();
-    view = new EditorView({
-      state: EditorState.create({
-        doc: "{{ zt.title }}",
-        extensions: [codePane],
-      }),
-      parent: document.body,
-    });
-    const state = view.state;
+    using host = windowMigration();
+    using pane = codePaneEditor("{{ zt.title }}");
+    const { editor } = pane;
+    const state = editor.state;
     const destination = document.implementation.createHTMLDocument();
-    const setRoot = vi.spyOn(view, "setRoot");
-    const measure = vi.spyOn(view, "requestMeasure");
+    const setRoot = vi.spyOn(editor, "setRoot");
+    const measure = vi.spyOn(editor, "requestMeasure");
     host.move({ document: destination } as Window);
     expect(setRoot).toHaveBeenCalledWith(destination);
     expect(measure).toHaveBeenCalled();
-    expect(view.state).toBe(state);
-    view.destroy();
-    view = null;
-    expect(host.dispose).toHaveBeenCalledOnce();
+    expect(editor.state).toBe(state);
+    pane.close();
+    expect(host.release).toHaveBeenCalledOnce();
+  });
+
+  it("takes the document it stands in as its root when it takes focus, though no move was told", () => {
+    // Obsidian tells of a move when the element shows, which an editor in a
+    // closed popover does not.
+    using _host = windowMigration();
+    using pane = codePaneEditor("{{ zt.title }}");
+    const { editor } = pane;
+    const destination = document.implementation.createHTMLDocument();
+    destination.body.append(editor.dom);
+    editor.contentDOM.dispatchEvent(new FocusEvent("focus"));
+    expect(editor.root).toBe(destination);
   });
 
   it("copies in a popout without moving focus through a fallback textarea", () => {
-    const host = migrationHost();
+    using host = windowMigration();
     const frame = document.createElement("iframe");
     document.body.append(frame);
     const writeText = vi.fn(async () => {});
@@ -184,10 +183,8 @@ describe("code panes", () => {
       configurable: true,
       value: { writeText },
     });
-    view = new EditorView({
-      state: EditorState.create({ doc: "alpha beta", extensions: [codePane] }),
-      parent: document.body,
-    });
+    using pane = codePaneEditor("alpha beta");
+    const view = pane.editor;
     frame.contentDocument!.body.append(view.dom);
     host.move(frame.contentWindow!);
     view.dispatch({ selection: { anchor: 0, head: 5 } });

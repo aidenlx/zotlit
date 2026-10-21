@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect } from "vitest";
 
 import { keepRendering } from "./background-throttling.ts";
+import { assertDevBundleFresh } from "./bundle-freshness.ts";
 import {
   e2eVaultPath,
   runVaultScript,
@@ -27,6 +28,7 @@ let refCount = 0;
 
 async function bootstrap(): Promise<void> {
   run.m = await import("@obsidian-messages");
+  await assertDevBundleFresh(workspaceRoot);
   await clearVault(runVaultScript, e2eVaultPath);
   const pluginBundleDir = join(workspaceRoot, "apps", "obsidian", "dist-dev");
   const e2ePluginDir = join(e2eVaultPath, ".obsidian", "plugins", "zotlit");

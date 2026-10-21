@@ -10,9 +10,8 @@ import {
   isChildItemFields,
   parseIndexedKey,
 } from "@zotlit/db";
-import type { AnnotViewAttachment, Attachment } from "@zotlit/db";
+import type { AnnotViewAttachment } from "@zotlit/db";
 
-import { openAttachments } from "@/lib/attachment-open";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
@@ -25,10 +24,6 @@ import type {
   AnnotationSource,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
-import {
-  createPdfReader,
-  toObsidianOpenable,
-} from "@/services/attachment-open/actions";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
@@ -135,7 +130,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
     "available" | "readerTarget" | "readerClosed" | "on"
   >;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
-  pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath" | "on">;
+  pdfReaders: Pick<PdfAnnotationEditor, "sessionFor" | "on">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<
     ExcerptDisplayService,
@@ -600,22 +595,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
   async #openPdf(): Promise<void> {
     const active = selectActiveAttachment(this.#store.getState());
     if (!active) return;
-    let attachment: Attachment | null;
-    try {
-      const { reads } = await this.#deps.reads.ready;
-      ({ attachment } = await Effect.runPromise(
-        reads.AnnotationsOfAttachment({ attachmentKey: active.indexedKey }),
-      ));
-    } catch (error) {
-      logger.warn("Failed to read the attachment to open", {
-        attachmentKey: active.indexedKey,
-        error,
-      });
-      return;
-    }
-    openAttachments(
-      attachment ? toObsidianOpenable([attachment], this.#deps) : [],
-      { reader: createPdfReader(this.#deps), app: this.#deps.app },
+    await this.#deps.opener.open(
+      { kind: "attachment", attachmentKey: active.indexedKey },
+      false,
     );
   }
 
@@ -678,9 +660,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // Only Active Tab follows an open PDF's own session, so the subscription
     // stands exactly as long as that mode does.
     this.#followLeafSession(
-      this.#followMode === "active-tab"
-        ? (this.#deps.app.workspace.getActiveFile()?.path ?? null)
-        : null,
+      this.#followMode === "active-tab" ? this.#activePdfSession() : null,
     );
     this.#layout.bindReader(this.#followedSession());
     if (this.#deps.reads.state !== "ready") {
@@ -758,7 +738,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   #resolveActiveLeaf(): ActiveLeafTarget | null {
     const activeFile = this.#deps.app.workspace.getActiveFile();
     if (!activeFile) return null;
-    const session = this.#deps.pdfReaders.sessionForPath(activeFile.path);
+    const session = this.#activePdfSession();
     if (session) {
       return session.target ? { kind: "pdf", target: session.target } : null;
     }
@@ -772,10 +752,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * and drop the subscription as soon as it is not — a session outlives no
    * mode it does not drive.
    */
-  #followLeafSession(filePath: string | null): void {
+  #followLeafSession(session: ReaderSession | null): void {
     this.#leafSession?.();
     this.#leafSession = null;
-    const session = filePath && this.#deps.pdfReaders.sessionForPath(filePath);
     if (!session) return;
     const stack = new DisposableStack();
     // The cards drive this selection, so a press on them is no click-away:
@@ -788,6 +767,17 @@ export class AnnotationView extends ItemView implements HistorySurface {
       ),
     );
     this.#leafSession = () => stack.dispose();
+  }
+
+  /**
+   * The Reader Session of the PDF view in the main area the researcher last
+   * worked in, asked of that view itself: two tabs can show one file as two
+   * Attachments that keep it.
+   */
+  #activePdfSession(): ReaderSession | null {
+    return this.#deps.pdfReaders.sessionFor(
+      this.#deps.app.workspace.getMostRecentLeaf()?.view,
+    );
   }
 
   /** Names what one companion reader push points at, in Indexed Keys. */
@@ -1191,10 +1181,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** The reader this view's Follow Mode is driven by, while one answers. */
   #followedSession(): ReaderSession | null {
     switch (this.#followMode) {
-      case "active-tab": {
-        const path = this.#deps.app.workspace.getActiveFile()?.path;
-        return path ? this.#deps.pdfReaders.sessionForPath(path) : null;
-      }
+      case "active-tab":
+        return this.#activePdfSession();
       case "zotero-reader":
         return this.#zoteroReader;
       case "pinned":

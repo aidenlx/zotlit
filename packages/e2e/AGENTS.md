@@ -6,7 +6,7 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 
 - `pnpm e2e` (root) or `pnpm --filter @zotlit/e2e e2e` — runs the suite.
 - `pnpm e2e:query` (root) — builds dependencies and runs only the ZotLit Query CLI cases, including cancellation.
-- For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/<area>.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. After the build is current, `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop.
+- For another focused desktop run, pass a file and test name: `pnpm e2e --project=desktop src/<area>.e2e.ts -t '<test name>'`. Add the paired project only when the changed behavior needs Zotero. `pnpm --filter @zotlit/e2e exec vitest run` accepts the same selection for an inner loop; it installs the dev plugin bundle on disk and fails, naming the rebuild command, when that bundle is older than its sources.
 - `pnpm --filter @zotlit/e2e typecheck` — type-checks the suite.
 - Worker responsiveness: `pnpm e2e:worker` requires desktop Obsidian and passes only when the unchanged refresh, changed-Item rebuild, and rejected-snapshot cases all execute. `pnpm verify --release` runs it after the full End-to-end Run on the desktop. Its worker timer detects stalls that sequential search p99 can hide.
 
@@ -24,6 +24,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | File | Area |
 | --- | --- |
 | `annotations.e2e.ts` | Annotation View, sidebar grouping, early Query File embeds |
+| `annotation-links.e2e.ts` | Durable Annotation Links in a note: click-to-land and pass-through to Zotero, the hover popover, and the Annotation Suggester's search-and-insert |
 | `annotations-excerpts.e2e.ts` | PDF excerpts, rendering, worker reads |
 | `query-file.e2e.ts` | Query File tabs, new-query hotkey |
 | `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts` | Query View UI, formulas, table and Items layout |
@@ -63,7 +64,7 @@ One process at a time drives the desktop Obsidian and its Paired Zotero, across 
 Each suite builds its own Fixture and new purged vaults under `.scratch/e2e-*`. The paired project's setup (`src/paired-setup.ts`) starts its Paired Zotero before test collection and owns its teardown at the end of the run; startup failure stops the run before tests begin. Desktop-only selections do not start Paired Zotero. The next run clears what a crashed run left. The developer's Fixture, Development Vault, and Paired Run stay open and untouched.
 
 - Files run serially (`fileParallelism: false`): both drive the one desktop Obsidian.
-- The OS focus stays with the developer and with runs in other worktrees. `keepRendering` makes a vault's windows render, and one of them act focused, behind other apps.
+- The OS focus stays with the developer and with runs in other worktrees, and vault windows and popouts open behind other apps' windows. `keepRendering` makes a vault's windows render, and one of them act focused, behind other apps.
 - `reloadWindow` (`src/window-reload.ts`) reloads a vault's whole window, so ZotLit loads in Obsidian startup order; use it for bugs a plugin reload hides.
 - A Paired Zotero that fails to start or to serve its Local API fails the file.
 - `src/paired-zotero.ts` holds the Local API client and the RDP levers. The [Fixture guide](../../docs/fixture.md) has the paths.

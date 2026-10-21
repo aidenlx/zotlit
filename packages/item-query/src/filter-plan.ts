@@ -2,7 +2,11 @@ import { parseIndexedKey } from "@zotlit/db";
 // Validation of a Filter Expression against the registries. The result is a
 // typed tree in which every name is resolved, so that execution and the
 // planner read one structure.
-import { parseExpressionAst } from "@zotlit/filter-expression";
+import {
+  isIdentifierName,
+  parseExpressionAst,
+  parsePartialExpressionAst,
+} from "@zotlit/filter-expression";
 import type { BinaryOperator, ExpressionNode } from "@zotlit/filter-expression";
 
 import type {
@@ -287,15 +291,98 @@ export function planFilter<Item = QueryItem, Needs = FieldNeeds>(
   }
 }
 
+/** The subexpression of a planned Filter Expression at one span. */
+export interface PlannedSubexpression {
+  readonly valueType: StaticType;
+  /**
+   * The type of a member a filter reads on the record it gives, by name;
+   * undefined for a name that is not one. Absent for a value that is not a
+   * record, or a record whose members are known only at execution.
+   */
+  readonly member?: (name: string) => StaticType | undefined;
+  /** Every name `member` answers, for a record of fixed keys. */
+  readonly names?: readonly string[];
+}
+
+/** What a filter reads on a record of the Query Context. */
+export const CONTEXT_RECORD_MEMBERS: readonly string[] = ["indexedKey", "key"];
+
+/**
+ * Plan `text`, as it is being typed, as {@link planFilter} does, and read the
+ * subexpression at exactly `at` as the planner typed it where it stands: a
+ * name a list method binds by that method's scope. An unfinished member
+ * access stands for its object, as does a member being typed off `at`, a call left open ends with the text, and a
+ * fault elsewhere leaves a subexpression planned before it typed. A custom
+ * field is not a member: it is read by bracket access.
+ * @returns Undefined where `text` does not parse that far or the planner
+ *   does not reach a subexpression spanning `at`.
+ */
+export function planSubexpression<Item, Needs>(
+  text: string,
+  at: Span,
+  {
+    registry = itemFilterRegistry as FilterRegistry<any, any>,
+    context,
+    formula,
+  }: PlanFilterOptions<Item, Needs>,
+): PlannedSubexpression | undefined {
+  // A member being typed off `at` is not finished, so the planner reads past it.
+  const ast = parsePartialExpressionAst(text, { typing: at });
+  if (!ast) return undefined;
+  let node: FilterNode<Item> | undefined;
+  const validator = new Validator<Item, Needs>(
+    { needs: [], customFields: [], warnings: [] },
+    registry,
+    {
+      context,
+      formula,
+      // Children are told first, so the last at `at` is the outermost.
+      observe: (planned, filter) => {
+        if (planned.from === at.from && planned.to === at.to) node = filter;
+      },
+    },
+  );
+  try {
+    validator.node(ast);
+  } catch (thrown) {
+    if (!(thrown instanceof Invalid)) throw thrown;
+  }
+  if (!node) return undefined;
+  const navigation = validator.navigation(node);
+  const members = navigation?.member;
+  if (members)
+    return {
+      valueType: node.valueType,
+      ...(navigation.names && { names: navigation.names }),
+      member: (name) => {
+        // `custom` is read only by bracket access, on a record as alone.
+        if (name === "custom") return undefined;
+        const field = members(name);
+        return field?.filterable && !field.customField
+          ? field.value.type
+          : undefined;
+      },
+    };
+  // The record `this` binds is a literal; its members are its keys.
+  if (node.kind === "literal" && node.recordDataset)
+    return {
+      valueType: node.valueType,
+      member: (name) =>
+        CONTEXT_RECORD_MEMBERS.includes(name) ? "string" : undefined,
+      names: CONTEXT_RECORD_MEMBERS,
+    };
+  return { valueType: node.valueType };
+}
+
 /**
  * Whether a custom field has a bare form in a Filter Expression: its name is
  * one identifier of the grammar and no built-in field, function, or keyword
  * has that name. The check is the same for every Library and every Item.
  */
 export function hasBareForm(customFieldName: string): boolean {
-  if (RESERVED_NAMES.has(customFieldName)) return false;
-  const { ast } = parseExpressionAst(customFieldName);
-  return ast?.type === "identifier" && ast.name === customFieldName;
+  return (
+    !RESERVED_NAMES.has(customFieldName) && isIdentifierName(customFieldName)
+  );
 }
 
 /**
@@ -497,6 +584,11 @@ class Validator<Item, Needs> {
     FilterNavigation<Needs>
   >();
 
+  /** The members and elements a planned node gives, where it tracks them. */
+  navigation(node: FilterNode<Item>): FilterNavigation<Needs> | undefined {
+    return this.#navigation.get(node);
+  }
+
   #track(
     node: FilterNode<Item>,
     navigation?: FilterNavigation<Needs>,
@@ -523,6 +615,7 @@ class Validator<Item, Needs> {
     return {
       dataset: left.dataset,
       equalityField: left.equalityField,
+      ...(left.names && right.names && { names: left.names }),
       member: (name) => {
         const a = left.member?.(name);
         const b = right.member?.(name);
@@ -550,9 +643,12 @@ class Validator<Item, Needs> {
     {
       context,
       formula,
+      observe,
     }: {
       context: QueryContext | undefined;
       formula: FormulaResolver<Item, Needs> | undefined;
+      /** Told each node as it is planned, in the scope it stands in. */
+      observe?: (ast: ExpressionNode, node: FilterNode<Item>) => void;
     },
   ) {
     this.context = context;
@@ -560,9 +656,20 @@ class Validator<Item, Needs> {
     this.#needs = needs;
     this.#customFields = customFields;
     this.#warnings = warnings;
+    this.#observe = observe;
   }
 
+  readonly #observe:
+    | ((ast: ExpressionNode, node: FilterNode<Item>) => void)
+    | undefined;
+
   node(ast: ExpressionNode): FilterNode<Item> {
+    const planned = this.#plan(ast);
+    this.#observe?.(ast, planned);
+    return planned;
+  }
+
+  #plan(ast: ExpressionNode): FilterNode<Item> {
     const { from, to } = ast;
     const span = { from, to };
     switch (ast.type) {
@@ -985,7 +1092,7 @@ class Validator<Item, Needs> {
     span: Span,
   ): FilterNode<Item> {
     const subject = (record as { value: RecordValue }).value;
-    if (name !== "indexedKey" && name !== "key") {
+    if (!CONTEXT_RECORD_MEMBERS.includes(name)) {
       const at = { from: span.to - name.length, to: span.to };
       return fail({
         kind: "plain",

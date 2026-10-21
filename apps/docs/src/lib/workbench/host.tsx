@@ -101,6 +101,7 @@ function matchData(
               : `group:${library.groupID}`,
         },
       ]),
+    customFields: () => Promise.resolve(seed?.customFieldNames ?? []),
     // The sample is the one Item the page has; it is tested in memory.
     matches: async (_, filter) => {
       if (!seed) return { kind: "missing" };
@@ -173,6 +174,7 @@ export function useWebHost({
         libraries: () => latest.current.data.libraries(),
         matches: (indexedKey, filter) =>
           latest.current.data.matches(indexedKey, filter),
+        customFields: (signal) => latest.current.data.customFields(signal),
       },
       insertTarget: () => latest.current.insertTarget(),
       persistence: {

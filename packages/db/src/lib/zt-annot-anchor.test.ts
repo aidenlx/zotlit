@@ -8,9 +8,13 @@ import {
 
 describe("formatAnnotationSubpath", () => {
   it("writes the Anchor beside the page Obsidian jumps to", () => {
-    expect(formatAnnotationSubpath({ page: 4, annotation: "ABCD2345" })).toBe(
-      "#page=4&zt-annotation=ABCD2345",
-    );
+    expect(
+      formatAnnotationSubpath({
+        page: 4,
+        annotation: "ABCD2345",
+        attachment: null,
+      }),
+    ).toBe("#page=4&zt-annotation=ABCD2345");
   });
 
   it("writes the page alone for an Annotation it was given no key for", () => {
@@ -24,32 +28,64 @@ describe("formatAnnotationSubpath", () => {
   });
 
   it("writes nothing when it is given neither", () => {
-    expect(formatAnnotationSubpath({ page: null, annotation: null })).toBe("");
+    expect(
+      formatAnnotationSubpath({
+        page: null,
+        annotation: null,
+        attachment: null,
+      }),
+    ).toBe("");
   });
 
   it("writes a group library's Indexed Key whole", () => {
     expect(
-      formatAnnotationSubpath({ page: 2, annotation: "ABCD2345g5678" }),
+      formatAnnotationSubpath({
+        page: 2,
+        annotation: "ABCD2345g5678",
+        attachment: null,
+      }),
     ).toBe("#page=2&zt-annotation=ABCD2345g5678");
   });
 
-  it("leaves out a key that is no Indexed Key", () => {
-    expect(formatAnnotationSubpath({ page: 4, annotation: "not a key" })).toBe(
-      "#page=4",
+  // Two Attachments can keep one file, so an open that knows which one it
+  // opened says so beside the Annotation.
+  it("writes the Attachment the open names after the Anchor", () => {
+    expect(
+      formatAnnotationSubpath({
+        page: 4,
+        annotation: "ABCD2345",
+        attachment: "EFGH6789",
+      }),
+    ).toBe("#page=4&zt-annotation=ABCD2345&zt-attachment=EFGH6789");
+  });
+
+  it("writes the Attachment alone for an open that names no place in it", () => {
+    expect(formatAnnotationSubpath({ attachment: "EFGH6789g5678" })).toBe(
+      "#zt-attachment=EFGH6789g5678",
     );
+  });
+
+  it("leaves out a key that is no Indexed Key", () => {
+    expect(
+      formatAnnotationSubpath({
+        page: 4,
+        annotation: "not a key",
+        attachment: null,
+      }),
+    ).toBe("#page=4");
   });
 });
 
 describe("parseAnnotationSubpath", () => {
   it("reads back what the formatter wrote", () => {
-    const anchor = { page: 4, annotation: "ABCD2345" };
+    const anchor = { page: 4, annotation: "ABCD2345", attachment: null };
     expect(parseAnnotationSubpath(formatAnnotationSubpath(anchor))).toEqual(
       anchor,
     );
   });
 
   it("reads back a group library's Indexed Key", () => {
-    const anchor = { page: 2, annotation: "ABCD2345g5678" };
+    const anchor = { page: 2, annotation: "ABCD2345g5678", attachment: null };
     expect(parseAnnotationSubpath(formatAnnotationSubpath(anchor))).toEqual(
       anchor,
     );
@@ -63,13 +99,14 @@ describe("parseAnnotationSubpath", () => {
       parseAnnotationSubpath(
         "#page=4&selection=1,2,3,4&annotation=17R&zt-annotation=ABCD2345",
       ),
-    ).toEqual({ page: 4, annotation: "ABCD2345" });
+    ).toEqual({ page: 4, annotation: "ABCD2345", attachment: null });
   });
 
   it("reads a fragment written without its leading hash", () => {
     expect(parseAnnotationSubpath("page=4&zt-annotation=ABCD2345")).toEqual({
       page: 4,
       annotation: "ABCD2345",
+      attachment: null,
     });
   });
 
@@ -77,18 +114,34 @@ describe("parseAnnotationSubpath", () => {
     expect(parseAnnotationSubpath("#page=4")).toEqual({
       page: 4,
       annotation: null,
+      attachment: null,
+    });
+  });
+
+  it("reads back the Attachment an open named", () => {
+    const anchor = { page: 4, annotation: "ABCD2345", attachment: "EFGH6789" };
+    expect(parseAnnotationSubpath(formatAnnotationSubpath(anchor))).toEqual(
+      anchor,
+    );
+  });
+
+  it("names no Attachment for a key that is no Indexed Key", () => {
+    expect(parseAnnotationSubpath("#zt-attachment=not a key")).toEqual({
+      page: null,
+      annotation: null,
+      attachment: null,
     });
   });
 
   it("names no Annotation for a key that is no Indexed Key", () => {
     expect(
       parseAnnotationSubpath(`#page=4&${ANNOTATION_ANCHOR_KEY}=not a key`),
-    ).toEqual({ page: 4, annotation: null });
+    ).toEqual({ page: 4, annotation: null, attachment: null });
   });
 
   it("names no page for a page that is no page number", () => {
     expect(parseAnnotationSubpath("#page=last&zt-annotation=ABCD2345")).toEqual(
-      { page: null, annotation: "ABCD2345" },
+      { page: null, annotation: "ABCD2345", attachment: null },
     );
   });
 
@@ -98,6 +151,7 @@ describe("parseAnnotationSubpath", () => {
       expect(parseAnnotationSubpath(subpath)).toEqual({
         page: null,
         annotation: null,
+        attachment: null,
       });
     },
   );

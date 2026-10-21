@@ -577,14 +577,39 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   }
 
   /**
+   * Whether the open waiting on this view's leaf named another Attachment of
+   * this file than the one bound — two Attachments keep one file, and the open
+   * asked for the one the path does not choose. The view then needs a binding
+   * of its own for it.
+   */
+  get renamed(): boolean {
+    if (this.#attachment.kind !== "resolved" || this.#absolutePath === null)
+      return false;
+    const named = peekPendingAnchor(this.#view.leaf)?.attachment ?? null;
+    if (named === null || named === this.#attachment.attachmentKey)
+      return false;
+    const resolution = this.#attachments.resolve(this.#absolutePath, {
+      attachmentKey: named,
+    });
+    return (
+      resolution.kind === "resolved" &&
+      resolution.attachmentKey !== this.#attachment.attachmentKey
+    );
+  }
+
+  /**
    * Names the open file's Attachment and binds its Annotations, then paints
-   * whatever page the reader already holds. The first answer that is not
-   * `pending` stands: a file Zotero does not know is asked about once, however
-   * often the resolver announces a change.
+   * whatever page the reader already holds. The Attachment the open named wins
+   * over the one the path chooses, and only a plain open is named by its path
+   * alone. The first answer that is not `pending` stands: a file Zotero does
+   * not know is asked about once, however often the resolver announces a
+   * change.
    */
   #resolve(absolutePath: string): void {
     if (this.#surfaces.disposed || this.#attachment.kind !== "pending") return;
-    this.#attachment = this.#attachments.resolve(absolutePath);
+    this.#attachment = this.#attachments.resolve(absolutePath, {
+      attachmentKey: peekPendingAnchor(this.#view.leaf)?.attachment ?? null,
+    });
     logger.debug("PDF view resolved", {
       path: this.#filePath,
       attachment: this.#attachment,

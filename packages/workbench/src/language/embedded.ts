@@ -2,10 +2,11 @@ import { liquidTagLanguage } from "@codemirror/lang-liquid";
 // Profile regions keep independent template syntax inside plain frontmatter.
 import type { Range } from "@codemirror/state";
 import { Prec } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
-import type { ViewUpdate } from "@codemirror/view";
+import { Decoration } from "@codemirror/view";
+import type { EditorView } from "@codemirror/view";
 import { highlightTree } from "@lezer/highlight";
 
+import { decorationLayer } from "./decorations";
 import { etaBody } from "./eta-language";
 import { etaParser } from "./eta-syntax";
 import { templateHighlighters, documentToken } from "./highlight";
@@ -66,18 +67,5 @@ export function embeddedTemplates(
     }
     return Decoration.set(marks, true);
   }
-  const plugin = ViewPlugin.define((view) => ({
-    decorations: decorations(view),
-    update(update: ViewUpdate) {
-      if (update.docChanged) this.decorations = decorations(update.view);
-    },
-  }));
-  return [
-    plugin,
-    Prec.high(
-      EditorView.decorations.of(
-        (view) => view.plugin(plugin)?.decorations ?? Decoration.none,
-      ),
-    ),
-  ];
+  return decorationLayer(decorations, { precedence: Prec.high });
 }

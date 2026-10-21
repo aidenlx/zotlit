@@ -275,7 +275,8 @@ ERRORS AND EMPTY VALUES
 
 SEE ALSO
   The downloaded catalog's functions, methods, and properties list every
-  call with its parameters. Read guide topic=schema to obtain the catalog.`;
+  call with a one-sentence description and its parameters. Read guide
+  topic=schema to obtain the catalog.`;
 
 const FIELDS_SECTION = `FIELDS AND PROJECTION PATHS
 

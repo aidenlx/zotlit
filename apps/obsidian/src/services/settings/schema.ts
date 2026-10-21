@@ -126,6 +126,21 @@ export const schema = v.object({
 
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
+  /**
+   * The text that opens the Annotation Suggester; empty turns it off. A
+   * trigger that overlaps a citation trigger opens nothing.
+   */
+  "citation.annotation-trigger": v.string(),
+  /**
+   * Treat Durable Annotation Links in notes: hover shows the Annotation and a
+   * click can open it in Obsidian's reader. Off leaves every one to Zotero.
+   */
+  "citation.annotation-links": v.boolean(),
+  /**
+   * Open a clicked Durable Annotation Link in Obsidian's reader, with the
+   * Annotation selected; off hands it to Zotero. Needs `citation.annotation-links`.
+   */
+  "citation.open-annotation-links": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
   /** Include Pandoc citation syntax in the shared document citation set. */
   "citation.pandoc-citations": v.boolean(),
@@ -258,6 +273,10 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "log.to-file": false,
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
+  // A bracket like the Citation Suggester's `[@`, and `>` for a quote.
+  "citation.annotation-trigger": "[>",
+  "citation.annotation-links": true,
+  "citation.open-annotation-links": true,
   "citation.show-citekey-in-suggester": false,
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,

@@ -1,11 +1,7 @@
 // A captured card's durable image helper, prepared before its one template render.
 import type { App } from "obsidian";
 
-import {
-  annotationHasCacheImage,
-  annotationOpenUri,
-  parseIndexedKey,
-} from "@zotlit/db";
+import { annotationHasCacheImage } from "@zotlit/db";
 import type { TemplateLink } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
@@ -25,7 +21,8 @@ export async function prepareSingleExcerpt(options: {
   resolver: Pick<ExcerptImageService, "resolve">;
   settings: Readonly<Settings>;
   notePath: string;
-  sourceLink: string | null;
+  /** Markdown link the unavailable-excerpt text points back to the Annotation with. */
+  sourceLink: string;
   signal: AbortSignal;
   valid: () => boolean;
 }): Promise<{ helper: TemplateLink | null; summary(): ExcerptSummary }> {
@@ -49,14 +46,7 @@ export async function prepareSingleExcerpt(options: {
       );
     }
   }
-  const key = parseIndexedKey(annotation.key);
-  const parent = parseIndexedKey(annotation.parentKey);
-  const sourceLink =
-    options.sourceLink ??
-    (key && parent
-      ? `[Zotero](${annotationOpenUri({ attachmentKey: parent.key, annotationKey: key.key, groupID: key.groupID, pageLabel: annotation.pageLabel })})`
-      : "");
-  const state = { used: false, result, sourceLink };
+  const state = { used: false, result, sourceLink: options.sourceLink };
   return {
     helper: image
       ? createExcerptLink(options.app, options.notePath, state)

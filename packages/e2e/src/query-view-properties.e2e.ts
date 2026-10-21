@@ -327,6 +327,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         `(async()=>{${PAGE}const popup=${propertiesPopup};const save=popup.querySelector('[data-chooser-page] [data-query-formula-save]');if(save){press(save,'Save');await until('page of the Formula',()=>popup.querySelector('[data-query-property-page]'));}press(popup.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
       );
+    /**
+     * The text the Formula field underlines, once the field shows
+     * `expected`, and how: the line style of each underline, and whether
+     * the field draws a gutter. The editor sets its underlines a frame
+     * after the page draws the text, and then, from the same draw, its
+     * `aria-invalid`; so where `expected` is empty, the field that was
+     * invalid is settled once `aria-invalid` reads false, and no underline
+     * of the text can come after that.
+     */
+    const formulaUnderlines = async (expected: string[]) =>
+      JSON.parse(
+        await obEval(
+          run.vaultId,
+          `(async()=>{${PAGE}const field=${propertiesPage}?.querySelector('[data-query-formula-expression]');const content=field?.querySelector('.cm-content');if(!content)throw new Error('Missing: the Formula field');const marks=()=>[...field.querySelectorAll('.cm-lintRange-error')];const texts=()=>JSON.stringify(marks().map(n=>n.textContent));const expected=${JSON.stringify(JSON.stringify(expected))};await until('underlines',()=>expected==='[]'?content.getAttribute('aria-invalid')==='false':texts()===expected).catch((error)=>{throw new Error(error.message+': '+texts()+', aria-invalid '+content.getAttribute('aria-invalid'));});return JSON.stringify({marks:marks().map(n=>n.textContent),styles:marks().map(n=>getComputedStyle(n).textDecorationStyle),gutter:field.querySelector('.cm-gutters')!=null});})()`,
+        ),
+      ) as { marks: string[]; styles: string[]; gutter: boolean };
     expect(
       await obEvalUntil(run.vaultId, `String(!!${propertiesPage})`, {
         expected: "true",
@@ -388,10 +404,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       syntax: "invalid",
       save: false,
     });
+    // The Syntax Fault is underlined as it is typed, in a wavy line and with
+    // no gutter beside the text.
+    expect(await formulaUnderlines(["+"])).toEqual({
+      marks: ["+"],
+      styles: ["wavy"],
+      gutter: false,
+    });
     expect(await typeFormula({ expression: "date.year" })).toEqual({
       syntax: "valid",
       save: true,
     });
+    expect((await formulaUnderlines([])).marks).toEqual([]);
     await saveFormula();
 
     // The Formula saves under formulas, shows after the view's properties,
@@ -472,6 +496,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `(()=>{const popup=${propertiesPopup};const issue=popup.querySelector('[data-query-property="formula.year"] [data-query-formula-issue]')?.getAttribute('data-query-formula-issue')??null;popup.hidePopover();return String(issue);})()`,
     );
     expect(rowIssue).toBe(wrong.headerIssue);
+
+    // The Formula's page underlines the name the run found wrong, and shows
+    // no tooltip over it, not even an empty one, well past CodeMirror's
+    // hover delay.
+    await editFormula();
+    expect((await formulaUnderlines(["nope"])).marks).toEqual(["nope"]);
+    const hovered = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}const field=${propertiesPage}.querySelector('[data-query-formula-expression]');const mark=field.querySelector('.cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));await new Promise(r=>setTimeout(r,800));return JSON.stringify([...mark.ownerDocument.querySelectorAll('.cm-tooltip-hover, .cm-tooltip-lint')].map(n=>n.className));})()`,
+      ),
+    ) as string[];
+    expect(hovered).toEqual([]);
+    // A text other than the saved one shows no underline of the run's Fault.
+    await typeFormula({ expression: "title.nope( )" });
+    expect((await formulaUnderlines([])).marks).toEqual([]);
+    await saveFormula();
+    await tabWhen((tab) => tab.text.includes("  year: title.nope( )\n"));
 
     // Remove, in the page's menu, leaves the file without the Formula and
     // its property, and steps back to the rows.

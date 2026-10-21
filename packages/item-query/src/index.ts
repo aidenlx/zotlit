@@ -11,6 +11,28 @@ export {
   type SchemaProperty,
 } from "./describe-item-query";
 export { describeQueryCustomFields } from "./describe-query-custom-fields";
+export {
+  parameterTexts,
+  parameterTypeText,
+  resultText,
+  signatureText,
+  type ParameterText,
+  type SignatureShape,
+} from "./signature-text";
+// The function registry of the Filter Expression language, for in-process
+// editors. The Query Schema stays the agent contract.
+export {
+  GLOBAL_FUNCTIONS,
+  IF_FUNCTION,
+  METHOD_ENTRIES,
+  PROPERTY_ENTRIES,
+  parameterAt,
+  type FunctionDefinition,
+  type FunctionParameter,
+  type ParameterType,
+  type PropertyDefinition,
+} from "./filter-functions";
+export type { FilterValueType } from "./filter-values";
 export { cellProperties } from "./cell-properties";
 export {
   AttachmentFileResolver,
@@ -51,6 +73,13 @@ export {
 } from "./query";
 export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
 export { planPath } from "./projection";
+export {
+  subexpressionTypes,
+  type ContextRecord,
+  type PlannedMember,
+  type SubexpressionType,
+} from "./subexpression-types";
+export type { StaticType } from "./filter-plan";
 export {
   projectedSortKey,
   type LastActivitySource,

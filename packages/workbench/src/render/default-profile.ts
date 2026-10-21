@@ -1,6 +1,7 @@
 // Built-in Profile used by standalone Workbench previews and Sample Item checks.
 
 import { CONTRACT_VERSION } from "@zotlit/db";
+import { DEFAULT_ANNOTATION_LIQUID } from "@zotlit/templates/facade";
 
 export const DEFAULT_PROFILE_SOURCE = `---
 id: default
@@ -54,13 +55,4 @@ views:
 {% endmanaged %}
 
 --- zotlit:annotation ---
-{% bq %}
-[!note] Page {{ zt.pageLabel }}
-
-{{ zt.imgLink | embed }}{{ zt.text }}
-{% if zt.comment %}
-
-{{ zt.comment }}
-{% endif %}
-{% endbq %}
-`;
+${DEFAULT_ANNOTATION_LIQUID}`;

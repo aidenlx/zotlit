@@ -87,7 +87,7 @@ export async function verifyPdfReadSource(
       async () =>
         (await obEval(
           vaultId,
-          `String(${services}.pdfAnnotationEditor.sessionForPath('${oldPdf}')?.target?.attachmentKey==='RGRPDF24')`,
+          `String(${services}.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${oldPdf}')?.session?.target?.attachmentKey==='RGRPDF24')`,
         )) === "true",
     ),
   ).toBe(true);

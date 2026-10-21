@@ -51,6 +51,8 @@ gh issue list --search "parent-issue:aidenlx/zotlit#<parent> state:open no:assig
 
 A ticket gets one progress comment when its branch merges into the integration branch — what changed, the merge SHA, the tests run, open points — and is closed right after. Comments and assignees otherwise wait for that merge.
 
+Closing keywords (`Closes #N`) act only on merges into the default branch `main`; PRs merge into `next` ([CONTRIBUTING.md](../../CONTRIBUTING.md)). After a PR merges into `next`, close its spec and each ticket still open with `gh issue close`, carrying that one progress comment.
+
 ## Pull requests as a triage surface
 
 External pull requests are not a request or triage surface. Triage GitHub issues only.

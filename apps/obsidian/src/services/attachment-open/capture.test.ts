@@ -1,48 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AttachmentReader } from "@/lib/attachment-open";
-import type { AttachmentResolution } from "@/services/attachment-resolver/service";
 import type { Settings } from "@/services/settings/schema";
 
+import { FILES, openerHarness } from "./__fixtures__";
 import {
-  decideFileLinkCapture,
+  EXTERNAL_TARGET,
   paneFromTarget,
   registerFileLinkCapture,
 } from "./capture";
-import type { ObsidianOpenableAttachment } from "./resolve";
-
-const VAULT = "/Users/me/Vault";
-
-const RESOLVED_PDF: AttachmentResolution = {
-  kind: "resolved",
-  serverID: null,
-  attachmentKey: "PDFSTR22",
-  itemKey: "SAKIMA22",
-  openable: true,
-};
-
-const RESOLVED_EPUB: AttachmentResolution = {
-  kind: "resolved",
-  serverID: null,
-  attachmentKey: "EPUBSTR2",
-  itemKey: "SAKIMA22",
-  openable: false,
-};
-
-function context(resolution: AttachmentResolution, vaultBasePath = VAULT) {
-  const asked: string[] = [];
-  return {
-    asked,
-    ctx: {
-      resolve: (path: string) => {
-        asked.push(path);
-        return resolution;
-      },
-      vaultBasePath,
-      platform: "darwin" as NodeJS.Platform,
-    },
-  };
-}
 
 describe("paneFromTarget", () => {
   // The pane names pass through, which `registerFileLinkCapture` proves with
@@ -57,190 +22,130 @@ describe("paneFromTarget", () => {
   );
 });
 
-describe("decideFileLinkCapture", () => {
-  it("leaves a web link alone without asking the resolver", () => {
-    const { asked, ctx } = context(RESOLVED_PDF);
-    expect(decideFileLinkCapture("https://example.com/a.pdf", ctx)).toEqual({
-      kind: "pass",
-    });
-    expect(asked).toEqual([]);
-  });
-
-  it("leaves a string that is no URL alone", () => {
-    const { ctx } = context(RESOLVED_PDF);
-    expect(decideFileLinkCapture("not a url", ctx)).toEqual({ kind: "pass" });
-  });
-
-  it("captures a Zotero-managed PDF outside the vault by its file: path", () => {
-    const { asked, ctx } = context(RESOLVED_PDF);
-    expect(
-      decideFileLinkCapture(
-        "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf",
-        ctx,
-      ),
-    ).toEqual({
-      kind: "capture",
-      attachment: {
-        indexedKey: "PDFSTR22",
-        label: "paper.pdf",
-        openPath: "file:/Users/me/Zotero/storage/ABCD1234/paper.pdf",
-        absolutePath: "/Users/me/Zotero/storage/ABCD1234/paper.pdf",
-      },
-    });
-    expect(asked).toEqual(["/Users/me/Zotero/storage/ABCD1234/paper.pdf"]);
-  });
-
-  it("captures a Zotero-managed PDF inside the vault by its vault-relative path", () => {
-    const { ctx } = context(RESOLVED_PDF);
-    expect(
-      decideFileLinkCapture("file:///Users/me/Vault/papers/paper.pdf", ctx),
-    ).toMatchObject({
-      kind: "capture",
-      attachment: { openPath: "papers/paper.pdf" },
-    });
-  });
-
-  it("carries the page anchor through as the subpath", () => {
-    const { ctx } = context(RESOLVED_PDF);
-    expect(
-      decideFileLinkCapture(
-        "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf#page=7",
-        ctx,
-      ),
-    ).toMatchObject({ attachment: { subpath: "#page=7" } });
-  });
-
-  it("decodes a percent-encoded path before it asks the resolver", () => {
-    const { asked, ctx } = context(RESOLVED_PDF);
-    decideFileLinkCapture(
-      "file:///Users/me/Zotero/storage/ABCD1234/Doe%202024.pdf",
-      ctx,
-    );
-    expect(asked).toEqual(["/Users/me/Zotero/storage/ABCD1234/Doe 2024.pdf"]);
-  });
-
-  // Which Attachments qualify is `isPdfAttachment`'s rule, proved over real
-  // rows in `resolve.test.ts`; what this proves is that Capture obeys the
-  // verdict the resolver already reached.
-  it("leaves an Attachment the resolver called unopenable alone", () => {
-    const { ctx } = context(RESOLVED_EPUB);
-    expect(
-      decideFileLinkCapture(
-        "file:///Users/me/Zotero/storage/E1/book.epub",
-        ctx,
-      ),
-    ).toEqual({ kind: "pass" });
-  });
-
-  it("leaves a file Zotero does not know alone", () => {
-    const { ctx } = context({ kind: "unresolved" });
-    expect(
-      decideFileLinkCapture("file:///Users/me/Desktop/scan.pdf", ctx),
-    ).toEqual({ kind: "pass" });
-  });
-
-  it("leaves the link alone while the resolver cannot answer yet", () => {
-    const { ctx } = context({ kind: "pending" });
-    expect(
-      decideFileLinkCapture(
-        "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf",
-        ctx,
-      ),
-    ).toEqual({ kind: "pass" });
-  });
-});
-
-const ZOTERO_PDF = "file:///Users/me/Zotero/storage/ABCD1234/paper.pdf";
+const PDF_LINK = `file://${FILES.rougier}#page=7`;
+const DURABLE =
+  "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2";
 
 /**
- * A window stand-in whose `open` records what the original was asked for.
- * `open` reads `target.open` at each call, so a disposed registration is
- * observed rather than the wrapper the install returned.
+ * Capture installed over a window stand-in whose original `open` records
+ * every call, with the real opener behind it: the opener reaches Zotero
+ * through the patched `open` with {@link EXTERNAL_TARGET}, as
+ * `openWithSystem` does. `open` reads `target.open` at each call, so a
+ * disposed registration is observed rather than the wrapper the install
+ * returned.
  */
-function host(resolution: AttachmentResolution, enabled = true) {
-  const native = vi.fn(() => null);
-  const opened: {
-    attachment: ObsidianOpenableAttachment;
-    pane: unknown;
-  }[] = [];
-  const reader: AttachmentReader<ObsidianOpenableAttachment> = {
-    icon: "file-text",
-    open: (attachment, pane) => void opened.push({ attachment, pane }),
-  };
+async function host(
+  stack: AsyncDisposableStack,
+  {
+    enabled = true,
+    missing = [],
+  }: { enabled?: boolean; missing?: readonly string[] } = {},
+) {
+  const native = vi.fn((..._args: Parameters<Window["open"]>) => null);
   const target = { open: native } as unknown as Window;
+  const { opener, resolver, opened } = await openerHarness(stack, {
+    missing,
+    native: (url) => void target.open(url, EXTERNAL_TARGET),
+  });
   const registration = registerFileLinkCapture({
-    vaultBasePath: VAULT,
-    attachments: { resolve: () => resolution },
+    opener,
+    attachments: resolver,
     settings: { current: { "reader.open-file-links": enabled } as Settings },
-    reader,
     window: target,
   });
+  let installed = true;
+  const dispose = () => {
+    if (!installed) return;
+    installed = false;
+    registration[Symbol.dispose]();
+  };
+  stack.defer(dispose);
   return {
     native,
     opened,
     open: (...args: Parameters<Window["open"]>) => target.open(...args),
-    [Symbol.dispose]: registration[Symbol.dispose].bind(registration),
+    dispose,
   };
 }
 
 describe("registerFileLinkCapture", () => {
-  it("sends a Zotero-managed PDF to the reader instead of the original", () => {
-    using capture = host(RESOLVED_PDF);
+  it("sends a link the opener takes to Obsidian's reader, in the pane the click asked for", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
 
-    expect(capture.open(`${ZOTERO_PDF}#page=7`, "split")).toBeNull();
+    expect(capture.open(PDF_LINK, "split")).toBeNull();
 
+    await vi.waitFor(() => expect(capture.opened).toHaveLength(1));
+    expect(capture.opened[0]).toMatchObject({
+      attachment: { indexedKey: "RGRPDF24", subpath: "#page=7" },
+      pane: "split",
+    });
     expect(capture.native).not.toHaveBeenCalled();
-    expect(capture.opened).toEqual([
-      {
-        attachment: {
-          indexedKey: "PDFSTR22",
-          label: "paper.pdf",
-          openPath: "file:/Users/me/Zotero/storage/ABCD1234/paper.pdf",
-          absolutePath: "/Users/me/Zotero/storage/ABCD1234/paper.pdf",
-          subpath: "#page=7",
-        },
-        pane: "split",
-      },
+  });
+
+  it("hands a link the opener leaves back to the original as it was called", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
+
+    capture.open("https://example.com/paper.pdf", "tab", "features");
+
+    expect(capture.native.mock.calls).toEqual([
+      ["https://example.com/paper.pdf", "tab", "features"],
     ]);
   });
 
-  it("hands Obsidian's own open-in-default-app target straight back", () => {
-    using capture = host(RESOLVED_PDF);
+  it("hands Obsidian's own open-in-default-app target straight back", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
 
-    capture.open(ZOTERO_PDF, "_external");
+    capture.open(PDF_LINK, EXTERNAL_TARGET);
+    capture.open(DURABLE, EXTERNAL_TARGET);
 
-    expect(capture.native).toHaveBeenCalledWith(
-      ZOTERO_PDF,
-      "_external",
-      undefined,
-    );
+    expect(capture.native.mock.calls).toEqual([
+      [PDF_LINK, EXTERNAL_TARGET, undefined],
+      [DURABLE, EXTERNAL_TARGET, undefined],
+    ]);
     expect(capture.opened).toEqual([]);
   });
 
-  it("hands every link back while the setting is off", () => {
-    using capture = host(RESOLVED_PDF, false);
+  it("hands every link back while the setting is off", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack, { enabled: false });
 
-    capture.open(ZOTERO_PDF, "");
+    capture.open(PDF_LINK, "");
+    capture.open(DURABLE, "");
 
-    expect(capture.native).toHaveBeenCalledWith(ZOTERO_PDF, "", undefined);
+    expect(capture.native.mock.calls).toEqual([
+      [PDF_LINK, "", undefined],
+      [DURABLE, "", undefined],
+    ]);
     expect(capture.opened).toEqual([]);
   });
 
-  it("leaves a zotero:// link ZotLit opens itself alone", () => {
-    using capture = host(RESOLVED_PDF);
+  // The opener hands Zotero a link through the system handler, which is
+  // `window.open` again: the link must pass this patch once, not loop. A
+  // Durable Annotation Link whose PDF this computer lacks takes that path.
+  it("lets a link the opener hands to Zotero pass the patch once", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack, { missing: [FILES.rougier] });
 
-    capture.open("zotero://open/library/items/ABCD1234");
+    expect(capture.open(DURABLE, "")).toBeNull();
 
-    expect(capture.native).toHaveBeenCalled();
+    await vi.waitFor(() => expect(capture.native).toHaveBeenCalled());
+    expect(capture.native.mock.calls).toEqual([
+      [DURABLE, EXTERNAL_TARGET, undefined],
+    ]);
     expect(capture.opened).toEqual([]);
   });
 
-  it("restores the original open when disposed", () => {
-    const capture = host(RESOLVED_PDF);
-    capture[Symbol.dispose]();
+  it("restores the original open when disposed", async () => {
+    await using stack = new AsyncDisposableStack();
+    const capture = await host(stack);
+    capture.dispose();
 
-    capture.open(ZOTERO_PDF, "");
+    capture.open(PDF_LINK, "");
 
-    expect(capture.native).toHaveBeenCalledWith(ZOTERO_PDF, "");
+    expect(capture.native.mock.calls).toEqual([[PDF_LINK, ""]]);
+    expect(capture.opened).toEqual([]);
   });
 });

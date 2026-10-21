@@ -60,6 +60,7 @@ export type { TemplateLanguage } from "./constants";
 export {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
   convertLegacyFrontmatterFields,
+  DEFAULT_ANNOTATION_LIQUID,
   LegacyTemplateConversionError,
   literatureNoteTemplateManifestRange,
   LiteratureNoteTemplateError,

@@ -12,8 +12,11 @@
 // app. Only that window answers `document.hasFocus()` with true, whichever
 // window holds the OS focus, and it gets the `focus` event that moves
 // Obsidian's `activeWindow` to it. Focus moves apply one at a time, in the
-// order they are asked for, so the last one asked wins. A popout opens with
-// `showInactive` in place of Obsidian's `show`, and `window.focus()` and
+// order they are asked for, so the last one asked wins. A window answers true
+// once its move has applied, not when it is asked for: until then Chromium
+// holds back the focus events of the elements focused in it, and CodeMirror
+// takes the caret the browser puts at the start of a field for the user's. A popout opens with
+// {@link showBehind} in place of Obsidian's `show`, and `window.focus()` and
 // `electronWindow.focus()` move only the emulation: each would take the OS
 // focus and put the window in front. A walk that needs a new popout active calls
 // its `window.focus()`. The run thus leaves the OS focus to the developer and to
@@ -25,12 +28,25 @@
 
 import { obEval } from "./obsidian-cli.ts";
 
+/**
+ * Eval code that shows the Electron window `win` names and leaves the OS focus
+ * and the developer's windows alone. `showInactive` keeps the focus but puts the
+ * window in front of every other app's windows on macOS; `blur` there orders it
+ * behind them. A minimized window comes back from the Dock in front for the
+ * length of the animation, so it stays transparent until it is restored and
+ * ordered back. Restore a minimized window with this, not `restore()`.
+ * `keepRendering` keeps a covered window rendering.
+ */
+export const showBehind = (win: string): string =>
+  `((w)=>{if(process.platform!=='darwin'){w.showInactive();return;}if(!w.isMinimized()){w.showInactive();w.blur();return;}const opacity=w.getOpacity();w.setOpacity(0);w.once('restore',()=>{w.blur();setTimeout(()=>w.setOpacity(opacity),100);});w.showInactive();})(${win});`;
+
 /** Global the restore function lives on in the vault window between calls. */
 const RESTORE = "__ztRestoreBackgroundThrottling";
 
 /**
  * Turns background throttling off for `vaultId`'s main window and every popout
- * it has or opens, shows each popout it opens without the OS focus, and moves
+ * it has or opens, shows each popout it opens behind other apps' windows and
+ * without the OS focus, and moves
  * focus emulation to the window `window.focus()` or `electronWindow.focus()`
  * last raised, starting with the main window. Calling it again replaces the
  * earlier call's hooks.
@@ -47,6 +63,7 @@ export async function keepRendering(vaultId: string): Promise<void> {
       const apply=()=>{for(const contents of vaultContents())contents.setBackgroundThrottling(false);};
       let focused;
       let focusedWin;
+      let appliedWin;
       let switching=Promise.resolve();
       const emulateFocus=(win)=>{
         focusedWin=win;
@@ -55,11 +72,13 @@ export async function keepRendering(vaultId: string): Promise<void> {
           const next=win.require('@electron/remote').getCurrentWebContents();
           if(focused!==next){
             const last=focused;focused=next;
+            appliedWin=undefined;
             if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});
             if(!next.debugger.isAttached())next.debugger.attach('1.3');
             await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
           }
           if(activeWindow!==win)win.dispatchEvent(new win.FocusEvent('focus'));
+          if(win===focusedWin)appliedWin=win;
         });
         switching=run.catch(()=>{});
         return run;
@@ -70,10 +89,10 @@ export async function keepRendering(vaultId: string): Promise<void> {
         const focus=win.focus;const shown=win.electronWindow;raised.set(win,{focus,shown,osFocus:shown?.focus});
         win.focus=()=>void emulateFocus(win);
         if(shown)shown.focus=()=>void emulateFocus(win);
-        win.document.hasFocus=()=>win===focusedWin;
+        win.document.hasFocus=()=>win===appliedWin;
       };
       const refs=[
-        app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>shown.showInactive();}),
+        app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>{${showBehind("shown")}};}),
         app.workspace.on('window-close',(_workspaceWindow,win)=>{raised.delete(win);if(win===focusedWin)void emulateFocus(window);}),
       ];
       apply();

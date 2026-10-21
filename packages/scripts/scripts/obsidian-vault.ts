@@ -7,23 +7,19 @@
 // app is shut. While it runs, the registry is reachable on the `vault-open` /
 // `vault-remove` / `vault-list` IPC channels, which the Obsidian CLI `eval`
 // command reaches from inside a vault window. This drives whichever route
-// applies, so cleanup never has to wake a shut app.
+// applies, so cleanup never has to wake a shut app. Removing the vault whose
+// window is the only one open closes that window first, then unregisters
+// offline if Obsidian quit with it, else through a registered vault the host
+// check opens; with none to open, it names the command to run after quitting.
 //
 // Creating needs Obsidian 1.13.4+ with "Command line interface" enabled
 // (Settings → General) and one registered vault to host the eval calls: the
 // focused vault window, else a registered vault the host check opens, Obsidian's
 // sandbox vault first.
 
+import type { VaultEntry } from "#obsidian-vault-registry";
 import { execFile } from "node:child_process";
-import {
-  access,
-  cp,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -58,6 +54,7 @@ import {
   OBSIDIAN_HOST_VAULT_ENV,
   OBSIDIAN_VAULT_OPEN_TIMEOUT_MS,
 } from "#obsidian-host-readiness";
+import { findVaultId, unregisterVaultFile } from "#obsidian-vault-registry";
 import { getWorkspaceRoot } from "#package-roots";
 
 const execFileAsync = promisify(execFile);
@@ -73,12 +70,6 @@ let inactive = false;
 const pluginId = "zotlit";
 /** The folder in Obsidian's user data that holds its sandbox vault. */
 const sandboxFolder = "Obsidian Sandbox";
-
-interface VaultEntry {
-  path: string;
-  ts: number;
-  open?: boolean;
-}
 
 /** Where Obsidian keeps `obsidian.json`, per-vault state, and Partitions. */
 function obsidianUserData(): string {
@@ -164,12 +155,14 @@ async function obEval(code: string, target?: string): Promise<string> {
  * process creates the vault window during that call and later calls its `show`,
  * which gives it the OS focus. With `--inactive`, a `browser-window-created`
  * listener in the main process, there only for the call, makes that window's
- * `show` call `showInactive` and its `focus` do nothing.
+ * `show` call `showInactive` and its `focus` do nothing. `showInactive` still
+ * puts the window in front of every other app's windows on macOS, so `show`
+ * then calls `blur`, which there orders the window behind them.
  */
 function vaultOpenCode(abs: string): string {
   const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
   if (!inactive) return open;
-  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>win.showInactive();win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
+  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>{win.showInactive();if(process.platform==="darwin")win.blur();};win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
 }
 
 /** Any reply means the app runs, including "Vault not found." with no vault window. */
@@ -193,13 +186,6 @@ async function vaultList(host?: string): Promise<Record<string, VaultEntry>> {
   return JSON.parse(raw) as Record<string, VaultEntry>;
 }
 
-function findVaultId(
-  vaults: Record<string, VaultEntry>,
-  abs: string,
-): string | undefined {
-  return Object.keys(vaults).find((id) => resolve(vaults[id]!.path) === abs);
-}
-
 async function waitFor(
   check: () => Promise<boolean>,
   tries = 40,
@@ -215,11 +201,20 @@ async function resolveHost(avoidPath?: string): Promise<string> {
   return (await checkObsidianHost({ avoidPath })).id;
 }
 
-/** Pick a live window other than the vault that an online removal targets. */
+/**
+ * Pick a live window other than the vault that an online removal targets.
+ * With `exclude`, resolve to `undefined` when that vault's window is the only
+ * one open.
+ */
+async function resolveRemovalHost(abs: string): Promise<string>;
+async function resolveRemovalHost(
+  abs: string,
+  exclude: string,
+): Promise<string | undefined>;
 async function resolveRemovalHost(
   abs: string,
   exclude?: string,
-): Promise<string> {
+): Promise<string | undefined> {
   const preferred = process.env[OBSIDIAN_HOST_VAULT_ENV];
   if (preferred) {
     const id = await obEval("app.appId", preferred);
@@ -237,15 +232,7 @@ async function resolveRemovalHost(
   if (focused !== exclude) return focused;
 
   const vaults = await vaultList(focused);
-  const other = Object.keys(vaults).find(
-    (id) => id !== exclude && vaults[id]!.open,
-  );
-  if (!other) {
-    throw new Error(
-      `no other open vault can host the removal. Open one, or set ${OBSIDIAN_HOST_VAULT_ENV}.`,
-    );
-  }
-  return other;
+  return Object.keys(vaults).find((id) => id !== exclude && vaults[id]!.open);
 }
 
 interface SeedOptions {
@@ -744,51 +731,11 @@ async function readFixtureLink(vaultId: string): Promise<FixtureLinkReport> {
 
 /**
  * Unregister without a running app, by editing the registry file directly.
- * Safe only while Obsidian is shut: a running main process holds the registry
- * in memory and would overwrite the file on its next save. The shared-origin
- * localStorage and IndexedDB keys need a live window, so they stay behind —
- * a few stale LevelDB keys that Obsidian ignores.
+ * The shared-origin localStorage and IndexedDB keys need a live window, so they
+ * stay behind — a few stale LevelDB keys that Obsidian ignores.
  */
-async function removeOffline(abs: string): Promise<string | undefined> {
-  const userData = obsidianUserData();
-  const configPath = join(userData, "obsidian.json");
-
-  // No registry file means nothing was ever registered.
-  const raw = await readFile(configPath, "utf-8").catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    },
-  );
-  if (raw === undefined) return undefined;
-
-  let config: { vaults?: Record<string, VaultEntry> };
-  try {
-    config = JSON.parse(raw) as typeof config;
-  } catch {
-    throw new Error(
-      `${configPath} holds invalid JSON — refusing to rewrite it`,
-    );
-  }
-
-  const vaults = config.vaults ?? {};
-  const id = findVaultId(vaults, abs);
-  if (!id) return undefined;
-
-  delete vaults[id];
-  config.vaults = vaults;
-  // Write through a temp file, so an interrupted run cannot truncate the
-  // registry and cost every other vault its entry.
-  const staging = `${configPath}.zt-tmp`;
-  await writeFile(staging, JSON.stringify(config));
-  await rename(staging, configPath);
-
-  await rm(join(userData, `${id}.json`), { force: true });
-  await rm(join(userData, "Partitions", `vault-${id}`), {
-    recursive: true,
-    force: true,
-  });
-  return id;
+function removeOffline(abs: string): Promise<string | undefined> {
+  return unregisterVaultFile(obsidianUserData(), abs);
 }
 
 /**
@@ -823,43 +770,91 @@ async function clearVaultStorage(
   }
 }
 
+/**
+ * Close the window of vault `id` and wait until `closed` holds. ZotLit is
+ * disabled first, so it releases its file handles before the window goes.
+ */
+async function closeVaultWindow(
+  id: string,
+  closed: () => Promise<boolean>,
+): Promise<void> {
+  await obEval(
+    `(async function(){await app.plugins.disablePlugin(${JSON.stringify(pluginId)});await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve)})});return 'ready'})()`,
+    id,
+  ).catch(() => undefined);
+  await obEval(
+    "app.workspace.rootSplit.containerEl.ownerDocument.defaultView.close()",
+    id,
+  ).catch(() => undefined);
+  await waitFor(closed);
+}
+
+/** Unregister the closed vault `id` through the live window `host`. */
+async function unregisterThrough(
+  host: string,
+  abs: string,
+  id: string,
+): Promise<void> {
+  // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
+  // so a surviving window clears what `vault-remove` leaves behind.
+  await clearVaultStorage(id, host).catch(() => undefined);
+  await obEval(
+    `localStorage.removeItem('enable-plugin-'+${JSON.stringify(id)});'ok'`,
+    host,
+  ).catch(() => undefined);
+
+  const removed = await obEval(
+    `require('electron').ipcRenderer.sendSync('vault-remove',${JSON.stringify(abs)})`,
+    host,
+  );
+  if (removed !== "true") {
+    throw new Error(`vault-remove refused for ${abs} (window still open?)`);
+  }
+}
+
+/**
+ * Remove vault `id` when its window is the only one open. Close that window,
+ * then unregister offline when Obsidian quit with it, or else through a
+ * registered vault the host check opens. With no other vault to open, the
+ * entry stays until Obsidian quits, and the error names the offline command.
+ */
+async function removeFromLastWindow(abs: string, id: string): Promise<string> {
+  await closeVaultWindow(id, async () => {
+    const reply = await cli(["eval", "code=app.appId"]).catch(() => undefined);
+    return reply !== `=> ${id}`;
+  });
+  if (!(await isObsidianRunning())) return (await removeOffline(abs)) ?? id;
+
+  let host: string;
+  try {
+    host = await resolveHost(abs);
+  } catch (error) {
+    throw new Error(
+      `Obsidian has no vault other than ${abs} to host its removal, so the vault stays registered. Quit Obsidian, then run:\n  node packages/scripts/scripts/obsidian-vault.ts remove ${abs}`,
+      { cause: error },
+    );
+  }
+  await unregisterThrough(host, abs, id);
+  return id;
+}
+
 async function removeOnline(abs: string): Promise<string | undefined> {
   let host = await resolveRemovalHost(abs);
   const id = findVaultId(await vaultList(host), abs);
+  if (!id) return undefined;
 
-  if (id) {
-    if (id === host) host = await resolveRemovalHost(abs, id);
-
-    // `vault-remove` refuses while the vault window is open. Close it only when
-    // it is open, because targeting a closed vault would re-open it.
-    if ((await vaultList(host))[id]?.open) {
-      await obEval(
-        `(async function(){await app.plugins.disablePlugin(${JSON.stringify(pluginId)});await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve)})});return 'ready'})()`,
-        id,
-      ).catch(() => undefined);
-      await obEval(
-        "app.workspace.rootSplit.containerEl.ownerDocument.defaultView.close()",
-        id,
-      ).catch(() => undefined);
-      await waitFor(async () => !(await vaultList(host))[id]?.open);
-    }
-
-    // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
-    // so a surviving window clears what `vault-remove` leaves behind.
-    await clearVaultStorage(id, host).catch(() => undefined);
-    await obEval(
-      `localStorage.removeItem('enable-plugin-'+${JSON.stringify(id)});'ok'`,
-      host,
-    ).catch(() => undefined);
-
-    const removed = await obEval(
-      `require('electron').ipcRenderer.sendSync('vault-remove',${JSON.stringify(abs)})`,
-      host,
-    );
-    if (removed !== "true") {
-      throw new Error(`vault-remove refused for ${abs} (window still open?)`);
-    }
+  if (id === host) {
+    const other = await resolveRemovalHost(abs, id);
+    if (other === undefined) return removeFromLastWindow(abs, id);
+    host = other;
   }
+
+  // `vault-remove` refuses while the vault window is open. Close it only when
+  // it is open, because targeting a closed vault would re-open it.
+  if ((await vaultList(host))[id]?.open) {
+    await closeVaultWindow(id, async () => !(await vaultList(host))[id]?.open);
+  }
+  await unregisterThrough(host, abs, id);
   return id;
 }
 

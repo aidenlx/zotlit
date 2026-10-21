@@ -1,29 +1,38 @@
-// File Link Capture: a clicked Attachment File Link reaches Obsidian's own PDF
-// view instead of the system handler, when it names an Obsidian-Openable
-// Attachment.
+// File Link Capture: a clicked Attachment File Link, or a Durable Annotation
+// Link, reaches Obsidian's own PDF view instead of the system handler, when it
+// names an Obsidian-Openable Attachment. The patch is the opener's entry point
+// for links Obsidian rendered; which links it takes is the opener's to decide.
 
 import { around } from "monkey-around";
-import { fileURLToPath } from "node:url";
 import type { PaneType } from "obsidian";
 
-import type { AttachmentReader } from "@/lib/attachment-open";
 import { disposable } from "@/lib/disposables";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type { AttachmentResolution } from "@/services/attachment-resolver/service";
+import { BaseNotice } from "@/lib/notice";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
 import type { SettingsService } from "@/services/settings/service";
 
-import type { ObsidianOpenableAttachment } from "./resolve";
-import { filename, obsidianOpenPath } from "./resolve";
+import type { TargetOpener } from "./open-target";
 
 const logger = getLogger("attachment-open");
 
 /**
  * The target Obsidian's own "Open in default browser" context-menu item passes
  * to `window.open`. Capture hands it straight back, so that item stays the
- * per-link way out of Obsidian's reader.
+ * per-link way out of Obsidian's reader, and the opener hands Zotero a link
+ * through it, past this patch.
  */
-const EXTERNAL_TARGET = "_external";
+export const EXTERNAL_TARGET = "_external";
+
+/**
+ * The system handler, reached past File Link Capture: Obsidian sends a
+ * non-web link to it whatever the target, and Capture hands `_external` back
+ * untouched, so a link the opener gives to Zotero is never captured again.
+ */
+export function openWithSystem(url: string): void {
+  window.open(url, EXTERNAL_TARGET);
+}
 
 /** What `window.open`'s second argument says about where the click wanted the file. */
 export function paneFromTarget(target: string | undefined): PaneType | boolean {
@@ -37,70 +46,11 @@ export function paneFromTarget(target: string | undefined): PaneType | boolean {
   }
 }
 
-/** What Capture needs to judge one clicked URL, with no Obsidian objects in it. */
-export interface FileLinkCaptureContext {
-  resolve: (absolutePath: string) => AttachmentResolution;
-  vaultBasePath: string;
-  platform: NodeJS.Platform;
-}
-
-/**
- * Either ZotLit takes the click, naming the Attachment exactly as every other
- * ZotLit reader gesture names one, or the original `window.open` runs
- * untouched.
- */
-export type FileLinkCapture =
-  | { kind: "pass" }
-  | { kind: "capture"; attachment: ObsidianOpenableAttachment };
-
-const PASS: FileLinkCapture = { kind: "pass" };
-
-/**
- * Decide one clicked URL. A link ZotLit cannot name as an Obsidian-Openable
- * Attachment passes through, including while the resolver answers `pending` —
- * Capture does not claim a link it cannot yet identify.
- */
-export function decideFileLinkCapture(
-  url: string,
-  ctx: FileLinkCaptureContext,
-): FileLinkCapture {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return PASS;
-  }
-  if (parsed.protocol !== "file:") return PASS;
-
-  let absolutePath: string;
-  try {
-    absolutePath = fileURLToPath(parsed);
-  } catch {
-    return PASS;
-  }
-
-  const resolution = ctx.resolve(absolutePath);
-  if (resolution.kind !== "resolved" || !resolution.openable) return PASS;
-
-  return {
-    kind: "capture",
-    attachment: {
-      indexedKey: resolution.attachmentKey,
-      label: filename(absolutePath),
-      openPath: obsidianOpenPath(absolutePath, ctx.vaultBasePath, ctx.platform),
-      absolutePath,
-      ...(parsed.hash ? { subpath: parsed.hash } : {}),
-    },
-  };
-}
-
 export interface FileLinkCaptureDeps {
-  /** The vault's own directory, for telling an in-vault Attachment from one outside. */
-  vaultBasePath: string;
-  attachments: Pick<AttachmentResolver, "resolve">;
+  /** Decides which links ZotLit takes, and opens them. */
+  opener: Pick<TargetOpener, "follow">;
+  attachments: Pick<AttachmentResolver, "warm">;
   settings: Pick<SettingsService, "current">;
-  /** Where a captured link opens — the same reader every other ZotLit gesture uses. */
-  reader: AttachmentReader<ObsidianOpenableAttachment>;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
   window?: Window;
 }
@@ -115,10 +65,15 @@ export interface FileLinkCaptureDeps {
  * global `window.open`, which is why `activeWindow` exists at all, so the
  * click reaches this patch whichever window it happened in.
  *
+ * The resolver builds its index on the first lookup, and the opener leaves
+ * every link to the system handler until it lands. A note's links are clicked
+ * before any PDF asks for that index, so Capture asks for it as it installs.
+ *
  * @see apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md
  */
 export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
   const host = (deps.window ?? window) as { open: Window["open"] };
+  deps.attachments.warm();
 
   return disposable(
     around(host, {
@@ -132,19 +87,17 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           ) {
             return native(url, target, features);
           }
-          const capture = decideFileLinkCapture(String(url), {
-            resolve: (path) => deps.attachments.resolve(path),
-            vaultBasePath: deps.vaultBasePath,
-            platform: process.platform,
-          });
-          if (capture.kind === "pass") return native(url, target, features);
+          const followed = deps.opener.follow(
+            String(url),
+            paneFromTarget(target),
+          );
+          if (followed === null) return native(url, target, features);
 
-          logger.debug("Attachment File Link captured", {
-            attachmentKey: capture.attachment.indexedKey,
-            openPath: capture.attachment.openPath,
-            subpath: capture.attachment.subpath,
+          logger.debug("Link captured", { url: String(url), target });
+          void followed.then((outcome) => {
+            if (outcome.kind === "file-missing")
+              new BaseNotice(m.notice_pdf_file_missing());
           });
-          void deps.reader.open(capture.attachment, paneFromTarget(target));
           return null;
         },
     }),

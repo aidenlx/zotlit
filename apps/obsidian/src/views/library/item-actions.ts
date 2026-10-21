@@ -14,12 +14,11 @@ import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
-import type { AttachmentOpenLookupDeps } from "@/services/attachment-open/actions";
+import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
 import {
   commitCitationInsert,
-  padCitationInsert,
   resolveCitationInsert,
 } from "@/views/citation-suggest/editor-suggest";
 import type { CitationSuggestDeps } from "@/views/citation-suggest/register";
@@ -34,7 +33,7 @@ import { lastEditor } from "./last-note";
 const logger = getLogger(["library-view", "item-actions"]);
 
 export type ItemActionsDeps = NoteResultDeps &
-  AttachmentOpenLookupDeps &
+  AttachmentOpenDeps &
   Pick<CitationSuggestDeps, "citationLookup" | "useLedger"> & {
     noteFeature: CitationSuggestDeps["noteFeature"];
     /** Show a short message to the researcher. */
@@ -106,18 +105,8 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         info,
         ...(at !== undefined && { range: { from: at, to: at } }),
         isCurrent: () => info.file === file && info.editor === editor,
+        workspace: deps.app.workspace,
       });
-      const { doc, selection } = editor.cm.state;
-      const start = at ?? selection.main.from;
-      const end = at ?? selection.main.to;
-      // The characters around the insert, so the citation sticks to neither.
-      const around = {
-        previous:
-          start === doc.lineAt(start).from
-            ? ""
-            : doc.sliceString(start - 1, start),
-        next: doc.sliceString(end, end + 1),
-      };
       const item = await read(indexedKey);
       if (!item) return;
       const outcome = await resolveCitationInsert(deps, { item }, "main");
@@ -128,8 +117,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
       commitCitationInsert(deps, {
         indexedKey,
         text: outcome.text,
-        insert: () =>
-          insertion.commit(padCitationInsert(outcome.text, around).text),
+        insert: () => insertion.commit(outcome.text, { kind: "citation" }),
       });
     },
     copyCitationKey: async (indexedKey) => {

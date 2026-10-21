@@ -40,7 +40,10 @@ import { QueryClientService } from "@/services/query-client/service";
 import { SettingsService } from "@/services/settings/service";
 import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
-import { requested } from "@/views/query-view/__fixtures__/query-run";
+import {
+  fakeQuery,
+  requested,
+} from "@/views/query-view/__fixtures__/query-run";
 import { openWelcomeView } from "@/views/welcome/register";
 
 import { nodeKey } from "./document";
@@ -562,7 +565,7 @@ function pluginData(stored?: unknown) {
         }),
     },
     libraryScope,
-    query: { run, on: () => () => {} },
+    query: fakeQuery(run),
     lookup: {
       openSession: () => ({
         search,
@@ -589,7 +592,7 @@ function pluginData(stored?: unknown) {
       },
     },
     literatureNotes,
-    readers: { open: () => Promise.resolve() },
+    opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
   } as unknown as LibraryViewDeps;
   /** Zotero's database changes to hold `items`, and says so. */
   const change = (items: readonly SeedItem[]) => {
@@ -3030,7 +3033,7 @@ describe("Reading Card", () => {
   it("lists the files, which open in their reader, the Zotero notes, which link to Zotero, and the tags as chips", async () => {
     const { deps, change } = pluginData();
     const open = vi.fn(() => Promise.resolve());
-    Object.assign(deps, { readers: { open } });
+    Object.assign(deps, { opener: { open } });
     const view = await openTab(deps);
     await act(async () => {
       change(FILLED);

@@ -6,7 +6,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 
 import type { AttachmentOpenDeps } from "./actions";
-import { createPdfReader, resolveLiteratureNoteAttachments } from "./actions";
+import { pdfPickerReader, resolveLiteratureNoteAttachments } from "./actions";
 
 /**
  * The `open-pdf` entry on a Literature Note's file menu. A pointer click shows
@@ -35,7 +35,7 @@ export function attachmentOpenFileMenu(
               itemKey,
             );
             openAttachments(attachments, {
-              reader: createPdfReader(deps),
+              reader: pdfPickerReader(deps.opener),
               app: deps.app,
               event: evt,
               anchor,

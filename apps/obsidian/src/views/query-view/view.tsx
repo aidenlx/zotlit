@@ -75,6 +75,7 @@ import {
 } from "./reader-diagnostic";
 import { NO_RESULTS } from "./results";
 import type {
+  FormulaIssue,
   QueryViewFailure,
   QueryViewWarning,
   ResultSnapshot,
@@ -88,7 +89,6 @@ import { resultTable } from "./table";
 import type { ResultTable } from "./table";
 import { TableLayout } from "./table-layout";
 import type { LiteratureNotes, VaultHost } from "./table-notes";
-import type { TableReaders } from "./table-readers";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
 import { useVaultPropertyNames, vaultText } from "./vault-cell";
@@ -106,7 +106,7 @@ const logger = getLogger(["views", "query-view"]);
 
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
-  query: Pick<QueryService, "run" | "on">;
+  query: Pick<QueryService, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<ZoteroReadsService, "on" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "on" | "current">;
@@ -114,8 +114,6 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** What the Table's Literature Note Property reads and does. */
   literatureNotes: LiteratureNotes;
-  /** The Table's Attachment and Annotation links. */
-  readers: TableReaders;
 }
 
 /** What the host gives the Query View, beside the services. */
@@ -463,19 +461,38 @@ const FORMULA_READ_FAULTS: ReadonlySet<string> = new Set([
   "unknown-formula",
 ]);
 
-/** The reason of each Formula that the run left out, by name. */
-function formulaIssues(outcome: QueryViewOutcome): NameDictionary<string> {
-  const faults =
-    outcome.kind === "result"
+/**
+ * @param formulas The Formulas the run planned, by name.
+ * @returns each Formula that the run left out, by name, with its reason and
+ * where its Fault is in the text the run planned, where it names a place
+ * there.
+ */
+function formulaIssues(
+  outcome: QueryViewOutcome,
+  formulas: QueryViewRequest["formulas"],
+): NameDictionary<FormulaIssue> {
+  const faults = Object.entries(
+    (outcome.kind === "result"
       ? outcome.result.formulaDiagnostics
       : outcome.kind === "failed"
         ? outcome.formulaDiagnostics
-        : undefined;
+        : undefined) ?? {},
+  );
   return nameDictionary(
-    Object.entries(faults ?? {}).map(([name, diagnostic]) => [
-      name,
-      readerText(diagnostic),
-    ]),
+    faults.map(([name, diagnostic]): [string, FormulaIssue] => {
+      const message = readerText(diagnostic);
+      const { location } = diagnostic;
+      const text = formulas?.[name];
+      return [
+        name,
+        location?.argument === "formulas" &&
+        location.path === name &&
+        location.span &&
+        text !== undefined
+          ? { message, place: { text, span: location.span } }
+          : { message },
+      ];
+    }),
   );
 }
 
@@ -573,11 +590,10 @@ export class QueryView extends Component implements HistorySurface {
    * child rows, which read the Libraries the view reads, as a child lives in
    * its parent's Library; their notes; and the readers their links open.
    */
-  get tableDeps(): Pick<
-    QueryViewDeps,
-    "query" | "literatureNotes" | "readers"
-  > {
-    const { query, literatureNotes, readers } = this.#deps;
+  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> & {
+    readers: QueryViewDeps["opener"];
+  } {
+    const { query, literatureNotes, opener: readers } = this.#deps;
     return {
       query: {
         on: (...args) => query.on(...args),
@@ -588,6 +604,7 @@ export class QueryView extends Component implements HistorySurface {
             signal,
           );
         },
+        customFieldNames: (signal) => query.customFieldNames(signal),
       },
       literatureNotes,
       readers,
@@ -788,6 +805,11 @@ export class QueryView extends Component implements HistorySurface {
         name,
       })),
     };
+  }
+
+  /** The custom fields of the Zotero source, which `custom[...]` offers. */
+  customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
+    return this.#deps.query.customFieldNames(signal);
   }
 
   /** The surface the host is, by what it binds to `this`. */
@@ -1030,7 +1052,7 @@ export class QueryView extends Component implements HistorySurface {
     if (plan.fault) {
       // A vault condition the vault cannot answer apart from ZotLit Query
       // keeps the view from running.
-      this.#fail(run, plan.fault.diagnostic, nameDictionary());
+      this.#fail(run, plan.fault.diagnostic, NO_RESULTS.formulaIssues);
       return;
     }
     const controller = new AbortController();
@@ -1067,7 +1089,7 @@ export class QueryView extends Component implements HistorySurface {
             message: error instanceof Error ? error.message : String(error),
             hint: "",
           },
-          nameDictionary(),
+          NO_RESULTS.formulaIssues,
         );
       },
     );
@@ -1083,7 +1105,11 @@ export class QueryView extends Component implements HistorySurface {
       case "cancelled":
         return;
       case "failed":
-        this.#fail(run, outcome.diagnostic, formulaIssues(outcome));
+        this.#fail(
+          run,
+          outcome.diagnostic,
+          formulaIssues(outcome, plan.request.formulas),
+        );
         return;
       case "result": {
         const result = outcome.result;
@@ -1126,7 +1152,7 @@ export class QueryView extends Component implements HistorySurface {
                 ]),
               ).values(),
             ],
-            formulaIssues: formulaIssues(outcome),
+            formulaIssues: formulaIssues(outcome, plan.request.formulas),
           },
           failure: null,
         });
@@ -1155,7 +1181,7 @@ export class QueryView extends Component implements HistorySurface {
   #fail(
     { view, plan, key, binding }: ViewRun,
     diagnostic: Diagnostic | QueryViewFailure["diagnostic"],
-    issues: NameDictionary<string>,
+    issues: NameDictionary<FormulaIssue>,
   ): void {
     const kept =
       !FORMULA_READ_FAULTS.has(diagnostic.code) &&

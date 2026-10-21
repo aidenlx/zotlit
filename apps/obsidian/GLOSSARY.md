@@ -186,6 +186,18 @@ _Avoid_: agent template workbench (names the audience, not the thing), template 
 Suggestions for fields, local variables, and language constructs at the position being edited in a Template. Accepting a suggestion completes an expression or inserts a Template Snippet.
 _Avoid_: Citation Suggester (a separate feature), field picker (the explicit field discovery surface)
 
+**Expression Completion**:
+Suggestions at the position being edited in a Filter Expression, wherever Obsidian edits one: a Formula, a Query View's filter condition, or a Match condition. It offers the Query Dataset's fields, `this.item` and `this.attachment` where the view has a Query Context, `formula.<name>` and `vault.<name>` where the expression may read them, the names a list method binds, and the language's functions, methods and properties; after `.` it offers what the receiver's type has, or every method when the type is unknown. Each entry shows its signature and description.
+_Avoid_: formula autocomplete, Bases completion (Obsidian's own, for `.base` files), Template Completion (the Template counterpart)
+
+**Signature Hint**:
+The tooltip that names the function or method whose arguments are being typed in a Filter Expression, with its parameters and types, the parameter under the caret marked, and its description.
+_Avoid_: docstring tooltip, parameter hint, argument help
+
+**Expression Colors**:
+The colors a Filter Expression shows in every editor Obsidian hosts: properties and paths, functions, values, strings, operators, punctuation and regular expressions each with the code color Obsidian defines for that kind of token, the palette a `.base` file draws from, so a community theme's code colors apply. The scheme is derived from Bases and compatible with it, not dependent on it, and colors some token kinds that a `.base` file leaves plain.
+_Avoid_: Bases colors (theirs, not ours), syntax theme
+
 **Workbench Guide**:
 The Template Workbench's built-in usage guide, disclosed in tiers: a quickstart and topic index by default, one topic section on demand. Together with command help it is the home of every workbench tooling fact — value lists come from the same registries the commands use, so the guide cannot drift from the code.
 _Avoid_: manual, skill documentation (the guide lives in the workbench, the skill points at it)
@@ -340,12 +352,20 @@ _Avoid_: Openable Attachment (the Zotero-reader sense), Readable Attachment, rea
 A Markdown link whose target is an Attachment's own file on this device, written as a `file://` URI. ZotLit writes one from the `fileLink` Template Helper on an Attachment and on an Annotation (which anchors it to `#page=N` and carries an Annotation Anchor), and from Attachment Import's fallback for a blocked source; a hand-written link of the same shape is one too. Names a device-local path, so it is valid only on the device that rendered it.
 _Avoid_: file link (ambiguous with a vault link), local link, attachment link (covers the Zotero deep link too)
 
+**Durable Annotation Link**:
+Zotero's own open link to one Annotation, `zotero://open/library/items/<attachment key>?annotation=<annotation key>&page=<page label>` (`groups/<id>` in place of `library` for a group Library). Names the Attachment and the Annotation by their keys, so it works on any device that holds the PDF, and Zotero opens it anywhere ZotLit does not. An Annotation's Backlink is one, and so is every annotation link in an imported Zotero Child Note. Its `page` is a printed page label, not a page number.
+_Avoid_: annotation backlink (in prose), zotero link, deep link
+
+**Open Target**:
+What one ZotLit gesture or followed link opens: an Attachment, or one Annotation in it, named by its Indexed Key. It opens in Obsidian's PDF view when it names an Obsidian-Openable Attachment whose file is on this device, and in Zotero otherwise; every ZotLit surface that opens an Attachment decides by this one rule, and an explicit "Open in Zotero" bypasses it.
+_Avoid_: reader target (see Reader Session), table reader, PDF target
+
 **File Link Capture**:
-Sending a clicked Attachment File Link to Obsidian's PDF view instead of the system handler, when the path resolves to an Obsidian-Openable Attachment. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off.
+Taking a clicked Attachment File Link or Durable Annotation Link as an Open Target instead of handing it to the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off, and every Durable Annotation Link once the user turns annotation links, or their opening, off. A Durable Annotation Link the system handler keeps opens in Zotero, and one names its own Attachment even where another Attachment keeps the same file.
 _Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
 
 **Annotation Anchor**:
-The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment. Obsidian reads the rest of that fragment and ignores this key, so the `#page=N` beside it still lands on its own.
+The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment — and, for an open ZotLit makes, the opened Attachment beside it (`zt-attachment`), since two Attachments can keep one file. Obsidian reads the rest of that fragment and ignores these keys, so the `#page=N` beside them still lands on its own.
 _Avoid_: annotation id (that is Obsidian's PDF-native one), annotation param, deep link, annotation target (see Reader Session)
 
 **Mark Landing**:
@@ -750,12 +770,16 @@ The per-vault choice of what a plain click on a Rendered Citation does, for lite
 _Avoid_: Open Pandoc Citations as Links (the retired Pandoc-only scope), citation click toggle
 
 **Hover Action** _(Obsidian)_:
-The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover.
+The per-vault choice of what hovering a recognized citation, Literature Note wikilink, or Durable Annotation Link shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover. A Durable Annotation Link names no note to preview, so under Page Preview it shows the Annotation Popover too.
 _Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
 
 **Citation Popover** _(Obsidian)_:
 The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — or one work under the vault Citation Presentation when there is no source document, with the available Item actions in a cursor-proximal row. The source-less form shows the bibliography body or Item summary, with no Reference Number, Entry Marker, or Entry Serial; it is the same Hover Action choice as the document-backed form, and hover shows one result.
 _Avoid_: concise popover (the working name), hover tooltip, hover card
+
+**Annotation Popover** _(Obsidian)_:
+The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open. It wears the Citation Popover's chrome and follows the Hover Action; a link whose Annotation no longer exists shows a short unavailable state.
+_Avoid_: annotation hover card, annotation preview (a page preview shows a note)
 
 **Citekey Reading Rendering** _(Obsidian)_:
 The reading-mode surface of In-text Citation Rendering for literal Pandoc citations: a Markdown post-processor replaces each complete Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text. When any item in one Citation is unresolved, or the Pandoc Engine cannot supply its formatted text, that whole Citation stays unchanged. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.

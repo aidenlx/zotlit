@@ -17,6 +17,10 @@ import { FirstLine, Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
 import { cn } from "@/lib/utils";
+import type {
+  OpenTarget,
+  TargetOpener,
+} from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
 import { useItemRow } from "./item-rows";
@@ -35,7 +39,6 @@ import {
 } from "./table-layout";
 import type { ChildState, TableRecord } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
-import type { ReaderTarget, TableReaders } from "./table-readers";
 import type { QueryView } from "./view";
 
 export const PAPERS_LAYOUT: QueryLayout = {
@@ -215,7 +218,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
 interface Expansion {
   readonly expanded: ReadonlyMap<string, ChildState>;
   readonly toggle: (record: TableRecord) => void;
-  readonly readers: TableReaders;
+  readonly readers: Pick<TargetOpener, "open">;
 }
 
 function PaperRow({
@@ -387,7 +390,7 @@ function ChildRows({
         {m.query_view_table_children_failed()}
       </li>
     );
-  const link = (target: ReaderTarget, children: ReactNode) => (
+  const link = (target: OpenTarget, children: ReactNode) => (
     <ReaderLink readers={readers} target={target}>
       {children}
     </ReaderLink>
