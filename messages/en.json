@@ -2304,7 +2304,6 @@
   "docs_toggle_menu": "Toggle Menu",
   "docs_open_search": "Open Search",
   "docs_redirect_v1_notice": "You followed a link to the ZotLit v1 docs. This is the closest page in the v2 docs.",
-  "docs_redirect_translation_pending": "ZotLit v2 content is not yet available in Chinese. The English page is shown.",
   "docs_redirect_original_page": "View the original v1 page",
   "docs_dismiss_notice": "Dismiss notice",
   "docs_last_updated": "Last updated on {date}",
