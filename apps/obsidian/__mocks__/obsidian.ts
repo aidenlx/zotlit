@@ -711,7 +711,11 @@ export abstract class EditorSuggest<T> {
   /** The popup's container; a bare element outside a DOM environment. */
   suggestEl: HTMLElement =
     typeof document === "undefined"
-      ? ({ addClass: () => {} } as unknown as HTMLElement)
+      ? ({
+          addClass: () => {},
+          setAttribute: () => {},
+          removeAttribute: () => {},
+        } as unknown as HTMLElement)
       : document.createElement("div");
 
   constructor(app: App) {

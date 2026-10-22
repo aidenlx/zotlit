@@ -197,8 +197,8 @@ describe("AnnotationEditorSuggest", () => {
       start: { line: 0, ch: 0 },
       end: { line: 0, ch: 2 },
     } as unknown as EditorSuggestContext;
-    const keys = async (hits: Promise<{ key: string }[]>) =>
-      (await hits).map(({ key }) => key);
+    const keys = async (hits: Promise<{ key: string }[] | null>) =>
+      (await hits)?.map(({ key }) => key) ?? null;
 
     // The next keystroke's search starts while the first is still running.
     const before = keys(h.suggest.getSuggestions({ ...context, query: "fi" }));
@@ -207,7 +207,9 @@ describe("AnnotationEditorSuggest", () => {
     query.release("fi");
 
     await expect(typed).resolves.toEqual(["fig-1", "fig-2"]);
-    await expect(before).resolves.toEqual([]);
+    // A dropped search answers `null`, which Obsidian skips; `[]` would close
+    // the popup while the typed query's answer is pending (#1665).
+    await expect(before).resolves.toBeNull();
 
     const closing = keys(
       h.suggest.getSuggestions({ ...context, query: "figure" }),
@@ -215,7 +217,7 @@ describe("AnnotationEditorSuggest", () => {
     h.suggest.close();
     query.release("figure");
 
-    await expect(closing).resolves.toEqual([]);
+    await expect(closing).resolves.toBeNull();
   });
 
   /**

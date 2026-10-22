@@ -14,6 +14,7 @@ import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit, SearchSession } from "@/services/item-lookup/service";
@@ -41,6 +42,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   #lookupController?: AbortController;
   #documentController?: AbortController;
   #cited: Promise<readonly string[]> = Promise.resolve([]);
+  readonly #answer = new CurrentAnswer<SearchHit>(this.suggestEl);
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -85,9 +87,13 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     };
   }
 
-  override async getSuggestions(
-    context: EditorSuggestContext,
-  ): Promise<SearchHit[]> {
+  override getSuggestions(context: EditorSuggestContext): Promise<SearchHit[]> {
+    // Obsidian shows nothing for a `null` answer; `[]` would close the dropdown.
+    return this.#answer.track(this.#search(context)) as Promise<SearchHit[]>;
+  }
+
+  /** The hits for `context`, or `null` when a later keystroke superseded it. */
+  async #search(context: EditorSuggestContext): Promise<SearchHit[] | null> {
     this.#lookupController?.abort();
     const controller = new AbortController();
     this.#lookupController = controller;
@@ -102,7 +108,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
           { signal: controller.signal },
         )
         .catch(() => null);
-      if (answer === null || controller.signal.aborted) return [];
+      if (controller.signal.aborted) return null;
+      if (answer === null) return [];
       const found = answer.resolve(key.citationKey);
       if (found.kind === "unique" || found.kind === "ambiguous") {
         this.close();
@@ -129,6 +136,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     this.#lookupController?.abort();
     this.#session?.close();
     this.#session = null;
+    this.#answer.close();
     super.close();
   }
 
@@ -136,7 +144,14 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     renderSearchHit(this.#deps.settings, hit, el);
   }
 
-  override async selectSuggestion(
+  override selectSuggestion(
+    hit: SearchHit,
+    evt: MouseEvent | KeyboardEvent,
+  ): void {
+    this.#answer.choose(hit, evt, (chosen) => void this.#insert(chosen, evt));
+  }
+
+  async #insert(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {

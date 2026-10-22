@@ -43,6 +43,10 @@ import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 import {
+  CurrentAnswer,
+  takeEnter,
+} from "@/services/item-lookup/current-answer";
+import {
   appendInlineFlair,
   appendTrailingFlair,
   FLAIR_ROW_CLASS,
@@ -132,12 +136,16 @@ type NativeSuggestion = WorkbenchSuggesterOption & { group: string };
 class EditorSuggester extends SuggestModal<NativeSuggestion> {
   #revision = 0;
   #latest: NativeSuggestion[] | Promise<NativeSuggestion[]> = [];
+  readonly #current = new CurrentAnswer<NativeSuggestion>(
+    this.resultContainerEl,
+  );
   readonly #answer = Promise.withResolvers<string | null>();
   #picked = false;
   #search = prepareSimpleSearch("");
   readonly #request: NativeWorkbenchSuggesterRequest;
   constructor(app: App, request: NativeWorkbenchSuggesterRequest) {
     super(app);
+    takeEnter(this);
     this.setTitle(request.title);
     this.#request = request;
     this.setPlaceholder(request.placeholder ?? request.title);
@@ -166,7 +174,7 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
           ) !== null,
       );
     if (!query.trim() || !this.#request.searchItems)
-      return (this.#latest = choices);
+      return this.#current.track((this.#latest = choices));
     this.#latest = this.#request
       .searchItems(query)
       .then((items): NativeSuggestion[] | Promise<NativeSuggestion[]> => {
@@ -184,7 +192,7 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
         new BaseNotice(m.workbench_item_search_failed());
         return choices;
       });
-    return this.#latest;
+    return this.#current.track(this.#latest);
   }
   /**
    * A row reads the way a citation row reads: the name in the title slot,
@@ -239,12 +247,22 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
     }
     if (option.group) appendTrailingFlair(el, option.group);
   }
+  /** Enter while the typed query's answer is pending chooses its first row. */
+  override selectActiveSuggestion(event: MouseEvent | KeyboardEvent): void {
+    if (this.#current.answersTypedQuery) super.selectActiveSuggestion(event);
+    else
+      this.#current.chooseFirst((option) =>
+        this.selectSuggestion(option, event),
+      );
+  }
   override selectSuggestion(
     value: WorkbenchSuggesterOption & { group: string },
     event: MouseEvent | KeyboardEvent,
   ): void {
-    this.#picked = true;
-    super.selectSuggestion(value, event);
+    this.#current.choose(value, event, (option) => {
+      this.#picked = true;
+      super.selectSuggestion(option, event);
+    });
   }
   override onChooseSuggestion(option: WorkbenchSuggesterOption): void {
     this.#answer.resolve(option.id);
@@ -254,6 +272,7 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
     if (!this.#picked) this.#answer.resolve(null);
     this.#revision++;
     this.#latest = [];
+    this.#current.close();
     this.#request.anchor?.focus();
   }
   choose(): Promise<string | null> {

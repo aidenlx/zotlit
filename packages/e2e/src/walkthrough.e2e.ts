@@ -832,7 +832,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    const result = `Array.from((${prompt})?.querySelectorAll('.suggestion-item')??[]).find(row=>row.textContent.includes('Ten Simple Rules for Better Figures'))`;
+    // The results are `aria-busy` while they answer an earlier query.
+    const result = `Array.from((${prompt})?.querySelectorAll('.suggestion-item')??[]).find(row=>!row.closest('[aria-busy]')&&row.textContent.includes('Ten Simple Rules for Better Figures'))`;
     expect(
       await obEvalUntil(
         vaultId,

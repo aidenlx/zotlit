@@ -137,6 +137,64 @@ describe("Template Workbench host", () => {
     modal.close();
   });
 
+  // #1665: the chooser kept an earlier query's rows on screen until the typed
+  // query's answer arrived, and Enter or a click chose from them.
+  it("chooses the first item of the typed query's answer when Enter comes before it", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const figures = { id: "DMRGRART", label: "Ten simple rules" };
+    const rules = { id: "RUGIER24", label: "Ten simple rules" };
+    const typed = Promise.withResolvers<(typeof rules)[]>();
+    const request: NativeWorkbenchSuggesterRequest = {
+      title: "Items",
+      groups: [],
+      searchItems: vi
+        .fn()
+        .mockResolvedValueOnce([figures, rules])
+        .mockReturnValueOnce(typed.promise),
+    };
+    const chosen = host.suggester(request);
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    const [earlier] = await modal.getSuggestions("ten");
+    void modal.getSuggestions("ten simple rules");
+
+    modal.selectSuggestion(earlier, { type: "click" } as MouseEvent);
+    modal.selectSuggestion(earlier, { type: "keydown" } as KeyboardEvent);
+    typed.resolve([rules, figures]);
+
+    await expect(chosen).resolves.toBe("RUGIER24");
+  });
+
+  it("waits on Enter before the first item answer, while the list has no row", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const rules = { id: "RUGIER24", label: "Ten simple rules" };
+    const typed = Promise.withResolvers<(typeof rules)[]>();
+    const request: NativeWorkbenchSuggesterRequest = {
+      title: "Items",
+      groups: [],
+      searchItems: vi.fn().mockReturnValueOnce(typed.promise),
+    };
+    const chosen = host.suggester(request);
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    void modal.getSuggestions("ten simple rules");
+
+    // Enter through the modal's own key scope, as Obsidian's keymap sends it.
+    const { handlers } = modal.scope as unknown as {
+      handlers: {
+        modifiers: string[] | null;
+        key: string | null;
+        func: (evt: KeyboardEvent) => unknown;
+      }[];
+    };
+    handlers
+      .find((h) => h.key === "Enter" && h.modifiers?.length === 0)!
+      .func({ type: "keydown", key: "Enter" } as KeyboardEvent);
+    typed.resolve([rules]);
+
+    await expect(chosen).resolves.toBe("RUGIER24");
+  });
+
   it("settles SuggestModal cancellation and restores control focus", async () => {
     const { host } = setup();
     using open = vi.spyOn(SuggestModal.prototype, "open");

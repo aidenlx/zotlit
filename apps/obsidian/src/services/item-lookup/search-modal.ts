@@ -2,12 +2,13 @@
 // the citation insert, the Explorer's paper, the annotation view's link —
 // searches and draws its rows the same way; a subclass decides what a chosen
 // Item does. A choice acts only on the answer to the query in the input.
-import { Scope, SuggestModal } from "obsidian";
+import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { SettingsService } from "@/services/settings/service";
 
+import { CurrentAnswer, takeEnter } from "./current-answer";
 import { FirstAnswerGate } from "./first-answer";
 import { renderSuggestion as renderSearchHit } from "./render-hit";
 import { DEFAULT_LIMIT } from "./service";
@@ -28,11 +29,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
   readonly #search: ItemSearchDeps;
   /** The searches of this picker while it is open. */
   #session: SearchSession | null = null;
-  /**
-   * The answer to the query last typed, or `null` once it shows. Until then
-   * the rows answer an earlier query.
-   */
-  #pending: Promise<SearchHit[]> | null = null;
+  readonly #answer = new CurrentAnswer<SearchHit>(this.resultContainerEl);
   readonly #firstAnswer = new FirstAnswerGate({
     // The container holds the dim backdrop too, so both show in one frame. A
     // layered utility holds while Obsidian sets no opacity on
@@ -50,15 +47,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     super(deps.app);
     this.#search = deps;
     this.limit = DEFAULT_LIMIT;
-    // The result list takes Enter only while it has a row, so Enter typed
-    // before any answer shows would do nothing. The modal's own scope takes
-    // Enter first and leaves every other key to the list beneath it.
-    this.scope = new Scope(this.scope);
-    this.scope.register([], "Enter", (evt) => {
-      if (evt.isComposing) return;
-      this.selectActiveSuggestion(evt);
-      return false;
-    });
+    takeEnter(this);
   }
 
   override onOpen(): void {
@@ -72,7 +61,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     this.#firstAnswer.close();
     this.#session?.close();
     this.#session = null;
-    this.#settle(this.#pending);
+    this.#answer.close();
     super.onClose();
   }
 
@@ -80,42 +69,28 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     query: string,
     options?: Pick<SearchOptions, "cited">,
   ): SearchHit[] | Promise<SearchHit[]> {
-    const answer = Promise.resolve(
-      this.#firstAnswer.track(
-        this.#session?.search(query, { ...options, limit: this.limit }) ??
-          Promise.resolve([]),
+    return this.#answer.track(
+      Promise.resolve(
+        this.#firstAnswer.track(
+          this.#session?.search(query, { ...options, limit: this.limit }) ??
+            Promise.resolve([]),
+        ),
       ),
     );
-    // Obsidian shows the rows once the returned answer settles, right after
-    // this step; an answer superseded by a later query settles the later one.
-    const shown: Promise<SearchHit[]> = answer.finally(() =>
-      this.#settle(shown),
-    );
-    this.#pending = shown;
-    this.resultContainerEl.setAttribute("aria-busy", "true");
-    return shown;
-  }
-
-  #settle(answer: Promise<SearchHit[]> | null): void {
-    if (this.#pending !== answer) return;
-    this.#pending = null;
-    this.resultContainerEl.removeAttribute("aria-busy");
   }
 
   /** Whether the rows answer the query in the input. */
   protected get answersTypedQuery(): boolean {
-    return this.#pending === null;
+    return this.#answer.answersTypedQuery;
   }
 
   /**
-   * Enter while the typed query's answer is pending would choose from an
-   * earlier query's rows, where another Item can stand in the same place or
-   * under the same title, or from no rows at all. Enter then waits for the
-   * answer and chooses its first row, the row Obsidian selects when it shows.
+   * Enter while the typed query's answer is pending, with an earlier query's
+   * rows or no rows at all, waits for the answer and chooses its first row.
    */
   override selectActiveSuggestion(evt: MouseEvent | KeyboardEvent): void {
     if (this.answersTypedQuery) super.selectActiveSuggestion(evt);
-    else void this.#chooseOnAnswer(evt);
+    else this.#answer.chooseFirst((hit) => this.selectSuggestion(hit, evt));
   }
 
   /** A click on a row about to give way to the typed query's answer is dropped. */
@@ -124,21 +99,8 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     evt: MouseEvent | KeyboardEvent,
   ): void {
     if (this.answersTypedQuery) super.selectSuggestion(value, evt);
-  }
-
-  async #chooseOnAnswer(evt: MouseEvent | KeyboardEvent): Promise<void> {
-    let hits: SearchHit[] = [];
-    // A query typed after Enter supersedes the one Enter waited for.
-    for (let pending = this.#pending; pending; pending = this.#pending) {
-      try {
-        hits = await pending;
-      } catch {
-        hits = [];
-      }
-      if (!this.#session) return;
-    }
-    const [first] = hits;
-    if (first) this.selectSuggestion(first, evt);
+    else
+      this.#answer.choose(value, evt, (hit) => this.selectSuggestion(hit, evt));
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
