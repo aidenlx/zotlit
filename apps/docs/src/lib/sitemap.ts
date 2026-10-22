@@ -9,6 +9,7 @@
 
 import type { FileRouteTypes } from "@/routeTree.gen";
 
+import type { SiteLocale } from "./i18n";
 import { getPageLocaleState } from "./locale-state";
 import { baseURL } from "./shared";
 import { blog, changelog, source } from "./source";
@@ -32,8 +33,8 @@ type PageRoute = Exclude<FileRouteTypes["to"], (typeof machineRoutes)[number]>;
 interface Entry {
   /** The URL path this entry publishes. @default the route's own path */
   pathname?: string;
-  /** Publication or last-commit day in ISO form, for the pages that carry one. */
-  lastModified?: string;
+  /** Each edition's publication or last-commit day in ISO form, for the pages that carry one. */
+  lastModified?: Partial<Record<SiteLocale, string>>;
 }
 
 export const xmlHeaders = {
@@ -57,23 +58,45 @@ async function lastCommitDay(page: {
   return lastModified?.toISOString().slice(0, 10);
 }
 
+/** The page's Chinese edition, when a Chinese file exists rather than an English fallback. */
+function nativeChinese<P extends { path: string; slugs: string[] }>(
+  collection: { getPage(slugs: string[], locale: SiteLocale): P | undefined },
+  page: P,
+): P | undefined {
+  const chinese = collection.getPage(page.slugs, "zh-CN");
+  return chinese && chinese.path !== page.path ? chinese : undefined;
+}
+
 async function docsEntries(): Promise<Entry[]> {
   const pages = source.getPages("en").filter((page) => page.slugs.length > 0);
   return Promise.all(
-    pages.map(async (page) => ({
-      pathname: page.url,
-      lastModified: await lastCommitDay(page),
-    })),
+    pages.map(async (page) => {
+      const chinese = nativeChinese(source, page);
+      return {
+        pathname: page.url,
+        lastModified: {
+          en: await lastCommitDay(page),
+          "zh-CN": chinese && (await lastCommitDay(chinese)),
+        },
+      };
+    }),
   );
 }
 
 /** A post's last commit day, or its publication day when git knows no later one. */
 async function blogEntries(): Promise<Entry[]> {
   return Promise.all(
-    blog.getPages("en").map(async (page) => ({
-      pathname: page.url,
-      lastModified: (await lastCommitDay(page)) ?? page.data.date,
-    })),
+    blog.getPages("en").map(async (page) => {
+      const chinese = nativeChinese(blog, page);
+      return {
+        pathname: page.url,
+        lastModified: {
+          en: (await lastCommitDay(page)) ?? page.data.date,
+          "zh-CN":
+            chinese && ((await lastCommitDay(chinese)) ?? chinese.data.date),
+        },
+      };
+    }),
   );
 }
 
@@ -89,7 +112,7 @@ export async function renderSitemap(): Promise<string> {
     "/blog/$slug": await blogEntries(),
     "/changelog/$version": changelog.getPages("en").map((page) => ({
       pathname: page.url,
-      lastModified: page.data.date,
+      lastModified: { en: page.data.date, "zh-CN": page.data.date },
     })),
     // The `/docs` index is a page of the collection too, and lists itself with
     // an empty slug set, so the route above carries no entry of its own.
@@ -100,14 +123,16 @@ export async function renderSitemap(): Promise<string> {
     entries.flatMap(({ pathname, lastModified }) => {
       const path = pathname || route;
       const state = getPageLocaleState(path, "en");
-      return state.alternates
-        .filter((item) => item.locale !== "x-default")
-        .map((item) =>
-          renderUrl(
-            `${baseURL}${item.path === "/" ? "" : item.path}`,
-            item.locale === "en" ? lastModified : undefined,
-          ),
-        );
+      return state.alternates.flatMap(({ locale, path: href }) =>
+        locale === "x-default"
+          ? []
+          : [
+              renderUrl(
+                `${baseURL}${href === "/" ? "" : href}`,
+                lastModified?.[locale],
+              ),
+            ],
+      );
     }),
   );
 
