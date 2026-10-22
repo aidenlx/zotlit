@@ -598,12 +598,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await typeText("c");
     await key("Enter");
     await key("Backspace");
+    const pillFocused = `String(activeDocument.activeElement?.matches('[data-query-vault-chip="c"]')??false)`;
     expect(
-      await obEvalUntil(
+      await obEvalUntil(run.vaultId, pillFocused, { expected: "true" }),
+    ).toBe(true);
+    // While the pill's menu stands it holds the keys: Delete removes no
+    // item, and Escape hides the menu alone, its Scope above the menu's own
+    // (#1668). The next Escape is the pill's, which gives focus to the field.
+    await key("F10", ["shift"]);
+    const menuShown = `String(!!activeDocument.querySelector('body > .menu'))`;
+    expect(
+      await obEvalUntil(run.vaultId, menuShown, { expected: "true" }),
+    ).toBe(true);
+    expect(await obEval(run.vaultId, MENU_READY)).toBe("ready");
+    await key("Delete");
+    expect(
+      await obEval(
         run.vaultId,
-        `String(activeDocument.activeElement?.matches('[data-query-vault-chip="c"]')??false)`,
-        { expected: "true" },
+        `String(!!${cell(tieFirst, "zt-projects")}.querySelector('[data-query-vault-chip="c"]')&&!!activeDocument.querySelector('body > .menu'))`,
       ),
+    ).toBe("true");
+    await key("Escape");
+    expect(
+      await obEvalUntil(run.vaultId, menuShown, { expected: "false" }),
+    ).toBe(true);
+    expect(await obEval(run.vaultId, pillFocused)).toBe("true");
+    await key("Escape");
+    expect(
+      await obEvalUntil(run.vaultId, focusedInput, { expected: "true" }),
+    ).toBe(true);
+    await key("Backspace");
+    expect(
+      await obEvalUntil(run.vaultId, pillFocused, { expected: "true" }),
     ).toBe(true);
     // A chip edits in place from its menu, as in a Bases list cell: a
     // right click opens it, Edit makes the chip's text a field, and a comma

@@ -141,10 +141,19 @@ event go nowhere while `activeElement` still moves; pass `--no-throttle`, which 
 the window lacks focus. Call `getCurrentWindow().focus()` first; when the user is working in
 another app, the window may not keep it, and the check waits for them.
 
+A pop-out is a window of its own: send its input through its own `webContents`, from
+`require("@electron/remote").BrowserWindow.getAllWindows()`, and focus that window first.
+
+Edit-menu shortcuts — Cmd+Z, Cmd+Shift+Z, Cmd+C, Cmd+V — reach the page as a trusted
+`keydown` but never run the menu's own action, even in a plain `<input>`. Check that the
+`keydown` arrives unprevented and goes where it should, then run the action as the menu
+does: `webContents.undo()`, `.redo()`, `.copy()`, `.paste()`.
+
 ### Menus bind their keys late
 
-`Menu.showAtPosition` binds a menu's keys a `setTimeout(0)` after it shows. A
-menu closed before that timer fires leaves its keys bound, and they swallow
+A `Menu` binds its keys a timer after it shows
+([keyboard-scope.md](../../../apps/obsidian/policies/keyboard-scope.md) has why that orders
+its Scope). A menu closed before that timer fires leaves its keys bound, and they swallow
 the next Enter. Between seeing a menu and pressing one of its items, wait one
 timer; E2E cases evaluate `MENU_READY` from `packages/e2e/src/page-gestures.ts`.
 
