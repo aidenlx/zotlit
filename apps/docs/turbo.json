@@ -19,7 +19,9 @@
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ],
-      "outputs": ["dist/**", ".tanstack/**"],
+      // `wrangler deploy` finds the built Worker through .wrangler/deploy, so a
+      // cache hit must restore that pointer along with dist.
+      "outputs": ["dist/**", ".tanstack/**", ".wrangler/deploy/**"],
       // The Cloudflare Web Analytics token is read at build time, so builds
       // with different values are distinct; `CLOUDFLARE_ENV` likewise
       // separates beta and production outputs.
