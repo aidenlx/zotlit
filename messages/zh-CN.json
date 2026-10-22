@@ -2898,5 +2898,17 @@
   "docs_fumadocs_toggle_theme": "Toggle theme",
   "docs_fumadocs_type": "Type",
   "docs_fumadocs_view_as_markdown": "View as Markdown",
+  "docs_fumadocs_close_image_zoom": "Close",
+  "docs_fumadocs_copied_anchor_link": "Copied anchor link",
+  "docs_fumadocs_copied_link": "Copied link",
+  "docs_fumadocs_copied_markdown": "Copied Markdown",
+  "docs_fumadocs_image_viewer": "Image viewer",
+  "docs_fumadocs_language": "Language",
+  "docs_fumadocs_next_image": "Next image",
+  "docs_fumadocs_options": "Options",
+  "docs_fumadocs_previous_image": "Previous image",
+  "docs_fumadocs_search_failed": "Search failed",
+  "docs_fumadocs_search_failed_fallback": "Search failed, showing results for {query}",
+  "docs_fumadocs_theme": "Theme",
   "docs_fumadocs_language_name": "Simplified Chinese"
 }
