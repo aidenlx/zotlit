@@ -42,7 +42,10 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
-import { CurrentAnswer } from "@/services/item-lookup/current-answer";
+import {
+  CurrentAnswer,
+  takeEnter,
+} from "@/services/item-lookup/current-answer";
 import {
   appendInlineFlair,
   appendTrailingFlair,
@@ -142,6 +145,7 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
   readonly #request: NativeWorkbenchSuggesterRequest;
   constructor(app: App, request: NativeWorkbenchSuggesterRequest) {
     super(app);
+    takeEnter(this);
     this.setTitle(request.title);
     this.#request = request;
     this.setPlaceholder(request.placeholder ?? request.title);
@@ -242,6 +246,14 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
       );
     }
     if (option.group) appendTrailingFlair(el, option.group);
+  }
+  /** Enter while the typed query's answer is pending chooses its first row. */
+  override selectActiveSuggestion(event: MouseEvent | KeyboardEvent): void {
+    if (this.#current.answersTypedQuery) super.selectActiveSuggestion(event);
+    else
+      this.#current.chooseFirst((option) =>
+        this.selectSuggestion(option, event),
+      );
   }
   override selectSuggestion(
     value: WorkbenchSuggesterOption & { group: string },

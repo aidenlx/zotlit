@@ -2,13 +2,13 @@
 // the citation insert, the Explorer's paper, the annotation view's link —
 // searches and draws its rows the same way; a subclass decides what a chosen
 // Item does. A choice acts only on the answer to the query in the input.
-import { Scope, SuggestModal } from "obsidian";
+import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { SettingsService } from "@/services/settings/service";
 
-import { CurrentAnswer } from "./current-answer";
+import { CurrentAnswer, takeEnter } from "./current-answer";
 import { FirstAnswerGate } from "./first-answer";
 import { renderSuggestion as renderSearchHit } from "./render-hit";
 import { DEFAULT_LIMIT } from "./service";
@@ -47,15 +47,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     super(deps.app);
     this.#search = deps;
     this.limit = DEFAULT_LIMIT;
-    // The result list takes Enter only while it has a row, so Enter typed
-    // before any answer shows would do nothing. The modal's own scope takes
-    // Enter first and leaves every other key to the list beneath it.
-    this.scope = new Scope(this.scope);
-    this.scope.register([], "Enter", (evt) => {
-      if (evt.isComposing) return;
-      this.selectActiveSuggestion(evt);
-      return false;
-    });
+    takeEnter(this);
   }
 
   override onOpen(): void {

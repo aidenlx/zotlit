@@ -1,6 +1,25 @@
 // The rule every search picker keeps: a choice acts only on the answer to the
 // query in the input. Obsidian's suggest popups keep an earlier query's rows on
 // screen until the typed query's answer arrives, and choose from them.
+import { Scope } from "obsidian";
+import type { SuggestModal } from "obsidian";
+
+/**
+ * Give `modal` an Enter of its own. The result list takes Enter only while it
+ * has a row, so Enter typed before any answer shows, or after an answer with
+ * no rows, would do nothing. The modal's own scope takes Enter first and
+ * leaves every other key to the list beneath it; the modal's
+ * `selectActiveSuggestion` then waits for the typed query's answer through
+ * {@link CurrentAnswer.chooseFirst}.
+ */
+export function takeEnter(modal: SuggestModal<unknown>): void {
+  modal.scope = new Scope(modal.scope);
+  modal.scope.register([], "Enter", (evt) => {
+    if (evt.isComposing) return;
+    modal.selectActiveSuggestion(evt);
+    return false;
+  });
+}
 
 /**
  * The answer to the query last typed in one picker. The picker passes each
