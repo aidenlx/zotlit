@@ -1796,11 +1796,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ opened: true, closed: false }));
     const popup =
       "Array.from(activeDocument.querySelectorAll('.suggestion-container')).at(-1)";
-    // The list matches the final query: its Item comes first.
+    // The list matches the final query: its Item comes first. The popup is
+    // `aria-busy` while its rows answer an earlier query.
     expect(
       await obEvalUntil(
         run.vaultId,
-        `String(!!${popup}?.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
+        `String(!!${popup}&&!${popup}.hasAttribute('aria-busy')&&!!${popup}.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
         { expected: "true" },
       ),
     ).toBe(true);

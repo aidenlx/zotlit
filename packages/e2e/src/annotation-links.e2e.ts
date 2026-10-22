@@ -373,7 +373,7 @@ async function searchAndInsert(
         editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(typed)}),{userEvent:'input.type'});
         const query=${JSON.stringify(typed)}.slice(${JSON.stringify(typed)}.indexOf('[>')+2);
         const rows=()=>[...annotations.suggestEl.querySelectorAll('.suggestion-item')];
-        const row=await until(()=>annotations.isOpen&&annotations.context?.query===query&&rows().find((el)=>el.textContent.includes(${JSON.stringify(choose)})),()=>'The Annotation Suggester showed no row for '+JSON.stringify(query)+': '+JSON.stringify(rows().map((el)=>el.textContent)));
+        const row=await until(()=>annotations.isOpen&&annotations.context?.query===query&&rows().find((el)=>!el.closest('[aria-busy]')&&el.textContent.includes(${JSON.stringify(choose)})),()=>'The Annotation Suggester showed no row for '+JSON.stringify(query)+': '+JSON.stringify(rows().map((el)=>el.textContent)));
         const shown=rows().map((el)=>el.textContent);
         const sup=row.querySelector('sup')?.textContent??null;
         const citationOpen=!!citations?.isOpen;

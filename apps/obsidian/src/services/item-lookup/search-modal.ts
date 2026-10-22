@@ -106,7 +106,9 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
     value: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): void {
-    this.#answer.choose(value, evt, (hit) => super.selectSuggestion(hit, evt));
+    if (this.answersTypedQuery) super.selectSuggestion(value, evt);
+    else
+      this.#answer.choose(value, evt, (hit) => this.selectSuggestion(hit, evt));
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
