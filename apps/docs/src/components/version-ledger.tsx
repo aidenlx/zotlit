@@ -5,6 +5,7 @@ import type { ReleaseChannel } from "@/lib/github-releases";
 import { formatReleaseInstant } from "@/lib/shared";
 // Current-version and compatibility ledger for the install pages.
 import * as m from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
 /** The channel label the ledger's first row carries. */
 const channelLabels: Record<ReleaseChannel, () => string> = {
@@ -67,7 +68,8 @@ export function VersionLedger({ app, channel }: VersionLedgerProps) {
         {ledger.publishedAt && (
           <span className="text-fd-muted-foreground">
             {" "}
-            · {formatReleaseInstant(ledger.publishedAt)}
+            ·{" "}
+            {formatReleaseInstant(ledger.publishedAt, { locale: getLocale() })}
           </span>
         )}
       </Row>

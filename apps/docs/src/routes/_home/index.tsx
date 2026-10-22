@@ -10,6 +10,7 @@ import {
   websiteSchema,
 } from "@/lib/structured-data";
 import { m } from "@/paraglide/messages.js";
+import { localizeHref } from "@/paraglide/runtime.js";
 
 export const Route = createFileRoute("/_home/")({
   component: Home,
@@ -130,7 +131,7 @@ function Home() {
               </dt>
               <span className="flex-1 -translate-y-1 border-b-2 border-dotted border-fd-border" />
               <a
-                href={feature.href}
+                href={localizeHref(feature.href)}
                 className="font-mono text-xs font-semibold tracking-[0.12em] whitespace-nowrap text-fd-primary uppercase hover:underline"
               >
                 {feature.ref}

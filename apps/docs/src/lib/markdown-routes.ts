@@ -28,7 +28,7 @@ const contentFile = "content.md";
 
 const suffix = ".md";
 
-function isMarkdownSection(value: string): value is MarkdownSection {
+export function isMarkdownSection(value: string): value is MarkdownSection {
   return (markdownSections as readonly string[]).includes(value);
 }
 
@@ -86,4 +86,18 @@ export function rewriteMarkdownSuffix(url: URL) {
 
   url.pathname = contentRouteUrl({ section, slugs });
   return url;
+}
+
+/** The HTML page addressed by either of its published Markdown edition URLs. */
+export function htmlPagePath(pathname: string): string {
+  if (pathname.startsWith("/llms.mdx/")) {
+    const page = parseContentRoute(pathname.slice("/llms.mdx/".length));
+    if (page) return `/${[page.section, ...page.slugs].join("/")}`;
+  }
+  if (pathname.endsWith(suffix)) {
+    const page = pathname.slice(0, -suffix.length);
+    const section = page.split("/")[1];
+    if (section && isMarkdownSection(section)) return page;
+  }
+  return pathname;
 }
