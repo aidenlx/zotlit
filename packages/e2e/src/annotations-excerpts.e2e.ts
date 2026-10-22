@@ -230,6 +230,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           cleanup.defer(()=>{navigator.clipboard.writeText=write;});
           clipboard.writeText('');
           if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
+          button.scrollIntoView({block:'center',behavior:'instant'});
+          await stands(button,'card More options');
           press(button,'card More options');
           const item=await until('Copy citation missing from the card menu',()=>Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(run.m.annot_view_menu_copy_citation())}),2500);
           press(item,'Copy citation');

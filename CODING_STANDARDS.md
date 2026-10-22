@@ -32,6 +32,10 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [UI testing](policies/ui-testing.md)
 - [Vocabulary](policies/vocabulary.md)
 
+## Shared desktop app
+
+- A diff that changes how desktop runs share the Obsidian app — its windows, focus, the vault registry, the clipboard, or admission — updates `packages/e2e/AGENTS.md`, `packages/e2e/policies/os-focus.md`, and ADRs 0077 and 0078 (`docs/adr/`) in the same diff, so each still agrees with the code.
+
 ## Internal state
 
 - ECMAScript private fields and methods (`#field`, `#method`) for internal state. Avoid TypeScript `private` for service internals.
