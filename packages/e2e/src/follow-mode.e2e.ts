@@ -33,7 +33,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       run.vaultId,
-      `(function(){${PAGE}press(${trigger},'Annotation View header');return true;})()`,
+      `(async function(){${PAGE}press(await stands(${trigger},'Annotation View header'),'Annotation View header');return true;})()`,
     );
     expect(
       await obEvalUntil(run.vaultId, `String(!!${popup})`, {
@@ -77,7 +77,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // closed and the menu never appears to shut.
     await obEval(
       run.vaultId,
-      `(function(){${PAGE}press(${trigger},'Annotation View header');return true;})()`,
+      `(async function(){${PAGE}press(await stands(${trigger},'Annotation View header'),'Annotation View header');return true;})()`,
     );
     expect(
       await obEvalUntil(run.vaultId, `String(${popup}===null)`, {

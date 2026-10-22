@@ -80,9 +80,6 @@ export async function verifyAnnotationInsert(
       "disabled",
       "close",
     ] as const) {
-      // `revealLeaf` opens a collapsed sidebar from width 0 over an
-      // animation: the real click in "success" waits until the sidebar stands
-      // where the button shows.
       await obEval(
         vaultId,
         `(async()=>{${PAGE}
@@ -99,8 +96,7 @@ export async function verifyAnnotationInsert(
         const button=s.view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key="FDRFQ7C2"] [aria-label="More options"]');
         if(!button)throw new Error('Annotation card menu missing');
         button.scrollIntoView({block:'center',behavior:'instant'});
-        const sidebar=s.viewLeaf.getRoot().containerEl;
-        await until('the sidebar opens',()=>{const r=button.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return sidebar.getAnimations().length===0&&hit&&button.contains(hit);},5000);
+        await stands(button,'card More options');
         const rect=button.getBoundingClientRect(),wc=s.view.contentEl.win.electronWindow.webContents;
         const point={x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)};
         wc.sendInputEvent({type:'mouseMove',...point});wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
