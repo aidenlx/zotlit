@@ -72,6 +72,9 @@ describe("the moves table's rules", () => {
       "/docs/a → /docs/b chains into another move",
       "/docs/a.md → /docs/b.md chains into another move",
       "/llms.mdx/docs/a/content.md → /llms.mdx/docs/b/content.md chains into another move",
+      "/zh-CN/docs/a → /zh-CN/docs/b chains into another move",
+      "/zh-CN/docs/a.md → /zh-CN/docs/b.md chains into another move",
+      "/zh-CN/llms.mdx/docs/a/content.md → /zh-CN/llms.mdx/docs/b/content.md chains into another move",
     ]);
   });
 
@@ -94,7 +97,7 @@ describe("the moves table's rules", () => {
 });
 
 describe("buildV2Redirects", () => {
-  it("sends each moved page and its two Markdown editions to the new path", () => {
+  it("sends each moved page and its two Markdown editions to the new path, in both locales", () => {
     expect(buildV2Redirects({ "/docs/old/page": LIVE })).toEqual([
       { source: "/docs/old/page", destination: LIVE, status: 308 },
       {
@@ -105,6 +108,21 @@ describe("buildV2Redirects", () => {
       {
         source: "/llms.mdx/docs/old/page/content.md",
         destination: "/llms.mdx/docs/reference/settings/content.md",
+        status: 308,
+      },
+      {
+        source: "/zh-CN/docs/old/page",
+        destination: "/zh-CN/docs/reference/settings",
+        status: 308,
+      },
+      {
+        source: "/zh-CN/docs/old/page.md",
+        destination: "/zh-CN/docs/reference/settings.md",
+        status: 308,
+      },
+      {
+        source: "/zh-CN/llms.mdx/docs/old/page/content.md",
+        destination: "/zh-CN/llms.mdx/docs/reference/settings/content.md",
         status: 308,
       },
     ]);
@@ -118,9 +136,9 @@ describe("renderSiteRedirectsFile", () => {
     const file = renderSiteRedirectsFile(moves);
     expect(file).toContain(`/docs/old ${LIVE} 308\n`);
     expect(file).toContain(`/docs/old.md ${LIVE}.md 308\n`);
-    expect(file).toContain("/zh-CN/* /:splat?lang=zh-CN 307\n");
+    expect(file).toContain(`/zh-CN/docs/old /zh-CN${LIVE} 308\n`);
     expect(file.trimEnd().split("\n")).toHaveLength(
-      buildV1Redirects().length + 3,
+      buildV1Redirects().length + 6,
     );
   });
 

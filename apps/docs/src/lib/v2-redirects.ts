@@ -23,9 +23,11 @@
 //
 // Every move is a permanent 308, and each entry also moves the page's two
 // Markdown editions (`<page>.md` and `/llms.mdx/docs/…/content.md`), spelled by
-// lib/markdown-routes.ts. OG card URLs are not redirected: only a live page
+// lib/markdown-routes.ts. The `/zh-CN` copies of all three move the same way,
+// whether the page has a Chinese file or falls back to English. OG card URLs are not redirected: only a live page
 // ever links its card.
 
+import { i18n, localizedPath } from "./i18n.js";
 import { contentRouteUrl, suffixEditionUrl } from "./markdown-routes.js";
 import type { MarkdownPage } from "./markdown-routes.js";
 import type { RedirectRule } from "./v1-redirects.js";
@@ -41,16 +43,25 @@ function docsPage(path: string): MarkdownPage {
 }
 
 /**
- * Three permanent redirects per moved page, in the table's order: the page,
- * then its suffix edition, then its content route.
+ * Three permanent redirects per moved page and locale, in the table's order:
+ * the page, then its suffix edition, then its content route.
  */
 export function buildV2Redirects(moves = V2_MOVES): RedirectRule[] {
   return Object.entries(moves).flatMap(([from, to]) => {
     const [old, moved] = [docsPage(from), docsPage(to)];
-    return [
+    const pairs = [
       { source: from, destination: to },
       { source: suffixEditionUrl(old), destination: suffixEditionUrl(moved) },
       { source: contentRouteUrl(old), destination: contentRouteUrl(moved) },
-    ].map((rule): RedirectRule => ({ ...rule, status: 308 }));
+    ];
+    return i18n.languages.flatMap((locale) =>
+      pairs.map(
+        ({ source, destination }): RedirectRule => ({
+          source: localizedPath(source, locale),
+          destination: localizedPath(destination, locale),
+          status: 308,
+        }),
+      ),
+    );
   });
 }
