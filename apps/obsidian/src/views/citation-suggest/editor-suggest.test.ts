@@ -605,3 +605,120 @@ describe("Citation Suggester document citations", () => {
     expect(h.search).not.toHaveBeenCalled();
   });
 });
+
+// Regression tests for #1665: the dropdown kept an earlier query's rows on
+// screen until the typed query's answer arrived, and Enter or a click chose
+// from them.
+describe("Citation Suggester choices while the typed query's answer is pending", () => {
+  /** Two Items with one title: their rows read the same. */
+  const figures = titled("DMRGRART", "rougier2014");
+  const rules = titled("RUGIER24", "rougier2024");
+
+  function titled(indexedKey: string, citationKey: string): SearchHit {
+    return {
+      item: { key: indexedKey, indexedKey, fields: { citationKey } },
+      matches: [],
+    } as unknown as SearchHit;
+  }
+
+  const enter = { type: "keydown", key: "Enter" } as KeyboardEvent;
+  const click = { type: "click", button: 0 } as MouseEvent;
+
+  function setup() {
+    let note = "";
+    const editor = {
+      getValue: () => note,
+      posToOffset: ({ ch }: { ch: number }) => ch,
+      offsetToPos: (ch: number) => ({ line: 0, ch }),
+      replaceRange: (
+        text: string,
+        from: { ch: number },
+        to: { ch: number },
+      ) => {
+        note = note.slice(0, from.ch) + text + note.slice(to.ch);
+      },
+      setCursor: () => {},
+    } as unknown as Editor;
+    const answers = new Map<string, PromiseWithResolvers<SearchHit[]>>();
+    const answerTo = (query: string) => {
+      let answer = answers.get(query);
+      if (!answer) {
+        answer = Promise.withResolvers<SearchHit[]>();
+        answers.set(query, answer);
+      }
+      return answer;
+    };
+    const record = vi.fn();
+    const suggest = new CitationEditorSuggest({
+      app: {} as App,
+      lookup: {
+        openSession: () => ({
+          search: (query: string) => answerTo(query).promise,
+          close: () => {},
+        }),
+      },
+      citationIndex: {
+        getDocumentCitationSet: async () => ({ citations: [] }),
+      },
+      settings: { current: {} },
+      useLedger: { record },
+      ...insertDeps((cites: { citationKey: string }[]) =>
+        cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
+      ),
+    } as unknown as CitationSuggestDeps);
+    const shown = new Map<string, Promise<SearchHit[]>>();
+    return {
+      suggest,
+      note: () => note,
+      record,
+      /** Types `query` after the trigger; Obsidian asks for its answer. */
+      type: (query: string) => {
+        note = `[@${query}`;
+        const context = {
+          file: null,
+          editor,
+          start: { line: 0, ch: 0 },
+          end: { line: 0, ch: note.length },
+          query,
+        } as unknown as EditorSuggestContext;
+        suggest.context = context;
+        shown.set(query, suggest.getSuggestions(context));
+      },
+      /** Answers `query` and waits until its rows show. */
+      answer: async (query: string, hits: SearchHit[]) => {
+        answerTo(query).resolve(hits);
+        await shown.get(query);
+      },
+      [Symbol.dispose]: () => suggest.close(),
+    };
+  }
+
+  it("inserts the first row of the typed query's answer when Enter comes before it", async () => {
+    using h = setup();
+    h.type("");
+    await h.answer("", [figures, rules]);
+    h.type("ten simple");
+
+    // The empty query's rows are still on screen, DMRGRART first.
+    h.suggest.selectSuggestion(figures, enter);
+    expect(h.note()).toBe("[@ten simple");
+
+    await h.answer("ten simple", [rules, figures]);
+    await vi.waitFor(() => expect(h.note()).toBe("[@rougier2024]"));
+    expect(h.record).toHaveBeenCalledWith("RUGIER24", "cited");
+  });
+
+  it("drops a click on a row of an earlier query's answer", async () => {
+    using h = setup();
+    h.type("");
+    await h.answer("", [figures, rules]);
+    h.type("ten simple");
+
+    h.suggest.selectSuggestion(figures, click);
+    h.suggest.selectSuggestion(figures, enter);
+    await h.answer("ten simple", [rules, figures]);
+
+    await vi.waitFor(() => expect(h.note()).toBe("[@rougier2024]"));
+    expect(h.record.mock.calls).toEqual([["RUGIER24", "cited"]]);
+  });
+});

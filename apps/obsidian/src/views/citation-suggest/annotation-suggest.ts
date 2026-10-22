@@ -10,6 +10,7 @@ import type {
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import { defaults } from "@/services/settings/schema";
@@ -52,6 +53,7 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     stack: DisposableStack;
     renderComment: CommentRenderer;
   } | null = null;
+  readonly #answer = new CurrentAnswer<AnnotationHit>(this.suggestEl);
 
   constructor(deps: AnnotationSuggestDeps) {
     super(deps.app);
@@ -89,9 +91,19 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     };
   }
 
-  override async getSuggestions(
+  override getSuggestions(
     context: EditorSuggestContext,
   ): Promise<AnnotationHit[]> {
+    // Obsidian shows nothing for a `null` answer; `[]` would close the popup.
+    return this.#answer.track(this.#search(context)) as Promise<
+      AnnotationHit[]
+    >;
+  }
+
+  /** The hits for `context`, or `null` when a later keystroke superseded it. */
+  async #search(
+    context: EditorSuggestContext,
+  ): Promise<AnnotationHit[] | null> {
     this.#searchController?.abort();
     const controller = new AbortController();
     this.#searchController = controller;
@@ -100,7 +112,8 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
         signal: controller.signal,
         limit: this.limit,
       })) ?? [];
-    if (!controller.signal.aborted) this.#incoming = hits;
+    if (controller.signal.aborted) return null;
+    this.#incoming = hits;
     return hits;
   }
 
@@ -109,6 +122,7 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     this.#rows?.stack.dispose();
     this.#rows = null;
     this.#incoming = [];
+    this.#answer.close();
     super.close();
   }
 
@@ -142,7 +156,14 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     };
   }
 
-  override selectSuggestion(hit: AnnotationHit): void {
+  override selectSuggestion(
+    hit: AnnotationHit,
+    evt: MouseEvent | KeyboardEvent,
+  ): void {
+    this.#answer.choose(hit, evt, (chosen) => this.#insert(chosen));
+  }
+
+  #insert(hit: AnnotationHit): void {
     const context = this.context;
     if (!context) return;
     const { editor, file, start, end } = context;
