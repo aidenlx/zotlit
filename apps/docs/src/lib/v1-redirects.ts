@@ -12,7 +12,7 @@
 //
 // Modern /zh-CN routes render through the locale router. Known Chinese v1
 // permalinks move permanently to the matching Chinese v2 pages, derived from
-// PAGE_MAP. Their translations must be complete before production deployment.
+// PAGE_MAP.
 
 import { zotlitLegacyUrl } from "./shared.js";
 import { PAGE_MAP, V1_ONLY } from "./v1-routes.js";
