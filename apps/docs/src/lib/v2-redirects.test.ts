@@ -18,7 +18,7 @@ const docsPages = new Set(
 const v1Sources = new Set(buildV1Redirects().map((rule) => rule.source));
 const v1Destinations = new Set(Object.values(PAGE_MAP));
 /** A live docs page, so a fixture fails only the rule under test. */
-const LIVE = "/docs/how-to/insert-citations";
+const LIVE = "/docs/reference/settings";
 
 /** Every rule a moves table breaks, one message per offending entry. */
 function problems(moves: Record<string, string>): string[] {
@@ -102,27 +102,27 @@ describe("buildV2Redirects", () => {
       { source: "/docs/old/page", destination: LIVE, status: 308 },
       {
         source: "/docs/old/page.md",
-        destination: "/docs/how-to/insert-citations.md",
+        destination: "/docs/reference/settings.md",
         status: 308,
       },
       {
         source: "/llms.mdx/docs/old/page/content.md",
-        destination: "/llms.mdx/docs/how-to/insert-citations/content.md",
+        destination: "/llms.mdx/docs/reference/settings/content.md",
         status: 308,
       },
       {
         source: "/zh-CN/docs/old/page",
-        destination: "/zh-CN/docs/how-to/insert-citations",
+        destination: "/zh-CN/docs/reference/settings",
         status: 308,
       },
       {
         source: "/zh-CN/docs/old/page.md",
-        destination: "/zh-CN/docs/how-to/insert-citations.md",
+        destination: "/zh-CN/docs/reference/settings.md",
         status: 308,
       },
       {
         source: "/zh-CN/llms.mdx/docs/old/page/content.md",
-        destination: "/zh-CN/llms.mdx/docs/how-to/insert-citations/content.md",
+        destination: "/zh-CN/llms.mdx/docs/reference/settings/content.md",
         status: 308,
       },
     ]);

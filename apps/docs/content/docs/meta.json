@@ -1,3 +1,12 @@
 {
-  "pages": ["(intro)", "tutorial", "how-to", "concepts", "reference"]
+  "pages": [
+    "(intro)",
+    "find-and-read-sources",
+    "take-and-update-notes",
+    "cite-and-export",
+    "organize-your-research",
+    "customize-your-notes",
+    "setup-and-troubleshooting",
+    "reference"
+  ]
 }

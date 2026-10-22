@@ -8,22 +8,21 @@
  * routes, so they carry no v1 back-link.
  */
 export const PAGE_MAP: Record<string, string> = {
-  "/getting-started/install": "/docs/install-zotlit",
-  "/getting-started/install/obsidian": "/docs/install-zotlit",
-  "/getting-started/install/zotero": "/docs/install-companion",
-  "/getting-started/basic-usage": "/docs/tutorial",
+  // The old how-to, tutorial, and concepts pages are gone from this branch;
+  // version history keeps them. Until their feature pages exist, each v1 path
+  // lands on the workflow section that will own it. The migration-map ticket
+  // (#1609) repoints these at the final pages.
+  "/getting-started/install": "/docs",
+  "/getting-started/install/obsidian": "/docs",
+  "/getting-started/install/zotero": "/docs/setup-and-troubleshooting",
+  "/getting-started/basic-usage": "/docs",
   "/getting-started/basic-usage/annotation-import":
-    "/docs/how-to/create-and-open-notes",
-  "/getting-started/basic-usage/annotation-view":
-    "/docs/how-to/use-annotation-view",
-  "/getting-started/basic-usage/citation-insertion":
-    "/docs/how-to/insert-citations",
-  "/getting-started/basic-usage/template-basics":
-    "/docs/tutorial/customize-template",
-  "/getting-started/basic-usage/template-config":
-    "/docs/how-to/customize-a-template",
-  "/getting-started/basic-usage/update-notes":
-    "/docs/how-to/keep-notes-updated",
+    "/docs/take-and-update-notes",
+  "/getting-started/basic-usage/annotation-view": "/docs/find-and-read-sources",
+  "/getting-started/basic-usage/citation-insertion": "/docs/cite-and-export",
+  "/getting-started/basic-usage/template-basics": "/docs/customize-your-notes",
+  "/getting-started/basic-usage/template-config": "/docs/customize-your-notes",
+  "/getting-started/basic-usage/update-notes": "/docs/take-and-update-notes",
   "/how-to/template-cheatsheet": "/docs/reference/templates/syntax",
   "/faq/slurp": "/docs/reference/templates/eta-syntax",
 };
