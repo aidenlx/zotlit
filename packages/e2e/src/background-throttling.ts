@@ -13,9 +13,13 @@
 // window holds the OS focus, and it gets the `focus` event that moves
 // Obsidian's `activeWindow` to it. When that window, or the one `activeWindow`
 // names, closes, the focus goes back to the main window, as the OS gives it to
-// another window of the app; a move that a closed window asked for, or that was
-// still applying when it closed, ends without its `focus` event, which would
-// leave `activeWindow` on the closed window. Focus moves apply one at a time, in the
+// another window of the app. A closed window cannot ask for the focus, and a
+// move still applying when its window closed ends without its `focus` event.
+// Turning focus emulation on in a window sends it a `focus` event of
+// Chromium's own, which can reach a popout after it closed; the main window
+// takes that event's place. Either event would leave `activeWindow` on the
+// closed window, and Obsidian's `navigator.clipboard` and timers through
+// `activeWindow` would fail from then on. Focus moves apply one at a time, in the
 // order they are asked for, so the last one asked wins. A window answers true
 // once its move has applied, not when it is asked for: until then Chromium
 // holds back the focus events of the elements focused in it, and CodeMirror
@@ -78,6 +82,7 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
       let switching=Promise.resolve();
       const open=(win)=>!win.closed&&raised.has(win);
       const emulateFocus=(win)=>{
+        if(!open(win))return switching;
         focusedWin=win;
         const run=switching.then(async()=>{
           if(win!==focusedWin||!open(win))return;
@@ -86,6 +91,7 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
             const last=focused;focused=next;
             appliedWin=undefined;
             if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false}).catch(()=>{});
+            if(!open(win))return;
             if(!next.debugger.isAttached())next.debugger.attach('1.3');
             await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
           }
@@ -99,7 +105,10 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
       const raised=new Map();
       const followFocus=(win)=>{
         if(raised.has(win))return;
-        const focus=win.focus;const shown=win.electronWindow;raised.set(win,{focus,shown,osFocus:shown?.focus});
+        const focus=win.focus;const shown=win.electronWindow;
+        const strayFocus=()=>{if(!raised.has(win)&&activeWindow===win)window.dispatchEvent(new FocusEvent('focus'));};
+        raised.set(win,{focus,shown,osFocus:shown?.focus,strayFocus});
+        if(win!==window)win.addEventListener('focus',strayFocus);
         win.focus=()=>void emulateFocus(win);
         if(shown)shown.focus=()=>void emulateFocus(win);
         win.document.hasFocus=()=>win===appliedWin;
@@ -118,7 +127,7 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
       do{settled=switching;await settled;}while(settled!==switching);
       window.${RESTORE}=()=>{
         for(const ref of refs)app.workspace.offref(ref);
-        for(const [win,{focus,shown,osFocus}] of raised){win.focus=focus;if(shown)shown.focus=osFocus;delete win.document.hasFocus;}
+        for(const [win,{focus,shown,osFocus,strayFocus}] of raised){win.focus=focus;if(shown)shown.focus=osFocus;win.removeEventListener('focus',strayFocus);delete win.document.hasFocus;}
         for(const contents of vaultContents()){contents.setBackgroundThrottling(true);if(contents.debugger.isAttached())contents.debugger.detach();}
         main.setBackgroundThrottling(previous);
         delete window.${RESTORE};
