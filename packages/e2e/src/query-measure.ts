@@ -37,7 +37,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { acquireDesktopLock } from "@zotlit/scripts/desktop-lock";
+import {
+  acquireDesktopSlotOrExit,
+  automatedLease,
+  DEFAULT_LEASE_MS,
+  formatDuration,
+} from "@zotlit/scripts/desktop-slot";
 import {
   buildFixture,
   discardFixture,
@@ -52,7 +57,7 @@ import {
 } from "@zotlit/scripts/fixture/spec";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow, showBehind } from "./background-throttling.ts";
 import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
 import {
   DATASET_QUERY_SPECS,
@@ -418,7 +423,13 @@ if (!(await isObsidianReachable(workspaceRoot))) {
   );
   process.exit(1);
 }
-using _desktopLock = await acquireDesktopLock({ cwd: workspaceRoot });
+using _desktopSlot = await acquireDesktopSlotOrExit({
+  cwd: workspaceRoot,
+  command: "measure:query",
+  leaseMs: automatedLease(DEFAULT_LEASE_MS.measureQuery),
+  // Its timings mean nothing while another run competes for the CPU.
+  exclusive: true,
+});
 
 let vaultId = "";
 
@@ -437,7 +448,7 @@ async function requireVisible(): Promise<void> {
   // Shows a hidden or minimized window and leaves the OS focus where it is.
   await obEval(
     vaultId,
-    "(()=>{const win=require('@electron/remote').getCurrentWindow();if(win.isMinimized())win.restore();win.showInactive();return true;})()",
+    `(()=>{const win=require('@electron/remote').getCurrentWindow();${showBehind("win")}return true;})()`,
   );
   log(
     `The window of the vault at ${vaultPath} is hidden. Bring it on screen and keep it uncovered: the script waits for 2 minutes.`,
@@ -990,7 +1001,7 @@ let environmentLines: string[] = [];
 try {
   const created = await runVaultScript(["create", vaultPath]);
   vaultId = created.stdout.trim().split("\n")[0]!.trim();
-  await keepRendering(vaultId);
+  await prepareRunWindow(vaultId);
   environmentLines = await environment();
   for (const items of tiers) {
     const raw: RawTier = {
@@ -1023,6 +1034,10 @@ const notes: string[] = [
   "Queries run in Electron utility processes. The measurement vault uses the E2E window setup: background throttling is disabled and focus is emulated without moving OS focus. Execution slices and encoding steps retain the spec's 16 ms p99 / 32 ms maximum limits. Renderer timer gaps (4 ms sampling) are an additional check against those limits. All limit=all runs write complete JSON files and return small receipts. These measurements include worker transfer and export publication. Fixture startup and initial search indexing finish before timing begins.",
 ];
 const measured = rawTiers.map((raw) => toTier(raw, notes));
+// The wall-clock time calibrates the measurement's Desktop Slot Lease.
+notes.push(
+  `Wall-clock duration: ${Temporal.Now.instant().since(startedAt).total("minutes").toFixed(1)} min, within a Desktop Slot Lease of ${formatDuration(_desktopSlot.owner.lease)}.`,
+);
 if (failure) {
   notes.push(
     `The run stopped early, in tier ${rawTiers.length} of ${tiers.length}: ${failure.message}`,

@@ -29,18 +29,49 @@ export function cli(args: string[], timeoutMs?: number): Promise<string> {
   return call(args);
 }
 
+/** Starts the reply of wrapped code that threw; JSON follows on the same line. */
+const THROWN = "__zotlitEvalError__";
+
+/**
+ * `code`, run as Obsidian's `eval` runs it — a global eval whose completion
+ * value is awaited — but with a thrown error answered as a {@link THROWN}
+ * reply that carries its `stack`. Obsidian itself prints only
+ * `Error: <message>`, so an error raised inside Obsidian's code would read as
+ * if the test's code raised it.
+ */
+export function wrapEvalCode(code: string): string {
+  return `(async()=>{try{return await (0,eval)(${JSON.stringify(code)});}catch(error){return ${JSON.stringify(THROWN)}+JSON.stringify({message:error instanceof Error?error.message:String(error),stack:error instanceof Error?error.stack:undefined});}})()`;
+}
+
+/** The error a {@link THROWN} reply stands for: the message, then the app's frames. */
+function thrownError(json: string): Error {
+  const { message, stack } = JSON.parse(json) as {
+    message: string;
+    stack?: string;
+  };
+  const frames = stack
+    ?.split("\n")
+    .filter((line) => /^\s+at /.test(line))
+    .join("\n");
+  return new Error(frames ? `${message}\n${frames}` : message);
+}
+
 /**
  * Pull the `=> `-prefixed reply out of raw CLI output. Evaluated code that
  * logs to the console (the plugin does, on a reload) shares the same
  * response stream, so the reply is the *last* `=> `-prefixed line rather than
- * necessarily the first character of the output.
+ * necessarily the first character of the output. A reply of code wrapped by
+ * {@link wrapEvalCode} that threw becomes that error.
  */
-function parseReply(text: string): string {
+export function parseEvalReply(text: string): string {
   const marker = "\n=> ";
   const lastIndex = text.lastIndexOf(marker);
-  if (lastIndex !== -1) return text.slice(lastIndex + marker.length);
-  if (text.startsWith("=> ")) return text.slice(3);
-  throw new Error(`obsidian reply had no "=> " line: ${text}`);
+  let reply: string;
+  if (lastIndex !== -1) reply = text.slice(lastIndex + marker.length);
+  else if (text.startsWith("=> ")) reply = text.slice(3);
+  else throw new Error(`obsidian reply had no "=> " line: ${text}`);
+  if (reply.startsWith(THROWN)) throw thrownError(reply.slice(THROWN.length));
+  return reply;
 }
 
 /**
@@ -58,11 +89,11 @@ export async function obEval(
   timeoutMs?: number,
 ): Promise<string> {
   const text = await cli(
-    [`vault=${vaultId}`, "eval", `code=${code}`],
+    [`vault=${vaultId}`, "eval", `code=${wrapEvalCode(code)}`],
     timeoutMs,
   );
   if (text === "") return "";
-  return parseReply(text);
+  return parseEvalReply(text);
 }
 
 /** {@link obEval}, with its reply parsed as JSON. */

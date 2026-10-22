@@ -2,7 +2,7 @@ import { cp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect } from "vitest";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { assertDevBundleFresh } from "./bundle-freshness.ts";
 import {
   e2eVaultPath,
@@ -35,7 +35,7 @@ async function bootstrap(): Promise<void> {
   const created = await runVaultScript(["open", e2eVaultPath]);
   run.vaultId = created.stdout.trim().split("\n")[0]!.trim();
   await obEval(run.vaultId, "app.vault.setConfig('nativeMenus',false);true");
-  await keepRendering(run.vaultId);
+  await prepareRunWindow(run.vaultId);
   const serverPort = await availableLoopbackPort();
   await obEval(
     run.vaultId,
@@ -87,10 +87,13 @@ export function registerEndToEndRunHooks(): void {
     }
   }, 120000);
 
+  // A case leaves no menu, dialog or popover open, and its notices go with
+  // it: a notice stays 4 s at the top right, over the toolbar the next case
+  // presses ("PDF Saved" after an export).
   afterEach(async () => {
     const left = await obEval(
       run.vaultId,
-      `(async()=>{${PAGE}const docs=()=>[document,...app.workspace.floatingSplit.children.map(split=>split.win.document)];const open=()=>docs().flatMap(doc=>[...doc.querySelectorAll('.menu, .modal-container, :popover-open')]);const left=open().map(el=>(el.matches(':popover-open')?'popover':el.classList.contains('menu')?'menu':'dialog')+': '+el.textContent.trim().slice(0,60));for(const el of open())if(el.matches(':popover-open'))el.hidePopover();await until('menus and dialogs close',async()=>{if(open().length===0)return true;await ${MENU_READY};activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return false;},5000);return JSON.stringify(left);})()`,
+      `(async()=>{${PAGE}const docs=()=>[document,...app.workspace.floatingSplit.children.map(split=>split.win.document)];const notices=()=>docs().flatMap(doc=>[...doc.querySelectorAll('.notice')]);for(const notice of notices())notice.click();await until('notices hide',()=>notices().length===0,2000);const open=()=>docs().flatMap(doc=>[...doc.querySelectorAll('.menu, .modal-container, :popover-open')]);const left=open().map(el=>(el.matches(':popover-open')?'popover':el.classList.contains('menu')?'menu':'dialog')+': '+el.textContent.trim().slice(0,60));for(const el of open())if(el.matches(':popover-open'))el.hidePopover();await until('menus and dialogs close',async()=>{if(open().length===0)return true;await ${MENU_READY};activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return false;},5000);return JSON.stringify(left);})()`,
     );
     expect(
       JSON.parse(left),

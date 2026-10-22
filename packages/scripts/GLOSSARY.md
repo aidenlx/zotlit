@@ -58,3 +58,39 @@ _Avoid_: smoke run, manual End-to-end Run
 An on-demand Fixture build scaled to a large synthetic item count for
 performance testing.
 _Avoid_: perf fixture, large fixture
+
+## Desktop admission
+
+**Desktop Slot**:
+One of a few places to drive the developer's one desktop Obsidian app, shared
+across every clone, worktree, and session of the user on this machine. Each
+holder drives its own vault, and a worktree holds at most one slot at a time. A
+Paired Zotero joins a hold only when the hold opens a vault in that app;
+Zotero-only work takes no slot.
+_Avoid_: desktop lock, desktop mutex
+
+**Exclusive Hold**:
+A hold of every Desktop Slot at once, for work that needs the whole app to
+itself, such as timing a query or capturing the screen.
+_Avoid_: global lock, full lock
+
+**Desktop Queue**:
+The ordered line of waiters for a Desktop Slot; the waiter at its head is the
+only one that may take a slot when one frees.
+_Avoid_: lock waiters, wait list
+
+**Lease**:
+The bounded time a holder may keep its Desktop Slot, counted from when it was
+admitted; a holder whose Lease ends loses the slot.
+_Avoid_: timeout, hold limit
+
+**Admission Deadline**:
+How long a waiter will wait, at the Desktop Queue and the Memory Gate combined,
+before giving up and reporting who is ahead of it.
+_Avoid_: lock timeout, wait timeout
+
+**Memory Gate**:
+The machine-wide check that admits a heavy run (a test invocation or an
+End-to-end Run) only while the OS reports that memory can grow and no other
+gated run has just started. It admits a run; it does not hold anything for it.
+_Avoid_: memory lock, memory slot

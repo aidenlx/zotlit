@@ -9,7 +9,7 @@ import {
   getFixtureLayout,
 } from "@zotlit/scripts/fixture";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import { attachmentAnnotations, workspaceRoot } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks } from "./e2e-run-lifecycle.ts";
@@ -31,7 +31,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await clearVault(queryVaultScript, queryVaultPath);
       const created = await queryVaultScript(["create", queryVaultPath]);
       queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
-      await keepRendering(queryVaultId);
+      await prepareRunWindow(queryVaultId);
     });
     afterAll(async () => {
       await queryVaultScript(["remove", queryVaultPath, "--purge"]);
@@ -268,7 +268,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await clearVault(queryVaultScript, queryVaultPath);
       const created = await queryVaultScript(["create", queryVaultPath]);
       queryVaultId = created.stdout.trim().split("\n")[0]!.trim();
-      await keepRendering(queryVaultId);
+      await prepareRunWindow(queryVaultId);
     });
     afterAll(async () => {
       await queryVaultScript(["remove", queryVaultPath, "--purge"]);

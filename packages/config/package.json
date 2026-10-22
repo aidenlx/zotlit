@@ -13,6 +13,7 @@
     "./oxlint": "./oxlint.base.ts",
     "./oxfmt": "./oxfmt.base.ts",
     "./vitest": "./vitest.base.ts",
+    "./memory-gate": "./memory-gate.ts",
     "./tsdown": "./tsdown.base.ts"
   },
   "scripts": {

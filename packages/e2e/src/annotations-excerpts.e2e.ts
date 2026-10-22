@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
 import { verifyAnnotationInsert } from "./annotation-insert.ts";
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
   annotationAttachment,
@@ -215,6 +215,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("copies an Annotation's citation after the database read, through Electron when the web clipboard refuses", async () => {
     const citation = `[@${annotationItem.citationKey}, {p. ${copiedAnnotation.pageLabel}}]`;
+    // Electron's clipboard here is the run's in-memory one (prepareRunWindow).
     const copy = (refuse: boolean) =>
       obEval(
         run.vaultId,
@@ -225,13 +226,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const view=leaf.view;await view.read;
           const button=await until('Annotation card menu missing',()=>view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(run.m.annot_view_more_tooltip())}]'),5000);
           const clipboard=require('electron').clipboard;
-          const saved={text:clipboard.readText(),html:clipboard.readHTML(),rtf:clipboard.readRTF(),image:clipboard.readImage()};
-          const bookmark=clipboard.readBookmark();if(bookmark.title)saved.bookmark=bookmark.title;
-          cleanup.defer(()=>clipboard.write(saved));
           const write=navigator.clipboard.writeText;
           cleanup.defer(()=>{navigator.clipboard.writeText=write;});
           clipboard.writeText('');
           if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
+          button.scrollIntoView({block:'center',behavior:'instant'});
+          await stands(button,'card More options');
           press(button,'card More options');
           const item=await until('Copy citation missing from the card menu',()=>Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(run.m.annot_view_menu_copy_citation())}),2500);
           press(item,'Copy citation');
@@ -271,7 +271,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "fresh",
     ]);
     const id = opened.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(id);
+    await prepareRunWindow(id);
     // No Zotero process runs on this suite's Fixture.
     expect(
       await obEval(

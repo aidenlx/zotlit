@@ -269,25 +269,64 @@ describe("Obsidian host readiness", () => {
     },
   );
 
-  it("does not open a closed vault selected through ZT_HOST_VAULT", async () => {
-    const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
-      async () => "",
-    );
-    const check = createObsidianHostReadiness(
-      {
-        pathExists: async () => true,
-        readRegistry: async () => ({
-          "research-id": { open: false, path: "/vaults/research" },
-        }),
-        runObsidian,
-      },
-      { environment: { ZT_HOST_VAULT: "research" } },
-    );
+  describe("with ZT_HOST_VAULT naming a closed vault", () => {
+    const registry = {
+      "research-id": { open: false, path: "/vaults/research" },
+      "notes-id": { open: true, path: "/vaults/notes" },
+    };
 
-    await expect(check()).rejects.toThrow(
-      "ZT_HOST_VAULT does not identify one open vault: research",
-    );
-    expect(runObsidian).not.toHaveBeenCalled();
+    function closedHostCheck(runObsidian: HostReadinessEffects["runObsidian"]) {
+      const calls: string[][] = [];
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async () => true,
+          readRegistry: async () => registry,
+          runObsidian: async (args, signal) => {
+            calls.push(args);
+            return runObsidian(args, signal);
+          },
+        },
+        { environment: { ZT_HOST_VAULT: "research" }, timeoutMs: 10 },
+      );
+      return { check, calls };
+    }
+
+    it("says the vault is not open, and lists the open vaults", async () => {
+      const { check, calls } = closedHostCheck(
+        async () =>
+          `=> ${JSON.stringify({
+            "research-id": { path: "/vaults/research" },
+            "notes-id": { open: true, path: "/vaults/notes" },
+            "drafts-id": { open: true, path: "/vaults/drafts" },
+          })}`,
+      );
+
+      await expect(check()).rejects.toThrow(
+        "ZT_HOST_VAULT=research names a vault that is not open.\n\nOpen vaults:\n  - drafts-id (drafts)\n  - notes-id (notes)\n\n",
+      );
+      // A call with `vault=research-id` would open the closed vault.
+      expect(calls.flat()).not.toContain("vault=research-id");
+    });
+
+    it("says no vault window is open when the app answers without one", async () => {
+      const { check } = closedHostCheck(async () => "Vault not found.");
+
+      await expect(check()).rejects.toThrow(
+        "ZT_HOST_VAULT=research names a vault that is not open.\n\nNo vault window is open.\n\n",
+      );
+    });
+
+    it("keeps the selection failure when the app does not answer", async () => {
+      vi.useFakeTimers();
+      const { check } = closedHostCheck(() => new Promise(() => {}));
+
+      await Promise.all([
+        expect(check()).rejects.toThrow(
+          "ZT_HOST_VAULT does not identify one open vault: research",
+        ),
+        vi.advanceTimersByTimeAsync(10),
+      ]);
+    });
   });
 
   it.each(["host", "live list"])(
@@ -421,30 +460,28 @@ describe("Obsidian host readiness", () => {
     });
   });
 
-  it.each(["unknown", "research"])(
-    "rejects %s without trying a different host",
-    async (selected) => {
-      const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
-        async () => '=> {"id":"notes-id","path":"/vaults/notes"}',
-      );
-      const check = createObsidianHostReadiness(
-        {
-          pathExists: async () => true,
-          readRegistry: async () => ({
-            research: { open: false, path: "/vaults/closed" },
-            "notes-id": { open: true, path: "/vaults/research" },
-          }),
-          runObsidian,
-        },
-        { environment: { ZT_HOST_VAULT: selected } },
-      );
+  it("rejects an unknown vault without trying a different host", async () => {
+    const selected = "unknown";
+    const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+      async () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+    );
+    const check = createObsidianHostReadiness(
+      {
+        pathExists: async () => true,
+        readRegistry: async () => ({
+          research: { open: false, path: "/vaults/closed" },
+          "notes-id": { open: true, path: "/vaults/research" },
+        }),
+        runObsidian,
+      },
+      { environment: { ZT_HOST_VAULT: selected } },
+    );
 
-      await expect(check()).rejects.toThrow(
-        `ZT_HOST_VAULT does not identify one open vault: ${selected}`,
-      );
-      expect(runObsidian).not.toHaveBeenCalled();
-    },
-  );
+    await expect(check()).rejects.toThrow(
+      `ZT_HOST_VAULT does not identify one open vault: ${selected}`,
+    );
+    expect(runObsidian).not.toHaveBeenCalled();
+  });
 
   it.each([
     { when: "before", probes: 0 },
