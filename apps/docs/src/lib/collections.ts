@@ -14,7 +14,7 @@ export const docs = defineDocs({
     schema: (await import("#content-config")).docsSchema,
     postprocess: {
       includeProcessedMarkdown: (await import("#content-config"))
-        .docsMarkdownEdition,
+        .markdownEdition,
     },
   },
   meta: {

@@ -1,7 +1,9 @@
 import Link from "fumadocs-core/link";
+import { asMarkdown } from "fumadocs-core/server";
 import type { ReactNode } from "react";
 
 import { CONTRACT_IR } from "@/lib/template-contract/contract";
+import { renderContractTableMarkdown } from "@/lib/template-contract/gfm";
 import { buildPageModel, sectionOf } from "@/lib/template-contract/page-model";
 import type {
   Doc,
@@ -22,6 +24,8 @@ const model = buildPageModel(CONTRACT_IR);
  * restate the same contract.
  */
 export function ContractTable({ section }: { section: string }) {
+  // Markdown has no row expander, so the edition gets every detail as GFM.
+  if (asMarkdown()) return renderContractTableMarkdown(model, section);
   const page = sectionOf(model, section);
   if (page.itemTypes.length > 0) {
     return <TypeTable anchor={page.id} type={itemTypeNodes(page.itemTypes)} />;

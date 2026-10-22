@@ -79,7 +79,7 @@ The site wears the "Manuscript & Machine" design. Its spec — theme, the four-f
 
 [`src/lib/template-contract/sections.ts`](src/lib/template-contract/sections.ts) owns the section structure. The `_*.mdx` partials beside the generated page own supplementary prose.
 
-The page's Markdown edition renders each `<ContractTable>` as a GFM table through the `stringify` callback on the docs collection's `includeProcessedMarkdown` in [`content.config.ts`](content.config.ts).
+The page's Markdown edition renders each `<ContractTable>` as a GFM table: the component returns [`renderContractTableMarkdown()`](src/lib/template-contract/gfm.ts) when `asMarkdown()` is set, through the components map in [`src/lib/markdown-editions.tsx`](src/lib/markdown-editions.tsx).
 
 ## Generated Functions and methods reference
 

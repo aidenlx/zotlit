@@ -10,7 +10,6 @@ import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
-import { zotlitLegacyUrl } from "@/lib/shared";
 
 ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, but if you customized your Eta templates, they are not loaded until you rename them, update the data vocabulary, and enable the <UiLabel name={m.settings_template_js_enable_name()} /> gate. Notes you created with v1 still appear in the index. Overwrite them when you want incremental body updates.
 
@@ -34,12 +33,12 @@ ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, bu
   <Step>
     ### Confirm in Obsidian
 
-    After the upgrade, open **Settings &rarr; ZotLit**. The settings pane loads with your migrated configuration. If you see your literature-note folder path and template folder path, the migration succeeded.
+    After the upgrade, open **Settings → ZotLit**. The settings pane loads with your migrated configuration. If you see your literature-note folder path and template folder path, the migration succeeded.
 
   </Step>
 </Steps>
 
-After the upgrade, v1 is gone. If you need to consult the original documentation while you transition, the <a href={zotlitLegacyUrl} target="_blank" rel="noreferrer noopener">ZotLit v1 docs</a> remain available.
+After the upgrade, v1 is gone. If you need to consult the original documentation while you transition, the [ZotLit v1 docs](https://zotlit-v1.aidenlx.site) remain available.
 
 ## Settings (automatic)
 

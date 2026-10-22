@@ -42,8 +42,11 @@ export function ActionLink({
   if (asMarkdown()) {
     const trailing = filename ? ` \`${filename}\`` : "";
     // Every call site places the device on its own line, so the empty line
-    // prefix is here for the block framing it carries, not for a prefix.
-    return md.linePrefix("")`[${children}](${href})${trailing}`;
+    // prefix is here for the block framing it carries, not for a prefix. The
+    // children of a block element arrive on their own lines; a link label is one.
+    return md`${children}`.then(
+      (label) => md.linePrefix("")`[${label.trim()}](${href})${trailing}`,
+    );
   }
 
   const Icon = icons[kind];
