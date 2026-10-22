@@ -7,7 +7,7 @@
     "#affected-base": "./lib/affected-base.ts",
     "#ai-attribution": "./lib/ai-attribution.ts",
     "#commit-tree": "./lib/commit-tree.ts",
-    "#desktop-lock": "./lib/desktop-lock.ts",
+    "#desktop-slot": "./lib/desktop-slot.ts",
     "#fixture": "./lib/fixture/build.ts",
     "#fixture/*": "./lib/fixture/*.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
@@ -25,7 +25,7 @@
     "#message-usage": "./lib/message-usage.ts"
   },
   "exports": {
-    "./desktop-lock": "./lib/desktop-lock.ts",
+    "./desktop-slot": "./lib/desktop-slot.ts",
     "./fixture": "./lib/fixture/build.ts",
     "./fixture/paired-run-node": "./lib/fixture/paired-run-node.ts",
     "./fixture/spec": "./lib/fixture/spec.ts",

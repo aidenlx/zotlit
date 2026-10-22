@@ -11,7 +11,10 @@ export default defineConfig({
   },
   test: {
     ...testDefaults,
-    globalSetup: ["./scripts/message-types-setup.ts"],
+    globalSetup: [
+      ...testDefaults.globalSetup,
+      "./scripts/message-types-setup.ts",
+    ],
     // `include` lives on the projects: Vite merges a root `include` into each
     // project's own, which would widen every project back to everything.
     environment: "node",

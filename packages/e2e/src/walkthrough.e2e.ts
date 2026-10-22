@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { LIST_ANNOTATIONS_JS, useListingProfile } from "./listing-profile.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
@@ -50,7 +50,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await clearVault(run, path);
     const opened = await run(["open", path, "--vault-case", "demo"]);
     vaultId = opened.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(vaultId);
+    await prepareRunWindow(vaultId);
   }, 180_000);
 
   afterAll(async () => {

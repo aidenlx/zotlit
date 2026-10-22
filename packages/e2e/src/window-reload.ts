@@ -1,7 +1,7 @@
 // Reloads a vault's whole Obsidian window, so the plugin loads the way it does
 // at Obsidian startup.
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
 
 /** Global the old window holds until the reload replaces it. */
@@ -18,7 +18,7 @@ const OLD_WINDOW = "__ztWindowBeforeReload";
  * after the cache and hides such bugs.
  *
  * Pending ZotLit settings are flushed first, as a plugin reload does on
- * unload. The window's {@link keepRendering} hooks die with it, so they are
+ * unload. The window's {@link prepareRunWindow} hooks die with it, so they are
  * taken down before the reload and put back after it.
  */
 export async function reloadWindow(vaultId: string): Promise<void> {
@@ -57,5 +57,5 @@ export async function reloadWindow(vaultId: string): Promise<void> {
   if (!commands) {
     throw new Error(`the window of ${vaultId} never registered its commands`);
   }
-  await keepRendering(vaultId);
+  await prepareRunWindow(vaultId);
 }

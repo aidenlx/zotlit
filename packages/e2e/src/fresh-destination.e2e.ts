@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ITEMS } from "@zotlit/scripts/fixture";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import {
   reachable,
   runVaultScript,
@@ -47,7 +47,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       "fresh",
     ]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(vaultId);
+    await prepareRunWindow(vaultId);
     await obEval(
       vaultId,
       "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",

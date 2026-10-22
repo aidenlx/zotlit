@@ -176,7 +176,7 @@ A Vault Case selects what the Fixture Vault holds beside the Library Scope.
 Build one directly, or name it on a Paired Run:
 
   pnpm fixture build --vault-case fresh
-  pnpm fixture open --vault-case upgrader
+  pnpm fixture open --for 10m --vault-case upgrader
 
 Each Vault Case other than the default opens its own Development Vault,
 tests/fixture-vault-<worktree>-<case>, so the cases never overwrite one
@@ -236,7 +236,7 @@ Saved open state can be stale; Obsidian can still open a closed window.
 Prepare the Fixture, open its per-worktree Development Vault, launch Paired
 Zotero, and verify that both extensions loaded:
 
-  pnpm fixture open
+  pnpm fixture open --for 10m
 
 The open command builds both extensions in parallel. It prepares the generated
 profile and Development Vault before it starts Paired Zotero, so Zotero reads
@@ -244,7 +244,7 @@ this run's HTTP port during startup.
 
 Add a Scope Case or restore the exact generated vault seed when needed:
 
-  pnpm fixture open partial --purge
+  pnpm fixture open --for 10m partial --purge
 
 The purge deletes the Development Vault folder and every ZotLit key in the
 vault's local storage, which Obsidian keeps outside that folder. A purged run
@@ -254,7 +254,11 @@ Pandoc consent, approved attachment folders, or saved view state.
 Use dev for the live form. It watches both extensions until Ctrl-C, then stops
 Paired Zotero and leaves the Development Vault window open:
 
-  pnpm fixture dev
+  pnpm fixture dev --for 60m
+
+Both commands hold the Desktop Slot while they run and require --for, its
+Lease, up to 60 min. When the Lease of dev ends, it stops as on Ctrl-C and
+exits 76; see pnpm desktop-slot --help.
 
 The host-vault check must succeed before the dev command starts.
 Either command closes a Paired Zotero that still holds this Fixture, then

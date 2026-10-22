@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "zx";
 
-import { acquireDesktopLock } from "@zotlit/scripts/desktop-lock";
+import {
+  acquireDesktopSlotOrExit,
+  automatedLease,
+  DEFAULT_LEASE_MS,
+} from "@zotlit/scripts/desktop-slot";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { E2E_RESULTS_ENV, newE2eResultsDir } from "./results-dir.ts";
@@ -15,8 +19,13 @@ if (!(await isObsidianReachable(root))) {
     "Worker responsiveness requires a running desktop Obsidian with its CLI enabled. Open a host vault, then run pnpm e2e:worker again.",
   );
 }
-// The nested `pnpm e2e` reuses this lock through the environment.
-using _lock = await acquireDesktopLock({ cwd: root });
+// The nested `pnpm e2e` reuses this hold through the environment, inside its
+// Lease.
+using _slot = await acquireDesktopSlotOrExit({
+  cwd: root,
+  command: "pnpm e2e:worker",
+  leaseMs: automatedLease(DEFAULT_LEASE_MS.e2eWorker),
+});
 // The nested run writes its results to the folder chosen here.
 const results = newE2eResultsDir();
 const report = join(results, "results.json");

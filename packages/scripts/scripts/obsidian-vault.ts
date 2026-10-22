@@ -31,6 +31,7 @@ import { hideBin } from "yargs/helpers";
 import { frontmatterFieldSchema } from "@zotlit/templates/constants";
 import type { FrontmatterField } from "@zotlit/templates/constants";
 
+import { holdDesktopMutex } from "#desktop-slot";
 import {
   DEV_VAULT_CASE_ENV,
   getDevVaultDir,
@@ -155,12 +156,24 @@ async function obEval(code: string, target?: string): Promise<string> {
  * process creates the vault window during that call and later calls its `show`,
  * which gives it the OS focus. With `--inactive`, a `browser-window-created`
  * listener in the main process, there only for the call, makes that window's
- * `show` call `showInactive` and its `focus` do nothing.
+ * `show` call `showInactive` and its `focus` do nothing. `showInactive` still
+ * puts the window in front of every other app's windows on macOS, so `show`
+ * then calls `blur`, which there orders the window behind them.
  */
 function vaultOpenCode(abs: string): string {
   const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
   if (!inactive) return open;
-  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>win.showInactive();win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
+  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>{win.showInactive();if(process.platform==="darwin")win.blur();};win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
+}
+
+/**
+ * Run `call`, which makes `vault-open` or `vault-remove` calls, under a short
+ * machine-wide mutex. Runs in other worktrees share the app's vault registry,
+ * and the `--inactive` window-created hook would catch another run's window.
+ */
+async function withVaultRegistry<T>(call: () => Promise<T>): Promise<T> {
+  using _registry = await holdDesktopMutex("vault-registry.lock");
+  return await call();
 }
 
 /** Any reply means the app runs, including "Vault not found." with no vault window. */
@@ -320,7 +333,9 @@ async function create(
 
   // `vault-open` registers the path and opens its window. Pass create=false
   // because the folder is already there; create=true rejects an existing one.
-  const opened = await obEval(vaultOpenCode(abs), host);
+  const opened = await withVaultRegistry(() =>
+    obEval(vaultOpenCode(abs), host),
+  );
   if (opened !== "true") {
     throw new Error(`vault-open refused: ${opened || "unknown error"}`);
   }
@@ -597,8 +612,13 @@ async function open(
   }
 
   await sync(abs, seed);
-  if ((await vaultList(host))[registered]?.open !== true) {
-    const opened = await obEval(vaultOpenCode(abs), host);
+  // Undefined when the window is already open.
+  const opened = await withVaultRegistry(async () =>
+    (await vaultList(host))[registered]?.open === true
+      ? undefined
+      : await obEval(vaultOpenCode(abs), host),
+  );
+  if (opened !== undefined) {
     if (opened !== "true") {
       throw new Error(`vault-open refused: ${opened || "unknown error"}`);
     }
@@ -801,9 +821,11 @@ async function unregisterThrough(
     host,
   ).catch(() => undefined);
 
-  const removed = await obEval(
-    `require('electron').ipcRenderer.sendSync('vault-remove',${JSON.stringify(abs)})`,
-    host,
+  const removed = await withVaultRegistry(() =>
+    obEval(
+      `require('electron').ipcRenderer.sendSync('vault-remove',${JSON.stringify(abs)})`,
+      host,
+    ),
   );
   if (removed !== "true") {
     throw new Error(`vault-remove refused for ${abs} (window still open?)`);

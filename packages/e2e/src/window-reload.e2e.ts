@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { reachable, runVaultScript, workspaceRoot } from "./e2e-run-fixture.ts";
 import { obJson } from "./obsidian-cli.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
@@ -14,7 +14,7 @@ describe.skipIf(!reachable)("Window reload", () => {
     await clearVault(runVaultScript, vaultPath);
     const created = await runVaultScript(["create", vaultPath]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(vaultId);
+    await prepareRunWindow(vaultId);
   }, 180000);
 
   afterAll(async () => {

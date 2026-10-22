@@ -29,7 +29,7 @@ import {
 import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/scripts/fixture";
 
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
@@ -141,7 +141,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   // The run seldom shows the vault's windows, and a hidden window gets no
   // animation frames. The windows close with the vault when the run ends.
   beforeAll(async () => {
-    await keepRendering(vaultId!);
+    await prepareRunWindow(vaultId!);
   });
 
   const prepareAuthorizationFixture = async (): Promise<void> => {
@@ -6287,6 +6287,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("copies the quoted text of a group for Cmd/Ctrl+C on the view, in list order", async () => {
           await withGroupOfTwo(async (made) => {
+            // The vault's in-memory clipboard (prepareRunWindow), not the OS one.
             const clipboard = (text: string | null) =>
               obEval(
                 vaultId!,

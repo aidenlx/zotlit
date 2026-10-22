@@ -15,7 +15,7 @@ export default defineConfig({
           name: "desktop",
           include: ["src/**/*.e2e.ts"],
           exclude: ["src/paired-run.e2e.ts"],
-          globalSetup: ["./src/desktop-lock-setup.ts"],
+          globalSetup: ["./src/desktop-slot-setup.ts"],
         },
       },
       {
@@ -23,16 +23,17 @@ export default defineConfig({
         test: {
           name: "paired",
           include: ["src/paired-run.e2e.ts"],
-          // The lock comes first: Paired Zotero starts only for its holder.
-          globalSetup: ["./src/desktop-lock-setup.ts", "./src/paired-setup.ts"],
+          // The slot comes first: Paired Zotero starts only for its holder.
+          globalSetup: ["./src/desktop-slot-setup.ts", "./src/paired-setup.ts"],
         },
       },
     ],
     reporters: ["./src/reporter.ts", "json"],
     outputFile: { json: join(e2eResultsDir(), "results.json") },
     environment: "node",
-    // Every file drives the one desktop Obsidian and opens its own Fixture and
-    // vault, so two files at once would take focus and windows from each other.
+    // A run holds one Desktop Slot and drives its files one at a time: they
+    // share the run's vault and its window focus emulation. Runs in other
+    // worktrees take their own slots.
     fileParallelism: false,
     testTimeout: 60000,
     hookTimeout: 60000,

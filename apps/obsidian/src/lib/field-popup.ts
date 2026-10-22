@@ -12,6 +12,7 @@ import type { App } from "obsidian";
 import { fieldPopupKeyHost } from "@zotlit/workbench/language";
 import type { FieldPopupKeyHost } from "@zotlit/workbench/language";
 
+import { onEditorWindowMigrated } from "./editor-migration";
 import { composing } from "./ime";
 
 /**
@@ -57,7 +58,7 @@ export function popupScope(
     // The Scope stands on the stack of one window, so a field that moves to
     // another gives it back; the field hands the keys over again as it takes
     // focus there, and they go onto that window's stack.
-    unwatch = keys.view.dom.onWindowMigrated(letGo);
+    unwatch = onEditorWindowMigrated(keys.view, letGo);
     return release;
   };
 }

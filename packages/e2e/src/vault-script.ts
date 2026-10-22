@@ -21,15 +21,27 @@ function scriptPath(workspaceRoot: string): string {
 export async function isObsidianReachable(
   workspaceRoot: string,
 ): Promise<boolean> {
+  let failure = "";
   const result = await execFileAsync(
     process.execPath,
     [scriptPath(workspaceRoot), "status"],
     { windowsHide: true },
-  ).catch(() => undefined);
+  ).catch((error: { stderr?: string }) => {
+    failure = error.stderr?.trim() ?? "";
+    return undefined;
+  });
   if (!result?.stdout.trim().startsWith("ready ")) {
+    // A running app with `ZT_HOST_VAULT` naming a closed vault is a setup
+    // mistake, not a missing Obsidian: fail the run instead of skipping it.
+    // The phrase comes from packages/scripts/lib/obsidian-host-readiness.ts.
+    if (failure.includes("names a vault that is not open")) {
+      throw new Error(
+        `End-to-end Run cannot select its host vault.\n${failure}`,
+      );
+    }
     if (process.env.ZOTLIT_E2E_REQUIRED === "1") {
       throw new Error(
-        "End-to-end Run requires a running desktop Obsidian with the CLI enabled. Open a host vault and check with: node packages/scripts/scripts/obsidian-cli.ts version",
+        `End-to-end Run requires a running desktop Obsidian with the CLI enabled. Open a host vault and check with: node packages/scripts/scripts/obsidian-cli.ts version${failure ? `\n\n${failure}` : ""}`,
       );
     }
     return false;

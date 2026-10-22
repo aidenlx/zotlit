@@ -17,7 +17,7 @@ function setup() {
   const migrated: (() => void)[] = [];
   const keys = {
     view: {
-      dom: {
+      scrollDOM: {
         onWindowMigrated: (listener: () => void) => {
           migrated.push(listener);
           return () => migrated.splice(migrated.indexOf(listener), 1);

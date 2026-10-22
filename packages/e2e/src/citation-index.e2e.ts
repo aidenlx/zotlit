@@ -13,7 +13,7 @@ import {
 } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { keepRendering } from "./background-throttling.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
 import { cli, obEval, waitFor } from "./obsidian-cli.ts";
 import {
   clearVault,
@@ -100,7 +100,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     );
     const created = await runVaultScript(["create", vaultPath]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
-    await keepRendering(vaultId);
+    await prepareRunWindow(vaultId);
     await cli([`vault=${vaultId}`, "plugin:disable", "id=zotlit"]);
     await buildFixture(fixture, {
       // Shared Reading keeps Stress Items at both ends of the 100,000-Item corpus.
