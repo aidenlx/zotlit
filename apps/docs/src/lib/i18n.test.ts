@@ -17,6 +17,7 @@ import { getPageLocaleState } from "./locale-state";
 import { contentRouteUrl, suffixEditionUrl } from "./markdown-routes";
 import { prerenderPages } from "./prerender-pages";
 import { pageHead } from "./seo";
+import { nativeChinese } from "./sitemap";
 import { blog, changelog, source } from "./source";
 import { breadcrumbListSchema } from "./structured-data";
 
@@ -155,6 +156,23 @@ describe("locale search", () => {
     expect(results.length).toBeGreaterThan(0);
     for (const result of results) expect(result.url).toBe(url);
   });
+});
+
+it("dates a sitemap's Chinese entry only from a native Chinese file", () => {
+  const fixture = loader({
+    i18n,
+    baseUrl: "/docs",
+    source: {
+      files: ["native.mdx", "native.zh-CN.mdx", "english-only.mdx"].map(
+        (path) => ({ type: "page" as const, path, data: { title: path } }),
+      ),
+    },
+  });
+  const [native, englishOnly] = ["native", "english-only"].map(
+    (slug) => fixture.getPage([slug], "en")!,
+  );
+  expect(nativeChinese(fixture, native!)?.path).toBe("native.zh-CN.mdx");
+  expect(nativeChinese(fixture, englishOnly!)).toBeUndefined();
 });
 
 // Published-route seam: each locale edition needs its own outage-safe asset.
