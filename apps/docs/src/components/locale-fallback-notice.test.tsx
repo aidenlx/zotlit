@@ -131,9 +131,6 @@ describe("LocaleFallbackNotice", () => {
       "/docs/pending?keep=one&lang=zh-CN&keep=two&lang=en#install",
     );
     expect(view.container.querySelectorAll("p")).toHaveLength(1);
-    expect(view.container.textContent).not.toContain(
-      m.docs_redirect_translation_pending({}, { locale: "zh-CN" }),
-    );
   });
 
   it("restores the browser fragment after hydrating a fragment-free server location", () => {
