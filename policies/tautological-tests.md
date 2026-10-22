@@ -2,7 +2,7 @@
 
 - **Independent oracles:** Derive expected values, membership, and counts from worked examples or known-good fixtures; keep them independent of returned results and production algorithms.
 - **Distinctive markers:** Assert on a value the starting fixture lacks, so an edit that never reached the output fails.
-- **Faithful fakes:** A fake answers only what its request asks, as the real dependency does. A fake that returns every field whatever the request names hides a request that asks for too little. ZotLit Query fakes cut their answer with `requested` (`apps/obsidian/src/views/query-view/__fixtures__/query-run.ts`).
+- **Faithful fakes:** A fake answers only what its request asks, and causes the effects the real dependency causes, in its order and timing. A fake that returns every field whatever the request names hides a request that asks for too little. ZotLit Query fakes cut their answer with `requested` (`apps/obsidian/src/views/query-view/__fixtures__/query-run.ts`). A fake that leaves out an effect, or runs it at once where the real one waits, hides code that depends on the order: the `Menu` mock in `apps/obsidian/__mocks__/obsidian.ts` loads a timer after it shows and pushes its Scope then, as Obsidian's does.
 - **Mock echoes:** Assert the real code's decisions, transformations, or effects, rather than a mocked value passing through unchanged.
 - **Declaration mirrors:** Exercise registered actions and the module that decides what a control shows, rather than asserting definition literals. A rendered control is exercised where it really renders: the running app.
 - **Canonical sources:** Authoritative declarations are valid oracles for consumers. Pin exact translated copy at the translation boundary; consumers use canonical messages.

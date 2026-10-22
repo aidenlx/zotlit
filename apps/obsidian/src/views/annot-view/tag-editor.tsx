@@ -5,17 +5,20 @@ import {
   AbstractInputSuggest,
   prepareSimpleSearch,
   renderMatches,
+  Scope,
 } from "obsidian";
 import type { App } from "obsidian";
 import { useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, RefObject } from "react";
+import type { RefObject } from "react";
 
 import { tagTypeToName } from "@zotlit/db";
 import { TagsInput, useTagsInput, useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
+import { composing } from "@/lib/ime";
 import { tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
@@ -230,7 +233,7 @@ function TagField({
 
   useLayoutEffect(() => {
     const input = inputRef.current;
-    const editor = input?.closest("[data-slot=tags-input]");
+    const editor = input?.closest<HTMLElement>("[data-slot=tags-input]");
     if (!input || !editor) return;
     /**
      * Ends the session. `add` hands the names on at once, so the text still
@@ -266,6 +269,18 @@ function TagField({
         if (ref) ref.current = el;
       },
     });
+    // Escape closes the editor alone, never a surface around it, wherever in
+    // the editor focus stands: the field or a chip's remove button. The
+    // surface's own Scope hears a key before the editor does, so the editor
+    // takes Escape on a Scope of its own while focus stands in it; the
+    // suggestion popup pushes its Scope above this one while it shows.
+    const scope = new Scope(app.scope);
+    scope.register([], "Escape", (event) => {
+      if (composing(event)) return;
+      end(false);
+      return false;
+    });
+    const keys = holdScopeWhileFocused(editor, scope, { keymap: app.keymap });
     // Focus moving between the field and a remove button stays inside the
     // session; focus leaving the editor ends it, and closes the editor unless
     // the surface keeps it open for the next session.
@@ -277,23 +292,12 @@ function TagField({
       if (onLeave && saving) return;
       end(true, !onLeave);
     };
-    // Escape closes the editor alone, never a surface around it, wherever in
-    // the editor focus stands: the field or a chip's remove button. With the
-    // suggestion popup open, Escape is the popup's.
-    // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
-    const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape" || suggest.current?.showing) return;
-      event.preventDefault();
-      event.stopPropagation();
-      end(false);
-    };
     editor.addEventListener("focusout", leave as EventListener);
-    editor.addEventListener("keydown", escape as EventListener);
     endSession.current = (withText = true) => end(withText);
     input.focus({ preventScroll: true });
     return () => {
       editor.removeEventListener("focusout", leave as EventListener);
-      editor.removeEventListener("keydown", escape as EventListener);
+      keys[Symbol.dispose]();
       suggest.current?.close();
       suggest.current = null;
       endSession.current = null;
@@ -302,13 +306,6 @@ function TagField({
       end(true);
     };
   }, [app, endSession]);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    // The popup answers Enter with the highlighted name, which is the typed
-    // text itself until the user moves to a Library name.
-    if (event.key === "Enter" && suggest.current?.showing)
-      event.preventDefault();
-  };
 
   return (
     <>
@@ -324,7 +321,6 @@ function TagField({
         aria-labelledby={labelId}
         autoComplete="off"
         readOnly={saving}
-        onKeyDown={onKeyDown}
         onBlur={(event) => {
           // A session that has ended takes no more text.
           if (ended.current) event.preventDefault();
@@ -390,27 +386,19 @@ interface TagSuggestSource {
 class TagSuggest extends AbstractInputSuggest<string> {
   readonly #source: TagSuggestSource;
   #search = prepareSimpleSearch("");
-  #open = false;
 
   constructor(app: App, input: HTMLInputElement, source: TagSuggestSource) {
     super(app, input);
     this.#source = source;
   }
 
-  /** Whether the popup shows. Obsidian keeps an untyped `isOpen` of its own. */
-  get showing(): boolean {
-    return this.#open;
-  }
-
   override open(): void {
     super.open();
-    this.#open = true;
     this.#source.shown(this.suggestEl);
   }
 
   override close(): void {
     super.close();
-    this.#open = false;
     this.#source.shown(null);
   }
 

@@ -1,7 +1,9 @@
-import { SuggestModal } from "obsidian";
+import { Scope, SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import { citationStyleLabel } from "@/lib/citation-style";
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
+import type { FocusScope } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -83,6 +85,8 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   readonly #onNew: ProfilePickerOptions["onNew"];
   readonly #onImport: ProfilePickerOptions["onImport"];
   #settled = false;
+  /** The Scope the Import button drawn last holds while it has focus. */
+  #importKeys: FocusScope | null = null;
 
   constructor(
     app: App,
@@ -181,9 +185,9 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
           text: m.profile_import_from_text_file(),
         });
         button.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ")
-            event.stopPropagation();
+          if (event.key === " ") event.stopPropagation();
         });
+        this.#holdButtonKeys(button);
         button.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -214,7 +218,29 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     if ("action" in choice && !this.#onNew) this.#resolve(undefined);
   }
 
+  /**
+   * Enter presses `button` while it holds focus. The modal's Scope hears a
+   * key before the button does and takes Enter for the highlighted row, so
+   * the button takes Enter on a Scope of its own, on top of the modal's
+   * while focus stands on it; Escape and the arrows still reach the modal.
+   */
+  #holdButtonKeys(button: HTMLButtonElement): void {
+    const scope = new Scope(this.scope);
+    scope.register([], "Enter", () => {
+      button.click();
+      return false;
+    });
+    // The list draws its rows again on every keystroke; the button it drew
+    // before is gone, and may have heard no blur.
+    this.#importKeys?.[Symbol.dispose]();
+    this.#importKeys = holdScopeWhileFocused(button, scope, {
+      keymap: this.app.keymap,
+    });
+  }
+
   override onClose(): void {
+    this.#importKeys?.[Symbol.dispose]();
+    this.#importKeys = null;
     // Obsidian closes the modal before delivering the selected suggestion.
     queueMicrotask(() => {
       if (!this.#settled) this.#resolve(undefined);

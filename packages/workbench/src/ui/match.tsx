@@ -261,10 +261,13 @@ export function MatchPane({
     <section
       {...part("pane")}
       onKeyDown={(event) => {
-        if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
         // A popup the host draws in the pane, such as a select's search
-        // field, keeps its own text editing.
-        if ((event.target as Element).closest("[popover]")) return;
+        // field, keeps its own text editing by stopping the key at its edge.
+        // A field with a history of its own, such as the expression field's
+        // CodeMirror, takes the key as it undoes, and the pane leaves it:
+        // stepping the Match too would put back the text the field undid.
+        if (event.defaultPrevented) return;
+        if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
         if (
           event.key.toLowerCase() === "z" ||
           event.key.toLowerCase() === "y"

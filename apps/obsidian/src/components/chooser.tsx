@@ -38,6 +38,7 @@ import type {
   ButtonHTMLAttributes,
   CSSProperties,
   HTMLAttributes,
+  KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
   Ref,
   RefObject,
@@ -796,6 +797,15 @@ function Popup({
       id={popupId}
       popover="auto"
       {...rest}
+      // An undo or a redo typed in the popup is its field's own text editing.
+      // A Scope cannot keep it so: answering `false` cancels the browser's
+      // undo, and any other answer leaves the key to the page, where a
+      // surface around the popup, such as the Match pane, steps a history of
+      // its own. So the popup stops the key at its edge, after its field.
+      onKeyDown={(event) => {
+        rest.onKeyDown?.(event);
+        if (isUndoKey(event)) event.stopPropagation();
+      }}
       className={cn(
         themeHook.chooser,
         "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
@@ -813,6 +823,13 @@ function Popup({
       {open && <ChooserSession>{children}</ChooserSession>}
     </div>
   );
+}
+
+/** Mod+Z, Mod+Shift+Z or Mod+Y, as a text field takes undo and redo. */
+function isUndoKey(event: ReactKeyboardEvent): boolean {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return false;
+  const key = event.key.toLowerCase();
+  return key === "z" || key === "y";
 }
 
 export interface ChooserInputProps {

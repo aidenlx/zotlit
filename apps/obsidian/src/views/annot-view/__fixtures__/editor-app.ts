@@ -1,24 +1,16 @@
 // The comment editor's App, for tests that mount the editor.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import { Scope } from "obsidian";
-import type { App } from "obsidian";
+import type { App, Scope } from "obsidian";
+
+import { keymapApp } from "@/lib/__fixtures__/keymap";
 
 /**
  * The app the comment editor takes its keys through: a keymap whose pushed
  * scopes a test can read and press, and no editor commands to hold.
  */
 export function editorApp(): App & { scopes: Scope[] } {
-  const scopes: Scope[] = [];
   return {
-    scope: new Scope(),
-    scopes,
-    keymap: {
-      pushScope: (scope: Scope) => scopes.push(scope),
-      popScope: (scope: Scope) => {
-        const index = scopes.indexOf(scope);
-        if (index !== -1) scopes.splice(index, 1);
-      },
-    },
+    ...keymapApp(),
     commands: { editorCommands: {} },
     // Where the comment editor and the reader's menus raise their menu events.
     workspace: { trigger: () => {} },

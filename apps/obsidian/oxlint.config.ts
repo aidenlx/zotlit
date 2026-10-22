@@ -38,10 +38,13 @@ export default defineConfig({
     "./scripts/oxlint-plugin-menu-sections.ts",
     "./scripts/oxlint-plugin-obsidian-css.ts",
     "./scripts/oxlint-plugin-private-api.ts",
+    new URL("../../packages/config/oxlint-plugin-keyboard.ts", import.meta.url)
+      .pathname,
   ],
   rules: {
     "no-console": "error",
     "zotlit-obsidian/no-cross-window-instanceof": "error",
+    "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": [

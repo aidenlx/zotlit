@@ -11,9 +11,11 @@
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
   AbstractInputSuggest,
+  Component,
   Menu,
   prepareFuzzySearch,
   renderMatches,
+  Scope,
 } from "obsidian";
 import type { App, SearchMatchPart, SearchResult } from "obsidian";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -31,6 +33,7 @@ import type { ProjectionJson } from "@zotlit/item-query";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
@@ -230,8 +233,8 @@ function showMenu(
  * A second request while the item's menu stands, as a right click can
  * raise, opens no second menu over it.
  *
- * @returns the menu, which a caller watches to tell its keys from the
- *   item's; none where the item's menu stands already.
+ * @returns the menu, for a caller whose item would hear the keys meant for
+ *   it; none where the item's menu stands already.
  */
 export function openChipMenu(
   chip: HTMLElement,
@@ -667,9 +670,9 @@ function ListEditor({
   latest.current = draft;
   /** Set when a key ends the edit in place, so the blur after does not. */
   const chipEnded = useRef(false);
-  /** Whether an item's menu stands, which takes the keys. */
-  const menuStands = useRef(false);
+  const app = useObsidianApp();
   const editingAt = draft.chip?.at;
+  useEditorScope(root);
   // An edit that opens on an item from its menu starts in that item.
   useLayoutEffect(() => {
     if (latest.current.chip === undefined) field.current?.focus();
@@ -800,15 +803,7 @@ function ListEditor({
       edit: () => editChip(at),
       remove: () => remove(at),
     });
-    if (!menu) return;
-    menuStands.current = true;
-    menu.onHide(() => {
-      // The key that closes the menu reaches the pill after the menu has
-      // gone, so the pill hears it as the menu's until the key is done.
-      chip.ownerDocument.defaultView?.setTimeout(() => {
-        menuStands.current = false;
-      });
-    });
+    if (menu) holdMenuKeys(menu, app.keymap);
   };
   const end = (how: VaultEditEnd) => onEnd(true, draft, how);
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -840,8 +835,6 @@ function ListEditor({
   };
   const onPillKey = (event: KeyboardEvent<HTMLElement>, at: number) => {
     event.stopPropagation();
-    // While the pill's menu stands, the keys are the menu's.
-    if (menuStands.current) return;
     if (asksForMenu(event)) {
       event.preventDefault();
       chipMenu(event.currentTarget, null, at);
@@ -979,6 +972,55 @@ function ListEditor({
       />
     </div>
   );
+}
+
+/**
+ * The list editor's keys are its own: a pill takes Escape, the arrows,
+ * Delete and Backspace, and the view the cell stands in claims the same keys
+ * for its cards on a Scope that hears them first. While focus stands inside
+ * `root`, a Scope of the editor's own stands on top of the view's. It
+ * registers nothing, so a key falls past it to the app's hotkeys and on to
+ * the element focus is on; the value suggester and an item's menu push their
+ * own Scopes above it.
+ */
+function useEditorScope(root: RefObject<HTMLElement | null>): void {
+  const app = useObsidianApp();
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const keys = holdScopeWhileFocused(el, new Scope(app.scope), {
+      keymap: app.keymap,
+    });
+    return () => keys[Symbol.dispose]();
+  }, [app, root]);
+}
+
+/**
+ * While an item's menu stands it holds the keys, and the pill focus stays on
+ * hears none. Obsidian's Menu takes its arrows and Enter, but its Escape hides
+ * it without taking the key, and a key it never registered goes on to the
+ * pill: Delete would remove an item the menu still offers to remove. A Scope
+ * above the menu's takes Escape, and the menu's own takes every other key it
+ * leaves alone; the menu's arrows and Enter stand before that one.
+ *
+ * The menu pushes its Scope as it loads, a timer after it shows, and a child
+ * of the menu loads after it: the child pushes this Scope on top of the
+ * menu's, and pops it as the hiding menu unloads.
+ */
+function holdMenuKeys(
+  menu: Menu,
+  keymap: Pick<App["keymap"], "pushScope" | "popScope">,
+): void {
+  menu.scope.register(null, null, () => false);
+  const keys = new Scope(menu.scope);
+  keys.register([], "Escape", () => {
+    menu.hide();
+    return false;
+  });
+  const hold = new Component();
+  hold.onload = () => keymap.pushScope(keys);
+  hold.onunload = () => keymap.popScope(keys);
+  menu.addChild(hold);
 }
 
 /**

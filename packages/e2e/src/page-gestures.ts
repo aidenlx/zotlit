@@ -41,13 +41,14 @@ export const MENU_READY =
 
 /**
  * Declares `trusted(win)` in an eval: the keys and clicks of `win` as the OS
- * delivers them, through its Electron web contents. `key(keyCode)` presses
- * and releases an Electron key code, such as `'Escape'`; `click(el)` clicks
+ * delivers them, through its Electron web contents. `key(keyCode, modifiers)`
+ * presses and releases an Electron key code, such as `'Escape'`, with the
+ * modifiers held, such as `['meta']`; `click(el)` clicks
  * the middle of `el`. Each waits until `win` has the event. Unlike `press`,
  * these reach the browser's own handling of a real gesture: a popover's
  * light dismiss, and Obsidian's keymap in the window that has the key.
  */
-export const TRUSTED = `const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();const delivered=(type)=>new Promise(r=>win.addEventListener(type,r,{once:true,capture:true}));return {key:async(keyCode)=>{const up=delivered('keyup');contents.sendInputEvent({type:'keyDown',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;},click:async(el)=>{const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};const up=delivered('mouseup');contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await up;}};};`;
+export const TRUSTED = `const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();const delivered=(type)=>new Promise(r=>win.addEventListener(type,r,{once:true,capture:true}));return {key:async(keyCode,modifiers=[])=>{const up=delivered('keyup');contents.sendInputEvent({type:'keyDown',keyCode,modifiers});contents.sendInputEvent({type:'keyUp',keyCode,modifiers});await up;},click:async(el)=>{const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};const up=delivered('mouseup');contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await up;}};};`;
 
 /**
  * Picks the view `name` in the view menu of a Query View, as a reader does:

@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { keymapApp, pressTop } from "@/lib/__fixtures__/keymap";
 import {
   createObsidianHost,
   PluginStub,
@@ -1202,6 +1203,54 @@ it("names the tree and the facets for a screen reader, with no tooltip over them
   expect(accessibleName(pane.querySelector("[role=group]")!)).toBe(
     m.library_view_facets_label(),
   );
+});
+
+it("puts the open tree away on Escape from inside it, on a Scope above the list's", async () => {
+  const { deps } = pluginData();
+  const app = keymapApp();
+  Object.assign(deps.app, { keymap: app.keymap });
+  const view = await openTab(deps);
+  const pane = view.contentEl.querySelector<HTMLElement>(
+    "[data-library-tree]",
+  )!;
+  const shell = pane.parentElement!;
+  const escape = async (target: Element, init: KeyboardEventInit = {}) => {
+    let event: KeyboardEvent | undefined;
+    await act(() => {
+      event = pressTop(app, { key: "Escape", ...init }, target);
+    });
+    return event!;
+  };
+
+  // A closed tree, on a wide pane, leaves Escape to the list.
+  row(view, THESIS).dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  expect(app.scopes).toEqual([]);
+
+  await press(
+    view,
+    view.contentEl.querySelector<HTMLElement>("[data-library-tree-toggle]")!,
+  );
+  expect(shell.hasAttribute("data-tree-open")).toBe(true);
+  row(view, THESIS).dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  expect(app.scopes).toHaveLength(1);
+
+  // A tag filter with text in it clears its own text first.
+  await act(() => view.tree.setTagFilter("method"));
+  const filter = pane.querySelector<HTMLInputElement>(
+    "[data-library-tags-filter]",
+  )!;
+  expect((await escape(filter)).defaultPrevented).toBe(true);
+  expect(view.tree.store.getState().tagFilter).toBe("");
+  expect(shell.hasAttribute("data-tree-open")).toBe(true);
+
+  // An Escape that drops a composition stays the input method's.
+  await escape(row(view, THESIS), { isComposing: true });
+  expect(shell.hasAttribute("data-tree-open")).toBe(true);
+
+  // From a row, the tree goes and the list's own Escape never runs.
+  expect((await escape(row(view, THESIS))).defaultPrevented).toBe(true);
+  expect(shell.hasAttribute("data-tree-open")).toBe(false);
+  expect(app.scopes).toEqual([]);
 });
 
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {

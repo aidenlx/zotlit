@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 
+import { keymapApp, pressTop } from "@/lib/__fixtures__/keymap";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
@@ -223,6 +224,45 @@ it("imports from the secondary action without choosing a Profile or starting cre
   await expect(choice).resolves.toBeUndefined();
   expect(onImport).toHaveBeenCalledOnce();
   expect(onNew).not.toHaveBeenCalled();
+});
+
+it("imports from Enter on the focused secondary action, before the list takes the highlighted row", async () => {
+  using opened = vi.spyOn(SuggestModal.prototype, "open");
+  const onImport = vi.fn(async () => {});
+  const onNew = vi.fn(async () => undefined);
+  const app = keymapApp();
+  const choice = chooseLiteratureNoteProfile(app as unknown as App, [books], {
+    onImport,
+    onNew,
+  });
+  const modal = opened.mock
+    .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+  const rows = await modal.getSuggestions("");
+  const el = document.body.createDiv();
+  onTestFinished(() => el.remove());
+  /** The Import button, as the list draws its rows on a keystroke. */
+  const draw = () => {
+    el.empty();
+    modal.renderSuggestion(rows.at(-1)!, el);
+    return el.querySelector("button")!;
+  };
+
+  // A row drawn again gives the last button's Scope back.
+  draw().focus();
+  const button = draw();
+  expect(app.scopes).toEqual([]);
+
+  button.focus();
+  expect(app.scopes).toHaveLength(1);
+  // The modal's own Scope, beneath, holds the list's Enter.
+  expect(app.scopes[0]).not.toBe(modal.scope);
+  expect(pressTop(app, { key: "Enter" }, button).defaultPrevented).toBe(true);
+
+  await expect(choice).resolves.toBeUndefined();
+  expect(onImport).toHaveBeenCalledOnce();
+  expect(onNew).not.toHaveBeenCalled();
+  // Closing the modal gives the Scope back.
+  expect(app.scopes).toEqual([]);
 });
 
 it.each([

@@ -56,8 +56,6 @@ export function TagSelector({ tree }: { tree: LibraryTree }) {
     const name = shown[index]!;
     const step = STEPS[event.key];
     if (event.key === "Enter" || event.key === " ") tree.toggleTag(name);
-    else if (event.key === "Escape" && tree.store.getState().open)
-      tree.setOpen(false);
     else if (step) {
       const to = step(index, shown.length - 1);
       setCurrent(shown[to]!);
@@ -146,13 +144,13 @@ export function TagSelector({ tree }: { tree: LibraryTree }) {
           value={filter}
           className="zt:w-full"
           onChange={(event) => tree.setTagFilter(event.currentTarget.value)}
+          // Escape clears the filter; on an empty one it reaches the open
+          // tree's own Scope, which puts the tree away.
           onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
-            if (filter !== "") tree.setTagFilter("");
-            else if (tree.store.getState().open) tree.setOpen(false);
-            else return;
+            if (event.key !== "Escape" || filter === "") return;
             event.preventDefault();
             event.stopPropagation();
+            tree.setTagFilter("");
           }}
         />
       </div>

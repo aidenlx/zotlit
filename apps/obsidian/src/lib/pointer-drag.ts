@@ -2,8 +2,15 @@
 // resizes a column or a pane does: the pointer capture, the cursor held over
 // the whole page, the window listeners, Escape, one update a frame and the
 // cleanup. What the drag sets stays with the caller.
+import { Scope } from "obsidian";
+import type { App } from "obsidian";
 
 export interface PointerDrag {
+  /**
+   * Whose keymap takes Escape while the drag is on: the surface under the
+   * drag hears a key on its own Scope before the window does.
+   */
+  app: Pick<App, "scope" | "keymap">;
   /** The press that starts the drag. */
   press: Pick<PointerEvent, "pointerId" | "clientX">;
   /** The element pressed, which takes the pointer and the `is-active` class. */
@@ -37,6 +44,7 @@ export interface PointerDrag {
  * that does not move, as half of a double click, drops nothing.
  */
 export function pointerDrag({
+  app,
   press,
   handle,
   cursor,
@@ -59,9 +67,19 @@ export function pointerDrag({
   }
   handle.classList.add("is-active");
   doc.body.classList.add(cursor);
+  // Escape ends the drag and goes no further, so the list under it keeps its
+  // selection and its card. The press put focus in the drag's window, whose
+  // stack the Scope goes on.
+  const scope = new Scope(app.scope);
+  scope.register([], "Escape", () => {
+    controller.abort();
+    return false;
+  });
+  app.keymap.pushScope(scope);
   signal.addEventListener(
     "abort",
     () => {
+      app.keymap.popScope(scope);
       win.cancelAnimationFrame(frame);
       handle.classList.remove("is-active");
       doc.body.classList.remove(cursor);
@@ -105,16 +123,6 @@ export function pointerDrag({
     "pointercancel",
     (event) => {
       if (mine(event)) controller.abort();
-    },
-    options,
-  );
-  win.addEventListener(
-    "keydown",
-    (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      controller.abort();
     },
     options,
   );

@@ -59,7 +59,7 @@ import {
   obEvalUntil,
   waitFor,
 } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { PAGE, TRUSTED } from "./page-gestures.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -758,6 +758,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       and: ['itemType == "book"', "title =="],
     });
     expect(await underlines("==")).toEqual([[], ["=="]]);
+    // Mod+Z in the expression field is its own history's, and the Match
+    // follows the text it undoes; in a select's search field it undoes the
+    // typed text and leaves the Match alone (#1667).
+    expect(
+      await obEval(
+        run.vaultId,
+        `(async()=>{${PAGE}${TRUSTED}const view=app.workspace.activeLeaf.view;const el=view.contentEl;const input=trusted(el.win);const contents=el.win.electronWindow.webContents;const mod=process.platform==='darwin'?'meta':'control';const rows=el.querySelectorAll('[data-condition-row]');const content=rows[1]?.querySelector('.cm-content');if(!content)throw new Error('Missing: expression field');const editor=content.cmTile.root.view;await input.click(content);editor.dispatch({selection:{anchor:editor.state.doc.length}});await contents.insertText(' x');await until('the typing reaches the Match',()=>view.controller.source.includes('title == x'));await input.key('z',[mod]);await until('undo takes the typing out of the field and the Match',()=>editor.state.doc.toString()==='title =='&&!view.controller.source.includes('title == x'));const select=rows[0].querySelector('[role=combobox]');press(select,'the first select');const popup=await until('the select opens',()=>select.popoverTargetElement?.matches(':popover-open')&&select.popoverTargetElement);const search=await until('focus in its search',()=>el.doc.activeElement===popup.querySelector('input')&&el.doc.activeElement);await contents.insertText('ab');await until('the search is typed',()=>search.value==='ab');const before=view.controller.source;await input.key('z',[mod]);contents.undo();await until('the search undoes its own text',()=>search.value!=='ab');const kept=view.controller.source===before;await input.key('Escape');return String(kept);})()`,
+      ),
+    ).toBe("true");
   });
 
   it("keeps per-Item matches in a mixed-Library batch with one unmatched-or-overlap fallback", async () => {

@@ -636,8 +636,6 @@ function TreePane({ tree }: { tree: LibraryTree }) {
       items?.[to]?.focus();
     };
     if (event.key === "Enter" || event.key === " ") tree.select(row.node);
-    else if (event.key === "Escape" && tree.store.getState().open)
-      tree.setOpen(false);
     else if (event.key === "ArrowDown") focus(index + 1);
     else if (event.key === "ArrowUp") focus(index - 1);
     else if (event.key === "ArrowRight" && row.expanded === false)

@@ -1,7 +1,7 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import type { HoverParent, Modifier, PDFPageViewport, Scope } from "obsidian";
+import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -10,6 +10,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { dispatchKey } from "@/lib/__fixtures__/keymap";
 import { withRecentColor } from "@/lib/annotation-colors";
 import {
   markExternal,
@@ -490,80 +491,7 @@ export function failedIn(
   return results.filter(({ ok }) => !ok).map(({ probe }) => probe);
 }
 
-const MODIFIER_HELD: Readonly<
-  Record<string, (event: KeyboardEvent) => boolean>
-> = {
-  Ctrl: (event) => event.ctrlKey,
-  Meta: (event) => event.metaKey,
-  Alt: (event) => event.altKey,
-  Shift: (event) => event.shiftKey,
-};
-
-/**
- * Whether a registration's modifiers are the ones the keystroke carries, as
- * Obsidian's own keymap compares them: a registration that names none matches
- * a bare key alone, and one that names `null` matches whatever is held.
- */
-function heldModifiers(
-  modifiers: Modifier[] | null,
-  event: KeyboardEvent,
-): boolean {
-  if (modifiers === null) return true;
-  return Object.entries(MODIFIER_HELD).every(
-    ([name, held]) => modifiers.includes(name as Modifier) === held(event),
-  );
-}
-
-/**
- * One keystroke as Obsidian delivers it: the view's Scope hears it first, and
- * the page hears it only when no handler there took it.
- *
- * The Scope's own search rule is Obsidian's: a registration that answers
- * `false` takes the key, and one that answers nothing ends the search all the
- * same unless it is a catch-all — a registration naming neither key nor
- * modifiers, which the search walks past to whatever stands behind it.
- *
- * @param target where the focus sits, which the Scope reads before the page is
- *   dispatched the event.
- * @see `Scope.handleKey` in Obsidian's own `app.js`.
- */
-export function dispatchKey(
-  scope: Scope,
-  init: KeyboardEventInit,
-  target: EventTarget,
-): KeyboardEvent {
-  const event = new KeyboardEvent("keydown", {
-    bubbles: true,
-    cancelable: true,
-    ...init,
-  });
-  Object.defineProperty(event, "target", { value: target });
-  // The mock Scope records its registrations, in the order made.
-  const { handlers } = scope as unknown as {
-    handlers: {
-      modifiers: Modifier[] | null;
-      key: string | null;
-      func: (evt: KeyboardEvent) => boolean | void;
-    }[];
-  };
-  for (const { modifiers, key, func } of handlers) {
-    if (key !== null && key.toLowerCase() !== event.key.toLowerCase()) continue;
-    if (!heldModifiers(modifiers, event)) continue;
-    const answer = func(event);
-    if (answer === false) {
-      // The registration took the key: Obsidian prevents the event and stops
-      // it, so the page never hears it.
-      event.preventDefault();
-      return event;
-    }
-    // A keyed registration ends the search whatever else it answers, so no
-    // registration behind it and no parent Scope hears the keystroke. The page
-    // hears it all the same: nothing prevented the event.
-    if (answer !== undefined || key !== null || modifiers !== null) break;
-  }
-  target.dispatchEvent(event);
-  return event;
-}
+export { dispatchKey };
 
 /** The instant the reader surfaces read their clock at. */
 export const READER_NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
