@@ -1,3 +1,5 @@
+// Fumadocs' native UI strings, read from the root message catalogs.
+
 import type { Translations } from "fumadocs-ui/i18n";
 
 import { m } from "@/paraglide/messages.js";

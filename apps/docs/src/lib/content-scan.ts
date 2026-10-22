@@ -14,6 +14,7 @@ import { getSlugs } from "fumadocs-core/source";
 import { globSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import type { SiteLocale } from "./i18n.js";
 import type { MarkdownSection } from "./markdown-routes.js";
 
 /** One content file, addressed the way the loaders address it. */
@@ -27,6 +28,9 @@ export interface ContentEntry {
  * One content directory per section, matching the file patterns the
  * collections in `collections.ts` pick up.
  */
+/** The infix that names a Chinese edition: `page.zh-CN.mdx` beside `page.mdx`. */
+export const chineseFile = /\.zh-CN(?=\.mdx?$)/;
+
 const sections: Record<MarkdownSection, { dir: string; files: string }> = {
   docs: { dir: "content/docs", files: "**/[!_]*.mdx" },
   changelog: { dir: "content/changelog", files: "**/*.{mdx,md}" },
@@ -39,16 +43,16 @@ const sections: Record<MarkdownSection, { dir: string; files: string }> = {
  */
 export function scanContent(
   packageRoot: string,
-  { locale = "en" }: { locale?: "en" | "zh-CN" } = {},
+  { locale = "en" }: { locale?: SiteLocale } = {},
 ): Record<MarkdownSection, ContentEntry[]> {
   return Object.fromEntries(
     Object.entries(sections).map(([section, { dir, files }]) => {
       const cwd = resolve(packageRoot, dir);
       const entries = globSync(files, { cwd })
-        .filter((file) => /\.zh-CN\.mdx?$/.test(file) === (locale === "zh-CN"))
+        .filter((file) => chineseFile.test(file) === (locale === "zh-CN"))
         .map(
           (file): ContentEntry => ({
-            slugs: getSlugs(file.replace(/\.zh-CN(?=\.mdx?$)/, "")),
+            slugs: getSlugs(file.replace(chineseFile, "")),
             frontmatter: frontmatter(readFileSync(join(cwd, file), "utf8"))
               .data,
           }),

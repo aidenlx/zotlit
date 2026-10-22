@@ -9,8 +9,7 @@ import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { cn } from "@/lib/cn";
 import { blogs } from "@/lib/collections";
-import { unlocalizedPath, validateSiteLocale } from "@/lib/i18n";
-import type { SiteLocale } from "@/lib/i18n";
+import { localeInput, unlocalizedPath } from "@/lib/i18n";
 import { getPageLocaleState } from "@/lib/locale-state";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
@@ -21,10 +20,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
 const getPost = createServerFn({ method: "GET" })
-  .validator((input: { slug: string; locale: SiteLocale }) => {
-    validateSiteLocale(input.locale);
-    return input;
-  })
+  .validator(localeInput<{ slug: string }>())
   .handler(async ({ data: { slug, locale } }) => {
     const page = blog.getPage([slug], locale);
     if (!page) throw notFound();

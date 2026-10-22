@@ -28,7 +28,7 @@ const contentFile = "content.md";
 
 const suffix = ".md";
 
-function isMarkdownSection(value: string): value is MarkdownSection {
+export function isMarkdownSection(value: string): value is MarkdownSection {
   return (markdownSections as readonly string[]).includes(value);
 }
 

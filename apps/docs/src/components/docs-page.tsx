@@ -27,8 +27,7 @@ import { RedirectNotice } from "@/components/redirect-notice";
 import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { docs } from "@/lib/collections";
 import { installPageSlugs } from "@/lib/github-releases";
-import { validateSiteLocale } from "@/lib/i18n";
-import type { SiteLocale } from "@/lib/i18n";
+import { localeInput } from "@/lib/i18n";
 import { contentRouteUrl } from "@/lib/markdown-routes";
 import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
@@ -43,10 +42,7 @@ import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
 /** Resolves a docs URL to the collection file the client loader compiles, plus what the head needs. */
 export const resolveDocsPage = createServerFn({ method: "GET" })
-  .validator((input: { splat: string; locale: SiteLocale }) => {
-    validateSiteLocale(input.locale);
-    return input;
-  })
+  .validator(localeInput<{ splat: string }>())
   .handler(async ({ data: { splat, locale } }) => {
     const page = source.getPage(splat.split("/").filter(Boolean), locale);
     if (!page) throw notFound();
