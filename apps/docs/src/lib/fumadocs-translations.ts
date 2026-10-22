@@ -20,6 +20,10 @@ export function fumadocsTranslations(locale: SiteLocale): Translations {
     ),
     "Choose a language(language switcher)(aria-label)":
       m.docs_fumadocs_choose_a_language({}, { locale }),
+    "Close(image zoom)(aria-label)": m.docs_fumadocs_close_image_zoom(
+      {},
+      { locale },
+    ),
     "Close Banner(banner)(aria-label)": m.docs_fumadocs_close_banner(
       {},
       { locale },
@@ -34,6 +38,16 @@ export function fumadocsTranslations(locale: SiteLocale): Translations {
       { locale },
     ),
     "Collapse Sidebar(sidebar)(aria-label)": m.docs_fumadocs_collapse_sidebar(
+      {},
+      { locale },
+    ),
+    "Copied Anchor Link(heading anchor)(aria-label)":
+      m.docs_fumadocs_copied_anchor_link({}, { locale }),
+    "Copied Link(accordion)(aria-label)": m.docs_fumadocs_copied_link(
+      {},
+      { locale },
+    ),
+    "Copied Markdown(page actions)": m.docs_fumadocs_copied_markdown(
       {},
       { locale },
     ),
@@ -59,6 +73,11 @@ export function fumadocsTranslations(locale: SiteLocale): Translations {
     "Default(type table)": m.docs_fumadocs_default({}, { locale }),
     "Edit on GitHub(edit page)": m.docs_fumadocs_edit_on_github({}, { locale }),
     "Hide Sidebar(sidebar)": m.docs_fumadocs_hide_sidebar({}, { locale }),
+    "Image Viewer(image zoom)(aria-label)": m.docs_fumadocs_image_viewer(
+      {},
+      { locale },
+    ),
+    "Language(language switcher)": m.docs_fumadocs_language({}, { locale }),
     "Last updated on(page footer)": m.docs_fumadocs_last_updated_on(
       {},
       { locale },
@@ -68,6 +87,10 @@ export function fumadocsTranslations(locale: SiteLocale): Translations {
       { locale },
     ),
     "Light(theme switcher)(aria-label)": m.docs_fumadocs_light({}, { locale }),
+    "Next Image(image zoom)(aria-label)": m.docs_fumadocs_next_image(
+      {},
+      { locale },
+    ),
     "Next Page(pagination)": m.docs_fumadocs_next_page({}, { locale }),
     "No Headings(table of contents)": m.docs_fumadocs_no_headings(
       {},
@@ -111,11 +134,16 @@ export function fumadocsTranslations(locale: SiteLocale): Translations {
       { locale },
     ),
     "Open(page actions)": m.docs_fumadocs_open({}, { locale }),
+    "Options(aria-label)": m.docs_fumadocs_options({}, { locale }),
     "Page Not Found(404 not found page)": m.docs_fumadocs_page_not_found(
       {},
       { locale },
     ),
     "Parameters(type table)": m.docs_fumadocs_parameters({}, { locale }),
+    "Previous Image(image zoom)(aria-label)": m.docs_fumadocs_previous_image(
+      {},
+      { locale },
+    ),
     "Previous Page(pagination)": m.docs_fumadocs_previous_page({}, { locale }),
     "Prop(type table)": m.docs_fumadocs_prop({}, { locale }),
     // Fumadocs interpolates its URL after the message reaches its provider.
@@ -124,11 +152,19 @@ export function fumadocsTranslations(locale: SiteLocale): Translations {
     "Returns(type table)": m.docs_fumadocs_returns({}, { locale }),
     "Search(search dialog)": m.docs_fumadocs_search({}, { locale }),
     "Search(search trigger)": m.docs_fumadocs_search({}, { locale }),
+    "Search failed(search dialog)": m.docs_fumadocs_search_failed(
+      {},
+      { locale },
+    ),
+    // Fumadocs interpolates the query after the message reaches its provider.
+    "Search failed, showing results for {query}(search dialog)":
+      m.docs_fumadocs_search_failed_fallback({ query: "{query}" }, { locale }),
     "Show Sidebar(sidebar)": m.docs_fumadocs_show_sidebar({}, { locale }),
     "System(theme switcher)(aria-label)": m.docs_fumadocs_system(
       {},
       { locale },
     ),
+    "Theme(site menu)": m.docs_fumadocs_theme({}, { locale }),
     "Table of Contents(inline table of contents)":
       m.docs_fumadocs_table_of_contents({}, { locale }),
     "The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.(404 not found page)":
