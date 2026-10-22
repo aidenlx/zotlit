@@ -11,7 +11,11 @@
 // or Obsidian's `electronWindow.focus()` raises, as the OS does for an active
 // app. Only that window answers `document.hasFocus()` with true, whichever
 // window holds the OS focus, and it gets the `focus` event that moves
-// Obsidian's `activeWindow` to it. Focus moves apply one at a time, in the
+// Obsidian's `activeWindow` to it. When that window, or the one `activeWindow`
+// names, closes, the focus goes back to the main window, as the OS gives it to
+// another window of the app; a move that a closed window asked for, or that was
+// still applying when it closed, ends without its `focus` event, which would
+// leave `activeWindow` on the closed window. Focus moves apply one at a time, in the
 // order they are asked for, so the last one asked wins. A window answers true
 // once its move has applied, not when it is asked for: until then Chromium
 // holds back the focus events of the elements focused in it, and CodeMirror
@@ -72,18 +76,20 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
       let focusedWin;
       let appliedWin;
       let switching=Promise.resolve();
+      const open=(win)=>!win.closed&&raised.has(win);
       const emulateFocus=(win)=>{
         focusedWin=win;
         const run=switching.then(async()=>{
-          if(win!==focusedWin)return;
+          if(win!==focusedWin||!open(win))return;
           const next=win.require('@electron/remote').getCurrentWebContents();
           if(focused!==next){
             const last=focused;focused=next;
             appliedWin=undefined;
-            if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});
+            if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false}).catch(()=>{});
             if(!next.debugger.isAttached())next.debugger.attach('1.3');
             await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
           }
+          if(!open(win))return;
           if(activeWindow!==win)win.dispatchEvent(new win.FocusEvent('focus'));
           if(win===focusedWin)appliedWin=win;
         });
@@ -100,7 +106,7 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
       };
       const refs=[
         app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>{${showBehind("shown")}};}),
-        app.workspace.on('window-close',(_workspaceWindow,win)=>{raised.delete(win);if(win===focusedWin)void emulateFocus(window);}),
+        app.workspace.on('window-close',(_workspaceWindow,win)=>{raised.delete(win);if(win===focusedWin||win===activeWindow)void emulateFocus(window);}),
       ];
       apply();
       followFocus(window);
