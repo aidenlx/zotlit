@@ -11,6 +11,7 @@
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import {
   AbstractInputSuggest,
+  Component,
   Menu,
   prepareFuzzySearch,
   renderMatches,
@@ -1001,6 +1002,10 @@ function useEditorScope(root: RefObject<HTMLElement | null>): void {
  * pill: Delete would remove an item the menu still offers to remove. A Scope
  * above the menu's takes Escape, and the menu's own takes every other key it
  * leaves alone; the menu's arrows and Enter stand before that one.
+ *
+ * The menu pushes its Scope as it loads, a timer after it shows, and a child
+ * of the menu loads after it: the child pushes this Scope on top of the
+ * menu's, and pops it as the hiding menu unloads.
  */
 function holdMenuKeys(
   menu: Menu,
@@ -1012,8 +1017,10 @@ function holdMenuKeys(
     menu.hide();
     return false;
   });
-  keymap.pushScope(keys);
-  menu.onHide(() => keymap.popScope(keys));
+  const hold = new Component();
+  hold.onload = () => keymap.pushScope(keys);
+  hold.onunload = () => keymap.popScope(keys);
+  menu.addChild(hold);
 }
 
 /**

@@ -1,11 +1,19 @@
 // The Match pane's own undo: Mod+Z in the pane steps the document's history,
 // and a popup the host draws in it keeps the key by stopping it at its edge.
-import { act, cleanup, fireEvent } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { useWorkbenchController } from "./editor";
 import { MatchPane } from "./match";
 import { mount, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 
@@ -49,4 +57,38 @@ it("steps the Match history from Mod+Z in the pane, and leaves one a popup insid
     fireEvent.keyDown(pane, { key: "Z", metaKey: true, shiftKey: true });
   });
   expect(controller.source).toBe(written);
+});
+
+it("leaves Mod+Z to the expression field, whose own history undoes the typing", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+  });
+  render(mounted.ui);
+  const { controller } = mounted;
+  const edit = await screen.findByRole("button", {
+    name: m.workbench_match_edit_as_expression(),
+  });
+  act(() => edit.click());
+  const view = EditorView.findFromDOM(await screen.findByRole("textbox"))!;
+  const typed = `${view.state.doc.toString()} && x`;
+  act(() => {
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: " && x" },
+      userEvent: "input.type",
+    });
+  });
+  await waitFor(() => expect(controller.source).toContain("&& x"));
+  const before = controller.source;
+
+  // The field's history undoes the typing, and the Match follows it; the
+  // pane stepping the Match too would put the typing back.
+  act(() => {
+    fireEvent.keyDown(view.contentDOM, { key: "z", ctrlKey: true });
+  });
+  expect(view.state.doc.toString()).not.toBe(typed);
+  await waitFor(() => expect(controller.source).not.toBe(before));
+  expect(controller.source).not.toContain("&& x");
 });

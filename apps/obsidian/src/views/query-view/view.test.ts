@@ -4950,11 +4950,23 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
           '[data-query-vault-chip="Roe"]',
         );
       await act(() => pill()!.focus());
+      // Menus push their Scope on this keymap as they load, a timer after
+      // they show, as Obsidian's push theirs on its own.
+      Menu.keymap = (app as unknown as App)
+        .keymap as unknown as typeof Menu.keymap;
+      onTestFinished(() => {
+        Menu.keymap = null;
+      });
       Menu.instances.length = 0;
       await act(() => {
         pressTop(app, { key: "ContextMenu" }, pill()!);
       });
+      await act(
+        () => new Promise((resolve) => pill()!.win.setTimeout(resolve, 0)),
+      );
       expect(Menu.instances).toHaveLength(1);
+      // The Scope that takes the menu's Escape stands above the menu's own.
+      expect(app.scopes.at(-2)).toBe(Menu.instances[0]!.scope);
       const menu = app.scopes.at(-1);
 
       // A key the menu leaves alone stops at it: Delete removes no item the

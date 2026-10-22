@@ -1200,7 +1200,7 @@ export class MenuItem {
  * Menu.addSeparator} deliberately keeps out. Assert
  * {@link MenuItem.section} instead of inferring grouping from position.
  */
-export class Menu {
+export class Menu extends Component {
   static instances: Menu[] = [];
 
   readonly items: MenuItem[] = [];
@@ -1224,6 +1224,7 @@ export class Menu {
   readonly scope = new Scope();
 
   constructor() {
+    super();
     Menu.instances.push(this);
     this.scope.register([], "Escape", () => {
       this.hide();
@@ -1260,14 +1261,41 @@ export class Menu {
     return this;
   }
 
-  /** Test helper: close the menu, running what `onHide` registered. */
+  /**
+   * Close the menu as Obsidian does: it unloads, its children with it, and
+   * runs what `onHide` registered.
+   */
   hide(): this {
+    this.unload();
     this.#onHide?.();
     return this;
   }
 
+  /** As Obsidian's: the menu loads, its children after it, a timer after it shows. */
+  #show(): void {
+    setTimeout(() => this.load(), 0);
+  }
+
+  /**
+   * The keymap a test hands the menus it opens, which a loaded menu pushes
+   * its Scope on, as Obsidian's push theirs on its global keymap.
+   */
+  static keymap: {
+    pushScope(scope: Scope): void;
+    popScope(scope: Scope): void;
+  } | null = null;
+
+  override onload(): void {
+    Menu.keymap?.pushScope(this.scope);
+  }
+
+  override onunload(): void {
+    Menu.keymap?.popScope(this.scope);
+  }
+
   showAtMouseEvent(evt: MouseEvent): this {
     this.mouseEvent = evt;
+    this.#show();
     return this;
   }
 
@@ -1279,6 +1307,7 @@ export class Menu {
   showAtPosition(position: MenuPositionDef, doc?: Document): this {
     this.position = position;
     this.positionDoc = doc ?? null;
+    this.#show();
     return this;
   }
 }
