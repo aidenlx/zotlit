@@ -175,18 +175,25 @@ function hostCandidates(
     );
 }
 
-function selectOpenHost(
-  vaults: Array<ObsidianHost & { open?: boolean }>,
+/** The one vault `selected` names, by ID or else by folder name, open or not. */
+function selectNamed<T extends ObsidianHost>(
+  vaults: T[],
   selected: string,
-): ObsidianHost | undefined {
+): T | undefined {
   const exact = vaults.filter((vault) => vault.id === selected);
   const matches =
     exact.length > 0
       ? exact
       : vaults.filter((vault) => basename(vault.path) === selected);
-  return matches.length === 1 && matches[0]!.open === true
-    ? matches[0]
-    : undefined;
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function selectOpenHost(
+  vaults: Array<ObsidianHost & { open?: boolean }>,
+  selected: string,
+): ObsidianHost | undefined {
+  const named = selectNamed(vaults, selected);
+  return named?.open === true ? named : undefined;
 }
 
 export function createObsidianHostReadiness(
@@ -227,6 +234,33 @@ export function createObsidianHostReadiness(
     };
     const evaluate = async (code: string, target?: string): Promise<string> =>
       evalValue(await reply(code, target)) ?? fail(noLiveHost);
+    // A call with `vault=<id>` would open the closed vault, so the open vaults
+    // come from whichever window answers a call without one. With no answer,
+    // the caller keeps its own failure.
+    const failClosed = async (selected: string): Promise<void> => {
+      let output: string;
+      try {
+        output = await runWithTimeout(
+          (signal) =>
+            effects.runObsidian(["eval", `code=${LIVE_VAULTS_PROBE}`], signal),
+          timeoutMs,
+        );
+      } catch {
+        return;
+      }
+      const notOpen = `${OBSIDIAN_HOST_VAULT_ENV}=${selected} names a vault that is not open.`;
+      if (output === NO_VAULT_WINDOW) {
+        return fail(`${notOpen}\n\nNo vault window is open.`);
+      }
+      const value = evalValue(output);
+      const open = value === undefined ? undefined : parseLiveVaults(value);
+      if (!open) return fail(notOpen);
+      const list = open
+        .filter((vault) => vault.open)
+        .map((vault) => `  - ${vault.id} (${basename(vault.path)})`)
+        .sort();
+      return fail(`${notOpen}\n\nOpen vaults:\n${list.join("\n") || "  none"}`);
+    };
     const readRegistryOr = async (
       message: string,
     ): Promise<Record<string, RegistryVaultEntry>> => {
@@ -304,6 +338,7 @@ export function createObsidianHostReadiness(
     }));
     const host = selectOpenHost(registeredVaults, selected);
     if (!host) {
+      if (selectNamed(registeredVaults, selected)) await failClosed(selected);
       return fail(
         `${OBSIDIAN_HOST_VAULT_ENV} does not identify one open vault: ${selected}`,
       );
