@@ -59,7 +59,7 @@ async function lastCommitDay(page: {
 }
 
 /** The page's Chinese edition, when a Chinese file exists rather than an English fallback. */
-function nativeChinese<P extends { path: string; slugs: string[] }>(
+export function nativeChinese<P extends { path: string; slugs: string[] }>(
   collection: { getPage(slugs: string[], locale: SiteLocale): P | undefined },
   page: P,
 ): P | undefined {
