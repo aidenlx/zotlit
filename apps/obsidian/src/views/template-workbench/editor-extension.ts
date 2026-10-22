@@ -6,6 +6,8 @@ import type { Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, tooltips } from "@codemirror/view";
 import type { ViewUpdate } from "@codemirror/view";
 
+import { onEditorWindowMigrated } from "@/lib/editor-migration";
+
 /** The class the stylesheet keys monospace typography on. */
 export const CODE_PANE_CLASS = "zt-template-workbench-code";
 
@@ -41,7 +43,7 @@ export const hostedEditor: Extension = [
   popoutCopy,
   ViewPlugin.define(
     (view) => {
-      const dispose = view.dom.onWindowMigrated((win) =>
+      const dispose = onEditorWindowMigrated(view, (win) =>
         follow(view, win.document),
       );
       return { destroy: dispose };
@@ -93,7 +95,7 @@ export const popoverTooltips: Extension = ViewPlugin.fromClass(
     constructor(readonly view: EditorView) {
       // A plugin cannot dispatch while the view makes it or updates.
       queueMicrotask(() => this.place());
-      this.#released = view.dom.onWindowMigrated(() =>
+      this.#released = onEditorWindowMigrated(view, () =>
         queueMicrotask(() => this.place()),
       );
     }
