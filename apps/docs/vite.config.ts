@@ -13,12 +13,13 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
+import { renderSiteRedirectsFile } from "./src/lib/redirects.js";
 import type { DocsLine } from "./src/lib/shared.js";
-import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
 // Keep Miniflare's local Worker registry with the package's other ignored
@@ -68,9 +69,10 @@ function resolvedDocsLine(): DocsLine {
 }
 
 /**
- * Emits the Cloudflare asset-layer rule files into the client build, so legacy
- * permalinks and the giscus CORS header resolve without a Worker invocation.
- * @see src/lib/v1-redirects.ts
+ * Emits the Cloudflare asset-layer rule files into the client build, so moved
+ * pages, legacy permalinks, and the giscus CORS header resolve without a Worker
+ * invocation.
+ * @see src/lib/redirects.ts
  * @see src/lib/headers.ts
  */
 function cloudflareAssetRules(): Plugin {
@@ -82,7 +84,7 @@ function cloudflareAssetRules(): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "_redirects",
-        source: renderRedirectsFile(),
+        source: renderSiteRedirectsFile(),
       });
       this.emitFile({
         type: "asset",
@@ -196,6 +198,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   plugins: [
+    chinesePagesPlugin(packageRoot),
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
       ...paraglideOptions,

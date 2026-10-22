@@ -7,6 +7,7 @@ const packageRoot = import.meta.dirname;
 export const paraglideOptions = {
   project: resolve(packageRoot, "../../project.inlang"),
   outdir: resolve(packageRoot, "src/paraglide"),
-  strategy: ["baseLocale"],
+  strategy: ["url", "baseLocale"],
+  trailingSlash: "never",
   emitTsDeclarations: true,
 } satisfies CompilerOptions;

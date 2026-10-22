@@ -3,6 +3,7 @@ import type { FooterProps } from "fumadocs-ui/layouts/docs/page/slots/footer";
 
 import { Comments } from "@/components/comments";
 import { Footer } from "@/layouts/docs/page/slots/footer";
+import { unlocalizedPath } from "@/lib/i18n";
 
 /**
  * The docs page tail: the owned prev/next cards, then the comment thread.
@@ -14,7 +15,10 @@ export function DocsPageFooter(props: FooterProps) {
 
   return (
     <Footer {...props}>
-      <Comments term={pathname.replace(/^\//, "")} className="mt-6" />
+      <Comments
+        term={unlocalizedPath(pathname).replace(/^\//, "")}
+        className="mt-6"
+      />
     </Footer>
   );
 }
