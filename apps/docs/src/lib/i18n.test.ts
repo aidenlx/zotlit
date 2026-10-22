@@ -115,6 +115,48 @@ describe("localized search breadcrumb roots", () => {
   });
 });
 
+// Search seam: `/api/search` builds its index with the default options, as here.
+describe("locale search", () => {
+  const fixture = loader({
+    i18n,
+    baseUrl: "/docs",
+    source: {
+      files: ["index.mdx", "index.zh-CN.mdx"].map((path) => ({
+        type: "page" as const,
+        path,
+        data: {
+          title: path.includes("zh-CN") ? "插入引用" : "Insert citations",
+          structuredData: {
+            headings: [],
+            contents: [
+              {
+                heading: undefined,
+                content: path.includes("zh-CN")
+                  ? "在笔记中插入文献引用的方法"
+                  : "How to insert citations into a note",
+              },
+            ],
+          },
+        },
+      })),
+    },
+  });
+
+  it.each([
+    ["zh-CN", "文献", "/zh-CN/docs"],
+    ["en", "citations", "/docs"],
+  ])("finds %s words inside unspaced text", async (locale, query, url) => {
+    const response = await createFromSource(fixture).GET(
+      new Request(
+        `https://example.test/api/search?locale=${locale}&query=${encodeURIComponent(query)}`,
+      ),
+    );
+    const results = (await response.json()) as { url: string }[];
+    expect(results.length).toBeGreaterThan(0);
+    for (const result of results) expect(result.url).toBe(url);
+  });
+});
+
 // Published-route seam: each locale edition needs its own outage-safe asset.
 describe("prerendered locale editions", () => {
   it("prerenders native editions and leaves missing-file fallback to the Worker", () => {
