@@ -1,11 +1,15 @@
+// Which edition a requested page serves, and the canonical and alternate URLs that follow.
+
+import type { SiteLocale } from "./i18n";
+import { localizedPath } from "./i18n";
 import { htmlPagePath } from "./markdown-routes";
 
 export interface PageLocaleState {
-  contentLocale: "en" | "zh-CN";
+  contentLocale: SiteLocale;
   isFallback: boolean;
   canonicalPath: string;
   alternates: {
-    locale: "en" | "zh-CN" | "x-default";
+    locale: SiteLocale | "x-default";
     path: string;
   }[];
 }
@@ -49,7 +53,7 @@ export function getPageLocaleState(
   const hasChinese =
     catalogPages.has(englishPath) || nativeChinesePages.has(englishPath);
   const chinese = isChinese(locale);
-  const chinesePath = `/zh-CN${englishPath === "/" ? "" : englishPath}`;
+  const chinesePath = localizedPath(englishPath, "zh-CN");
   const alternates: PageLocaleState["alternates"] = [
     { locale: "en", path: englishPath },
   ];

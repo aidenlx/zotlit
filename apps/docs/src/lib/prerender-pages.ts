@@ -15,6 +15,7 @@
 // @see docs/adr/0051-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.js";
+import { localizedPath } from "./i18n.js";
 import type { MarkdownSection } from "./markdown-routes.js";
 import {
   contentRouteUrl,
@@ -105,9 +106,7 @@ export function prerenderPages(packageRoot: string): PrerenderPage[] {
     ...machineRoutePages(content),
     ...htmlPages(content),
     ...[...machineRoutePages(chinese), ...htmlPages(chinese)].map(
-      ({ path }) => ({
-        path: `/zh-CN${path === "/" ? "" : path}`,
-      }),
+      ({ path }) => ({ path: localizedPath(path, "zh-CN") }),
     ),
   ];
 }

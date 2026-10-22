@@ -1,13 +1,23 @@
+// Rewrites a Markdown edition's internal links to the locale it is served in.
+
 import type { Definition, Link as MarkdownLink, Nodes } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
 import type { SiteLocale } from "./i18n";
-import { unlocalizedPath } from "./i18n";
+import { chinesePrefix, unlocalizedPath } from "./i18n";
+import { isMarkdownSection } from "./markdown-routes";
 import { changelogFeedRoute } from "./shared";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
+
+/** A path inside a section that has locale editions, or a section's own `.md` edition. */
+function isLocalizedSectionPath(path: string) {
+  const [, head = "", ...rest] = path.split("/");
+  const section = rest.length === 0 ? head.replace(/\.md$/, "") : head;
+  return isMarkdownSection(section) || section === "llms.mdx";
+}
 
 /** The raw destination's start, with parsed labels and code left intact. */
 function destinationStart(markdown: string, node: MarkdownLink | Definition) {
@@ -58,7 +68,7 @@ export function localizeMarkdownLinks(markdown: string, locale: SiteLocale) {
     const pathname = url.pathname;
     const canonical = unlocalizedPath(pathname);
     if (
-      !/^\/(?:docs|blog|changelog|llms\.mdx)(?:\/|\.md$|$)/.test(canonical) ||
+      !isLocalizedSectionPath(canonical) ||
       canonical === changelogFeedRoute
     ) {
       continue;
@@ -71,8 +81,8 @@ export function localizeMarkdownLinks(markdown: string, locale: SiteLocale) {
     if (start === undefined || markdown[start] !== "/") continue;
     edits.push({
       start,
-      remove: hasPrefix ? "/zh-CN".length : 0,
-      value: locale === "zh-CN" ? "/zh-CN" : "",
+      remove: hasPrefix ? chinesePrefix.length : 0,
+      value: locale === "zh-CN" ? chinesePrefix : "",
     });
   }
   let localized = markdown;

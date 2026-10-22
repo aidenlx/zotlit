@@ -1,3 +1,5 @@
+// Fumadocs' framework and i18n providers, wired to TanStack Router and Paraglide.
+
 import {
   Link,
   useParams,

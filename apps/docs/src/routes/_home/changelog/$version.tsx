@@ -8,8 +8,7 @@ import { getMDXComponents } from "@/components/mdx";
 import { betaFallbackUrl } from "@/lib/beta-fallback";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
-import { validateSiteLocale } from "@/lib/i18n";
-import type { SiteLocale } from "@/lib/i18n";
+import { localeInput } from "@/lib/i18n";
 import { getPageLocaleState } from "@/lib/locale-state";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
@@ -29,10 +28,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
 const getRelease = createServerFn({ method: "GET" })
-  .validator((input: { version: string; locale: SiteLocale }) => {
-    validateSiteLocale(input.locale);
-    return input;
-  })
+  .validator(localeInput<{ version: string }>())
   .handler(({ data: { version, locale } }) => {
     const page = changelog.getPage([version], locale);
     if (!page) {

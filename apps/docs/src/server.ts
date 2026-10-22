@@ -12,6 +12,8 @@ import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { env } from "cloudflare:workers";
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 
+import { localizedPath } from "./lib/i18n";
+import type { SiteLocale } from "./lib/i18n";
 import { getPageLocaleState } from "./lib/locale-state";
 import { negotiatedContentRoute } from "./lib/markdown-routes";
 import { buildV1Redirects } from "./lib/v1-redirects";
@@ -24,14 +26,13 @@ import { paraglideMiddleware } from "./paraglide/server";
  * edition drops the preference instead, so the page answers as the HTML it is —
  * the renderer serves a document route to HTML readers alone.
  */
-function negotiate(request: Request, locale: string): Request {
+function negotiate(request: Request, locale: SiteLocale): Request {
   if (!isMarkdownPreferred(request)) return request;
 
   const url = new URL(request.url);
   const headers = new Headers(request.headers);
   const contentRoute = negotiatedContentRoute(deLocalizeUrl(url).pathname);
-  if (contentRoute)
-    url.pathname = `${locale === "zh-CN" ? "/zh-CN" : ""}${contentRoute}`;
+  if (contentRoute) url.pathname = localizedPath(contentRoute, locale);
   else headers.set("accept", "text/html");
 
   return new Request(url, { method: request.method, headers });
