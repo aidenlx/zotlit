@@ -14,6 +14,7 @@ import {
   Menu,
   prepareFuzzySearch,
   renderMatches,
+  Scope,
 } from "obsidian";
 import type { App, SearchMatchPart, SearchResult } from "obsidian";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -31,6 +32,7 @@ import type { ProjectionJson } from "@zotlit/item-query";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
@@ -670,6 +672,7 @@ function ListEditor({
   /** Whether an item's menu stands, which takes the keys. */
   const menuStands = useRef(false);
   const editingAt = draft.chip?.at;
+  useEditorScope(root);
   // An edit that opens on an item from its menu starts in that item.
   useLayoutEffect(() => {
     if (latest.current.chip === undefined) field.current?.focus();
@@ -979,6 +982,27 @@ function ListEditor({
       />
     </div>
   );
+}
+
+/**
+ * The list editor's keys are its own: a pill takes Escape, the arrows,
+ * Delete and Backspace, and the view the cell stands in claims the same keys
+ * for its cards on a Scope that hears them first. While focus stands inside
+ * `root`, a Scope of the editor's own stands on top of the view's. It
+ * registers nothing, so a key falls past it to the app's hotkeys and on to
+ * the element focus is on; the value suggester and an item's menu push their
+ * own Scopes above it.
+ */
+function useEditorScope(root: RefObject<HTMLElement | null>): void {
+  const app = useObsidianApp();
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const keys = holdScopeWhileFocused(el, new Scope(app.scope), {
+      keymap: app.keymap,
+    });
+    return () => keys[Symbol.dispose]();
+  }, [app, root]);
 }
 
 /**

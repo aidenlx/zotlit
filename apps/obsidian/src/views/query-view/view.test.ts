@@ -20,8 +20,10 @@ import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
 import { shimPopover } from "@/components/__fixtures__/popover";
 import type { ShimmedPopover } from "@/components/__fixtures__/popover";
+import { pressTop } from "@/lib/__fixtures__/keymap";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -37,6 +39,7 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { fakeQuery, requested } from "./__fixtures__/query-run";
+import { QueryCardFocus } from "./card-focus";
 import type { ContextSource } from "./context-hint";
 import { serializeQueryFile } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
@@ -357,8 +360,9 @@ async function mount(
   } as unknown as QueryViewDeps;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});
+  const scope = new Scope();
   const view = new QueryView(deps, {
-    scope: new Scope(),
+    scope,
     sourcePath: () => sourcePath,
     context,
     contextSource,
@@ -392,6 +396,10 @@ async function mount(
   return {
     view,
     el,
+    /** The keymap whose pushed Scopes a test can read. */
+    app: deps.app as unknown as { scopes: Scope[] },
+    /** The Scope the host gives the view for its keys. */
+    scope,
     run,
     reads,
     libraryScope,
@@ -4893,6 +4901,43 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
             );
           });
       expect(chipInput()).not.toBeNull();
+    });
+
+    it("keeps the view's own keys off a list editor while focus stands in it", async () => {
+      const { cell, input, app, el, scope } = await typed(["vault.authors"], {
+        authors: ["Doe, J", "Roe"],
+      });
+      // The view's keys go on the keymap as a note holds the view: while
+      // focus stands inside it, and not from a text field.
+      using _held = new QueryCardFocus(app as unknown as App).hold(
+        el,
+        scope,
+        {} as HistorySurface,
+      );
+      await act(() => cell("authors").click());
+      // The edit opens in the field, so a Scope of the editor's own alone
+      // stands on the keymap.
+      expect(app.scopes).toHaveLength(1);
+      const editor = app.scopes[0];
+
+      // Focus on a pill pushes the view's Scope as the event comes down,
+      // and the editor's goes back on top of it.
+      const pill = cell("authors").querySelector<HTMLElement>(
+        '[data-query-vault-chip="Roe"]',
+      )!;
+      await act(() => pill.focus());
+      expect(app.scopes).toEqual([scope, editor]);
+
+      // The editor's Scope takes no key, so Escape reaches the pill rather
+      // than the view's Escape, and the pill gives focus back to the field.
+      await act(() => {
+        pressTop(app, { key: "Escape" }, pill);
+      });
+      expect(document.activeElement).toBe(input());
+
+      // Focus that leaves the editor gives the Scope back.
+      await act(() => input()!.blur());
+      expect(app.scopes).not.toContain(editor);
     });
 
     it("moves between pills with the arrows, and removes the last with Backspace from an empty field", async () => {

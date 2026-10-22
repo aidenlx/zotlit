@@ -185,7 +185,11 @@ it("leaves the history keys to the comment editor holding focus", async () => {
 it("leaves the history keys to a Text Draft holding focus", async () => {
   await using h = await setup(false);
   const area = h.containerEl.appendChild(
-    createTextDraftArea(document, { input: vi.fn(), finish: vi.fn() }),
+    createTextDraftArea(
+      document,
+      { input: vi.fn(), finish: vi.fn() },
+      editorApp(),
+    ),
   );
 
   h.key({ key: "z", ctrlKey: true }, area);

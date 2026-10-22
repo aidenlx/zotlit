@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pressTop } from "@/lib/__fixtures__/keymap";
 import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -58,13 +59,17 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+/** The app of the tree drawn last, whose keymap a test can read and press. */
+let app = editorApp();
+
 /** Draws one element in a fresh root, as the view mounts its tree. */
 async function mount(element: ReturnType<typeof createElement>) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  app = editorApp();
   await act(() =>
-    root?.render(createElement(AppContext, { value: editorApp() }, element)),
+    root?.render(createElement(AppContext, { value: app }, element)),
   );
   return host;
 }
@@ -406,13 +411,50 @@ describe("the card's tag editor", () => {
       field: "tags",
     });
 
+    // Focus back in the editor puts its Scope on top again.
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     await act(() => {
-      input.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      expect(pressTop(app, { key: "Escape" }, input).defaultPrevented).toBe(
+        true,
       );
     });
     expect(onSaveTags).toHaveBeenCalledTimes(2);
     expect(store.getState().editing).toBeNull();
+    expect(app.scopes).toEqual([]);
+  });
+
+  it("closes from Escape on a chip's remove button, before the view clears its selection", async () => {
+    const { host, store } = await mountCard();
+    await click(tagToggle(host));
+    expect(app.scopes).toHaveLength(1);
+    const input = host.querySelector<HTMLInputElement>(".zt-annot-tag-input")!;
+    const remove = host.querySelector<HTMLElement>(".zt-annot-tag-remove")!;
+    input.dispatchEvent(
+      new FocusEvent("focusout", {
+        bubbles: true,
+        relatedTarget: remove,
+      }),
+    );
+    // Focus moving inside the editor keeps its Scope; the view's Scope,
+    // beneath it, never hears the key.
+    expect(app.scopes).toHaveLength(1);
+    // An Escape that drops a composition stays the input method's.
+    await act(() => {
+      const escape = pressTop(
+        app,
+        { key: "Escape", isComposing: true },
+        remove,
+      );
+      expect(escape.defaultPrevented).toBe(false);
+    });
+    expect(store.getState().editing).not.toBeNull();
+    await act(() => {
+      expect(pressTop(app, { key: "Escape" }, remove).defaultPrevented).toBe(
+        true,
+      );
+    });
+    expect(store.getState().editing).toBeNull();
+    expect(app.scopes).toEqual([]);
   });
 
   it("starts no second save from a blur while the last one is in flight", async () => {

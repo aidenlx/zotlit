@@ -1166,10 +1166,18 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     }
     const page = pageViewOf(controller, draft.pageIndex + 1);
     if (!page) return;
-    const area = (this.#draftArea ??= createTextDraftArea(page.div.doc, {
-      input: (text) => creation.typeDraft(text),
-      finish: () => creation.finishDraft(),
-    }));
+    const area = (this.#draftArea ??= createTextDraftArea(
+      page.div.doc,
+      {
+        input: (text) => creation.typeDraft(text),
+        finish: () => creation.finishDraft(),
+      },
+      // Under the PDF view's own keys, which leave a text field its keys.
+      {
+        scope: this.#view.scope ?? this.#view.app.scope,
+        keymap: this.#view.app.keymap,
+      },
+    ));
     placeTextDraft(area, page, {
       draft,
       font: interfaceFont(page.div.win),

@@ -10,6 +10,12 @@
 // textarea and wraps in the saved mark.
 //
 // @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/page.js#L860-L947
+import { Scope } from "obsidian";
+import type { App } from "obsidian";
+
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
+import type { FocusScope } from "@/lib/focus-scope";
+import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 
 import { readingAngle } from "./free-text-layout";
@@ -34,27 +40,39 @@ export interface TextDraftEvents {
   finish: () => void;
 }
 
+/** The Scope each textarea holds while it has focus. */
+const holds = new WeakMap<HTMLTextAreaElement, FocusScope>();
+
 /**
  * Builds the textarea once for a draft. A press on it stays its own, so no
  * reader gesture under it acts; Escape finishes the draft and goes no
  * further. The page's own re-render takes the textarea off the page for a
  * moment, and a focus lost to that is no finish.
+ *
+ * The PDF view's Scope hears a key before the textarea does, and takes
+ * Escape to close its find bar, so the textarea takes Escape on a Scope of
+ * its own, on top while it holds focus.
+ *
+ * @param keys the keymap, and the Scope the textarea's goes under: the PDF
+ *   view's, so every other key still reaches the view.
  */
 export function createTextDraftArea(
   document_: Document,
   { input, finish }: TextDraftEvents,
+  keys: Pick<App, "scope" | "keymap">,
 ): HTMLTextAreaElement {
   const area = document_.win.createEl("textarea");
   area.classList.add(themeHook.pdfTextDraft);
   area.dir = "auto";
   area.spellcheck = false;
   area.addEventListener("input", () => input(area.value));
-  area.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
+  const scope = new Scope(keys.scope);
+  scope.register([], "Escape", (event) => {
+    if (composing(event)) return;
     finish();
+    return false;
   });
+  holds.set(area, holdScopeWhileFocused(area, scope, { keymap: keys.keymap }));
   area.addEventListener("blur", () => {
     queueMicrotask(() => {
       if (area.isConnected) finish();
@@ -121,6 +139,9 @@ export function removeTextDraftArea(area: HTMLTextAreaElement): void {
   const focused = area.doc.activeElement === area;
   const textLayer =
     area.parentElement?.querySelector<HTMLElement>(".textLayer");
+  // A focused element taken off the page may hear no blur.
+  holds.get(area)?.[Symbol.dispose]();
+  holds.delete(area);
   area.remove();
   if (focused) textLayer?.focus({ preventScroll: true });
 }

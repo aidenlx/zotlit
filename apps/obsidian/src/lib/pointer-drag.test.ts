@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
+import type { Scope } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { keymapApp, pressTop } from "./__fixtures__/keymap";
 import { pointerDrag } from "./pointer-drag";
 
 const CURSOR = "zt-is-dragging-test";
@@ -40,7 +42,9 @@ function start() {
   const handle = document.body.createDiv();
   const controller = new AbortController();
   const calls: unknown[][] = [];
+  const app = keymapApp();
   pointerDrag({
+    app,
     press: { pointerId: 1, clientX: 100 },
     handle,
     cursor: CURSOR,
@@ -49,7 +53,7 @@ function start() {
     drop: (delta) => calls.push(["drop", delta]),
     end: () => calls.push(["end"]),
   });
-  return { handle, controller, calls };
+  return { handle, controller, calls, app };
 }
 
 it("holds the cursor and the active edge while the drag is on, and moves once a frame with the last offset", () => {
@@ -90,17 +94,23 @@ it("drops nothing for a press that does not move", () => {
 it.each([
   [
     "Escape",
-    () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })),
+    (app: { scopes: Scope[] }) => {
+      // The drag takes the key: the Scope of the list under it never hears it.
+      const escape = pressTop(app, { key: "Escape" }, document.body);
+      expect(escape.defaultPrevented).toBe(true);
+    },
   ],
   ["a lost pointer", () => pointer("pointercancel", 120)],
 ])("ends without a drop on %s", (_, cancel) => {
-  const { calls } = start();
+  const { calls, app } = start();
   pointer("pointermove", 120);
-  cancel();
+  expect(app.scopes).toHaveLength(1);
+  cancel(app);
   runFrames();
   pointer("pointerup", 120);
   expect(calls).toEqual([["end"]]);
   expect(document.body.classList.contains(CURSOR)).toBe(false);
+  expect(app.scopes).toEqual([]);
 });
 
 it("ends without a drop when its controller aborts, as a closing view does", () => {

@@ -10,6 +10,7 @@ import { setTooltip } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { pointerDrag } from "@/lib/pointer-drag";
+import type { PointerDrag } from "@/lib/pointer-drag";
 
 import {
   CARD_WIDTH_DEFAULT,
@@ -55,6 +56,8 @@ export interface CardWidthHost {
   collapse(collapsed: boolean): void;
   /** Close the card, as a drag let go past the minimum asks. */
   close(): void;
+  /** The app whose keymap a drag of the edge takes Escape on. */
+  readonly app: PointerDrag["app"];
 }
 
 /** Where the Reading Card shows. */
@@ -215,6 +218,7 @@ export class CardWidth {
       this.#host.collapse(now);
     };
     pointerDrag({
+      app: this.#host.app,
       press: event,
       handle: this.#handle,
       cursor: RESIZING,

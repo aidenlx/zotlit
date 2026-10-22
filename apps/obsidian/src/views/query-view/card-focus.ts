@@ -67,11 +67,13 @@ export class QueryCardFocus {
       if (next !== null && !over && this.#last === held) this.#last = null;
     };
     const onDragStart = (event: DragEvent) => event.stopPropagation();
-    el.addEventListener("focusin", onFocusIn);
+    // As the focus event comes down, so a layer inside the view that holds a
+    // Scope of its own, such as a list editor, pushes it above this one.
+    el.addEventListener("focusin", onFocusIn, true);
     el.addEventListener("focusout", onFocusOut);
     el.addEventListener("dragstart", onDragStart);
     return disposable(() => {
-      el.removeEventListener("focusin", onFocusIn);
+      el.removeEventListener("focusin", onFocusIn, true);
       el.removeEventListener("focusout", onFocusOut);
       el.removeEventListener("dragstart", onDragStart);
       release();

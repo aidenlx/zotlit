@@ -10,8 +10,10 @@ import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
 
 import { Effect } from "@/lib/effect";
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
+import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { QueryViewValue } from "@/services/item-query/query-view";
@@ -452,6 +454,7 @@ export class LibraryView extends ItemView {
       cardEl,
       { list: main, pane: shell },
       {
+        app: this.#deps.app,
         stored: () => this.#storage.document().cardWidth,
         // A drag past the minimum hides the card while the pointer stays
         // there, and closes it on release.
@@ -531,6 +534,7 @@ export class LibraryView extends ItemView {
         shell.toggleAttribute("data-tree-open", open),
       ),
     );
+    this.#holdTreeKeys(treePane);
     // A press on the list beside it puts the tree away.
     main.addEventListener("pointerdown", (event) => {
       if (!this.tree.store.getState().open) return;
@@ -782,6 +786,36 @@ export class LibraryView extends ItemView {
       this.selection.setState({ card: true });
       return false;
     });
+  }
+
+  /**
+   * The open tree's keys: Escape puts the tree away from anywhere inside it,
+   * before the list beneath clears its selection or puts its card away. The
+   * view's Scope hears a key before the tree does, so the tree takes Escape
+   * on a Scope of its own, on top while it is open and focus stands in it.
+   * A filter with text in it keeps Escape, which clears it first.
+   */
+  #holdTreeKeys(pane: HTMLElement): void {
+    const { keymap } = this.#deps.app;
+    const scope = new Scope(this.scope);
+    scope.register([], "Escape", (event) => {
+      if (composing(event)) return;
+      // The tag filter, the one field in the tree, clears its text first.
+      if (inTextEntry(event.target) && this.tree.store.getState().tagFilter)
+        return;
+      this.tree.setOpen(false);
+      return false;
+    });
+    const keys = holdScopeWhileFocused(pane, scope, {
+      keymap,
+      when: () => this.tree.store.getState().open,
+    });
+    this.tree.register(
+      this.tree.store.subscribe(({ open }) => {
+        if (!open) keys.release();
+      }),
+    );
+    this.register(() => keys[Symbol.dispose]());
   }
 
   /** Whether a key landed on the list, and not on a control that takes it. */

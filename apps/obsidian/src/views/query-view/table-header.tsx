@@ -11,6 +11,7 @@ import type {
 } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
+import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -231,6 +232,7 @@ export function TableHeader({
   /** The widths the researcher set, by property path. */
   sizes: ColumnSizes | undefined;
 }) {
+  const app = useObsidianApp();
   const columns = properties.visible;
   const editable = view.canSave;
   // A host that keeps no column widths offers no resize.
@@ -361,6 +363,7 @@ export function TableHeader({
       resizedWidth({ start, delta, direction, min });
     let saved = false;
     pointerDrag({
+      app,
       press: event,
       handle,
       cursor: RESIZING,
