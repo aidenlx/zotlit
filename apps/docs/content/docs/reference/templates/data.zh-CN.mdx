@@ -1,0 +1,250 @@
+---
+title: "模板数据"
+description: "按模板类型分类汇总的 zt 变量上全部可用字段属性。"
+---
+
+{/* 由 scripts/generate-template-data.ts 根据 @zotlit/db 模板契约自动生成 - 请勿直接编辑契约表格部分。 */}
+{/* 编辑 packages/db/src/lib/context/ 下 `zt` 类型的文档注释，重新生成契约，然后运行 `pnpm --filter @zotlit/docs generate:template-data`。 */}
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+import { Callout } from "@/components/callout";
+import { ContractTable } from "@/components/contract-table";
+
+本页面列出了在各类模板中 `zt` 变量上可供调用的所有字段属性。您可以对照自己的实际文献库，使用[模板数据浏览器](/docs/how-to/explore-template-data)进行直观探索。
+
+## 笔记模板与内容模板 [#note-and-content-templates]
+
+`note` 模板接收到的 `zt` 根节点数据：涵盖所有条目基础字段，以及在应用层实时装配计算的扩展字段（反向链接、解析后的附件链接、扁平化标注列表、作者便捷属性等）。
+
+配置方案文档中的笔记正文主体，以及其内部的 `{% managed %}` 受管块，均共享此上下文数据。
+
+<ContractTable section="note-and-content-templates" />
+
+## 标注模板 [#annotation-template]
+
+`annotation` 模板接收到的 `zt` 根节点数据：单条批注数据（[`TemplateAnnotation`](#annotation-entry)）加上 [`citation`](#annotation-template-citation)。笔记根节点上的 `zt.annotations` 列表条目不带单独的引文——仅单条标注渲染时才会解析引文。
+
+配置方案文档末尾的标注格式区域（Annotation Section）接收此单条批注作为 `zt`。
+
+<ContractTable section="annotation-template" />
+
+## 笔记名称模板 [#filename-template]
+
+`filename` 模板接收到的 `zt` 根节点数据：条目自身字段、所属分类、主要创作者、作者摘要，以及非活跃的 `notePath` / `noteLink` 占位字段。在为笔记命名计算时仅读取当前条目自身。
+
+配置方案文档 manifest 中的 `filename` 模板接收如下完全对应的属性。
+
+<ContractTable section="filename-template" />
+
+## 条目基础字段 [#item-fields]
+
+Zotero 条目的每个字段均作为顶层扁平属性挂载在 `zt` 上。规范的 Zotero 字段名是主要的访问入口，特定条目类型的具体别名会自动归一化为其规范基础字段：例如通过 `zt.publicationTitle` 访问 `blogTitle`，通过 `zt.publisher` 访问 `studio`。特定类型的旧别名本身不直接挂载在 `zt` 上。
+
+<include>./_field-aliases.zh-CN.mdx</include>
+
+### 按条目类型划分的字段清单 [#common-fields]
+
+每个 Zotero 条目类型均暴露其专属的字段集合。展开某类型即可查看其在上述通用字段基础上扩充的 `zt` 属性名。
+
+<ContractTable section="common-fields" />
+
+## 引文模板 [#citation-templates]
+
+引文模板数据根节点（`zt`）：`citations[i].item === items[i]`。
+
+引文模板（`zotlit-citation.md`）负责渲染单条正文内引文。
+
+将 `zt.citations` 传递给 Pandoc 引文格式化器，它会读取 `prefix`、`suffix`、`suppressAuthor`、`locator` 以及 `labelShort`，并自动忽略 `item.citationKey` 为 null 的无效条目。
+
+| 语言   | 形式                    | 表达式                                                       |
+| ------ | ----------------------- | ------------------------------------------------------------ |
+| Liquid | `normal`                | `{{ zt.citations \| pandoc_cite }}`                          |
+| Eta    | `normal`                | `<%= pandocCite(zt.citations) %>`                            |
+| Liquid | `prefer-author-in-text` | `{{ zt.citations \| pandoc_cite: "prefer-author-in-text" }}` |
+| Eta    | `prefer-author-in-text` | `<%= pandocCite(zt.citations, "prefer-author-in-text") %>`   |
+
+若要生成 LaTeX 源码，可将相同的 `zt.citations` 传递给 LaTeX 格式化器。它会将所有保留的引用标识合并为一个命令，并从第一个保留条目中提取前注（prenote）与后注（postnote）。带有前缀的引文将输出 natbib 和 BibLaTeX 的双参数形式：`\cite[see][p. 3]{smith2024}`。
+
+| 语言   | 形式        | 表达式                                       |
+| ------ | ----------- | -------------------------------------------- |
+| Liquid | `\cite`     | `{{ zt.citations \| tex_cite }}`             |
+| Eta    | `\cite`     | `<%= texCite(zt.citations) %>`               |
+| Liquid | `\autocite` | `{{ zt.citations \| tex_cite: "autocite" }}` |
+| Eta    | `\autocite` | `<%= texCite(zt.citations, "autocite") %>`   |
+
+<ContractTable section="citation-templates" />
+
+### 引文变体 [#citation-variant]
+
+请求引文时的交互动作，作为 `zt.variant` 传入引文模板：`"main"` 代表 Enter，`"alt"` 代表 Shift+Enter 或在建议窗口查询末尾输入 `/`。此枚举仅命名交互手势 — 引文模板决定每个变体具体渲染为何种内容。
+
+内置引文模板针对 `alt` 渲染作者在正文中的形式，针对 `main` 渲染带方括号的标准形式。
+
+- `"main"`：在建议窗口中按 Enter、插入弹窗以及批注的 `citation`。
+- `"alt"`：按 Shift+Enter，或在建议窗口查询末尾附加 `/`。
+
+### 引文条目 [#citation-item]
+
+引文中的单篇被引条目：纯粹的条目数据加上引文范围属性（这些属性永远不会存在于条目本身）。作为 `zt.citations` 公开给引文模板，其中 `zt.items` 为对应的裸条目。
+
+`zt.citations` 中的每个元素。可通过 `{% for citation in zt.citations %}` 进行循环遍历。
+
+<ContractTable section="citation-item" />
+
+### 被引条目字段 [#cited-item-fields]
+
+被引条目的数据，采用与笔记根对象相同的模板词汇，并限定为实时 Zotero 条目与笔记嵌入的 CSL-JSON 快照共同支持的字段。仓库与文献库上下文 — 标签、添加/修改日期、文献库标识以及笔记解析器 — 仅保留在笔记根对象上，嵌入快照无法表达这些内容。未解析的参考文献将变为所有字段均为 null 的存根，因此引文模板无需对条目本身进行空值检查。
+
+每个被引条目还携带其对应类型的全部[条目字段](#item-fields)。它省略的笔记根对象属性包括：`key`、`libraryID`、`indexedKey`、`tags`、`dateAdded`、`dateModified`、`collections`、`backlink`、`weblink`、`annotations`、`attachments`、`authors`、`authorsShort`、`relatedItems`、`notes`、`notePath` 和 `noteLink`。
+
+<ContractTable section="cited-item-fields" />
+
+### 定位符标签简写 [#locator-label-abbreviations]
+
+`labelShort` 将 CSL 的 `label` 映射为其对应的 Pandoc 定位符简写术语。任何未列出的标签（包括 `"page"`）均输出 `p.`。
+
+| `label`     | `labelShort` |
+| ----------- | ------------ |
+| `book`      | `bk.`        |
+| `chapter`   | `chap.`      |
+| `column`    | `col.`       |
+| `figure`    | `fig.`       |
+| `folio`     | `fol.`       |
+| `issue`     | `no.`        |
+| `line`      | `l.`         |
+| `note`      | `n.`         |
+| `opus`      | `op.`        |
+| `paragraph` | `para.`      |
+| `part`      | `pt.`        |
+| `section`   | `sec.`       |
+| `sub-verbo` | `s.v.`       |
+| `verse`     | `v.`         |
+| `volume`    | `vol.`       |
+
+## 批注条目 [#annotation-entry]
+
+已解析应用层链接的单条批注：笔记根对象上 `zt.annotations` 的一个条目，也是单条批注根上下文 [`AnnotationTemplateContext`](#annotation-template) 的基础。
+
+可通过 `{% for annotation in zt.annotations %}` 进行遍历。
+
+<ContractTable section="annotation-entry" />
+
+## 批注类型 [#annotation-types]
+
+解析后的批注类型名称：Zotero 官方声明的类型，或在编写此映射后 Zotero 新增类型时对应的 `"unknown"`。
+
+- `"highlight"`：使用高亮颜色标记的文本。
+- `"note"`：固定在页面某一位置的便签。
+- `"image"`：矩形区域选区，保存为摘录图片。
+- `"ink"`：手绘涂鸦，保存为摘录图片。
+- `"underline"`：下划线文本。
+- `"text"`：直接键入在页面上的自由文本。
+- `"unknown"`：编写此映射后 Zotero 新增的类型 ID。
+
+## 父条目 [#parent-item]
+
+从独立的 `annotation` 模板中查看的父文献条目。批注视图拖拽插入会解析条目的标签，但完全省略分类行 — `collections` 仅存在于笔记根对象上。可在该处读取（`zt.collections`）。
+
+<ContractTable section="parent-item" />
+
+## 创作者 [#creators]
+
+模板词汇体系中的条目创作者。在字符串上下文中强制转换为 [`fullName`](#creators-fullName)。
+
+`zt.creators` 列出条目上的所有创作者。`zt.authors` 列出首个非空角色中的创作者：条目的主要创作者角色、编者（editor）、导演（director），最后是贡献者（contributor）。机构创作者（Zotero `fieldMode=1`）设置 `literal`，并将 `family` 和 `given` 留空。
+
+<ContractTable section="creators" />
+
+## 标签 [#tags]
+
+模板词汇体系中的标签。在字符串上下文中强制转换为 `name`（类似于分类转换为其名称），因此 `{{ zt.tags | join: ", " }}` 会直接渲染标签名称。Zotero 内部数字 ID 已被丢弃；`type` 为解析后的名称，而非 Zotero 的原始整数。
+
+<ContractTable section="tags" />
+
+## 分类 [#collections]
+
+条目所属的 Zotero 分类，采用模板词汇体系。在字符串上下文中强制转换为 `name`（类似于标签转换为其名称）。
+
+使用 `collection_paths` 过滤器可渲染由分隔符（默认为 `"/"`）连接的完整祖先层级路径。
+
+<ContractTable section="collections" />
+
+## 日期格式 [#date-format]
+
+`zt.date` 是通过 `kind` 区分的四种解析变体之一。`{{ zt.date }}` 对 `"date"` 渲染为 ISO 日期，对 `"yearMonth"` 渲染为 ISO 年-月，对 `"year"` 渲染为裸年份，对 `"text"` 渲染为用户输入的原始文本。使用 `{{ zt.date | date: "%Y-%m-%d" }}` 可通过 [strftime 占位符](/docs/reference/templates/syntax#date-formatting-filter)进行显式格式化；对于 `"text"` 类型的日期，无论格式化字符串为何，均原样输出其原始文本。
+
+<ContractTable section="date-format" />
+
+## Extra 字段 [#extra-field]
+
+对 Zotero `extra` 字段的最佳结构化解析。纯数据对象，可在 Liquid、Eta 和 JS 中直接索引。
+
+`toString` 不可枚举，因此展开操作、`JSON.stringify` 或 `Object.keys` 只能获取这三个数据属性。
+
+`zt.extra` 是 Zotero 自由文本 Extra 字段的解析视图，如果字段为空则为 `null`。`{{ zt.extra }}` 会渲染字段的原始文本。
+
+<ContractTable section="extra-field" />
+
+### Extra 行 [#extra-lines]
+
+按文档顺序排列的 Extra 字段单行源数据：解析后的键值对（`key` 加上两端去空格的 `value`）或非键值对文本/空行（`key: null`）。`raw` 为原始整行内容，确保穿插的散文文字不会丢失。
+
+行在首个 `:` 或 `=` 处分割，且仅当 key 以 ASCII 字母开头且只包含 ASCII 字母、数字、空格、点、连字符或下划线时才视作键值对。不匹配的行或 value 为空的行将作为普通文本行。
+
+不可枚举的 `toString` 返回 `raw`，与 extra 字段本身的机制相同。
+
+`zt.extra.lines` 中的每一项。
+
+<ContractTable section="extra-lines" />
+
+## 附件 [#attachments]
+
+v2 模板词汇体系中的附件数据。公开在 `zt.attachments` 上，并在每条批注上作为 `parentAttachment` 呈现。
+
+<ContractTable section="attachments" />
+
+## 关联条目 [#related-items]
+
+[`relatedItems`](#note-and-content-templates-relatedItems) 中的单个条目：关联条目自身的字段，已与其反向链接和作者便捷字段扁平化整合。仅展开第 1 层 — 故意不包含其自身的 `annotations`、`attachments` 和 `relatedItems`（递归解析会导致关联条目的数据库查询级联膨胀），以此作为关系图谱的边界。
+
+每个条目还携带其对应类型的全部[条目字段](#item-fields)。
+
+<ContractTable section="related-items" />
+
+## 笔记 [#notes]
+
+在 [`notes`](#note-and-content-templates-notes) 上作为链接形式呈现的子笔记 — 导入笔记的 Markdown 正文保存在其自身文件中，绝不会内联在此处。包含一个不可枚举的 `toString` 方法来渲染其 [`title`](#notes-title)（回退到 [`key`](#notes-key)），因此在字符串上下文和预览中会转换为标题字符串。
+
+导入工作流请参阅[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。
+
+<ContractTable section="notes" />
+
+### 导入笔记 frontmatter [#imported-note-frontmatter]
+
+<include>./_imported-note-frontmatter.zh-CN.mdx</include>
+
+## 延伸阅读 [#see-also]
+
+<Cards>
+  <Card
+    title="模板语法"
+    description="Liquid 语法、过滤器及 ZotLit 自定义标签。"
+    href="/docs/reference/templates/syntax"
+  />
+  <Card
+    title="Frontmatter 参考"
+    description="合并策略、保留键与更新机制。"
+    href="/docs/reference/templates/frontmatter"
+  />
+  <Card
+    title="默认模板"
+    description="每种类型的内置 Liquid 模板及其详细注释。"
+    href="/docs/reference/templates/defaults"
+  />
+  <Card
+    title="探索模板数据"
+    description="使用模板数据探索器交互式发现属性字段。"
+    href="/docs/how-to/explore-template-data"
+  />
+</Cards>

@@ -1,0 +1,107 @@
+---
+version: "2.2.0-beta.1"
+companion: "2.2.0-beta.1"
+date: "2026-09-27"
+description: "在 Obsidian 中阅读并批注 Zotero PDF、标注视图支持多选卡片、导出时遵循笔记自身样式"
+---
+
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+此测试版本允许您直接在 Obsidian 内部、正在撰写的笔记旁边阅读并批注您的 Zotero PDF，且您的每一处标注都会实时同步保存回 Zotero 中。
+
+<Callout type="info" title="版本运行环境要求">
+
+- **Obsidian 1.14.2 或更高版本**：用以打开存放于仓库外部的 Zotero PDF。
+- **Zotero 10 或更高版本**：用以直接从 Obsidian 向 Zotero 保存批注改动。在 Zotero 9 下，您可以阅读 PDF 及其已有标注，但无法执行保存编辑。
+
+</Callout>
+
+## 版本亮点
+
+### 在 Obsidian 中直接阅读并批注 Zotero PDF
+
+![在 Obsidian 的 PDF 阅读器中打开的一篇论文，展示了其原有的 Zotero 高亮与下划线，单条高亮的弹出浮窗显示其评注与标签，右侧标注视图将每条批注列为卡片](/img/changelog/pdf-reader-annotations.webp)
+
+Zotero 条目的 PDF 现在可以直接在 Obsidian 标签页中打开，并与您正在撰写的文献笔记并排阅读，无需频繁在应用程序之间来回切换。PDF 仍然存放在仓库之外的 Zotero storage 目录中；在 Obsidian 中直接打开它需要 Obsidian 1.14.2 或更高版本。您在 Zotero 中添加的高亮与笔记已经忠实呈现在页面上，保持原有的 Zotero 色彩。在配合 Zotero 10 及更高版本时，您在 Obsidian 中所做的任何批注均会自动保存回 Zotero，能够像普通标注一样正常参与 Zotero 云端同步并在其原生阅读器中展示。
+
+您可以通过多种入口打开 PDF：
+
+- 在文献笔记中，运行 <Command inline name={m.command_open_pdf_name()} />，或从笔记标签页右键菜单中选取。
+- 在 <Command inline name={m.command_open_lit_note_name()} /> 弹窗中，在选中的结果上按下 `Shift+Enter`。
+- 在 Zotero 中，从条目的右键上下文菜单中选择 <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} />，或在 Zotero 阅读器页面菜单中点击 <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />。这两处均需要升级至最新配套插件 ZotLit Companion。
+- 点击笔记中的文件链接。PDF 会直接跳转至对应页码打开，并自动高亮选中关联的批注。
+
+<UiLabel name={m.annot_view_name()} />
+面板会在侧边栏中随 PDF 一同浮现。若希望侧边栏保持静止，可在
+<SettingsPath
+  page={m.settings_page_reader()}
+  setting={m.settings_reader_focus_annot_view_name()}
+/>
+中关闭自动聚焦。若希望重新使用系统外部程序打开文件链接，可在同一页面中关闭
+<UiLabel name={m.settings_reader_open_file_links_name()} />
+。目前仅支持在 Obsidian 中打开 PDF；EPUB 与网页快照仍将留在 Zotero 中。[在
+Obsidian 中打开条目的
+PDF](/docs/how-to/open-pdf-in-obsidian)列出了全部打开途径。
+
+![一篇包含批注 callout 的论文章节笔记，callout 双链链接回 PDF 第 1 页，旁边并排展示 PDF 以及选定了同一标注的标注视图](/img/changelog/pdf-reader-insert-into-note.webp)
+
+页面侧边的工具栏提供了与 Zotero 原生阅读器完全对标的标注工具：<UiLabel name={m.pdf_toolbar_highlight()} />、<UiLabel name={m.pdf_toolbar_underline()} />、<UiLabel name={m.pdf_toolbar_note()} />、用于在页面任意位置键入文字的 <UiLabel name={m.pdf_toolbar_text()} />、用于截取图表的 <UiLabel name={m.pdf_toolbar_image()} /> 以及手绘笔画的 <UiLabel name={m.pdf_toolbar_ink()} />。在任何 PDF 中，每个工具都会记住您上次为其选定的颜色。
+
+选中文档中的标记即可修改其颜色、评注或标签。评注编辑器支持加粗、斜体、下标与上标排版，体验与 Zotero 完全一致。当 PDF 的文本提取存在缺陷（例如连字破碎）时，标注卡片上的 <UiLabel name={m.annot_view_menu_edit_text()} /> 允许您直接修正被引用的文本。您可以拖拽标记以调整位置或缩放范围，并在确认后删除标注。当 PDF 处于打开状态时，按下 `Ctrl+Z`（macOS 为 `Command+Z`）即可撤销上一次标注改动，重做（Redo）可再次应用。[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)详细介绍了每个工具与快捷键。
+
+仅阅读标注无需任何权限。但编辑批注需要满足以下四项前提：
+
+- Zotero 10 或更高版本。在 Zotero 9 下，PDF 可以正常打开并查看标注，但无法在 Obsidian 中保存改动，ZotLit 会提示您更新 Zotero。
+- Zotero 正在同一台计算机上保持运行。
+- 在 Zotero 的“设置 → 高级”中开启了**允许本计算机上的其他应用程序与 Zotero 通信**。当此选项关闭时，ZotLit 会明确提示。
+- 您已为 ZotLit 授权（只需操作一次）。在标注视图中点击 <UiLabel name={m.capability_enable_editing()} />，或前往 <SettingsPath page={m.settings_page_zotero()} /> 在 <UiLabel name={m.settings_zotero_editing_name()} /> 所在行点击 <UiLabel name={m.settings_zotero_editing_enable()} />。在 Zotero 弹出提示时，选择 **Always Allow（始终允许）**。选择单次 Allow 将无法启用编辑。
+
+如果在您于 Obsidian 中编辑标注的同时该标注在 Zotero 中也发生了改动，卡片会弹出 <UiLabel name={m.annot_view_conflict_title()} /> 提示并列出两端版本，由您决定保留哪一份。Zotero 本身禁止修改的标注在 Obsidian 中同样处于只读锁定状态。例如：Zotero 直接从 PDF 文件中读取导入的标注，或群组文献库中由其他成员创建的标注。卡片上的小锁图标会给出具体的锁定原因。
+
+请在同一个应用中完成单条标注的修改并等待其保存完毕后，再切换到另一端操作。Zotero 存在一个[已知缺陷](https://github.com/aidenlx/zotlit/issues/1165)，在两个应用同时修改同一条标注时可能会导致静默覆盖。
+
+## 破坏性变更
+
+### 导出时优先遵循笔记自身的引文样式设置
+
+<Command inline name={m.command_pandoc_export_name()} /> 与原生 Pandoc
+导出现在会采用笔记在 Obsidian 中使用的引文样式。样式来源依次可能是笔记自身的
+`zotlit-csl` 属性、导入笔记所属配置方案的样式，或您的
+<UiLabel name={m.settings_citation_references_style_name()} />
+设置。导出对话框会说明样式来源，完成通知也会显示实际使用的样式名称。
+
+此前，当 Zotero 无法提供您选择的样式时，内置导出会回退到捆绑的样式。现在会停止导出并提示原因，以免文档使用您未选择的样式。请在 Zotero 中安装该样式，或在导出对话框中选择其他样式。
+
+如果您使用 ZotLit 集成文件自行运行 Pandoc，请在此版本中重新保存集成文件。旧版文件无法与本次发布配合使用。详见[导出包含引文的笔记](/docs/how-to/export-note-with-citations)与[使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc)。
+
+## 新增功能 [#whats-new]
+
+### 标注视图 [#annotation-view]
+
+- 视图会保留您选择的跟随模式：<UiLabel name={m.annot_view_mode_active_tab()} />、<UiLabel name={m.annot_view_mode_zotero_reader()} /> 或 <UiLabel name={m.annot_view_mode_pinned()} />，直到您主动更改。当前来源没有可显示内容时，视图会在原位说明。
+- 使用 `Ctrl`+点击或 `Command`+点击、`Shift`+点击，或 `Ctrl+A` / `Command+A` 选择多张卡片，随后可一并删除、使用数字键 `1` 至 `8` 更改颜色，或复制文本。一次撤销即可恢复整组操作。
+- 卡片菜单中的 <UiLabel name={m.annot_view_menu_insert()} /> 会将批注插入笔记的光标处，内容与拖拽插入一致，也可通过键盘操作。
+- 视图菜单中的 <UiLabel name={m.command_open_pdf_name()} /> 会在 Obsidian 中打开当前显示的附件。
+- <UiLabel name={m.annot_view_filter_tag_trigger()} /> 与
+  <UiLabel name={m.annot_view_filter_color_trigger()} />
+  现在以小浮窗展开，筛选控件不会再将列表向下推移。
+- 可在批注卡片或 PDF 弹出浮窗中编辑标签，然后选择 <UiLabel name={m.annot_view_tags_save()} />。
+- 即使两个 PDF 阅读器均已关闭，图像与手绘批注也能在卡片上显示图片，并插入笔记。编辑批注后，图片会随之更新。详见[摘录图片](/docs/concepts/excerpt-images)。
+
+完整指南见[使用标注视图](/docs/how-to/use-annotation-view)。
+
+### ZotLit Companion
+
+- 在 Zotero 设置的 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板中，<UiLabel name={m["zotero.prefs_open_section"]()} /> 区域下的 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 可选择从 Zotero 菜单打开笔记的位置：<UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />、<UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />、<UiLabel name={m["zotero.prefs_pane_type_split.label"]()} /> 或 <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />。
+- `obsidian://zotlit/` 链接可通过 `paneType` 参数指定相同的位置选项：`tab`、`split` 或 `window`。详见[链接打开的位置](/docs/reference/protocol-links#pane-type)。
+
+## 问题修复 [#bug-fixes]
+
+- 在 Zotero 中右键点击 PDF 附件时，此前会打开空的 ZotLit 子菜单。现在没有适用操作时，子菜单会显示为禁用状态。
+- 转换 2.1 模板文件时，即使旧文件移入回收站失败，转换结果仍会保留。ZotLit 会列出遗留文件，并再次尝试清理。
+- ZotLit 拒绝转换模板时，现在仅列出您需要修改的文件。
+- 推迟模板转换后显示的提醒更加简短。

@@ -1,0 +1,52 @@
+---
+title: "更新 Obsidian 安装包版本"
+description: "当 ZotLit 提示需要运行最新安装包，或加载失败并报 SyntaxError 错误时，更新 Obsidian 内置的 Electron 运行时。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+当 ZotLit 弹出常驻通知提示 <UiLabel name={m.notice_installer_update_needed()} />，或者 ZotLit 完全无法加载启动（Obsidian 显示 _Failed to load plugin "zotlit"_，开发者控制台输出 `SyntaxError` 报错）时，请依照本指南进行操作。
+
+Obsidian 的应用内自动更新可以升级软件本体版本，但无法替换桌面端捆绑的底层 Electron 核心运行时。ZotLit 依赖更新版本的 Electron。更新安装包意味着需要重新下载当前的完整 Obsidian 安装包，并直接覆盖安装到现有程序上。
+
+<Callout type="info" title="保留现有配置与文件">
+  您无需预先卸载已有的 Obsidian。
+</Callout>
+
+## 更新安装包
+
+<Steps>
+  <Step>
+    ### 下载最新的 Obsidian 安装包
+
+    在 ZotLit 的提示通知中点击 <UiLabel name={m.notice_installer_update_download()} />。您也可以直接前往 [Obsidian 官网下载页面](https://obsidian.md/download)，下载适用于您操作系统的最新安装程序。
+
+  </Step>
+  <Step>
+    ### 关闭 Obsidian
+
+    关闭所有打开的 Obsidian 窗口，等待程序完全退出。
+
+  </Step>
+  <Step>
+    ### 运行安装程序
+
+    打开下载的安装包，按照常规步骤进行安装。将其安装在与当前 Obsidian 相同的目录位置。
+
+  </Step>
+  <Step>
+    ### 重新打开 Obsidian 并启用 ZotLit
+
+    重新打开 Obsidian。进入**设置 → 社区插件**，找到 ZotLit，点击**启用**。
+
+  </Step>
+</Steps>
+
+现在，ZotLit 即可顺利启用，不再会弹出更新安装包的提示通知。
+
+## 另请参阅
+
+查阅 Obsidian 官方帮助文档中的[安装包更新指南](https://obsidian.md/help/updates#installer-updates)。

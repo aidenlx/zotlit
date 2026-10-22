@@ -1,0 +1,163 @@
+---
+title: "从 v1 迁移"
+description: "重命名 Eta 模板、开启 JavaScript 权限开关并覆盖 v1 笔记以完成从 v1 到 v2 的大版本升级。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit v2 会在原位置直接替换 v1。基础设置会在首次加载时自动迁移；但如果您自定义过 Eta 模板，在您重命名文件、更新数据变量名并开启 <UiLabel name={m.settings_template_js_enable_name()} /> 权限开关之前，它们将不会被加载。您在 v1 中创建的笔记依然会被系统索引正常识别；当您需要增量式正文更新支持时，对其执行覆盖操作即可。
+
+<Callout type="info" title="需要您留意的关键事项">
+
+- **恢复自定义笔记生成效果的必备操作：** 将模板文件重命名为 v2 规范格式，将代码中的 `it.*` 全面替换为 `zt.*`，并[开启 <UiLabel name={m.settings_template_js_enable_name()} /> 权限开关](/docs/how-to/enable-javascript-templates)。若未完成这些步骤，v2 将回退到内置的默认模板，无法体现您先前的自定义效果。
+- **自动迁移（无需任何手动操作）：** 插件基础设置，包括文件夹路径以及自定义 frontmatter 属性。它们会在首次加载时自动完成转换迁移。
+- **可选操作：** 对旧的 v1 笔记执行 <Command inline name={m.command_overwrite_note_name()} />，以注入受管区域标记，从而享受后续的增量式正文更新。
+
+</Callout>
+
+## 安装 v2
+
+<Steps>
+  <Step>
+    ### 安装 v2 插件
+
+    ZotLit v2 使用与 v1 完全相同的插件 ID（`zotlit`）。当您安装 v2 时，Obsidian 会直接就地覆盖替换 v1。没有独立的次级插件条目，也无需手动预先卸载。该插件仅限桌面端运行。
+
+  </Step>
+  <Step>
+    ### 在 Obsidian 中确认
+
+    升级完成后，打开 <SettingsPath />。设置面板将加载显示迁移后的配置。如果您能看到之前的文献笔记文件夹路径以及模板文件夹路径，则说明自动迁移已经成功完成。
+
+  </Step>
+</Steps>
+
+升级完成后，v1 的代码即被完全取代。如果您在过渡期间需要查阅原有的老版使用文档，[ZotLit v1 文档](https://zotlit-v1.aidenlx.site)依然保持在线可用。
+
+## 设置项迁移（全自动）
+
+在升级后的首次启动期间，ZotLit 会自动侦测到您的 v1 设置并立即执行迁移。针对基础设置项您无需进行任何手动操作。该迁移仅运行一次并将结果持久化落盘；即使发生写入异常也只会记录到日志中，绝不会阻断插件的正常加载。
+
+具体迁移内容包括：
+
+- 您的文献笔记保存目录以及模板存放文件夹路径。
+- 自定义 frontmatter 属性字段，将保留为 JavaScript 语言字段。您从未自定义过的字段（即沿用 v1 默认值的字段）会自动转换为现代的 Liquid 语法。
+- 内嵌的模板源码（例如笔记文件名模板的正文）不会直接迁移，因为 v2 采用了全新的数据体系规范（由 v1 的 `it.*` 全面升级为 `zt.*`）。v2 改为直接从仓库中的模板文件读取配置。
+
+<Callout type="info" title="JavaScript 语言字段需要开启权限开关">
+  迁移为 JavaScript 语言的自定义 frontmatter 字段需要开启{" "}
+  <UiLabel name={m.settings_template_js_enable_name()} />{" "}
+  开关才能执行计算。在您开启之前，笔记更新时会暂时跳过这些字段，并弹出通知列出跳过的字段项。有关开启授权的步骤，请参阅[启用
+  JavaScript 模板](/docs/how-to/enable-javascript-templates)。
+</Callout>
+
+## 迁移模板 [#migrate-templates]
+
+v2 读取名称以 `zotlit-` 开头的模板文件。v1 文件使用 `zt-` 前缀（例如 `zt-note.eta.md`），v2 不会读取它们。在重命名前，v2 不会加载您的自定义模板，而是使用内置默认模板。
+
+v1 模板使用 Eta（JavaScript）编写。在 v2 中，Eta 模板需要开启 <UiLabel name={m.settings_template_js_enable_name()} />：这是一项按设备单独授权的设置，存储在同步设置之外，默认禁用。在开启之前：
+
+- v2 能读取到的 Eta 模板文件（`.eta.md`）处于停用状态。通知会指出文件，并说明 JavaScript 模板已禁用。
+- 使用 JavaScript 的 frontmatter 字段也处于停用状态。更新笔记时，通知会列出跳过的字段。
+
+如果您自定义过 Eta 模板，需要完成以下三步才能恢复笔记生成：
+
+1. **重命名**模板文件，使其符合 v2 命名规则（将 `zt-` 改为 `zotlit-`，将 `annots` 改为 `content`）。
+2. 在所有模板中**将 `it.*` 替换为 `zt.*`**。
+3. 在每台使用 ZotLit 的设备上**开启** <UiLabel name={m.settings_template_js_enable_name()} />。
+
+重命名后，笔记、内容和标注文件会作为同一个文献笔记配置方案的组成部分进行渲染，两个引文文件则生成插入引文时的文本。您可以从欢迎视图或设置顶部的提醒行启动一次经过验证的转换，将它们合并为 v2 的模板文档。
+
+完整步骤请参阅[迁移 v1 Eta 模板](/docs/how-to/migrate-v1-eta-templates)，其中包括逐字段映射、[转换流程](/docs/how-to/migrate-v1-eta-templates#convert)以及可选的 Liquid 转换方式。
+
+<Callout type="info" title="从未自定义过模板？">
+  如果您只使用 v1 默认模板，无需进行任何操作。v2 提供了更新后的 Liquid
+  默认模板，无需开启 <UiLabel name={m.settings_template_js_enable_name()} />{" "}
+  即可使用。
+</Callout>
+
+## 导入笔记中的标注 [#annotations-in-imported-notes]
+
+将 Zotero 笔记导入仓库时，v2 会直接转换笔记中已有的标注内容。高亮和下划线会变为带有 `zotero://` 回链的行内标记，图片摘录会变为嵌入内容，您输入的评注保持原样。如果您在导入前已在 Zotero 中编辑过标注段落，这些修改也会保留。v1 则通过标注模板重新渲染每条标注，因此会丢弃段落中的直接修改。
+
+要恢复 v1 的渲染方式，请开启 <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_annotations_template_name()} />。该开关默认关闭。开启后，标注段落会通过您的标注模板，使用从 Zotero 重新获取的数据进行渲染。
+
+<Callout type="warn" title="开启此设置后，在 Zotero 中所做的修改会被丢弃">
+  这与 v1 的行为相同：标注根据 Zotero 存储的数据重新渲染，因此您在 Zotero
+  笔记中对标注段落所做的修改不会保留。对您已调整结构或添加文字的段落，则回退为直接转换。
+</Callout>
+
+## 刷新 v1 笔记 [#refresh-v1-notes]
+
+v2 根据 frontmatter 中的 `zotero-key` 值识别现有文献笔记。这些笔记会出现在笔记索引中，<Command inline name={m.command_update_note_metadata_name()} /> 可刷新其 frontmatter。不过，v1 笔记没有受管区域（即 v2 用于区分生成内容与您撰写文字的 `%%zt-managed%%` 标记），因此无法对其正文进行增量更新。
+
+添加受管区域是可选操作，无需立即执行，也无需对每篇笔记执行。准备好后：
+
+<Steps>
+  <Step>
+    ### 打开一篇 v1 文献笔记 [#open-a-v1-literature-note]
+
+    打开任意一篇由 ZotLit v1 创建的笔记。
+
+  </Step>
+  <Step>
+    ### 运行覆盖命令 [#run-the-overwrite-command]
+
+    打开命令面板并运行：
+
+    <Command name={m.command_overwrite_note_name()} />
+
+    界面会显示确认对话框。选择 <UiLabel name={m.modal_overwrite_note_confirm()} /> 继续。ZotLit 会根据当前笔记模板重新生成整个笔记正文。受管 frontmatter 键会更新；您添加的其他 frontmatter 键会保留。
+
+  </Step>
+  <Step>
+    ### 检查受管区域 [#verify-the-managed-region]
+
+    覆盖后，笔记中会包含 `%%zt-managed%%` 标记，此时即可通过 <Command inline name={m.command_update_note_name()} /> 进行增量更新。
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="为何选择覆盖而非更新？">
+  受管区域让 ZotLit 可以替换生成内容，同时保留您撰写的文字。v1
+  笔记缺少这些标记，因此增量更新无法确定要更新的边界。详细说明请参阅[文献笔记与受管区域](/docs/concepts/literature-notes-and-the-managed-region)。
+</Callout>
+
+## 已移除的功能 [#retired-features]
+
+v2 不再提供 v1 的以下两种工作流。
+
+**标注合并。** v1 可以合并多个 PDF 附件中的标注，或在更新时去重。v2 不包含此工作流，而是按附件分别渲染 Zotero 中的标注。
+
+**按主题导入。** v1 允许笔记订阅 Zotero 标签（`#zt-topic/<name>`），从而将带有该标签的新条目自动导入为文献笔记。v2 不包含此工作流。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="迁移 v1 Eta 模板"
+    description="重命名文件、更新数据字段，并开启 JavaScript 模板权限。"
+    href="/docs/how-to/migrate-v1-eta-templates"
+  />
+  <Card
+    title="启用 JavaScript 模板"
+    description="开启权限开关，让 Eta 模板在此设备上运行。"
+    href="/docs/how-to/enable-javascript-templates"
+  />
+  <Card
+    title="文献笔记与受管区域"
+    description="ZotLit 如何区分您撰写的文字与生成的内容。"
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+  <Card
+    title="保持笔记更新"
+    description="在 Zotero 数据变化时更新单篇或批量笔记。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+</Cards>

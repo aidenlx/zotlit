@@ -1,0 +1,80 @@
+---
+title: "在多台设备上同步使用"
+description: "在跨设备同步仓库时，为每台电脑分别设置各自独立的 Zotero 配置文件或数据目录路径。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+当您在多台计算机之间同步 Obsidian 仓库时，每台电脑上的 Zotero 安装路径可能各不相同。ZotLit 将 Zotero 配置文件路径与数据目录路径保存在本地设备层级，因此一台机器上的路径设置绝不会通过仓库同步去错误覆盖另一台机器。
+
+批注编辑授权同样按单台设备分别保存。在每台电脑上只需授权一次，在 Zotero 弹出确认框时选择 **Always Allow（始终允许）**即可。详情参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
+
+## 默认安装路径：无需任何额外配置
+
+在 Zotero 安装于官方默认位置的计算机上，ZotLit 会自动侦测其配置文件（读取 Zotero 的 `profiles.ini`）以及数据目录。一个刚同步下来的新仓库无需任何手动设置即可自动连接上 Zotero。
+
+如果您的每台电脑都采用默认的 Zotero 安装位置，配置到此即已完成，无需进行任何单设备覆盖。
+
+## 为特定设备指定自定义 Zotero 路径
+
+如果某台计算机上的 Zotero 配置文件或数据目录位于自定义位置，您只需在该设备上告知 ZotLit 其具体路径即可。
+
+<Steps>
+  <Step>
+    ### 打开 Zotero 设置
+
+    在需要配置自定义路径的设备上，打开 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />。
+
+  </Step>
+  <Step>
+    ### 设置 Zotero 个人配置文件目录
+
+    使用 <UiLabel name={m.settings_db_profile_dir_name()} /> 路径选择器，为当前机器选取正确的 profile 目录。如果您只需要修改数据目录，可跳过此步。
+
+  </Step>
+  <Step>
+    ### 设置数据目录覆盖（如有必要）
+
+    如果 Zotero 数据目录同样处于非默认位置，使用 <UiLabel name={m.settings_db_data_dir_name()} /> 路径选择器选取正确的路径。
+
+  </Step>
+</Steps>
+
+选取的路径仅对当前这台设备生效。同步同一仓库的其他设备将完整保留它们自己的路径（或继续使用自动侦测机制）。
+
+<Callout type="info" title="清除设备覆盖项">
+  若要让某台设备重新恢复自动侦测，只需将配置文件或数据目录选择器重置为其默认值即可。ZotLit
+  会立即在该设备上恢复自动寻找。
+</Callout>
+
+## 当新设备无法找到 Zotero 时
+
+如果您将仓库同步到了一台 Zotero 位于非默认路径且尚未设置设备覆盖的新电脑上，ZotLit 可能会暂时找不到数据库。启动时它会弹出提示通知：
+
+> 在此设备上未找到 Zotero
+
+打开提示中的链接并按照上述步骤指定正确路径即可。完成后，ZotLit 即可立即正常连接到本地文献库。
+
+该通知提供 <UiLabel name={m.notice_db_not_found_action()} /> 操作，用于打开欢迎视图。快速入门的第一步显示实时连接状态，并提供定位操作，让您选择正确路径。在连接问题解决前，每次启动都会再次显示通知；自动检测成功或已有有效的设备覆盖设置时，则不会出现。
+
+您也可以按上文说明，直接在 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} /> 中设置路径。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="ZotLit 如何连接 Zotero"
+    description="ZotLit 如何定位和读取 Zotero 数据库，以及路径为何按设备保存。"
+    href="/docs/concepts/how-zotlit-connects-to-zotero"
+  />
+  <Card
+    title="设置"
+    description={`所有 ZotLit 设置的完整参考，包括${m.settings_page_zotero()}页面。`}
+    href="/docs/reference/settings"
+  />
+</Cards>

@@ -1,0 +1,168 @@
+---
+title: "操作指南"
+description: "笔记、引文、导出、模板以及迁移任务的分步操作解决方案。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+每个操作指南均针对一项具体的任务。找到符合您当前需求的情境：
+
+## 核心使用场景
+
+<Cards>
+  <Card
+    title="创建并打开文献笔记"
+    description="您手头有一篇 Zotero 条目，希望在仓库中生成对应的文献笔记。"
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="插入引文"
+    description="您需要在当前笔记中插入一条 Markdown 格式的引文。"
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="查看、复制与排查参考文献"
+    description="您需要检查引文出现位置、复制参考文献条目或修正参考文献错误。"
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="在关系图谱中探索引文关联"
+    description="您希望将引文作为连线绘制在图谱中，或仅查看由您学术研究构成的引文图谱。"
+    href="/docs/how-to/explore-citations-in-graph"
+  />
+  <Card
+    title="导出包含引文的笔记"
+    description="您需要一份包含格式化引文与文末参考文献列表的 Word 文档或网页。"
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="通过原生 Pandoc 导出"
+    description="您需要结合自己安装的 Pandoc CLI、指定参考文献库文件或自定义命令行参数。"
+    href="/docs/how-to/export-with-native-pandoc"
+  />
+  <Card
+    title="保持笔记即时更新"
+    description="您的 Zotero 数据发生了更新，文献笔记中的内容需要同步刷新。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="导入 Zotero 笔记"
+    description="您希望将 Zotero 中的子笔记作为独立的 Markdown 文件导入仓库。"
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="在 Obsidian 中打开条目的 PDF"
+    description="您希望直接在 Obsidian 标签页中阅读 Zotero 的 PDF，无需切换窗口。"
+    href="/docs/how-to/open-pdf-in-obsidian"
+  />
+  <Card
+    title="在 Obsidian 中编辑 PDF 批注"
+    description="您希望在 Obsidian 中阅读 PDF 的同时新建或修改 Zotero 标注。"
+    href="/docs/how-to/edit-pdf-annotations"
+  />
+  <Card
+    title="使用标注视图"
+    description="您希望在阅读时，在侧边栏中浏览条目的高亮标注。"
+    href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="配置即时同步更新"
+    description="您希望 Zotero 中的数据变动能够自动推送到 Obsidian。"
+    href="/docs/how-to/set-up-live-updates"
+  />
+  <Card
+    title="在多台设备上同步使用"
+    description="您在不同路径的计算机之间同步仓库，需要妥善适配各设备的 Zotero 位置。"
+    href="/docs/how-to/sync-across-devices"
+  />
+</Cards>
+
+## 模板 [#templates]
+
+<Cards>
+  <Card
+    title="安装 ZotLit Skill"
+    description="您希望让智能体（Agent）在此仓库中协助编辑并测试模板。"
+    href="/docs/install-skill"
+  />
+  <Card
+    title="自定义模板"
+    description="默认的生成效果不符合您的笔记格式预期。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="针对不同笔记使用不同模板"
+    description="图书、学术论文或特定分类下的文献需要各自专有的笔记格式。"
+    href="/docs/how-to/use-different-templates"
+  />
+  <Card
+    title="以 Markdown 格式编辑配置方案"
+    description="您更倾向于直接编辑配置方案源码，而非使用工作台的标签页界面。"
+    href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="浏览模板数据"
+    description="您需要查找模板中可供调用的具体字段。"
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="配置 frontmatter 属性"
+    description="您希望在文献笔记的 frontmatter 中添加自定义的 YAML 属性字段。"
+    href="/docs/how-to/configure-frontmatter-properties"
+  />
+  <Card
+    title="启用 JavaScript 模板"
+    description="您的模板需要使用 Eta 语法或 JavaScript 表达式计算。"
+    href="/docs/how-to/enable-javascript-templates"
+  />
+</Cards>
+
+## 版本迁移
+
+<Cards>
+  <Card
+    title="从 2.1 模板迁移"
+    description="您当前使用的是 ZotLit 2.1 版本，想了解升级后对您的模板有何变化。"
+    href="/docs/how-to/migrate-from-2.1-templates"
+  />
+  <Card
+    title="从 Pandoc Reference List 迁移"
+    description="您希望将已有的引文工作流平滑转移至 ZotLit。"
+    href="/docs/how-to/migrate-from-pandoc-reference-list"
+  />
+  <Card
+    title="从 v1 迁移"
+    description="您正在从 ZotLit v1 进行大版本升级，需要确认各项注意事项。"
+    href="/docs/how-to/migrate-from-v1"
+  />
+  <Card
+    title="迁移 v1 Eta 模板"
+    description="您手头有 v1 的自定义 Eta 模板，需要适配更新至 v2 规范。"
+    href="/docs/how-to/migrate-v1-eta-templates"
+  />
+</Cards>
+
+## 故障排查
+
+<Cards>
+  <Card
+    title="更新 Obsidian 安装包版本"
+    description="ZotLit 提示需要更高版本的 Electron 运行时方可加载启动。"
+    href="/docs/how-to/update-obsidian-installer"
+  />
+  <Card
+    title="消除 Zotero 安全提示"
+    description="Zotero 在每次打开 obsidian:// 协议链接时均会弹出确认弹窗。"
+    href="/docs/how-to/suppress-zotero-security-prompt"
+  />
+  <Card
+    title="解决 Zotero 数据不同步或过期问题"
+    description="更新文献笔记后，Zotero 中的最新改动并未如期出现。"
+    href="/docs/how-to/fix-stale-data"
+  />
+  <Card
+    title="收集调试日志"
+    description="您在提交问题反馈（Bug Report）时需要附带日志或调试诊断输出。"
+    href="/docs/how-to/collect-debug-logs"
+  />
+</Cards>

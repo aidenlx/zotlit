@@ -1,0 +1,182 @@
+---
+title: "配置方案文档"
+description: "配置方案文档的文件格式：manifest 属性键、笔记模板源码、受管块以及标注区域。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本页介绍了配置方案（Profile）文档的技术规格：完整承载单个配置方案的单个文件、其 manifest 元数据配置项以及固定的文档内部结构。
+
+## 什么是配置方案文档 [#what-a-profile-document-is]
+
+一份配置方案对应一个独立文件。ZotLit 通过扫描模板文件夹来检索配置方案，只要存在文件名为 `zotlit-profile.<slug>.md` 的文件，就会立即作为配置方案加载生效。无需额外安装、显式注册或在其他设置中关联文件路径。
+
+| 属性特征 | 具体取值                               |
+| -------- | -------------------------------------- |
+| 文件命名 | `zotlit-profile.<slug>.md`             |
+| 文件位置 | 必须是模板文件夹的直接子文件           |
+| 唯一身份 | manifest 元数据区中的 `id` 属性键      |
+| 影响范围 | 创建时标记绑定了该 `id` 的所有文献笔记 |
+
+模板文件夹由 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 指定。由于扫描仅限单层，因此存放在子文件夹中的 `zotlit-` 文件仅会被视为普通笔记，不会作为配置方案加载。
+
+文件名中的 `<slug>` 仅用于人类友好阅读：ZotLit 在生成该文件时从配置方案名称派生该别名，后续解析时绝不依赖文件名。重命名该文件不会丢失配置方案、设置或已有笔记关联，因为真实身份完全取决于 manifest 中的 `id`。
+
+如果某份文档的 manifest 校验失败，或者有多份文档重复声明了相同的 `id`，它们均会被排除在配置方案注册表之外。其匹配规则将处于休眠失效状态，且在 <SettingsPath page={m.settings_page_profiles()} /> 中的 <UiLabel name={m.settings_profile_excluded_heading()} /> 下进行故障提示。
+
+默认配置方案（Default profile）是唯一的特例。在您为其生成实体文档前，它作为插件设置记录存在。
+
+主设置页面上的 <UiLabel name={m.settings_profile_document_name()} /> 所在行包含两项操作：<UiLabel name={m.settings_profile_edit()} /> 会在模板文件夹中生成 `zotlit-profile.default.md` 并将其打开，该文件具有固定的 `id: default`，且不得包含任何绑定值或 `match` 规则；<UiLabel name={m.settings_profile_document_restore()} /> 则将该文件移至 Obsidian 废纸篓，使默认配置方案重新恢复为开箱即用的内置模板状态。
+
+## 文档内部结构 [#document-structure]
+
+配置方案文档按严格顺序由四个部分构成：manifest 元数据区、笔记模板源码、可选的受管块，以及标注区域（Annotation Section）。
+
+```markdown
+---
+id: V1StGXR8Z5jd
+name: Books
+version: 1.0.0
+contract: 3
+filename: "Books - {{ zt.title }}"
+---
+
+# {{ zt.title }}
+
+{% managed %}
+Citation key: {{ zt.citationKey }}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+{{ zt.text }}
+{% endbq %}
+```
+
+| 部分     | 是否必需 | 边界                                          |
+| -------- | -------- | --------------------------------------------- |
+| Manifest | 是       | 开头的 `---` 行与下一个 `---` 行之间的 YAML。 |
+| 笔记源码 | 否       | manifest 与标注区域标题行之间的全部内容。     |
+| 受管块   | 否       | 笔记源码中的零个或一个 `{% managed %}` 块。   |
+| 标注区域 | 是       | 从标题行延伸至文件末尾。                      |
+
+各部分遵循以下规则。
+
+- 文件第一行必须是 `---`，后续另一个仅含 `---` 的行结束 manifest。缺少 manifest 或未闭合的 manifest 均会报错。YAML 键不得重复。
+- ZotLit 创建或覆盖笔记时，会完整渲染笔记源码。
+- 标注区域的标题行必须严格写为 `--- zotlit:annotation ---`，从行首开始，且独占一行。
+- 标注区域延伸至文件末尾，允许为空。每条标注渲染一次，以该标注作为 `zt`；参见[数据参考](/docs/reference/templates/data)。
+- 系统在读取 Markdown 或模板语法之前，逐行查找标题行。即使该行位于围栏代码块、原始文本区域或注释区域内，也会被识别为标注区域的起点。
+- 缺少标题行、出现第二个标题行，或出现任何其他以 `--- zotlit:` 开头的行，均会报错，包括显式声明的笔记标题行。
+- manifest 的 `language` 适用于笔记源码、受管块、标注区域和 `filename` 模板。标注区域使用配置方案的语言渲染。文档中携带的模板片段各自声明语言。
+
+## Manifest 配置键 [#manifest-keys]
+
+Manifest 采用严格的映射结构。下表未列出的键均无法通过校验。加载器接受并校验下表中的所有键；“使用方”说明哪个环节使用该值。
+
+- **笔记**：笔记处理流程或配置方案注册表读取此值。它影响 ZotLit 写入笔记的内容，或笔记对应的配置方案。
+- **编辑器**：模板工作台、配置方案分享面板或配置方案导入面板读取或编辑此值。笔记操作不使用此值。
+- **网页工作台**：仅网页工作台使用此值。桌面应用将其显示为只读，笔记操作不使用此值。此版本尚未启用网页工作台。
+
+| 键                            | 类型                         | 是否必需 | 使用方     | 含义                                                                                           |
+| ----------------------------- | ---------------------------- | -------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| `id`                          | 字符串                       | 是       | 笔记       | 配置方案的标识：由十二个字母或数字组成；默认配置方案使用 `default`。                           |
+| `name`                        | 字符串                       | 是       | 笔记       | 配置方案的名称，显示在配置方案列表中，并写入笔记的配置方案标记。                               |
+| `version`                     | 字符串                       | 是       | 编辑器     | 文档自身的版本号，由分享面板写入。                                                             |
+| `author`                      | 字符串                       | 否       | 编辑器     | 分享配置方案时携带的元数据。                                                                   |
+| `description`                 | 字符串                       | 否       | 编辑器     | 分享配置方案时携带的元数据。                                                                   |
+| `contract`                    | 大于或等于 1 的整数          | 是       | 网页工作台 | 文档对应的模板契约版本。当前版本为 3，网页工作台会拒绝其他契约版本的文档。                     |
+| `minAppVersion`               | 字符串                       | 否       | 网页工作台 | 文档所需的最低 ZotLit 版本。较旧版本无法在网页工作台中打开或保存该文档。                       |
+| `sampleItemType`              | 字符串                       | 否       | 编辑器     | 工作台预览时使用的 Zotero 条目类型。桌面工作台可编辑此值；只有网页工作台会按类型选择示例条目。 |
+| `filename`                    | 模板源码                     | 是       | 笔记       | 笔记名称模板，其输出用作新文献笔记的文件名。                                                   |
+| `match`                       | 字符串，或 `and` / `or` 列表 | 否       | 笔记       | 配置方案匹配条件。参见[配置方案匹配规则](/docs/reference/templates/profile-match)。            |
+| `folder`                      | 字符串                       | 否       | 笔记       | 绑定值：文献笔记的文件夹。                                                                     |
+| `citationStyle`               | 字符串或 `null`              | 否       | 笔记       | 绑定值：CSL 样式 ID。`null` 表示使用 ZotLit 内置样式。                                         |
+| `importFolder`                | 字符串                       | 否       | 笔记       | 绑定值：导入 Zotero 笔记的文件夹。                                                             |
+| `importColoredHighlights`     | 布尔值                       | 否       | 笔记       | 绑定值：导入的高亮是否使用颜色语法。                                                           |
+| `importAnnotationsAsTemplate` | 布尔值                       | 否       | 笔记       | 绑定值：导入的标注段落是否使用配置方案的标注区域渲染。                                         |
+| `language`                    | `liquid` 或 `eta`            | 否       | 笔记       | 文档自身源码的渲染语言，默认为 `liquid`。                                                      |
+| `partials`                    | 名称、语言和源码组成的列表   | 否       | 笔记       | 文档内携带的模板片段源码。它们随文档一起渲染，并在导入时解包为独立片段文件。                   |
+| `frontmatter`                 | 配置项列表                   | 否       | 笔记       | 按写入顺序排列的受管 frontmatter 属性。                                                        |
+
+还需遵循以下约束：
+
+- 默认配置方案文档（`id: default`）不得包含绑定值或 `match`。包含任一项都会导致校验失败。
+- 同一文档中的 `partials` 名称必须唯一，且不能使用 `annotation`，因为每个配置方案的标注区域使用此名称。
+- 同一文档中的静态 `frontmatter` 键必须唯一，且不能使用 ZotLit 的保留键。
+
+## 绑定值 [#bindings]
+
+五个 manifest 键将配置方案与仓库级行为关联。每个键写入的记录与对应设置项相同。
+
+| 键                            | 设置项                                                                | 值                                         |
+| ----------------------------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| `folder`                      | <UiLabel name={m.settings_profile_folder_name()} />                   | 文件夹路径。                               |
+| `citationStyle`               | <UiLabel name={m.settings_citation_references_style_name()} />        | CSL 样式 ID；`null` 表示 ZotLit 内置样式。 |
+| `importFolder`                | <UiLabel name={m.settings_note_import_folder_name()} />               | 文件夹路径。                               |
+| `importColoredHighlights`     | <UiLabel name={m.settings_note_import_colored_highlights_name()} />   | `true` 或 `false`。                        |
+| `importAnnotationsAsTemplate` | <UiLabel name={m.settings_note_import_annotations_template_name()} /> | `true` 或 `false`。                        |
+
+绑定值仅覆盖默认配置方案记录中的指定项。文档省略某个键时，继承设置中的值；指定某个键时，为使用此配置方案的笔记覆盖该值。继承值来自主设置页面中的相应设置项，详见[设置](/docs/reference/settings)。
+
+## 受管 frontmatter 配置项 [#managed-frontmatter-entries]
+
+`frontmatter` 列表按写入顺序，为 ZotLit 写入文献笔记 YAML frontmatter 的每个属性声明一个配置项。每项声明一个值成员，成员名称表示用于求值的语言。
+
+| 成员    | 值                                                    |
+| ------- | ----------------------------------------------------- |
+| `expr`  | 一个 Liquid 值表达式。                                |
+| `value` | 一个 JSON-e 模板。                                    |
+| `js`    | 一个 JavaScript 表达式。JavaScript 开关关闭时不执行。 |
+
+每项还包含属性名 `key`，以及合并策略 `merge`，其值为 `replace`（默认）、`append` 或 `keep`。不含 `key` 的项称为展开项：其值必须生成以字符串为键的映射，每个生成的键都会在该位置写为一个属性。展开项不能使用 `expr`。
+
+配置项形式、合并策略和保留键见 [Frontmatter 属性](/docs/reference/templates/frontmatter)。
+
+## 受管块 [#the-managed-block]
+
+笔记源码可以包含一个 `{% managed %}` 块，以 `{% endmanaged %}` 结束。Liquid 和 Eta 使用相同的这两个标签。
+
+此块独立渲染：块外赋值的变量在块内不可见，因此更新时的渲染结果能与创建时保持一致。创建笔记时，此块在正文中的原位置渲染；更新笔记时，仅重新渲染此块，并将输出填入笔记的受管区域。
+
+允许不含受管块。没有受管块的正文为静态内容，更新这类笔记时仅处理 frontmatter。包含两个受管块、块未闭合，或存在不匹配的 `{% endmanaged %}`，都会导致校验失败。
+
+ZotLit 在笔记中为此块的输出添加 `%%zt-managed%%` 和 `%%/zt-managed%%` 标记。这些标记属于笔记，而非模板文档。参见[文献笔记与受管区域](/docs/concepts/literature-notes-and-the-managed-region)。
+
+## 文件命名与分类 [#file-naming-and-classification]
+
+模板文件夹仅根据文件名对每个以 `zotlit-` 开头的 Markdown 文件分类。`zotlit-profile.<slug>.md` 是配置方案文档，`zotlit-citation.md` 是引文文本，`zotlit-partial.<name>.md` 是一个模板片段。完整规则见[模板文档命名](/docs/reference/templates/syntax#template-document-naming)。
+
+不符合这三种模式的 `zotlit-` Markdown 文件不会注册任何模板。设置中会将其单独列为一行，标为 <UiLabel name={m.settings_template_unrecognized_name()} /> 并显示路径。不以 `zotlit-` 开头的文件会被完全忽略。
+
+在完成转换之前，默认配置方案仍使用 2.1 版槽位文件（`zotlit-<name>.liquid.md` 和 `zotlit-<name>.eta.md`）。参见[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
+
+关于文件夹的发现方式及三类文档的关系，参见[模板的工作原理](/docs/concepts/how-templates-work)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="Frontmatter 属性"
+    description="受管属性的配置项形式、合并策略和保留键。"
+    href="/docs/reference/templates/frontmatter"
+  />
+  <Card
+    title="配置方案匹配规则"
+    description="match 键使用的条件语言。"
+    href="/docs/reference/templates/profile-match"
+  />
+  <Card
+    title="以 Markdown 编辑配置方案"
+    description="手动编辑 manifest、笔记源码和标注区域。"
+    href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="配置方案"
+    description="配置方案决定的内容，以及 ZotLit 如何选择配置方案。"
+    href="/docs/concepts/profiles"
+  />
+</Cards>

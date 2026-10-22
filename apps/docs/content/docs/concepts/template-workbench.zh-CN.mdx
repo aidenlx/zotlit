@@ -1,0 +1,114 @@
+---
+title: "模板工作台 CLI"
+description: "智能体如何通过 Obsidian CLI 检查、测试并排查模板文档，以及这些命令绝不会擅自写入的边界。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+模板工作台 CLI 是集成在 Obsidian CLI 中的一组 ZotLit 指令。它允许智能体（Agent）直接读取您的模板文档，在内存中针对真实的 Zotero 文献库数据进行测试渲染，并准确汇报渲染结果。您只需描述想要的笔记样式；智能体即可为您编写相应的 Liquid 或 Eta 模板。同样的命令还能快速指出模板渲染异常或报错的原因。
+
+## 各组件的协同工作机制
+
+**模板工作台 CLI** 是底层的命令接口。它负责选中特定的模板文档，读取模板接收到的 Zotero 数据，并在内存中进行模拟渲染以展示产出结果。它只负责安全地“读取”与“模拟渲染”，绝不会擅自修改或写入文件。
+
+**ZotLit Skill** 的分发标识符为 `zotlit-template`。它封装了借助 CLI 检查、编辑和测试模板的标准化工作流。Claude Code、Codex 以及 pi 均可原生调用。
+
+**工作台指南（Workbench Guide）** 是内嵌在 ZotLit 插件内部的即时交互使用指南。它随您安装的插件版本一同分发，因此始终与该版本的 CLI 命令保持绝对同步。ZotLit Skill 会直接引导智能体查阅该指南以获取最新的指令规范。
+
+如需获取当前的命令行帮助，请在终端中运行：
+
+```bash
+obsidian help zotlit
+obsidian zotlit:template-guide
+```
+
+## 各命令的具体功能
+
+共有五条子命令在 Obsidian CLI 中响应。它们属于 CLI 专属指令，而非 Obsidian 图形界面的命令面板命令。
+
+**检查（Inspection）** 命令用于选定单个模板文档，并严格验证 ZotLit 编译的代码是否与磁盘上的源码完全一致，确保智能体绝不会编辑过期的缓存副本。返回内容包括文档名称、其依赖的共享片段和引文文本，以及 ZotLit 发现的任何语法问题。如果不带目标参数，该命令会列出模板文件夹中的全部模板文档，包含内置的默认配置方案。
+
+**数据（Data）** 命令用于返回模板在 `zt` 命名空间下实际接收到的数据结构。可通过根节点参数过滤其返回形态：<UiLabel name={m.workbench_fields_root_note()} />、<UiLabel name={m.workbench_fields_root_annotation()} />、<UiLabel name={m.workbench_fields_root_filename()} /> 或 <UiLabel name={m.workbench_fields_root_citation()} />。可选的字段发现能力可将返回结果精准限制在本次编辑所需的字段范围内，避免将整个庞大的 Zotero 条目数据全部塞入智能体的上下文窗口中。
+
+**测试（Checking）** 命令用于对照真实的 Zotero 条目或现有的文献笔记，在内存中模拟渲染某份文档（或是智能体保存在模板文件夹外部暂存文件中的草稿）。它会细致汇报各部分的测试状态（通过、失败或未测试）：对于配置方案，分别涵盖笔记名称、属性、正文、受管区域及批注；对于引文文本或共享片段，则汇报渲染生成的最终文本。针对更新操作，它还会报告将被合并进笔记的属性以及最终的笔记全文，让您在确认落盘前能够提前预览完整效果。
+
+**状态（State）** 命令用于一览工作台的全局状态：包含插件版本、当前命令连接的仓库与 Zotero 数据源、本设备是否开启了 JavaScript 模板权限，以及 ZotLit 发现的全部配置方案与模板文件。
+
+**指南（The guide）** 命令用于输出当前安装版本内嵌的说明文档，按主题分类呈现。Skill 会引导智能体阅读此处，确保智能体严格依循您当前运行版本的契约进行操作。
+
+所有命令的返回值均为结构化 JSON，附带契约版本号、调用的命令名以及 `ok` 状态标识。在失败时，会返回带有错误码、错误信息以及明确恢复建议提示的诊断信息。有关每条命令的参数、语法及诊断错误码列表，请参阅[模板工作台 CLI 参考](/docs/reference/template-workbench-cli)。
+
+早先版本中直接渲染模板文件或通过插件设置读写受管 frontmatter 的命令现已废弃。它们仍然可以响应，但会返回指向 inspection、data 和 check 的废弃诊断提示。受管 frontmatter 现在直接在配置方案文档中维护，不再通过 CLI 独立修改。
+
+## 读取与编辑的严格安全边界
+
+CLI 仅读取您的模板文档和 Zotero 文献库，并在内存中进行无副作用的渲染。执行测试操作绝不会修改任何东西：不会写入模板文档、不会修改笔记、不会更改设置，也不会触碰任何 Zotero 记录。对草稿进行测试不会导致草稿被安装。
+
+您的智能体通过其自带的仓库文件编辑工具来修改模板文档。这些修改就如同您亲自在仓库中编辑文件一样，因此您可以在采纳前阅读文件差异，并在修改后使用 CLI 进行检查。经 CLI 验证的渲染产出是可信的证据，而非智能体自行生成的口头总结。
+
+<Callout type="warn" title="智能体数据访问权限">
+  您选用的智能体可以接收由 CLI 返回的 Zotero
+  元数据与批注文本。智能体自身的数据处理政策将适用。
+</Callout>
+
+## JavaScript 模板
+
+Liquid 模板默认可用，无需额外授权。Eta 文档以及使用 `js` 编写的受管 frontmatter 表达式则需要本设备显式开启 JavaScript 模板权限。
+
+您需要在每台设备的 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 中自行开启此权限。CLI 不会更改该设置：开关关闭时，命令若遇到 Eta 文档会失败并返回诊断信息，智能体必须请您开启设置。
+
+## 受管 frontmatter [#managed-frontmatter]
+
+受管 frontmatter 字段是文献笔记 frontmatter 中的 YAML 属性，其值由模板表达式生成。每次更新笔记时，ZotLit 都会重新计算这些值。
+
+配置项列表位于配置方案文档的 manifest 中，其顺序就是 ZotLit 写入属性的顺序。每个配置项自身声明使用的语言：`expr` 表示 Liquid 表达式，`value` 表示 JSON-e 模板，`js` 表示受权限开关控制的 JavaScript 表达式。智能体通过文件工具编辑文档中的列表，再运行检查读取结果。
+
+如需通过界面手动配置，请参阅[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。有关配置项成员和合并策略，请参阅[配置方案文档](/docs/reference/templates/profile-document)和 [frontmatter 参考](/docs/reference/templates/frontmatter)。
+
+要查看随插件提供的指南中的 frontmatter 规则，请运行：
+
+```bash
+obsidian zotlit:template-guide topic=frontmatter
+```
+
+## 模板工作台 CLI 与模板数据浏览器 [#template-workbench-cli-and-template-data-explorer]
+
+模板工作台 CLI 通过命令行为智能体提供数据和内存渲染能力，智能体可据此编辑和检查您的模板文档。
+
+模板数据浏览器是供您使用的可视化侧边栏。您自行编辑模板时，可以在其中浏览当前模板数据，并复制路径或代码片段。有关面板和复制操作，请参阅[浏览模板数据](/docs/how-to/explore-template-data)。
+
+两者使用相同的数据解析机制，且都不执行写入：浏览和渲染不会创建笔记、导入附件或更改设置。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="模板工作台 CLI 参考"
+    description="当前可用的命令、参数和诊断代码。"
+    href="/docs/reference/template-workbench-cli"
+  />
+  <Card
+    title="安装 ZotLit Skill"
+    description="为在单个仓库中工作的智能体安装 Skill。"
+    href="/docs/install-skill"
+  />
+  <Card
+    title="模板工作台视图"
+    description="在 Obsidian 中编辑和预览模板文档。"
+    href="/docs/concepts/template-workbench-view"
+  />
+  <Card
+    title="自定义模板"
+    description="编辑配置方案、预览结果并更新现有笔记。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="JavaScript 模板"
+    description="了解 Eta 和 JavaScript frontmatter 的授权开关。"
+    href="/docs/concepts/javascript-templates"
+  />
+</Cards>

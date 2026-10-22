@@ -1,0 +1,76 @@
+---
+title: "介绍"
+description: "ZotLit 文档：将 Zotero 深度融入您知识库的 Obsidian 插件。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Callout } from "@/components/callout";
+
+ZotLit 将您的 Zotero 文献库融入 Obsidian。ZotLit Companion（Zotero 端的必备插件）保持 Zotero 中的最新更改能即时供 ZotLit 读取。
+
+<Callout type="warn" title="从 v1 版本升级？">
+  v2
+  是一次包含破坏性变更的重大升级。现有的文献笔记和自定义模板无法直接沿用：文献笔记在重新创建前将无法获得增量更新，自定义
+  Eta 模板也需要重新适配。在升级前，请仔细阅读[从 v1
+  迁移](/docs/how-to/migrate-from-v1)。
+</Callout>
+
+<Callout type="info" title="从 2.1 升级？">
+  现有的 2.1 文献笔记模板仍可继续运行。ZotLit
+  提供了一次性转换功能，可将它们合并到配置方案文档中。在完成转换前，只有默认配置方案能够创建和更新笔记。在添加新的配置方案之前，请先阅读[从
+  2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
+</Callout>
+
+## 从这里开始
+
+请按顺序完成以下步骤。Better BibTeX 为可选安装，但强烈建议在引文工作流中使用。
+
+<Steps>
+  <Step>
+    ### 安装 ZotLit
+
+    [在 Obsidian 中安装并启用 ZotLit。](/docs/install-zotlit)
+
+  </Step>
+  <Step>
+    ### 安装 ZotLit Companion
+
+    [在 Zotero 中安装必备的配套插件。](/docs/install-companion)
+
+  </Step>
+  <Step>
+    ### 安装 Better BibTeX（推荐）
+
+    [安装 Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 以获得稳定的[文献引用标识（citation key）](https://retorque.re/zotero-better-bibtex/citing/)和[参考文献列表自动更新](https://retorque.re/zotero-better-bibtex/exporting/auto/)。
+
+    ZotLit 同时也支持 Zotero 原生文献引用标识以及手动导出参考文献列表。
+
+  </Step>
+  <Step>
+    ### 创建第一篇文献笔记
+
+    [从 Zotero 文献库中的条目创建一篇笔记。](/docs/tutorial/first-note)
+
+  </Step>
+</Steps>
+
+## 浏览文档
+
+<Cards>
+  <Card
+    title="操作指南"
+    description="针对具体任务的分步操作解决方案。"
+    href="/docs/how-to"
+  />
+  <Card
+    title="核心概念"
+    description="ZotLit 的工作原理及其背后的设计理念。"
+    href="/docs/concepts"
+  />
+  <Card
+    title="参考"
+    description="设置选项、模板语法与详细配置说明。"
+    href="/docs/reference"
+  />
+</Cards>

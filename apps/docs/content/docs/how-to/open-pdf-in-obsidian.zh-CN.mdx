@@ -1,0 +1,81 @@
+---
+title: "在 Obsidian 中打开条目的 PDF"
+description: "从文献笔记、快速切换器或 Zotero 直接在 Obsidian 原生 PDF 阅读器中打开 Zotero 的 PDF 附件。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+直接在 Obsidian 标签页中阅读 Zotero 条目的 PDF，无需切换窗口到 Zotero。
+
+无论 PDF 文件存放于您的仓库内部，还是保存在 Zotero 的存储目录中，ZotLit 均支持在 Obsidian 内置的 PDF 阅读器中直接打开。此特性专用于 PDF 附件；EPUB、网页快照及其他文件类型仍留在 Zotero 中。
+
+此功能需要 Obsidian 1.14.2 或更高版本（ZotLit 2.2 同样要求此版本）。
+
+## 从文献笔记中打开
+
+在 Obsidian 中打开文献笔记后：
+
+- 打开命令面板并运行 <Command inline name={m.command_open_pdf_name()} />。
+- 或者右键选择笔记标签页，在文件菜单的 **zotlit** 分组中选择 <UiLabel name={m.command_open_pdf_name()} />。
+
+## 从标注视图中打开
+
+打开标注视图的面板菜单并选择 <UiLabel name={m.command_open_pdf_name()} />。这将打开该视图当前展示的附件。当视图已经处于跟随 Obsidian 中该 PDF 标签页的状态时，菜单中会自动隐藏该选项。
+
+## 从快速切换器中打开
+
+运行 <Command inline name={m.command_open_lit_note_name()} />，搜索条目，然后在结果上按下 `Shift+Enter`。PDF 将直接打开，而不会展开文献笔记。关于各交互快捷键的详细说明，请参阅[使用快速切换器](/docs/how-to/create-and-open-notes#quick-switcher)。
+
+## 从 Zotero 中打开
+
+这些入口需要安装与 ZotLit 2.2 配套发布的 ZotLit Companion（Zotero 配套插件）。[安装 ZotLit Companion](/docs/install-companion) 提供了当前版本的安装说明。
+
+- 在文献库中，选中一个 PDF 附件或附带有 PDF 的条目，从顶层右键菜单中选择 <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} />。
+- 在 Zotero 中阅读 PDF 时，在页面中右键单击并选择 <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />。这将直接在 Obsidian 中打开您当前正在阅读的 PDF。
+
+## 从笔记中的文件链接打开
+
+文献笔记的 `fileLink` 会生成直达附件文件的链接，而单条批注的 `fileLink` 还会额外追加来源页码及标注标识。点击该链接即可在 Obsidian 中打开 PDF 并直接跳转至对应页码，同时选中对应标注并将其滚动至视野居中位置。即使 Zotero 中已删除了该标注，链接仍可正常定位至对应的 PDF 页码。
+
+这适用于仓库中任何指向您 Zotero 库中 PDF 的链接。指向任何其他类型文件（EPUB、网页快照、Zotero 之外的普通 PDF）的链接依然会按照原有方式调用系统默认程序打开。
+
+如果无论如何都希望通过系统默认应用打开该链接，请右键单击该链接并选择**在默认浏览器中打开**。若要全局关闭该拦截跳转行为，请在 <SettingsPath page={m.settings_page_reader()} /> 中关闭 <UiLabel name={m.settings_reader_open_file_links_name()} />。
+
+## 打开效果说明
+
+当条目仅有一个 PDF 时，它会直接打开。当包含多个 PDF 时，ZotLit 会弹出选择器让您挑选；选择列表按文件名排列，搜索框提示为 <UiLabel name={m.modal_select_pdf_placeholder()} />。
+
+当条目没有任何 PDF 时，ZotLit 会提示 <UiLabel name={m.notice_no_pdf_attachment()} />；当文件已在磁盘中丢失时，会提示 <UiLabel name={m.notice_pdf_file_missing()} />。在这两种情况下，ZotLit 均不会退回到 Zotero 中尝试打开。
+
+标注视图会在侧边栏中随 PDF 一同唤起，以便条目的高亮标注直接呈现于文档旁边。当标注视图处于 <UiLabel name={m.annot_view_mode_active_tab()} /> 模式时，它会自动跟随激活的 PDF 标签页。
+
+如果您希望侧边栏保持静止，可在 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} /> 中将其关闭。详见[设置](/docs/reference/settings#reader)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="在 Obsidian 中编辑 PDF 标注"
+    description="在 Obsidian 中阅读时创建或修改 Zotero 标注。"
+    href="/docs/how-to/edit-pdf-annotations"
+  />
+  <Card
+    title="使用标注视图"
+    description="在 PDF 旁浏览条目的高亮标注，并将它们拖入笔记。"
+    href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="创建和打开文献笔记"
+    description="通过快速切换器、引文或 Zotero 打开或创建文献笔记。"
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="命令"
+    description="所有 ZotLit 命令及其调用入口。"
+    href="/docs/reference/commands#literature-note-actions"
+  />
+</Cards>

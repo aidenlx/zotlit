@@ -1,0 +1,149 @@
+---
+title: "ZotLit v2.1"
+description: "完整的引文工作流：在 Zotero 数据支撑下完成写作、查阅与导出。"
+date: 2026-08-24
+---
+
+import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+v2.1 全面交付了完整的引文工作流。它覆盖了从在正文中插入引文到最终导出附带格式化参考文献列表的成文文档的全链路，并在此过程中加入了多文献库支持与 Zotero 10 兼容性适配。
+
+<Callout title="重点速览">
+v2.1 带来了正文引文格式化渲染、参考文献侧边栏、引文悬停浮窗、被引侧边栏、附带参考文献列表的笔记导出以及多文献库范围检索支持。现在同时支持 Zotero 10 与 Zotero 9。
+
+<ActionLink href="/docs/install-zotlit" kind="external">
+  安装 ZotLit
+</ActionLink>
+
+要求 Obsidian 桌面端 1.13.4+ 以及 Zotero 配套插件 ZotLit Companion。
+
+</Callout>
+
+## 在写作中畅享引文
+
+在笔记任意位置输入 `@` 即可唤起引文建议下拉框，快速插入 Pandoc 文献引用标识。如需包含定位符（locator）与前缀的完整引文簇，键入 `[@` 即可触发方括号插入。按 `Shift+Enter` 可快速选择备用格式。
+
+字面量 Pandoc 引文簇（例如 `[see @wang2020, p. 3; @lee2019]`）在实时预览和阅读视图中会自动渲染为美观的格式化引文，采用您在 Zotero 已安装样式中选定的 CSL 样式。如果在设置中开启了**双链引文（Wikilink citations）**，文献笔记双链也可以按照完全相同的方式格式化呈现。两者共享统一的格式化显示与连续编号逻辑。该渲染由内置的轻量 Pandoc 引擎驱动，无需在操作系统中额外安装第三方依赖。
+
+编辑器中的文献引用标识被赋予了链接交互样式。未解析的标识（即 Zotero 中找不到对应条目）与已解析的标识在视觉上有明显的区分。点击文献引用标识可直接打开其对应的文献笔记；鼠标悬停即可查看预览。
+
+<ActionLink href="/docs/how-to/insert-citations" kind="external">
+  插入引文
+</ActionLink>
+<ActionLink href="/docs/concepts/how-citekey-links-work" kind="external">
+  文献引用标识导航与渲染机制
+</ActionLink>
+
+## 查阅您的参考文献
+
+### 参考文献侧边栏
+
+独立的侧边栏视图会将当前活动笔记中包含的引文汇总为排版精美的参考文献列表。每个条目均展示其引文编号以及所选 CSL 样式格式化的文本。操作按钮支持一键打开文献笔记、在 Zotero 中定位该条目或打开其关联的 PDF。点击条目文本即可在正文中依次定位跳转换读各处引用。
+
+![实时预览中将文献笔记双链渲染为格式化引文簇，右侧参考文献侧边栏展示对应的参考文献列表条目](/img/changelog/wikilink-citation-runs.webp)
+
+### 引文悬停浮窗
+
+将鼠标悬停在引文上，即可在弹出浮窗中查看所引文献的完整格式化参考文献条目；对于多篇引用，会按引用顺序垂直层叠展示。每个条目均提供快捷操作按钮：打开文献笔记、在 Zotero 中定位条目或打开对应附件。浮窗在实时预览、阅读视图和源码模式下的 Pandoc 字面量引文均可触发；在开启双链引文时同样适用于文献笔记双链。
+
+**设置 → ZotLit → 引文 → 悬停操作**配置项决定了悬停时的呈现行为：**引文浮窗**（默认）、**页面预览**（Obsidian 原生文献笔记页面预览）或**关闭**。
+
+![引文悬停浮窗展示了三个层叠的参考文献条目，包含格式化文本、DOI 链接以及针对各条目的操作按钮，旁边为参考文献侧边栏](/img/changelog/citation-popover.webp)
+
+### 被引侧边栏（Cited By Sidebar）
+
+反向引用视图能够清晰呈现整个仓库中有哪些笔记引用了当前打开的这篇文献笔记。结果按源文件进行分组聚合，并展示各处的引用计数。每次出现均以类似搜索结果卡片的形式展示上下文摘录。点击任意一处即可精准跳转到编辑器中的对应位置。
+
+工具栏提供了关键词搜索过滤、上下文切换（紧凑摘录或完整的所在块）、六种排序模式以及全部折叠功能，交互与 Obsidian 原生的反向链接（Backlinks）面板高度一致。
+
+![被引侧边栏展示仓库中引用当前文献笔记的笔记，类似搜索结果的摘录卡片按来源文件分组](/img/changelog/cited-by-sidebar.webp)
+
+<ActionLink
+  href="/docs/how-to/review-copy-troubleshoot-references"
+  kind="external"
+>
+  查阅、复制参考文献并排查问题
+</ActionLink>
+
+## 导出与分享 [#export-and-share]
+
+### 导出包含引文的笔记 [#export-note-with-citations]
+
+**ZotLit: 导出包含引文的笔记**命令可将活动笔记转换为附带格式化参考文献列表的 DOCX 或 HTML 文档。在导出对话框中选择输出格式、CSL 样式与保存位置即可。引文从笔记自身的链接中解析，全部处理均由内置引擎完成，无需额外安装 Pandoc。
+
+<ActionLink href="/docs/how-to/export-note-with-citations" kind="external">
+  导出包含引文的笔记
+</ActionLink>
+
+### 复制参考文献列表 [#copy-bibliography]
+
+参考文献侧边栏工具栏提供**复制参考文献列表**操作。一次操作即可将完整列表同时复制为富文本和纯文本。粘贴到 Word 或 Google Docs 时，强调格式、上标、小型大写字母与 DOI 链接都会保留。如果目标应用仅支持纯文本，则使用纯文本版本。
+
+### 原生 Pandoc CLI 工作流 [#native-pandoc-cli-workflow]
+
+如果您已在本地安装 Pandoc，ZotLit 可以生成与当前插件版本匹配的 Lua 过滤器与 Pandoc 默认配置文件。这种方式支持完整的 Pandoc 处理流程，包括自定义模板、多种输出格式，以及将文献笔记双链转换为规范引文。
+
+<ActionLink href="/docs/how-to/export-with-native-pandoc" kind="external">
+  使用原生 Pandoc 导出
+</ActionLink>
+<ActionLink href="/docs/tutorial/write-and-export-cited-note" kind="external">
+  撰写并导出包含引文的笔记
+</ActionLink>
+<ActionLink href="/docs/tutorial/pandoc-citation-workflow" kind="external">
+  Pandoc 引文工作流
+</ActionLink>
+
+## 多文献库与 Zotero 10 [#multi-library-and-zotero-10]
+
+### 文献库范围 [#library-scope]
+
+ZotLit 现在可以同时使用多个 Zotero 文献库。新的**文献库范围**设置替代了原有的**默认文献库**设置，提供两种模式：**所有文献库**会跟随 Zotero 数据库变化，之后加入的群组文献库也会立即纳入范围；**选定的文献库**则始终遵循您指定的选择。搜索、文献引用标识解析与文献库级命令均在该范围内执行。
+
+当一个文献引用标识匹配多个文献库中的条目时，ZotLit 会提示歧义，而不会静默选择首个匹配项。打开引文时，系统会询问您指的是哪个条目；参考文献侧边栏会显示引文错误，并列出候选条目。您可以在 Zotero 中修改其中一个条目的文献引用标识，或缩小文献库范围来解决问题。
+
+<ActionLink href="/docs/reference/settings#library-scope" kind="external">
+  设置：文献库范围
+</ActionLink>
+
+### 支持 Zotero 10 [#zotero-10-support]
+
+ZotLit 现在同时支持 Zotero 10 与 Zotero 9。Zotero 10 改变了近期编辑内容的存储方式，配套插件因此会自动为 ZotLit 保持数据库最新。切换回 Obsidian 时，您在 Zotero 中的改动已可使用。Zotero 侧边栏新增的 <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> 面板可用于确认最近的改动已写入数据库。
+
+<ActionLink href="/docs/how-to/fix-stale-data" kind="external">
+  解决 Zotero 改动未显示的问题
+</ActionLink>
+
+## 其他改进 [#and-more]
+
+- **文件名中的作者字段。** 文件名模板现在可以使用 `authors` 和 `authorsShort`，与笔记模板中的数据保持一致。
+- **引文语言区域。** 新增的**引文语言区域**设置统一控制仓库中引文术语、日期与排序使用的语言，接受 `en-US`、`de` 或 `zh-CN` 等语言标签。
+- **为每篇笔记设置引文样式与语言。** **ZotLit: 设置引文显示方式**命令允许通过 frontmatter 属性，为单篇笔记覆盖仓库级的 CSL 样式与语言。
+- **条目序号。** 脚注类引文样式（例如 Chicago full-note）会在正文与参考文献侧边栏的侧边显示编号。
+- **主题样式接口。** 引文元素新增 CSS 类，主题作者可据此设置已解析、未解析、待处理与已渲染引文的样式。详见[主题样式接口](/docs/reference/theme-hooks)。
+- **导入笔记中的彩色高亮。** 一个按需开启的设置可将导入的 Zotero 笔记高亮转换为基于 emoji 的彩色高亮语法，支持六种高亮颜色。
+
+## 从 Pandoc Reference List 迁移 [#coming-from-pandoc-reference-list]
+
+Pandoc Reference List（PRL）率先在 Obsidian 中实现了根据 Pandoc 引文实时生成参考文献列表的功能，ZotLit 引文工作流的多项设计也参考了它。如果您使用过 PRL，这些功能会让您感到熟悉。
+
+ZotLit 覆盖了许多相同的需求，但实现方式有所不同。PRL 读取 `.bib` 等参考文献文件，ZotLit 则直接读取 Zotero。因此，ZotLit 不支持独立的参考文献文件，PRL 的部分功能也没有对应实现。ZotLit 不能直接替换 PRL 而无需调整。
+
+PRL 仓库现托管于 Obsidian Community Archive。迁移指南介绍了两者的差异与切换步骤，致谢信息见[致谢页面](/docs/credits)。
+
+<ActionLink
+  href="/docs/how-to/migrate-from-pandoc-reference-list"
+  kind="external"
+>
+  从 Pandoc Reference List 迁移
+</ActionLink>
+
+## 反馈 [#feedback]
+
+问题、建议和缺陷报告均可通过社区页面提交。
+
+<ActionLink href="/community" kind="external">
+  社区
+</ActionLink>

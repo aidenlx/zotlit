@@ -1,0 +1,218 @@
+---
+title: "在关系图谱中探索引文关联"
+description: "在 Obsidian 的图谱视图中将引文作为连线绘制、灵活控制呈现项，并通过命令面板一键打开专属引文图谱。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+利用 Obsidian 原生的全局关系图谱与局部关系图谱，清晰洞察笔记建立在哪些文献基石之上。
+
+ZotLit 会从每篇笔记向其引用的文献作品绘制一条连线。该连线指向对应作品的文献笔记；若仓库中尚未为该作品生成文献笔记，则指向专门的**被引文献节点（Cited Work Node）**。
+
+所有的 Obsidian 原生图谱功能均能无缝协同运作：搜索、颜色分组、深度层级、出入链箭头，以及局部图谱跟随当前活动笔记的联动。探索深度层级同样涵盖引文连线，因此从某篇文献笔记出发向外探索 2 层，即可轻松触达与该文献共享同一参考源的其他笔记。
+
+## 准备工作
+
+- 在 **设置 → 核心插件** 中开启 Obsidian 原生的**关系图谱（Graph view）**核心插件。
+- 打开 <SettingsPath page={m.settings_page_citations()} />，确认 <UiLabel name={m.settings_citation_graph_name()} /> 处于开启状态（默认即为开启）。
+- 在同一页面中保持至少开启一种引文来源：对于 `[@doe2024]` 开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} />；对于无别名文献笔记双链开启 <UiLabel name={m.settings_citation_wikilink_citations_name()} />。在此处关闭的语法将不会在图谱中绘制引文连线。
+
+关闭 <UiLabel name={m.settings_citation_graph_name()} /> 会完全移除附加的引文连线、被引文献节点以及 ZotLit 控制项，您的颜色分组与原生图谱配置依然保留。
+
+## 控制图谱的绘制内容
+
+ZotLit 在图谱的控制齿轮面板中增加了六个专属控制项。点击任意图谱右上角的齿轮设置图标即可展开该面板：
+
+| 分组     | 控制项                                                           | 默认值 | 作用说明                                                         |
+| -------- | ---------------------------------------------------------------- | ------ | ---------------------------------------------------------------- |
+| 过滤器   | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | 开启   | 为每个 `[@doe2024]` 引文绘制连线。                               |
+| 过滤器   | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | 开启   | 为每个指向文献笔记的无别名双链绘制连线。                         |
+| 过滤器   | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | 关闭   | 隐藏除文献笔记、被引文献节点以及引用了它们的笔记之外的所有节点。 |
+| 显示设置 | <UiLabel name={m.graph_option_author_title_labels_name()} />     | 关闭   | 在文献笔记和被引文献节点上直接显示作者、年份与短标题。           |
+| 显示设置 | <UiLabel name={m.graph_option_color_citation_links_name()} />    | 关闭   | 用专属的颜色高亮绘制引文连线（包括被识别为引文的双链）。         |
+| 显示设置 | <UiLabel name={m.graph_option_citation_popover_name()} />        | 关闭   | 允许在悬停文献笔记与被引文献节点时呼出引文浮窗。                 |
+
+只有当 <SettingsPath page={m.settings_page_citations()} /> 中的 <UiLabel name={m.settings_citation_wikilink_citations_name()} /> 处于开启状态时，<UiLabel name={m.graph_option_wikilink_citations_name()} /> 控制项才会出现。关闭该设置时，`[[wikilink]]` 将不作为引文处理，保留其原生的图谱连线含义。
+
+每个全局或局部图谱标签页都会独立保存各自的显示选项。通过全局图谱书签可以快速恢复保存的图谱视图状态。新独立打开的常规图谱默认会关闭作者标题标签、引文连线颜色及悬停浮窗。点击**恢复默认设置**可将上述六项设置与原生选项一并重置为默认值。
+
+在启用 Obsidian **书签（Bookmarks）**核心插件后，可通过全局图谱面板菜单中的**添加书签**保存当前视图。
+
+Obsidian 原生的**仅显示现有文件**选项会隐藏被引文献节点，因为尚未创建文献笔记的被引文献并不是您仓库中的物理文件。
+
+### 在节点上直观阅读作者与标题
+
+在**显示设置**中开启 <UiLabel name={m.graph_option_author_title_labels_name()} />，即可根据作者与标题清晰识别文献作品。文献笔记与被引文献节点采用相同的标签排版样式，节点颜色用以区分哪些文献已生成文献笔记。
+
+第一行显示作者与年份（如 `Smith et al. 2020`）。颜色稍暗的第二行显示 Zotero 中的短标题（若无短标题则显示完整标题）。过长的标题文本末尾以省略号收尾。
+
+缩小视口可概览作者与年份；放大视口可清晰呈现标题文本。标题行会依循 Obsidian 原生的**文字淡入阈值**在第一行之后淡入呈现。将鼠标悬停在节点上可在任意缩放级别下显示第二行标题，即使关闭了 <UiLabel name={m.graph_option_citation_popover_name()} /> 同样有效。
+
+如果文献条目没有创作者，其标题会移至第一行，年份呈现在下方。缺少发布年份则仅保留作者；缺少标题则仅保留单行。
+
+如果 ZotLit 暂时无法读取文献数据，文献笔记会保留其文件名；带有缺失或歧义标识键的被引文献节点则会保留该标识键。
+
+图谱搜索框匹配的是您的文件，而不是这些显示标签。节点上显示的作者名只有原本就存在于文件中时才会被搜索到。ZotLit 不会将标签文本写入笔记。
+
+### 节点与连线颜色 [#node-and-edge-colors]
+
+文献笔记使用原生节点颜色。可添加颜色分组，为它们设置统一颜色。被引文献节点使用较淡的颜色，除非它们匹配了原生颜色分组。
+
+开启 <UiLabel name={m.graph_option_color_citation_links_name()} /> 可为引文连线着色。关闭时，所有连线使用原生颜色。悬停相连节点时，连线仍使用 Obsidian 的高亮颜色。
+
+分组初始颜色、被引文献节点颜色和引文连线颜色请参阅[主题钩子](/docs/reference/theme-hooks#graph)。
+
+## 将文献笔记设为一个颜色分组 [#color-your-literature-notes-as-a-group]
+
+<Steps>
+  <Step>
+    ### 打开分组区域 [#open-the-groups-section]
+
+    打开图谱控制面板，展开 **Groups**。
+
+  </Step>
+  <Step>
+    ### 添加分组 [#add-the-group]
+
+    在原生 **New group** 控件下方，选择 <UiLabel name={m.graph_citations_add_literature_notes_group()} />。
+
+    ZotLit 会插入一个颜色分组，其搜索条件匹配所有带有 `zotero-key` 属性的笔记，也就是全部文献笔记。
+
+  </Step>
+</Steps>
+
+新分组初始使用 ZotLit 橙色：浅色模式为 `#E8622C`，深色模式为 `#F0793F`。主题与 CSS 片段可以[覆盖初始颜色](/docs/reference/theme-hooks#graph)。
+
+您可以使用原生控件改色、调整顺序或删除分组。切换主题时，已保存的颜色不变。若已有匹配的分组，则保留其颜色和位置。再次选择按钮时，仅在该分组已被移除的情况下才会添加它。
+
+**Restore default settings** 会清除所有颜色分组，包括这个分组。按钮仍然保留，再选一次即可恢复分组。
+
+## 打开引文图谱 [#open-a-citation-graph]
+
+**引文图谱**是在原生图谱上应用 ZotLit 预设的视图，打开后直接呈现研究关系，而不是整个仓库的关系图。
+
+<Steps>
+  <Step>
+    ### 运行命令 [#run-the-command]
+
+    打开命令面板（Windows 和 Linux 上为 `Ctrl+P`，macOS 上为 `Cmd+P`），运行以下命令之一：
+
+    <Command name={m.command_open_citation_graph_name()} />
+
+    <Command name={m.command_open_local_citation_graph_name()} />
+
+    全局命令会在 Obsidian 自带的 **Open graph view** 所使用的位置打开图谱。局部命令会在当前笔记旁打开纵向分栏，并跟随该窗格，行为类似 Obsidian 的 **Open local graph**。只有笔记处于活动状态时，局部命令才会出现在命令面板中。
+
+    两个命令都没有默认快捷键。您可以在 **Settings > Hotkeys** 中设置。
+
+  </Step>
+  <Step>
+    ### 了解预设 [#read-the-preset]
+
+    图谱会按以下设置打开：
+
+    - 开启 <UiLabel name={m.graph_option_pandoc_citations_name()} />；若存在 <UiLabel name={m.graph_option_wikilink_citations_name()} />，也将其开启。
+    - 开启 <UiLabel name={m.graph_option_citation_connected_only_name()} />，保留文献笔记及其引用结构。
+    - 开启 <UiLabel name={m.graph_option_author_title_labels_name()} />、<UiLabel name={m.graph_option_color_citation_links_name()} /> 和 <UiLabel name={m.graph_option_citation_popover_name()} />。
+    - 关闭 **Tags**、**Attachments** 与 **Orphans**，开启 **Arrows**，关闭 **Existing files only** 以保留被引文献节点。
+    - 添加一个文献笔记颜色分组，除非已有分组使用相同的搜索条件。
+
+    力导向设置与其他原生选项保持原样。重复运行任一命令都不会添加第二个颜色分组。
+
+  </Step>
+</Steps>
+
+预设只应用于命令打开的图谱标签页。独立打开的普通图谱仍保留自身默认值。为图谱添加书签，之后即可恢复所选选项。如果您移除了文献笔记分组，再次运行命令会将其恢复。
+
+在作者与标题标签功能加入前保存或添加书签的图谱，会保留原来的标签形式。再次运行引文图谱命令可应用当前预设，也可以直接在该图谱中开启 <UiLabel name={m.graph_option_author_title_labels_name()} />。
+
+<Callout type="info">
+  局部引文图谱不会隐藏孤立节点。Obsidian 的局部图谱面板没有 **Orphans** 选项，
+  因此预设无法设置它。开启{" "}
+  <UiLabel name={m.graph_option_citation_connected_only_name()} />
+  后，通常不会有孤立节点保留在图谱中。
+</Callout>
+
+### 命令没有打开图谱时 [#when-a-command-opens-nothing]
+
+以下三种情况下，两个命令都会显示通知，而不会打开图谱：
+
+- <UiLabel name={m.graph_citations_core_plugin_disabled()} /> 图谱由 Obsidian
+  提供，必须先开启对应的核心插件。
+- <UiLabel name={m.graph_citations_disabled()} />
+  否则预设只能打开不含引文的图谱，所以命令会停止。
+- <UiLabel name={m.graph_citations_unavailable()} /> ZotLit
+  无法启动绘制引文连线的模块。即使前述两个设置均已开启，也可能在此停止。
+
+## 操作被引文献 [#act-on-a-cited-work]
+
+选择被引文献节点，可为它所代表的文献补建笔记。
+
+| 文献引用标识的匹配情况 | 选择节点后的行为                   |
+| ---------------------- | ---------------------------------- |
+| 匹配一个 Zotero 条目   | 按配置方案创建文献笔记并打开。     |
+| 匹配多个 Zotero 条目   | 列出候选项，供您选择正确的条目。   |
+| 不匹配任何 Zotero 条目 | 显示通知，提示您修正笔记中的标识。 |
+
+如果标识只匹配一个 Zotero 条目，创建笔记后，对应的被引文献节点会消失。图谱重新绘制，由文献笔记节点替代它，并保留原有连线。
+
+如果标识匹配多个条目，被引文献节点会继续保留。选择候选项会创建并打开该笔记，但标识本身仍有歧义，因此图谱仍不能为连线确定唯一的笔记目标。请先解决标识歧义。参阅[同一标识匹配多个条目](/docs/concepts/how-citekey-links-work#ambiguous-key)。
+
+右键选择被引文献节点，可查看该标识支持的操作。
+
+| 文献引用标识的匹配情况 | 菜单项                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 匹配一个 Zotero 条目   | <UiLabel name={m.graph_citations_menu_create_note()} />、<UiLabel name={m.references_open_in_zotero()} />、<UiLabel name={m.graph_citations_menu_copy_citekey()} /> |
+| 匹配多个 Zotero 条目   | <UiLabel name={m.graph_citations_menu_create_note()} />、<UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                   |
+| 不匹配任何 Zotero 条目 | <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                            |
+
+其他节点仍使用 Obsidian 自带的菜单。
+
+## 悬停节点 [#hover-a-node]
+
+在图谱的 **Display** 区域开启 <UiLabel name={m.graph_option_citation_popover_name()} />，即可使用引文悬停功能。关闭时，文献笔记使用原生悬停行为，被引文献节点不显示浮窗。
+
+开启后，悬停文献笔记或被引文献节点的行为由 <SettingsPath page={m.settings_page_citations()} /> 下的 <UiLabel name={m.settings_citation_hover_action_name()} /> 决定，与编辑器中的悬停使用同一设置。
+
+| <UiLabel name={m.settings_citation_hover_action_name()} />         | 文献笔记节点             | 被引文献节点       |
+| ------------------------------------------------------------------ | ------------------------ | ------------------ |
+| <UiLabel name={m.settings_citation_hover_action_popover()} />      | 显示该文献的格式化条目。 | 显示该文献的条目。 |
+| <UiLabel name={m.settings_citation_hover_action_page_preview()} /> | 显示笔记预览。           | 无操作。           |
+| <UiLabel name={m.settings_citation_hover_action_off()} />          | 使用原生悬停行为。       | 无操作。           |
+
+其他节点仍使用 Obsidian 原生的悬停行为。
+
+如果希望只有按住 Ctrl（Windows）或 Command（macOS）时才显示图谱浮窗，请在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> 下开启 <UiLabel name={m.settings_citation_hover_mod_graph_name()} />。
+
+<Callout type="info">
+  使用 <UiLabel name={m.settings_citation_hover_action_popover()} />{" "}
+  时，图谱浮窗采用仓库的引文样式和语言，
+  尚未被引用的文献笔记也一样。条目不显示编号。如果样式没有参考文献列表，或无法格式化，
+  浮窗会显示条目摘要。浮窗中的操作作用于当前显示的条目。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="插入引文"
+    description="写入图谱会显示的引文。"
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="正文引文渲染与导航的工作原理"
+    description="了解文献引用标识的解析目标以及歧义标识的行为。"
+    href="/docs/concepts/how-citekey-links-work"
+  />
+  <Card
+    title="主题钩子"
+    description="通过主题或 CSS 片段修改图谱节点与连线的颜色。"
+    href="/docs/reference/theme-hooks#graph"
+  />
+</Cards>

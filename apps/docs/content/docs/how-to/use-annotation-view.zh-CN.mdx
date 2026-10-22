@@ -1,0 +1,171 @@
+---
+title: "使用标注视图"
+description: "打开标注侧边栏，指定其跟随模式，并将高亮标注拖入您的笔记中。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+标注视图（Annotation View）是一个侧边栏面板，用于集中列出某篇 Zotero 条目的所有批注。您可以在其中浏览高亮标注、将它们拖拽至笔记中，并自由选择视图是跟随当前活动标签页、跟随 Zotero 阅读器，还是固定停留在指定的文献条目上。
+
+## 打开标注视图
+
+打开命令面板并运行：
+
+<Command name={m.command_open_annot_view_name()} />
+
+<UiLabel name={m.annot_view_name()} />
+面板将在右侧侧边栏中打开。左侧功能区（ribbon）中的荧光笔图标同样可以一键唤起该视图。
+
+在默认情况下，标注视图会自动跟随您的当前活动标签页。如果当前标签页既不是文献笔记也不是 Zotero PDF，则会显示 <UiLabel name={m.annot_view_empty_active_tab()} />。
+
+若要在 Obsidian 标签页中直接打开 Zotero PDF，请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
+
+## 选择视图跟随的目标
+
+标注视图提供了三种跟随模式：
+
+| 模式                                                      | 交互行为                                                               |
+| --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| <UiLabel name={m.annot_view_mode_active_tab()} />（默认） | 跟随您当前激活的标签页：文献笔记对应的条目，或 Zotero PDF 对应的附件。 |
+| <UiLabel name={m.annot_view_mode_zotero_reader()} />      | 跟随 Zotero 外部阅读器中当前打开的附件。需要启用即时同步更新。         |
+| <UiLabel name={m.annot_view_mode_pinned()} />             | 固定停留在您选定的单个条目上，并记忆其具体的附件。                     |
+
+点击视图工具栏开头的模式按钮即可快速切换。面板菜单中同样提供了这三个切换项，且每个模式均配有独立的命令。
+
+视图会始终保持您选定的模式，直到您主动进行切换。当对应数据源暂时无法响应时，视图会在原地提示原因，而绝不会擅自替您更改模式。
+
+<Steps>
+  <Step>
+    ### 跟随 Zotero 阅读器
+
+    在模式按钮中选择 <UiLabel name={m.annot_view_mode_zotero_reader()} />。当您在 Zotero 阅读器中打开或切换文献条目时，视图会自动刷新并显示该附件下的所有标注。
+
+    该模式依赖即时同步更新功能，它负责将阅读器的当前位置从 Zotero 实时传递至 Obsidian。在关闭即时同步更新期间，视图会显示 <UiLabel name={m.annot_view_enable_live_updates()} /> 引导按钮。详情参阅[配置即时同步更新](/docs/how-to/set-up-live-updates)。
+
+    如果在 Zotero 中关闭了阅读器，视图仍会在 <UiLabel name={m.annot_view_reader_closed()} /> 提示下保留上一个附件的标注内容。
+
+  </Step>
+  <Step>
+    ### 固定单篇条目
+
+    选择 <UiLabel name={m.annot_view_mode_pin_current_item()} /> 可以固定视图当前展示的条目，或者选择 <UiLabel name={m.annot_view_pin_choose_item()} /> 在 Zotero 中搜索并绑定另一篇条目。
+
+    从 Zotero PDF 标签页中执行固定操作会释放该标签页对附件的独占锁定，从而允许您在保持固定的同时切换浏览该条目下的其他关联附件。
+
+    选择 <UiLabel name={m.annot_view_mode_unpin()} /> 可恢复到固定先前的跟随模式。
+
+    对于 Zotero 中没有父级条目的独立 PDF，无法进行固定，控件会相应提示。
+
+  </Step>
+</Steps>
+
+## 选择附件
+
+当条目包含多个附件时，工具栏下方的选择器会列出当前显示附件的名称及其标注数量，并按条目记住您的选择。
+
+Zotero PDF 标签页和 Zotero 阅读器会自行决定附件，因此当视图跟随其中之一时，选择器会让位。
+
+如需在 Obsidian 中阅读当前显示的附件，请点击模式按钮，然后选择 <UiLabel name={m.command_open_pdf_name()} />。面板菜单中包含完全相同的项。当 Obsidian 的某个 PDF 标签页已在显示该附件时，此选项会自动隐藏。
+
+## 筛选列表 [#filter]
+
+工具栏提供了两个过滤器。点击对应按钮均会在下方弹出一个小型浮窗。
+
+- <UiLabel name={m.annot_view_filter_tag_trigger()} />
+  ：列出标注所带有的标签。在搜索框中键入可快速查找标签，随后可多选一个或多个标签。
+- <UiLabel name={m.annot_view_filter_color_trigger()} />
+  ：列出标注的高亮颜色。可勾选一个或多个颜色。
+
+列表仅展示同时满足所选标签之一和所选颜色之一的标注。选定标签或颜色后，按钮会直观显示您的选择。如需重置清空，打开浮窗选择 <UiLabel name={m.annot_view_filter_tag_clear()} /> 或 <UiLabel name={m.annot_view_filter_color_clear()} />。
+
+## 多选卡片 [#select-several]
+
+点击单张卡片将仅选中该卡片。若需同时选中多张卡片：
+
+| 操作快捷键                                                | 执行结果                                           |
+| --------------------------------------------------------- | -------------------------------------------------- |
+| Windows/Linux 上按 `Ctrl`+点击，macOS 上按 `Command`+点击 | 将卡片加入选中状态，或将其从多选中移除。           |
+| `Shift`+点击                                              | 连续选中从上一个选定卡片到当前卡片之间的所有卡片。 |
+| Windows/Linux 上按 `Ctrl+A`，macOS 上按 `Command+A`       | 选中当前列表中展示的全部卡片。                     |
+
+您还可以按 `Shift+Up` 或 `Shift+Down` 逐个扩展选中区域。按 `Escape` 可清空选择。
+
+在选中多张卡片后，您可以：
+
+- 删除标注：按 `Delete` 或 `Backspace` 并确认。也可以右键点击选中的卡片，点击带有卡片数量的删除项。
+- 更改标注颜色：按下数字键 `1` 到 `8`。各数字对应 Zotero 调色板的标准顺序。也可以右键点击选中卡片并选择 <UiLabel name={m.annot_view_card_color()} />。
+- 复制标注文本：按 `Ctrl+C`（macOS 为 `Command+C`），或右键点击选中的卡片选择 <UiLabel name={m.annot_view_menu_copy_text()} />。ZotLit 会复制每张卡片的引用文本（若无引用文本则复制评注），并在卡片之间留一空行。
+
+删除与改色属于写入操作，因此必须先开启编辑授权。按一次撤销（Undo）即可同时撤销对所有卡片的改动。有关撤销与其他编辑操作，请参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
+
+## 受锁定的批注 [#locked]
+
+卡片页码旁的小锁图标标明了 ZotLit 无法修改的受锁定批注。将鼠标悬停在图标上即可查看锁定原因。例如：Zotero 直接从 PDF 文件中导入了该标注，或者该标注由群组文献库的其他成员所创建。关于受锁定标注的可用权限，请参阅[在 Obsidian 中编辑 PDF 批注](/docs/how-to/edit-pdf-annotations)。
+
+## 将批注拉取到笔记中
+
+1. 打开您希望插入批注的笔记。
+2. 将侧边栏中的某条标注卡片直接拖拽到编辑器中的目标位置。
+3. 等待插入完成。图片和手写墨迹摘录会在链接插入之前预先准备完毕。
+
+若无需拖拽即可插入，请先将光标放置在笔记中的目标插入位置。然后右键单击标注卡片，或打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，点击 <UiLabel name={m.annot_view_menu_insert()} />。ZotLit 将插入与拖拽完全相同的格式化文本。在未激活任何笔记编辑器时该菜单项不可用。
+
+ZotLit 会依据该条目文献笔记所绑定的[配置方案](/docs/concepts/profiles)进行渲染，若该条目尚无笔记则按默认配置方案处理。等待期间的编辑会让插入位置随文本移动。按 `Escape` 可取消正在处理的插入请求。插入完成后，执行一次撤销（Undo）即可移除插入的全部内容。
+
+当开启 <UiLabel name={m.settings_attachment_import_name()} /> 时，插入的摘录会被保存为仓库中的图片文件。关闭时，新摘录将使用说明图片不可用的占位文本与源链接。在侧边栏中浏览卡片或选定目标笔记不会生成落地图片文件。
+
+即使两个 PDF 阅读器都已关闭，您仍可查看和插入[摘录图片](/docs/concepts/excerpt-images)。图片请求失败时，会生成替代文本或保留已有图片；操作会在一份汇总中报告结果不确定或不可用的情况。
+
+### 上下文菜单操作 [#context-menu-actions]
+
+右键选择标注行，或打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，可使用更多选项：
+
+- <UiLabel name={m.annot_view_menu_edit_text()} />
+  ：打开编辑器，修改高亮或下划线标注的引用文本。请参阅[编辑引用文本](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text)。
+- <UiLabel name={m.annot_view_menu_copy_backlink()} />
+  ：复制指向标注在 PDF 中所在位置的回链。
+- <UiLabel name={m.annot_view_menu_copy_text()} />
+  ：复制引用文本；如果标注没有引用文本，则复制评注。
+- <UiLabel name={m.annot_view_menu_copy_citation()} />
+  ：复制标注父条目的格式化引文。
+- <UiLabel name={m.indexed_key_menu_copy_annotation()} />
+  ：复制标注的 Zotero 标识符。
+- <UiLabel name={m.annot_view_menu_insert()} />
+  ：在当前活动笔记的光标处插入标注，效果与拖拽相同。
+- <UiLabel name={m.template_data_explorer_menu_explore()} />
+  ：打开模板数据浏览器，并显示该标注的数据。
+- <UiLabel name={m.annot_view_menu_delete()} />
+  ：在您确认后从 Zotero
+  删除标注。请参阅[删除标注](/docs/how-to/edit-pdf-annotations#delete-an-annotation)。
+
+选中多张卡片时，菜单只显示能同时应用于所有选中卡片的操作。请参阅[多选卡片](#select-several)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="在 Obsidian 中编辑 PDF 标注"
+    description="创建各种类型的标注，修改颜色、评注、标签和引用文本，或删除标注。"
+    href="/docs/how-to/edit-pdf-annotations"
+  />
+  <Card
+    title="导入 Zotero 笔记"
+    description="将 Zotero 子笔记导入为独立的 Markdown 文件。"
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="配置即时同步更新"
+    description="启用从 Zotero 到 Obsidian 的自动推送。"
+    href="/docs/how-to/set-up-live-updates"
+  />
+  <Card
+    title="保持笔记更新"
+    description="在 Zotero 数据变化时更新文献笔记。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+</Cards>
