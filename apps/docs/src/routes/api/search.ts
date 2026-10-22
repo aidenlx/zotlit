@@ -13,7 +13,9 @@ import { source } from "@/lib/source";
 /**
  * Only the docs loader is indexed; the changelog and the blog stay out of
  * search, matching the Next.js site. The index builds on the first query and
- * then lives for the isolate's lifetime.
+ * then lives for the isolate's lifetime. It sets no `language`: the default
+ * multilingual tokenizer segments Chinese with `Intl.Segmenter`, while
+ * `"english"` would drop CJK text from both the index and the query.
  *
  * @see https://github.com/fuma-nama/fumadocs/blob/fumadocs-mdx%4015.2.1/apps/docs/content/docs/headless/search/index.mdx
  */
