@@ -78,9 +78,12 @@ import type {
 
 const logger = getLogger(["views", "annot-view"]);
 
-/** The composite widgets in the layout and its host that answer their own keys. */
-const COMPOSITE_WIDGET =
-  '[role="listbox"], [role="combobox"], [role="menu"], [role="menuitem"]';
+/**
+ * The composite widgets in the layout and its host that answer their own keys.
+ * A menu is none of them: it holds a Scope of its own while it stands, so its
+ * keys never reach the view's.
+ */
+const COMPOSITE_WIDGET = '[role="listbox"], [role="combobox"]';
 
 /**
  * Whether a key belongs to the control it landed on rather than to the Card
@@ -949,7 +952,7 @@ export class AnnotationsLayout extends Component {
 
     // Cmd/Ctrl+A selects every card the list shows, from anywhere in the
     // host. One typed into a field goes on to the field, which selects its own
-    // text, and one on a list box or a menu goes on to that widget.
+    // text, and one on a list box goes on to that widget.
     add(
       registerKeymap(scope, ["Mod"], "A", (event) => {
         if (controlOwnsKey(event.target)) return;
@@ -973,8 +976,8 @@ export class AnnotationsLayout extends Component {
     }
 
     // `1`–`8` recolour every Selected Card, in the palette's own order, as the
-    // same keys do in the PDF. One on a field, a list box or a menu goes on to
-    // that control.
+    // same keys do in the PDF. One on a field or a list box goes on to that
+    // control.
     for (const [index, color] of ANNOTATION_COLORS.entries()) {
       add(
         registerKeymap(scope, [], String(index + 1), (event) => {
@@ -987,8 +990,8 @@ export class AnnotationsLayout extends Component {
     }
 
     // Cmd/Ctrl+C copies the text of every Selected Card, from anywhere in the
-    // host. One typed into a field, on a list box or a menu, or over text the
-    // user selected in the cards, goes on to that control or the platform's
+    // host. One typed into a field, on a list box, or over text the user
+    // selected in the cards, goes on to that control or the platform's
     // own copy.
     add(
       registerKeymap(scope, ["Mod"], "C", (event) => {

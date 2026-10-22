@@ -6,6 +6,7 @@ import { act } from "preact/test-utils";
 import { createElement as h } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { pressTop } from "@/lib/__fixtures__/keymap";
 import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
@@ -39,9 +40,10 @@ function mount(onChange: (next: string) => void = () => {}) {
   host = document.body.appendChild(document.createElement("div"));
   const outside = host.appendChild(document.createElement("button"));
   slot = host.appendChild(document.createElement("div"));
+  const app = editorApp();
   render(
     h(AppContext, {
-      value: editorApp(),
+      value: app,
       children: h(Select, {
         "aria-label": "Sort by",
         value: "title",
@@ -69,7 +71,7 @@ function mount(onChange: (next: string) => void = () => {}) {
     [...popup.querySelectorAll<HTMLElement>('[role="option"]')].map(
       (row) => row.textContent,
     );
-  return { trigger, popup, outside, hide, key, rows };
+  return { app, host, trigger, popup, outside, hide, key, rows };
 }
 
 it("opens searching for a printable key, on its first match", async () => {
@@ -130,6 +132,34 @@ it("shuts when focus leaves for elsewhere", async () => {
       );
   });
   expect(hide).toHaveBeenCalledOnce();
+});
+
+it("keeps undo in its search field, out of a surface around it that steps a history of its own", async () => {
+  const { app, host, trigger, popup, key } = mount();
+  const surface = vi.fn();
+  host!.addEventListener("keydown", (event) => {
+    if (event.key === "z") surface();
+  });
+  await key({ key: "ArrowDown" });
+  const field = popup.querySelector("input")!;
+
+  // The Chooser's Scope stands on top and leaves undo alone, so the field's
+  // own undo runs and the surface never hears the key.
+  for (const init of [
+    { key: "z", ctrlKey: true },
+    { key: "z", ctrlKey: true, shiftKey: true },
+    { key: "y", metaKey: true },
+  ]) {
+    const event = pressTop(app, init, field);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(surface).not.toHaveBeenCalled();
+
+  // Off the popup, the key is the surface's.
+  await act(() => {
+    pressTop(app, { key: "z", ctrlKey: true }, trigger);
+  });
+  expect(surface).toHaveBeenCalledOnce();
 });
 
 it("hides a raw id that repeats the name", async () => {

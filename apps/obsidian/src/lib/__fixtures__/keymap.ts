@@ -53,7 +53,8 @@ function heldModifiers(
  * The Scope's own search rule is Obsidian's: a registration that answers
  * `false` takes the key, and one that answers nothing ends the search all the
  * same unless it is a catch-all — a registration naming neither key nor
- * modifiers, which the search walks past to whatever stands behind it.
+ * modifiers, which the search walks past to whatever stands behind it, and
+ * past the last registration to the Scope's parent.
  *
  * @param target where the focus sits, which the Scope reads before the page is
  *   dispatched the event.
@@ -70,31 +71,38 @@ export function dispatchKey(
     ...init,
   });
   Object.defineProperty(event, "target", { value: target });
+  if (handleKey(scope, event) === false) {
+    // A registration took the key: Obsidian prevents the event and stops it,
+    // so the page never hears it.
+    event.preventDefault();
+    return event;
+  }
+  target.dispatchEvent(event);
+  return event;
+}
+
+/** One Scope's answer to a key: `false` where a registration took it. */
+function handleKey(scope: Scope, event: KeyboardEvent): unknown {
   // The mock Scope records its registrations, in the order made.
-  const { handlers } = scope as unknown as {
+  const { handlers, parent } = scope as unknown as {
     handlers: {
       modifiers: Modifier[] | null;
       key: string | null;
       func: (evt: KeyboardEvent) => boolean | void;
     }[];
+    parent?: Scope;
   };
   for (const { modifiers, key, func } of handlers) {
     if (key !== null && key.toLowerCase() !== event.key.toLowerCase()) continue;
     if (!heldModifiers(modifiers, event)) continue;
     const answer = func(event);
-    if (answer === false) {
-      // The registration took the key: Obsidian prevents the event and stops
-      // it, so the page never hears it.
-      event.preventDefault();
-      return event;
-    }
     // A keyed registration ends the search whatever else it answers, so no
     // registration behind it and no parent Scope hears the keystroke. The page
-    // hears it all the same: nothing prevented the event.
-    if (answer !== undefined || key !== null || modifiers !== null) break;
+    // hears it all the same unless it answered `false`.
+    if (answer !== undefined || key !== null || modifiers !== null)
+      return answer;
   }
-  target.dispatchEvent(event);
-  return event;
+  return parent && handleKey(parent, event);
 }
 
 /** One keystroke through the Scope on top of `app`'s keymap. */

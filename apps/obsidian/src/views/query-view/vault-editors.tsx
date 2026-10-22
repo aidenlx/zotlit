@@ -232,8 +232,8 @@ function showMenu(
  * A second request while the item's menu stands, as a right click can
  * raise, opens no second menu over it.
  *
- * @returns the menu, which a caller watches to tell its keys from the
- *   item's; none where the item's menu stands already.
+ * @returns the menu, for a caller whose item would hear the keys meant for
+ *   it; none where the item's menu stands already.
  */
 export function openChipMenu(
   chip: HTMLElement,
@@ -669,8 +669,7 @@ function ListEditor({
   latest.current = draft;
   /** Set when a key ends the edit in place, so the blur after does not. */
   const chipEnded = useRef(false);
-  /** Whether an item's menu stands, which takes the keys. */
-  const menuStands = useRef(false);
+  const app = useObsidianApp();
   const editingAt = draft.chip?.at;
   useEditorScope(root);
   // An edit that opens on an item from its menu starts in that item.
@@ -803,15 +802,7 @@ function ListEditor({
       edit: () => editChip(at),
       remove: () => remove(at),
     });
-    if (!menu) return;
-    menuStands.current = true;
-    menu.onHide(() => {
-      // The key that closes the menu reaches the pill after the menu has
-      // gone, so the pill hears it as the menu's until the key is done.
-      chip.ownerDocument.defaultView?.setTimeout(() => {
-        menuStands.current = false;
-      });
-    });
+    if (menu) holdMenuKeys(menu, app.keymap);
   };
   const end = (how: VaultEditEnd) => onEnd(true, draft, how);
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -843,8 +834,6 @@ function ListEditor({
   };
   const onPillKey = (event: KeyboardEvent<HTMLElement>, at: number) => {
     event.stopPropagation();
-    // While the pill's menu stands, the keys are the menu's.
-    if (menuStands.current) return;
     if (asksForMenu(event)) {
       event.preventDefault();
       chipMenu(event.currentTarget, null, at);
@@ -1003,6 +992,28 @@ function useEditorScope(root: RefObject<HTMLElement | null>): void {
     });
     return () => keys[Symbol.dispose]();
   }, [app, root]);
+}
+
+/**
+ * While an item's menu stands it holds the keys, and the pill focus stays on
+ * hears none. Obsidian's Menu takes its arrows and Enter, but its Escape hides
+ * it without taking the key, and a key it never registered goes on to the
+ * pill: Delete would remove an item the menu still offers to remove. A Scope
+ * above the menu's takes Escape, and the menu's own takes every other key it
+ * leaves alone; the menu's arrows and Enter stand before that one.
+ */
+function holdMenuKeys(
+  menu: Menu,
+  keymap: Pick<App["keymap"], "pushScope" | "popScope">,
+): void {
+  menu.scope.register(null, null, () => false);
+  const keys = new Scope(menu.scope);
+  keys.register([], "Escape", () => {
+    menu.hide();
+    return false;
+  });
+  keymap.pushScope(keys);
+  menu.onHide(() => keymap.popScope(keys));
 }
 
 /**

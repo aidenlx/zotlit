@@ -919,6 +919,9 @@ export class Scope {
     func: (evt: KeyboardEvent) => boolean | void;
   }[] = [];
 
+  /** The Scope a key no registration here ended goes on to. */
+  constructor(readonly parent?: Scope) {}
+
   register(
     modifiers: Modifier[] | null,
     key: string | null,
@@ -1217,8 +1220,14 @@ export class Menu {
   /** Every section `addSections` registered, in the order given. */
   readonly sections: string[] = [];
 
+  /** The menu's keys, whose Escape hides it without taking the key. */
+  readonly scope = new Scope();
+
   constructor() {
     Menu.instances.push(this);
+    this.scope.register([], "Escape", () => {
+      this.hide();
+    });
   }
 
   addSections(sections: readonly string[]): this {

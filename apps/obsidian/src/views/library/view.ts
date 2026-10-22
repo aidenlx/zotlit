@@ -96,10 +96,12 @@ export interface LibraryViewDeps extends QueryViewDeps {
 /**
  * The controls in the view that answer Enter and the arrow keys themselves:
  * links, buttons (an icon button, such as the Welcome View banner's dismiss,
- * is a `role="button"`), menus, list boxes, and the Library Tree.
+ * is a `role="button"`), list boxes, and the Library Tree. A menu is none of
+ * them: it holds a Scope of its own while it stands, so its keys never reach
+ * the view's.
  */
 const OWN_KEYS =
-  'a, button, [role="button"], [role="menu"], [role="menuitem"], [role="listbox"], [role="combobox"], [role="tree"], [data-library-card]';
+  'a, button, [role="button"], [role="listbox"], [role="combobox"], [role="tree"], [data-library-card]';
 
 /**
  * What Enter does on the selected row, by its modifiers, as in the quick

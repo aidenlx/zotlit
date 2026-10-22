@@ -4940,6 +4940,44 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
       expect(app.scopes).not.toContain(editor);
     });
 
+    it("holds the keys in an item's menu while it stands, and gives them back to the pill as it hides", async () => {
+      const { cell, input, app } = await typed(["vault.authors"], {
+        authors: ["Doe, J", "Roe"],
+      });
+      await act(() => cell("authors").click());
+      const pill = () =>
+        cell("authors").querySelector<HTMLElement>(
+          '[data-query-vault-chip="Roe"]',
+        );
+      await act(() => pill()!.focus());
+      Menu.instances.length = 0;
+      await act(() => {
+        pressTop(app, { key: "ContextMenu" }, pill()!);
+      });
+      expect(Menu.instances).toHaveLength(1);
+      const menu = app.scopes.at(-1);
+
+      // A key the menu leaves alone stops at it: Delete removes no item the
+      // menu still offers to remove.
+      await act(() => {
+        pressTop(app, { key: "Delete" }, pill()!);
+      });
+      expect(pill()).not.toBeNull();
+
+      // Escape hides the menu alone, and focus stays on the pill.
+      await act(() => {
+        pressTop(app, { key: "Escape" }, pill()!);
+      });
+      expect(app.scopes).not.toContain(menu);
+      expect(document.activeElement).toBe(pill());
+
+      // The next Escape is the pill's, which gives focus back to the field.
+      await act(() => {
+        pressTop(app, { key: "Escape" }, pill()!);
+      });
+      expect(document.activeElement).toBe(input());
+    });
+
     it("moves between pills with the arrows, and removes the last with Backspace from an empty field", async () => {
       const { cell, input, press, literatureNotes } = await typed(
         ["vault.authors"],

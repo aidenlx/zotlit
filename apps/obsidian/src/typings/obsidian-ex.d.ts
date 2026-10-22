@@ -919,6 +919,13 @@ declare module "obsidian" {
      * against Obsidian 1.14.4.
      */
     addSections(sections: readonly string[]): this;
+    /**
+     * The Scope the menu holds the keyboard with while it shows, pushed as it
+     * opens and popped as it hides, parented to the keymap's empty root
+     * scope. It takes the arrows and Enter; its Escape hides the menu without
+     * taking the key. Internal; verified against Obsidian 1.13.7 and 1.14.2.
+     */
+    scope: Scope;
   }
   interface EditorSuggest<T> {
     /** Undocumented internal driving the popover's selection; invoking it from a custom keymap handler selects the highlighted suggestion as if Enter were pressed. */
