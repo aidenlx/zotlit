@@ -16,6 +16,7 @@ import type { ComponentType, ElementType } from "react";
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { ContractTable } from "@/components/contract-table";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import * as m from "@/paraglide/messages.js";
@@ -44,6 +45,7 @@ const mdxComponents: Record<string, ElementType> = {
   ActionLink,
   Callout,
   Command,
+  ContractTable,
   SettingsPath,
   UiLabel,
 };
