@@ -3,6 +3,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import type { Profiler } from "node:inspector";
 import { join } from "node:path";
 
+// oxlint-disable-next-line no-restricted-imports -- share the host benchmark's fixture without importing its Vitest suite.
+import { syntheticNote } from "../../../apps/obsidian/src/services/citation-index/__fixtures__/scan-pipeline-note.ts";
 import { obEval } from "./obsidian-cli.ts";
 import { e2eResultsDir } from "./results-dir.ts";
 
@@ -12,6 +14,10 @@ import { e2eResultsDir } from "./results-dir.ts";
  * No worker session is measured. Worker execution, disk work and idle waits run
  * elsewhere. Other renderer tasks and the small harness cost stay in the result:
  * this is a conservative gate, with no guessed baseline subtracted.
+ * The @electron/remote sendCommand calls cross synchronous IPC; part of their
+ * cost falls inside each sample, biasing the gate conservatively upward.
+ * Repeating changed with the same text measures the harness floor, including
+ * the unchanged parse, reply and equality check. Report it without subtraction.
  *
  * A readonly transaction queues behind the production write. Its completion
  * bounds the measurement after persistence callbacks; the record is checked
@@ -19,10 +25,15 @@ import { e2eResultsDir } from "./results-dir.ts";
  * of the gate. The profile includes native '(program)' and GC samples.
  */
 export async function measureCitationScan(vaultId: string) {
-  const evidence = JSON.parse(
-    await obEval(
-      vaultId,
-      `(async()=>{
+  const summaries = [];
+  const directory = e2eResultsDir();
+  await mkdir(directory, { recursive: true });
+  for (const dense of [true, false]) {
+    const density = dense ? "dense" : "sparse";
+    const evidence = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
         await using cleanup=new AsyncDisposableStack();
         const index=app.plugins.plugins.zotlit.services.citationIndex;
         await index.ready;
@@ -37,9 +48,7 @@ export async function measureCitationScan(vaultId: string) {
           request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
         });
         cleanup.defer(()=>db.close());
-        const uri='zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2';
-        const paragraph='Evidence supports this reading. '.repeat(2)+'[@rougierTenSimpleRules2014] []('+uri+')\\n\\n';
-        const text=('[ @unused ]\\n'+paragraph.repeat(1000)).slice(0,100000);
+        const text=${JSON.stringify(syntheticNote(100_000, dense, true))};
         const ready=Promise.withResolvers();
         const changed=app.metadataCache.on('changed',file=>{
           if(file.path==='Scan pipeline renderer budget.md')ready.resolve();
@@ -50,7 +59,7 @@ export async function measureCitationScan(vaultId: string) {
         const file=await app.vault.create('Scan pipeline renderer budget.md',text);
         cleanup.defer(()=>app.vault.delete(file));
         await ready.promise;clearTimeout(timer);
-        await index.getFileScan(file);
+        let previousScan=await index.getFileScan(file);
         const cache=app.metadataCache.getFileCache(file);
         const taskCpu=async()=>{
           const {metrics}=await client.sendCommand('Performance.getMetrics');
@@ -64,9 +73,11 @@ export async function measureCitationScan(vaultId: string) {
           transaction.oncomplete=resolve;transaction.onabort=()=>reject(transaction.error);
         });
         const samples=[];
-        const edit=async n=>{
-          const key='scan'+String(n).padStart(4,'0');
-          const body=('[@'+key+']\\n'+paragraph.repeat(1000)).slice(0,100000);
+        const floorSamples=[];
+        const edit=async(n,unchanged=false)=>{
+          // Match work1's width so only membership changes, not later positions.
+          const key='r'+String(n+1).padStart(4,'0');
+          const body=text.replace('[@work1]','[@'+key+']');
           const start=await taskCpu();
           // The public intake event supplies edited text, just as Obsidian does.
           // Keep editor rendering and Obsidian's own Markdown parse outside this gate.
@@ -76,6 +87,8 @@ export async function measureCitationScan(vaultId: string) {
           const cpuMs=((await taskCpu())-start)*1000;
           if(body.length!==100000||scan?.citekeys[0]?.raw!==key||scan.annotations.length===0)
             throw Error('Edited 100k note did not reach the production index');
+          if(unchanged&&scan!==previousScan)throw Error('Unchanged text replaced the scan record');
+          previousScan=scan;
           const persisted=await new Promise((resolve,reject)=>{
             const request=db.transaction('scans','readonly').objectStore('scans').get(file.path);
             request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
@@ -86,7 +99,8 @@ export async function measureCitationScan(vaultId: string) {
         await barrier();
         for(let n=0;n<18;n++){
           const cpuMs=await edit(n);
-          if(n>=3)samples.push(cpuMs);
+          const floorMs=await edit(n,true);
+          if(n>=3){samples.push(cpuMs);floorSamples.push(floorMs);}
         }
         await client.sendCommand('Profiler.enable');
         cleanup.defer(()=>client.sendCommand('Profiler.disable'));
@@ -95,47 +109,61 @@ export async function measureCitationScan(vaultId: string) {
         let profile;
         try{for(let n=18;n<21;n++)await edit(n);}
         finally{({profile}=await client.sendCommand('Profiler.stop'));}
-        return JSON.stringify({samples,profile,characters:100000,warmups:3,profileEdits:3});
+        return JSON.stringify({samples,floorSamples,profile,characters:100000,warmups:3,profileEdits:3});
       })()`,
-      120_000,
-    ),
-  ) as {
-    samples: number[];
-    profile: Profiler.Profile;
-    characters: number;
-    warmups: number;
-    profileEdits: number;
-  };
-  const sorted = evidence.samples.toSorted((a, b) => a - b);
-  const nodes = new Map(evidence.profile.nodes.map((node) => [node.id, node]));
-  const frames = new Map<string, number>();
-  for (const [at, id] of (evidence.profile.samples ?? []).entries()) {
-    const frame = nodes.get(id)!.callFrame;
-    if (frame.functionName === "(idle)") continue;
-    const name = `${frame.functionName || "(anonymous)"} ${frame.url}:${frame.lineNumber + 1}`;
-    frames.set(
-      name,
-      (frames.get(name) ?? 0) + evidence.profile.timeDeltas![at]! / 1000,
+        120_000,
+      ),
+    ) as {
+      samples: number[];
+      floorSamples: number[];
+      profile: Profiler.Profile;
+      characters: number;
+      warmups: number;
+      profileEdits: number;
+    };
+    const sorted = evidence.samples.toSorted((a, b) => a - b);
+    const floorSorted = evidence.floorSamples.toSorted((a, b) => a - b);
+    const nodes = new Map(
+      evidence.profile.nodes.map((node) => [node.id, node]),
+    );
+    const frames = new Map<string, number>();
+    for (const [at, id] of (evidence.profile.samples ?? []).entries()) {
+      const frame = nodes.get(id)!.callFrame;
+      if (frame.functionName === "(idle)") continue;
+      const name = `${frame.functionName || "(anonymous)"} ${frame.url}:${frame.lineNumber + 1}`;
+      frames.set(
+        name,
+        (frames.get(name) ?? 0) + evidence.profile.timeDeltas![at]! / 1000,
+      );
+    }
+    const summary = {
+      density,
+      medianMs: sorted[Math.floor(sorted.length / 2)]!,
+      maxMs: sorted.at(-1)!,
+      samples: evidence.samples,
+      harnessFloor: {
+        medianMs: floorSorted[Math.floor(floorSorted.length / 2)]!,
+        maxMs: floorSorted.at(-1)!,
+        samples: evidence.floorSamples,
+      },
+      topFrames: [...frames.entries()]
+        .toSorted((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([frame, sampledMs]) => ({ frame, sampledMs })),
+    };
+    summaries.push(summary);
+    await writeFile(
+      join(directory, `citation-scan-renderer-${density}.json`),
+      JSON.stringify({ ...evidence, ...summary }, null, 2),
+    );
+    await writeFile(
+      join(directory, `citation-scan-renderer-${density}.cpuprofile`),
+      JSON.stringify(evidence.profile),
     );
   }
-  const summary = {
-    medianMs: sorted[Math.floor(sorted.length / 2)]!,
-    maxMs: sorted.at(-1)!,
-    samples: evidence.samples,
-    topFrames: [...frames.entries()]
-      .toSorted((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([frame, sampledMs]) => ({ frame, sampledMs })),
-  };
-  const directory = e2eResultsDir();
-  await mkdir(directory, { recursive: true });
   await writeFile(
     join(directory, "citation-scan-renderer.json"),
-    JSON.stringify({ ...evidence, ...summary }, null, 2),
+    JSON.stringify(summaries, null, 2),
   );
-  await writeFile(
-    join(directory, "citation-scan-renderer.cpuprofile"),
-    JSON.stringify(evidence.profile),
-  );
-  return summary;
+  return summaries;
 }

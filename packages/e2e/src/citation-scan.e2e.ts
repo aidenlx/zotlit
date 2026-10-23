@@ -49,6 +49,12 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           cleanup.defer(async()=>{await app.vault.delete(created);await services.template.refresh();});
         }
         await services.template.refresh();
+        // Pin before any tab cites the Item: a pin that follows an active-tab load
+        // of the same Item stays "Loading…" (#1701).
+        s.annotations=app.workspace.getRightLeaf(false);
+        cleanup.defer(()=>s.annotations.detach());
+        await s.annotations.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:'RUGIER24'}});
+        await s.annotations.view.read;
         const literature=await app.vault.create(${JSON.stringify(literature)},${JSON.stringify("---\nzotero-key: RUGIER24\n---\n")});
         cleanup.defer(()=>app.vault.delete(literature));
         s.file=await app.vault.create(${JSON.stringify(note)},${JSON.stringify("An empty draft.\n")});
@@ -60,10 +66,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         s.editor=s.leaf.view.editor;
         s.editor.setValue(${JSON.stringify(body)});
         await s.leaf.view.save();
-        s.annotations=app.workspace.getRightLeaf(false);
-        cleanup.defer(()=>s.annotations.detach());
-        await s.annotations.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:'RUGIER24'}});
-        await s.annotations.view.read;
         return true;
       })()`,
       );
@@ -104,7 +106,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         `(async()=>{
         const s=${state};await s.leaf.view.save();
         s.references=app.workspace.getRightLeaf(false);
-        cleanup.defer(()=>s.references.detach());
+        s.cleanup.defer(()=>s.references.detach());
         await s.references.setViewState({type:'zotlit-references'});
         app.workspace.setActiveLeaf(s.leaf,{focus:true});return true;
       })()`,
@@ -238,9 +240,14 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
       ).toEqual(
         before.uses.map((occurrence) => occurrence.position.start.offset + 16),
       );
-      const measurement = await measureCitationScan(vaultId);
-      console.info("Citation scan renderer CPU, 100k characters", measurement);
-      expect(measurement.maxMs).toBeLessThan(2);
+      const measurements = await measureCitationScan(vaultId);
+      for (const measurement of measurements) {
+        console.info(
+          "Citation scan renderer CPU, 100k characters",
+          measurement,
+        );
+        expect.soft(measurement.maxMs, measurement.density).toBeLessThan(2);
+      }
     } finally {
       await obEval(
         vaultId,

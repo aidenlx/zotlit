@@ -34,30 +34,13 @@ import type { ParseClient } from "@/services/citation-parse/client";
 // oxlint-disable-next-line no-restricted-imports -- this Node benchmark uses the guarded build tooling outside src.
 import { scanBenchmarkWorker } from "../../../scripts/scan-benchmark-worker";
 import { scanCitekeyOccurrences } from "./__fixtures__/legacy-citekey-scan";
+import { syntheticNote } from "./__fixtures__/scan-pipeline-note";
 import { scanNote } from "./scan-note";
 import { createCitationIndexHarness } from "./test-harness";
 
 const RUNS = 15;
 const SIZES = [10_000, 100_000, 1_000_000];
 const SIGNAL = new AbortController().signal;
-
-function syntheticNote(size: number, dense: boolean, links: boolean): string {
-  const paragraphs: string[] = [];
-  let length = 0;
-  for (let n = 1; length < size; n++) {
-    const prose = "Evidence supports this reading. ".repeat(dense ? 2 : 30);
-    let paragraph = `${prose}[@work${n}]\n\n`;
-    if (n % 5 === 0)
-      paragraph += links
-        ? "> [!quote] Evidence\n> [](zotero://open/library/items/ABCD2345?annotation=EFGH6789&page=2)\n\n"
-        : "> [!quote] Evidence\n> A passage from the source.\n\n";
-    if (n % 25 === 0)
-      paragraph += `\`\`\`md\n[@excluded]${links ? " ![](zotero://open/library/items/ABCD2345?annotation=EXCL2345)" : ""}\n\`\`\`\n\n`;
-    paragraphs.push(paragraph);
-    length += paragraph.length;
-  }
-  return paragraphs.join("").slice(0, size);
-}
 
 function median(samples: number[]): number {
   return samples.toSorted((a, b) => a - b)[Math.floor(samples.length / 2)]!;
