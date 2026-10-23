@@ -103,6 +103,25 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["src/**"],
+      rules: { "zotlit-services/worker-rpc": "error" },
+    },
+    {
+      // ZoteroReads owns the effect/rpc launch, shutdown and log transport.
+      files: [
+        "src/services/zotero-reads/worker-launch.ts",
+        "src/services/zotero-reads/worker-host.ts",
+        "src/services/zotero-reads/worker.ts",
+      ],
+      rules: { "zotlit-services/worker-rpc": "off" },
+    },
+    {
+      // Worker migration backlog: move snapshot integrity checks to effect/rpc,
+      // then remove this file from the list.
+      files: ["src/services/database/snapshot-integrity.ts"],
+      rules: { "zotlit-services/worker-rpc": "off" },
+    },
+    {
       files: ["src/**/*.test.{ts,tsx}"],
       rules: {
         "zotlit-effect-tests/no-effect-run-in-test": "error",
