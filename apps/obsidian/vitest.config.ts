@@ -76,9 +76,19 @@ export default defineConfig({
           exclude: [
             ...testDefaults.exclude,
             ...HAPPY_DOM_NATIVE_RESPONSE_FILES,
-            // Needs a native Pandoc; vitest.lua-filter.config.ts runs it.
+            // Needs a native Pandoc; the `pandoc` project runs it.
             "src/**/*.pandoc.test.ts",
           ],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "pandoc",
+          include: ["src/**/*.pandoc.test.ts"],
+          // The style validator reads XML through the DOMParser Obsidian's
+          // renderer supplies.
+          environment: "happy-dom",
         },
       },
       {

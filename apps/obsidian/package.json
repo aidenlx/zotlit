@@ -22,7 +22,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "bench": "vitest run --config vitest.bench.config.ts",
-    "test:lua-filter": "vitest run --config vitest.lua-filter.config.ts"
+    "test:lua-filter": "vitest run --project pandoc"
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
