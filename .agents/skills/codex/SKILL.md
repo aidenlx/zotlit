@@ -45,14 +45,15 @@ Run it in the background; the harness notifies on exit.
 `codex exec review` reviews a diff instead of executing a spec. Verified on `codex-cli 0.164.0`; check `codex exec review --help` when the version moves.
 
 ```bash
-codex exec review -m <model> -c model_reasoning_effort='"xhigh"' --title "<title>" \
+codex exec -C <worktree> review -m <model> -c model_reasoning_effort='"xhigh"' --title "<title>" \
   -o .scratch/<task>/review.md "Read <absolute path to brief.md> and carry it out exactly." < /dev/null > .scratch/<task>/review-log.txt 2>&1
 ```
 
+- **Worktree:** `-C` is an option of `codex exec`, so it goes before `review`. Placed after `review`, it fails with a usage error.
 - **Scope:** a prompt and a scope flag (`--base`, `--uncommitted`, `--commit`) are mutually exclusive. A briefed review names its scope inside the brief: "Review the diff from `git diff <fixed-point>...HEAD`, commits: `<list>`."
 - **Report only:** the brief ends with "Report findings only. Change no files."
 - **Approvals:** `review` has no `--approve-for-me`. It takes approvals from `~/.codex/config.toml`: `approvals_reviewer = "auto_review"`, `approval_policy = "on-request"` and `sandbox_mode = "workspace-write"`. Pass them as `-c` overrides on a machine whose config differs.
-- **Parse errors:** a flag-parse error still exits `0`. Read the log for it.
+- **Usage errors:** a misplaced or unknown flag exits `2` and writes no report. The log holds the usage message.
 
 ## 3. Review
 
