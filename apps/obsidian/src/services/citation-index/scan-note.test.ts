@@ -40,6 +40,91 @@ const conformance: {
   record: Partial<NoteScanRecord>;
 }[] = [
   {
+    name: "ATX heading before indented code (#1689)",
+    text: `## heading\n    ${hidden}`,
+    record: {},
+  },
+  {
+    name: "setext underline before indented code (#1689)",
+    text: `heading\n===\n    ${hidden}`,
+    record: {},
+  },
+  {
+    name: "horizontal rule before indented code (#1689)",
+    text: `***\n    ${hidden}`,
+    record: {},
+  },
+  {
+    name: "annotation embed inside a Markdown link (#1689)",
+    text: `[![quote](${uri})](https://example.org)`,
+    record: {
+      annotations: [{ ...annotation, form: "embed", position: pos(1, 67) }],
+    },
+  },
+  {
+    name: "reference definition before indented code (#1689)",
+    text: `[a]: https://example.org\n    ${hidden}`,
+    record: {},
+  },
+  {
+    name: "visible autolink after a Markdown link and label (#1689)",
+    text: `[x](https://example.org) [a]: <${uri}>`,
+    record: {
+      annotations: [{ ...annotation, form: "labelled", position: pos(30, 88) }],
+    },
+  },
+  {
+    name: "named character reference in link destination (#1689)",
+    text: "[](zotero://open/library/items/ABCD2345?page=1&amp;annotation=EFGH6789)",
+    record: {
+      annotations: [
+        {
+          ...annotation,
+          pageLabel: "1",
+          form: "citation",
+          position: pos(0, 71),
+        },
+      ],
+    },
+  },
+  {
+    name: "decimal character reference in image destination (#1689)",
+    text: "![](zotero://open/library/items/ABCD2345?page=1&#38;annotation=EFGH6789)",
+    record: {
+      annotations: [
+        { ...annotation, pageLabel: "1", form: "embed", position: pos(0, 72) },
+      ],
+    },
+  },
+  {
+    name: "hex character reference in link destination (#1689)",
+    text: "[](zotero://open/library/items/ABCD2345?page=1&#x26;annotation=EFGH6789)",
+    record: {
+      annotations: [
+        {
+          ...annotation,
+          pageLabel: "1",
+          form: "citation",
+          position: pos(0, 72),
+        },
+      ],
+    },
+  },
+  {
+    name: "autolink keeps character references literal (#1689)",
+    text: `<${uri}&page=&copy;>`,
+    record: {
+      annotations: [{ ...annotation, form: "labelled", position: pos(0, 70) }],
+    },
+  },
+  {
+    name: "escaped ampersand keeps character reference literal (#1689)",
+    text: `[](${uri}&page=\\&copy;)`,
+    record: {
+      annotations: [{ ...annotation, form: "citation", position: pos(0, 73) }],
+    },
+  },
+  {
     name: "empty-text Annotation Citation",
     text: `[](${uri})`,
     record: {
@@ -83,8 +168,9 @@ const conformance: {
     },
   },
   // remark-obsidian/test/parity/corpus.ts: frontmatter/closing-line-trailing-text.
+  // #1689 requires an exact closing delimiter; this block stays unclosed.
   {
-    name: "frontmatter closing-line tail stays text",
+    name: "frontmatter delimiter with trailing text stays prose",
     text: "---\nx: y\n--- [@k]",
     record: {
       citations: [
@@ -336,6 +422,16 @@ const conformance: {
     text: `before $$${hidden}$$ after`,
     record: {},
   },
+  {
+    name: "display math closing-line tail preserves source positions (#1689)",
+    text: "$$x$$ [@k]",
+    record: {
+      citations: [
+        { start: 6, end: 10, keys: [{ citekey: "k", start: 7, end: 9 }] },
+      ],
+      citekeys: [{ kind: "citekey", raw: "k", position: pos(7, 9) }],
+    },
+  },
   // Same corpus: probe/math/display-own-lines and math/empty-block.
   {
     name: "display math across blank lines",
@@ -344,6 +440,32 @@ const conformance: {
   },
   // Same corpus: probe/math/display-open-only.
   { name: "unclosed display math", text: `$$\n${hidden}`, record: {} },
+  {
+    name: "four hyphens do not close frontmatter (#1689)",
+    text: `---\nx: y\n----\n${hidden}\n---`,
+    record: {},
+  },
+  {
+    name: "hyphens with a suffix do not close frontmatter (#1689)",
+    text: `---\nx: y\n---x\n${hidden}\n---`,
+    record: {},
+  },
+  {
+    name: "exact CRLF frontmatter close preserves following text (#1689)",
+    text: "---\r\nx: y\r\n---\r\n[[Note]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "Note",
+          position: {
+            start: { line: 3, col: 0, offset: 16 },
+            end: { line: 3, col: 8, offset: 24 },
+          },
+        },
+      ],
+    },
+  },
   // remark-obsidian/test/parity/corpus.ts: frontmatter/wikilink-value.
   {
     name: "closed frontmatter",

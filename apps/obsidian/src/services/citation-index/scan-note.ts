@@ -1,6 +1,8 @@
 // One worker-safe parse produces the raw citation and annotation facts for one note.
 import { parser } from "@lezer/markdown";
+import type { BlockContext, Line } from "@lezer/markdown";
 import { regex } from "arkregex";
+import { decodeHTMLStrict } from "entities/decode";
 
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
@@ -47,15 +49,10 @@ export interface NoteScanRecord {
 }
 
 const markdown = parser.configure({
-  remove: [
-    "Emphasis",
-    "HardBreak",
-    "Entity",
-    "ATXHeading",
-    "SetextHeading",
-    "HorizontalRule",
-    "LinkReference",
-  ],
+  // Trim only inline presentation nodes: these cannot move exclusion boundaries.
+  // Keep every block parser, including headings, rules and reference definitions,
+  // so a following indented code block stays separate from paragraph text.
+  remove: ["Emphasis", "HardBreak", "Entity"],
   // Keep HTMLBlock: remark-obsidian/test/parity/corpus.ts, html/passthrough,
   // records a raw HTML section whose [[not a wikilink]] produces no link.
   defineNodes: ["WikiLink", "Math"],
@@ -73,19 +70,7 @@ const markdown = parser.configure({
             else if (line.text.startsWith("$$", at)) {
               const end = at + 2;
               cx.addElement(cx.elt("Math", from, cx.lineStart + end));
-              if (end < line.text.length) {
-                cx.addElement(
-                  cx.elt(
-                    "Paragraph",
-                    cx.lineStart + end,
-                    cx.lineStart + line.text.length,
-                    cx.parser.parseInline(
-                      line.text.slice(end),
-                      cx.lineStart + end,
-                    ),
-                  ),
-                );
-              }
+              addTrailingParagraph(cx, line, end);
               cx.nextLine();
               return true;
             }
@@ -148,7 +133,11 @@ const markdown = parser.configure({
   ],
 });
 
-const MARKDOWN_ESCAPE = regex("\\\\([!-/:-@\\[-`{-~])", "g");
+// Decode in one pass so an escaped ampersand cannot open a character reference.
+const MARKDOWN_ESCAPE_OR_REFERENCE = regex(
+  "\\\\([!-/:-@\\[-`{-~])|&(?:#(?:[0-9]{1,7}|x[0-9a-f]{1,6})|[a-z0-9]{1,31});",
+  "gi",
+);
 
 /** @returns Raw, unresolved occurrences with half-open UTF-16 source positions. */
 export function scanNote(text: string): NoteScanRecord {
@@ -193,6 +182,13 @@ export function scanNote(text: string): NoteScanRecord {
   let commentIndex = 0;
   tree.iterate({
     enter({ name, from, to, node }) {
+      // A link's label stays masked, but its nested images are embeds.
+      if (
+        node.parent?.name === "Link" &&
+        node.parent.getChild("URL") &&
+        name !== "Image"
+      )
+        return false;
       while (comments[commentIndex] && comments[commentIndex]!.to <= from)
         commentIndex++;
       const comment = comments[commentIndex];
@@ -218,6 +214,7 @@ export function scanNote(text: string): NoteScanRecord {
           "CommentBlock",
           "ProcessingInstruction",
           "ProcessingInstructionBlock",
+          "LinkReference",
         ].includes(name)
       ) {
         mask(body, from, to);
@@ -248,26 +245,13 @@ export function scanNote(text: string): NoteScanRecord {
       if (name === "Link" || name === "Image" || name === "Autolink") {
         const url = node.getChild("URL");
         if (!url) return;
-        // With LinkReference removed, an angle-wrapped definition destination
-        // looks like an Autolink. Its leading [label]: still identifies it.
-        const label = node.prevSibling;
-        if (
-          name === "Autolink" &&
-          label?.name === "Link" &&
-          !label.getChild("URL") &&
-          !label.getChild("LinkLabel") &&
-          text.slice(label.to, from).trim() === ":" &&
-          text
-            .slice(label.prevSibling?.to ?? node.parent!.from, label.from)
-            .trim() === ""
-        ) {
-          mask(body, from, to);
-          return false;
-        }
         let destination = text.slice(url.from, url.to);
         if (destination.startsWith("<")) destination = destination.slice(1, -1);
         if (name !== "Autolink")
-          destination = destination.replace(MARKDOWN_ESCAPE, "$1");
+          destination = destination.replace(
+            MARKDOWN_ESCAPE_OR_REFERENCE,
+            (match, escaped) => escaped ?? decodeHTMLStrict(match),
+          );
         const marks = node.getChildren("LinkMark");
         const classified = classifyAnnotationLink(
           destination,
@@ -289,7 +273,7 @@ export function scanNote(text: string): NoteScanRecord {
           });
         }
         mask(body, from, to);
-        return false;
+        return name === "Link" ? undefined : false;
       }
     },
   });
@@ -315,9 +299,9 @@ export function scanNote(text: string): NoteScanRecord {
 
 function noteParser(text: string) {
   if (!text.startsWith("---\n") && !text.startsWith("---\r\n")) return markdown;
-  const close = text.indexOf("\n---", 3);
-  if (close < 0) return markdown;
-  const to = close + 4;
+  const close = /\n---\r?(?=\n|$)/.exec(text);
+  if (!close) return markdown;
+  const to = close.index + close[0].length;
   return markdown.configure({
     defineNodes: ["Frontmatter"],
     parseBlock: [
@@ -328,23 +312,30 @@ function noteParser(text: string) {
           if (cx.lineStart !== 0) return false;
           while (cx.lineStart + line.text.length < to) cx.nextLine();
           cx.addElement(cx.elt("Frontmatter", 0, to));
-          const tail = to - cx.lineStart;
-          if (tail < line.text.length) {
-            cx.addElement(
-              cx.elt(
-                "Paragraph",
-                to,
-                cx.lineStart + line.text.length,
-                cx.parser.parseInline(line.text.slice(tail), to),
-              ),
-            );
-          }
+          addTrailingParagraph(cx, line, to - cx.lineStart);
           cx.nextLine();
           return true;
         },
       },
     ],
   });
+}
+
+function addTrailingParagraph(
+  cx: BlockContext,
+  line: Line,
+  from: number,
+): void {
+  if (from >= line.text.length) return;
+  const start = cx.lineStart + from;
+  cx.addElement(
+    cx.elt(
+      "Paragraph",
+      start,
+      cx.lineStart + line.text.length,
+      cx.parser.parseInline(line.text.slice(from), start),
+    ),
+  );
 }
 
 function mask(body: string[], from: number, to: number): void {

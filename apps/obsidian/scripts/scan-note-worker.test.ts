@@ -48,7 +48,7 @@ it("bundles the scanner and classifier without Obsidian and scans in a worker (#
   const bundled = (await import(
     `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`
   )) as { default: string };
-  const worker = new Worker(
+  await using worker = new Worker(
     `
     const { parentPort } = require("node:worker_threads");
     ${bundled.default}
@@ -56,33 +56,29 @@ it("bundles the scanner and classifier without Obsidian and scans in a worker (#
   `,
     { eval: true },
   );
-  try {
-    const result = once(worker, "message");
-    worker.postMessage(
-      "[](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
-    );
-    expect(await result).toEqual([
-      {
-        citations: [],
-        citekeys: [],
-        wikilinks: [],
-        malformedWikilinks: [],
-        malformedAnnotationCitations: [],
-        annotations: [
-          {
-            form: "citation",
-            indexedKey: "EFGH6789g42",
-            attachmentKey: "ABCD2345",
-            pageLabel: null,
-            position: {
-              start: { line: 0, col: 0, offset: 0 },
-              end: { line: 0, col: 62, offset: 62 },
-            },
+  const response = once(worker, "message");
+  worker.postMessage(
+    "[](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
+  );
+  expect(await response).toEqual([
+    {
+      citations: [],
+      citekeys: [],
+      wikilinks: [],
+      malformedWikilinks: [],
+      malformedAnnotationCitations: [],
+      annotations: [
+        {
+          form: "citation",
+          indexedKey: "EFGH6789g42",
+          attachmentKey: "ABCD2345",
+          pageLabel: null,
+          position: {
+            start: { line: 0, col: 0, offset: 0 },
+            end: { line: 0, col: 62, offset: 62 },
           },
-        ],
-      },
-    ]);
-  } finally {
-    await worker.terminate();
-  }
+        },
+      ],
+    },
+  ]);
 });
