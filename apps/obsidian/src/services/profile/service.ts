@@ -36,6 +36,7 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { changesUntil } from "@/lib/effect-stream";
 import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -1587,9 +1588,7 @@ export const layerProfile = Layer.effect(
     );
     return Profile.of({
       state: SubscriptionRef.get(state),
-      changes: SubscriptionRef.changes(state).pipe(
-        Stream.interruptWhen(Deferred.await(stopped)),
-      ),
+      changes: changesUntil(state, Deferred.await(stopped)),
       loaded: Effect.sync(() => engine.loaded),
       profiles: Effect.sync(() => engine.profiles),
       diagnostics: Effect.sync(() => engine.diagnostics),

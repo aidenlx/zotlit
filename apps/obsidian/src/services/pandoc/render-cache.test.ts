@@ -7,17 +7,20 @@ import { describe, expect } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
-import type { Context } from "@/lib/effect";
-import { Effect, Fiber, Queue, Stream } from "@/lib/effect";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileRuntimeOf } from "@/services/profile/__fixtures__";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { Held } from "@/services/query-client/service";
+import { layerQueryClients } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import { createTemplateHost } from "@/services/template/__fixtures__";
+import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { Inlines } from "./ast";
@@ -31,14 +34,65 @@ import type {
   RenderedCitation,
   RenderRequest,
 } from "./engine";
-import { BibliographyRender } from "./render-cache";
+import { BibliographyRender, layerBibliographyRender } from "./render-cache";
 import type { CitationRenderOutcome } from "./render-cache";
 import { bibliographyRenderFixture } from "./render-cache/__fixtures__";
 import type { BibliographyRenderFixtureOptions } from "./render-cache/__fixtures__";
 import type { PandocEngineStatus } from "./service";
+import { PandocEngine } from "./service";
 
 const APA = "http://www.zotero.org/styles/apa";
 const IEEE = "http://www.zotero.org/styles/ieee";
+
+it.effect.each(["Profile", "preference override"] as const)(
+  "#1705: two immediate %s changes each invalidate through the native stream",
+  (dependency) =>
+    Effect.gen(function* () {
+      const profile = yield* profileRuntimeOf(createTemplateHost());
+      const { pref } = yield* zoteroPrefFixture();
+      const dependencies = yield* profile.runtime.contextEffect;
+      // Settle the dependency graph before acquiring the cache under test.
+      yield* TestClock.adjust(0);
+      const cache = Context.get(
+        yield* Layer.build(
+          layerBibliographyRender.pipe(
+            Layer.provide(Layer.succeedContext(dependencies)),
+            Layer.provide(Layer.succeed(ZoteroPref, pref)),
+            Layer.provide(layerQueryClients),
+            Layer.provide(
+              Layer.succeed(ZoteroReads, {
+                events: Stream.never,
+              } as unknown as ZoteroReads["Service"]),
+            ),
+            Layer.provide(
+              Layer.succeed(PandocEngine, {
+                getStatus: () => Effect.succeed({ kind: "absent" }),
+                changes: Stream.never,
+              } as unknown as PandocEngine["Service"]),
+            ),
+          ),
+        ),
+        BibliographyRender,
+      );
+      const invalidated: unknown[] = [];
+      yield* Stream.runForEach(cache.events, (event) =>
+        Effect.sync(() => invalidated.push(event._tag)),
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
+      if (dependency === "Profile") {
+        profile.settings.updateDefaultLiteratureNoteProfileBindings({
+          "note.literature-folder": "First",
+        });
+        profile.settings.updateDefaultLiteratureNoteProfileBindings({
+          "note.literature-folder": "Second",
+        });
+      } else {
+        yield* pref.setDataDir("/other-data");
+        yield* pref.setDataDir(null);
+      }
+      yield* TestClock.adjust(0);
+      expect(invalidated).toEqual(["invalidated", "invalidated"]);
+    }),
+);
 
 it.effect(
   "#1705: built cache exposes loaded settings and every immediate state change",

@@ -18,6 +18,7 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { changesUntil } from "@/lib/effect-stream";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
@@ -351,9 +352,7 @@ export const layerBibliographyRender = Layer.effect(
     });
     return BibliographyRender.of({
       state: SubscriptionRef.get(state),
-      changes: SubscriptionRef.changes(state).pipe(
-        Stream.interruptWhen(Deferred.await(stopped)),
-      ),
+      changes: changesUntil(state, Deferred.await(stopped)),
       events: Stream.fromPubSub(events),
       render: Effect.fn("BibliographyRender.render")(
         function* (items, presentation) {

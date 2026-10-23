@@ -18,11 +18,12 @@ import {
   Deferred,
   Effect,
   Layer,
-  Stream,
   SubscriptionRef,
 } from "@/lib/effect";
+import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
+import { changesUntil } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -248,9 +249,7 @@ export const layerZoteroPref = Layer.effect(
 
     return ZoteroPref.of({
       current,
-      changes: SubscriptionRef.changes(state).pipe(
-        Stream.interruptWhen(Deferred.await(stopped)),
-      ),
+      changes: changesUntil(state, Deferred.await(stopped)),
       get: Effect.fn("ZoteroPref.get")(function* (name: string) {
         return (yield* current).prefs.get(PREF_BRANCH + name);
       }),

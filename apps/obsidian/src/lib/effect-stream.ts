@@ -1,7 +1,24 @@
-// A Stream handed to code that lives outside Effect, as a callback subscription.
-import type { ManagedRuntime } from "@/lib/effect";
-import { Cause, Effect, Stream } from "@/lib/effect";
+// State Streams and callback subscriptions shared by Effect services and adapters.
+import type { ManagedRuntime, SubscriptionRef } from "@/lib/effect";
+import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+
+/**
+ * Replay state and retain every update until the service stops. Acquire the
+ * subscription before interruptWhen forks upstream, so a consumer started
+ * immediately during layer acquisition attaches before the layer returns.
+ * Each consumer owns its subscription through the Stream's Scope.
+ */
+export function changesUntil<A>(
+  state: SubscriptionRef.SubscriptionRef<A>,
+  stopped: Effect.Effect<void>,
+): Stream.Stream<A> {
+  return Stream.unwrap(
+    Effect.map(PubSub.subscribe(state.pubsub), (subscription) =>
+      Stream.fromSubscription(subscription).pipe(Stream.interruptWhen(stopped)),
+    ),
+  );
+}
 
 /**
  * Call `callback` with each element of `stream`, run by `runtime`, until the
