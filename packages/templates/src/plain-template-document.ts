@@ -29,6 +29,7 @@ export type PlainTemplateDocumentErrorCode =
   | "invalid-manifest";
 
 export class PlainTemplateDocumentError extends Error {
+  readonly _tag = "PlainTemplateDocumentError";
   readonly code: PlainTemplateDocumentErrorCode;
   readonly recovery: string;
   /** UTF-16 offset of the responsible text, so a host can point at it. */

@@ -6,13 +6,14 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 
+import { testReads } from "./__fixtures__";
+import type { TestReads } from "./__fixtures__";
 import { layerRcRef } from "./connection";
 import type { Connection, ConnectionOpener } from "./connection";
 import type { HandlersOptions } from "./handlers";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import type { SnapshotId } from "./rpc";
-import { ZoteroReadsService } from "./service";
 
 /** The handler layer on this runtime over `connection`, for the caller's scope. */
 export const inProcessClient = Effect.fnUntraced(function* (
@@ -72,7 +73,7 @@ export interface InProcessReadsOptions {
   handlers?: HandlersOptions;
 }
 
-/** A {@link ZoteroReadsService} on the in-process adapter over `opener`. */
+/** A {@link TestReads} on the in-process adapter over `opener`. */
 export function inProcessReadsService(
   opener: ConnectionOpener,
   {
@@ -80,13 +81,13 @@ export function inProcessReadsService(
     opening = Promise.resolve(),
     handlers,
   }: InProcessReadsOptions = {},
-): ZoteroReadsService {
-  return new ZoteroReadsService({
-    client: Effect.andThen(
+): TestReads {
+  return testReads(
+    Effect.andThen(
       Effect.promise(() => opening),
       Effect.map(inProcessClient(layerRcRef(opener), handlers), wrap),
     ),
-  });
+  );
 }
 
 /**
@@ -95,13 +96,14 @@ export function inProcessReadsService(
  * that stubs the `@zotlit/db` queries answers through the real handlers.
  */
 export function stubbedReads(): Pick<
-  ZoteroReadsService,
-  "ready" | "acquireRead"
+  TestReads,
+  "reads" | "ready" | "acquireRead"
 > &
-  AsyncDisposable & { state: ZoteroReadsService["state"] } {
+  AsyncDisposable & { state: TestReads["state"] } {
   const service = inProcessReadsService(memoryOpener(() => "").open);
   return {
     state: "ready",
+    reads: service.reads,
     get ready() {
       return service.ready;
     },
@@ -114,9 +116,9 @@ export function stubbedReads(): Pick<
  * `service` with `state` fixed, for a suite that tests a consumer's state
  * gate. Every other member is the service's own.
  */
-export function withState<S extends ZoteroReadsService>(
+export function withState<S extends TestReads>(
   service: S,
-  state: ZoteroReadsService["state"],
+  state: TestReads["state"],
 ): S {
   return new Proxy(service, {
     get(target, property) {

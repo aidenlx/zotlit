@@ -324,7 +324,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #closed = false;
   #generation = 0;
   #bindingDefaults = BUILT_IN_BINDING_DEFAULTS;
-  #databaseUnavailable = false;
   #stylesUnavailable = false;
   #citationStyles: NameFolderPaneProps["citationStyles"] = [];
   /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
@@ -756,23 +755,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   get unavailableDependencies(): string[] {
     return [
-      ...(this.#databaseUnavailable
+      ...(this.#deps.zoteroReads.state === "degraded"
         ? [m.template_workbench_database_unavailable()]
         : []),
       ...(this.#stylesUnavailable
         ? [m.template_workbench_styles_unavailable()]
         : []),
     ];
-  }
-  async #databaseReady(): Promise<boolean> {
-    try {
-      await this.#deps.zoteroReads.ready;
-      return true;
-    } catch {
-      this.#databaseUnavailable = true;
-      this.#mount();
-      return false;
-    }
   }
 
   subscribeReveals(
@@ -1330,11 +1319,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (itemGeneration !== this.#itemGeneration) return;
     if (typeof value.itemIndexedKey === "string") {
       store.setItem({ id: value.itemIndexedKey, title: null });
-      if (
-        !getSampleItem(value.itemIndexedKey) &&
-        !(await this.#databaseReady())
-      )
-        return;
       if (!this.#closed && itemGeneration === this.#itemGeneration)
         await this.#selectKey(value.itemIndexedKey);
     } else if (value.itemIndexedKey === null) store.setItem(null);
@@ -1445,7 +1429,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#root = createRoot(this.contentEl);
     this.#mount();
     void this.refreshStyles();
-    void this.#databaseReady();
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;
@@ -1974,7 +1957,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       return false;
     const generation = this.#itemGeneration;
     try {
-      const { reads } = await this.#deps.zoteroReads.ready;
+      const { reads } = this.#deps.zoteroReads;
       const items = await Effect.runPromise(
         reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
       );

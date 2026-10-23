@@ -23,7 +23,7 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import { InertTemplateError } from "@/services/template/errors";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 /**
  * Dependencies for the batch runner's single-action create / update path.
@@ -36,7 +36,7 @@ export interface SingleUpdateDeps {
    * The database reads. A batch run opens its Snapshot here, and its note
    * updates read through it.
    */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready" | "state">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state">;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   noteFeature: NoteFeature;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
@@ -138,7 +138,7 @@ export async function createAndOpen(
   ref: ItemRef,
   profile?: ProfileSelector,
 ): Promise<void> {
-  const { reads } = await deps.zoteroReads.ready;
+  const { reads } = deps.zoteroReads;
   const items = await Effect.runPromise(
     reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
   );

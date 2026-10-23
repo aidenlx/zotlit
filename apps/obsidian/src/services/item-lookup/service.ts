@@ -27,8 +27,8 @@ import type {
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { SearchHit as ReadsSearchHit } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
@@ -53,7 +53,7 @@ export interface SearchHit extends ReadsSearchHit {
 
 export interface ItemLookupDeps {
   useLedger: Pick<PlainUseLedger, "uses">;
-  reads: Pick<ZoteroReadsService, "ready">;
+  reads: Pick<PlainZoteroReads, "reads">;
   libraryScope: Pick<LibraryScopeService, "ready" | "on" | "current">;
 }
 
@@ -216,7 +216,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
     this.commit(stack.move());
 
-    await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
+    await this.#libraryScope.ready;
     logger.info("Item lookup ready");
     scopeKey = scopeKeyOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);
@@ -236,42 +236,41 @@ export class ItemLookup extends Service<ItemLookupReady> {
         : null;
     const citedKeys = new Set(cited);
     const t0 = performance.now();
-    return Effect.promise(() => this.#reads.ready).pipe(
-      Effect.flatMap(({ reads }) =>
-        reads.SearchItems({
-          libraryIDs: libraries.map((library) => library.libraryID),
-          query,
-          limit,
-          ...(query.trim() === ""
-            ? { uses: this.#useLedger.uses, ...(cited ? { cited } : {}) }
-            : {}),
-        }),
-      ),
-      Effect.map((hits) => {
-        logger.debug("Search completed", {
-          libraries: libraries.length,
-          queryLength: query.length,
-          hits: hits.length,
-          durationMs: performance.now() - t0,
-        });
-        return hits.map((hit): SearchHit => ({
-          ...hit,
-          library: labels?.get(hit.item.libraryID) ?? null,
-          cited: citedKeys.has(hit.item.indexedKey),
-        }));
-      }),
-      Effect.catchTag("DbUnavailable", (error) =>
-        Effect.sync(() => {
-          logger.debug("Search answered empty; database unavailable", {
-            error,
+    return this.#reads.reads
+      .SearchItems({
+        libraryIDs: libraries.map((library) => library.libraryID),
+        query,
+        limit,
+        ...(query.trim() === ""
+          ? { uses: this.#useLedger.uses, ...(cited ? { cited } : {}) }
+          : {}),
+      })
+      .pipe(
+        Effect.map((hits) => {
+          logger.debug("Search completed", {
+            libraries: libraries.length,
+            queryLength: query.length,
+            hits: hits.length,
+            durationMs: performance.now() - t0,
           });
-          return [];
+          return hits.map((hit): SearchHit => ({
+            ...hit,
+            library: labels?.get(hit.item.libraryID) ?? null,
+            cited: citedKeys.has(hit.item.indexedKey),
+          }));
         }),
-      ),
-      // A search answers; a failure of any other kind is logged, not thrown.
-      Effect.catch((error) => this.#logFailure(error)),
-      Effect.catchDefect((defect) => this.#logFailure(defect)),
-    );
+        Effect.catchTag("DbUnavailable", (error) =>
+          Effect.sync(() => {
+            logger.debug("Search answered empty; database unavailable", {
+              error,
+            });
+            return [];
+          }),
+        ),
+        // A search answers; a failure of any other kind is logged, not thrown.
+        Effect.catch((error) => this.#logFailure(error)),
+        Effect.catchDefect((defect) => this.#logFailure(defect)),
+      );
   }
 
   #logFailure(error: unknown): Effect.Effect<SearchHit[]> {

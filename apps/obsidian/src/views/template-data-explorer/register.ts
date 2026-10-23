@@ -10,7 +10,7 @@ import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import {
   activeTemplateWorkbench,
   openProfileExplorer,
@@ -25,7 +25,7 @@ type ExplorerPlugin = Pick<
 
 export interface ExplorerRegistrationDeps {
   app: App;
-  zoteroReads: ZoteroReadsService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"

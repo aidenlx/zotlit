@@ -164,6 +164,25 @@ async function makeHarness(
   };
 }
 
+it.effect(
+  "#1705: closing a migration fixture scope disables late layout callbacks",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* Effect.promise(() =>
+            makeHarness(undefined, context),
+          );
+          yield* acquireAsyncDisposable(async () => fixture.service);
+          return fixture;
+        }),
+      );
+      yield* Effect.promise(() => harness.layoutReady());
+      expect(harness.openPrompt).not.toHaveBeenCalled();
+    }),
+);
+
 describe("LiteratureNoteTemplateMigrationService", () => {
   it.effect("durably arms the prompt without changing legacy files", () =>
     Effect.gen(function* () {
@@ -171,6 +190,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       const harness = yield* Effect.promise(() =>
         makeHarness(undefined, context),
       );
+      yield* acquireAsyncDisposable(async () => harness.service);
       const paths = [...harness.files.keys()];
 
       yield* Effect.promise(() => harness.layoutReady());
@@ -209,6 +229,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
             context,
           ),
         );
+        yield* acquireAsyncDisposable(async () => harness.service);
 
         yield* Effect.promise(() => harness.layoutReady());
 
@@ -227,6 +248,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
+        yield* acquireAsyncDisposable(async () => harness.service);
 
         const result = yield* Effect.promise(() => harness.service.convert());
 
@@ -453,6 +475,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
+        yield* acquireAsyncDisposable(async () => harness.service);
         harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
           new LegacyTemplateConversionError(
             "legacy-render-mismatch",
@@ -495,6 +518,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true }, context),
         );
+        yield* acquireAsyncDisposable(async () => harness.service);
         harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
           new LegacyTemplateConversionError(
             "legacy-frontmatter-evaluation",
@@ -532,6 +556,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         const harness = yield* Effect.promise(() =>
           makeHarness({ pending: true, ejectedAnnotation: true }, context),
         );
+        yield* acquireAsyncDisposable(async () => harness.service);
 
         const result = yield* Effect.promise(() => harness.service.convert());
 
@@ -567,6 +592,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           context,
         ),
       );
+      yield* acquireAsyncDisposable(async () => harness.service);
 
       const result = yield* Effect.promise(() => harness.service.convert());
 
@@ -1046,6 +1072,7 @@ describe("the one-shot conversion aborts before any write", () => {
             context,
           ),
         );
+        yield* acquireAsyncDisposable(async () => harness.service);
         harness.template.convertLegacyTemplateDocuments.mockRejectedValueOnce(
           new LegacyTemplateConversionError(
             "legacy-render-mismatch",

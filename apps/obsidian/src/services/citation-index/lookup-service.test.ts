@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import { testReads } from "@/services/zotero-reads/__fixtures__";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   inProcessClient,
   memoryOpener,
@@ -52,14 +52,14 @@ function fixture(
   const opener = memoryOpener(() =>
     seedWorksSql([{ itemID: 1, key: "ITEMKEY1", citationKey: key }]),
   );
-  const shared = new ZoteroReadsService({
-    client: Effect.gen(function* () {
+  const shared = testReads(
+    Effect.gen(function* () {
       yield* Effect.promise(() => options.opening ?? Promise.resolve());
       const client = yield* inProcessClient(layerRcRef(opener.open));
       yield* client.Libraries({}).pipe(Effect.orDie);
       return options.wrap?.(client) ?? client;
     }),
-  });
+  );
   queryClients.push(shared);
   const queryClient = queryClientsFixture();
   queryClients.push(queryClient);
@@ -67,7 +67,11 @@ function fixture(
   const reads = new CitationLookup({
     queryClient,
     libraryScope,
-    reads: shared,
+    reads: {
+      reads: shared.reads,
+      state: "ready",
+      on: (event, callback) => shared.on(event, callback),
+    },
   });
   return {
     reads,
@@ -94,7 +98,7 @@ it("builds once at startup with ready dependencies and no events", async () => {
     queryClient,
     libraryScope: new LibraryScopeStub([personalLibrary()]),
     reads: {
-      ready: Promise.resolve(ready),
+      reads: ready.client,
       state: "ready",
       on: () => () => undefined,
     },

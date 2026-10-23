@@ -12,6 +12,7 @@ import {
 } from "@/lib/effect";
 import type { Context, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { startupBarrier } from "@/lib/effect-startup";
 
 import type { BinaryPin } from "./pin";
 import { ManagedBinaryPlatform } from "./platform";
@@ -172,7 +173,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       ),
     );
   });
-  yield* Effect.gen(function* () {
+  const discoverCache = Effect.gen(function* () {
     if (yield* isCached()) {
       const current = yield* SubscriptionRef.get(status);
       if (current.kind === "absent" || current.kind === "declined")
@@ -189,6 +190,15 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
         { error: Cause.squash(cause) },
         "warn",
       ),
+    ),
+  );
+
+  yield* startupBarrier(
+    discoverCache,
+    log(
+      "Binary cache discovery is still running; using initial status",
+      {},
+      "warn",
     ),
   );
 

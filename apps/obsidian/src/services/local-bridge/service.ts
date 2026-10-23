@@ -25,7 +25,7 @@ import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
@@ -74,7 +74,7 @@ export interface LocalBridgeServiceDeps {
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"

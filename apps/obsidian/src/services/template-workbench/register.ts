@@ -13,7 +13,7 @@ import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import {
   createCheckHandler,
@@ -70,7 +70,7 @@ import { choices } from "./vocabulary";
 
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
-  zoteroReads: ZoteroReadsService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"

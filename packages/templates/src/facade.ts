@@ -167,6 +167,7 @@ export interface TemplateFacadeOptions {
 
 /** Facade-origin errors: a missing template, or an eta compile error labeled with its name. */
 export class TemplateError extends Error {
+  readonly _tag = "TemplateError";
   readonly templateName: string;
 
   constructor(message: string, templateName: string, options?: ErrorOptions) {

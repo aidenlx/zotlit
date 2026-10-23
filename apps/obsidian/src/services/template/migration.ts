@@ -26,18 +26,17 @@ import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
 import type { PlainTemplate } from "./plain";
-import { Template } from "./service";
+import { Template, templateFailure } from "./service";
 import type {
   ConvertedLegacyProfileDocument,
   ConvertedLegacyTemplateDocuments,
   LegacyTemplateDocuments,
+  TemplateFailure,
 } from "./service";
 
 interface MigrationSettings {
@@ -101,7 +100,7 @@ export interface MigrationVerificationData {
 
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
-  zoteroReads: ZoteroReadsService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
   noteIndex: Pick<
     PlainNoteIndex,
@@ -618,10 +617,13 @@ export class TemplateMigration extends Context.Service<
   TemplateMigration,
   {
     whenSettled(): Effect.Effect<void>;
-    convert(): Effect.Effect<LiteratureNoteTemplateMigrationResult, unknown>;
+    convert(): Effect.Effect<
+      LiteratureNoteTemplateMigrationResult,
+      TemplateFailure
+    >;
     retryCleanup(): Effect.Effect<
       Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>,
-      unknown
+      TemplateFailure
     >;
   }
 >()("zotlit/template/TemplateMigration") {}
@@ -709,7 +711,7 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
       yield* attemptPromise(() => engine.detectTemplates(false)).pipe(
         Effect.catchCause(report),
       );
-      const owned = <A>(effect: Effect.Effect<A, unknown>) =>
+      const owned = <A, E>(effect: Effect.Effect<A, E>) =>
         closed
           ? effect
           : Effect.forkIn(effect, scope, {
@@ -749,6 +751,6 @@ export function layerTemplateMigration(options: TemplateMigrationOptions) {
 
 function attemptPromise<A>(
   evaluate: () => Promise<A>,
-): Effect.Effect<A, unknown> {
-  return Effect.tryPromise({ try: evaluate, catch: (error) => error });
+): Effect.Effect<A, TemplateFailure> {
+  return Effect.tryPromise({ try: evaluate, catch: templateFailure });
 }

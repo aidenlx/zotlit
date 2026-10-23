@@ -11,6 +11,8 @@ import {
   renderFailureSpan,
 } from "@zotlit/workbench/render";
 
+import { Schema } from "@/lib/effect";
+
 import type { PartialNameRefusal } from "./defaults";
 
 /**
@@ -21,6 +23,7 @@ import type { PartialNameRefusal } from "./defaults";
  * the artifact, ready to surface verbatim in operation failure toasts.
  */
 export class InertTemplateError extends Error {
+  readonly _tag = "InertTemplateError";
   /**
    * The inert Template's name. Absent in exactly one case: the inert artifact
    * is the managed-frontmatter field set, which is a field list rather than a
@@ -44,6 +47,7 @@ export class InertTemplateError extends Error {
  * `refusal` names the clause that refused.
  */
 export class PartialNameError extends Error {
+  readonly _tag = "PartialNameError";
   readonly partialName: string;
   readonly refusal: PartialNameRefusal;
 
@@ -132,4 +136,24 @@ export function reportedFaultSpan(
     .reduce((offset, text) => offset + text.length + 1, 0);
   const from = lineStart + Math.min(column - 1, lines[line - 1]!.length);
   return { source, from, to: Math.min(from + 1, source.length) };
+}
+
+/** A host operation failed at the Template service boundary. */
+export class TemplateOperationError extends Schema.TaggedError<TemplateOperationError>()(
+  "TemplateOperationError",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/** A template engine or a lazy render-data getter failed. */
+export class TemplateRenderError extends Schema.TaggedError<TemplateRenderError>()(
+  "TemplateRenderError",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/** Plain callers keep the original external exception and its diagnostic shape. */
+export function plainTemplateError(error: unknown): unknown {
+  return error instanceof TemplateOperationError ||
+    error instanceof TemplateRenderError
+    ? error.cause
+    : error;
 }

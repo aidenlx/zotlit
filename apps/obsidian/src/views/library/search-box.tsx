@@ -24,7 +24,7 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { QueryViewState } from "@/views/query-view/view";
 
 import { librariesOf } from "./document";
@@ -42,7 +42,7 @@ export const LIBRARY_SEARCH_LIMIT = 500;
 
 export interface LibrarySearchDeps {
   lookup: Pick<ItemLookup, "openSession">;
-  reads: Pick<ZoteroReadsService, "on">;
+  reads: Pick<PlainZoteroReads, "on">;
   libraryScope: Pick<LibraryScopeService, "on" | "current" | "libraries">;
 }
 

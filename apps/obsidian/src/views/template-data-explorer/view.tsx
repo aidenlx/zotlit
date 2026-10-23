@@ -28,7 +28,7 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { PlainTemplate } from "@/services/template/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import {
   activeTemplateWorkbench,
   registerCompanionHistory,
@@ -65,10 +65,7 @@ import {
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 export interface ExplorerViewDeps extends TemplateDataDeps {
-  zoteroReads: Pick<
-    ZoteroReadsService,
-    "state" | "ready" | "on" | "acquireRead"
-  >;
+  zoteroReads: Pick<PlainZoteroReads, "state" | "reads" | "on" | "acquireRead">;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   templates: Pick<
@@ -531,7 +528,6 @@ export class TemplateDataExplorerView extends ItemView {
     this.#mount();
     this.#cleanup = cleanup.move();
     updateSelectionTitle(this);
-    await this.#deps.zoteroReads.ready;
     if (this.#closed || this.#session.state.getState().context) return;
     if (!this.#session.state.getState().item) {
       const file = this.app.workspace.getActiveFile();

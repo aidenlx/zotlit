@@ -8,7 +8,7 @@ import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type ZotLitPlugin from "@/zt-main";
 
 import {
@@ -57,7 +57,10 @@ export interface ZotLitSettingTabOptions {
     | "subscribe"
   >;
   profile: ProfileService;
-  db: ZoteroReadsService;
+  db: Pick<
+    PlainZoteroReads,
+    "refresh" | "state" | "error" | "on" | "activeReadMode"
+  >;
   libraryScope: LibraryScopeService;
   zoteroPref: SettingTabContext["zoteroPref"];
   localServer: LocalServerActions;
@@ -87,7 +90,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     | "updateDefaultLiteratureNoteProfileBindings"
     | "subscribe"
   >;
-  readonly #db: ZoteroReadsService;
+  readonly #db: Pick<
+    PlainZoteroReads,
+    "refresh" | "state" | "error" | "on" | "activeReadMode"
+  >;
   readonly #libraryScope: LibraryScopeService;
   readonly #zoteroPref: SettingTabContext["zoteroPref"];
   readonly #localServer: LocalServerActions;

@@ -29,6 +29,9 @@ import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
 import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
 import type { ZoteroPref } from "./zotero-pref/service";
+import { layerZoteroReads } from "./zotero-reads/service";
+import type { ZoteroReads } from "./zotero-reads/service";
+import { workerClient } from "./zotero-reads/worker-client";
 
 /**
  * The graph `buildServices` builds before the container over `plugin`:
@@ -41,6 +44,7 @@ export function pluginLayer(
   plugin: Plugin,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
+  | ZoteroReads
   | PluginSettings
   | UseLedger
   | QueryClients
@@ -52,17 +56,22 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return Layer.mergeAll(
-    layerUseLedger,
-    layerTemplateMigration(migration).pipe(Layer.provideMerge(layerTemplate)),
-    layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
-    Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
-      Layer.provide(layerManagedBinaryPlatform),
+  return layerZoteroReads(workerClient()).pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        layerUseLedger,
+        layerTemplateMigration(migration).pipe(
+          Layer.provideMerge(layerTemplate),
+        ),
+        layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
+        Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
+          Layer.provide(layerManagedBinaryPlatform),
+        ),
+        layerNoteIndex,
+        layerCitationParse,
+        layerQueryClients,
+      ),
     ),
-    layerNoteIndex,
-    layerCitationParse,
-    layerQueryClients,
-  ).pipe(
     Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
     Layer.provideMerge(
       layerLogging.pipe(Layer.provide(layerLogOutput(plugin))),

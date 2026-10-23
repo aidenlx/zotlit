@@ -19,7 +19,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { ImportProfile } from "./import-profile-modal";
 
@@ -106,7 +106,10 @@ export interface SettingTabContext {
     | "subscribe"
   >;
   profile: ProfileService;
-  db: ZoteroReadsService;
+  db: Pick<
+    PlainZoteroReads,
+    "refresh" | "state" | "error" | "on" | "activeReadMode"
+  >;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;
   zoteroPref: Pick<

@@ -19,7 +19,7 @@ import { createCitationIndexHarness } from "@/services/citation-index/test-harne
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {
   CLEAR_WORKS_SQL,
   inProcessReadsService,
@@ -77,7 +77,7 @@ function reads(works: readonly SeededWork[] = []) {
   client.$client.exec(seedWorksSql(works));
   const service = inProcessReadsService(sharedClientOpener(client));
   const stub = {
-    state: "ready" as ZoteroReadsService["state"],
+    state: "ready" as TestReads["state"],
     get ready() {
       return service.ready;
     },

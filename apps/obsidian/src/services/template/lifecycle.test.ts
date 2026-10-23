@@ -1,7 +1,15 @@
 import { TestClock } from "effect/testing";
-import { expect, vi } from "vitest";
+import { expect, expectTypeOf, vi } from "vitest";
 
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Queue,
+  Stream,
+} from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -9,7 +17,7 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginSettings } from "@/services/settings/service";
 
 import { createTemplateHost, templateOf, templateOver } from "./__fixtures__";
-import { layerTemplateMigration } from "./migration";
+import { layerTemplateMigration, TemplateMigration } from "./migration";
 import { plainTemplate, plainTemplateMigration } from "./plain";
 import { Template } from "./service";
 
@@ -48,6 +56,7 @@ it.effect(
       const unsubscribe = template.subscribe(() => {
         Queue.offerUnsafe(received, undefined);
       });
+      yield* Queue.take(received);
       const both = template.refresh().then(() => template.refresh());
       yield* Effect.promise(() => both);
       yield* Queue.take(received);
@@ -207,7 +216,7 @@ it.effect("#1705: a later folder change supersedes a pending folder read", () =>
       return slow.promise;
     });
     const changes = yield* Queue.unbounded<void>();
-    yield* Stream.runForEach(template.changes, () =>
+    yield* Stream.runForEach(template.compileEvents, () =>
       Queue.offer(changes, undefined),
     ).pipe(Effect.forkScoped({ startImmediately: true }));
     yield* settings.update({ "template.folder": "slow" });
@@ -219,4 +228,176 @@ it.effect("#1705: a later folder change supersedes a pending folder read", () =>
     expect(yield* template.waitUntilSettled(500)).toBe("settled");
     expect(yield* template.render("note", {})).toBe("Latest");
   }),
+);
+
+it.effect("#1705: settlement includes an edit queued during a slow flush", () =>
+  Effect.gen(function* () {
+    const path = "templates/zotlit-note.liquid.md";
+    const host = createTemplateHost({ [path]: "Initial" });
+    const template = yield* templateOf(host);
+    const started = yield* Queue.unbounded<void>();
+    const first = Promise.withResolvers<string>();
+    const second = Promise.withResolvers<string>();
+    host.vault.cachedRead
+      .mockImplementationOnce(() => {
+        Queue.offerUnsafe(started, undefined);
+        return first.promise;
+      })
+      .mockImplementationOnce(() => {
+        Queue.offerUnsafe(started, undefined);
+        return second.promise;
+      });
+    host.vault.modifyFile(path, "First edit");
+    yield* TestClock.adjust(500);
+    yield* Queue.take(started);
+    const settledRender = yield* template
+      .waitUntilSettled(2000)
+      .pipe(
+        Effect.andThen(template.render("note", {})),
+        Effect.forkChild({ startImmediately: true }),
+      );
+    host.vault.modifyFile(path, "Second edit");
+    first.resolve("First edit");
+    yield* TestClock.adjust(500);
+    yield* Queue.take(started);
+    second.resolve("Second edit");
+    expect(yield* Fiber.join(settledRender)).toBe("Second edit");
+  }),
+);
+
+it.effect.each(["loaded", "init-failed"] as const)(
+  "#1705: late status subscribers receive the initial %s state",
+  (state) =>
+    Effect.gen(function* () {
+      const host = createTemplateHost({
+        "templates/zotlit-note.liquid.md": "{% unknown_tag %}",
+      });
+      if (state === "init-failed") {
+        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+          throw new Error("initial scan failed");
+        });
+      }
+      const template = yield* templateOf(host);
+      const first = yield* template.changes.pipe(
+        Stream.runHead,
+        Effect.timeoutOption(10),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust(10);
+      const replay = Option.getOrThrow(
+        Option.getOrThrow(yield* Fiber.join(first)),
+      );
+      expect(replay.state).toBe(state);
+      if (state === "loaded")
+        expect(replay.compileErrors.has("note")).toBe(true);
+      else if (replay.state === "init-failed") {
+        expect(replay.cause).toBeDefined();
+      }
+    }),
+);
+
+it.effect("#1705: a stalled source read does not block runtime disposal", () =>
+  Effect.gen(function* () {
+    const host = createTemplateHost({
+      "templates/zotlit-note.liquid.md": "Loaded",
+    });
+    const context = yield* Effect.context<never>();
+    const stack = yield* acquireAsyncDisposable(
+      async () => new AsyncDisposableStack(),
+    );
+    const runtime = buildRuntime(
+      templateOver(host).pipe(
+        Layer.provideMerge(Layer.succeedContext(context)),
+      ),
+      stack,
+    );
+    yield* Effect.promise(() => runtime.context());
+    const template = plainTemplate(runtime);
+    const started = yield* Queue.unbounded<void>();
+    const stalled = Promise.withResolvers<string>();
+    host.vault.cachedRead.mockImplementationOnce(() => {
+      Queue.offerUnsafe(started, undefined);
+      return stalled.promise;
+    });
+    const reading = template.getTemplateSource("note").catch(() => undefined);
+    yield* Queue.take(started);
+    const closing = runtime.dispose();
+    const disposed = yield* Effect.promise(() => closing).pipe(
+      Effect.timeoutOption(10),
+      Effect.forkChild,
+    );
+    yield* TestClock.adjust(10);
+    const result = yield* Fiber.join(disposed);
+    stalled.resolve("Late source");
+    yield* Effect.promise(() => Promise.all([closing, reading]));
+    expect(result).toMatchObject({ _tag: "Some" });
+  }),
+);
+
+it.effect(
+  "#1705: Template keeps tagged render, conversion, and vault failures",
+  () =>
+    Effect.gen(function* () {
+      const host = createTemplateHost({
+        "templates/zotlit-note.eta.md": "Inert",
+        "templates/zotlit-filename.liquid.md": "Title",
+      });
+      const template = yield* templateOf(host);
+      expectTypeOf<
+        Effect.Error<ReturnType<typeof template.render>>
+      >().toExtend<{ readonly _tag: string }>();
+      expect(yield* Effect.flip(template.render("missing", {}))).toMatchObject({
+        _tag: "TemplateError",
+        templateName: "missing",
+      });
+      expect(
+        yield* Effect.flip(
+          template.convertLegacyLiteratureNoteTemplates({
+            note: {},
+            filename: {},
+          }),
+        ),
+      ).toMatchObject({
+        _tag: "LegacyTemplateConversionError",
+        code: "unsupported-legacy-template",
+      });
+      const cause = new Error("vault read failed");
+      host.vault.cachedRead.mockRejectedValueOnce(cause);
+      expect(
+        yield* Effect.flip(template.getTemplateSource("filename")),
+      ).toMatchObject({
+        _tag: "TemplateOperationError",
+        cause,
+      });
+    }),
+);
+
+it.effect(
+  "#1705: TemplateMigration maps external failures with their cause",
+  () =>
+    Effect.gen(function* () {
+      const host = createTemplateHost({
+        "templates/zotlit-note.liquid.md": "Note",
+      });
+      const cause = new Error("verification data unavailable");
+      const services = yield* Layer.build(
+        layerTemplateMigration({
+          loadVerificationData: async () => {
+            throw cause;
+          },
+          openPrompt: () => {},
+        }).pipe(
+          Layer.provideMerge(templateOver(host)),
+          Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+        ),
+      );
+      const migration = Context.get(services, TemplateMigration);
+      expectTypeOf<
+        Effect.Error<ReturnType<typeof migration.convert>>
+      >().toExtend<{ readonly _tag: string }>();
+      expect(yield* Effect.flip(migration.convert())).toMatchObject({
+        _tag: "TemplateOperationError",
+        cause,
+      });
+    }),
 );

@@ -28,7 +28,7 @@ import type { NoteFeature } from "@/services/note-feature/operations";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainTemplate } from "@/services/template/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { LITERATURE_NOTE } from "./query-file";
 
@@ -189,7 +189,7 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
     Pick<NoteFeature, "replacedKeys">;
   profile: Pick<ProfileService, "on">;
   template: Pick<PlainTemplate, "on">;
-  zoteroReads: Pick<ZoteroReadsService, "ready">;
+  zoteroReads: Pick<PlainZoteroReads, "reads">;
 }
 
 /** The keys a note's Profile replaces, or the read of them under way. */
@@ -382,7 +382,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   };
   /** The usual creation of an Item's note; `null` where none came of it. */
   async function createNote(itemKey: string): Promise<TFile | null> {
-    const { reads } = await deps.zoteroReads.ready;
+    const { reads } = deps.zoteroReads;
     const item = (
       await Effect.runPromise(
         reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),

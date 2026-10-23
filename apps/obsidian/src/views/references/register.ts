@@ -10,7 +10,7 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
 import type { ReferencesViewDeps } from "./view";
@@ -23,7 +23,7 @@ type ReferencesPlugin = Pick<
 export interface ReferencesRegistrationDeps {
   profile: ProfileReader;
   app: App;
-  db: ZoteroReadsService;
+  db: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
   citationIndex: CitationIndex;
   citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: LibraryScopeService;

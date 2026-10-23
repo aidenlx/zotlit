@@ -713,7 +713,7 @@ describe("createNote", () => {
     const state = { runs: 0, leaseReleased: false };
     const zoteroReads = deps.zoteroReads;
     deps.zoteroReads = {
-      ready: zoteroReads.ready,
+      reads: zoteroReads.reads,
       acquireRead: async () => {
         const lease = await zoteroReads.acquireRead();
         return {

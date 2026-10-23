@@ -39,7 +39,7 @@ import type {
 } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
 import type { Held } from "@/services/query-client/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -67,7 +67,7 @@ const logger = getLogger(["views", "references"]);
 
 export interface ReferencesViewDeps {
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
+  db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead" | "on">;
   citationLookup: Pick<CitationLookup, "status" | "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
@@ -266,7 +266,7 @@ export class ReferencesView extends ItemView {
     this.register(bibliographyRender.on("settled", repaint));
     this.#reload();
     this.#rescan();
-    await Promise.all([db.ready, this.#deps.profile.ready]);
+    await this.#deps.profile.ready;
     this.#rescan();
     this.#reload();
   }

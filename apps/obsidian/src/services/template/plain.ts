@@ -2,13 +2,19 @@ import { Cause, Effect, Exit } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 
+import { plainTemplateError } from "./errors";
 import { TemplateMigration } from "./migration";
 import type { LiteratureNoteTemplateMigrationResult } from "./migration";
 import { Template } from "./service";
-import type { TemplateOperations, TemplateServiceEvents } from "./service";
+import type {
+  TemplateOperations,
+  TemplateServiceEvents,
+  TemplateStatus,
+} from "./service";
 
 export type PlainTemplate = TemplateOperations & {
-  subscribe(callback: () => void): () => void;
+  readonly status: TemplateStatus;
+  subscribe(callback: (status: TemplateStatus) => void): () => void;
   on<K extends keyof TemplateServiceEvents>(
     event: K,
     callback: TemplateServiceEvents[K],
@@ -27,19 +33,24 @@ export function plainTemplate(
   };
   const read = <A>(effect: Effect.Effect<A, unknown>): A => {
     const exit = released.runSync(Effect.exit(effect));
-    if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+    if (Exit.isFailure(exit))
+      throw plainTemplateError(Cause.squash(exit.cause));
     return exit.value;
   };
   const run = async <A>(effect: Effect.Effect<A, unknown>): Promise<A> => {
     const exit = await released.runPromiseExit(effect);
-    if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+    if (Exit.isFailure(exit))
+      throw plainTemplateError(Cause.squash(exit.cause));
     return exit.value;
   };
-  const subscribeChanges = (callback: () => void) =>
+  const subscribeChanges = (callback: (status: TemplateStatus) => void) =>
     runtime.scope.state._tag === "Closed"
       ? () => {}
       : subscribe(runtime, service.changes, callback);
   return {
+    get status() {
+      return read(service.status);
+    },
     get compileErrors() {
       return read(service.compileErrors);
     },
@@ -120,7 +131,10 @@ export function plainTemplate(
     setJavascriptTemplatesEnabled: (enabled) =>
       run(service.setJavascriptTemplatesEnabled(enabled)),
     subscribe: subscribeChanges,
-    on: (_event, callback) => subscribeChanges(callback),
+    on: (_event, callback) =>
+      runtime.scope.state._tag === "Closed"
+        ? () => {}
+        : subscribe(runtime, service.compileEvents, callback),
   };
 }
 
@@ -141,7 +155,8 @@ export function plainTemplateMigration(
   );
   const execute = async <A>(effect: Effect.Effect<A, unknown>): Promise<A> => {
     const exit = await run(effect);
-    if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+    if (Exit.isFailure(exit))
+      throw plainTemplateError(Cause.squash(exit.cause));
     return exit.value;
   };
   return {

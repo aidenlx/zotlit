@@ -28,7 +28,7 @@ import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -43,7 +43,7 @@ const logger = getLogger("citation-popover");
 
 export interface CitationPopoverDeps {
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
+  db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
   citationLookup: Pick<CitationLookup, "read" | "status" | "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
