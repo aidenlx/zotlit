@@ -1,6 +1,6 @@
 ---
 name: zotlit-citations
-description: "Answer citation questions about an Obsidian vault through ZotLit: which notes cite a work, what a document cites, and why a citation is broken. Use whenever a user asks who cites something, what a note references, where a work is discussed, or why a citation does not resolve."
+description: "Answer citation questions about an Obsidian vault through ZotLit: which notes cite a work, what a document cites, where an Annotation is used, and why a citation is broken. Use whenever a user asks who cites something, what a note references, where a work is discussed, where an Annotation is used, or why a citation does not resolve."
 ---
 
 # ZotLit citations
@@ -15,7 +15,7 @@ Complete these steps in order before you answer a citation question.
 
 Read the guide again after a ZotLit update.
 
-This skill is written against citations CLI Contract version 4 — the `contractVersion` a `cited-by` or `references` answer carries. When an answer reports another number, run `zotlit:citations-guide` again and follow the live guide over this skill. Step 3 belongs to another namespace: `zotlit:template-status` reports the Template Workbench's own contract version, which moves on its own.
+This skill is written against citations CLI Contract version 4 — the `contractVersion` a `cited-by`, `references`, or `annotation-uses` answer carries. When an answer reports another number, run `zotlit:citations-guide` again and follow the live guide over this skill. Step 3 belongs to another namespace: `zotlit:template-status` reports the Template Workbench's own contract version, which moves on its own.
 
 ## Target one vault and one Zotero library
 
@@ -38,6 +38,7 @@ Ask the vault, never the filesystem: a text search over the vault misses the cit
 - **A work the user points at through a Literature Note** — take the Zotero key from that note, then query by key.
 - **A work the user names only in prose** — ask which item they mean, or ask them to point at the note. Do not guess an item.
 - **A document** — query its references by its vault path. Ask this of the user's own writing as readily as of a Literature Note.
+- **Where an Annotation is used** — query `annotation-uses` with the Annotation's own Indexed Key. Ask the user to identify the Annotation when its key is unknown. Follow the live guide for parameter details.
 
 ## Read context from positions
 
@@ -57,7 +58,9 @@ Every such fix edits the user's writing or their Zotero library. Propose each ch
 
 ## Report what the answer is worth
 
-Read `omittedSyntaxes` before you report any answer. An empty list means the answer is whole. When it names a syntax, say the answer is short — this note or work carries citations written that way and the answer leaves them out — and name the setting the guide gives for that syntax. Leave the change to the user.
+For work and document answers, read `omittedSyntaxes` before you report. An empty list means the answer is whole. When it names a syntax, say the answer is short — this note or work carries citations written that way and the answer leaves them out — and name the setting the guide gives for that syntax. Leave the change to the user.
+
+For Annotation-use answers, read `coverage` before you report. Follow the live guide to explain whether the reported uses are complete; state any coverage limit with the answer.
 
 When the payload reports a degraded index state, give the answer and say plainly that it may be incomplete. When a call fails, follow the recovery action in `diagnostic.hint` before you retry, and tell the user what you changed.
 

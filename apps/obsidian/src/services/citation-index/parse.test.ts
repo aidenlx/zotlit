@@ -9,6 +9,7 @@ import { makeRecoveringParseClient } from "@/services/citation-parse/recovering-
 import type { ParseConnection } from "@/services/citation-parse/recovering-client";
 
 import type { CitedBySnapshot } from "./service";
+import { SCANNER_REVISION } from "./store";
 import {
   createCitationIndexHarness,
   KEY_A,
@@ -304,7 +305,7 @@ it("serves an older scanner revision until backfill replaces it (#1691)", async 
   release.resolve();
   await harness.index.whenIndexed();
   expect(harness.index.citationKeys()).toEqual(["doe2024"]);
-  expect(store.records.get("draft.md")?.scannerRevision).toBe(1);
+  expect(store.records.get("draft.md")?.scannerRevision).toBe(SCANNER_REVISION);
 });
 
 it("requeues failed parses and keeps persisted citations during worker recovery (#1691)", async () => {
@@ -356,7 +357,7 @@ it("requeues failed parses and keeps persisted citations during worker recovery 
     "draft.md",
     "new.md",
   ]);
-  expect(store.records.get("draft.md")?.scannerRevision).toBe(1);
+  expect(store.records.get("draft.md")?.scannerRevision).toBe(SCANNER_REVISION);
 });
 
 it("bounds backfill at four in-flight notes and prunes absent paths (#1691)", async () => {
@@ -771,7 +772,7 @@ it("settles backfill when the parse worker cannot start (#1691)", async () => {
   });
 });
 
-it.each([1, 0])(
+it.each([SCANNER_REVISION, 0])(
   "abandons a note with scanner revision %i after three worker deaths so backfill can settle (#1691)",
   async (revision) => {
     const store = new MemoryStore();

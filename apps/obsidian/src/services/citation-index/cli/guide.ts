@@ -7,6 +7,7 @@
 // without its row reaching this page.
 
 import type {
+  AnnotationOccurrence,
   CitationCoverage,
   CitationKeyResolution,
   CitationSyntax,
@@ -15,17 +16,24 @@ import type {
 
 import { DIAGNOSTIC_HINTS } from "./envelope";
 import type { ReferenceEntry } from "./envelope";
-import type { CitedByParam, ReferencesParam } from "./request";
+import type {
+  AnnotationUsesParam,
+  CitedByParam,
+  ReferencesParam,
+} from "./request";
 
 /** What each selector of the citation commands names. */
 const SELECTORS = {
-  key: "A Zotero key: an 8-character item key, with a 'g<group-id>' suffix for an item in a group library. cited-by takes exactly one of key= or citekey=.",
+  key: "A Zotero key: an 8-character item key, with a 'g<group-id>' suffix for an item in a group library. cited-by takes exactly one of key= or citekey=. annotation-uses takes the Annotation's own key=.",
   citekey:
     "A citation key, written as it appears in the note body without the leading '@'. It names an item through the citation-key snapshot. A key several items carry in the current library scope names none of them: the answer is AMBIGUOUS_CITEKEY, and details.candidates lists every candidate as { key, libraryID }, so key= selects the intended one.",
   file: "The vault-relative path of one Markdown note, as file=folder/note.md. Any Markdown note answers: a document need not be a Literature Note to cite works.",
   "expect-source":
     "The Zotero source the call expects, checked before any data load. It asserts the Zotero source, not the vault; put vault=<vault-name> before the command name to select the vault.",
-} as const satisfies Record<CitedByParam | ReferencesParam, string>;
+} as const satisfies Record<
+  AnnotationUsesParam | CitedByParam | ReferencesParam,
+  string
+>;
 
 /** What each entry kind of a references answer reports (ADR 0024). */
 const ENTRY_KINDS = {
@@ -50,6 +58,13 @@ const OCCURRENCE_KINDS = {
   wikilink:
     "A wikilink to a Literature Note, alone or with a '#cite:' Citation Fragment.",
 } as const satisfies Record<CitationSyntax, string>;
+
+const ANNOTATION_FORMS = {
+  citation: "A link with exactly empty text: [](zotero://...).",
+  labelled:
+    "A link with non-empty text, including whitespace-only text, or a <zotero://...> autolink.",
+  embed: "An image link: ![...](zotero://...).",
+} as const satisfies Record<AnnotationOccurrence["form"], string>;
 
 /** How much of the vault the reported citation facts cover. */
 const COVERAGE_STATES = {
@@ -102,12 +117,14 @@ SYNOPSIS
   obsidian zotlit:cited-by (key=<zotero-key> | citekey=<citation-key>) \\
     [expect-source=<source-id>]
   obsidian zotlit:references file=<vault-path> [expect-source=<source-id>]
+  obsidian zotlit:annotation-uses key=<annotation-key> [expect-source=<source-id>]
   obsidian zotlit:citations-guide
 
 DESCRIPTION
-  The Citation Index answers two questions: which notes cite one Zotero item
-  (cited-by), and what one document cites (references). Both answer with index
-  facts and no view presentation: there is no excerpt text and no rendered
+  The Citation Index answers which notes cite one Zotero item (cited-by),
+  what one document cites (references), and where an Annotation is used
+  (annotation-uses). The commands answer with index facts and no view
+  presentation: there is no excerpt text and no rendered
   bibliography. Every occurrence carries its position, so open the file and
   read as much context as the task needs. Full item data stays on one surface:
   call zotlit:template-data with the Zotero key an answer reports.
@@ -117,7 +134,7 @@ WORKFLOW
   2. Run obsidian zotlit:citations-guide.
   3. Run obsidian zotlit:template-status and record identity.source.id,
      then pass expect-source=<source-id> to every later call.
-  4. Query with cited-by or references.
+  4. Query with cited-by, references, or annotation-uses.
   5. Open each reported path and read it at the reported position.
   6. Run zotlit:template-data key=<zotero-key> when the task needs item data.
 
@@ -125,7 +142,7 @@ SELECTORS
 ${rows(assignments(SELECTORS))}
 
 ENVELOPE
-  Both data commands answer with JSON: contractVersion, command, ok, the
+  All data commands answer with JSON: contractVersion, command, ok, the
   echoed request, identity, and then either the payload or a diagnostic. This
   guide is literal text and carries no envelope. contractVersion versions the
   citation commands alone; every other zotlit:* namespace versions its own CLI
@@ -149,6 +166,23 @@ CITED BY PAYLOAD
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.
 
+ANNOTATION USES PAYLOAD
+  groups      One entry per note in path order, as { path, occurrences }.
+              Each occurrence is { form, text, position }, in document order.
+              text is the source between the label brackets, including any
+              Markdown, escapes and whitespace; for an autolink it is the URI.
+              position covers the whole link and uses the bases below.
+  coverage    See INDEX STATE.
+
+  The echoed request.key identifies the Annotation itself. All three forms
+  count, independently of citation-source choices and Library Scope. The
+  command reads stored note facts without resolving the Annotation's parent
+  item or checking whether the Zotero source still holds the Annotation.
+  No recorded uses returns groups:[], with coverage stating completeness.
+
+ANNOTATION FORMS
+${rows(ANNOTATION_FORMS)}
+
 REFERENCES PAYLOAD
   entries     The document's cited works in first-occurrence order, each as
               { refNumber, kind, occurrences } plus the fields its kind adds.
@@ -166,7 +200,7 @@ ENTRY KINDS
 ${rows(ENTRY_KINDS)}
 
 OCCURRENCES
-  Every occurrence is { kind, raw, position }.
+  cited-by and references report each occurrence as { kind, raw, position }.
 
 ${rows(OCCURRENCE_KINDS)}
   raw         The identifier alone: the citation key without its '@' and
@@ -184,16 +218,16 @@ ${rows(OCCURRENCE_KINDS)}
   excluded before the index reads a note.
 
 INDEX STATE
-  coverage (cited-by)
+  coverage (cited-by and annotation-uses)
 ${rows(COVERAGE_STATES, 4)}
 
-  resolution (both commands)
+  resolution (cited-by and references)
 ${rows(RESOLUTION_STATES, 4)}
 
   database (references)
 ${rows(DATABASE_STATES, 4)}
 
-  syntaxes (both commands)
+  syntaxes (cited-by and references)
 ${rows(SYNTAX_STATES, 4)}
 
   syntaxes reports each Citation Syntax as included or excluded, a vault-wide
@@ -201,8 +235,8 @@ ${rows(SYNTAX_STATES, 4)}
   syntaxes that wrote occurrences it left out, so a short answer is visible
   without reading the note.
 
-  Both commands wait out the transitional states, indexing and resolving, and
-  answer INDEX_NOT_READY when either persists. degraded and unreadable are
+  All data commands wait out the transitional states, indexing and resolving,
+  and answer INDEX_NOT_READY when either persists. degraded and unreadable are
   settled data rather than a failure: the answer is partial, so report the
   state with it.
 

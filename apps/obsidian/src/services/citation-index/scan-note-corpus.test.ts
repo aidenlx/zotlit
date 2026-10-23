@@ -303,6 +303,7 @@ it("token/display-math/newline-escaped-close: an escaped $$ leaves the payload v
   // The payload starts on line 2 at offset 8, after "$$\n" and "x\$$\n".
   const text = `$$\nx\\$$\n${payload}`;
   const annotation = {
+    text: "",
     indexedKey: "EFGH6789",
     attachmentKey: "ABCD2345",
     pageLabel: null,
@@ -364,6 +365,7 @@ it("an inline footnote in a link label keeps the Annotation link labelled (#1689
         attachmentKey: "ABCD2345",
         pageLabel: null,
         form: "labelled",
+        text: "^[note]",
         position: { start: at(0, 0, 0), end: at(0, 67, 67) },
       },
     ],

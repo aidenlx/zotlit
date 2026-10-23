@@ -19,6 +19,8 @@ export interface CitationOccurrence {
   kind: CitationSyntax;
   /** The literal citekey, stripped wikilink linkpath, or Annotation Indexed Key. */
   raw: string;
+  /** The validated text after a Wikilink Citation’s #cite: marker. */
+  fragment?: string;
   position: Pos;
   /** The Annotation Citation's page locator, when supplied by its link. */
   pageLabel?: string | null;
@@ -97,7 +99,12 @@ export function documentWikilinks(links: readonly LinkCache[]): {
       position: link.position,
     };
     if (classified.kind === "eligible") {
-      occurrences.push(occurrence);
+      occurrences.push({
+        ...occurrence,
+        ...(classified.fragment !== undefined && {
+          fragment: classified.fragment,
+        }),
+      });
     } else {
       malformed.push({ occurrence });
     }
@@ -108,7 +115,7 @@ export function documentWikilinks(links: readonly LinkCache[]): {
 function classifyWikilinkCitation(
   link: LinkCache,
 ):
-  | { kind: "eligible"; path: string }
+  | { kind: "eligible"; path: string; fragment?: string }
   | { kind: "malformed"; path: string }
   | null {
   if (!link.original.startsWith("[[") || link.original.includes("|")) {
@@ -120,7 +127,9 @@ function classifyWikilinkCitation(
   const prefix = "#cite:";
   if (!subpath.startsWith(prefix)) return null;
   const parsed = parseCitationFragment(subpath.slice(prefix.length));
-  return parsed.ok ? { kind: "eligible", path } : { kind: "malformed", path };
+  return parsed.ok
+    ? { kind: "eligible", path, fragment: subpath.slice(prefix.length) }
+    : { kind: "malformed", path };
 }
 
 /**
@@ -137,6 +146,7 @@ export function occurrencesEqual(
     return (
       occurrence.kind === other.kind &&
       occurrence.raw === other.raw &&
+      occurrence.fragment === other.fragment &&
       occurrence.pageLabel === other.pageLabel &&
       occurrence.position.start.offset === other.position.start.offset &&
       occurrence.position.end.offset === other.position.end.offset

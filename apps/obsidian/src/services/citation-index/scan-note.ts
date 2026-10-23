@@ -24,10 +24,13 @@ export interface SourcePosition {
 export interface NoteCitationOccurrence {
   kind: "citekey" | "wikilink";
   raw: string;
+  fragment?: string;
   position: SourcePosition;
 }
 
 export interface AnnotationOccurrence extends AnnotationLink {
+  /** Source text between the label brackets, or the URI of an autolink. */
+  text: string;
   position: SourcePosition;
 }
 
@@ -511,7 +514,10 @@ export function scanNote(text: string): NoteScanRecord {
           if (path && subpath === "") record.wikilinks.push(occurrence);
           else if (path && subpath.startsWith("#cite:")) {
             if (parseCitationFragment(subpath.slice(6)).ok)
-              record.wikilinks.push(occurrence);
+              record.wikilinks.push({
+                ...occurrence,
+                fragment: subpath.slice(6),
+              });
             else record.malformedWikilinks.push({ occurrence });
           }
         }
@@ -554,13 +560,17 @@ export function scanNote(text: string): NoteScanRecord {
             position: position(from, to),
           });
         const marks = node.getChildren("LinkMark");
+        const linkText =
+          name === "Autolink"
+            ? text.slice(url.from, url.to)
+            : text.slice(from + (name === "Image" ? 2 : 1), marks[1]!.from);
         const classified = classifyAnnotationLink(
           destination,
           name === "Autolink"
             ? { kind: "autolink" }
             : name === "Image"
               ? { kind: "image" }
-              : { kind: "link", text: text.slice(from + 1, marks[1]!.from) },
+              : { kind: "link", text: linkText },
         );
         if (classified?.form === "malformed") {
           record.malformedAnnotationCitations.push({
@@ -570,6 +580,7 @@ export function scanNote(text: string): NoteScanRecord {
         } else if (classified) {
           record.annotations.push({
             ...classified,
+            text: linkText,
             position: position(from, to),
           });
         }

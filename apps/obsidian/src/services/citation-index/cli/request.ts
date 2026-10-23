@@ -70,6 +70,30 @@ export function parseCitedByRequest(
   return decodeCliParams(params, citedByParams, { command: "cited-by" });
 }
 
+const annotationUsesParams = v.pipe(
+  cliParams({
+    key: v.pipe(
+      cliValue("key"),
+      v.check(
+        isIndexedKey,
+        "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+      ),
+    ),
+    "expect-source": expectSourceParam,
+  }),
+  v.transform(({ key }) => ({ key })),
+);
+
+export type AnnotationUsesParam = CliParamName<typeof annotationUsesParams>;
+
+export function parseAnnotationUsesRequest(
+  params: CliData,
+): CliRequest<v.InferOutput<typeof annotationUsesParams>> {
+  return decodeCliParams(params, annotationUsesParams, {
+    command: "annotation-uses",
+  });
+}
+
 const referencesParams = v.pipe(
   cliParams(
     { file: cliValue("file"), "expect-source": expectSourceParam },

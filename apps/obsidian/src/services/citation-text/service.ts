@@ -5,6 +5,7 @@ import { isChildItemFields, itemToCsl } from "@zotlit/db";
 // The formatted text of one document's Citations, held for every surface that shows them.
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { formatPandocCitation } from "@zotlit/templates/pandoc-citation";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
 import type { CitationKey } from "@/lib/citation-source";
@@ -393,7 +394,18 @@ export class CitationText extends Service<void> {
             occurrence.position.end.offset,
           ),
           start: occurrence.position.start.offset,
-          renderSource: `[@${indexedKey}]`,
+          renderSource: formatPandocCitation([
+            {
+              citationKey: indexedKey,
+              prefix: null,
+              suffix: null,
+              suppressAuthor: false,
+              locator:
+                occurrence.pageLabel == null
+                  ? null
+                  : { label: "p.", value: occurrence.pageLabel },
+            },
+          ]),
           // Annotation link replacement belongs to #1678.
           complete: false,
         });
@@ -538,7 +550,7 @@ export class CitationText extends Service<void> {
    * Pandoc source the exporter would write it as.
    *
    * Membership and resolved works come from the Document Citation Set;
-   * the body supplies each admitted link's Citation Fragment and run separators.
+   * the body supplies the separators between admitted links.
    */
   #wikilinkCitations(
     file: TFile,
@@ -577,9 +589,9 @@ export class CitationText extends Service<void> {
 
     const runs = citationRuns(
       occurrences.filter((occurrence) => occurrence.kind === "wikilink"),
-      ({ position }) =>
+      ({ raw, fragment }) =>
         wikilinkCitation(
-          body.slice(position.start.offset + 2, position.end.offset - 2),
+          fragment === undefined ? raw : `${raw}#cite:${fragment}`,
           context,
         ),
       (previous, next) =>

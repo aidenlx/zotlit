@@ -192,9 +192,17 @@ const sortedStats: Record<string, { ctime: number; mtime: number }> = {
 
 let root: Root | undefined;
 
-/** Settles awaited work without letting a macrotask yield run. */
-async function flushMicrotasks(): Promise<void> {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+/** Bounds state polling while preserving the preview stream's host-yield boundary. */
+async function waitForState(assertion: () => void): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (attempt === 999) throw error;
+      await Promise.resolve();
+    }
+  }
 }
 
 afterEach(async () => {
@@ -229,6 +237,7 @@ function makeFile(
 }
 
 async function render(options: {
+  previewsPending?: boolean;
   citationIndex?: Pick<CitationIndex, "getFileScan">;
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
@@ -338,7 +347,20 @@ async function render(options: {
     );
     await Promise.resolve();
   });
-  await act(flushMicrotasks);
+  const previewPaths =
+    options.previewsPending || options.indexedKey === null
+      ? []
+      : shown.groups.map(({ path }) => path);
+  await act(() =>
+    waitForState(() => {
+      for (const path of previewPaths) {
+        expect(store.getState().previews[path]?.status).toBeOneOf([
+          "ready",
+          "unavailable",
+        ]);
+      }
+    }),
+  );
   return {
     actions,
     app,
@@ -521,7 +543,8 @@ describe("CitedBy", () => {
     }));
     const paths = groups.map(({ path }) => path);
     const pendingReads: ((source: string) => void)[] = [];
-    const { container, read } = await render({
+    const { container, read, store } = await render({
+      previewsPending: true,
       snapshot: snapshot({ groups }),
       read: () =>
         new Promise<string>((resolve) => {
@@ -532,14 +555,19 @@ describe("CitedBy", () => {
     const finishReads = async (count: number) => {
       await act(async () => {
         for (let done = 0; done < count; done += 1) {
-          pendingReads.shift()?.(body);
-          await flushMicrotasks();
+          await waitForState(() => expect(pendingReads).toHaveLength(1));
+          const path = readPaths().at(-1)!;
+          pendingReads.shift()!(body);
+          await waitForState(() =>
+            expect(store.getState().previews[path]?.status).toBe("ready"),
+          );
         }
       });
     };
 
-    await act(flushMicrotasks);
-    expect(readPaths()).toEqual(paths.slice(0, 1));
+    await act(() =>
+      waitForState(() => expect(readPaths()).toEqual(paths.slice(0, 1))),
+    );
 
     await finishReads(5);
     expect(readPaths()).toEqual(paths.slice(0, 5));
@@ -555,7 +583,8 @@ describe("CitedBy", () => {
 
   it("stops streaming once the view is gone", async () => {
     const pendingReads: ((source: string) => void)[] = [];
-    const { read } = await render({
+    const { read, store } = await render({
+      previewsPending: true,
       snapshot: snapshot({
         groups: [group, { ...group, path: "Notes/other.md" }],
       }),
@@ -564,14 +593,15 @@ describe("CitedBy", () => {
           pendingReads.push(resolve);
         }),
     });
-    await act(flushMicrotasks);
-    expect(read).toHaveBeenCalledOnce();
+    await act(() => waitForState(() => expect(read).toHaveBeenCalledOnce()));
 
     await act(() => root?.unmount());
     root = undefined;
     await act(async () => {
-      pendingReads.shift()?.(body);
-      await flushMicrotasks();
+      pendingReads.shift()!(body);
+      await waitForState(() =>
+        expect(store.getState().previews[group.path]?.status).toBe("ready"),
+      );
     });
 
     expect(read).toHaveBeenCalledOnce();
@@ -709,8 +739,15 @@ describe("CitedBy", () => {
         stale.container.querySelector("[data-occurrence]") as HTMLElement
       ).click(),
     );
-    await act(flushMicrotasks);
-    expect(stale.openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+    await act(() =>
+      waitForState(() =>
+        expect(stale.openLinkText).toHaveBeenLastCalledWith(
+          group.path,
+          "",
+          false,
+        ),
+      ),
+    );
     expect(stale.setEphemeralState).not.toHaveBeenCalled();
   });
 
@@ -735,7 +772,12 @@ describe("CitedBy", () => {
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
 
-    await act(flushMicrotasks);
+    await act(() =>
+      waitForState(() => {
+        expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+        expect(container.textContent).toContain("Preview unavailable");
+      }),
+    );
     expect(container.querySelector("mark")).toBeNull();
     expect(container.textContent).toContain("Preview unavailable");
     expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
@@ -794,13 +836,16 @@ describe("CitedBy", () => {
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
-    await act(flushMicrotasks);
-    expect(openLinkText).toHaveBeenLastCalledWith("draft.md", "", false);
-    expect(setEphemeralState).toHaveBeenLastCalledWith({
-      startLoc: occurrence.position.start,
-      endLoc: occurrence.position.end,
-      line: 0,
-    });
+    await act(() =>
+      waitForState(() => {
+        expect(openLinkText).toHaveBeenLastCalledWith("draft.md", "", false);
+        expect(setEphemeralState).toHaveBeenLastCalledWith({
+          startLoc: occurrence.position.start,
+          endLoc: occurrence.position.end,
+          line: 0,
+        });
+      }),
+    );
   });
 
   it("#1693 waits for the stored parse when a preview follows a note edit", async () => {
@@ -828,17 +873,21 @@ describe("CitedBy", () => {
       snapshot: cited,
       citationIndex: harness.index,
       stats: { "draft.md": harness.draft.stat },
+      previewsPending: true,
       read: () => Promise.resolve(edited),
     });
     await act(async () => {
       gate.resolve();
       await harness.index.getDocumentCitationSet(harness.draft);
-      await flushMicrotasks();
     });
-    expect(container.textContent).toContain("More context.");
-    expect(container.querySelector("mark")?.textContent).toBe(
-      `[](${annotationUri})`,
-    );
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(container.textContent).toContain("More context.");
+        expect(container.querySelector("mark")?.textContent).toBe(
+          `[](${annotationUri})`,
+        );
+      });
+    });
   });
 
   it("collapses and expands every source group from one toolbar toggle", async () => {

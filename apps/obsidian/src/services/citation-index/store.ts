@@ -6,7 +6,7 @@ import type { App } from "obsidian";
 
 import type { NoteScanRecord } from "./scan-note";
 
-export const SCANNER_REVISION = 1;
+export const SCANNER_REVISION = 2;
 
 /** One file's scan, plus what decides whether it still describes that file. */
 export interface FileScan extends Pick<

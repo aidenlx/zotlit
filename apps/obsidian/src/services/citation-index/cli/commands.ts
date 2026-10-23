@@ -7,6 +7,8 @@ import type {
   CitationLookupRequest,
 } from "@/services/citation-index/lookup";
 import type {
+  AnnotationUse,
+  CitationCoverage,
   Citation,
   CitationKeyResolution,
   CitationSettleOutcome,
@@ -29,6 +31,7 @@ import {
   notSettledDiagnostic,
   rejectionDiagnostic,
   reportCandidates,
+  reportAnnotationUses,
   reportGroups,
   reportOccurrences,
 } from "./envelope";
@@ -41,6 +44,7 @@ import type {
 } from "./envelope";
 import { renderCitationsGuide } from "./guide";
 import {
+  parseAnnotationUsesRequest,
   parseCitedByRequest,
   parseGuideRequest,
   parseReferencesRequest,
@@ -55,6 +59,9 @@ export const CITED_BY_COMMAND =
 
 export const REFERENCES_COMMAND =
   "zotlit:references" as const satisfies CitationsCommand;
+
+export const ANNOTATION_USES_COMMAND =
+  "zotlit:annotation-uses" as const satisfies CitationsCommand;
 
 export const CITATIONS_GUIDE_COMMAND =
   "zotlit:citations-guide" as const satisfies CitationsCommand;
@@ -93,6 +100,8 @@ interface CitationsCliDeps {
   /** @default 5000 */
   settleTimeoutMs?: number;
   index: {
+    getAnnotationUses: (indexedKey: string) => readonly AnnotationUse[];
+    coverage: () => CitationCoverage;
     waitUntilSettled: (timeoutMs: number) => Promise<CitationSettleOutcome>;
     /** What a citation key names through the Citekey Resolution Snapshot: no
      *  Item, exactly one, or the candidates that make it Ambiguous. */
@@ -134,6 +143,7 @@ interface CitationsCliDeps {
 export type CitationsCliHandlers = Record<
   | typeof CITED_BY_COMMAND
   | typeof REFERENCES_COMMAND
+  | typeof ANNOTATION_USES_COMMAND
   | typeof CITATIONS_GUIDE_COMMAND,
   CliHandler
 >;
@@ -179,6 +189,25 @@ export function createCitationsCliHandlers(
   };
 
   return {
+    [ANNOTATION_USES_COMMAND]: async (params: CliData): Promise<string> => {
+      const request = parseAnnotationUsesRequest(params);
+      if (request.kind === "invalid")
+        return invalidRequest(ANNOTATION_USES_COMMAND, request);
+      const admission = await admit(
+        ANNOTATION_USES_COMMAND,
+        params,
+        request.value,
+      );
+      if (admission.kind === "rejected") return admission.response;
+      return envelope(ANNOTATION_USES_COMMAND, {
+        ok: true,
+        ...admission.echoed,
+        groups: reportAnnotationUses(
+          deps.index.getAnnotationUses(request.value.key),
+        ),
+        coverage: deps.index.coverage(),
+      });
+    },
     [CITED_BY_COMMAND]: async (params: CliData): Promise<string> => {
       const request = parseCitedByRequest(params);
       if (request.kind === "invalid") {
