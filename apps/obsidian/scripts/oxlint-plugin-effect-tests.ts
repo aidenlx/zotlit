@@ -1,3 +1,4 @@
+// Rule tests: src/lint/effect-tests.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 
