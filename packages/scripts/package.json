@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "imports": {
+    "#format-versions": "./lib/format-versions.ts",
     "#affected-base": "./lib/affected-base.ts",
     "#ai-attribution": "./lib/ai-attribution.ts",
     "#commit-tree": "./lib/commit-tree.ts",

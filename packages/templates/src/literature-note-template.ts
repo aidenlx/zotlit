@@ -271,6 +271,7 @@ export function convertLegacyFrontmatterFields(
  * on; the web Workbench refuses a Profile whose stamp names another contract,
  * so the two move together.
  */
+// Persisted version: packages/scripts/lib/format-versions.ts.
 const SYNTHESIZED_CONTRACT_VERSION = 3;
 
 /** Synthesize one document from the three legacy Literature Note slots. */

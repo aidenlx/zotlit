@@ -101,6 +101,7 @@ Values change through code, and DOM ops check how the UI looks and behaves.
 | Target | Expression |
 |---|---|
 | Obsidian app config | `app.vault.setConfig(key, value)` |
+| Fixture database write | Fork the built data, save `zoteroPref.dataDirOverride`, call `zoteroPref.setDataDir(<fork>)`, write to the fork, restore the saved override, then remove the fork. Follow [Write to a data fork](../../../docs/fixture.md#write-to-a-data-fork). |
 | ZotLit setting | `app.plugins.plugins.zotlit.settingTab.setControlValue("citation.at-trigger", false)` |
 
 `setControlValue` runs the same `SettingsService` path the rendered control does and persists to

@@ -11,6 +11,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [CLI + skill pair](policies/cli-skill-pair.md)
 - [Comments](policies/comments.md)
 - [Event naming](policies/event-naming.md)
+- [Fixture pages](policies/fixture-pages.md)
 - [Function parameters](policies/function-parameters.md)
 - [Grouping](policies/grouping.md)
 - [Host state](policies/host-state.md)

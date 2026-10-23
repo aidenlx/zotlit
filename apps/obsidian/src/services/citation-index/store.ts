@@ -6,6 +6,7 @@ import type { App } from "obsidian";
 
 import type { NoteScanRecord } from "./scan-note";
 
+// Persisted version: packages/scripts/lib/format-versions.ts.
 export const SCANNER_REVISION = 1;
 
 /** One file's scan, plus what decides whether it still describes that file. */
@@ -48,6 +49,7 @@ const SCANS = "scans";
  * Bump to discard every stored scan: the upgrade recreates the store empty and
  * the backfill rebuilds it, which is how a change to {@link FileScan} ships.
  */
+// Persisted version: packages/scripts/lib/format-versions.ts.
 const SCHEMA_VERSION = 2;
 
 interface CitationIndexSchema extends DBSchema {
