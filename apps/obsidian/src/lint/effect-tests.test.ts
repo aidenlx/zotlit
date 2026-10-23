@@ -1,7 +1,10 @@
 import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
 
-import { noEffectRunInTest } from "../../scripts/oxlint-plugin-effect-tests";
+import {
+  noEffectRunInTest,
+  noRealTimerInEffectTest,
+} from "../../scripts/oxlint-plugin-effect-tests";
 
 RuleTester.describe = describe;
 RuleTester.it = it;
@@ -58,6 +61,47 @@ tester.run("no-effect-run-in-test", noEffectRunInTest, {
     {
       code: 'import { runPromise as go } from "effect/Effect";\nit("reads", async () => { await go(read); })',
       errors: run,
+    },
+  ],
+});
+
+const timer = [{ messageId: "timer" }];
+
+// Failure modes: an Effect case waits on real time and goes unflagged, or a
+// plain or live case, which owns real time, is flagged.
+tester.run("no-real-timer-in-effect-test", noRealTimerInEffectTest, {
+  valid: [
+    'it.effect("waits", () => Effect.gen(function* () { yield* Effect.sleep("1 second"); yield* TestClock.adjust("1 second"); }))',
+    'it("waits", async () => { await delay(50); })',
+    'it.live("waits", () => Effect.promise(() => delay(50)))',
+    'it.effect.live("waits", () => Effect.promise(() => new Promise((r) => setTimeout(r, 5))))',
+    // A fixture outside any case.
+    "const wait = () => delay(5);",
+  ],
+  invalid: [
+    {
+      code: 'it.effect("waits", () => Effect.promise(() => delay(50)))',
+      errors: timer,
+    },
+    {
+      code: 'it.effect("waits", () => Effect.promise(() => new Promise((r) => setTimeout(r, 50))))',
+      errors: timer,
+    },
+    {
+      code: 'it.effect("yields", () => Effect.gen(function* () { yield* Effect.promise(() => yieldToMain()); }))',
+      errors: timer,
+    },
+    {
+      code: 'it.effect.each([1])("waits", () => Effect.sync(() => window.setTimeout(done, 5)))',
+      errors: timer,
+    },
+    {
+      code: 'it.effect("fakes", () => Effect.sync(() => { vi.useFakeTimers(); vi.advanceTimersByTime(50); }))',
+      errors: [...timer, ...timer],
+    },
+    {
+      code: 'layer(Probe)("probe", (it) => { it.effect("waits", () => Effect.promise(() => delay(5))); })',
+      errors: timer,
     },
   ],
 });

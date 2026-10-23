@@ -103,7 +103,10 @@ export default defineConfig({
   overrides: [
     {
       files: ["src/**/*.test.{ts,tsx}"],
-      rules: { "zotlit-effect-tests/no-effect-run-in-test": "error" },
+      rules: {
+        "zotlit-effect-tests/no-effect-run-in-test": "error",
+        "zotlit-effect-tests/no-real-timer-in-effect-test": "error",
+      },
     },
     {
       // These tests exercise the run entry points themselves.

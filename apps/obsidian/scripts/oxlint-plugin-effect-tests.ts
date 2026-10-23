@@ -4,6 +4,19 @@ import type { AstNode, Rule } from "./oxlint-ast.ts";
 const TEST_FUNCTIONS = new Set(["it", "test"]);
 /** `it.<name>` forms whose body is an Effect, run by @effect/vitest. */
 const EFFECT_TESTERS = new Set(["effect", "live", "layer", "prop"]);
+/** Waits on the event loop's real time. */
+const REAL_TIMERS = new Set([
+  "setTimeout",
+  "setInterval",
+  "setImmediate",
+  "delay",
+  "sleep",
+  "yieldToMain",
+]);
+const REAL_TIME_HOSTS = new Set(["globalThis", "window", "activeWindow"]);
+/** Vitest's fake timers, which the TestClock replaces. */
+const isViTimer = (name: string) => /Timers|SystemTime/.test(name);
+const VI = new Set(["vi"]);
 
 /** Modules exporting the `Effect` namespace by that name. */
 const EFFECT_NAMESPACE_MODULES = new Set(["effect", "@/lib/effect"]);
@@ -64,37 +77,40 @@ function isEffectRun(callee: AstNode | undefined, names: RunNames): boolean {
 }
 
 /**
- * Whether `callee` is a plain Vitest case: `it(…)`, `test.only(…)`,
- * `it.each(…)(…)`, but not `it.effect(…)` or another Effect tester.
+ * How a Vitest case runs its body: `it(…)`, `test.only(…)`, `it.each(…)(…)`
+ * are plain; `it.effect(…)` and the other Effect testers run an Effect, on
+ * the TestClock unless `live`. `undefined` when `callee` is no case.
  */
-function isPlainTestCall(callee: AstNode | undefined): boolean {
+function caseKind(
+  callee: AstNode | undefined,
+): "plain" | "effect" | "live" | undefined {
   let node = callee;
-  let plain = true;
+  let kind: "plain" | "effect" | "live" = "plain";
   while (node) {
     if (node.type === "Identifier")
-      return plain && TEST_FUNCTIONS.has(node.name as string);
+      return TEST_FUNCTIONS.has(node.name as string) ? kind : undefined;
     if (node.type === "MemberExpression") {
-      if (EFFECT_TESTERS.has(node.property?.name as string)) plain = false;
+      const name = node.property?.name as string;
+      if (name === "live") kind = "live";
+      else if (EFFECT_TESTERS.has(name) && kind === "plain") kind = "effect";
       node = node.object;
     } else if (node.type === "CallExpression") node = node.callee;
-    else return false;
+    else return undefined;
   }
-  return false;
+  return undefined;
 }
 
-/** The plain test case `node` runs inside, if any. */
-function inPlainTest(node: AstNode): boolean {
+/** How the innermost test case around `node` runs, if any. */
+function enclosingCase(node: AstNode): ReturnType<typeof caseKind> {
   for (let child = node, parent = node.parent; parent;) {
-    if (
-      parent.type === "CallExpression" &&
-      parent.arguments?.includes(child) &&
-      isPlainTestCall(parent.callee)
-    )
-      return true;
+    if (parent.type === "CallExpression" && parent.arguments?.includes(child)) {
+      const kind = caseKind(parent.callee);
+      if (kind) return kind;
+    }
     child = parent;
     parent = parent.parent;
   }
-  return false;
+  return undefined;
 }
 
 /**
@@ -129,7 +145,7 @@ export const noEffectRunInTest: Rule = {
       CallExpression(node) {
         if (
           isEffectRun(node.callee as AstNode, names) &&
-          inPlainTest(node as unknown as AstNode)
+          enclosingCase(node as unknown as AstNode) === "plain"
         )
           context.report({ node, messageId: "run" });
       },
@@ -137,7 +153,49 @@ export const noEffectRunInTest: Rule = {
   },
 };
 
+/** A call that waits on, or fakes, the event loop's real time. */
+function isRealTimer(callee: AstNode | undefined): boolean {
+  return (
+    (callee?.type === "Identifier" && REAL_TIMERS.has(callee.name as string)) ||
+    isMemberOf(callee, REAL_TIME_HOSTS, (name) => REAL_TIMERS.has(name)) ||
+    isMemberOf(callee, VI, isViTimer)
+  );
+}
+
+/**
+ * An Effect case's time is the TestClock (policies/test-timing.md → Effect):
+ * a real timer makes it slow and flaky, and Vitest's fake timers do not move
+ * Effect's clock. `it.live` keeps real time for real external async.
+ */
+export const noRealTimerInEffectTest: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require the TestClock for time inside an it.effect case.",
+    },
+    messages: {
+      timer:
+        "An it.effect case runs on the TestClock: sleep with Effect.sleep and advance with TestClock.adjust, or await a Queue or Deferred the code signals. Real external async belongs in it.live.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (
+          isRealTimer(node.callee as AstNode) &&
+          enclosingCase(node as unknown as AstNode) === "effect"
+        )
+          context.report({ node, messageId: "timer" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-effect-tests" },
-  rules: { "no-effect-run-in-test": noEffectRunInTest },
+  rules: {
+    "no-effect-run-in-test": noEffectRunInTest,
+    "no-real-timer-in-effect-test": noRealTimerInEffectTest,
+  },
 };
