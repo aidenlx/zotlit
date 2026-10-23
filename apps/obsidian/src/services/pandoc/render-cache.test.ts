@@ -2,11 +2,14 @@ import "@mock/dom-parser";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { Effect } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
@@ -32,6 +35,33 @@ import type { PandocEngineStatus } from "./service";
 
 const APA = "http://www.zotero.org/styles/apa";
 const IEEE = "http://www.zotero.org/styles/ieee";
+
+it.effect(
+  "releases a pending bibliography render when the runtime closes (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* acquireAsyncDisposable(() => makeHarness());
+      yield* Effect.promise(async () => {
+        const gate = Promise.withResolvers<void>();
+        const started = Promise.withResolvers<void>();
+        harness.engine.gate = gate;
+        harness.engine.stamp = () => {
+          started.resolve();
+          return "";
+        };
+        const rendering = expect(
+          harness.cache.render([item("alpha")]),
+        ).resolves.toEqual({ kind: "unavailable", reason: "failed" });
+        await started.promise;
+        await harness[Symbol.asyncDispose]();
+        try {
+          await rendering;
+        } finally {
+          gate.resolve();
+        }
+      });
+    }),
+);
 
 function item(id: string): CslItemData {
   return { id, type: "article-journal" };
