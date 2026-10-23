@@ -29,7 +29,7 @@ import type {
   BibliographyRequest,
   RenderedCitation,
 } from "@/services/pandoc/engine";
-import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
@@ -521,7 +521,7 @@ describe("CitationText", () => {
       const failedRender =
         format === "citation" ? renderCitations : renderBibliography;
       const bibliographyRender = cleanup.use(
-        new BibliographyRenderCache({
+        await bibliographyRenderFixture({
           queryClient,
           profile: { on: () => () => {} },
           db: { on: () => () => {} },

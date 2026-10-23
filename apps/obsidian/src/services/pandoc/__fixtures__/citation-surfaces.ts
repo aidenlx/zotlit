@@ -39,7 +39,7 @@ import { CitationPopover } from "@/services/citation-popover/service";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
-import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
@@ -327,7 +327,7 @@ export async function openCitationVault({
     await createCitationEngine(new Blob([await readFile(WASM_PATH)])),
   );
   const cache = stack.use(
-    new BibliographyRenderCache({
+    await bibliographyRenderFixture({
       profile: { ...profileReader(), on: (_event, callback) => { let first = true; return settings.subscribe(() => { if (!first) callback(); first = false; }); } },
       db: harness.db,
       pandocEngine: {
@@ -340,7 +340,6 @@ export async function openCitationVault({
       queryClient: harness.queryClient,
     }),
   );
-  await cache.ready;
   let vaultStyleMissing: string | null = null;
   stack.defer(
     cache.onStyleMissing((styleId) => {

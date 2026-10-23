@@ -61,7 +61,7 @@ import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { plainNoteIndex } from "./note-index/plain";
 import { plainPandocEngine } from "./pandoc/plain";
-import { BibliographyRenderCache } from "./pandoc/render-cache";
+import { plainBibliographyRender } from "./pandoc/render-cache/plain";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
@@ -564,23 +564,8 @@ export async function buildServices(
     .useValue({
       pandocEngine: () => plainPandocEngine(runtime),
     })
-    .use({
-      bibliographyRender: ({
-        zoteroReads,
-        pandocEngine,
-        zoteroPref,
-        settings,
-        profile,
-        queryClient,
-      }) =>
-        new BibliographyRenderCache({
-          profile,
-          db: zoteroReads,
-          pandocEngine,
-          zoteroPref,
-          settings,
-          queryClient,
-        }),
+    .useValue({
+      bibliographyRender: () => plainBibliographyRender(runtime),
     })
     .use({
       citationText: ({

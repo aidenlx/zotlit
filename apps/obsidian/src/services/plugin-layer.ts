@@ -14,6 +14,8 @@ import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import { layerNoteIndex } from "./note-index/service";
 import type { NoteIndex } from "./note-index/service";
+import { layerBibliographyRender } from "./pandoc/render-cache";
+import type { BibliographyRender } from "./pandoc/render-cache";
 import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
 import { layerProfile } from "./profile/service";
@@ -48,6 +50,7 @@ export function pluginLayer(
   plugin: Plugin,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
+  | BibliographyRender
   | Profile
   | LibraryScope
   | ZoteroReads
@@ -62,7 +65,8 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return Layer.mergeAll(layerLibraryScope, layerProfile).pipe(
+  return layerBibliographyRender.pipe(
+    Layer.provideMerge(Layer.mergeAll(layerLibraryScope, layerProfile)),
     Layer.provideMerge(layerZoteroReads(workerClient())),
     Layer.provideMerge(
       Layer.mergeAll(
