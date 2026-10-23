@@ -117,8 +117,6 @@ export class ReferencesView extends ItemView {
   #actions: ReferenceActions | null = null;
   /** Bumped when copy readiness moves to another on-screen result. */
   #copyGeneration = 0;
-  /** Bumped per reload, so only the latest reload's database read lands. */
-  #reloads = 0;
   /** The Held Read whose events can repaint this list. */
   #renderKey: string | null = null;
   /** Bumped per rescan, the same way, since a query may await a file read. */
@@ -278,7 +276,6 @@ export class ReferencesView extends ItemView {
 
   protected override async onClose(): Promise<void> {
     this.#scan += 1;
-    this.#reloads += 1;
     this.#copyGeneration += 1;
     this.#scanController?.abort();
     this.#lookup = null;
@@ -432,7 +429,6 @@ export class ReferencesView extends ItemView {
     }
     this.#entrySerials = this.#readEntrySerials();
     this.#copyGeneration += 1;
-    ++this.#reloads;
     const citations = this.#citations;
     // Retained formatted entries answer for the render that is about to be
     // replaced, so the reload alone puts copy out of reach, before its read.
