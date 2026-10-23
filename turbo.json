@@ -35,6 +35,9 @@
     "typecheck:test": {
       "dependsOn": ["^build", "transit"]
     },
+    "typecheck:node": {
+      "dependsOn": ["^build", "transit"]
+    },
     "test": {
       "dependsOn": ["^build", "transit"],
       "env": ["GITHUB_ACTIONS"]
@@ -47,6 +50,9 @@
       "dependsOn": ["^build", "transit", "generate:language-packs"]
     },
     "@zotlit/obsidian#typecheck:test": {
+      "dependsOn": ["^build", "transit", "generate:language-packs"]
+    },
+    "@zotlit/obsidian#typecheck:node": {
       "dependsOn": ["^build", "transit", "generate:language-packs"]
     },
     "@zotlit/e2e#typecheck": {

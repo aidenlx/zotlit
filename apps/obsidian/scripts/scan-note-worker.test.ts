@@ -1,53 +1,12 @@
 // The scanner's public entry runs in the same guarded bundle as production workers.
 import { once } from "node:events";
-import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
-import { build } from "vite";
 import { expect, it } from "vitest";
 
-import { embeddedWorker } from "./embedded-worker.ts";
-
-const packageRoot = resolve(import.meta.dirname, "..");
+import { scanWorkerBundle } from "./scan-worker-bundle.ts";
 
 it("runs the production parse worker without Obsidian (#1691)", async () => {
-  const result = await build({
-    configFile: false,
-    logLevel: "silent",
-    plugins: [
-      {
-        name: "scan-worker-test-entry",
-        resolveId: (id) => (id === "virtual:scan-test" ? id : null),
-        load: (id) =>
-          id === "virtual:scan-test"
-            ? 'export { default } from "virtual:scan-worker";'
-            : null,
-      },
-      embeddedWorker({
-        id: "virtual:scan-worker",
-        entry: resolve(packageRoot, "src/services/citation-parse/worker.ts"),
-        config: {
-          resolve: { alias: { "@": resolve(packageRoot, "src") } },
-          external: [],
-          minify: false,
-          sourcemap: false,
-          target: "es2025",
-        },
-      }),
-    ],
-    build: {
-      write: false,
-      lib: { entry: "virtual:scan-test", formats: ["es"] },
-      rolldownOptions: { input: "virtual:scan-test" },
-    },
-  });
-  const outputs = Array.isArray(result) ? result : [result];
-  const chunk = outputs
-    .flatMap((output) => ("output" in output ? output.output : []))
-    .find((output) => output.type === "chunk");
-  if (!chunk) throw new Error("Scanner worker bundle emitted no JavaScript");
-  const bundled = (await import(
-    `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}`
-  )) as { default: string };
+  const source = await scanWorkerBundle();
   await using worker = new Worker(
     `
     const { parentPort } = require("node:worker_threads");
@@ -55,7 +14,7 @@ it("runs the production parse worker without Obsidian (#1691)", async () => {
       addEventListener: (_, listener) => parentPort.on("message", data => listener({ data })),
       postMessage: data => parentPort.postMessage(data),
     };
-    ${bundled.default}
+    ${source}
   `,
     { eval: true },
   );

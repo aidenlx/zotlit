@@ -21,6 +21,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { QueryService } from "@/services/item-query/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
@@ -260,7 +261,7 @@ async function harness(
   // ZotLit Query tests the Profile Matches over the same database.
   const query = stack.use(
     new QueryService({
-      useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
+      useLedger: inertUseLedger,
       pluginVersion: "2.2.0",
       reads: zoteroReads,
       zoteroPref: {
@@ -307,17 +308,6 @@ async function harness(
           blocked: 0,
           refused: 0,
         }),
-      }),
-    },
-    noteImport: {
-      prepare: async () => ({
-        resolveChildNote: () => ({
-          key: "",
-          indexedKey: "",
-          title: null,
-          noteLink: () => "",
-        }),
-        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
       }),
     },
   };

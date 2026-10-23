@@ -716,7 +716,7 @@ function buildDecorations(
   const visibleCitekeys = new Set<string>();
   let lastLineFrom = -1;
   for (const range of view.visibleRanges) {
-    for (let pos = range.from; pos <= range.to; ) {
+    for (let pos = range.from; pos <= range.to;) {
       const line = state.doc.lineAt(pos);
       pos = line.to + 1;
       // A line straddling two visible ranges is offered twice; decorate it once.

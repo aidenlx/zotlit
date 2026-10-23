@@ -29,7 +29,7 @@ import { QueryCardFocus } from "./card-focus";
 import { createQueryFileEmbed } from "./embed";
 import type { QueryView, QueryViewDeps } from "./view";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const FILE_PATH = "query-files/Reading.zotquery";
 const FILE = `views:

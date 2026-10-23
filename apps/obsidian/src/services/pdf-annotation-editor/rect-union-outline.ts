@@ -53,24 +53,20 @@ export function unionOutlinePath(
 ): string {
   if (rects.length === 0) return "";
 
-  const spread = rects.map(
-    ([left, top, right, bottom]): OutlineRect => [
-      left - padding,
-      top - padding,
-      right + padding,
-      bottom + padding,
-    ],
-  );
+  const spread = rects.map(([left, top, right, bottom]): OutlineRect => [
+    left - padding,
+    top - padding,
+    right + padding,
+    bottom + padding,
+  ]);
   const xBand = bandAxis(spread.flatMap(([left, , right]) => [left, right]));
   const yBand = bandAxis(spread.flatMap(([, top, , bottom]) => [top, bottom]));
-  const padded = spread.map(
-    ([left, top, right, bottom]): OutlineRect => [
-      xBand.get(left)!,
-      yBand.get(top)!,
-      xBand.get(right)!,
-      yBand.get(bottom)!,
-    ],
-  );
+  const padded = spread.map(([left, top, right, bottom]): OutlineRect => [
+    xBand.get(left)!,
+    yBand.get(top)!,
+    xBand.get(right)!,
+    yBand.get(bottom)!,
+  ]);
 
   const ys = distinctSorted(
     padded.flatMap(([, top, , bottom]) => [top, bottom]),

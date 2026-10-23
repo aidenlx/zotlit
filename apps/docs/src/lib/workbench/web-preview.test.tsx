@@ -186,7 +186,8 @@ describe("preview scheduling", () => {
     expect(request.mode).toBe("update");
     const result = renderProfile(request.source, request.snapshot, request);
     expect(result.creationBody).toContain("My own introduction");
-    expect(result.creationBody).toContain("%%zt-managed%%");
+    // The default body has no Managed Region for an update to refill.
+    expect(result.creationBody).not.toContain("%%zt-managed%%");
     expect(result.fold.length).toBeGreaterThan(0);
     await page.waitFor(() => {
       expect(

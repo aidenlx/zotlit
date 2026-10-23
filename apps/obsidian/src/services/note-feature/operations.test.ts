@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -97,7 +96,6 @@ import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service
 import {
   ATTACHMENT_TYPE_ID,
   inProcessReadsService,
-  recordCalls,
   seedWorksSql,
   sharedClientOpener,
   worksSql,
@@ -826,15 +824,17 @@ describe("createNote", () => {
         ? "<% zt.countRender() %>Text only"
         : `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>End of note`,
     );
+    const render = <T extends object>(name: string, data: T) =>
+      engine.render(name, {
+        ...data,
+        countRender: () => {
+          state.runs++;
+        },
+      });
     deps.template = {
       ...makeTemplate(),
-      render: (name, data) =>
-        engine.render(name, {
-          ...data,
-          countRender: () => {
-            state.runs++;
-          },
-        }),
+      render,
+      renderManagedContent: (data) => render("content", data),
     };
     const feature = createNoteFeature(deps);
     const notices: ExcerptSummary[] = [];
@@ -1303,17 +1303,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     using update = vi.spyOn(deps.settings, "update");
@@ -1383,6 +1372,7 @@ describe("createNote", () => {
     const deps: TestDeps = {
       app,
       template: {
+        renderManagedContent: () => "",
         ready: Promise.resolve(),
         loaded: true,
         frontmatterFields: [],
@@ -1417,17 +1407,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     const file = createdFile(await createNoteFeature(deps).createNote(root));
@@ -1504,17 +1483,6 @@ describe("createNote", () => {
         ],
       }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     using update = vi.spyOn(deps.settings, "update");
@@ -1526,61 +1494,6 @@ describe("createNote", () => {
     expect(update).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(2);
     expect(document.renderForCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders and flushes Child Notes under one Snapshot", async () => {
-    vi.mocked(buildNoteContextFromSource).mockReturnValue(createGateContext());
-    const { db } = makeDbDeps();
-    const { wrap, calls, snapshots } = recordCalls([
-      "NoteSource",
-      "NoteBodies",
-    ]);
-    await using zoteroReads = inProcessReadsService(
-      sharedClientOpener(db.client),
-      { wrap },
-    );
-    const deps: TestDeps = {
-      app: makeApp(),
-      template: makeTemplate(),
-      db,
-      zoteroReads,
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        // The Child Note flush reads through the reads the create handed it.
-        prepare: async ({ reads }) => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => {
-            await Effect.runPromise(
-              reads.NoteBodies({ libraryID: 1, keys: ["NTED2345"] }),
-            );
-            return { created: 0, skipped: 0, failed: 0 };
-          },
-        }),
-      },
-    };
-
-    createdFile(await createNoteFeature(deps).createNote(makeCreateGateItem()));
-
-    expect(snapshots).toHaveLength(1);
-    expect(
-      calls.map(({ operation, payload }) => [operation, payload.snapshot]),
-    ).toEqual([
-      ["NoteSource", snapshots[0]],
-      ["NoteBodies", snapshots[0]],
-    ]);
   });
 
   it("awaits noteIndex.whenIndexed (not just ready) before writing the note", async () => {
@@ -1615,6 +1528,7 @@ describe("createNote", () => {
     const deps: TestDeps = {
       app,
       template: {
+        renderManagedContent: () => "",
         ready: Promise.resolve(),
         loaded: true,
         frontmatterFields: [],
@@ -1634,17 +1548,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     const createPromise = createNoteFeature(deps).createNote(item);
@@ -1681,17 +1584,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
     const create = app.vault.create;
 
@@ -1731,17 +1623,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
     const create = app.vault.create;
 
@@ -1786,17 +1667,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     });
 
     const first = feature.createNote(item);
@@ -1836,17 +1706,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     });
 
     const created = await feature.createNote(item);
@@ -1878,17 +1737,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     });
 
     const first = await feature.createNote(item);
@@ -1932,17 +1780,6 @@ describe("createNote", () => {
           },
         }),
       },
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     });
 
     await expect(feature.createNote(item)).rejects.toThrow(
@@ -1983,6 +1820,7 @@ describe("createNote", () => {
           ready: service === "profile" ? templateReady : Promise.resolve(),
         },
         template: {
+          renderManagedContent: () => "",
           ready: service === "template" ? templateReady : Promise.resolve(),
           loaded: true,
           frontmatterFields: [],
@@ -2005,17 +1843,6 @@ describe("createNote", () => {
         zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
         settings: makeSettings(),
         attachmentImport: blockedAttachmentImport,
-        noteImport: {
-          prepare: async () => ({
-            resolveChildNote: () => ({
-              key: "",
-              indexedKey: "",
-              title: null,
-              noteLink: () => "",
-            }),
-            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-          }),
-        },
       };
 
       const createPromise = createNoteFeature(deps).createNote(item);
@@ -2065,17 +1892,6 @@ describe("createNote", () => {
         ],
       }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     const file = createdFile(
@@ -2109,17 +1925,6 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({ "note.template-conversion-pending": true }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     }).createNote(makeCreateGateItem());
 
     expect(result.outcome).toBe("created");
@@ -2145,7 +1950,6 @@ describe("createNote", () => {
         profiles: [{ id: profileId, label: "Books" }],
       }),
       attachmentImport: { prepare: vi.fn() },
-      noteImport: { prepare: vi.fn() },
     }).createNote(makeCreateGateItem(), { profile: profileId });
 
     expect(result).toEqual({
@@ -2186,17 +1990,6 @@ describe("createNote", () => {
         defaultDocument: "zotlit-profile.default.md",
       }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     }).createNote(makeCreateGateItem());
 
     const file = createdFile(result);
@@ -2247,17 +2040,6 @@ describe("createNote", () => {
         ],
       }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     const file = createdFile(
@@ -2319,17 +2101,6 @@ describe("createNote", () => {
         profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     await expect(
@@ -2376,17 +2147,6 @@ describe("createNote", () => {
           profiles: [{ id: profileId, label: "Books", document: "books.md" }],
         }),
         attachmentImport: blockedAttachmentImport,
-        noteImport: {
-          prepare: async () => ({
-            resolveChildNote: () => ({
-              key: "",
-              indexedKey: "",
-              title: null,
-              noteLink: () => "",
-            }),
-            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-          }),
-        },
       }).createNote(makeCreateGateItem(), { profile: profileId });
 
       expect(result).toMatchObject({
@@ -2434,7 +2194,6 @@ describe("createNote", () => {
         ],
       }),
       attachmentImport: { prepare: vi.fn() },
-      noteImport: { prepare: vi.fn() },
     };
 
     const result = await createNoteFeature(deps).createNote(
@@ -2479,9 +2238,6 @@ describe("createNote", () => {
         ],
       }),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: vi.fn(),
-      },
     };
 
     const result = await createNoteFeature(deps).createNote(
@@ -2500,76 +2256,6 @@ describe("createNote", () => {
         requestedProfile: requestedProfileId,
       },
     });
-  });
-
-  it("runs the created note and its Child Note import under one outcome scope", async () => {
-    const root = makeItem({
-      itemID: 1,
-      key: "RTKEY234",
-      indexedKey: "RTKEY234",
-      title: "Root",
-      citationKey: "root2024",
-    });
-    vi.mocked(buildNoteContextFromSource).mockImplementation(
-      ({ item }, resolvers) => stubNoteContext(item, [], resolvers),
-    );
-    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
-    const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
-    await using probe = excerptReuseProbe();
-    const deps: TestDeps = {
-      app: makeApp(),
-      template: makeTemplate(),
-      ...makeDbDeps(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-      excerptImages: (options) => {
-        excerptScopes.push(options.outcomes);
-        return {
-          annotationImageLink: () => null,
-          // Runs after the Child Note import prepared, so this resolution is the
-          // batch's second one and only the retention can answer it.
-          prepare: async () => {
-            await probe.resolve(options.outcomes);
-          },
-          summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
-        };
-      },
-      noteImport: {
-        prepare: async (options) => {
-          importScopes.push(options.outcomes);
-          await probe.resolve(options.outcomes);
-          return {
-            resolveChildNote: () => ({
-              key: "",
-              indexedKey: "",
-              title: null,
-              noteLink: () => "",
-            }),
-            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-          };
-        },
-      },
-    };
-
-    const result = await createNoteFeature(deps).createNote(root);
-
-    expect(result.outcome).toBe("created");
-    expect(excerptScopes).toHaveLength(1);
-    // The Child Notes this note's template imports inherit the batch scope, so
-    // the note's own resolution reuses what the import's rendered.
-    expect(importScopes[0]).toBe(excerptScopes[0]);
-    expect(probe.renders()).toBe(1);
-    // The batch is over once the note and its imports settle: a later request
-    // through that scope renders again.
-    await probe.resolve(excerptScopes[0]);
-    expect(probe.renders()).toBe(2);
   });
 });
 
@@ -2764,6 +2450,7 @@ function makeUpdateHarness(options: {
   );
 
   const template: TestDeps["template"] = {
+    renderManagedContent: () => renderContent(),
     ready: Promise.resolve(),
     loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
@@ -2794,17 +2481,6 @@ function makeUpdateHarness(options: {
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: makeSettings(options.settings),
     attachmentImport: blockedAttachmentImport,
-    noteImport: {
-      prepare: async () => ({
-        resolveChildNote: () => ({
-          key: "",
-          indexedKey: "",
-          title: null,
-          noteLink: () => "",
-        }),
-        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-      }),
-    },
   };
 
   // Zotero holds the Item the note is stamped with: "A Study" (smith2024).
@@ -2856,55 +2532,6 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 }
 
 describe("updateNote", () => {
-  it.each(["update", "overwrite"] as const)(
-    "waits for Child Note outcomes after an early attachment failure (%s)",
-    async (operation) => {
-      const harness = makeUpdateHarness({
-        content: formatManagedRegion("OLD"),
-      });
-      stubIndexedKeyUpdate(updateContext());
-      const failed = Promise.withResolvers<void>();
-      const finishChild = Promise.withResolvers<void>();
-      const copyError = new Error("attachment copy failed");
-      harness.deps.attachmentImport = {
-        prepare: async () => ({
-          ...(await blockedAttachmentImport.prepare()),
-          flush: async () => {
-            failed.resolve();
-            throw copyError;
-          },
-        }),
-      };
-      const prepare = harness.deps.noteImport.prepare;
-      harness.deps.noteImport.prepare = async (options) => ({
-        ...(await prepare(options)),
-        flush: async (report) => {
-          await finishChild.promise;
-          report?.({ zotero: 0, unchecked: 0, unavailable: 1 });
-          return { created: 1, skipped: 0, failed: 0 };
-        },
-      });
-      const feature = createNoteFeature(harness.deps);
-      const report = vi.fn();
-      feature.on("excerpt-images-reported", report);
-      const file = harness.file("Literature/Test.md");
-      const pending =
-        operation === "update"
-          ? feature.updateNote(file, { indexedKey: "ABC23456", scope: "full" })
-          : feature.overwriteNote(file, "ABC23456");
-      const rejected = expect(pending).rejects.toBe(copyError);
-      await failed.promise;
-      expect(report).not.toHaveBeenCalled();
-      finishChild.resolve();
-      await rejected;
-      expect(report).toHaveBeenCalledExactlyOnceWith({
-        zotero: 0,
-        unchecked: 0,
-        unavailable: 1,
-      });
-    },
-  );
-
   it.each(["full", "metadata"] as const)(
     "preserves a replacement file when the session changes during %s preparation",
     async (scope) => {
@@ -3317,8 +2944,12 @@ describe("updateNote", () => {
         ],
       },
     });
-    const prepare = vi.fn(harness.deps.noteImport.prepare);
-    harness.deps.noteImport.prepare = prepare;
+    const prepare = vi.fn<NonNullable<TestDeps["excerptImages"]>>(() => ({
+      annotationImageLink: () => null,
+      prepare: async () => {},
+      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+    }));
+    harness.deps.excerptImages = prepare;
 
     await createNoteFeature(harness.deps).updateNote(
       harness.file("Books/Root.md"),
@@ -4864,48 +4495,6 @@ describe("writeNoteUpdate", () => {
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
   });
 
-  it("shares one outcome scope with the Child Note import and releases it after the update", async () => {
-    vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
-    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
-    await using probe = excerptReuseProbe();
-    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
-    const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
-    harness.deps.excerptImages = (options) => {
-      excerptScopes.push(options.outcomes);
-      return {
-        annotationImageLink: () => null,
-        // Runs after the Child Note import prepared, so this resolution is the
-        // batch's second one and only the retention can answer it.
-        prepare: async () => {
-          await probe.resolve(options.outcomes);
-        },
-        summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
-      };
-    };
-    const prepare = harness.deps.noteImport.prepare;
-    harness.deps.noteImport.prepare = async (options) => {
-      importScopes.push(options.outcomes);
-      await probe.resolve(options.outcomes);
-      return await prepare(options);
-    };
-
-    await createNoteFeature(harness.deps).writeNoteUpdate(
-      harness.file("Literature/Root.md"),
-      writeOptions("full"),
-    );
-
-    expect(excerptScopes).toHaveLength(1);
-    expect(excerptScopes[0]).toBeDefined();
-    // The Child Notes this update imports inherit the batch scope, so the
-    // update's second resolution reuses what the import's first one rendered.
-    expect(importScopes[0]).toBe(excerptScopes[0]);
-    expect(probe.renders()).toBe(1);
-    // The update released what it retained: a later request through that scope
-    // renders again rather than reusing.
-    await probe.resolve(excerptScopes[0]);
-    expect(probe.renders()).toBe(2);
-  });
-
   it("leaves a caller's batch scope open for the rest of its run", async () => {
     vi.mocked(buildNoteContextFromSource).mockReturnValue(updateContext());
     const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
@@ -5064,6 +4653,7 @@ describe("renderCitation", () => {
     const deps: TestDeps = {
       app: makeApp(),
       template: {
+        renderManagedContent: () => "",
         ready: Promise.resolve(),
         loaded: false,
         frontmatterFields: [],
@@ -5086,17 +4676,6 @@ describe("renderCitation", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     const result = createNoteFeature(deps).renderCitation(
@@ -5146,6 +4725,7 @@ describe("renderCitation", () => {
     const deps: TestDeps = {
       app: makeApp(),
       template: {
+        renderManagedContent: () => "",
         ready: Promise.resolve(),
         loaded: true,
         frontmatterFields: [],
@@ -5168,17 +4748,6 @@ describe("renderCitation", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings(),
       attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
     };
 
     const item = makeItem({
@@ -5208,6 +4777,8 @@ function citationTemplate(
     facade.define("annotation", opts.annotation, "eta");
   }
   return {
+    renderManagedContent: <T extends object>(data: T): string =>
+      facade.render("content", data),
     ready: Promise.resolve(),
     loaded: true,
     frontmatterFields: [],
@@ -5238,17 +4809,6 @@ function annotDeps(template: TestDeps["template"]): TestDeps {
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: makeSettings(),
     attachmentImport: blockedAttachmentImport,
-    noteImport: {
-      prepare: async () => ({
-        resolveChildNote: () => ({
-          key: "",
-          indexedKey: "",
-          title: null,
-          noteLink: () => "",
-        }),
-        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-      }),
-    },
   };
 }
 
@@ -5274,6 +4834,7 @@ function makeTemplate() {
     getLiteratureNoteTemplate: () => undefined,
     renderProfileAnnotation: () => "",
     renderCitation: () => "",
+    renderManagedContent: () => "",
     renderFilename<T extends object>(data: T): string {
       const { title, key } = data as { title: string | null; key: string };
       return title ?? key;

@@ -498,7 +498,7 @@ export function scanNote(text: string): NoteScanRecord {
   // while a marker inside code cannot open or close one.
   const commentText = text.includes("%%") ? maskedText(text, body) : text;
   const comments: { from: number; to: number }[] = [];
-  for (let from = commentText.indexOf("%%"); from >= 0; ) {
+  for (let from = commentText.indexOf("%%"); from >= 0;) {
     const close = commentText.indexOf("%%", from + 2);
     const to = close < 0 ? text.length : close + 2;
     comments.push({ from, to });

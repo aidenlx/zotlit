@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { stringifyYaml } from "obsidian";
 import type { App, TFile } from "obsidian";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,10 +14,7 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
-import {
-  profileReader,
-  resolveProfile,
-} from "@/services/profile/__fixtures__/reader";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -27,16 +23,15 @@ import type { TemplateService } from "@/services/template/service";
 import {
   inProcessReadsService,
   memoryOpener,
-  recordCalls,
 } from "@/services/zotero-reads/test-utils";
 
 import { noteAnnotationKeys, parseNote } from "./note-parser";
-import { createNoteImporter, NoteImportMintError } from "./service";
-import type {
-  ImportVaultApp,
-  NoteImporter,
-  PrepareNoteImportOptions,
+import {
+  childNoteLink,
+  createNoteImporter,
+  NoteImportMintError,
 } from "./service";
+import type { ImportVaultApp, NoteImporter } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
 // the wiring (resolveLink binding, library scoping) without the template pipeline.
@@ -270,10 +265,6 @@ function makeService(
     attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
   return {
-    prepare: (options) => {
-      current = options.settings;
-      return importer.prepare(options);
-    },
     importNote: (note, options) => {
       current = options.settings;
       return importer.importNote(note, options);
@@ -285,25 +276,22 @@ function makeService(
   };
 }
 
-function makePrepare(
-  overrides: Omit<Partial<PrepareNoteImportOptions>, "settings"> & {
-    settings?: Partial<ResolvedLiteratureNoteProfileBindings & Settings>;
-  } = {},
-): PrepareNoteImportOptions {
-  const { settings: settingsOverrides, ...rest } = overrides;
+/** Settings whose default Profile imports into `Imported`, with `bindings` over it. */
+function importSettings(
+  bindings: Partial<ResolvedLiteratureNoteProfileBindings> = {},
+): Settings {
   return {
-    reads,
-    sourcePath: "Literature/Paper.md",
-    settings: {
-      ...resolveProfile(defaults, "default").settings,
-      "note.import-folder": "Imported",
-      ...settingsOverrides,
+    ...defaults,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        "note.import-folder": "Imported",
+        ...bindings,
+      },
     },
-    ...rest,
   };
 }
-
-const PREPARE = makePrepare();
 
 const PROFILE_A = "Bk3Qn7XvT2Lp" as ProfileId;
 const PROFILE_B = "Rz9Wm4YfH6Kd" as ProfileId;
@@ -494,69 +482,17 @@ describe("createNoteImporter", () => {
     );
   });
 
-  it("flushes Child Notes from the Snapshot the operation holds, across a refresh", async () => {
-    // Open #2 holds a newer body: the refresh lands between render and flush.
-    const { open } = memoryOpener(
-      (n) =>
-        SEED +
-        (n === 1
-          ? ""
-          : "update itemNotes set note = '<p>refreshed</p>' where itemID = 50;"),
-    );
-    const { wrap, calls, snapshots } = recordCalls(["NoteBodies"]);
-    await using readsService = inProcessReadsService(open, { wrap });
-    const { app, create } = makeApp();
-    await using lease = await readsService.acquireRead();
-    const batch = await makeService(app).prepare({
-      ...PREPARE,
-      reads: lease.reads,
-    });
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await readsService.refresh();
-    await batch.flush();
-
-    expect(create.mock.calls[0]![1]).toContain(`md(${NOTE_BODY})`);
-    expect(calls).toEqual([
-      {
-        operation: "NoteBodies",
-        payload: { libraryID: 1, keys: ["NOTE1234"], snapshot: snapshots[0] },
-      },
-    ]);
-    // The refresh landed: a read outside the Snapshot sees the new body.
-    const { reads: current } = await readsService.ready;
-    const [refreshed] = await Effect.runPromise(
-      current.NoteBodies({ libraryID: 1, keys: ["NOTE1234"] }),
-    );
-    expect(refreshed!.note).toBe("<p>refreshed</p>");
-  });
-
-  it("mints a flat path, renders the title alias, and creates the mirror on flush", async () => {
+  it("creates a flat mirror in the import folder and commits its copies", async () => {
     const { app, create, createFolder } = makeApp();
     const attachmentImport = makeAttachmentImport();
-    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
 
-    const link = batch.resolveChildNote({
-      itemID: 50,
-      libraryID: USER_LIBRARY_ID,
-      groupID: null,
-      parentItemID: 1,
-      key: "NOTE1234",
-      indexedKey: "NOTE1234",
-      title: "Methods",
-      dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
-    });
-    expect(link.indexedKey).toBe("NOTE1234");
-    const rendered = link.noteLink();
-    expect(rendered).toMatch(
-      /^\[\[Imported\/Methods_[\w-]{6}\.md\|Methods\]\]$/,
-    );
+    await expect(
+      makeService(app, { attachmentImport }).importNote(makeNote(), {
+        reads,
+        settings: importSettings(),
+      }),
+    ).resolves.toBe("created");
 
-    await expect(batch.flush()).resolves.toEqual({
-      created: 1,
-      skipped: 0,
-      failed: 0,
-    });
     expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
     const [path, content] = create.mock.calls[0]!;
     expect(path).toMatch(/^Imported\/Methods_[\w-]{6}\.md$/);
@@ -569,34 +505,14 @@ describe("createNoteImporter", () => {
     expect(attachmentImport.flush).toHaveBeenCalledOnce();
   });
 
-  it("stamps a side-effect import with the in-flight Literature Note Profile", async () => {
-    const { app, create } = makeApp();
-    const settings = resolveProfile(profileSettings(), PROFILE_A)!.settings;
-    const batch = await makeService(app).prepare({
-      ...PREPARE,
-      settings,
-    });
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
-
-    expect(create.mock.calls[0]![0]).toMatch(/^Law\/Imported\//);
-    expect(create.mock.calls[0]![1]).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
-    );
-    expect(
-      vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
-    ).toBe(true);
-  });
-
   it("mints a bare root-relative path when the import folder is the vault root", async () => {
     const { app, create, createFolder } = makeApp();
-    const batch = await makeService(app).prepare(
-      makePrepare({ settings: { "note.import-folder": "" } }),
-    );
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
+    await makeService(app).importNote(makeNote(), {
+      reads,
+      settings: importSettings({ "note.import-folder": "" }),
+    });
+
     expect(create.mock.calls[0]![0]).toMatch(/^Methods_[\w-]{6}\.md$/);
     // Root needs no folder creation.
     expect(createFolder).not.toHaveBeenCalled();
@@ -604,149 +520,55 @@ describe("createNoteImporter", () => {
 
   it("scopes the identity key by groupID", async () => {
     const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
 
-    const link = batch.resolveChildNote(
-      makeNote({ groupID: 42, libraryID: 2 }),
-    );
-    expect(link.indexedKey).toBe("NOTE1234g42");
-    link.noteLink();
-    await batch.flush();
+    await makeService(app).importNote(makeNote({ groupID: 42, libraryID: 2 }), {
+      reads,
+      settings: importSettings(),
+    });
+
     expect(create.mock.calls[0]![1]).toContain("zotero-note-key: NOTE1234g42");
-  });
-
-  it("links to an existing imported note by identity, queuing nothing", async () => {
-    const { app, host, create } = makeApp({
-      "Imported/Old name_abc123.md": {},
-    });
-    const existing = host.file("Imported/Old name_abc123.md");
-    const batch = await makeService(app, { existing: [existing] }).prepare(
-      PREPARE,
-    );
-
-    const link = batch.resolveChildNote(makeNote({ title: "Renamed" }));
-    // The file is never renamed; only the alias reflects the new title.
-    expect(link.noteLink()).toBe("[[Imported/Old name_abc123.md|Renamed]]");
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 0,
-      failed: 0,
-    });
-    expect(create).not.toHaveBeenCalled();
-  });
-
-  it("queues nothing when the link is never rendered", async () => {
-    const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote());
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 0,
-      failed: 0,
-    });
-    expect(create).not.toHaveBeenCalled();
-  });
-
-  it("skips and warns when the note vanished before flush", async () => {
-    const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote({ key: "GONE2345" })).noteLink();
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 1,
-      failed: 0,
-    });
-    expect(create).not.toHaveBeenCalled();
   });
 
   it("skips on a file-exists collision at write time without flushing copies", async () => {
     const { app, create } = makeApp();
     create.mockRejectedValueOnce(new Error("File already exists."));
     const attachmentImport = makeAttachmentImport();
-    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 1,
-      failed: 0,
-    });
+    await expect(
+      makeService(app, { attachmentImport }).importNote(makeNote(), {
+        reads,
+        settings: importSettings(),
+      }),
+    ).resolves.toBe("skipped");
     // The note wasn't written, so its queued image copies stay inert.
     expect(attachmentImport.flush).not.toHaveBeenCalled();
   });
 
-  it("isolates a note's hard write error so siblings still import", async () => {
-    const { app, create } = makeApp();
-    // A non-file-exists failure (disk full, permission, parse error) on one note.
-    create.mockRejectedValueOnce(new Error("EACCES: permission denied"));
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote({ key: "NOTE0001" })).noteLink();
-    batch.resolveChildNote(makeNote({ key: "NOTE0002" })).noteLink();
-
-    await expect(batch.flush()).resolves.toEqual({
-      created: 1,
-      skipped: 0,
-      failed: 1,
-    });
-    // Both notes were attempted; the failure didn't short-circuit the sibling.
-    expect(create).toHaveBeenCalledTimes(2);
-  });
-
-  it("reuses the minted path across a second prepare() batch while the note index lags", async () => {
-    // Simulates a double-triggered "Update in Obsidian": the note index hasn't
-    // caught up (metadataCache 'changed' lands async after vault.create), so
-    // both batches see no existing imported note for this key.
-    const { app, create } = makeApp();
-    const service = makeService(app);
-
-    const batch1 = await service.prepare(PREPARE);
-    const link1 = batch1.resolveChildNote(makeNote());
-    const rendered1 = link1.noteLink();
-
-    const batch2 = await service.prepare(PREPARE);
-    const link2 = batch2.resolveChildNote(makeNote());
-    const rendered2 = link2.noteLink();
-
-    // Both renders resolve to the same minted path, not two distinct ones.
-    expect(rendered2).toBe(rendered1);
-
-    await batch1.flush();
-    // The second batch's write attempt lands on the same already-created
-    // path, so it hits the existing file-exists collision handling.
-    create.mockRejectedValueOnce(new Error("File already exists."));
-    await expect(batch2.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 1,
-      failed: 0,
-    });
-
-    // Only one path was ever minted for the key.
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls[0]![0]).toBe(create.mock.calls[1]![0]);
-  });
-
   it("throws NoteImportMintError when the minted path is already occupied", async () => {
     const { app, host } = makeApp({ "occupied.md": {} });
-    // Any path the mint checks reports as occupied, forcing the hard collision.
-    vi.spyOn(host.vault, "getAbstractFileByPath").mockReturnValue(
-      host.file("occupied.md"),
+    // Any note path the mint checks reports as occupied, forcing the hard
+    // collision; the import folder itself is still free.
+    const occupied = host.file("occupied.md");
+    vi.spyOn(host.vault, "getAbstractFileByPath").mockImplementation((path) =>
+      path.endsWith(".md") ? occupied : null,
     );
-    const batch = await makeService(app).prepare(PREPARE);
 
-    expect(() => batch.resolveChildNote(makeNote())).toThrow(
-      NoteImportMintError,
-    );
+    await expect(
+      makeService(app).importNote(makeNote(), {
+        reads,
+        settings: importSettings(),
+      }),
+    ).rejects.toThrow(NoteImportMintError);
   });
 
   it("falls back to a key-based name when the title sanitizes to empty", async () => {
     const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
 
-    batch.resolveChildNote(makeNote({ title: "..." })).noteLink();
-    await batch.flush();
+    await makeService(app).importNote(makeNote({ title: "..." }), {
+      reads,
+      settings: importSettings(),
+    });
+
     expect(create.mock.calls[0]![0]).toMatch(
       /^Imported\/zotero_note_NOTE1234_[\w-]{6}\.md$/,
     );
@@ -759,14 +581,11 @@ describe("createNoteImporter", () => {
     );
     const { app, create } = makeApp();
     const attachmentImport = makeAttachmentImport();
-    const batch = await makeService(app, { attachmentImport }).prepare(
-      makePrepare({
-        settings: { "note.import-annotations-as-template": true },
-      }),
-    );
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
+    await makeService(app, { attachmentImport }).importNote(makeNote(), {
+      reads,
+      settings: importSettings({ "note.import-annotations-as-template": true }),
+    });
 
     // The service scopes the annotation lookup to the note's library.
     const [sources] = vi.mocked(renderAnnotationSources).mock.calls[0]!;
@@ -806,15 +625,17 @@ describe("createNoteImporter", () => {
       TemplateService,
       "render" | "renderCitation" | "renderProfileAnnotation"
     >;
-    const { app } = makeApp();
-    const settings = resolveProfile(profileSettings(), PROFILE_B)!.settings;
-    const batch = await makeService(app, { template }).prepare({
-      ...PREPARE,
-      settings,
+    const { app, host } = makeApp({
+      "History/Imported/Existing.md": {
+        [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B,
+      },
     });
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
+    await makeService(app, { template }).importNote(makeNote(), {
+      reads,
+      settings: profileSettings(),
+      targetFile: host.file("History/Imported/Existing.md"),
+    });
 
     const render = vi.mocked(renderAnnotationSources).mock.calls[0]![1]
       .renderAnnotation;
@@ -833,10 +654,11 @@ describe("createNoteImporter", () => {
 
   it("passes no annotation renderer to parseNote when the setting is off", async () => {
     const { app } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
+    await makeService(app).importNote(makeNote(), {
+      reads,
+      settings: importSettings(),
+    });
 
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
@@ -847,17 +669,14 @@ describe("createNoteImporter", () => {
   it("passes the colored highlight toggle and mappings to the note parser", async () => {
     const { app } = makeApp();
     const mappings = { blue: { output: "custom", customEmoji: "👩‍🔬" } } as const;
-    const batch = await makeService(app).prepare(
-      makePrepare({
-        settings: {
-          "note.import-colored-highlights": true,
-          "note.import-highlight-mappings": mappings,
-        },
-      }),
-    );
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
+    await makeService(app).importNote(makeNote(), {
+      reads,
+      settings: {
+        ...importSettings({ "note.import-colored-highlights": true }),
+        "note.import-highlight-mappings": mappings,
+      },
+    });
 
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
@@ -885,14 +704,13 @@ describe("createNoteImporter", () => {
         })
         .join("\n"),
     );
-    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
 
-    batch.resolveChildNote(makeNote()).noteLink();
-    await expect(batch.flush()).resolves.toEqual({
-      created: 1,
-      skipped: 0,
-      failed: 0,
-    });
+    await expect(
+      makeService(app, { attachmentImport }).importNote(makeNote(), {
+        reads,
+        settings: importSettings(),
+      }),
+    ).resolves.toBe("created");
 
     const content = create.mock.calls[0]![1] as string;
     expect(content).toContain("![image.png](file:///elsewhere/one.png)");
@@ -911,7 +729,7 @@ describe("createNoteImporter", () => {
 
     const outcome = await service.importNote(makeNote(), {
       reads,
-      settings: PREPARE.settings,
+      settings: importSettings(),
       targetFile: target,
     });
 
@@ -1119,6 +937,54 @@ describe("createNoteImporter", () => {
     expect(create.mock.calls[0]![1]).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
+  });
+
+  it("links a Child Note to its Imported Note by identity", async () => {
+    const { app, host, create } = makeApp({
+      "Imported/Old name_abc123.md": {},
+    });
+    const existing = host.file("Imported/Old name_abc123.md");
+    const link = childNoteLink(
+      { app, noteIndex: { getImportedNoteByNoteKey: () => [existing] } },
+      makeNote({ title: "Renamed" }),
+      "Literature/Paper.md",
+    );
+
+    expect(link.indexedKey).toBe("NOTE1234");
+    // The file is never renamed; only the alias reflects the new title.
+    expect(link.noteLink()).toBe("[[Imported/Old name_abc123.md|Renamed]]");
+    expect(link.noteLink("Summary")).toBe(
+      "[[Imported/Old name_abc123.md|Summary]]",
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("links a Child Note with no Imported Note to Zotero and writes nothing", async () => {
+    const { app, create, createFolder } = makeApp();
+    const noteIndex = { getImportedNoteByNoteKey: () => [] };
+
+    const personal = childNoteLink(
+      { app, noteIndex },
+      makeNote({ title: "Methods [draft]" }),
+      "Literature/Paper.md",
+    );
+    const group = childNoteLink(
+      { app, noteIndex },
+      { ...makeNote({ groupID: 42, libraryID: 2 }), title: null },
+      "Literature/Paper.md",
+    );
+
+    expect(personal.noteLink()).toBe(
+      "[Methods \\[draft\\]](zotero://select/library/items/NOTE1234)",
+    );
+    expect(personal.noteLink("Summary", "#Heading")).toBe(
+      "[Summary](zotero://select/library/items/NOTE1234)",
+    );
+    expect(group.noteLink()).toBe(
+      "[NOTE1234](zotero://select/groups/42/items/NOTE1234)",
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(createFolder).not.toHaveBeenCalled();
   });
 
   it("uses the default Profile when an attached note has no Literature Note", async () => {

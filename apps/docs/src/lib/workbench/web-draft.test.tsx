@@ -101,11 +101,11 @@ describe("the document's way in and out", () => {
       return "blob:workbench";
     });
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
-      function (this: HTMLAnchorElement) {
-        names.push(this.download);
-      },
-    );
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      names.push(this.download);
+    });
 
     importFile(page.host, KEPT);
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));

@@ -83,6 +83,9 @@ export default defineConfig({
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
     "typescript/prefer-readonly": "error",
+    // A union member erased by another is an inference bug, not intent: an
+    // `infer` that came out `never` silently drops a type from a signature.
+    "typescript/no-redundant-type-constituents": "error",
 
     "no-unused-vars": "error",
     "no-param-reassign": "error",

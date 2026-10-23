@@ -11,7 +11,7 @@ An Obsidian Markdown file linked one-to-one with a Zotero Item. Identified by a 
 _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguous with Child Note), document
 
 **Imported Note** _(Obsidian)_:
-An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes, and the same `zotlit-profile` stamp as a Literature Note — written at creation from the creation context (side-effect import: the in-flight operation's Profile; explicit import of an attached note: the parent's Literature Note stamp; otherwise the default Profile), re-emitted on every overwrite, absent meaning the default Profile. Writes follow the stamp; the parent item's Profile is never consulted after creation. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
+An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes, and the same `zotlit-profile` stamp as a Literature Note — written at creation from the creation context (an attached note: the parent's Literature Note stamp; otherwise the default Profile), re-emitted on every overwrite, absent meaning the default Profile. Writes follow the stamp; the parent item's Profile is never consulted after creation. Created only by an explicit import command, never by rendering a Literature Note. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
 **Plain HTML Child Note** _(Zotero)_:
@@ -23,7 +23,7 @@ The text a vault note or document holds now: the text of the view that has it op
 _Avoid_: buffer, editor text, file content (the disk text only)
 
 **Managed Region**:
-The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. A Query Block in it keeps its text through the update. Content outside the markers is user-owned and preserved.
+The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. A Query Block in it keeps its text through the update. Content outside the markers is user-owned and preserved. A note has one only when its template has a Managed Block; the default template has none. Removing the two marker lines stops management, and an update then leaves the body untouched.
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
@@ -473,7 +473,7 @@ A `.zotquery` vault file that holds one or more Query Views over the Zotero libr
 _Avoid_: base, query note, view file
 
 **Query Block**:
-A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one in place of the annotation listing in the Managed Region; a full update keeps the existing block text, so toolbar changes stay.
+A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one under `## Annotations`, outside any Managed Region, once at creation. In a Managed Region, a full update keeps the existing block text, so toolbar changes stay.
 _Avoid_: annotation block, embed block
 
 **Query View**:
@@ -592,7 +592,7 @@ A per-color choice of representation for highlights converted during Note Import
 ### Integration processes
 
 **Note Import**:
-Converting a Zotero Child Note's HTML to Obsidian Markdown and writing it as an Imported Note. Includes citation resolution, embedded-image resolution, and optional annotation-paragraph template mapping. Triggered automatically as a side effect of Literature Note create/update (skip-if-exists) or explicitly via protocol action (overwrite).
+Converting a Zotero Child Note's HTML to Obsidian Markdown and writing it as an Imported Note. Includes citation resolution, embedded-image resolution, and optional annotation-paragraph template mapping. Triggered only explicitly: by the import commands and batch import, or via protocol action (overwrite). Rendering a Literature Note never triggers it.
 
 **Attachment Import**:
 Copying an import-capable Zotero file, such as an annotation excerpt image or note-embedded image, into the vault's attachment folder. A file Zotero manages is reflinked (macOS copy-on-write) with fallback to regular copy; a linked file elsewhere is read from the file that was checked, so a swap afterwards cannot substitute another one. A source is copied once approved: automatically for Zotero's storage directory, its annotation cache, and the configured base attachment directory, or otherwise only inside an Approved Attachment Root. A blocked source, and every source while Attachment Import is disabled, instead links with a `file://` URI to its own location. An ordinary Literature Note attachment `fileLink` always links directly to the source and does not start Attachment Import.

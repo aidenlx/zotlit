@@ -13,6 +13,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Keyboard scope](policies/keyboard-scope.md)
 - [Local storage](policies/local-storage.md)
 - [Pop-out windows](policies/popout-windows.md)
+- [Services](policies/services.md)
 - [Tailwind-first](policies/tailwind-first.md)
 - [Theme hooks](policies/theme-hooks.md)
 - [Tooltips](policies/tooltips.md)
@@ -22,16 +23,32 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 
 Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane) with `class="zt-root"` — that scope enables the Tailwind preflight so semantic HTML and border utilities render clean. See the skill's **Scoped preflight** section.
 
+## Effect
+
+Review Effect code against the docs of the installed `effect` package, the version the code runs: `node_modules/effect/AGENTS.md`, and the topic folders of `node_modules/effect/ai-docs/src/` — `01_effect` (basics, Schema, services, errors, resources, running), `03_stream`, `04_integration/10_managed-runtime.ts`, `08_observability`, `09_testing`. Cite the doc for each finding. A departure from a documented pattern carries a comment that names its reason.
+
+Check in particular:
+
+- **Service methods** return Effects, and callers outside Effect go through the service's plain adapter ([Services](policies/services.md) → Plain adapter). A method written as a generator is `Effect.fn("<Tag>.<method>")` (`01_effect/01_basics/02_effect-fn.ts`, `01_effect/03_services/01_service.ts`); a read derived from state (`Effect.map` over a `SubscriptionRef`) or a single combinator call (`Effect.acquireUseRelease`) stays a plain expression.
+- **Crossing in** from plain code runs through the plugin's `ManagedRuntime` (`buildRuntime` in `src/lib/effect-layer.ts`). An Obsidian callback registered inside a layer runs through a runner made from the layer's own context (`Effect.runSyncWith(yield* Effect.context<never>())`), so it keeps the layer's services and Clock.
+- **Failures** are typed in the error channel and handled where a decision is made; a boundary that must not fail catches the whole `Cause` (`catchCause`) and logs it. Unknown persisted data decodes through `Schema` (`decodeUnknownOption` to degrade).
+- **Time** comes from `Clock` (`instantClock` for a `Temporal.Instant`), so `TestClock` drives it.
+- **Interruption**: a step that must finish once started — applying a configuration, a write with its own cleanup — is `Effect.uninterruptible`, and its test proves a scope close waits for it.
+
 ## Logging
 
-Import `getLogger` from `@/lib/log` — wraps LogTape with parent category `["zotlit", "obsidian"]`:
+Log through Effect, with the category set by `withLogCategory` from `@/lib/effect-log` (under parent `["zotlit", "obsidian"]`) and fields as annotations:
 
 ```ts
-import { getLogger } from "@/lib/log";
-const logger = getLogger("settings");
+Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
+  Effect.annotateLogs({ error }),
+  withLogCategory("use-ledger"),
+);
 ```
 
-`LoggingService` owns `configure()` — don't call it anywhere else. The ZoteroReads worker has its own LogTape instance: `zotero-reads/worker.ts` configures it to forward records to the renderer at the plugin's log level.
+`getLogger` from `@/lib/log` is the legacy LogTape logger; a file that already uses it keeps it until it is reworked.
+
+`layerLogging` in `src/services/log/service.ts` owns LogTape's configuration; the dev-only `enableStartupLogging` is the one other caller. The ZoteroReads worker has its own LogTape instance: `zotero-reads/worker.ts` configures it to forward records to the renderer at the plugin's log level.
 
 ## View state and menus
 

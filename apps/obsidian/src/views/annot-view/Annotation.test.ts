@@ -27,7 +27,7 @@ import { Annotation } from "./Annotation";
 import { cardPlace } from "./card-selection";
 import { AnnotStoreProvider, createAnnotStore } from "./store";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const CARD: AnnotationRecord = {
   key: "AAAA1111",

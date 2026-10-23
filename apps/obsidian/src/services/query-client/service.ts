@@ -9,6 +9,7 @@ import {
 } from "@tanstack/query-core";
 import type { Query, QueryFunction, QueryKey } from "@tanstack/query-core";
 
+import { Context } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
@@ -394,3 +395,9 @@ function settledValue<T>(query: Query<T>): Promise<T | null> {
     query.state.status === "error" ? null : (query.state.data ?? null),
   );
 }
+
+/** {@link QueryClientService} in the plugin's Layer graph, bridged until it converts. */
+export class QueryClients extends Context.Service<
+  QueryClients,
+  QueryClientService
+>()("zotlit/query-client/QueryClients") {}

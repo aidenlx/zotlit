@@ -248,6 +248,12 @@ export interface SynthesizedLiteratureNoteTemplateManifest {
   readonly name?: string;
   readonly description?: string;
   readonly frontmatter?: readonly FrontmatterField[];
+  /**
+   * Whether the content insertion becomes a Managed Block. `false` writes the
+   * content source in place, so the body renders once at creation.
+   * @default true
+   */
+  readonly managed?: boolean;
 }
 
 /** Map legacy settings fields without parsing or rewriting their expressions. */
@@ -315,9 +321,13 @@ export function synthesizeLegacyLiteratureNoteTemplate(
     insertionIndex === 0 || legacy.note.source[insertionIndex - 1] === "\n"
       ? "{% managed %}\n"
       : "{% managed %}";
+  const content =
+    manifestOverrides.managed === false
+      ? legacy.content.source
+      : `${openManaged}${legacy.content.source}{% endmanaged %}`;
   const body = `${legacy.note.source.replace(
     insertion,
-    () => `${openManaged}${legacy.content.source}{% endmanaged %}`,
+    () => content,
   )}\n${ANNOTATION_HEADER}\n${annotationSource}`;
   const manifest = stringifyYaml(
     {

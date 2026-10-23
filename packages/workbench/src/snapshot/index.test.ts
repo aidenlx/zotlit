@@ -140,11 +140,11 @@ describe("exportItemSnapshot", () => {
           path: "zt.attachments[0].fileLink",
           reason: "The Attachment has no permitted vault-relative target.",
         },
-        {
-          path: "zt.notes[0].noteLink",
-          reason: "The Child Note has no permitted vault-relative target.",
-        },
       ]),
+    );
+    // A Child Note with no vault target still links to Zotero.
+    expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
+      "zt.notes[0].noteLink",
     );
   });
 

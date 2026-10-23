@@ -242,13 +242,73 @@ const empty: Omit<NoteScanRecord, "ranges"> = {
   malformedAnnotationCitations: [],
 };
 
+// S4: Citation targets use the same normalized target as Obsidian links.
+const normalizedWikilinks: Record<string, NoteScanRecord["wikilinks"]> = {
+  "fuzz/embed/26": [
+    {
+      kind: "wikilink",
+      raw: "target",
+      position: {
+        start: {
+          line: 0,
+          col: 24,
+          offset: 24,
+        },
+        end: {
+          line: 0,
+          col: 35,
+          offset: 35,
+        },
+      },
+    },
+  ],
+  "token/wikilink/escaped-close": [
+    {
+      kind: "wikilink",
+      raw: "target",
+      position: {
+        start: {
+          line: 0,
+          col: 0,
+          offset: 0,
+        },
+        end: {
+          line: 0,
+          col: 11,
+          offset: 11,
+        },
+      },
+    },
+  ],
+  "token/embed/both-escaped": [
+    {
+      kind: "wikilink",
+      raw: "target",
+      position: {
+        start: {
+          line: 0,
+          col: 2,
+          offset: 2,
+        },
+        end: {
+          line: 0,
+          col: 13,
+          offset: 13,
+        },
+      },
+    },
+  ],
+};
+
 it.each(cases)("$id", ({ id, text, record, links }) => {
   const difference = deliberateDifferences[id];
   const expectedLinks = difference ? linkFacts(text, difference.links) : links;
+  const normalized = normalizedWikilinks[id];
   const { ranges: _ranges, ...occurrences } = scanNote(text);
   expect(occurrences, difference?.reason).toEqual({
     ...empty,
     ...record,
+    ...(normalized ? { wikilinks: normalized } : {}),
     links: expectedLinks,
   });
 });

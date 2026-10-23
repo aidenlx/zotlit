@@ -1,13 +1,15 @@
 // Selector parsing: the request each command accepts, and the identity it asserts.
 
 import type { CliData } from "obsidian";
-import * as v from "valibot";
 
 import { DEFAULT_CITATION_VARIANT, isIndexedKey } from "@zotlit/db";
 import type { CitationVariant, ContractRoot, TemplateSlot } from "@zotlit/db";
 import type { PartialContext } from "@zotlit/workbench/render";
 
 import {
+  cliDefault,
+  cliLiterals,
+  cliMap,
   cliNotApplicable,
   cliOneOf,
   cliParams,
@@ -19,7 +21,9 @@ import {
   expectSourceParam,
   noCliParams,
 } from "@/lib/cli-params";
-import type { CliParamName, CliRequest } from "@/lib/cli-params";
+import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
+import { Schema } from "@/lib/effect";
+import type { Effect } from "@/lib/effect";
 import { isPartialNameShape } from "@/services/template/defaults";
 
 import { diagnostic } from "./envelope";
@@ -56,10 +60,14 @@ export {
 const INDEXED_KEY_MESSAGE = "key must be an Indexed Key.";
 
 /** The Indexed Key an item-backed command selects with. */
-const indexedKey = v.pipe(
-  v.string(),
-  v.check(isIndexedKey, INDEXED_KEY_MESSAGE),
-);
+const indexedKey = indexedKeyOr(INDEXED_KEY_MESSAGE);
+
+/** An Indexed Key, or `message` for any other text. */
+function indexedKeyOr(message: string) {
+  return Schema.String.check(
+    Schema.makeFilter((key: string) => isIndexedKey(key) || message),
+  );
+}
 
 /**
  * The key message of a selector. A Citation takes one built-in example set
@@ -84,12 +92,12 @@ function exampleMessage(citation: boolean): string {
  */
 const citationByKey = {
   example: cliNotApplicable(exampleMessage(true)),
-  key: v.pipe(v.string(), v.check(isIndexedKey, keyMessage(true))),
+  key: indexedKeyOr(keyMessage(true)),
 };
 
 /** The selector of a variant that reads one built-in Citation example set. */
 const citationByExample = {
-  example: v.picklist(
+  example: cliLiterals(
     CITATION_EXAMPLE_NAMES,
     `example must be ${quotedList(CITATION_EXAMPLE_NAMES)}.`,
   ),
@@ -98,35 +106,30 @@ const citationByExample = {
 const NOTE_SELECTOR_MESSAGE =
   "Select one non-empty note path, key, or Citation example.";
 
-const dataRoot = v.picklist(CONTRACT_ROOT_NAMES, rootVocabulary());
+const dataRoot = cliLiterals(CONTRACT_ROOT_NAMES, rootVocabulary());
 
 /** How `template-data` reads the root, after the object it reads. */
 const dataReading = {
-  query: v.optional(
+  query: Schema.optionalKey(
     cliText("query must contain text. Use query=<field name> for discovery."),
   ),
-  path: v.optional(
+  path: Schema.optionalKey(
     cliText("path must contain text. Use query=<field name> for discovery."),
   ),
   full: cliSwitch("Use the full flag to request the complete zt object."),
-  format: v.optional(v.picklist(["json"], "format must be 'json'."), "json"),
+  format: cliDefault(cliLiterals(["json"], "format must be 'json'."), "json"),
   "expect-source": expectSourceParam,
 };
 
-function oneReadMode<
-  TInput extends { query?: string; path?: string; full?: true },
->() {
-  return cliOneOf<TInput>(["query", "path", "full"], {
-    many: "Use one of query=<words>, path=<zt.path>, or full.",
-  });
-}
+const oneReadMode = cliOneOf<{ query?: string; path?: string; full?: true }>(
+  ["query", "path", "full"],
+  { many: "Use one of query=<words>, path=<zt.path>, or full." },
+);
 
 /** The request every `template-data` variant decodes to. */
 function dataRequest<TSelected extends object>(
   selected: TSelected,
-  reading: { root: ContractRoot } & v.InferOutput<
-    v.StrictObjectSchema<typeof dataReading, undefined>
-  >,
+  reading: { root: ContractRoot } & Schema.Struct<typeof dataReading>["Type"],
 ) {
   const { root, format, query, path, full } = reading;
   return {
@@ -149,56 +152,54 @@ const dataParams = cliVariants(
           ? "citation"
           : "citationExample",
   {
-    note: v.pipe(
-      cliParams(
-        {
-          root: dataRoot,
-          note: cliText(NOTE_SELECTOR_MESSAGE),
-          key: cliNotApplicable(NOTE_SELECTOR_MESSAGE),
-          example: cliNotApplicable(NOTE_SELECTOR_MESSAGE),
-          ...dataReading,
-        },
-        { root: rootVocabulary() },
+    note: cliParams(
+      {
+        root: dataRoot,
+        note: cliText(NOTE_SELECTOR_MESSAGE),
+        key: cliNotApplicable(NOTE_SELECTOR_MESSAGE),
+        example: cliNotApplicable(NOTE_SELECTOR_MESSAGE),
+        ...dataReading,
+      },
+      { root: rootVocabulary() },
+    )
+      .check(oneReadMode)
+      .pipe(cliMap(({ note, ...reading }) => dataRequest({ note }, reading))),
+    citation: cliParams(
+      { root: dataRoot, ...citationByKey, ...dataReading },
+      { key: keyMessage(true) },
+    )
+      .check(oneReadMode)
+      .pipe(cliMap(({ key, ...reading }) => dataRequest({ key }, reading))),
+    citationExample: cliParams({
+      root: dataRoot,
+      ...citationByExample,
+      ...dataReading,
+    })
+      .check(oneReadMode)
+      .pipe(
+        cliMap(({ example, ...reading }) => dataRequest({ example }, reading)),
       ),
-      oneReadMode(),
-      v.transform(({ note, ...reading }) => dataRequest({ note }, reading)),
-    ),
-    citation: v.pipe(
-      cliParams(
-        { root: dataRoot, ...citationByKey, ...dataReading },
-        { key: keyMessage(true) },
-      ),
-      oneReadMode(),
-      v.transform(({ key, ...reading }) => dataRequest({ key }, reading)),
-    ),
-    citationExample: v.pipe(
-      cliParams({ root: dataRoot, ...citationByExample, ...dataReading }),
-      oneReadMode(),
-      v.transform(({ example, ...reading }) =>
-        dataRequest({ example }, reading),
-      ),
-    ),
-    item: v.pipe(
-      cliParams(
-        {
-          root: dataRoot,
-          example: cliNotApplicable(exampleMessage(false)),
-          key: indexedKey,
-          ...dataReading,
-        },
-        { root: rootVocabulary(), key: INDEXED_KEY_MESSAGE },
-      ),
-      oneReadMode(),
-      v.transform(({ key, ...reading }) => dataRequest({ key }, reading)),
-    ),
+    item: cliParams(
+      {
+        root: dataRoot,
+        example: cliNotApplicable(exampleMessage(false)),
+        key: indexedKey,
+        ...dataReading,
+      },
+      { root: rootVocabulary(), key: INDEXED_KEY_MESSAGE },
+    )
+      .check(oneReadMode)
+      .pipe(cliMap(({ key, ...reading }) => dataRequest({ key }, reading))),
   },
 );
 
 /** What `template-data` reads: a note, a Zotero object, or a Citation set. */
-export type DataRequest = v.InferOutput<typeof dataParams>;
+export type DataRequest = CliOutput<typeof dataParams>;
 export type DataParam = CliParamName<typeof dataParams>;
 
-export function parseDataRequest(params: CliData): CliRequest<DataRequest> {
+export function parseDataRequest(
+  params: CliData,
+): Effect.Effect<DataRequest, CliRejection> {
   return decodeCliParams(params, dataParams, {
     command: "template-data",
     misplaced: { template: dataCommandTemplateHint() },
@@ -215,16 +216,17 @@ const notCitationVariant = cliNotApplicable(
 );
 const notCitationExample = cliNotApplicable(exampleMessage(false));
 
-const partialTemplate = v.custom<`partial:${string}`>(
-  (input) =>
-    typeof input === "string" &&
-    isPartialTemplate(input) &&
-    isPartialNameShape(partialTemplateName(input)),
-  "A Shared Partial name is letters, digits, and hyphens: template=partial:<name>.",
-);
+const partialTemplate = Schema.String.check(
+  Schema.makeFilter(
+    (input: string) =>
+      (isPartialTemplate(input) &&
+        isPartialNameShape(partialTemplateName(input))) ||
+      "A Shared Partial name is letters, digits, and hyphens: template=partial:<name>.",
+  ),
+).pipe(cliMap((input) => input as `partial:${string}`));
 
-const citationVariant = v.optional(
-  v.picklist(
+const citationVariant = cliDefault(
+  cliLiterals(
     CITATION_VARIANT_NAMES,
     `variant must be ${quotedList(CITATION_VARIANT_NAMES)}.`,
   ),
@@ -232,8 +234,8 @@ const citationVariant = v.optional(
 );
 
 const renderFormat = {
-  format: v.optional(
-    v.picklist(["markdown", "json"], "format must be 'markdown' or 'json'."),
+  format: cliDefault(
+    cliLiterals(["markdown", "json"], "format must be 'markdown' or 'json'."),
     "json",
   ),
   "expect-source": expectSourceParam,
@@ -281,95 +283,89 @@ const renderParams = cliVariants(
             ? "partialCitation"
             : "partialCitationExample",
   {
-    slot: v.pipe(
-      cliParams(
-        {
-          template: v.picklist(TEMPLATE_SLOT_NAMES, renderTemplateMessage),
-          root: notPartialRoot,
-          example: notCitationExample,
-          variant: notCitationVariant,
-          key: indexedKey,
-          ...renderFormat,
-        },
-        { template: renderTemplateMessage, key: INDEXED_KEY_MESSAGE },
-      ),
-      v.transform(({ key, template, format }) =>
+    slot: cliParams(
+      {
+        template: cliLiterals(TEMPLATE_SLOT_NAMES, renderTemplateMessage),
+        root: notPartialRoot,
+        example: notCitationExample,
+        variant: notCitationVariant,
+        key: indexedKey,
+        ...renderFormat,
+      },
+      { template: renderTemplateMessage, key: INDEXED_KEY_MESSAGE },
+    ).pipe(
+      cliMap(({ key, template, format }) =>
         renderRequest({ key }, { template, format }),
       ),
     ),
-    citation: v.pipe(
-      cliParams(
-        {
-          template: v.literal(CITATION_TEMPLATE),
-          root: notPartialRoot,
-          ...citationByKey,
-          variant: citationVariant,
-          ...renderFormat,
-        },
-        { key: keyMessage(true) },
-      ),
-      v.transform(({ key, template, variant, format }) =>
+    citation: cliParams(
+      {
+        template: Schema.Literal(CITATION_TEMPLATE),
+        root: notPartialRoot,
+        ...citationByKey,
+        variant: citationVariant,
+        ...renderFormat,
+      },
+      { key: keyMessage(true) },
+    ).pipe(
+      cliMap(({ key, template, variant, format }) =>
         renderRequest({ key }, { template, variant, format }),
       ),
     ),
-    citationExample: v.pipe(
-      cliParams({
-        template: v.literal(CITATION_TEMPLATE),
-        root: notPartialRoot,
-        ...citationByExample,
-        variant: citationVariant,
-        ...renderFormat,
-      }),
-      v.transform(({ example, template, variant, format }) =>
+    citationExample: cliParams({
+      template: Schema.Literal(CITATION_TEMPLATE),
+      root: notPartialRoot,
+      ...citationByExample,
+      variant: citationVariant,
+      ...renderFormat,
+    }).pipe(
+      cliMap(({ example, template, variant, format }) =>
         renderRequest({ example }, { template, variant, format }),
       ),
     ),
-    partial: v.pipe(
-      cliParams(
-        {
-          template: partialTemplate,
-          root: v.optional(
-            v.picklist(
-              PARTIAL_CONTEXT_NAMES,
-              `root must be ${quotedList(PARTIAL_CONTEXT_NAMES)}.`,
-            ),
-            "note",
+    partial: cliParams(
+      {
+        template: partialTemplate,
+        root: cliDefault(
+          cliLiterals(
+            PARTIAL_CONTEXT_NAMES,
+            `root must be ${quotedList(PARTIAL_CONTEXT_NAMES)}.`,
           ),
-          example: notCitationExample,
-          variant: notCitationVariant,
-          key: indexedKey,
-          ...renderFormat,
-        },
-        { key: INDEXED_KEY_MESSAGE },
-      ),
-      v.transform(({ key, template, root, format }) =>
+          "note",
+        ),
+        example: notCitationExample,
+        variant: notCitationVariant,
+        key: indexedKey,
+        ...renderFormat,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(
+      cliMap(({ key, template, root, format }) =>
         renderRequest({ key }, { template, root, format }),
       ),
     ),
-    partialCitation: v.pipe(
-      cliParams(
-        {
-          template: partialTemplate,
-          root: v.literal("citation"),
-          ...citationByKey,
-          variant: citationVariant,
-          ...renderFormat,
-        },
-        { key: keyMessage(true) },
-      ),
-      v.transform(({ key, template, root, variant, format }) =>
+    partialCitation: cliParams(
+      {
+        template: partialTemplate,
+        root: Schema.Literal("citation"),
+        ...citationByKey,
+        variant: citationVariant,
+        ...renderFormat,
+      },
+      { key: keyMessage(true) },
+    ).pipe(
+      cliMap(({ key, template, root, variant, format }) =>
         renderRequest({ key }, { template, root, variant, format }),
       ),
     ),
-    partialCitationExample: v.pipe(
-      cliParams({
-        template: partialTemplate,
-        root: v.literal("citation"),
-        ...citationByExample,
-        variant: citationVariant,
-        ...renderFormat,
-      }),
-      v.transform(({ example, template, root, variant, format }) =>
+    partialCitationExample: cliParams({
+      template: partialTemplate,
+      root: Schema.Literal("citation"),
+      ...citationByExample,
+      variant: citationVariant,
+      ...renderFormat,
+    }).pipe(
+      cliMap(({ example, template, root, variant, format }) =>
         renderRequest({ example }, { template, root, variant, format }),
       ),
     ),
@@ -377,10 +373,12 @@ const renderParams = cliVariants(
 );
 
 /** The Template `template-render` renders, and the object it reads. */
-export type RenderRequest = v.InferOutput<typeof renderParams>;
+export type RenderRequest = CliOutput<typeof renderParams>;
 export type RenderParam = CliParamName<typeof renderParams>;
 
-export function parseRenderRequest(params: CliData): CliRequest<RenderRequest> {
+export function parseRenderRequest(
+  params: CliData,
+): Effect.Effect<RenderRequest, CliRejection> {
   return decodeCliParams(params, renderParams, { command: "template-render" });
 }
 
@@ -396,69 +394,59 @@ const documentRenderParams = cliVariants(
         ? "source"
         : "profile",
   {
-    profile: v.pipe(
-      cliParams(
-        {
-          profile: cliValue("profile"),
-          document: notOtherDocument,
-          source: notOtherDocument,
-          key: indexedKey,
-          "expect-source": expectSourceParam,
-        },
-        {
-          key: INDEXED_KEY_MESSAGE,
-          profile: "Provide exactly one of profile, document, or source.",
-        },
-      ),
-      v.transform(({ key, profile }) => ({ key, profile })),
-    ),
-    document: v.pipe(
-      cliParams(
-        {
-          document: cliValue("document"),
-          source: notOtherDocument,
-          key: indexedKey,
-          "expect-source": expectSourceParam,
-        },
-        { key: INDEXED_KEY_MESSAGE },
-      ),
-      v.transform(({ key, document }) => ({ key, document })),
-    ),
-    source: v.pipe(
-      cliParams(
-        {
-          source: cliValue("source"),
-          key: indexedKey,
-          "expect-source": expectSourceParam,
-        },
-        { key: INDEXED_KEY_MESSAGE },
-      ),
-      v.transform(({ key, source }) => ({ key, source })),
-    ),
+    profile: cliParams(
+      {
+        profile: cliValue("profile"),
+        document: notOtherDocument,
+        source: notOtherDocument,
+        key: indexedKey,
+        "expect-source": expectSourceParam,
+      },
+      {
+        key: INDEXED_KEY_MESSAGE,
+        profile: "Provide exactly one of profile, document, or source.",
+      },
+    ).pipe(cliMap(({ key, profile }) => ({ key, profile }))),
+    document: cliParams(
+      {
+        document: cliValue("document"),
+        source: notOtherDocument,
+        key: indexedKey,
+        "expect-source": expectSourceParam,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(cliMap(({ key, document }) => ({ key, document }))),
+    source: cliParams(
+      {
+        source: cliValue("source"),
+        key: indexedKey,
+        "expect-source": expectSourceParam,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(cliMap(({ key, source }) => ({ key, source }))),
   },
 );
 
 /** The Indexed Key, and the Profile, installed document, or source to render. */
-export type DocumentRenderRequest = v.InferOutput<typeof documentRenderParams>;
+export type DocumentRenderRequest = CliOutput<typeof documentRenderParams>;
 export type DocumentRenderParam = CliParamName<typeof documentRenderParams>;
 
 /** Select one Profile, installed document, or in-memory source override. */
 export function parseDocumentRenderRequest(
   params: CliData,
-): CliRequest<DocumentRenderRequest> {
+): Effect.Effect<DocumentRenderRequest, CliRejection> {
   return decodeCliParams(params, documentRenderParams, {
     command: "template-document-render",
   });
 }
 
 /** A command that reads no selector at all. */
-const noParams = v.pipe(
-  noCliParams,
-  v.transform(() => null),
-);
+const noParams = noCliParams.pipe(cliMap(() => null));
 
 /** `template-schema` lists every published schema and reads no selector at all. */
-export function parseSchemaRequest(params: CliData): CliRequest<null> {
+export function parseSchemaRequest(
+  params: CliData,
+): Effect.Effect<null, CliRejection> {
   return decodeCliParams(params, noParams, {
     command: "template-schema",
     misplaced: {
@@ -471,18 +459,17 @@ export function parseSchemaRequest(params: CliData): CliRequest<null> {
 
 const templateSlotMessage = `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`;
 
-const sourceParams = v.pipe(
-  cliParams(
-    { template: v.picklist(TEMPLATE_SLOT_NAMES, templateSlotMessage) },
-    { template: templateSlotMessage },
-  ),
-  v.transform((input) => input.template),
-);
+const sourceParams = cliParams(
+  { template: cliLiterals(TEMPLATE_SLOT_NAMES, templateSlotMessage) },
+  { template: templateSlotMessage },
+).pipe(cliMap((input) => input.template));
 
 export type SourceParam = CliParamName<typeof sourceParams>;
 
 /** `template-source` selects a Template name and reads nothing item-backed. */
-export function parseSourceRequest(params: CliData): CliRequest<TemplateSlot> {
+export function parseSourceRequest(
+  params: CliData,
+): Effect.Effect<TemplateSlot, CliRejection> {
   return decodeCliParams(params, sourceParams, {
     command: "template-source",
     misplaced: {
@@ -492,73 +479,68 @@ export function parseSourceRequest(params: CliData): CliRequest<TemplateSlot> {
   });
 }
 
-const guideParams = v.pipe(
-  cliParams({
-    topic: v.optional(
-      v.picklist(
-        GUIDE_TOPIC_NAMES,
-        `topic must be ${quotedList(GUIDE_TOPIC_NAMES)}.`,
-      ),
+const guideParams = cliParams({
+  topic: Schema.optionalKey(
+    cliLiterals(
+      GUIDE_TOPIC_NAMES,
+      `topic must be ${quotedList(GUIDE_TOPIC_NAMES)}.`,
     ),
-  }),
-  v.transform((input) => input.topic ?? null),
-);
+  ),
+}).pipe(cliMap((input) => input.topic ?? null));
 
 export type GuideParam = CliParamName<typeof guideParams>;
 
 /** `template-guide` prints the quickstart when `topic` is absent. */
 export function parseGuideRequest(
   params: CliData,
-): CliRequest<GuideTopic | null> {
+): Effect.Effect<GuideTopic | null, CliRejection> {
   return decodeCliParams(params, guideParams, { command: "template-guide" });
 }
 
 /** `template-status` reads no selector at all. */
-export function parseStatusRequest(params: CliData): CliRequest<null> {
+export function parseStatusRequest(
+  params: CliData,
+): Effect.Effect<null, CliRejection> {
   return decodeCliParams(params, noParams, { command: "template-status" });
 }
 
 /** `frontmatter-status` reads no selector at all. */
 export function parseFrontmatterStatusRequest(
   params: CliData,
-): CliRequest<null> {
+): Effect.Effect<null, CliRejection> {
   return decodeCliParams(params, noParams, { command: "frontmatter-status" });
 }
 
-const language = v.picklist(
+const language = cliLiterals(
   FRONTMATTER_LANGUAGE_NAMES,
   `language must be ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}.`,
 );
 
 const evalTarget = {
   key: indexedKey,
-  format: v.optional(v.picklist(["json"], "format must be 'json'."), "json"),
+  format: cliDefault(cliLiterals(["json"], "format must be 'json'."), "json"),
   "expect-source": expectSourceParam,
 };
 
 const frontmatterEvalParams = cliVariants(
   ({ expr }) => (expr === undefined ? "configured" : "adhoc"),
   {
-    configured: v.pipe(
-      cliParams(
-        {
-          language: cliNotApplicable("language requires expr."),
-          ...evalTarget,
-        },
-        { key: INDEXED_KEY_MESSAGE },
-      ),
-      v.transform(({ key, format }) => ({ key, format, adhoc: null })),
-    ),
-    adhoc: v.pipe(
-      cliParams(
-        {
-          ...evalTarget,
-          expr: v.string(),
-          language: v.optional(language, "liquid"),
-        },
-        { key: INDEXED_KEY_MESSAGE },
-      ),
-      v.transform(({ key, format, expr, language }) => ({
+    configured: cliParams(
+      {
+        language: cliNotApplicable("language requires expr."),
+        ...evalTarget,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(cliMap(({ key, format }) => ({ key, format, adhoc: null }))),
+    adhoc: cliParams(
+      {
+        ...evalTarget,
+        expr: Schema.String,
+        language: cliDefault(language, "liquid"),
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(
+      cliMap(({ key, format, expr, language }) => ({
         key,
         format,
         adhoc: { expr, language },
@@ -569,37 +551,39 @@ const frontmatterEvalParams = cliVariants(
 
 /** `frontmatter-eval`'s parsed selector: the configured set (`adhoc: null`),
  *  or one ad-hoc expression to evaluate instead. */
-export type FrontmatterEvalRequest = v.InferOutput<
-  typeof frontmatterEvalParams
->;
+export type FrontmatterEvalRequest = CliOutput<typeof frontmatterEvalParams>;
 export type FrontmatterEvalParam = CliParamName<typeof frontmatterEvalParams>;
 
 /** `frontmatter-eval` selects an Item and, with `expr=`, one ad-hoc
  *  expression to evaluate in place of the configured field set. */
 export function parseFrontmatterEvalRequest(
   params: CliData,
-): CliRequest<FrontmatterEvalRequest> {
+): Effect.Effect<FrontmatterEvalRequest, CliRejection> {
   return decodeCliParams(params, frontmatterEvalParams, {
     command: "frontmatter-eval",
   });
 }
 
 /** The Managed Frontmatter field key a command names. */
-const fieldKey = v.pipe(cliText("field must not be empty."), v.trim());
+const fieldKey = trimmedText("field must not be empty.");
 
-const frontmatterSetParams = v.pipe(
-  cliParams({
-    field: fieldKey,
-    expr: v.optional(v.pipe(cliText("expr must not be empty."), v.trim())),
-    language: v.optional(language),
-    merge: v.optional(
-      v.picklist(
-        FRONTMATTER_MERGE_NAMES,
-        `merge must be ${quotedList(FRONTMATTER_MERGE_NAMES)}.`,
-      ),
+/** Text with something beside whitespace, trimmed. */
+function trimmedText(message: string) {
+  return cliText(message).pipe(cliMap((text) => text.trim()));
+}
+
+const frontmatterSetParams = cliParams({
+  field: fieldKey,
+  expr: Schema.optionalKey(trimmedText("expr must not be empty.")),
+  language: Schema.optionalKey(language),
+  merge: Schema.optionalKey(
+    cliLiterals(
+      FRONTMATTER_MERGE_NAMES,
+      `merge must be ${quotedList(FRONTMATTER_MERGE_NAMES)}.`,
     ),
-  }),
-  v.transform(({ field, expr, language, merge }) => ({
+  ),
+}).pipe(
+  cliMap(({ field, expr, language, merge }) => ({
     field,
     ...(expr !== undefined ? { expr } : {}),
     ...(language !== undefined ? { language } : {}),
@@ -614,14 +598,14 @@ const frontmatterSetParams = v.pipe(
  * configuration (patch) or a default (new field), so parsing never fills one
  * in itself.
  */
-export type FrontmatterSetRequest = v.InferOutput<typeof frontmatterSetParams>;
+export type FrontmatterSetRequest = CliOutput<typeof frontmatterSetParams>;
 
 export type FrontmatterSetParam = CliParamName<typeof frontmatterSetParams>;
 
 /** `frontmatter-set` upserts one Managed Frontmatter field by key. */
 export function parseFrontmatterSetRequest(
   params: CliData,
-): CliRequest<FrontmatterSetRequest> {
+): Effect.Effect<FrontmatterSetRequest, CliRejection> {
   return decodeCliParams(params, frontmatterSetParams, {
     command: "frontmatter-set",
   });
@@ -632,7 +616,7 @@ const frontmatterRemoveParams = cliParams({ field: fieldKey });
 /** `frontmatter-remove`'s parsed selector: the field key to delete. Whether
  *  it is actually configured is a handler concern (`FIELD_NOT_FOUND`), not a
  *  selector-level one. */
-export type FrontmatterRemoveRequest = v.InferOutput<
+export type FrontmatterRemoveRequest = CliOutput<
   typeof frontmatterRemoveParams
 >;
 
@@ -643,19 +627,20 @@ export type FrontmatterRemoveParam = CliParamName<
 /** `frontmatter-remove` deletes one Managed Frontmatter field by key. */
 export function parseFrontmatterRemoveRequest(
   params: CliData,
-): CliRequest<FrontmatterRemoveRequest> {
+): Effect.Effect<FrontmatterRemoveRequest, CliRejection> {
   return decodeCliParams(params, frontmatterRemoveParams, {
     command: "frontmatter-remove",
   });
 }
 
 const frontmatterReorderParams = cliParams({
-  order: v.pipe(
-    v.string(),
-    v.transform((order) => order.split(",").map((key) => key.trim())),
-    v.check(
-      (order) => order.every((key) => key !== ""),
-      "order must be a comma-separated list of field keys, with no empty entries.",
+  order: Schema.String.pipe(
+    cliMap((order) => order.split(",").map((key) => key.trim())),
+  ).check(
+    Schema.makeFilter(
+      (order: readonly string[]) =>
+        order.every((key) => key !== "") ||
+        "order must be a comma-separated list of field keys, with no empty entries.",
     ),
   ),
 });
@@ -664,7 +649,7 @@ const frontmatterReorderParams = cliParams({
  *  commas and trimmed. Whether it is an exact permutation of the configured
  *  keys is a handler concern (it needs the current configuration), not a
  *  selector-level one. */
-export type FrontmatterReorderRequest = v.InferOutput<
+export type FrontmatterReorderRequest = CliOutput<
   typeof frontmatterReorderParams
 >;
 
@@ -676,7 +661,7 @@ export type FrontmatterReorderParam = CliParamName<
  *  `order` must list every configured key exactly once. */
 export function parseFrontmatterReorderRequest(
   params: CliData,
-): CliRequest<FrontmatterReorderRequest> {
+): Effect.Effect<FrontmatterReorderRequest, CliRejection> {
   return decodeCliParams(params, frontmatterReorderParams, {
     command: "frontmatter-reorder",
   });

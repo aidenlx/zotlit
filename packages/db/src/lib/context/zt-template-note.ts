@@ -23,6 +23,7 @@ import type { AnnotationFileLinkAnchor } from "@/lib/zt-annot-anchor";
 import type { Attachment } from "@/lib/zt-attach";
 import type { TemplateCollection } from "@/lib/zt-collection";
 import type { ItemTag } from "@/lib/zt-tag";
+import { itemSelectUri } from "@/lib/zt-uri";
 import type { Item } from "@/queries/items";
 import type { ChildNote } from "@/queries/notes";
 
@@ -49,15 +50,28 @@ export interface TemplateNoteLink {
   /** Note title as Zotero stores it; `null` when the row carries none. */
   title: string | null;
   /**
-   * Renders the Obsidian link; default alias is the live title. Rendering it
-   * queues the child note for import — a link never rendered creates no file,
-   * and an already-imported note links to the existing file without
-   * re-importing.
+   * Renders the link; default alias is the live title. It links the child
+   * note's imported note when one exists, and otherwise opens the note in
+   * Zotero. Rendering it never imports the child note.
    *
    * @ztFilter note_link
-   * @ztInert
    */
   noteLink: TemplateLink;
+}
+
+/**
+ * A Markdown link that opens `note` in Zotero, labelled `alias` or else the
+ * note's title (its key when untitled): what `noteLink` renders for a child
+ * note with no imported note.
+ */
+export function zoteroNoteLink(
+  note: Pick<ChildNote, "key" | "groupID" | "title">,
+  alias?: string,
+): string {
+  const label = (alias ?? (note.title || note.key))
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
+  return `[${label}](${itemSelectUri(note.key, note.groupID)})`;
 }
 
 export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {

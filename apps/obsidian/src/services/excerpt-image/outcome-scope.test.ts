@@ -49,9 +49,10 @@ function fixture(options: { bytes?: number; failWrites?: boolean } = {}) {
   const bytes = new Uint8Array(options.bytes ?? 3).fill(1);
   const entries = new Map<string, ExcerptEntry>();
   let pdf = { size: 100, mtimeMs: 10 };
-  const render = vi.fn(
-    async (): Promise<ExcerptImage> => ({ bytes, format: PNG_FORMAT }),
-  );
+  const render = vi.fn(async (): Promise<ExcerptImage> => ({
+    bytes,
+    format: PNG_FORMAT,
+  }));
   const service = new ExcerptImageService({
     cache: {
       get: async (key) => entries.get(key),
@@ -98,12 +99,10 @@ describe("Excerpt outcome scope", () => {
   it("answers a repeat from retention without reading the store", async () => {
     const entries = new Map<string, ExcerptEntry>();
     const stored = vi.fn(async (key: string) => entries.get(key));
-    const render = vi.fn(
-      async (): Promise<ExcerptImage> => ({
-        bytes: new Uint8Array(3),
-        format: PNG_FORMAT,
-      }),
-    );
+    const render = vi.fn(async (): Promise<ExcerptImage> => ({
+      bytes: new Uint8Array(3),
+      format: PNG_FORMAT,
+    }));
     await using service = new ExcerptImageService({
       cache: {
         get: stored,

@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 
 import {
   pandocCliFilter,
@@ -21,21 +24,32 @@ const PARAMETER_FREE_COMMANDS = [
 describe("Pandoc integration CLI", () => {
   const handlers = createPandocIntegrationHandlers(PLUGIN_VERSION);
 
-  it("returns the exact installed Pandoc Integration Pair in one response", () => {
-    expect(JSON.parse(handlers[PANDOC_FILES_COMMAND]({}))).toEqual({
-      contractVersion: 3,
-      command: PANDOC_FILES_COMMAND,
-      pluginVersion: PLUGIN_VERSION,
-      files: {
-        [PANDOC_FILTER_FILENAME]: pandocCliFilter,
-        [PANDOC_DEFAULTS_FILENAME]: pandocDefaults,
-      },
-    });
-  });
+  it.effect(
+    "returns the exact installed Pandoc Integration Pair in one response",
+    () =>
+      Effect.gen(function* () {
+        expect(JSON.parse(yield* handlers[PANDOC_FILES_COMMAND]({}))).toEqual({
+          contractVersion: 3,
+          command: PANDOC_FILES_COMMAND,
+          pluginVersion: PLUGIN_VERSION,
+          files: {
+            [PANDOC_FILTER_FILENAME]: pandocCliFilter,
+            [PANDOC_DEFAULTS_FILENAME]: pandocDefaults,
+          },
+        });
+      }),
+  );
 
-  it.each(PARAMETER_FREE_COMMANDS)("%s rejects parameters", (command) => {
-    expect(() => handlers[command]({ unexpected: "true" })).toThrow(
-      `Unknown parameter 'unexpected': ${command} takes no parameters.`,
-    );
-  });
+  it.effect.each(PARAMETER_FREE_COMMANDS)("%s rejects parameters", (command) =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        handlers[command]({ unexpected: "true" }),
+      );
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error).toHaveProperty(
+        "message",
+        `Unknown parameter 'unexpected': ${command} takes no parameters.`,
+      );
+    }),
+  );
 });

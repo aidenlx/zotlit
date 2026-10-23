@@ -526,8 +526,10 @@ describe.skipIf(skip)("dragged range ends", () => {
                 const kept =
                   adjusted !== null &&
                   round(adjusted.rects) === round(position.rects);
-                const shape = (rects: readonly Rect[], next: readonly Rect[]) =>
-                  kept ? "" : `${round(rects)} ${round(next)} `;
+                const shape = (
+                  rects: readonly Rect[],
+                  next: readonly Rect[],
+                ) => (kept ? "" : `${round(rects)} ${round(next)} `);
                 got.push(
                   `${where} ${adjusted && `${shape(adjusted.rects, adjusted.nextPageRects ?? [])}${adjusted.text}`}`,
                 );

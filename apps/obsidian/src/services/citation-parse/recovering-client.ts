@@ -1,7 +1,7 @@
 // Owns scoped worker recovery and bounded requests across connection lifetimes.
 import { Deferred, Effect, Fiber, Schedule } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log";
 
 import { ParseFailed, ParseWorkerDied } from "./client";
 import type { ParseClient, ParseRequest } from "./client";
@@ -14,8 +14,6 @@ export interface ParseConnection extends ParseClient, Disposable {
 export interface RecoveringParseClient extends ParseClient {
   start(): void;
 }
-
-const logger = getLogger("citation-parse");
 
 export const makeRecoveringParseClient = Effect.fnUntraced(function* (
   connect: () => ParseConnection,
@@ -44,9 +42,10 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
   }).pipe(
     Effect.scoped,
     Effect.tapError((error) =>
-      Effect.sync(() => {
-        logger.warn("Parse worker stopped; restarting", { error });
-      }),
+      Effect.logWarning("Parse worker stopped; restarting").pipe(
+        Effect.annotateLogs({ error }),
+        withLogCategory("citation-parse"),
+      ),
     ),
     Effect.retry(
       Schedule.min([
@@ -108,12 +107,10 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
       Effect.runPromiseWith(context)(
         parse(request).pipe(
           Effect.tapError((error) =>
-            Effect.sync(() => {
-              logger.warn("Citation parse abandoned", {
-                path: request.path,
-                error,
-              });
-            }),
+            Effect.logWarning("Citation parse abandoned").pipe(
+              Effect.annotateLogs({ path: request.path, error }),
+              withLogCategory("citation-parse"),
+            ),
           ),
           Effect.forkIn(scope),
           Effect.flatMap((fiber) =>

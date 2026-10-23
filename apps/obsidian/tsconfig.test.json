@@ -5,6 +5,9 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    // The rule tests in src/lint reach the Oxlint plugins, which Node loads
+    // by their .ts paths.
+    "allowImportingTsExtensions": true,
     "isolatedDeclarations": false,
     "types": ["node-24"],
     "jsx": "react-jsx",

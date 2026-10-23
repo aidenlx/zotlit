@@ -68,14 +68,12 @@ export function currentOccurrence(options: {
     ...scan.wikilinks,
     ...scan.annotations
       .filter(({ form }) => form === "citation")
-      .map(
-        ({ indexedKey, position, pageLabel }): CitationOccurrence => ({
-          kind: "annotation",
-          raw: indexedKey,
-          position,
-          pageLabel,
-        }),
-      ),
+      .map(({ indexedKey, position, pageLabel }): CitationOccurrence => ({
+        kind: "annotation",
+        raw: indexedKey,
+        position,
+        pageLabel,
+      })),
   ];
   return (
     candidates.find(

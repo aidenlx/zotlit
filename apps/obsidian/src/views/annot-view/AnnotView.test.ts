@@ -26,7 +26,7 @@ import {
 import type { CardSelection } from "./card-selection";
 import { AnnotStoreProvider, createAnnotStore, visibleOrder } from "./store";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const KEYS = ["AAAA1111", "BBBB2222", "CCCC3333"];
 

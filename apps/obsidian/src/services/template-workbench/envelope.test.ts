@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
 
+import { CliRejection } from "@/lib/cli-params";
+
 import {
   DIAGNOSTIC_HINTS,
   diagnostic,
@@ -110,22 +112,23 @@ describe("Diagnostic Report", () => {
     ]);
   });
 
-  it("keeps the valibot path and received value of a rejected parameter", () => {
+  it("keeps the issue path and received value of a rejected parameter", () => {
     expect(
-      rejectionDiagnostic({
-        kind: "invalid",
-        parameter: "root",
-        message: "root must be 'note' or 'annotation'.",
-        issue: {
-          path: "root",
-          expected: '"note" | "annotation"',
-          received: '"nite"',
-          keys: ["root"],
-          input: "nite",
-          allowed: ["note", "annotation"],
-        },
-        received: [["root", "nite"]],
-      }),
+      rejectionDiagnostic(
+        new CliRejection({
+          parameter: "root",
+          message: "root must be 'note' or 'annotation'.",
+          issue: {
+            path: "root",
+            expected: '"note" | "annotation"',
+            received: '"nite"',
+            keys: ["root"],
+            input: "nite",
+            allowed: ["note", "annotation"],
+          },
+          received: [["root", "nite"]],
+        }),
+      ),
     ).toEqual({
       code: "INVALID_SELECTOR",
       message: "root must be 'note' or 'annotation'.",

@@ -194,9 +194,9 @@ export interface FixtureItem {
    */
   literatureNoteProfile?: string;
   /**
-   * Seed this Item's Literature Note as the default note template renders it:
-   * the Zotero and Attachment links, then a managed region whose Annotations
-   * are a Query Block. Below the region, outside what Update Note rewrites,
+   * Seed this Item's Literature Note as an earlier default note template
+   * rendered it: the Zotero and Attachment links, then a managed region whose
+   * Annotations are a Query Block. Below the region, outside what Update Note rewrites,
    * the note embeds a view of a Query File, so one note holds both forms.
    */
   literatureNoteRendered?: boolean;
@@ -813,20 +813,18 @@ export const ITEMS: readonly FixtureItem[] = [
       [95, "SRTTEN22", "10"],
       [96, "SRTNINE2", "9"],
     ] as const
-  ).map(
-    ([itemID, key, title]): FixtureItem => ({
-      itemID,
-      libraryID: 1,
-      key,
-      itemType: "journalArticle",
-      citationKey: null,
-      title,
-      date: "2010",
-      creators: [author("Lena", "Collator")],
-      dateModified: `2019-01-01 00:00:${String(itemID - 90).padStart(2, "0")}`,
-      collectionIDs: [],
-    }),
-  ),
+  ).map(([itemID, key, title]): FixtureItem => ({
+    itemID,
+    libraryID: 1,
+    key,
+    itemType: "journalArticle",
+    citationKey: null,
+    title,
+    date: "2010",
+    creators: [author("Lena", "Collator")],
+    dateModified: `2019-01-01 00:00:${String(itemID - 90).padStart(2, "0")}`,
+    collectionIDs: [],
+  })),
   // ── Graph showcase: information-science citation web ──────────────
   {
     itemID: 70,
@@ -3355,8 +3353,8 @@ export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
   {
     name: "content",
     language: "liquid",
-    find: "## Notes",
-    replace: "## Zotero notes",
+    find: "## Annotations",
+    replace: "## Highlights",
   },
   {
     name: "annotation",

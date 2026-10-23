@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
-import { UseLedger } from "@/services/use-ledger/service";
+import { buildUseLedger } from "@/services/use-ledger/__fixtures__";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { insertAnnotation } from "./annotation-insert";
@@ -60,8 +60,7 @@ async function harness(
 ) {
   const { repository } = await repositorySetup(stack);
   const app = host();
-  const useLedger = stack.use(new UseLedger({ app }));
-  await useLedger.ready;
+  const useLedger = buildUseLedger(app, stack);
   const cm = stateEditor({ doc });
   stack.defer(() => cm.destroy());
   const editor = {

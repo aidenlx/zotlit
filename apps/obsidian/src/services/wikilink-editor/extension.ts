@@ -1,4 +1,4 @@
-import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
+import { syntaxTree } from "@codemirror/language";
 // The CodeMirror side of the Wikilink Editor Treatment: one replace decoration
 // per Literature Note wikilink in the visible ranges, carrying the Citation
 // Display Text and everything Obsidian's own rendering would have supplied, so
@@ -7,13 +7,16 @@ import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 // hover of a rendered Citation to the Citation Popover and its plain click to
 // the caret.
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
-import type { EditorState, Extension } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
 
-import { livePreviewOf } from "@/lib/editor-decoration";
-import type { DocRange } from "@/lib/editor-decoration";
+import {
+  livePreviewOf,
+  tokenNodes,
+  visibleLineRanges,
+} from "@/lib/editor-decoration";
 import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import { EditorLookup } from "@/services/citation-index/editor-lookup";
@@ -50,7 +53,6 @@ import type { Held } from "@/services/query-client/service";
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
 import { scanWikilinks } from "./scan";
-import type { TokenNode } from "./scan";
 import "./style.css";
 
 /**
@@ -570,48 +572,4 @@ function citedWorks({ citation }: WikilinkDecoration): HoveredWork[] {
     citekey,
     indexedKey: citation.works[at],
   }));
-}
-
-/**
- * The visible ranges widened to whole lines and merged, so a link straddling a
- * range edge is scanned once and in full. Wikilinks never cross a line, so
- * whole lines are enough, and the merge keeps the ranges disjoint and ordered —
- * which is what {@link RangeSetBuilder} requires of the additions built from
- * them.
- */
-function visibleLineRanges(view: EditorView): DocRange[] {
-  const { doc } = view.state;
-  const ranges: DocRange[] = [];
-  for (const range of view.visibleRanges) {
-    const from = doc.lineAt(range.from).from;
-    const to = doc.lineAt(range.to).to;
-    const last = ranges.at(-1);
-    if (last !== undefined && from <= last.to) last.to = Math.max(last.to, to);
-    else ranges.push({ from, to });
-  }
-  return ranges;
-}
-
-/**
- * The token nodes of one region, in document order. Line-class nodes are left
- * out: they span a whole line and would break the node adjacency the scan reads
- * conceal groups from.
- */
-function tokenNodes(state: EditorState, range: DocRange): TokenNode[] {
-  const nodes: TokenNode[] = [];
-  syntaxTree(state).iterate({
-    from: range.from,
-    to: range.to,
-    enter(node) {
-      const classes = node.type.prop(tokenClassNodeProp);
-      if (classes === undefined) return;
-      nodes.push({
-        from: node.from,
-        to: node.to,
-        classes: classes.split(" "),
-        text: state.doc.sliceString(node.from, node.to),
-      });
-    },
-  });
-  return nodes;
 }

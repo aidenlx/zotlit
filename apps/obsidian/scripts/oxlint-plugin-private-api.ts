@@ -1,3 +1,4 @@
+// Rule tests: src/lint/private-api.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 type Rule = Parameters<RuleTester["run"]>[1];

@@ -68,7 +68,7 @@ await step("Lint", () => sh`pnpm lint ${ci ? ["--", "-f", "github"] : []}`);
 await step(
   "Typecheck",
   () =>
-    sh`pnpm exec turbo run typecheck typecheck:test --filter=!@zotlit/e2e ${scope}`,
+    sh`pnpm exec turbo run typecheck typecheck:test typecheck:node --filter=!@zotlit/e2e ${scope}`,
 );
 
 await step(

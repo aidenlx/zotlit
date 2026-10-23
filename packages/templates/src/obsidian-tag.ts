@@ -32,8 +32,8 @@ const ALL_DIGITS = /^[0-9]+$/;
  */
 export function normalizeObsidianTag(name: string): string {
   const body = name
-    .replace(DISALLOWED, "_")
-    .replace(REPEATED_SLASH, "/")
-    .replace(EDGE_SEPARATORS, "");
+    .replaceAll(DISALLOWED, "_")
+    .replaceAll(REPEATED_SLASH, "/")
+    .replaceAll(EDGE_SEPARATORS, "");
   return ALL_DIGITS.test(body) ? `_${body}` : body;
 }

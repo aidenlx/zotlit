@@ -2,23 +2,29 @@
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path/posix";
 import { MarkdownView } from "obsidian";
-import type { App, CliHandler } from "obsidian";
-import * as v from "valibot";
+import type { App, CliData } from "obsidian";
 
 import { renderDiagnostic } from "@zotlit/item-query";
 import { formatPlainTemplateDocument } from "@zotlit/templates/facade";
 
+import type { CliCommandHandler } from "@/lib/cli-command";
 import {
+  catchRejection,
+  cliLiterals,
   cliOneOf,
   cliParams,
+  cliRule,
   cliSwitch,
   cliText,
   decodeCliParams,
   expectSourceParam,
+  amendRejection,
 } from "@/lib/cli-params";
-import type { CliParamName } from "@/lib/cli-params";
+import type { CliOutput, CliParamName } from "@/lib/cli-params";
+import { Clock, Duration, Effect, Schema } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { isErrno } from "@/lib/errno";
-import { getLogger } from "@/lib/log";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
@@ -47,7 +53,6 @@ import {
 } from "./inspect-contract";
 export { inspectFlags, TEMPLATE_INSPECT_COMMAND } from "./inspect-contract";
 
-const logger = getLogger("template-workbench");
 type FreshnessState = "current" | "timeout" | "superseded" | "read-failed";
 
 export function sourceRevision(source: string): string {
@@ -69,94 +74,102 @@ export interface FreshnessDeps {
   absent?: ReadonlySet<string>;
 }
 
-/** Compare adapter reads with exact reconciliation bytes, with a bounded event wait.
- * The initial disk snapshot remains the requested version throughout the attempt. */
-export async function verifySavedSources(
-  deps: FreshnessDeps,
-  paths: readonly string[],
-  timeoutMs = INSPECT_TIMEOUT_MS,
-): Promise<{
-  state: FreshnessState;
-  versions: SourceVersion[];
-  errors?: { path: string; message: string; code?: string }[];
-}> {
-  using stack = new DisposableStack();
-  let wake = Promise.withResolvers<void>();
-  stack.defer(deps.onChange(() => wake.resolve()));
-  const deadline = Promise.withResolvers<void>();
-  stack.adopt(
-    window.setTimeout(() => deadline.resolve(), timeoutMs),
-    (timer) => window.clearTimeout(timer),
-  );
-  let timedOut = false;
-  void deadline.promise.then(() => {
-    timedOut = true;
-  });
-  const errors: { path: string; message: string; code?: string }[] = [];
-  const finish = (state: FreshnessState, versions: SourceVersion[]) => {
-    logger.debug("Saved source verification completed", {
-      state,
-      paths,
-      versions,
-      errors,
-    });
-    return { state, versions, ...(errors.length ? { errors } : {}) };
-  };
-  const read = async (path: string) => {
-    try {
-      return await deps.read(path);
-    } catch (error) {
-      if (!isErrno(error, "ENOENT")) {
-        errors.push({
+/**
+ * Compare adapter reads with exact reconciliation bytes, with a bounded event
+ * wait. The initial disk snapshot remains the requested version throughout the
+ * attempt; the wait ends `timeoutMs` after it began, by the Effect Clock.
+ */
+export const verifySavedSources = Effect.fn(
+  "TemplateWorkbenchCli.verifySavedSources",
+)(
+  function* (
+    deps: FreshnessDeps,
+    paths: readonly string[],
+    { timeoutMs = INSPECT_TIMEOUT_MS }: { timeoutMs?: number | undefined } = {},
+  ): Effect.fn.Return<
+    {
+      state: FreshnessState;
+      versions: SourceVersion[];
+      errors?: { path: string; message: string; code?: string }[];
+    },
+    never,
+    Scope.Scope
+  > {
+    const deadline = (yield* Clock.currentTimeMillis) + timeoutMs;
+    let wake = Promise.withResolvers<void>();
+    yield* Effect.acquireRelease(
+      Effect.sync(() => deps.onChange(() => wake.resolve())),
+      (unsubscribe) => Effect.sync(unsubscribe),
+    );
+    const errors: { path: string; message: string; code?: string }[] = [];
+    const finish = (state: FreshnessState, versions: SourceVersion[]) =>
+      Effect.logDebug("Saved source verification completed").pipe(
+        Effect.annotateLogs({ state, paths, versions, errors }),
+        Effect.as({ state, versions, ...(errors.length ? { errors } : {}) }),
+      );
+    const read = (path: string) =>
+      Effect.tryPromise({
+        try: () => deps.read(path),
+        catch: (error) => error,
+      }).pipe(
+        Effect.catch((error) => {
+          if (!isErrno(error, "ENOENT")) {
+            errors.push({
+              path,
+              message: error instanceof Error ? error.message : String(error),
+              ...(error instanceof Error &&
+              "code" in error &&
+              typeof error.code === "string"
+                ? { code: error.code }
+                : {}),
+            });
+          }
+          return Effect.succeed(undefined);
+        }),
+      );
+    const readAll = Effect.forEach(paths, read, { concurrency: "unbounded" });
+    const requested = yield* readAll;
+    while (true) {
+      const changed = wake.promise;
+      const disk = errors.length ? requested : yield* readAll;
+      const versions = paths.map((path, index) => {
+        const loaded = deps.loaded(path);
+        return {
           path,
-          message: error instanceof Error ? error.message : String(error),
-          ...(error instanceof Error &&
-          "code" in error &&
-          typeof error.code === "string"
-            ? { code: error.code }
-            : {}),
-        });
-      }
-      return undefined;
-    }
-  };
-  const requested = await Promise.all(paths.map(read));
-  while (true) {
-    const changed = wake.promise;
-    const disk = errors.length ? requested : await Promise.all(paths.map(read));
-    const versions = paths.map((path, index) => {
-      const loaded = deps.loaded(path);
-      return {
-        path,
-        requested:
-          requested[index] === undefined
-            ? null
-            : sourceRevision(requested[index]),
-        disk: disk[index] === undefined ? null : sourceRevision(disk[index]),
-        loaded: loaded === undefined ? null : sourceRevision(loaded),
-      };
-    });
-    if (errors.length) return finish("read-failed", versions);
-    if (versions.some((entry) => entry.disk !== entry.requested))
-      return finish("superseded", versions);
-    if (
-      versions.every(
-        (entry) =>
-          entry.disk === entry.loaded &&
-          (entry.disk !== null || deps.absent?.has(entry.path)),
+          requested:
+            requested[index] === undefined
+              ? null
+              : sourceRevision(requested[index]),
+          disk: disk[index] === undefined ? null : sourceRevision(disk[index]),
+          loaded: loaded === undefined ? null : sourceRevision(loaded),
+        };
+      });
+      if (errors.length) return yield* finish("read-failed", versions);
+      if (versions.some((entry) => entry.disk !== entry.requested))
+        return yield* finish("superseded", versions);
+      if (
+        versions.every(
+          (entry) =>
+            entry.disk === entry.loaded &&
+            (entry.disk !== null || deps.absent?.has(entry.path)),
+        )
       )
-    )
-      return finish("current", versions);
-    if (timedOut) return finish("timeout", versions);
-    logger.trace("Waiting for saved source reconciliation", {
-      paths,
-      versions,
-      timeoutMs,
-    });
-    await Promise.race([changed, deadline.promise]);
-    wake = Promise.withResolvers<void>();
-  }
-}
+        return yield* finish("current", versions);
+      const remaining = deadline - (yield* Clock.currentTimeMillis);
+      if (remaining <= 0) return yield* finish("timeout", versions);
+      yield* Effect.logTrace("Waiting for saved source reconciliation").pipe(
+        Effect.annotateLogs({ paths, versions, timeoutMs }),
+      );
+      yield* Effect.timeoutOption(
+        Effect.promise(() => changed),
+        Duration.millis(remaining),
+      );
+      wake = Promise.withResolvers<void>();
+    }
+  },
+  Effect.scoped,
+  withLogCategory("template-workbench"),
+);
 
 export interface InspectDeps {
   app: App;
@@ -368,41 +381,47 @@ export function selectInspectionNote(
 
 const INVALID_TARGET = INSPECT_DIAGNOSTICS.INVALID_SELECTOR.message;
 
-const target = v.optional(cliText(INVALID_TARGET));
+const target = Schema.optionalKey(cliText(INVALID_TARGET));
 
-const inspectParams = v.pipe(
-  cliParams({
-    note: target,
-    profile: target,
-    document: target,
-    source: v.optional(v.picklist([INSPECT_SOURCE_FULL], INVALID_TARGET)),
-    editor: cliSwitch(INVALID_TARGET),
-    "expect-source": expectSourceParam,
-  }),
-  cliOneOf(INSPECT_SELECTORS, { many: INVALID_TARGET }),
+/** The selectors and the editor switch, as the rules between them read them. */
+type InspectTarget = {
+  note?: string;
+  profile?: string;
+  document?: string;
+  editor?: true;
+};
+
+const inspectParams = cliParams({
+  note: target,
+  profile: target,
+  document: target,
+  source: Schema.optionalKey(
+    cliLiterals([INSPECT_SOURCE_FULL], INVALID_TARGET),
+  ),
+  editor: cliSwitch(INVALID_TARGET),
+  "expect-source": expectSourceParam,
+}).check(
+  cliOneOf<InspectTarget>(INSPECT_SELECTORS, { many: INVALID_TARGET }),
   // Editor source belongs to one selected document.
-  v.forward(
-    v.partialCheck(
-      [["editor"], ["note"], ["profile"], ["document"]],
-      (input) =>
-        input.editor === undefined ||
-        INSPECT_SELECTORS.some((name) => input[name] !== undefined),
-      INVALID_TARGET,
-    ),
-    ["editor"],
+  cliRule(
+    "editor",
+    (input: InspectTarget) =>
+      input.editor === undefined ||
+      INSPECT_SELECTORS.some((name) => input[name] !== undefined),
+    INVALID_TARGET,
   ),
 );
 
-export type InspectRequest = v.InferOutput<typeof inspectParams>;
+export type InspectRequest = CliOutput<typeof inspectParams>;
 export type InspectParam = CliParamName<typeof inspectParams>;
 
 export function createInspectHandler(
   deps: InspectDeps,
   draft?: { source: string; path: string },
   replacedDependency?: string,
-): CliHandler {
-  return async (params) => {
-    const identity = await deps.identity();
+): CliCommandHandler {
+  return Effect.fn("TemplateWorkbenchCli.inspect")(function* (params: CliData) {
+    const identity = yield* Effect.promise(() => deps.identity());
     const answer = (result: object) =>
       JSON.stringify(
         {
@@ -427,170 +446,180 @@ export function createInspectHandler(
         diagnostic: renderDiagnostic({ code, ...INSPECT_DIAGNOSTICS[code] }),
         ...context,
       });
-    const request = decodeCliParams(params, inspectParams, {
-      command: "template-inspect",
-    });
-    if (request.kind === "invalid")
-      return answer({
-        ok: false,
-        diagnostic: rejectionDiagnostic({
-          ...request,
-          hint: request.hint ?? INSPECT_DIAGNOSTICS.INVALID_SELECTOR.hint,
-        }),
+    return yield* Effect.gen(function* () {
+      const query = yield* decodeCliParams(params, inspectParams, {
+        command: "template-inspect",
       });
-    const query = request.value;
-    if (
-      query["expect-source"] !== undefined &&
-      query["expect-source"] !== identity.source.id
-    )
-      return fail("TARGET_MISMATCH");
-    await Promise.all([deps.templates.ready, deps.profile.ready]);
-    const draftDocument: InspectDocument | undefined =
-      draft && query.document?.startsWith("partial:")
-        ? {
-            kind: "partial",
-            id: query.document,
-            label: query.document.slice("partial:".length),
-            path: null,
-            problems: [],
-          }
-        : undefined;
-    if (draftDocument && partialNameRefusal(draftDocument.label, new Set()))
-      return fail("INVALID_SELECTOR");
-    const inventoryWithDraft = () => {
-      const documents = inspectInventory(deps);
       if (
-        draftDocument &&
-        !documents.some((document) => document.id === draftDocument.id)
+        query["expect-source"] !== undefined &&
+        query["expect-source"] !== identity.source.id
       )
-        documents.push(draftDocument);
-      return documents;
-    };
-    let inventory = inventoryWithDraft();
-    if (
-      query.note === undefined &&
-      query.profile === undefined &&
-      query.document === undefined
-    ) {
+        return fail("TARGET_MISMATCH");
+      yield* Effect.promise(() =>
+        Promise.all([deps.templates.ready, deps.profile.ready]),
+      );
+      const draftDocument: InspectDocument | undefined =
+        draft && query.document?.startsWith("partial:")
+          ? {
+              kind: "partial",
+              id: query.document,
+              label: query.document.slice("partial:".length),
+              path: null,
+              problems: [],
+            }
+          : undefined;
+      if (draftDocument && partialNameRefusal(draftDocument.label, new Set()))
+        return fail("INVALID_SELECTOR");
+      const inventoryWithDraft = () => {
+        const documents = inspectInventory(deps);
+        if (
+          draftDocument &&
+          !documents.some((document) => document.id === draftDocument.id)
+        )
+          documents.push(draftDocument);
+        return documents;
+      };
+      let inventory = inventoryWithDraft();
+      if (
+        query.note === undefined &&
+        query.profile === undefined &&
+        query.document === undefined
+      ) {
+        return answer({
+          ok: true,
+          documents: inventory,
+          problems: deps.profile.diagnostics,
+        });
+      }
+      let selection: InspectSelection = query;
+      let note: { path: string; key: string } | undefined;
+      if (query.note !== undefined) {
+        const selected = selectInspectionNote(deps, query.note);
+        if (selected.error)
+          return fail(selected.error, { matches: selected.matches });
+        note = selected.note;
+        selection = { profile: selected.profile };
+      }
+      const selectionOptions = { profileIdentityOnly: note !== undefined };
+      let matches = selectInspectDocument(
+        inventory,
+        selection,
+        selectionOptions,
+      );
+      if (matches.length !== 1)
+        return fail(matches.length ? "AMBIGUOUS_TARGET" : "TARGET_NOT_FOUND", {
+          matches,
+        });
+      let document = matches[0]!;
+      // Eta includes can be dynamic. Verify the complete installed partial registry
+      // and the Citation Template so a selected Profile cannot hide an old dependency.
+      const isDependency = (entry: InspectDocument) =>
+        entry.id !== document.id &&
+        entry.id !== replacedDependency &&
+        (entry.kind === "partial" ||
+          (document.kind !== "citation" && entry.kind === "citation"));
+      let dependencies = inventory.filter(isDependency);
+      const editor = query.editor === true;
+      const builtinPaths = [...(draft ? [] : [document]), ...dependencies]
+        .filter((entry) => entry.path === null)
+        .map((entry) =>
+          entry.kind === "profile"
+            ? join(deps.folder(), DEFAULT_PROFILE_DOCUMENT)
+            : citationPath(deps.folder()),
+        );
+      const paths = [
+        ...new Set([
+          ...(document.path && !editor && !draft ? [document.path] : []),
+          ...dependencies.flatMap((entry) => (entry.path ? [entry.path] : [])),
+          ...builtinPaths,
+        ]),
+      ];
+      const freshness = yield* verifySavedSources(
+        {
+          read: (path) => deps.app.vault.adapter.read(path),
+          loaded: (path) => deps.templates.getLoadedDocumentSource(path),
+          onChange: (callback) =>
+            deps.templates.on("compile-status-changed", callback),
+          absent: new Set(builtinPaths),
+        },
+        paths,
+        { timeoutMs: deps.timeoutMs },
+      );
+      if (freshness.state !== "current")
+        return fail(
+          freshness.state === "read-failed"
+            ? "SOURCE_READ_FAILED"
+            : "SOURCE_NOT_LOADED",
+          { document, note, freshness },
+        );
+      inventory = inventoryWithDraft();
+      matches = selectInspectDocument(inventory, selection, selectionOptions);
+      if (matches.length !== 1 || matches[0]!.path !== document.path)
+        return fail("SOURCE_SUPERSEDED", { freshness });
+      document = matches[0]!;
+      dependencies = inventory.filter(isDependency);
+      if (
+        dependencies.some(
+          (entry) => entry.path !== null && !paths.includes(entry.path),
+        )
+      )
+        return fail("SOURCE_SUPERSEDED", { document, dependencies, freshness });
+      let source: string;
+      if (draft) source = draft.source;
+      else if (editor) {
+        const view = deps.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!document.path || view?.file?.path !== document.path)
+          return fail("EDITOR_TARGET_MISMATCH");
+        source = view.editor.getValue();
+      } else if (document.path)
+        source = deps.templates.getLoadedDocumentSource(document.path)!;
+      else
+        source =
+          document.kind === "profile"
+            ? deps.profile.getBuiltInSource()
+            : formatPlainTemplateDocument(CITATION_TEMPLATE_SOURCE, "liquid");
       return answer({
         ok: true,
-        documents: inventory,
-        problems: deps.profile.diagnostics,
+        document,
+        note,
+        dependencies,
+        dependencyScope: "installed-partial-registry",
+        freshness,
+        input: {
+          origin: draft
+            ? "draft"
+            : editor
+              ? "editor"
+              : document.path
+                ? "saved"
+                : "built-in",
+          path: draft?.path ?? document.path,
+          revision: sourceRevision(source),
+        },
+        ...(editor
+          ? {
+              contextOrigin: "saved",
+              validation: {
+                state: "not-checked",
+                reason:
+                  "Document metadata, bindings, dependencies, and problems describe saved source. Editor source was disclosed without validation.",
+              },
+            }
+          : {}),
+        ...(query.source === INSPECT_SOURCE_FULL ? { source } : {}),
+        problems: document.problems,
       });
-    }
-    let selection: InspectSelection = query;
-    let note: { path: string; key: string } | undefined;
-    if (query.note !== undefined) {
-      const selected = selectInspectionNote(deps, query.note);
-      if (selected.error)
-        return fail(selected.error, { matches: selected.matches });
-      note = selected.note;
-      selection = { profile: selected.profile };
-    }
-    const selectionOptions = { profileIdentityOnly: note !== undefined };
-    let matches = selectInspectDocument(inventory, selection, selectionOptions);
-    if (matches.length !== 1)
-      return fail(matches.length ? "AMBIGUOUS_TARGET" : "TARGET_NOT_FOUND", {
-        matches,
-      });
-    let document = matches[0]!;
-    // Eta includes can be dynamic. Verify the complete installed partial registry
-    // and the Citation Template so a selected Profile cannot hide an old dependency.
-    const isDependency = (entry: InspectDocument) =>
-      entry.id !== document.id &&
-      entry.id !== replacedDependency &&
-      (entry.kind === "partial" ||
-        (document.kind !== "citation" && entry.kind === "citation"));
-    let dependencies = inventory.filter(isDependency);
-    const editor = query.editor === true;
-    const builtinPaths = [...(draft ? [] : [document]), ...dependencies]
-      .filter((entry) => entry.path === null)
-      .map((entry) =>
-        entry.kind === "profile"
-          ? join(deps.folder(), DEFAULT_PROFILE_DOCUMENT)
-          : citationPath(deps.folder()),
-      );
-    const paths = [
-      ...new Set([
-        ...(document.path && !editor && !draft ? [document.path] : []),
-        ...dependencies.flatMap((entry) => (entry.path ? [entry.path] : [])),
-        ...builtinPaths,
-      ]),
-    ];
-    const freshness = await verifySavedSources(
-      {
-        read: (path) => deps.app.vault.adapter.read(path),
-        loaded: (path) => deps.templates.getLoadedDocumentSource(path),
-        onChange: (callback) =>
-          deps.templates.on("compile-status-changed", callback),
-        absent: new Set(builtinPaths),
-      },
-      paths,
-      deps.timeoutMs,
+    }).pipe(
+      catchRejection((rejection) =>
+        answer({
+          ok: false,
+          diagnostic: rejectionDiagnostic(
+            amendRejection(rejection, {
+              hint: rejection.hint ?? INSPECT_DIAGNOSTICS.INVALID_SELECTOR.hint,
+            }),
+          ),
+        }),
+      ),
     );
-    if (freshness.state !== "current")
-      return fail(
-        freshness.state === "read-failed"
-          ? "SOURCE_READ_FAILED"
-          : "SOURCE_NOT_LOADED",
-        { document, note, freshness },
-      );
-    inventory = inventoryWithDraft();
-    matches = selectInspectDocument(inventory, selection, selectionOptions);
-    if (matches.length !== 1 || matches[0]!.path !== document.path)
-      return fail("SOURCE_SUPERSEDED", { freshness });
-    document = matches[0]!;
-    dependencies = inventory.filter(isDependency);
-    if (
-      dependencies.some(
-        (entry) => entry.path !== null && !paths.includes(entry.path),
-      )
-    )
-      return fail("SOURCE_SUPERSEDED", { document, dependencies, freshness });
-    let source: string;
-    if (draft) source = draft.source;
-    else if (editor) {
-      const view = deps.app.workspace.getActiveViewOfType(MarkdownView);
-      if (!document.path || view?.file?.path !== document.path)
-        return fail("EDITOR_TARGET_MISMATCH");
-      source = view.editor.getValue();
-    } else if (document.path)
-      source = deps.templates.getLoadedDocumentSource(document.path)!;
-    else
-      source =
-        document.kind === "profile"
-          ? deps.profile.getBuiltInSource()
-          : formatPlainTemplateDocument(CITATION_TEMPLATE_SOURCE, "liquid");
-    return answer({
-      ok: true,
-      document,
-      note,
-      dependencies,
-      dependencyScope: "installed-partial-registry",
-      freshness,
-      input: {
-        origin: draft
-          ? "draft"
-          : editor
-            ? "editor"
-            : document.path
-              ? "saved"
-              : "built-in",
-        path: draft?.path ?? document.path,
-        revision: sourceRevision(source),
-      },
-      ...(editor
-        ? {
-            contextOrigin: "saved",
-            validation: {
-              state: "not-checked",
-              reason:
-                "Document metadata, bindings, dependencies, and problems describe saved source. Editor source was disclosed without validation.",
-            },
-          }
-        : {}),
-      ...(query.source === INSPECT_SOURCE_FULL ? { source } : {}),
-      problems: document.problems,
-    });
-  };
+  });
 }

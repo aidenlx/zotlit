@@ -1,6 +1,7 @@
 import { getLanguage, Plugin, requestUrl, View } from "obsidian";
 import semverGte from "semver/functions/gte";
 
+import type { CliCommand, CliHost } from "@/lib/cli-command";
 import { handlerCheckedFlags, printableCliHandler } from "@/lib/cli-rejection";
 import {
   ANNOTATION_SUGGESTER_ENABLED,
@@ -206,7 +207,7 @@ function showLanguagePackInstallOffer(lifecycle: LanguagePackLifecycle): void {
 }
 
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
-export default class ZotLitPlugin extends Plugin {
+export default class ZotLitPlugin extends Plugin implements CliHost {
   // Owns every service/resource registered during onload after startup commits.
   #stack?: AsyncDisposableStack;
 
@@ -244,6 +245,20 @@ export default class ZotLitPlugin extends Plugin {
       handlerCheckedFlags(flags),
       printableCliHandler(handler),
     );
+  }
+
+  /**
+   * Register a zotlit:* command whose handler is an Effect, run on the
+   * plugin's runtime (`@/lib/cli-command`).
+   */
+  registerCliCommand(
+    name: string,
+    { description, flags, handler }: CliCommand,
+  ): void {
+    this.registerCliHandler(name, description, flags, (params) => {
+      if (!this.#services) throw new Error("Plugin not loaded");
+      return this.#services.runCli(handler(params));
+    });
   }
 
   /** Show the installer notice independently of the version check. */

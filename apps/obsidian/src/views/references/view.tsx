@@ -248,7 +248,12 @@ export class ReferencesView extends ItemView {
         if (path === this.#path) this.#reload();
       }),
     );
-    this.register(db.on("changed", () => this.#reload()));
+    this.register(
+      db.on("changed", () => {
+        this.#rescan();
+        this.#reload();
+      }),
+    );
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
     // for a Zotero change, a Citation and References Style change, or an engine

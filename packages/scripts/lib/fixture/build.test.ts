@@ -2068,7 +2068,7 @@ describe("the generated Obsidian vault", () => {
     expect(note).toContain("[@ioannidisWhyMost2005]");
   });
 
-  it("seeds a Literature Note as the default template renders it, with a Query File embed below the managed region", async () => {
+  it("seeds a Literature Note with the Managed Region an earlier default rendered, and a Query File embed below it", async () => {
     const note = await readFile(
       join(layout.vaultDir, "literatures", "rougierTenSimpleRules2014.md"),
       "utf-8",
@@ -2080,9 +2080,7 @@ describe("the generated Obsidian vault", () => {
         ),
         "utf-8",
       )
-    )
-      .split(/(?=## Annotations\n)/u)[1]!
-      .trimEnd();
+    ).trimEnd();
     const pdf = pathToFileURL(
       join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
     ).href;

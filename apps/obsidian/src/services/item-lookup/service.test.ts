@@ -394,7 +394,7 @@ function itemLookup(
   libraryScope: FakeLibraryScope = new FakeLibraryScope(),
 ): ItemLookup {
   return new ItemLookup({
-    useLedger: { ready: Promise.resolve(), uses: {} },
+    useLedger: { uses: {} },
     reads: reads.service,
     libraryScope: libraryScope as unknown as LibraryScopeService,
   });

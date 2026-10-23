@@ -27,7 +27,7 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -86,7 +86,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
-  citationParse: ParseClient;
+  citationParse: Pick<PlainCitationParse, "parse">;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationLookup: Pick<CitationLookup, "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;

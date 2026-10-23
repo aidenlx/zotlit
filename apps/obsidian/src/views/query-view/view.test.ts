@@ -55,7 +55,7 @@ import type {
 import { QueryView, RERUN_DELAY_MS, SaveAsButton, SortButton } from "./view";
 import type { QueryViewDeps } from "./view";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 vi.mock("obsidian", async (importOriginal) => {
   const obsidian = await importOriginal<typeof import("obsidian")>();
   return {

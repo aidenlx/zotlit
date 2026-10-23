@@ -172,11 +172,11 @@ async function capture(
     return "blob:workbench";
   });
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
-    function (this: HTMLAnchorElement) {
-      names.push(this.download);
-    },
-  );
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    names.push(this.download);
+  });
   try {
     run();
   } finally {

@@ -21,7 +21,7 @@ import type {
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 class TestCitedByView extends CitedByView {
   open(): Promise<void> {

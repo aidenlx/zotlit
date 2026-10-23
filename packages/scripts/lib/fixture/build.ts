@@ -1589,8 +1589,7 @@ function vaultPropertyLines(
 /**
  * The Annotations section the default note template renders, read from the
  * shipped `content` template. The section holds no Liquid, so its text is its
- * own render output; the Notes section above it renders empty for an Item
- * with no child Notes.
+ * own render output.
  * @throws when the section is gone or holds Liquid, so a changed template
  *   fails the build rather than seeding text no render produces.
  */
@@ -1613,10 +1612,12 @@ function renderedAnnotationsSection(): string {
 const RENDERED_NOTE_EMBED = "Lab annotations.zotquery#This item";
 
 /**
- * A Literature Note as the default note template renders it, so Update Note
- * leaves it as it is. Below the managed region, outside what Update Note
- * rewrites, the note embeds {@link RENDERED_NOTE_EMBED}, so one note holds
- * both a Query Block and a Query File embed whose edits save to the file.
+ * A Literature Note as an earlier default note template rendered it: its
+ * Annotations section sits in a Managed Region, which Update Note refills with
+ * the same text, so Update Note leaves the note as it is. Below the managed
+ * region, outside what Update Note rewrites, the note embeds
+ * {@link RENDERED_NOTE_EMBED}, so one note holds both a Query Block and a
+ * Query File embed whose edits save to the file.
  */
 function renderedLiteratureNote(
   item: FixtureItem,

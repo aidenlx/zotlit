@@ -1,6 +1,11 @@
-import type { CliHandler, Plugin } from "obsidian";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TestClock } from "effect/testing";
+import type { CliData } from "obsidian";
+import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { Effect, Exit, Fiber } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
 import { TEMPLATE_INSPECT_COMMAND } from "./inspect";
@@ -31,8 +36,10 @@ async function fixture(
   const f = stack.use(await profileServiceFixture(files));
   const disk = new Map(f.vault.contents);
   const readSignal = Promise.withResolvers<void>();
+  let nextRead = Promise.withResolvers<void>();
   const read = vi.fn(async (path: string) => {
     readSignal.resolve();
+    nextRead.resolve();
     const value = disk.get(path);
     if (value === undefined)
       throw Object.assign(new Error("Missing file"), { code: "ENOENT" });
@@ -42,65 +49,522 @@ async function fixture(
     getName: () => "Inspection fixture",
     adapter: { getBasePath: () => "/fixture", read },
   });
-  const handlers = new Map<string, CliHandler>();
-  registerTemplateWorkbench(
-    {
-      manifest: { version: "test" },
-      registerCliHandler: (...args: Parameters<Plugin["registerCliHandler"]>) =>
-        handlers.set(args[0], args[3]),
-    } as unknown as Plugin,
-    {
-      app: f.app,
-      templates: f.template,
-      settings: f.settings,
-      profile: f.profile,
-      zoteroPref: {
-        ready: Promise.resolve(),
-        sourceId: "fixture-source",
-        databasePath: "/fixture/db",
-      },
-    } as never,
-  );
+  const { host, command } = fakeCliHost();
+  registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
+    app: f.app,
+    templates: f.template,
+    settings: f.settings,
+    profile: f.profile,
+    zoteroPref: {
+      ready: Promise.resolve(),
+      sourceId: "fixture-source",
+      databasePath: "/fixture/db",
+    },
+  } as never);
+  const inspect = (params: CliData = {}) =>
+    command(TEMPLATE_INSPECT_COMMAND)
+      .handler(params)
+      .pipe(Effect.map(assertRefusalsHint));
+  const guide = () =>
+    command("zotlit:template-guide").handler({ topic: "inspect" });
   const cleanup = stack.move();
   return {
     ...f,
     disk,
     read,
     readSignal,
-    [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
-    inspect: async (params: Parameters<CliHandler>[0] = {}) => {
-      const answer = JSON.parse(
-        (await handlers.get(TEMPLATE_INSPECT_COMMAND)!(params)) as string,
-      );
-      // The Workbench Guide tells a caller to follow `diagnostic.hint` on
-      // failure, so every refusal this suite reaches carries one.
-      const refusals = [answer].filter(
-        (entry) => entry.ok === false && entry.diagnostic,
-      );
-      expect(refusals).toEqual(
-        refusals.map(() =>
-          expect.objectContaining({
-            diagnostic: expect.objectContaining({ hint: expect.any(String) }),
-          }),
-        ),
-      );
-      return answer;
+    /** Settles once the adapter is next read. */
+    nextRead: () => {
+      nextRead = Promise.withResolvers<void>();
+      return nextRead.promise;
     },
-    guide: async () =>
-      handlers.get("zotlit:template-guide")!({ topic: "inspect" }),
+    [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
+    inspect,
+    guide,
+    // The cases that wait out TemplateService's reconciliation debounce stay
+    // Promise code: the debounce is a window timer that only Vitest's fake
+    // timers advance, which an it.effect case may not use. They run the
+    // command as Obsidian does, outside any test Effect.
+    inspectNow: (params?: CliData) => Effect.runPromise(inspect(params)),
   };
 }
 
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+/** {@link fixture}, closed when the test's scope closes. */
+const scopedFixture = (files?: Record<string, string>) =>
+  acquireAsyncDisposable(() => fixture(files));
+
+/** The parsed answer, once it holds that every refusal carries a hint. */
+function assertRefusalsHint(output: string) {
+  const answer = JSON.parse(output);
+  // The Workbench Guide tells a caller to follow `diagnostic.hint` on
+  // failure, so every refusal this suite reaches carries one.
+  const refusals = [answer].filter(
+    (entry) => entry.ok === false && entry.diagnostic,
+  );
+  expect(refusals).toEqual(
+    refusals.map(() =>
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({ hint: expect.any(String) }),
+      }),
+    ),
+  );
+  return answer;
+}
 
 describe("registered template-inspect", () => {
+  it.effect(
+    "lists all document kinds without source and resolves a Profile label",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture();
+        const inventory = yield* f.inspect();
+        expect(
+          inventory.documents.map((entry: { kind: string }) => entry.kind),
+        ).toEqual(["profile", "profile", "citation", "partial"]);
+        expect(inventory.source).toBeUndefined();
+        const result = yield* f.inspect({ profile: "Books" });
+        expect(result).toMatchObject({
+          ok: true,
+          document: { path: BOOKS, profile: { id: "Bk3Qn7XvT2Lp" } },
+          input: { origin: "saved" },
+          freshness: { state: "current" },
+          identity: { vault: { path: "/fixture" } },
+        });
+        expect(result.source).toBeUndefined();
+        expect(
+          (yield* f.inspect({ document: BOOKS, source: "full" })).source,
+        ).toBe(source);
+      }),
+  );
+
+  it.effect(
+    "keeps note stamps as strict identities even when another Profile label matches",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture({
+          [BOOKS]: source.replace("name: Books", "name: MissingId123"),
+        });
+        f.vault.addFile("Reading/Book.md", "Existing note");
+        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+          frontmatter: {
+            "zotero-key": "ABCD2345",
+            "zotlit-profile": "MissingId123",
+          },
+        } as never);
+        expect(yield* f.inspect({ note: "Reading/Book.md" })).toMatchObject({
+          ok: false,
+          diagnostic: { code: "TARGET_NOT_FOUND" },
+          matches: [],
+        });
+        expect(yield* f.inspect({ profile: "MissingId123" })).toMatchObject({
+          ok: true,
+          document: { path: BOOKS },
+        });
+      }),
+  );
+
+  const inspectStampedNote = (files: Record<string, string>) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const f = yield* scopedFixture(files);
+        f.vault.addFile("Reading/Book.md", "Existing note");
+        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+          frontmatter: {
+            "zotero-key": "ABCD2345",
+            "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
+          },
+        } as never);
+        return yield* f.inspect({ note: "Reading/Book.md", source: "full" });
+      }),
+    );
+
+  it.effect(
+    "resolves the note's stamped Profile through invalid document inventory",
+    () =>
+      Effect.gen(function* () {
+        const invalid = source.replace(
+          "--- zotlit:annotation ---",
+          "No Annotation Section",
+        );
+        const response = yield* inspectStampedNote({ [BOOKS]: invalid });
+        expect(response).toMatchObject({
+          ok: true,
+          note: { key: "ABCD2345" },
+          document: { path: BOOKS, profileIdentity: { id: "Bk3Qn7XvT2Lp" } },
+          source: invalid,
+        });
+        expect(response.problems.length).toBeGreaterThan(0);
+      }),
+  );
+
+  it.effect(
+    "resolves the note's stamped Profile through duplicate document inventory",
+    () =>
+      Effect.gen(function* () {
+        expect(
+          yield* inspectStampedNote({
+            [BOOKS]: source,
+            "templates/zotlit-profile.duplicate.md": source,
+          }),
+        ).toMatchObject({
+          ok: false,
+          diagnostic: { code: "AMBIGUOUS_TARGET" },
+          matches: [
+            { path: BOOKS },
+            { path: "templates/zotlit-profile.duplicate.md" },
+          ],
+        });
+      }),
+  );
+
+  it.effect(
+    "reads invalid source and built-in Default without creating files",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture({
+          [BOOKS]: "---\nfilename: [\n---\nBroken",
+        });
+        const before = [...f.vault.contents];
+        const invalid = yield* f.inspect({ document: BOOKS, source: "full" });
+        expect(invalid).toMatchObject({
+          ok: true,
+          source: "---\nfilename: [\n---\nBroken",
+          freshness: { state: "current" },
+        });
+        expect(invalid.problems.length).toBeGreaterThan(0);
+        expect(invalid.problems[0].message).toEqual(expect.any(String));
+        const builtin = yield* f.inspect({
+          profile: "default",
+          source: "full",
+        });
+        expect(builtin.input.origin).toBe("built-in");
+        expect(builtin.source).toContain("filename:");
+        expect([...f.vault.contents]).toEqual(before);
+      }),
+  );
+
+  it.effect(
+    "resolves a note's item and owning Profile and rejects missing targets",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture();
+        f.vault.addFile("Reading/Book.md", "My note");
+        vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
+          frontmatter: {
+            "zotero-key": "ABCD2345",
+            "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
+          },
+        } as never);
+        expect(yield* f.inspect({ note: "Reading/Book.md" })).toMatchObject({
+          ok: true,
+          note: { path: "Reading/Book.md", key: "ABCD2345" },
+          document: { path: BOOKS },
+        });
+        expect(yield* f.inspect({ document: "absent.md" })).toMatchObject({
+          ok: false,
+          diagnostic: { code: "TARGET_NOT_FOUND" },
+        });
+        expect(
+          yield* f.inspect({ profile: "Books", document: BOOKS }),
+        ).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "INVALID_SELECTOR",
+            details: { parameter: "document" },
+          },
+        });
+        expect(
+          yield* f.inspect({ note: "Reading/Book.md", profile: "Books" }),
+        ).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "INVALID_SELECTOR",
+            details: { parameter: "profile" },
+          },
+        });
+      }),
+  );
+
+  it.effect(
+    "reports affected revisions when an external dependency is never observed",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture();
+        f.disk.set(PARTIAL, "Unobserved marker");
+        const attempt = yield* Effect.forkChild(
+          f.inspect({ document: BOOKS, source: "full" }),
+        );
+        // The wait's deadline is set before the first read.
+        yield* Effect.promise(() => f.readSignal.promise);
+        yield* TestClock.adjust(1001);
+        const response = yield* Fiber.join(attempt);
+        expect(response).toMatchObject({
+          ok: false,
+          diagnostic: { code: "SOURCE_NOT_LOADED" },
+          freshness: { state: "timeout" },
+        });
+        const partial = response.freshness.versions.find(
+          (entry: { path: string }) => entry.path === PARTIAL,
+        );
+        expect(partial.disk).not.toBe(partial.loaded);
+        expect(response.source).toBeUndefined();
+      }),
+  );
+
+  it.effect("keeps saved and explicitly selected editor source distinct", () =>
+    Effect.gen(function* () {
+      const f = yield* scopedFixture();
+      Object.assign(f.app.workspace, {
+        getActiveViewOfType: () => ({
+          file: { path: BOOKS },
+          editor: { getValue: () => "Unsaved marker" },
+        }),
+      });
+      expect(
+        (yield* f.inspect({ document: BOOKS, source: "full" })).source,
+      ).toBe(source);
+      expect(
+        yield* f.inspect({ document: BOOKS, source: "full", editor: "true" }),
+      ).toMatchObject({
+        source: "Unsaved marker",
+        input: { origin: "editor" },
+        contextOrigin: "saved",
+        validation: { state: "not-checked" },
+      });
+      expect(
+        yield* f.inspect({ document: PARTIAL, editor: "true" }),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: { code: "EDITOR_TARGET_MISMATCH" },
+      });
+    }),
+  );
+
+  it.effect("reports ambiguous note names without choosing a fallback", () =>
+    Effect.gen(function* () {
+      const f = yield* scopedFixture();
+      f.vault.addFile("Reading/Book.md", "First");
+      f.vault.addFile("Archive/Book.md", "Second");
+      expect(yield* f.inspect({ note: "Book" })).toMatchObject({
+        ok: false,
+        diagnostic: { code: "AMBIGUOUS_TARGET" },
+        matches: ["Reading/Book.md", "Archive/Book.md"],
+      });
+    }),
+  );
+
+  it.effect.each([
+    ["templates/zotlit-profile.default.md", { profile: "default" }],
+    ["templates/zotlit-citation.md", { document: "citation" }],
+  ] as const)(
+    "checks the canonical built-in customization path %s before claiming current",
+    ([path, selection]) =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture({});
+        const builtin = yield* f.inspect(selection);
+        expect(builtin.freshness.versions).toContainEqual({
+          path,
+          requested: null,
+          disk: null,
+          loaded: null,
+        });
+        f.disk.set(path, "External customization not observed");
+        const read = f.nextRead();
+        const attempt = yield* Effect.forkChild(f.inspect(selection));
+        // The wait's deadline is set before the first read.
+        yield* Effect.promise(() => read);
+        yield* TestClock.adjust(1001);
+        expect(yield* Fiber.join(attempt)).toMatchObject({
+          ok: false,
+          diagnostic: { code: "SOURCE_NOT_LOADED" },
+          freshness: { state: "timeout" },
+        });
+      }),
+  );
+
+  it.effect(
+    "preserves invalid document error messages and nested causes in JSON",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture();
+        const statuses = f.template.getLiteratureNoteTemplateStatuses();
+        vi.spyOn(
+          f.template,
+          "getLiteratureNoteTemplateStatuses",
+        ).mockReturnValue(
+          statuses.map((entry) => ({
+            ...entry,
+            validation: {
+              state: "invalid",
+              manifestId: "Bk3Qn7XvT2Lp",
+              error: {
+                code: "unknown",
+                message: "Invalid document envelope",
+                recovery: "Repair its YAML",
+                cause: new Error("Original YAML parser evidence", {
+                  cause: new Error("Nested cause"),
+                }),
+              },
+            },
+          })),
+        );
+        expect(yield* f.inspect({ document: BOOKS })).toMatchObject({
+          problems: [
+            {
+              message: "Invalid document envelope",
+              cause: {
+                message: "Original YAML parser evidence",
+                cause: { message: "Nested cause" },
+              },
+            },
+          ],
+        });
+      }),
+  );
+
+  it.effect(
+    "preserves duplicate Profile IDs for targeted and direct document inspection",
+    () =>
+      Effect.gen(function* () {
+        const duplicate = "templates/zotlit-profile.duplicate.md";
+        const f = yield* scopedFixture({
+          [BOOKS]: source,
+          [duplicate]: source,
+        });
+        expect(yield* f.inspect({ profile: "Bk3Qn7XvT2Lp" })).toMatchObject({
+          ok: false,
+          diagnostic: { code: "AMBIGUOUS_TARGET" },
+          matches: [{ path: BOOKS }, { path: duplicate }],
+        });
+        const direct = yield* f.inspect({ document: BOOKS });
+        expect(direct.document.profileIdentity).toEqual({
+          id: "Bk3Qn7XvT2Lp",
+          label: "Books",
+        });
+        expect(direct.problems).toContainEqual(
+          expect.objectContaining({
+            code: "duplicate-profile-id",
+            paths: [BOOKS, duplicate],
+          }),
+        );
+        expect(direct.profileDiagnostics).toHaveLength(2);
+      }),
+  );
+
+  it.effect(
+    "returns reserved Shared Partial source and its naming problem",
+    () =>
+      Effect.gen(function* () {
+        const path = "templates/zotlit-partial.citation.md";
+        const f = yield* scopedFixture({ [path]: "Reserved source marker" });
+        expect(
+          yield* f.inspect({ document: path, source: "full" }),
+        ).toMatchObject({
+          ok: true,
+          source: "Reserved source marker",
+          problems: [{ code: "RESERVED_PARTIAL_NAME" }],
+          freshness: { state: "current" },
+        });
+      }),
+  );
+
+  it.effect(
+    "serves inspection flags and diagnostics through the registered guide and checks expect-source",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture();
+        const guide = String(yield* f.guide());
+        const [, flagsText, diagnosticsText] = guide
+          .split("\nFLAGS\n")
+          .flatMap((section) => section.split("\nDIAGNOSTICS\n"));
+        const indexRows = (text: string) =>
+          Object.fromEntries(
+            text
+              .trim()
+              .split("\n")
+              .map((line) => {
+                const separator = line.indexOf(": ");
+                return [
+                  line.slice(0, separator).trim(),
+                  line.slice(separator + 2),
+                ];
+              }),
+          );
+        expect(indexRows(flagsText!)).toEqual(
+          Object.fromEntries(
+            Object.entries(inspectFlags).map(([name, flag]) => [
+              name,
+              flag.description,
+            ]),
+          ),
+        );
+        expect(indexRows(diagnosticsText!)).toEqual(
+          Object.fromEntries(
+            Object.entries(INSPECT_DIAGNOSTICS).map(([code, entry]) => [
+              code,
+              `${entry.message} ${entry.hint}`,
+            ]),
+          ),
+        );
+        expect(
+          yield* f.inspect({
+            profile: "Books",
+            "expect-source": "wrong-source",
+          }),
+        ).toMatchObject({ ok: false, diagnostic: { code: "TARGET_MISMATCH" } });
+        expect(
+          yield* f.inspect({
+            profile: "Books",
+            "expect-source": "fixture-source",
+          }),
+        ).toMatchObject({ ok: true });
+      }),
+  );
+
+  it.effect(
+    "stops reading and watching saved source when the inspection is interrupted",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* scopedFixture();
+        const watching = vi.fn();
+        const on = f.template.on.bind(f.template);
+        vi.spyOn(f.template, "on").mockImplementation((name, callback) => {
+          const off = on(name, callback);
+          watching(true);
+          return () => {
+            watching(false);
+            off();
+          };
+        });
+        // The first read never answers, so the inspection is still at work.
+        f.read.mockImplementation(() => {
+          f.readSignal.resolve();
+          return new Promise<string>(() => {});
+        });
+        const attempt = yield* Effect.forkChild(f.inspect({ document: BOOKS }));
+        yield* Effect.promise(() => f.readSignal.promise);
+        const reads = f.read.mock.calls.length;
+
+        yield* Fiber.interrupt(attempt);
+
+        expect(Exit.hasInterrupts(yield* Fiber.await(attempt))).toBe(true);
+        expect(watching.mock.calls).toEqual([[true], [false]]);
+        yield* TestClock.adjust(1001);
+        expect(f.read).toHaveBeenCalledTimes(reads);
+      }),
+  );
+});
+
+describe("registered template-inspect across a reconciliation", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   it.each([BOOKS, PARTIAL, "templates/zotlit-citation.md"])(
     "clears the loaded revision and preserves the read error after reconciliation cannot read %s",
     async (path) => {
       const saved = path === BOOKS ? source : "Previously loaded source";
       await using f = await fixture({ [path]: saved });
-      expect(await f.inspect({ document: path })).toMatchObject({
+      expect(await f.inspectNow({ document: path })).toMatchObject({
         ok: true,
         freshness: { state: "current" },
       });
@@ -111,7 +575,7 @@ describe("registered template-inspect", () => {
       );
       f.vault.modifyFile(path, saved);
       await vi.advanceTimersByTimeAsync(500);
-      const attempt = f.inspect({ document: path, source: "full" });
+      const attempt = f.inspectNow({ document: path, source: "full" });
       await vi.advanceTimersByTimeAsync(1001);
       const response = await attempt;
       expect(response).toMatchObject({
@@ -133,164 +597,23 @@ describe("registered template-inspect", () => {
     },
   );
 
-  it("lists all document kinds without source and resolves a Profile label", async () => {
-    await using f = await fixture();
-    const inventory = await f.inspect();
-    expect(
-      inventory.documents.map((entry: { kind: string }) => entry.kind),
-    ).toEqual(["profile", "profile", "citation", "partial"]);
-    expect(inventory.source).toBeUndefined();
-    const result = await f.inspect({ profile: "Books" });
-    expect(result).toMatchObject({
-      ok: true,
-      document: { path: BOOKS, profile: { id: "Bk3Qn7XvT2Lp" } },
-      input: { origin: "saved" },
-      freshness: { state: "current" },
-      identity: { vault: { path: "/fixture" } },
-    });
-    expect(result.source).toBeUndefined();
-    expect((await f.inspect({ document: BOOKS, source: "full" })).source).toBe(
-      source,
-    );
-  });
-
   it("selects a twelve-character label and retains label ambiguity", async () => {
     const named = source.replace("name: Books", "name: ReadingBooks");
     await using f = await fixture({ [BOOKS]: named });
-    expect(await f.inspect({ profile: "ReadingBooks" })).toMatchObject({
+    expect(await f.inspectNow({ profile: "ReadingBooks" })).toMatchObject({
       ok: true,
       document: { path: BOOKS },
     });
     const other = "templates/zotlit-profile.other.md";
     f.vault.createFile(other, named.replace("Bk3Qn7XvT2Lp", "OtherBook1234"));
     await vi.advanceTimersByTimeAsync(500);
-    expect(await f.inspect({ profile: "ReadingBooks" })).toMatchObject({
+    expect(await f.inspectNow({ profile: "ReadingBooks" })).toMatchObject({
       ok: false,
       diagnostic: { code: "AMBIGUOUS_TARGET" },
     });
-    expect(await f.inspect({ profile: "Bk3Qn7XvT2Lp" })).toMatchObject({
+    expect(await f.inspectNow({ profile: "Bk3Qn7XvT2Lp" })).toMatchObject({
       ok: true,
       document: { path: BOOKS },
-    });
-  });
-
-  it("keeps note stamps as strict identities even when another Profile label matches", async () => {
-    await using f = await fixture({
-      [BOOKS]: source.replace("name: Books", "name: MissingId123"),
-    });
-    f.vault.addFile("Reading/Book.md", "Existing note");
-    vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
-      frontmatter: {
-        "zotero-key": "ABCD2345",
-        "zotlit-profile": "MissingId123",
-      },
-    } as never);
-    expect(await f.inspect({ note: "Reading/Book.md" })).toMatchObject({
-      ok: false,
-      diagnostic: { code: "TARGET_NOT_FOUND" },
-      matches: [],
-    });
-    expect(await f.inspect({ profile: "MissingId123" })).toMatchObject({
-      ok: true,
-      document: { path: BOOKS },
-    });
-  });
-
-  async function inspectStampedNote(files: Record<string, string>) {
-    await using f = await fixture(files);
-    f.vault.addFile("Reading/Book.md", "Existing note");
-    vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
-      frontmatter: {
-        "zotero-key": "ABCD2345",
-        "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
-      },
-    } as never);
-    return await f.inspect({ note: "Reading/Book.md", source: "full" });
-  }
-
-  it("resolves the note's stamped Profile through invalid document inventory", async () => {
-    const invalid = source.replace(
-      "--- zotlit:annotation ---",
-      "No Annotation Section",
-    );
-    const response = await inspectStampedNote({ [BOOKS]: invalid });
-    expect(response).toMatchObject({
-      ok: true,
-      note: { key: "ABCD2345" },
-      document: { path: BOOKS, profileIdentity: { id: "Bk3Qn7XvT2Lp" } },
-      source: invalid,
-    });
-    expect(response.problems.length).toBeGreaterThan(0);
-  });
-
-  it("resolves the note's stamped Profile through duplicate document inventory", async () => {
-    expect(
-      await inspectStampedNote({
-        [BOOKS]: source,
-        "templates/zotlit-profile.duplicate.md": source,
-      }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "AMBIGUOUS_TARGET" },
-      matches: [
-        { path: BOOKS },
-        { path: "templates/zotlit-profile.duplicate.md" },
-      ],
-    });
-  });
-
-  it("reads invalid source and built-in Default without creating files", async () => {
-    await using f = await fixture({ [BOOKS]: "---\nfilename: [\n---\nBroken" });
-    const before = [...f.vault.contents];
-    const invalid = await f.inspect({ document: BOOKS, source: "full" });
-    expect(invalid).toMatchObject({
-      ok: true,
-      source: "---\nfilename: [\n---\nBroken",
-      freshness: { state: "current" },
-    });
-    expect(invalid.problems.length).toBeGreaterThan(0);
-    expect(invalid.problems[0].message).toEqual(expect.any(String));
-    const builtin = await f.inspect({ profile: "default", source: "full" });
-    expect(builtin.input.origin).toBe("built-in");
-    expect(builtin.source).toContain("filename:");
-    expect([...f.vault.contents]).toEqual(before);
-  });
-
-  it("resolves a note's item and owning Profile and rejects missing targets", async () => {
-    await using f = await fixture();
-    f.vault.addFile("Reading/Book.md", "My note");
-    vi.spyOn(f.app.metadataCache, "getFileCache").mockReturnValue({
-      frontmatter: {
-        "zotero-key": "ABCD2345",
-        "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
-      },
-    } as never);
-    expect(await f.inspect({ note: "Reading/Book.md" })).toMatchObject({
-      ok: true,
-      note: { path: "Reading/Book.md", key: "ABCD2345" },
-      document: { path: BOOKS },
-    });
-    expect(await f.inspect({ document: "absent.md" })).toMatchObject({
-      ok: false,
-      diagnostic: { code: "TARGET_NOT_FOUND" },
-    });
-    expect(
-      await f.inspect({ profile: "Books", document: BOOKS }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "INVALID_SELECTOR",
-        details: { parameter: "document" },
-      },
-    });
-    expect(
-      await f.inspect({ note: "Reading/Book.md", profile: "Books" }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "INVALID_SELECTOR",
-        details: { parameter: "profile" },
-      },
     });
   });
 
@@ -299,7 +622,7 @@ describe("registered template-inspect", () => {
     const edited = source.replace("Managed", "External marker");
     f.disk.set(BOOKS, edited);
     f.disk.set(PARTIAL, "External partial marker");
-    const result = f.inspect({ document: BOOKS, source: "full" });
+    const result = f.inspectNow({ document: BOOKS, source: "full" });
     await f.readSignal.promise;
     f.vault.modifyFile(BOOKS, edited);
     f.vault.modifyFile(PARTIAL, "External partial marker");
@@ -314,67 +637,10 @@ describe("registered template-inspect", () => {
     );
   });
 
-  it("reports affected revisions when an external dependency is never observed", async () => {
-    await using f = await fixture();
-    f.disk.set(PARTIAL, "Unobserved marker");
-    const result = f.inspect({ document: BOOKS, source: "full" });
-    await f.readSignal.promise;
-    await vi.advanceTimersByTimeAsync(1001);
-    const response = await result;
-    expect(response).toMatchObject({
-      ok: false,
-      diagnostic: { code: "SOURCE_NOT_LOADED" },
-      freshness: { state: "timeout" },
-    });
-    const partial = response.freshness.versions.find(
-      (entry: { path: string }) => entry.path === PARTIAL,
-    );
-    expect(partial.disk).not.toBe(partial.loaded);
-    expect(response.source).toBeUndefined();
-  });
-
-  it("keeps saved and explicitly selected editor source distinct", async () => {
-    await using f = await fixture();
-    Object.assign(f.app.workspace, {
-      getActiveViewOfType: () => ({
-        file: { path: BOOKS },
-        editor: { getValue: () => "Unsaved marker" },
-      }),
-    });
-    expect((await f.inspect({ document: BOOKS, source: "full" })).source).toBe(
-      source,
-    );
-    expect(
-      await f.inspect({ document: BOOKS, source: "full", editor: "true" }),
-    ).toMatchObject({
-      source: "Unsaved marker",
-      input: { origin: "editor" },
-      contextOrigin: "saved",
-      validation: { state: "not-checked" },
-    });
-    expect(
-      await f.inspect({ document: PARTIAL, editor: "true" }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "EDITOR_TARGET_MISMATCH" },
-    });
-  });
-
-  it("reports ambiguous note names without choosing a fallback", async () => {
-    await using f = await fixture();
-    f.vault.addFile("Reading/Book.md", "First");
-    f.vault.addFile("Archive/Book.md", "Second");
-    expect(await f.inspect({ note: "Book" })).toMatchObject({
-      ok: false,
-      diagnostic: { code: "AMBIGUOUS_TARGET" },
-      matches: ["Reading/Book.md", "Archive/Book.md"],
-    });
-  });
-
   it("reports a superseded source instead of claiming the first request is current", async () => {
     await using f = await fixture();
     f.disk.set(BOOKS, source.replace("Managed", "Requested marker"));
-    const result = f.inspect({ document: BOOKS });
+    const result = f.inspectNow({ document: BOOKS });
     await f.readSignal.promise;
     f.disk.set(BOOKS, source.replace("Managed", "Superseding marker"));
     f.vault.modifyFile(BOOKS, f.disk.get(BOOKS)!);
@@ -386,31 +652,6 @@ describe("registered template-inspect", () => {
     });
   });
 
-  it.each([
-    ["templates/zotlit-profile.default.md", { profile: "default" }],
-    ["templates/zotlit-citation.md", { document: "citation" }],
-  ] as const)(
-    "checks the canonical built-in customization path %s before claiming current",
-    async (path, selection) => {
-      await using f = await fixture({});
-      const builtin = await f.inspect(selection);
-      expect(builtin.freshness.versions).toContainEqual({
-        path,
-        requested: null,
-        disk: null,
-        loaded: null,
-      });
-      f.disk.set(path, "External customization not observed");
-      const attempt = f.inspect(selection);
-      await vi.advanceTimersByTimeAsync(1001);
-      expect(await attempt).toMatchObject({
-        ok: false,
-        diagnostic: { code: "SOURCE_NOT_LOADED" },
-        freshness: { state: "timeout" },
-      });
-    },
-  );
-
   it("returns adapter errors with their path and original errno instead of waiting for missing source", async () => {
     await using f = await fixture();
     const timersBefore = vi.getTimerCount();
@@ -419,7 +660,7 @@ describe("registered template-inspect", () => {
         code: "EACCES",
       }),
     );
-    const response = await f.inspect({ document: BOOKS });
+    const response = await f.inspectNow({ document: BOOKS });
     expect(response).toMatchObject({
       ok: false,
       diagnostic: { code: "SOURCE_READ_FAILED" },
@@ -435,112 +676,6 @@ describe("registered template-inspect", () => {
       },
     });
     expect(vi.getTimerCount()).toBe(timersBefore);
-  });
-
-  it("preserves invalid document error messages and nested causes in JSON", async () => {
-    await using f = await fixture();
-    const statuses = f.template.getLiteratureNoteTemplateStatuses();
-    vi.spyOn(f.template, "getLiteratureNoteTemplateStatuses").mockReturnValue(
-      statuses.map((entry) => ({
-        ...entry,
-        validation: {
-          state: "invalid",
-          manifestId: "Bk3Qn7XvT2Lp",
-          error: {
-            code: "unknown",
-            message: "Invalid document envelope",
-            recovery: "Repair its YAML",
-            cause: new Error("Original YAML parser evidence", {
-              cause: new Error("Nested cause"),
-            }),
-          },
-        },
-      })),
-    );
-    expect(await f.inspect({ document: BOOKS })).toMatchObject({
-      problems: [
-        {
-          message: "Invalid document envelope",
-          cause: {
-            message: "Original YAML parser evidence",
-            cause: { message: "Nested cause" },
-          },
-        },
-      ],
-    });
-  });
-
-  it("preserves duplicate Profile IDs for targeted and direct document inspection", async () => {
-    const duplicate = "templates/zotlit-profile.duplicate.md";
-    await using f = await fixture({ [BOOKS]: source, [duplicate]: source });
-    expect(await f.inspect({ profile: "Bk3Qn7XvT2Lp" })).toMatchObject({
-      ok: false,
-      diagnostic: { code: "AMBIGUOUS_TARGET" },
-      matches: [{ path: BOOKS }, { path: duplicate }],
-    });
-    const direct = await f.inspect({ document: BOOKS });
-    expect(direct.document.profileIdentity).toEqual({
-      id: "Bk3Qn7XvT2Lp",
-      label: "Books",
-    });
-    expect(direct.problems).toContainEqual(
-      expect.objectContaining({
-        code: "duplicate-profile-id",
-        paths: [BOOKS, duplicate],
-      }),
-    );
-    expect(direct.profileDiagnostics).toHaveLength(2);
-  });
-
-  it("returns reserved Shared Partial source and its naming problem", async () => {
-    const path = "templates/zotlit-partial.citation.md";
-    await using f = await fixture({ [path]: "Reserved source marker" });
-    expect(await f.inspect({ document: path, source: "full" })).toMatchObject({
-      ok: true,
-      source: "Reserved source marker",
-      problems: [{ code: "RESERVED_PARTIAL_NAME" }],
-      freshness: { state: "current" },
-    });
-  });
-
-  it("serves inspection flags and diagnostics through the registered guide and checks expect-source", async () => {
-    await using f = await fixture();
-    const guide = String(await f.guide());
-    const [, flagsText, diagnosticsText] = guide
-      .split("\nFLAGS\n")
-      .flatMap((section) => section.split("\nDIAGNOSTICS\n"));
-    const indexRows = (text: string) =>
-      Object.fromEntries(
-        text
-          .trim()
-          .split("\n")
-          .map((line) => {
-            const separator = line.indexOf(": ");
-            return [line.slice(0, separator).trim(), line.slice(separator + 2)];
-          }),
-      );
-    expect(indexRows(flagsText!)).toEqual(
-      Object.fromEntries(
-        Object.entries(inspectFlags).map(([name, flag]) => [
-          name,
-          flag.description,
-        ]),
-      ),
-    );
-    expect(indexRows(diagnosticsText!)).toEqual(
-      Object.fromEntries(
-        Object.entries(INSPECT_DIAGNOSTICS).map(([code, entry]) => [
-          code,
-          `${entry.message} ${entry.hint}`,
-        ]),
-      ),
-    );
-    expect(
-      await f.inspect({ profile: "Books", "expect-source": "wrong-source" }),
-    ).toMatchObject({ ok: false, diagnostic: { code: "TARGET_MISMATCH" } });
-    expect(
-      await f.inspect({ profile: "Books", "expect-source": "fixture-source" }),
-    ).toMatchObject({ ok: true });
   });
 
   it.each([
@@ -561,7 +696,7 @@ describe("registered template-inspect", () => {
     async ({ initial, edited, problems }) => {
       await using f = await fixture({ [BOOKS]: source, [PARTIAL]: initial });
       f.disk.set(PARTIAL, edited);
-      const attempt = f.inspect({ document: BOOKS });
+      const attempt = f.inspectNow({ document: BOOKS });
       await f.readSignal.promise;
       f.vault.modifyFile(PARTIAL, edited);
       await vi.advanceTimersByTimeAsync(500);

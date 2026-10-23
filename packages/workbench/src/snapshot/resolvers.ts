@@ -1,6 +1,6 @@
 // Redacting Zotero resolvers and validation for permitted vault targets.
 
-import { formatAnnotationFragment } from "@zotlit/db";
+import { formatAnnotationFragment, zoteroNoteLink } from "@zotlit/db";
 import type { Attachment, Item, NoteResolvers, TemplateLink } from "@zotlit/db";
 
 import type { SnapshotProvenance, SnapshotVaultTargets } from "./types";
@@ -89,9 +89,7 @@ export function snapshotResolvers(
       title: note.title,
       noteLink:
         targetLink(targets.notes?.[note.indexedKey], note.title ?? note.key) ??
-        unavailableLink(
-          "The Child Note has no permitted vault-relative target.",
-        ),
+        ((alias) => zoteroNoteLink(note, alias)),
     }),
   };
 }

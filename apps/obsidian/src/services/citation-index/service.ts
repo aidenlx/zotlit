@@ -21,7 +21,7 @@ import type { CitationLookup, CitationLookupStatus } from "./lookup-service";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
 
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 
 import { groupCitations } from "./query";
 import type { Citation, ResolvedNote } from "./query";
@@ -159,7 +159,7 @@ interface CitationIndexEvents {
 }
 
 export interface CitationIndexOptions {
-  parseClient: ParseClient;
+  parseClient: Pick<PlainCitationParse, "parse">;
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
@@ -984,14 +984,12 @@ export class CitationIndex extends Service<void> {
         : []
       )
         .filter(({ form }) => form === "citation")
-        .map(
-          ({ indexedKey, position, pageLabel }): CitationOccurrence => ({
-            kind: "annotation",
-            raw: indexedKey,
-            position,
-            pageLabel,
-          }),
-        ),
+        .map(({ indexedKey, position, pageLabel }): CitationOccurrence => ({
+          kind: "annotation",
+          raw: indexedKey,
+          position,
+          pageLabel,
+        })),
       malformedAnnotations: this.#includeAnnotationCitations
         ? (scan?.malformedAnnotationCitations ?? [])
         : [],

@@ -3,12 +3,21 @@ import { link, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData, FileSystemAdapter, Vault } from "obsidian";
 
-import { Cause, Effect, Exit, Fiber, FiberMap, Scope } from "@/lib/effect";
+import type { CliRejection } from "@/lib/cli-params";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  FiberMap,
+  Result,
+  Scope,
+} from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
-import type { UseLedger } from "@/services/use-ledger/service";
+import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -35,7 +44,7 @@ import type {
 
 interface QueryServiceDeps {
   pluginVersion: string;
-  useLedger: Pick<UseLedger, "ready" | "uses" | "on">;
+  useLedger: Pick<PlainUseLedger, "uses" | "subscribe">;
   reads: ZoteroReadsService;
   zoteroPref: Pick<
     ZoteroPrefService,
@@ -80,9 +89,12 @@ export class QueryService extends Service {
     this.ready = this.#load();
   }
 
-  /** Changes to device Uses invalidate every open Query View. */
-  on(...args: Parameters<UseLedger["on"]>): () => void {
-    return this.#deps.useLedger.on(...args);
+  /**
+   * Changes to device Uses invalidate every open Query View: `callback` runs on
+   * each Use recorded after this call.
+   */
+  on(_event: "changed", callback: () => void): () => void {
+    return this.#deps.useLedger.subscribe(() => callback());
   }
 
   async #load(): Promise<void> {
@@ -95,7 +107,6 @@ export class QueryService extends Service {
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
     try {
-      await this.#deps.useLedger.ready;
       await this.#deps.reads.ready;
       await this.#deps.libraryScope.ready;
     } catch (error) {
@@ -132,11 +143,9 @@ export class QueryService extends Service {
     // Decode and claim the id synchronously, so two calls with one id
     // cannot both start. The worker receives the decoded query.
     const command = QUERY_COMMAND;
-    const request = decodeQuery(params);
-    if (request.kind === "invalid") {
-      return Promise.resolve(failure(command, rejectionDiagnostic(request)));
-    }
-    const query = request.value;
+    const request = decodeNow(command, decodeQuery(params));
+    if (Result.isFailure(request)) return Promise.resolve(request.failure);
+    const query = request.success;
     const { id } = query;
     if (id !== undefined && FiberMap.hasUnsafe(this.#jobs, id)) {
       return Promise.resolve(queryIdInUseFailure(id, command));
@@ -185,11 +194,10 @@ export class QueryService extends Service {
   /** List Collection paths or Tag names through the same worker connection. */
   values(params: CliData, signal: AbortSignal): Promise<string> {
     const command = QUERY_VALUES_COMMAND;
-    const request = decodeValues(params);
-    if (request.kind === "invalid")
-      return Promise.resolve(failure(command, rejectionDiagnostic(request)));
+    const request = decodeNow(command, decodeValues(params));
+    if (Result.isFailure(request)) return Promise.resolve(request.failure);
     return this.#start(
-      this.#job({ schema: false, command, values: request.value }),
+      this.#job({ schema: false, command, values: request.success }),
       signal,
     );
   }
@@ -220,16 +228,13 @@ export class QueryService extends Service {
   /** Answer the shared schema command, optionally narrowed by from. */
   schema(params: CliData, signal: AbortSignal): Promise<string> {
     const command = QUERY_SCHEMA_COMMAND;
-    const rejected = decodeSchemaArguments(params);
-    if (rejected.kind === "invalid") {
-      return Promise.resolve(failure(command, rejectionDiagnostic(rejected)));
-    }
+    const request = decodeNow(command, decodeSchemaArguments(params));
+    if (Result.isFailure(request)) return Promise.resolve(request.failure);
+    const { from } = request.success;
     return this.#start(
       this.#job({
         schema: true,
-        ...(rejected.value.from === undefined
-          ? {}
-          : { dataset: rejected.value.from }),
+        ...(from === undefined ? {} : { dataset: from }),
         command,
         pluginVersion: this.#deps.pluginVersion,
       }),
@@ -426,6 +431,27 @@ export class QueryService extends Service {
       return result;
     });
   }
+}
+
+/**
+ * Decode a command's parameters now, synchronously: the request, or the
+ * diagnostic envelope of `command` for the parameter that rejects it. The
+ * service is a legacy Service whose callers hold Promises; decoding before
+ * any await lets `#query` claim a query id before a second call with the
+ * same id can start.
+ */
+function decodeNow<A>(
+  command: QueryCliCommand,
+  decode: Effect.Effect<A, CliRejection>,
+): Result.Result<A, string> {
+  return Effect.runSync(
+    decode.pipe(
+      Effect.mapError((rejection) =>
+        failure(command, rejectionDiagnostic(rejection)),
+      ),
+      Effect.result,
+    ),
+  );
 }
 
 /** Report one phase of a cancel to the measurement, when one observes. */

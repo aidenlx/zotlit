@@ -2,7 +2,7 @@ import { Cause, Clock, Context, Effect, Exit } from "effect";
 import type { Scheduler } from "effect";
 import { expect } from "vitest";
 
-// The test helper of the package: plain Vitest, no `@effect/vitest`.
+// The test helper of the package.
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import {
   ItemQueryDatabase,

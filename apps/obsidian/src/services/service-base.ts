@@ -100,7 +100,36 @@ type RegisteredValues<TEntry extends ValueRegistration<any>> = {
   readonly [K in keyof TEntry]: ReturnType<TEntry[K]>;
 };
 
-type ServiceErrorHandler = (key: string, error: ServiceInitError) => void;
+export type ServiceErrorHandler = (
+  key: string,
+  error: ServiceInitError,
+) => void;
+
+/**
+ * Wrap a startup failure of `service` in {@link ServiceInitError} under `key`,
+ * so dependents awaiting `ready` observe the wrapped rejection, and report it
+ * through `onError`.
+ */
+export function superviseReady(
+  key: string,
+  service: Service<any>,
+  onError: ServiceErrorHandler,
+): void {
+  service.ready = service.ready.catch((cause: unknown) => {
+    throw new ServiceInitError(key, cause);
+  });
+
+  void service.ready.catch((error: ServiceInitError) => {
+    try {
+      onError(key, error);
+    } catch (reporterError) {
+      console.error(`Failed to report service "${key}" init error`, {
+        error,
+        reporterError,
+      });
+    }
+  });
+}
 
 /**
  * Typed service registry and lifecycle bridge.
@@ -150,20 +179,7 @@ export class ServiceContainer<TServices extends object = {}> {
       );
     }
 
-    service.ready = service.ready.catch((cause: unknown) => {
-      throw new ServiceInitError(key, cause);
-    });
-
-    void service.ready.catch((error: ServiceInitError) => {
-      try {
-        this.#onError(key, error);
-      } catch (reporterError) {
-        console.error(`Failed to report service "${key}" init error`, {
-          error,
-          reporterError,
-        });
-      }
-    });
+    superviseReady(key, service, this.#onError);
 
     const services = this.#services as Record<string, Service<any>>;
     services[key] = this.#stack.use(service);

@@ -15,7 +15,7 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import { ReferencesView } from "./view";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 class TestReferencesView extends ReferencesView {
   open() {

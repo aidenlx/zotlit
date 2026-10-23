@@ -1,48 +1,42 @@
-// Owns the parse worker from layout-ready until plugin disposal.
-import type { Workspace } from "obsidian";
+// Owns the parse worker from layout-ready until the layer's Scope closes.
 import workerSource from "virtual:citation-parse-worker";
 
-import { Effect, Scope } from "@/lib/effect";
-import { openScope } from "@/lib/effect-scope";
-import { Service } from "@/services/service-base";
+import { Context, Effect, Layer } from "@/lib/effect";
+import { ObsidianApp } from "@/lib/obsidian-app";
 
-import type { ParseClient, ParseRequest, ParseReply } from "./client";
+import { ParseFailed } from "./client";
+import type { ParseRequest, ParseReply } from "./client";
 import { makeRecoveringParseClient } from "./recovering-client";
-import type { RecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
 
-interface CitationParseDeps {
-  workspace: Workspace;
-}
-
-export class CitationParse
-  extends Service<RecoveringParseClient>
-  implements ParseClient
-{
-  readonly #workspace;
-  ready: Promise<RecoveringParseClient>;
-
-  constructor({ workspace }: CitationParseDeps) {
-    super();
-    this.#workspace = workspace;
-    this.ready = this.#load();
+export class CitationParse extends Context.Service<
+  CitationParse,
+  {
+    parse(request: ParseRequest): Effect.Effect<ParseReply, ParseFailed>;
   }
+>()("zotlit/citation-parse/CitationParse") {}
 
-  async #load(): Promise<RecoveringParseClient> {
-    await using stack = new AsyncDisposableStack();
-    const { scope, close } = openScope();
-    stack.defer(close);
-    const client = await Effect.runPromise(
-      makeRecoveringParseClient(() => connectParseWorker(workerSource)).pipe(
-        Scope.provide(scope),
-      ),
+export const layerCitationParse = Layer.effect(
+  CitationParse,
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    const client = yield* makeRecoveringParseClient(() =>
+      connectParseWorker(workerSource),
     );
-    this.#workspace.onLayoutReady(() => client.start());
-    this.commit(stack.move());
-    return client;
-  }
-
-  async parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply> {
-    return (await this.ready).parse(request, signal);
-  }
-}
+    const run = Effect.runSyncWith(yield* Effect.context<never>());
+    app.workspace.onLayoutReady(() => run(Effect.sync(() => client.start())));
+    return CitationParse.of({
+      parse: Effect.fn("CitationParse.parse")(function* (
+        request: ParseRequest,
+      ) {
+        return yield* Effect.tryPromise({
+          try: (signal) => client.parse(request, signal),
+          catch: (error) =>
+            error instanceof ParseFailed
+              ? error
+              : new ParseFailed(String(error)),
+        });
+      }),
+    });
+  }),
+);

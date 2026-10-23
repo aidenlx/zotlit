@@ -3,19 +3,14 @@
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-import type {
-  App,
-  CliFlag,
-  CliFlags,
-  FileSystemAdapter,
-  Plugin,
-} from "obsidian";
+import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
 import { isChildItemFields } from "@zotlit/db";
 
+import type { CliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type {
@@ -38,8 +33,6 @@ import type {
   CitedByParam,
   ReferencesParam,
 } from "./request";
-
-const logger = getLogger(["citation-index", "cli"]);
 
 interface CitationsCliRegistrationDeps {
   app: App;
@@ -82,7 +75,7 @@ function referencesFlags(): CliFlags {
 }
 
 export function registerCitationsCli(
-  plugin: Plugin,
+  host: CliHost,
   deps: CitationsCliRegistrationDeps,
 ): void {
   const handlers = createCitationsCliHandlers({
@@ -124,10 +117,10 @@ export function registerCitationsCli(
     readDocument: (path) => readDocument(deps, path),
   });
 
-  plugin.registerCliHandler(
-    ANNOTATION_USES_COMMAND,
-    "List the notes that use one Zotero annotation, with every occurrence",
-    {
+  host.registerCliCommand(ANNOTATION_USES_COMMAND, {
+    description:
+      "List the notes that use one Zotero annotation, with every occurrence",
+    flags: {
       key: {
         value: "<annotation-key>",
         description:
@@ -139,26 +132,25 @@ export function registerCitationsCli(
         description: "Zotero source ID the call must match",
       },
     } satisfies Record<AnnotationUsesParam, CliFlag>,
-    handlers[ANNOTATION_USES_COMMAND],
-  );
-  plugin.registerCliHandler(
-    CITED_BY_COMMAND,
-    "List the notes that cite one Zotero item, with the position of every citation",
-    citedByFlags(),
-    handlers[CITED_BY_COMMAND],
-  );
-  plugin.registerCliHandler(
-    REFERENCES_COMMAND,
-    "List what one note cites, with the position of every citation",
-    referencesFlags(),
-    handlers[REFERENCES_COMMAND],
-  );
-  plugin.registerCliHandler(
-    CITATIONS_GUIDE_COMMAND,
-    "Print the ZotLit citations CLI guide",
-    null,
-    handlers[CITATIONS_GUIDE_COMMAND],
-  );
+    handler: handlers[ANNOTATION_USES_COMMAND],
+  });
+  host.registerCliCommand(CITED_BY_COMMAND, {
+    description:
+      "List the notes that cite one Zotero item, with the position of every citation",
+    flags: citedByFlags(),
+    handler: handlers[CITED_BY_COMMAND],
+  });
+  host.registerCliCommand(REFERENCES_COMMAND, {
+    description:
+      "List what one note cites, with the position of every citation",
+    flags: referencesFlags(),
+    handler: handlers[REFERENCES_COMMAND],
+  });
+  host.registerCliCommand(CITATIONS_GUIDE_COMMAND, {
+    description: "Print the ZotLit citations CLI guide",
+    flags: null,
+    handler: handlers[CITATIONS_GUIDE_COMMAND],
+  });
 }
 
 /** Any Markdown note answers: a document need not be a Literature Note to cite
@@ -190,28 +182,34 @@ async function documentOmittedSyntaxes(
  *  holds one; a read that fails leaves the verdict `"unreadable"` rather than
  *  reporting every Item as missing. The same read renders the Item's summary,
  *  so one answer carries both. */
-async function lookupItem(
-  db: CitationsCliRegistrationDeps["db"],
-  indexedKey: string,
-): Promise<ItemLookup> {
-  if (db.state === "degraded") return { presence: "unreadable", summary: null };
-  try {
-    const { reads } = await db.ready;
-    const item = (
-      await Effect.runPromise(
-        reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-      )
-    ).get(indexedKey);
-    if (!item) return { presence: "absent", summary: null };
+const lookupItem = Effect.fn("CitationsCli.lookupItem")(
+  function* (db: CitationsCliRegistrationDeps["db"], indexedKey: string) {
+    if (db.state === "degraded") return UNREADABLE;
+    const { reads } = yield* Effect.tryPromise(() => db.ready);
+    const item = (yield* reads.ItemsByIndexedKeys({
+      indexedKeys: [indexedKey],
+    })).get(indexedKey);
+    if (!item) return { presence: "absent", summary: null } as const;
     // A note or an attachment carries no work fields, so the source holds it
     // and renders no summary for it, as the reference list reads it too.
     const { fields } = item;
     const summary = isChildItemFields(fields)
       ? null
       : itemSummary(item, fields).formatted;
-    return { presence: "present", summary };
-  } catch (error) {
-    logger.warn("Cannot look up the selected item", { indexedKey, error });
-    return { presence: "unreadable", summary: null };
-  }
-}
+    return { presence: "present", summary } as const;
+  },
+  (effect, _db, indexedKey): Effect.Effect<ItemLookup> => {
+    const unreadable = (error: unknown) =>
+      Effect.logWarning("Cannot look up the selected item").pipe(
+        Effect.annotateLogs({ indexedKey, error }),
+        withLogCategory("citation-index", "cli"),
+        Effect.as(UNREADABLE),
+      );
+    return effect.pipe(
+      Effect.catch(unreadable),
+      Effect.catchDefect(unreadable),
+    );
+  },
+);
+
+const UNREADABLE: ItemLookup = { presence: "unreadable", summary: null };

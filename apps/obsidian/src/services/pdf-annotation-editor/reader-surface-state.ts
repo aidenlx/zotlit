@@ -260,24 +260,22 @@ export function createReaderSurfaceState({
 }: Pick<ReaderSurfaceState, "colors" | "capability" | "now"> &
   Partial<Pick<ReaderSurfaceState, "recentColors">>) {
   return createStore<ReaderSurfaceState>()(
-    subscribeWithSelector(
-      (): ReaderSurfaceState => ({
-        armed: null,
-        marksVisible: true,
-        colors,
-        recentColors,
-        capability,
-        capabilityAt: now,
-        now,
-        floating: NONE,
-        liveStroke: null,
-        pendingStrokes: [],
-        records: [],
-        mutations: new Map(),
-        commentDrafts: new Map(),
-        tagDrafts: new Map(),
-      }),
-    ),
+    subscribeWithSelector((): ReaderSurfaceState => ({
+      armed: null,
+      marksVisible: true,
+      colors,
+      recentColors,
+      capability,
+      capabilityAt: now,
+      now,
+      floating: NONE,
+      liveStroke: null,
+      pendingStrokes: [],
+      records: [],
+      mutations: new Map(),
+      commentDrafts: new Map(),
+      tagDrafts: new Map(),
+    })),
   );
 }
 

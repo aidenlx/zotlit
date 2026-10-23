@@ -77,7 +77,10 @@ describe("a draft the parser refuses", () => {
     const view = sourceView(page.host);
     const broken = view.state.doc
       .toString()
-      .replace("# {{ zt.title }}", "{% managed %}\nTwice\n{% endmanaged %}");
+      .replace(
+        "# {{ zt.title }}",
+        "{% managed %}\nOnce\n{% endmanaged %}\n{% managed %}\nTwice\n{% endmanaged %}",
+      );
     act(() => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: broken },
@@ -191,7 +194,10 @@ describe("a draft the parser refuses", () => {
     const view = sourceView(page.host);
     const broken = view.state.doc
       .toString()
-      .replace("# {{ zt.title }}", "{% managed %}\nTwice\n{% endmanaged %}");
+      .replace(
+        "# {{ zt.title }}",
+        "{% managed %}\nOnce\n{% endmanaged %}\n{% managed %}\nTwice\n{% endmanaged %}",
+      );
     act(() => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: broken },

@@ -1,6 +1,9 @@
-import type { CliHandler, Plugin, TFile } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import type { TFile } from "obsidian";
+import { describe, expect, vi } from "vitest";
 
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
 
@@ -8,23 +11,20 @@ import { CITATIONS_GUIDE_COMMAND, REFERENCES_COMMAND } from "./commands";
 import { registerCitationsCli } from "./register";
 
 describe("Citations CLI registration", () => {
-  it("publishes the guide with command help and no flags", async () => {
-    const registerCliHandler = vi.fn();
-    const plugin = { registerCliHandler } as unknown as Plugin;
+  it.effect("publishes the guide with command help and no flags", () =>
+    Effect.gen(function* () {
+      const { host, command } = fakeCliHost();
 
-    registerCitationsCli(plugin, {} as never);
+      registerCitationsCli(host, {} as never);
 
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      CITATIONS_GUIDE_COMMAND,
-      "Print the ZotLit citations CLI guide",
-      null,
-      expect.any(Function),
-    );
-    const guide = registerCliHandler.mock.calls.find(
-      ([command]) => command === CITATIONS_GUIDE_COMMAND,
-    )![3] as CliHandler;
-    expect(await guide({})).toContain("ZOTLIT-CITATIONS(1)");
-  });
+      const guide = command(CITATIONS_GUIDE_COMMAND);
+      expect(guide).toMatchObject({
+        description: "Print the ZotLit citations CLI guide",
+        flags: null,
+      });
+      expect(yield* guide.handler({})).toContain("ZOTLIT-CITATIONS(1)");
+    }),
+  );
 
   describe("references over the vault", () => {
     const OCCURRENCE = {
@@ -65,15 +65,14 @@ describe("Citations CLI registration", () => {
     const ASSET = { path: "writing/figure.png", extension: "png" } as TFile;
 
     function setup() {
-      const registerCliHandler = vi.fn();
-      const plugin = { registerCliHandler } as unknown as Plugin;
+      const { host, command } = fakeCliHost();
       const files = new Map([
         [NOTE.path, NOTE],
         [ASSET.path, ASSET],
       ]);
       const getDocumentCitationSet = vi.fn(() => Promise.resolve(CITATION_SET));
 
-      registerCitationsCli(plugin, {
+      registerCitationsCli(host, {
         app: {
           vault: {
             getName: () => "Test Vault",
@@ -105,47 +104,54 @@ describe("Citations CLI registration", () => {
         },
       } as never);
 
-      const references = registerCliHandler.mock.calls.find(
-        ([command]) => command === REFERENCES_COMMAND,
-      )![3] as CliHandler;
+      const references = command(REFERENCES_COMMAND).handler;
       return {
         getDocumentCitationSet,
-        references: (file: string) => Promise.resolve(references({ file })),
+        references: (file: string) => references({ file }),
       };
     }
 
-    it("answers for any Markdown note, not only a Literature Note", async () => {
-      const { references, getDocumentCitationSet } = setup();
+    it.effect("answers for any Markdown note, not only a Literature Note", () =>
+      Effect.gen(function* () {
+        const { references, getDocumentCitationSet } = setup();
 
-      const output = await references(NOTE.path);
+        const output = yield* references(NOTE.path);
 
-      expect(getDocumentCitationSet).toHaveBeenCalledWith(NOTE);
-      expect(JSON.parse(output)).toMatchObject({
-        ok: true,
-        request: { file: NOTE.path },
-        entries: [
-          {
-            refNumber: 1,
-            kind: "unresolved",
-            citekey: "roe2099",
-            occurrences: [REPORTED_OCCURRENCE],
-          },
-        ],
-        // The fake database never became readable, which the payload reports.
-        database: "unreadable",
-      });
-    });
+        expect(getDocumentCitationSet).toHaveBeenCalledWith(NOTE);
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          request: { file: NOTE.path },
+          entries: [
+            {
+              refNumber: 1,
+              kind: "unresolved",
+              citekey: "roe2099",
+              occurrences: [REPORTED_OCCURRENCE],
+            },
+          ],
+          // The fake database never became readable, which the payload reports.
+          database: "unreadable",
+        });
+      }),
+    );
 
-    it("reports a path that names a file other than a Markdown note", async () => {
-      const { references, getDocumentCitationSet } = setup();
+    it.effect(
+      "reports a path that names a file other than a Markdown note",
+      () =>
+        Effect.gen(function* () {
+          const { references, getDocumentCitationSet } = setup();
 
-      const output = await references(ASSET.path);
+          const output = yield* references(ASSET.path);
 
-      expect(getDocumentCitationSet).not.toHaveBeenCalled();
-      expect(JSON.parse(output)).toMatchObject({
-        ok: false,
-        diagnostic: { code: "FILE_NOT_FOUND", details: { file: ASSET.path } },
-      });
-    });
+          expect(getDocumentCitationSet).not.toHaveBeenCalled();
+          expect(JSON.parse(output)).toMatchObject({
+            ok: false,
+            diagnostic: {
+              code: "FILE_NOT_FOUND",
+              details: { file: ASSET.path },
+            },
+          });
+        }),
+    );
   });
 });

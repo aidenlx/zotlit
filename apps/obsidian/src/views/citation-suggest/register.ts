@@ -7,7 +7,7 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { SettingsService } from "@/services/settings/service";
-import type { UseLedger } from "@/services/use-ledger/service";
+import type { PlainUseLedger } from "@/services/use-ledger/plain";
 
 import { AnnotationEditorSuggest } from "./annotation-suggest";
 import type { AnnotationSuggestDeps } from "./annotation-suggest";
@@ -23,7 +23,7 @@ export interface CitationSuggestDeps {
    *  whether the snapshot that answers that has resolved at all yet. */
   citationLookup: Pick<CitationLookup, "read" | "status">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
-  useLedger: Pick<UseLedger, "record">;
+  useLedger: Pick<PlainUseLedger, "record">;
 }
 
 /**

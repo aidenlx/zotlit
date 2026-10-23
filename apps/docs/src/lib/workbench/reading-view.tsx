@@ -405,7 +405,7 @@ function markedBlocks(
 ): ReactNode[] {
   const nodes = tree.children as ElementContent[];
   const blocks: ReactNode[] = [];
-  for (let index = 0; index < nodes.length; ) {
+  for (let index = 0; index < nodes.length;) {
     const node = nodes[index]!;
     const mark = marks.find((range) => within(node, range));
     if (!mark) {

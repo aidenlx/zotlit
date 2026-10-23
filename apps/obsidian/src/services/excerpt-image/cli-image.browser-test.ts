@@ -1,3 +1,5 @@
+import { Effect } from "@/lib/effect";
+
 import { check } from "./__fixtures__/check";
 import { answerAnnotationImage } from "./cli-image";
 import type { AnnotationImagePorts } from "./cli-image";
@@ -41,7 +43,7 @@ export async function run(): Promise<string[]> {
   };
   const passed: string[] = [];
   const ports: AnnotationImagePorts = {
-    read: async () => request,
+    read: () => Effect.succeed(request),
     resolve: async () => ({
       kind: "available",
       provenance: "rendered",
@@ -72,18 +74,24 @@ export async function run(): Promise<string[]> {
   };
   for (const provenance of ["rendered", "cache", "zotero"] as const) {
     const answer = JSON.parse(
-      await answerAnnotationImage(
-        { key: "ABCDEFGH" },
-        {
-          ...ports,
-          resolve: async () => ({
-            kind: "available",
-            provenance,
-            freshness: "checked",
-            ...image,
-            identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
-          }),
-        },
+      await Effect.runPromise(
+        answerAnnotationImage(
+          { key: "ABCDEFGH" },
+          {
+            ...ports,
+            resolve: async () => ({
+              kind: "available",
+              provenance,
+              freshness: "checked",
+              ...image,
+              identity: {
+                key: "a".repeat(64),
+                fingerprint: "image",
+                pdf: null,
+              },
+            }),
+          },
+        ),
       ),
     );
     check(
@@ -109,26 +117,33 @@ export async function run(): Promise<string[]> {
     "render-timeout",
   ]) {
     const answer = JSON.parse(
-      await answerAnnotationImage(
-        { key: "ABCDEFGH" },
-        {
-          ...ports,
-          read: async () =>
-            code === "annotation-not-found"
-              ? null
-              : code === "not-an-image-annotation"
-                ? {
-                    ...request,
-                    annotation: { ...request.annotation, type: "highlight" },
-                  }
-                : request,
-          resolve: async () => {
-            if (code === "render-timeout")
-              throw new DOMException("Deadline", "TimeoutError");
-            return { kind: "unavailable" };
+      await Effect.runPromise(
+        answerAnnotationImage(
+          { key: "ABCDEFGH" },
+          {
+            ...ports,
+            read: () =>
+              Effect.succeed(
+                code === "annotation-not-found"
+                  ? null
+                  : code === "not-an-image-annotation"
+                    ? {
+                        ...request,
+                        annotation: {
+                          ...request.annotation,
+                          type: "highlight" as const,
+                        },
+                      }
+                    : request,
+              ),
+            resolve: async () => {
+              if (code === "render-timeout")
+                throw new DOMException("Deadline", "TimeoutError");
+              return { kind: "unavailable" };
+            },
+            exists: async () => code !== "file-unavailable",
           },
-          exists: async () => code !== "file-unavailable",
-        },
+        ),
       ),
     );
     check(
