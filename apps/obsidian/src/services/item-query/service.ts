@@ -8,7 +8,7 @@ import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
-import type { UseLedger } from "@/services/use-ledger/service";
+import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -35,7 +35,7 @@ import type {
 
 interface QueryServiceDeps {
   pluginVersion: string;
-  useLedger: Pick<UseLedger, "ready" | "uses" | "on">;
+  useLedger: Pick<PlainUseLedger, "uses" | "subscribe">;
   reads: ZoteroReadsService;
   zoteroPref: Pick<
     ZoteroPrefService,
@@ -80,9 +80,12 @@ export class QueryService extends Service {
     this.ready = this.#load();
   }
 
-  /** Changes to device Uses invalidate every open Query View. */
-  on(...args: Parameters<UseLedger["on"]>): () => void {
-    return this.#deps.useLedger.on(...args);
+  /**
+   * Changes to device Uses invalidate every open Query View: `callback` runs on
+   * each Use recorded after this call.
+   */
+  on(_event: "changed", callback: () => void): () => void {
+    return this.#deps.useLedger.subscribe(() => callback());
   }
 
   async #load(): Promise<void> {
@@ -95,7 +98,6 @@ export class QueryService extends Service {
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
     try {
-      await this.#deps.useLedger.ready;
       await this.#deps.reads.ready;
       await this.#deps.libraryScope.ready;
     } catch (error) {

@@ -2,7 +2,15 @@ import { Scheduler } from "effect/Scheduler";
 import { expect, it } from "vitest";
 
 import { browserScheduler } from "./browser-scheduler";
-import { Context, Effect, Exit, Fiber, FiberSet, Scope } from "./effect";
+import {
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Logger,
+  Scope,
+} from "./effect";
 
 // Failure modes: raw root defaults, explicit-context roots, synchronous runtime
 // factories, and cancellation losing the supplied AbortSignal.
@@ -60,4 +68,17 @@ it("preserves cancellation options", async () => {
   });
   controller.abort();
   expect(Exit.isFailure(await pending)).toBe(true);
+});
+
+// Failure mode: the runtime services replace the logger a caller supplied,
+// so a layer's own context loses its records.
+it("lets a supplied context override the runtime services", async () => {
+  const logged: string[] = [];
+  const capture = Logger.make(({ message }) => {
+    logged.push(String(message));
+  });
+  const context = Context.make(Logger.CurrentLoggers, new Set([capture]));
+  Effect.runSyncWith(context)(Effect.logInfo("sync"));
+  await Effect.runPromiseWith(context)(Effect.logInfo("async"));
+  expect(logged).toEqual(["sync", "async"]);
 });

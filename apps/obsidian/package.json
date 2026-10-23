@@ -18,10 +18,11 @@
     "analyze": "ANALYZE=true vite build",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
     "test": "vitest run",
     "bench": "vitest run --config vitest.bench.config.ts",
-    "test:lua-filter": "node scripts/check-lua-filter.ts"
+    "test:lua-filter": "vitest run --project pandoc"
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
@@ -71,6 +72,7 @@
     "@codemirror/lint": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
+    "@effect/vitest": "catalog:",
     "@electron/remote": "^2.1.3",
     "@lezer/common": "catalog:",
     "@logtape/logtape": "catalog:",

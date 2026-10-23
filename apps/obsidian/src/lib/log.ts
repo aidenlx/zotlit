@@ -7,15 +7,15 @@ import {
 /**
  * Root logger for the obsidian app. Module-level so any file can call
  * {@link getLogger} at import time without depending on the DI container.
- * `LoggingService` owns the `configure()` lifecycle; before it runs, calls
+ * `layerLogging` owns LogTape's configuration; before it builds, calls
  * through this logger are no-ops aside from LogTape's own meta sink.
  */
 export const rootLogger = tapGetLogger(["zotlit", "obsidian"]);
 
 /**
- * Wires a console sink before `LoggingService` can read settings, so dev builds
- * keep startup records (locale resolution, Language Pack install) that would
- * otherwise be dropped. `LoggingService` replaces this config with `reset: true`.
+ * Wires a console sink before the services build, so dev builds keep startup
+ * records (locale resolution, Language Pack install) that would otherwise be
+ * dropped. `layerLogging` replaces this config with `reset: true`.
  */
 export function enableStartupLogging(): void {
   configureSync({

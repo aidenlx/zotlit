@@ -519,7 +519,7 @@ describe("Citation Suggester document citations", () => {
     );
     await using lookup = new ItemLookup({
       reads,
-      useLedger: { ready: Promise.resolve(), uses: {} },
+      useLedger: { uses: {} },
       libraryScope: {
         ready: Promise.resolve(),
         on: () => () => {},

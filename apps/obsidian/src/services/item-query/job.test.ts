@@ -1,4 +1,4 @@
-import { Effect, Fiber } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
@@ -211,6 +211,7 @@ describe("Query Job", () => {
     seedBulkLibrary(scenario.sqlite, 20000);
     const { output, stagePath } = exportPaths(scenario);
     const events: string[] = [];
+    const firstPause = Deferred.makeUnsafe<void>();
 
     const answer = await Effect.runPromise(
       Effect.gen(function* () {
@@ -221,13 +222,18 @@ describe("Query Job", () => {
             attachmentFiles: makeAttachmentFileResolver(ATTACHMENT_PATHS),
           }).pipe(
             Effect.provideService(ItemQuerySliceObserver, {
-              paused: () => events.push("pause"),
+              paused: () => {
+                events.push("pause");
+                Deferred.doneUnsafe(firstPause, Effect.void);
+              },
               resumed: () => events.push("resume"),
             }),
           ),
         );
         // A stand-in for a ZoteroReads request on the default scheduler,
-        // such as Ping: a timer task.
+        // such as Ping: a timer task, set once the job is mid-query so it
+        // lands at a later pause rather than before the first slice.
+        yield* Deferred.await(firstPause);
         yield* Effect.sleep("1 millis");
         events.push("other");
         return yield* Fiber.join(job);

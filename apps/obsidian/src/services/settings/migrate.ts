@@ -400,3 +400,17 @@ export function migrateV9ToV10(raw: unknown): Record<string, unknown> {
     },
   };
 }
+
+/** Each migration `SettingsService` runs, under the option that takes it. */
+export const settingsMigrations = {
+  migrateLegacy: migrateLegacyV0,
+  migrateV1: migrateV1ToV2,
+  migrateV2: migrateV2ToV3,
+  migrateV3: migrateV3ToV4,
+  migrateV4: migrateV4ToV5,
+  migrateV5: migrateV5ToV6,
+  migrateV6: migrateV6ToV7,
+  migrateV7: migrateV7ToV8,
+  migrateV8: migrateV8ToV9,
+  migrateV9: migrateV9ToV10,
+};

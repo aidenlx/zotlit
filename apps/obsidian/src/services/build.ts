@@ -1,6 +1,8 @@
 import type { FileSystemAdapter } from "obsidian";
 
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
 import { revealSetting } from "@/lib/open-settings";
@@ -48,7 +50,6 @@ import { QueryService } from "./item-query/service";
 import { LibraryScopeService } from "./library-scope/service";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
-import { LoggingService } from "./log/service";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { createBatchImport } from "./note-import/batch-import";
@@ -60,29 +61,18 @@ import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
+import { pluginLayer } from "./plugin-layer";
 import { ProfileService } from "./profile/service";
-import { QueryClientService } from "./query-client/service";
+import { QueryClients } from "./query-client/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import {
-  migrateLegacyV0,
-  migrateV1ToV2,
-  migrateV2ToV3,
-  migrateV3ToV4,
-  migrateV4ToV5,
-  migrateV5ToV6,
-  migrateV6ToV7,
-  migrateV7ToV8,
-  migrateV8ToV9,
-  migrateV9ToV10,
-} from "./settings/migrate";
-import { SettingsService } from "./settings/service";
+import { PluginSettings } from "./settings/service";
 import {
   LiteratureNoteTemplateMigrationService,
   loadLiteratureNoteTemplateMigrationData,
 } from "./template/migration";
 import { TemplateService } from "./template/service";
-import { UseLedger } from "./use-ledger/service";
+import { plainUseLedger } from "./use-ledger/plain";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
@@ -98,14 +88,21 @@ import { workerClient } from "./zotero-reads/worker-client";
  * This function does not own lifecycle. `zt-main.ts` creates the stack, passes
  * it here, and moves the stack only after all plugin startup wiring succeeds.
  *
- * Registration order matters: services dispose in LIFO. `log` is registered
- * after `settings` so it shuts down (flushing the file sink) before settings
- * drains its pending writes.
+ * The runtime over {@link pluginLayer} is built first, and the container
+ * injects its services with `useValue`: a converted service through its plain
+ * adapter, a bridged one as it is. The runtime's disposal sits under every
+ * container registration on `stack`, so the whole graph closes after the last
+ * container service has disposed: a container service never outlives a layer
+ * it uses. A service leaves the container for the graph as it converts or is
+ * bridged.
+ *
+ * Within the container, registration order matters: services dispose in LIFO.
  */
 export function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
 ) {
+  const runtime = buildRuntime(pluginLayer(plugin), stack);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -119,31 +116,14 @@ export function buildServices(
   };
 
   return container
-    .use({
-      settings: () =>
-        new SettingsService({
-          plugin,
-          migrateLegacy: migrateLegacyV0,
-          migrateV1: migrateV1ToV2,
-          migrateV2: migrateV2ToV3,
-          migrateV3: migrateV3ToV4,
-          migrateV4: migrateV4ToV5,
-          migrateV5: migrateV5ToV6,
-          migrateV6: migrateV6ToV7,
-          migrateV7: migrateV7ToV8,
-          migrateV8: migrateV8ToV9,
-          migrateV9: migrateV9ToV10,
-          handoff: plugin.app,
-        }),
+    .useValue({
+      settings: () => runtime.runSync(PluginSettings.use(Effect.succeed)),
     })
-    .use({
-      log: ({ settings }) => new LoggingService({ plugin, settings }),
+    .useValue({
+      useLedger: () => plainUseLedger(runtime),
     })
-    .use({
-      useLedger: () => new UseLedger({ app: plugin.app }),
-    })
-    .use({
-      queryClient: () => new QueryClientService(),
+    .useValue({
+      queryClient: () => runtime.runSync(QueryClients.use(Effect.succeed)),
     })
     .use({
       release: ({ settings }) =>

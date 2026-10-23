@@ -6,26 +6,15 @@ import type { App } from "obsidian";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
+import type { BinaryPin } from "./pin";
 import { createOpfsBinaryStore } from "./store";
 import type { BinaryStore } from "./store";
 
+export type { BinaryPin } from "./pin";
 export type { BinaryStore } from "./store";
 
 /** Suffix of a cached binary; a download still running writes `.part` instead. */
 const BINARY_SUFFIX = ".wasm";
-
-/**
- * The download a build committed to, resolved and verified against the
- * official upstream release at build time.
- */
-export interface BinaryPin {
-  /** Upstream release version, e.g. `3.10`. */
-  readonly version: string;
-  /** Exact upstream asset that carries the binary. */
-  readonly url: string;
-  /** Lowercase hex SHA-256 of the binary itself, after {@link ManagedBinary.extract}. */
-  readonly sha256: string;
-}
 
 /**
  * One Managed Binary: what a release pins, where the device caches it, and what
