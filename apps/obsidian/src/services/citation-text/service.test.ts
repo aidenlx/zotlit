@@ -1,12 +1,13 @@
-import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // @vitest-environment happy-dom
@@ -206,10 +207,7 @@ async function makeHarness({
   const service = new CitationText({
     openDocuments,
     citationLookup: {
-      on: (_event: string, cb: () => void) => {
-        listeners.set("index:resolution-changed", cb);
-        return () => listeners.delete("index:resolution-changed");
-      },
+      on: listen("lookup"),
     },
     app: {
       vault: {
@@ -314,7 +312,7 @@ async function makeHarness({
     indexChanged: (path) => fire("index:changed", path),
     rendersInvalidated: () => fire("render:invalidated"),
     resolutionChanged: () => fire("notes:changed"),
-    citekeyResolutionChanged: () => fire("index:resolution-changed"),
+    citekeyResolutionChanged: () => fire("lookup:changed"),
     metadataChanged: (path) => fire("metadata:changed", { path }),
     deleteNote: () => {
       present = false;
@@ -1202,20 +1200,30 @@ describe("CitationText staleness", () => {
   // The citekey resolution snapshot decides what a literal `@citekey` reaches
   // and whether a wikilink's Item carries a native citation key, so a rebuild
   // makes every document's text stale.
-  it("keeps every document's text when the citekey resolution snapshot rebuilds", async () => {
-    const { service, citekeyResolutionChanged, dispose } = await makeHarness({
-      body: "Blah [@alpha].",
-    });
-    await readText(service);
-    let invalidated = 0;
-    service.on("invalidated", () => (invalidated += 1));
+  it.effect(
+    "#1705 invalidates held text on lookup changes until disposed",
+    () =>
+      Effect.promise(async () => {
+        await using cleanup = new AsyncDisposableStack();
+        const { service, citekeyResolutionChanged, dispose } =
+          await makeHarness({
+            body: "Blah [@alpha].",
+          });
+        cleanup.defer(dispose);
+        await readText(service);
+        let invalidated = 0;
+        service.on("invalidated", () => (invalidated += 1));
 
-    citekeyResolutionChanged();
+        citekeyResolutionChanged();
 
-    expect(service.peek(NOTE.path)).not.toBeNull();
-    expect(invalidated).toBe(1);
-    await dispose();
-  });
+        expect(service.peek(NOTE.path)).not.toBeNull();
+        expect(invalidated).toBe(1);
+        await service[Symbol.asyncDispose]();
+
+        citekeyResolutionChanged();
+        expect(invalidated).toBe(1);
+      }),
+  );
 
   it("answers a read of a document deleted while it ran with nothing", async () => {
     const gate = Promise.withResolvers<readonly RenderedCitation[]>();

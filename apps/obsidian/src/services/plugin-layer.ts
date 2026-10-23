@@ -6,6 +6,8 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
+import { layerCitationLookup } from "./citation-index/lookup-service";
+import type { CitationLookup } from "./citation-index/lookup-service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLibraryScope } from "./library-scope/service";
@@ -48,6 +50,7 @@ export function pluginLayer(
   plugin: Plugin,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
+  | CitationLookup
   | Profile
   | LibraryScope
   | ZoteroReads
@@ -62,7 +65,8 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return Layer.mergeAll(layerLibraryScope, layerProfile).pipe(
+  return layerCitationLookup.pipe(
+    Layer.provideMerge(Layer.mergeAll(layerLibraryScope, layerProfile)),
     Layer.provideMerge(layerZoteroReads(workerClient())),
     Layer.provideMerge(
       Layer.mergeAll(
