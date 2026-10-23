@@ -22,7 +22,7 @@ import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { loadApprovedFolders, saveApprovedFolders } from "./approved-folders";
 import {
@@ -60,7 +60,7 @@ const SKIP_SUMMARY_DEBOUNCE_MS = 1500;
 export interface AttachmentImportServiceDeps {
   app: App;
   settings: SettingsService;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath"> & {
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath"> & {
     /** Only the one event the root snapshot follows. */
     on(event: "resolved-changed", cb: () => void): () => void;
   };

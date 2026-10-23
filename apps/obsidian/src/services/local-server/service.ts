@@ -17,7 +17,7 @@ import { getLogger } from "@/lib/log";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { createLiveUpdateApp } from "./live-update-app";
 
@@ -106,7 +106,7 @@ export interface LocalServerEvents {
 
 export interface LocalServerServiceDeps {
   settings: SettingsService;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<PlainZoteroPref, "sourceId">;
   noteIndex: NoteIndex;
 }
 

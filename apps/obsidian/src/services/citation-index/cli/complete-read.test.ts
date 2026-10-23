@@ -26,7 +26,6 @@ function commands(h: CitationIndexHarness) {
     app: h.app,
     citationIndex: h.index,
     zoteroPref: {
-      ready: Promise.resolve(),
       sourceId: "test",
       databasePath: "/test/zotero.sqlite",
     },

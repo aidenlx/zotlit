@@ -14,6 +14,8 @@ import { settingsMigrations } from "./settings/migrate";
 import { PluginSettings, SettingsService } from "./settings/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
+import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
+import type { ZoteroPref } from "./zotero-pref/service";
 
 /**
  * The graph `buildServices` builds before the container over `plugin`:
@@ -24,9 +26,12 @@ import type { UseLedger } from "./use-ledger/service";
  */
 export function pluginLayer(
   plugin: Plugin,
-): Layer.Layer<PluginSettings | UseLedger | QueryClients | CitationParse> {
+): Layer.Layer<
+  PluginSettings | UseLedger | QueryClients | CitationParse | ZoteroPref
+> {
   return Layer.mergeAll(
     layerUseLedger,
+    layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
     layerCitationParse,
     layerQueryClients,
   ).pipe(

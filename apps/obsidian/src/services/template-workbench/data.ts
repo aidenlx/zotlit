@@ -38,7 +38,7 @@ import {
   resolveObsidianExcerptImageContext,
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -74,10 +74,7 @@ export interface TemplateDataDeps {
   >;
   settings: Pick<SettingsService, "loaded">;
   templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
-  zoteroPref: Pick<
-    ZoteroPrefService,
-    "ready" | "dataDir" | "baseAttachmentPath"
-  >;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
 /**
@@ -147,7 +144,6 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
     [
       attempt(() => deps.settings.loaded),
       attempt(() => deps.noteIndex.whenIndexed()),
-      attempt(() => deps.zoteroPref.ready),
       attempt(() => deps.templates.ready),
     ],
     { concurrency: "unbounded" },

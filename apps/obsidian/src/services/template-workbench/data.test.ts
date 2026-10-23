@@ -875,7 +875,6 @@ function createFixture(options?: {
           },
         },
         zoteroPref: {
-          ready: Promise.resolve(),
           dataDir: "/Zotero",
           baseAttachmentPath: null,
         },

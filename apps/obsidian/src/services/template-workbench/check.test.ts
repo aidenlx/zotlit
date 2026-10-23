@@ -88,7 +88,6 @@ async function fixture(
     getImportedNoteByNoteKey: () => [],
   };
   const zoteroPref = {
-    ready: Promise.resolve(),
     sourceId: "fixture",
     databasePath: "/fixture/db",
     dataDir: "/fixture",

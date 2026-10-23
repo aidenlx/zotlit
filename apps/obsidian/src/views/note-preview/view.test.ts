@@ -153,7 +153,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     app,
     settings: fixture.deps.settings,
     zoteroReads: fixture.deps.zoteroReads,
-    zoteroPref: { ready: Promise.resolve(), dataDir: null },
+    zoteroPref: { dataDir: null },
     templates: fixture.deps.templates,
     nativePreview: fixture.deps,
   } as unknown as TemplateWorkbenchDeps);
