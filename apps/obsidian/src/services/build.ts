@@ -4,7 +4,7 @@ import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
-import { buildRuntime } from "@/lib/effect-layer";
+import { buildRuntimeAsync } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
 import { revealSetting } from "@/lib/open-settings";
@@ -101,11 +101,11 @@ import { workerClient } from "./zotero-reads/worker-client";
  *
  * Within the container, registration order matters: services dispose in LIFO.
  */
-export function buildServices(
+export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
 ) {
-  const runtime = buildRuntime(pluginLayer(plugin), stack);
+  const runtime = await buildRuntimeAsync(pluginLayer(plugin), stack);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });

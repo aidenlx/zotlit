@@ -107,5 +107,7 @@ export const workerClient = Effect.fnUntraced(function* ({
       for (const unsubscribe of unsubscribes) unsubscribe();
     }),
   );
+  // Reconcile changes made while the worker connection was being acquired.
+  push();
   return reads;
 });

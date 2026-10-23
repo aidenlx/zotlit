@@ -3,10 +3,85 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
 
-import { Effect, Fiber, Queue, Stream } from "@/lib/effect";
+import { Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
 import { zoteroPrefFixture } from "./__fixtures__";
+
+// #1705: cancellation at the storage boundary must leave the published override
+// equal to the saved one, and a profile change must still start its reload.
+for (const kind of ["data", "profile"] as const) {
+  it.effect(
+    `finishes the ${kind} directory commit when interrupted after persistence`,
+    () =>
+      Effect.gen(function* () {
+        const started = yield* Queue.unbounded<string>();
+        const stopped = yield* Queue.unbounded<string>();
+        let interrupt = () => {};
+        const f = yield* zoteroPrefFixture(
+          (path) =>
+            path === "/profile/prefs.js"
+              ? Effect.succeed("")
+              : Queue.offer(started, path).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(Queue.offer(stopped, path)),
+                ),
+          { profileDir: "/profile" },
+          () => interrupt(),
+        );
+        const commit = yield* Effect.withFiber((fiber) => {
+          // The synchronous OS callback interrupts exactly after persistence.
+          interrupt = () => fiber.interruptUnsafe();
+          return kind === "data"
+            ? f.pref.setDataDir("/new-data")
+            : f.pref.setProfileDir("/new-profile");
+        }).pipe(Effect.forkChild);
+        expect(Exit.isFailure(yield* Fiber.await(commit))).toBe(true);
+        const current = yield* f.pref.current;
+        if (kind === "data") {
+          expect(f.saved()).toEqual({
+            profileDir: "/profile",
+            dataDir: "/new-data",
+          });
+          expect(current.dataDirOverride).toBe("/new-data");
+        } else {
+          expect(f.saved()).toEqual({ profileDir: "/new-profile" });
+          expect(current.profileDirOverride).toBe("/new-profile");
+          expect(yield* Queue.take(started)).toBe("/new-profile/prefs.js");
+          yield* f.runtime.disposeEffect;
+          expect(yield* Queue.take(stopped)).toBe("/new-profile/prefs.js");
+        }
+      }),
+  );
+}
+
+// #1705: every consumer's first read needs the settled profile, including
+// the worker database, the CLI source identity, and Template Workbench styles.
+it.effect("builds with settled preferences before the first read", () =>
+  Effect.gen(function* () {
+    const started = yield* Queue.unbounded<void>();
+    const first = yield* zoteroPrefFixture(() =>
+      Queue.offer(started, undefined).pipe(
+        Effect.andThen(Effect.sleep("1 second")),
+        Effect.as(
+          'user_pref("extensions.zotero.useDataDir", true);\nuser_pref("extensions.zotero.dataDir", "/research-data");',
+        ),
+      ),
+    ).pipe(
+      Effect.flatMap((f) => f.pref.current),
+      Effect.forkChild,
+    );
+    yield* Queue.take(started);
+    yield* TestClock.adjust("1 second");
+    expect(yield* Fiber.join(first)).toMatchObject({
+      state: "ready",
+      resolvedProfileDir: "/profile",
+      dataDir: "/research-data",
+      databasePath: "/research-data/zotero.sqlite",
+      sourceId: expect.any(String),
+    });
+  }),
+);
 
 // Failure modes: a Device Override is not persisted, or observers retain the
 // old database path after the setting changes.
@@ -30,23 +105,24 @@ it.effect("publishes and persists the data directory Device Override", () =>
 );
 
 // Failure modes: a late read replaces a newer profile, or closing the service
-// leaves its startup/profile reads running and able to change state.
+// leaves its profile reads running and able to change state.
 it.effect("keeps the latest profile and interrupts reads on scope close", () =>
   Effect.gen(function* () {
     const started = yield* Queue.unbounded<string>();
     const stopped = yield* Queue.unbounded<string>();
     const read = (path: string) =>
       Effect.gen(function* () {
+        if (path === "/profile/prefs.js") return "";
         yield* Queue.offer(started, path);
         yield* Effect.sleep(
-          path === "/profile/prefs.js" ? "2 seconds" : "1 second",
+          path === "/slow-profile/prefs.js" ? "2 seconds" : "1 second",
         );
-        return (
-          `user_pref("extensions.zotero.baseAttachmentPath", "${  path  }");`
-        );
+        return `user_pref("extensions.zotero.baseAttachmentPath", "${path}");`;
       }).pipe(Effect.ensuring(Queue.offer(stopped, path)));
     const f = yield* zoteroPrefFixture(read);
-    expect(yield* Queue.take(started)).toBe("/profile/prefs.js");
+    yield* Queue.take(stopped);
+    yield* f.pref.setProfileDir("/slow-profile");
+    expect(yield* Queue.take(started)).toBe("/slow-profile/prefs.js");
     yield* f.pref.setProfileDir("/new-profile");
     expect(yield* Queue.take(started)).toBe("/new-profile/prefs.js");
     yield* TestClock.adjust("1 second");

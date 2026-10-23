@@ -182,46 +182,50 @@ export const layerZoteroPref = Layer.effect(
       }
     }, withLogCategory("zotero-pref"));
 
-    const setDataDir = Effect.fn("ZoteroPref.setDataDir")(function* (
-      dir: string | null,
-    ) {
-      const before = yield* current;
-      if (closed || dir === before.dataDirOverride) return;
-      saveZoteroPathOverrides(app, {
-        profileDir: before.profileDirOverride,
-        dataDir: dir,
-      });
-      yield* SubscriptionRef.set(
-        state,
-        snapshot({ ...before, dataDirOverride: dir }),
-      );
-      yield* Effect.logDebug("Data dir override changed").pipe(
-        Effect.annotateLogs({ dir }),
-      );
-    }, withLogCategory("zotero-pref"));
+    const setDataDir = Effect.fn("ZoteroPref.setDataDir")(
+      function* (dir: string | null) {
+        const before = yield* current;
+        if (closed || dir === before.dataDirOverride) return;
+        saveZoteroPathOverrides(app, {
+          profileDir: before.profileDirOverride,
+          dataDir: dir,
+        });
+        yield* SubscriptionRef.set(
+          state,
+          snapshot({ ...before, dataDirOverride: dir }),
+        );
+        yield* Effect.logDebug("Data dir override changed").pipe(
+          Effect.annotateLogs({ dir }),
+        );
+      },
+      Effect.uninterruptible,
+      withLogCategory("zotero-pref"),
+    );
 
-    const setProfileDir = Effect.fn("ZoteroPref.setProfileDir")(function* (
-      dir: string | null,
-    ) {
-      const before = yield* current;
-      if (closed || dir === before.profileDirOverride) return;
-      saveZoteroPathOverrides(app, {
-        profileDir: dir,
-        dataDir: before.dataDirOverride,
-      });
-      yield* SubscriptionRef.set(
-        state,
-        snapshot({ ...before, profileDirOverride: dir }),
-      );
-      yield* Effect.logDebug(
-        "Profile dir override changed; re-reading prefs",
-      ).pipe(Effect.annotateLogs({ dir }));
-      yield* Effect.forkIn(reload(dir), scope, { startImmediately: true });
-    }, withLogCategory("zotero-pref"));
+    const setProfileDir = Effect.fn("ZoteroPref.setProfileDir")(
+      function* (dir: string | null) {
+        const before = yield* current;
+        if (closed || dir === before.profileDirOverride) return;
+        saveZoteroPathOverrides(app, {
+          profileDir: dir,
+          dataDir: before.dataDirOverride,
+        });
+        yield* SubscriptionRef.set(
+          state,
+          snapshot({ ...before, profileDirOverride: dir }),
+        );
+        yield* Effect.logDebug(
+          "Profile dir override changed; re-reading prefs",
+        ).pipe(Effect.annotateLogs({ dir }));
+        yield* Effect.forkIn(Effect.interruptible(reload(dir)), scope, {
+          startImmediately: true,
+        });
+      },
+      Effect.uninterruptible,
+      withLogCategory("zotero-pref"),
+    );
 
-    yield* Effect.forkScoped(reload(overrides.profileDir), {
-      startImmediately: true,
-    });
+    yield* reload(overrides.profileDir);
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;

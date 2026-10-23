@@ -15,10 +15,29 @@ import { runtimeServices } from "./effect-services";
  * stack before the build runs, so a build that throws releases what it had
  * already acquired when the stack unwinds.
  *
- * A layer that suspends throws here: plugin load does not wait. Acquire
- * synchronously, and fork async startup onto the layer's Scope.
+ * A layer that suspends throws here. Use `buildRuntimeAsync` when callers
+ * need asynchronous acquisition to finish before they hold the services.
  */
 export function buildRuntime<R>(
+  layer: Layer.Layer<R>,
+  stack: AsyncDisposableStack,
+): ManagedRuntime.ManagedRuntime<R, never> {
+  const runtime = createRuntime(layer, stack);
+  runtime.runSync(NativeEffect.void);
+  return runtime;
+}
+
+/** Build settled services before callers use their synchronous adapters. */
+export async function buildRuntimeAsync<R>(
+  layer: Layer.Layer<R>,
+  stack: AsyncDisposableStack,
+): Promise<ManagedRuntime.ManagedRuntime<R, never>> {
+  const runtime = createRuntime(layer, stack);
+  await runtime.runPromise(NativeEffect.void);
+  return runtime;
+}
+
+function createRuntime<R>(
   layer: Layer.Layer<R>,
   stack: AsyncDisposableStack,
 ): ManagedRuntime.ManagedRuntime<R, never> {
@@ -37,6 +56,5 @@ export function buildRuntime<R>(
       ),
     ),
   );
-  runtime.runSync(NativeEffect.void);
   return runtime;
 }

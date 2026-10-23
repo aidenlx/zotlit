@@ -42,14 +42,16 @@ it.effect("provides plain reads, Promises, and cancellable subscriptions", () =>
   }),
 );
 
-// Failure modes: initial load fails to notify old consumers, or the compatibility
+// Failure modes: profile reload fails to notify old consumers, or the compatibility
 // events confuse a profile read with a data-directory Device Override.
 it.effect(
   "maps preference reads and Device Overrides to compatibility events",
   () =>
     Effect.gen(function* () {
-      const f = yield* zoteroPrefFixture(() =>
-        Effect.sleep("1 second").pipe(Effect.as("")),
+      const f = yield* zoteroPrefFixture((path) =>
+        path === "/profile/prefs.js"
+          ? Effect.succeed("")
+          : Effect.sleep("1 second").pipe(Effect.as("")),
       );
       const plain = plainZoteroPref(f.runtime);
       const events: string[] = [];
@@ -67,6 +69,7 @@ it.effect(
           for (const stop of stops) stop();
         }),
       );
+      plain.setProfileDir("/reloaded-profile");
       yield* TestClock.adjust("1 second");
       yield* Queue.take(resolved);
       expect(events).toEqual(["prefs"]);
