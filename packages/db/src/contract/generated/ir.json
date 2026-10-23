@@ -3841,7 +3841,7 @@
         },
         {
           "name": "noteLink",
-          "description": "Renders the Obsidian link; default alias is the live title. Rendering it\nqueues the child note for import — a link never rendered creates no file,\nand an already-imported note links to the existing file without\nre-importing.",
+          "description": "Renders the link; default alias is the live title. It links the child\nnote's imported note when one exists, and otherwise opens the note in\nZotero. Rendering it never imports the child note.",
           "optional": false,
           "type": {
             "kind": "helper",

@@ -102,7 +102,8 @@ export interface ConvertedLegacyLiteratureNoteTemplate {
   readonly document: LiteratureNoteTemplateDocument;
   readonly rendered: {
     readonly create: string;
-    readonly update: string;
+    /** `null` when the converted document has no Managed Block. */
+    readonly update: string | null;
     readonly filename: string;
     readonly annotation: string | null;
   };
@@ -128,6 +129,12 @@ export interface ConvertLegacyLiteratureNoteTemplateOptions {
   readonly frontmatter?: readonly FrontmatterField[];
   readonly javascript?: boolean;
   readonly operationTimestamp?: Temporal.Instant;
+  /**
+   * Whether the legacy `content` slot renders as a Managed Region, so the
+   * converted document carries a Managed Block.
+   * @default true
+   */
+  readonly managed?: boolean;
 }
 
 /** One root-variable read found by static analysis of a registered Liquid template. */
@@ -375,8 +382,10 @@ export class TemplateFacade {
     },
     options: ConvertLegacyLiteratureNoteTemplateOptions = {},
   ): ConvertedLegacyLiteratureNoteTemplate {
+    const managed = options.managed ?? true;
     const source = synthesizeLegacyLiteratureNoteTemplate(legacy, {
       frontmatter: options.frontmatter,
+      managed,
     });
     const document = this.parseLiteratureNoteTemplate(source);
     const legacyRendered = {
@@ -405,7 +414,7 @@ export class TemplateFacade {
             )
           : null,
     };
-    if (rendered.update === null) {
+    if (managed && rendered.update === null) {
       throw new LegacyTemplateConversionError(
         "legacy-render-mismatch",
         "Converted document has no Managed Block",
@@ -416,7 +425,8 @@ export class TemplateFacade {
       );
     }
     assertSameRender("create output", legacyRendered.create, rendered.create);
-    assertSameRender("update output", legacyRendered.update, rendered.update);
+    if (rendered.update !== null)
+      assertSameRender("update output", legacyRendered.update, rendered.update);
     assertSameRender(
       "filename output",
       legacyRendered.filename,
@@ -477,7 +487,7 @@ export class TemplateFacade {
     return {
       source,
       document,
-      rendered: { ...rendered, update: rendered.update },
+      rendered,
       frontmatterPatch,
     };
   }

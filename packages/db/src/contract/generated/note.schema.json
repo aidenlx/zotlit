@@ -3921,7 +3921,7 @@
               "additionalProperties": false
             }
           ],
-          "description": "Renders the Obsidian link; default alias is the live title. Rendering it queues the child note for import — a link never rendered creates no file, and an already-imported note links to the existing file without re-importing."
+          "description": "Renders the link; default alias is the live title. It links the child note's imported note when one exists, and otherwise opens the note in Zotero. Rendering it never imports the child note."
         }
       },
       "required": ["key", "indexedKey", "title", "noteLink"],

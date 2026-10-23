@@ -8,6 +8,7 @@ const FENCE_END = "```\n";
 /**
  * The default Profile with a static annotation listing in place of its Query
  * Block: each Annotation of the item renders through the annotation template.
+ * The listing sits in a Managed Block, so an update refills it.
  */
 export const ANNOTATION_LIST_PROFILE_SOURCE = ((): string => {
   const start = DEFAULT_PROFILE_SOURCE.indexOf(QUERY_BLOCK_START);
@@ -17,12 +18,14 @@ export const ANNOTATION_LIST_PROFILE_SOURCE = ((): string => {
       FENCE_END,
       start + QUERY_BLOCK_START.length,
     ) + FENCE_END.length;
-  return `${DEFAULT_PROFILE_SOURCE.slice(0, start)}{% if zt.annotations.size > 0 %}
+  return `${DEFAULT_PROFILE_SOURCE.slice(0, start)}{% managed %}
+{% if zt.annotations.size > 0 %}
 ## Annotations
 
 {% for annotation in zt.annotations %}
 {% render_annotation annotation %}
 {% endfor %}
 {% endif %}
+{% endmanaged %}
 ${DEFAULT_PROFILE_SOURCE.slice(end)}`;
 })();

@@ -230,6 +230,7 @@ export {
 } from "./lib/zt-note-mark";
 export {
   buildFilenameContext,
+  zoteroNoteLink,
   type NoteTemplateContext,
   type TemplateNoteLink,
 } from "./lib/context/zt-template-note";

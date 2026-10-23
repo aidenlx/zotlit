@@ -142,6 +142,7 @@ async function fixture(mode: string) {
     },
     profile: profileReader(settings),
     template: {
+      renderManagedContent: () => "",
       ready: Promise.resolve(),
       loaded: true,
       renderProfileAnnotation: render,

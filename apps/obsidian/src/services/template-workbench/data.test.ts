@@ -209,7 +209,10 @@ describe("registered field discovery", () => {
       path: "zt.notes[0].noteLink",
     });
     expect(helper.discovery.matches[0]).toMatchObject({
-      value: { $inert: expect.any(String) },
+      value: {
+        $helper: "noteLink",
+        value: "[Child](zotero://select/library/items/NATE2345)",
+      },
       examples: { eta: "<%= zt?.notes?.[0]?.noteLink?.() %>" },
     });
     expect(fixture.writeCalls).toEqual([]);
@@ -696,7 +699,14 @@ describe("zotlit:template-data with the real loader", () => {
             parentItem: { $ref: "zt" },
           },
         ],
-        notes: [{ noteLink: { $inert: expect.any(String) } }],
+        notes: [
+          {
+            noteLink: {
+              $helper: "noteLink",
+              value: "[Child](zotero://select/library/items/NATE2345)",
+            },
+          },
+        ],
       },
     });
     expect(fixture.writeCalls).toEqual([]);

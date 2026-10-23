@@ -309,17 +309,6 @@ async function harness(
         }),
       }),
     },
-    noteImport: {
-      prepare: async () => ({
-        resolveChildNote: () => ({
-          key: "",
-          indexedKey: "",
-          title: null,
-          noteLink: () => "",
-        }),
-        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-      }),
-    },
   };
   const feature = createNoteFeature(deps);
   const cleanup = stack.move();

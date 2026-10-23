@@ -194,9 +194,9 @@ export interface FixtureItem {
    */
   literatureNoteProfile?: string;
   /**
-   * Seed this Item's Literature Note as the default note template renders it:
-   * the Zotero and Attachment links, then a managed region whose Annotations
-   * are a Query Block. Below the region, outside what Update Note rewrites,
+   * Seed this Item's Literature Note as an earlier default note template
+   * rendered it: the Zotero and Attachment links, then a managed region whose
+   * Annotations are a Query Block. Below the region, outside what Update Note rewrites,
    * the note embeds a view of a Query File, so one note holds both forms.
    */
   literatureNoteRendered?: boolean;
@@ -3355,8 +3355,8 @@ export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
   {
     name: "content",
     language: "liquid",
-    find: "## Notes",
-    replace: "## Zotero notes",
+    find: "## Annotations",
+    replace: "## Highlights",
   },
   {
     name: "annotation",

@@ -6,7 +6,7 @@ import filenameEta from "@defaults/filename.eta?raw";
 import filenameLiquid from "@defaults/filename.liquid?raw";
 import noteEta from "@defaults/note.eta?raw";
 import noteLiquid from "@defaults/note.liquid?raw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "./facade";
 import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
@@ -118,18 +118,19 @@ describe("Liquid default templates via the facade", () => {
     },
   );
 
-  it("renders a tight notes list under a heading", () => {
+  it("lists no Child Notes, so rendering links none", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotationLiquid, "liquid");
     facade.define("content", contentLiquid, "liquid");
+    const noteLink = vi.fn(() => "[[a|A]]");
 
     const rendered = facade.render("content", {
-      notes: [{ noteLink: () => "[[a|A]]" }, { noteLink: () => "[[b|B]]" }],
+      notes: [{ noteLink }],
       annotations: [],
     });
 
-    expect(rendered).toContain("## Notes");
-    expect(rendered).toContain("- [[a|A]]\n- [[b|B]]");
+    expect(rendered.trim()).toBe(QUERY_BLOCK_SECTION);
+    expect(noteLink).not.toHaveBeenCalled();
   });
 
   // The Annotations show live through `this`: the block names no Item, and an

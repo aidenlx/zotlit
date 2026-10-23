@@ -119,8 +119,8 @@ describe("parseNote over the default Profile", () => {
         );
         expect(text).toContain(String(mark.properties["data-target"]));
       }
-      expect(result.creationBody).toContain("%%zt-managed%%");
-      expect(JSON.stringify(tree)).not.toContain("zt-managed");
+      // The default body renders once, with no Managed Region.
+      expect(result.creationBody).not.toContain("%%zt-managed%%");
     });
   }
 });

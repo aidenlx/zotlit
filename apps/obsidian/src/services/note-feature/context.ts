@@ -34,7 +34,7 @@ import type {
 } from "@/services/excerpt-image/prepare";
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { QueryService } from "@/services/item-query/service";
-import type { NoteImport, NoteImporter } from "@/services/note-import/service";
+import { childNoteLink } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
@@ -85,6 +85,7 @@ export interface NoteFeatureDeps {
     | "ready"
     | "loaded"
     | "render"
+    | "renderManagedContent"
     | "renderCitation"
     | "renderProfileAnnotation"
     | "renderFilename"
@@ -92,8 +93,8 @@ export interface NoteFeatureDeps {
     | "getLiteratureNoteTemplate"
   >;
   /**
-   * The note write pipeline's reads: an operation holds one lease, so the
-   * Literature Note and the Child Notes it imports read one database state.
+   * The note write pipeline's reads: an operation holds one lease, so every
+   * read of one write sees one database state.
    */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready">;
   /** ZotLit Query, which tests the Profile Matches of an Item. */
@@ -105,7 +106,6 @@ export interface NoteFeatureDeps {
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   settings: Pick<SettingsService, "current" | "loaded" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
-  noteImport: Pick<NoteImporter, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (
     options: Omit<
@@ -190,7 +190,6 @@ export function buildNoteResolvers(
   ctx: Omit<NoteFeatureDeps, "db">,
   options: {
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
-    noteImport: Pick<NoteImport, "resolveChildNote">;
     settings: ProfileBindingSettings | null;
     sourcePath: string;
     excerptImages?: PreparedExcerpts;
@@ -240,7 +239,7 @@ export function buildNoteResolvers(
         }
       },
     },
-    resolveChildNote: (note) => options.noteImport.resolveChildNote(note),
+    resolveChildNote: (note) => childNoteLink(ctx, note, options.sourcePath),
   };
 }
 
