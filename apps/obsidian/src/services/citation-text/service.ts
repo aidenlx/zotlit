@@ -382,7 +382,7 @@ export class CitationText extends Service<void> {
    * mappings alone rather than for every rescan.
    */
   async #readDocument(file: TFile): Promise<DocumentCitations> {
-    await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
+    await this.#noteIndex.whenIndexed();
     const { facts, set } = await this.#citationIndex.getParsedDocument(file);
     const { source: body, record } = facts;
     const wikilinks = this.#wikilinkCitations(file, body, set);

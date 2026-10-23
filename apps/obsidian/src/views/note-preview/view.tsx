@@ -52,7 +52,7 @@ import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import {
   templateFolderOf,
@@ -99,7 +99,7 @@ export interface PreviewViewDeps extends NativeRenderDeps {
   settings: Pick<PlainPluginSettings, "current" | "update">;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
   profile: Pick<
-    ProfileService,
+    PlainProfile,
     "getBuiltInSource" | "profiles" | "resolveProfile"
   >;
 }

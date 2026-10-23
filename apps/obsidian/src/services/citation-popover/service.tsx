@@ -311,7 +311,6 @@ async function readWork(
   request: WorkHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
-  await deps.profile.ready;
   const work = request.work;
   const empty: PopoverRead = {
     blocks: [],
@@ -401,7 +400,6 @@ async function readBlocks(
   request: CitationHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
-  await deps.profile.ready;
   const file = deps.app.vault.getFileByPath(request.sourcePath);
   if (!file) {
     logger.debug("Hovered citation sits in no note", {

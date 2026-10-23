@@ -14,7 +14,7 @@ import type {
 } from "@zotlit/workbench/bridge";
 
 import { getLogger } from "@/lib/log";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 
 import { ProfileDocumentMissingError, profileSelector } from "./reads";
@@ -25,7 +25,7 @@ const logger = getLogger("local-bridge");
 
 /** The Profile service as the write boundary uses it: the reads plus the write. */
 export type BridgeProfileWriter = BridgeProfileReader &
-  Pick<ProfileService, "saveSource">;
+  Pick<PlainProfile, "saveSource">;
 
 /**
  * A Save answered. `reference-refused` is the one outcome the contract carries
@@ -59,7 +59,6 @@ export function createLocalBridgeSave(
 ): LocalBridgeSave {
   return {
     async saveSelectedProfile(profileId, request) {
-      await deps.profile.ready;
       // The reference the page holds is the Profile id and nothing else, so a
       // draft for another Profile cannot reach this Connection's document.
       if (request.reference !== profileId)

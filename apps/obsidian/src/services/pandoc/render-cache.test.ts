@@ -1,4 +1,5 @@
 import "@mock/dom-parser";
+import { TestClock } from "effect/testing";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,11 +11,13 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
+import { profileRuntimeOf } from "@/services/profile/__fixtures__";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
+import { createTemplateHost } from "@/services/template/__fixtures__";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
@@ -30,11 +33,78 @@ import type {
   RenderRequest,
 } from "./engine";
 import { BibliographyRenderCache } from "./render-cache";
-import type { CitationRenderOutcome } from "./render-cache";
+import type {
+  BibliographyRenderCacheOptions,
+  CitationRenderOutcome,
+} from "./render-cache";
 import type { PandocEngineStatus } from "./service";
 
 const APA = "http://www.zotero.org/styles/apa";
 const IEEE = "http://www.zotero.org/styles/ieee";
+
+it.effect.each(["share", "import"] as const)(
+  "#1705: preparing a Profile %s with unchanged templates keeps held renders",
+  (operation) =>
+    Effect.gen(function* () {
+      const { profile } = yield* profileRuntimeOf(createTemplateHost());
+      const harness = yield* acquireAsyncDisposable(() =>
+        makeHarness({}, undefined, profile),
+      );
+      const changes: unknown[] = [];
+      profile.on("changed", () => changes.push(profile.state));
+      const items = [item("alpha")];
+      const before = yield* Effect.promise(() =>
+        harness.cache.readBibliography(items),
+      );
+      yield* Effect.promise(async () => {
+        if (operation === "share") await profile.prepareShare("default");
+        else
+          await profile.prepareImport(
+            profile
+              .getBuiltInSource()
+              .replace("id: default", "id: Bk3Qn7XvT2Lp"),
+          );
+      });
+      yield* TestClock.adjust(0);
+      expect(changes).toEqual([]);
+      expect(harness.invalidations).toEqual([]);
+      expect(
+        yield* Effect.promise(() => harness.cache.readBibliography(items)),
+      ).toBe(before);
+      expect(harness.engine.requests).toHaveLength(1);
+    }),
+);
+
+it.effect(
+  "#1705: Profile preparation observes changed partials and invalidates held renders",
+  () =>
+    Effect.gen(function* () {
+      const path = "templates/zotlit-partial.summary.md";
+      const host = createTemplateHost({ [path]: "Original summary" });
+      const { profile } = yield* profileRuntimeOf(host);
+      const harness = yield* acquireAsyncDisposable(() =>
+        makeHarness({}, undefined, profile),
+      );
+      const items = [item("alpha")];
+      yield* Effect.promise(() => harness.cache.readBibliography(items));
+      host.vault.modifyFile(path, "Updated summary");
+      const preparing = profile.prepareShare("default");
+      yield* TestClock.adjust(500);
+      const plan = yield* Effect.promise(() => preparing);
+      expect(
+        plan.render({
+          version: "1.0.0",
+          author: "",
+          description: "",
+          partials: ["summary"],
+        }),
+      ).toContain("Updated summary");
+      yield* TestClock.adjust(0);
+      expect(harness.invalidations).toHaveLength(1);
+      yield* Effect.promise(() => harness.cache.readBibliography(items));
+      expect(harness.engine.requests).toHaveLength(2);
+    }),
+);
 
 it.effect(
   "releases a pending bibliography render when the runtime closes (#1705)",
@@ -269,6 +339,7 @@ interface Harness extends AsyncDisposable {
 async function makeHarness(
   overrides: SettingsOverrides = {},
   dataDir?: string,
+  profile?: BibliographyRenderCacheOptions["profile"],
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
   const db = new DatabaseStub();
@@ -282,8 +353,7 @@ async function makeHarness(
   const queryClient = stack.use(queryClientsFixture());
   const cache = stack.use(
     new BibliographyRenderCache({
-      profile: {
-        ready: Promise.resolve(),
+      profile: profile ?? {
         on: (event, callback) => profileEvents.on(event, callback),
       },
       db,

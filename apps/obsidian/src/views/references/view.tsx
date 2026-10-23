@@ -266,7 +266,6 @@ export class ReferencesView extends ItemView {
     this.register(bibliographyRender.on("settled", repaint));
     this.#reload();
     this.#rescan();
-    await this.#deps.profile.ready;
     this.#rescan();
     this.#reload();
   }

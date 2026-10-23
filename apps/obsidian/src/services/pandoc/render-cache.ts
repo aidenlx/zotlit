@@ -6,7 +6,7 @@ import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
@@ -53,7 +53,7 @@ interface BibliographyRenderEvents {
 }
 
 export interface BibliographyRenderCacheOptions {
-  profile: Pick<ProfileService, "ready" | "on">;
+  profile: Pick<PlainProfile, "on">;
   db: Pick<PlainZoteroReads, "on">;
   pandocEngine: Pick<
     PlainPandocEngine,
@@ -303,7 +303,6 @@ export class BibliographyRenderCache extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#profile.ready;
     stack.defer(this.#profile.on("changed", () => this.#invalidate()));
 
     stack.defer(this.#db.on("changed", () => this.#invalidate()));

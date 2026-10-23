@@ -17,7 +17,7 @@ import type {
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
@@ -103,7 +103,7 @@ export type DocumentPresentation =
 export function documentPresentation(
   metadataCache: Pick<MetadataCache, "getFileCache">,
   file: TFile,
-  profiles?: Pick<ProfileService, "loaded" | "profileOf">,
+  profiles?: Pick<PlainProfile, "loaded" | "profileOf">,
 ): DocumentPresentation {
   const frontmatter = metadataCache.getFileCache(file)?.frontmatter;
   const presentation: RenderPresentation = {};

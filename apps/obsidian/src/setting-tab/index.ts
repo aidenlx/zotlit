@@ -5,7 +5,6 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -56,7 +55,7 @@ export interface ZotLitSettingTabOptions {
     | "updateDefaultLiteratureNoteProfileBindings"
     | "subscribe"
   >;
-  profile: ProfileService;
+  profile: SettingTabContext["profile"];
   db: Pick<
     PlainZoteroReads,
     "refresh" | "state" | "error" | "on" | "activeReadMode"
@@ -111,7 +110,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #excerptDisplay: SettingTabContext["excerptDisplay"];
   readonly #annotations: AnnotationCapabilityActions;
   readonly #writeAuthorization: WriteAuthorizationActions;
-  readonly #profile: ProfileService;
+  readonly #profile: SettingTabContext["profile"];
   readonly #template: SettingTabContext["template"];
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: ManagedBinaryActions;
@@ -175,21 +174,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
     plugin.register(
       template.on("compile-status-changed", () => this.#requestUpdate()),
-    );
-    // Obsidian calls `update()` from `addSettingTab()`, so the first pass runs
-    // while `onload` is still wiring and PlainTemplate is still loading. The
-    // rows that need it structurally are left out of that pass, so re-render
-    // once the service reports ready. `compile-status-changed` can't stand in:
-    // its load-time emit lands before the service flips to loaded.
-    let unloaded = false;
-    plugin.register(() => {
-      unloaded = true;
-    });
-    void profile.ready.then(
-      () => {
-        if (!unloaded) this.#requestUpdate();
-      },
-      () => {},
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
     plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
