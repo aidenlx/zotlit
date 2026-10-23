@@ -653,6 +653,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0
+      entities:
+        specifier: 7.0.1
+        version: 7.0.1
       eta:
         specifier: 'catalog:'
         version: 4.6.0
