@@ -40,6 +40,181 @@ const conformance: {
   record: Partial<NoteScanRecord>;
 }[] = [
   {
+    name: "probe/math-marker/dash-then-opener: list boundary (#1689)",
+    text: "- $$x\n  [[Note]]\n\n[[After]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "Note",
+          position: {
+            start: { line: 1, col: 2, offset: 8 },
+            end: { line: 1, col: 10, offset: 16 },
+          },
+        },
+        {
+          kind: "wikilink",
+          raw: "After",
+          position: {
+            start: { line: 3, col: 0, offset: 18 },
+            end: { line: 3, col: 9, offset: 27 },
+          },
+        },
+      ],
+    },
+  },
+  {
+    name: "probe/math-unclosed/callout-title: unclosed body opener (#1689)",
+    text: "> [!note]\n> $$x\n> [[Note]]\n\n[[After]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "Note",
+          position: {
+            start: { line: 2, col: 2, offset: 18 },
+            end: { line: 2, col: 10, offset: 26 },
+          },
+        },
+        {
+          kind: "wikilink",
+          raw: "After",
+          position: {
+            start: { line: 4, col: 0, offset: 28 },
+            end: { line: 4, col: 9, offset: 37 },
+          },
+        },
+      ],
+    },
+  },
+  {
+    name: "comment/inline: comment inside an annotation image label (#1689)",
+    text: `![%%hidden%%](${uri})`,
+    record: {
+      annotations: [{ ...annotation, form: "embed", position: pos(0, 71) }],
+    },
+  },
+  {
+    name: "probe/math-unclosed/quote-same-line: following fenced code (#1689)",
+    text: "> $$x\n> ```\n> [[Note]]\n\n[[After]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "After",
+          position: {
+            start: { line: 4, col: 0, offset: 24 },
+            end: { line: 4, col: 9, offset: 33 },
+          },
+        },
+      ],
+    },
+  },
+  {
+    name: "math/in-blockquote: closed math across a bare quote marker (#1689)",
+    text: "> $$x\n>\n> [[Note]]\n> $$\n\n[[After]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "After",
+          position: {
+            start: { line: 5, col: 0, offset: 25 },
+            end: { line: 5, col: 9, offset: 34 },
+          },
+        },
+      ],
+    },
+  },
+  {
+    name: "probe/cross/highlight-wikilink (#1689)",
+    text: "==a[[b==c]]\n",
+    record: {},
+  },
+  {
+    name: "probe/label-wikilink/after-plain-bracket (#1689)",
+    text: "a [x][[w]] b\n",
+    record: {},
+  },
+  {
+    name: "probe/footnote-embed/ref-wikilink (#1689)",
+    text: "[^[[target]]]\n",
+    record: {},
+  },
+  {
+    name: "context/footnote-definition/wikilink (#1689)",
+    text: "[^1]: [[target]]\n",
+    record: {
+      wikilinks: [{ kind: "wikilink", raw: "target", position: pos(6, 16) }],
+    },
+  },
+  {
+    name: "math/text-after-close: a display closer needs its own line (#1689)",
+    text: "Here is an equation\n$$\nx = x + 1\n$$and text after\n\n[[Test 2]]\n",
+    record: {},
+  },
+  {
+    name: "probe/footnote-embed/inline-wikilink (#1689)",
+    text: "^[[[Note]]]",
+    record: {
+      wikilinks: [{ kind: "wikilink", raw: "Note", position: pos(2, 10) }],
+    },
+  },
+  {
+    name: "comment/inline: comment within annotation label (#1689)",
+    text: `[visible %%hidden%%](${uri})`,
+    record: {
+      annotations: [{ ...annotation, form: "labelled", position: pos(0, 78) }],
+    },
+  },
+  {
+    name: "probe/label-precedence/wikilink-inside (#1689)",
+    text: "[foo [[target]] bar](u)",
+    record: {
+      wikilinks: [{ kind: "wikilink", raw: "target", position: pos(5, 15) }],
+    },
+  },
+  {
+    name: "probe/math-unclosed/quote-same-line: container boundary (#1689)",
+    text: "> $$x\n> [[Note]]\n\n[[After]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "Note",
+          position: {
+            start: { line: 1, col: 2, offset: 8 },
+            end: { line: 1, col: 10, offset: 16 },
+          },
+        },
+        {
+          kind: "wikilink",
+          raw: "After",
+          position: {
+            start: { line: 3, col: 0, offset: 18 },
+            end: { line: 3, col: 9, offset: 27 },
+          },
+        },
+      ],
+    },
+  },
+  {
+    name: "probe/math/display-same-line: indented paragraph continuation (#1689)",
+    text: "$$x$$ tail\n    [[Note]]",
+    record: {
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "Note",
+          position: {
+            start: { line: 1, col: 4, offset: 15 },
+            end: { line: 1, col: 12, offset: 23 },
+          },
+        },
+      ],
+    },
+  },
+  {
     name: "ATX heading before indented code (#1689)",
     text: `## heading\n    ${hidden}`,
     record: {},

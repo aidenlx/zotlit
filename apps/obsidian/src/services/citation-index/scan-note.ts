@@ -1,5 +1,5 @@
 // One worker-safe parse produces the raw citation and annotation facts for one note.
-import { parser } from "@lezer/markdown";
+import { InlineContext, parser } from "@lezer/markdown";
 import type { BlockContext, Line } from "@lezer/markdown";
 import { regex } from "arkregex";
 import { decodeHTMLStrict } from "entities/decode";
@@ -48,6 +48,11 @@ export interface NoteScanRecord {
   }[];
 }
 
+// Each paragraph searches a suffix at most once per delimiter width.
+const mathClosers = new WeakMap<InlineContext, number[]>();
+const referenceLabelOpeners = new WeakMap<InlineContext, number>();
+const exhaustedHighlights = new WeakSet<InlineContext>();
+
 const markdown = parser.configure({
   // Trim only inline presentation nodes: these cannot move exclusion boundaries.
   // Keep every block parser, including headings, rules and reference definitions,
@@ -55,31 +60,97 @@ const markdown = parser.configure({
   remove: ["Emphasis", "HardBreak", "Entity"],
   // Keep HTMLBlock: remark-obsidian/test/parity/corpus.ts, html/passthrough,
   // records a raw HTML section whose [[not a wikilink]] produces no link.
-  defineNodes: ["WikiLink", "Math"],
+  defineNodes: [
+    "WikiLink",
+    "Math",
+    "FootnoteMark",
+    "Highlight",
+    {
+      name: "FootnoteDefinition",
+      composite(_cx, line, indent) {
+        if (line.indent < indent && line.pos < line.text.length) return false;
+        line.moveBaseColumn(indent);
+        return true;
+      },
+    },
+  ],
   parseBlock: [
+    {
+      name: "FootnoteDefinition",
+      before: "LinkReference",
+      parse(cx, line) {
+        if (!line.text.startsWith("[^", line.pos)) return false;
+        const end = line.text.indexOf("]:", line.pos + 2);
+        if (end < 0) return false;
+        const from = cx.lineStart + line.pos;
+        cx.startComposite("FootnoteDefinition", from, line.indent + 4);
+        line.addMarker(cx.elt("FootnoteMark", from, cx.lineStart + end + 2));
+        line.moveBase(end + 2);
+        return null;
+      },
+    },
     {
       name: "DisplayMath",
       before: "FencedCode",
+      endLeaf(_cx, line) {
+        return (
+          line.text.startsWith("$$", line.pos) &&
+          displayMathClose(line.text, line.pos + 2) < 0
+        );
+      },
       parse(cx, line) {
         if (!line.text.startsWith("$$", line.pos)) return false;
         const from = cx.lineStart + line.pos;
         let at = line.pos + 2;
+        if (displayMathClose(line.text, at) >= 0) return false;
+        const indent = line.baseIndent;
+        let markers = 0;
+        for (let depth = 0; depth < cx.depth; depth++)
+          if (cx.parentType(depth).name === "Blockquote") markers++;
+        const inContainer = cx.depth > 1;
+        const indentedContainer = cx.parentType().name !== "Blockquote";
+        const hasContent = line.text.slice(at).trim().length > 0;
+        const lines = [line.text.slice(line.pos)];
+        let to = cx.lineStart + line.text.length;
         for (;;) {
           for (; at < line.text.length; at++) {
             if (line.text[at] === "\\") at++;
             else if (line.text.startsWith("$$", at)) {
-              const end = at + 2;
+              let end = at + 2;
+              while (line.text[end] === "$") end++;
+              if (line.text.slice(end).trim() !== "") {
+                at = end - 1;
+                continue;
+              }
               cx.addElement(cx.elt("Math", from, cx.lineStart + end));
               addTrailingParagraph(cx, line, end);
               cx.nextLine();
               return true;
             }
           }
-          const to = cx.lineStart + line.text.length;
-          if (!cx.nextLine()) {
-            cx.addElement(cx.elt("Math", from, to));
+          to = cx.lineStart + line.text.length;
+          if (
+            !cx.nextLine() ||
+            (inContainer &&
+              ((indentedContainer && line.baseIndent < indent) ||
+                line.markers.length < markers))
+          ) {
+            if (inContainer && hasContent) {
+              // An unclosed container opener is prose. Restore block structure
+              // too, so a following fence or indented block still excludes code.
+              const prose = cx.parser
+                .configure({ remove: ["DisplayMath"] })
+                .parse(lines.join("\n"));
+              for (
+                let child = prose.topNode.firstChild;
+                child;
+                child = child.nextSibling
+              )
+                cx.addElement(cx.elt(child.toTree(), from + child.from));
+            } else cx.addElement(cx.elt("Math", from, to));
             return true;
           }
+          lines.push(" ".repeat(line.basePos) + line.text.slice(line.basePos));
           at = line.pos;
         }
       },
@@ -87,11 +158,62 @@ const markdown = parser.configure({
   ],
   parseInline: [
     {
+      name: "Highlight",
+      before: "Link",
+      parse(cx, next, pos) {
+        if (
+          next !== 61 ||
+          cx.char(pos + 1) !== 61 ||
+          exhaustedHighlights.has(cx)
+        )
+          return -1;
+        let end = pos + 2;
+        for (; end < cx.end; end++) {
+          if (cx.char(end) === 92) end++;
+          else if (cx.char(end) === 61 && cx.char(end + 1) === 61) break;
+        }
+        if (end >= cx.end) {
+          exhaustedHighlights.add(cx);
+          return -1;
+        }
+        return cx.addElement(
+          cx.elt(
+            "Highlight",
+            pos,
+            end + 2,
+            cx.parser.parseInline(cx.slice(pos + 2, end), pos + 2),
+          ),
+        );
+      },
+    },
+    {
+      name: "ReferenceLabel",
+      before: "LinkEnd",
+      parse(cx, next, pos) {
+        if (next !== 93 || cx.char(pos + 1) !== 91) return -1;
+        const start =
+          cx.findOpeningDelimiter(InlineContext.linkStart) ??
+          cx.findOpeningDelimiter(InlineContext.imageStart);
+        if (start !== null && cx.char(cx.getDelimiterAt(start)!.to) !== 94)
+          referenceLabelOpeners.set(cx, pos + 1);
+        return -1;
+      },
+    },
+    {
+      name: "InlineFootnote",
+      before: "Link",
+      parse(cx, next, pos) {
+        if (next !== 94 || cx.char(pos + 1) !== 91) return -1;
+        return cx.addElement(cx.elt("FootnoteMark", pos, pos + 2));
+      },
+    },
+    {
       name: "WikiLink",
       before: "Link",
       parse(cx, next, pos) {
         const open = next === 33 ? pos + 1 : pos;
         if (cx.char(open) !== 91 || cx.char(open + 1) !== 91) return -1;
+        if (referenceLabelOpeners.get(cx) === open) return -1;
         for (let at = open + 2; at < cx.end; at++) {
           const char = cx.char(at);
           if (char === 10 || char === 13) return -1;
@@ -115,6 +237,14 @@ const markdown = parser.configure({
           (first === 32 || first === 9 || (first >= 48 && first <= 57))
         )
           return -1;
+        let closers = mathClosers.get(cx);
+        if (!closers) mathClosers.set(cx, (closers = [-1, -1]));
+        if (closers[size - 1]! >= pos + size) {
+          const close = closers[size - 1]!;
+          return close < cx.end
+            ? cx.addElement(cx.elt("Math", pos, close + size))
+            : -1;
+        }
         for (let at = pos + size; at < cx.end; at++) {
           if (cx.char(at) === 92) at++;
           else if (cx.char(at) === 36) {
@@ -123,15 +253,25 @@ const markdown = parser.configure({
                 ? cx.char(at + 1) === 36
                 : cx.char(at - 1) !== 32 && cx.char(at - 1) !== 9
             ) {
+              closers[size - 1] = at;
               return cx.addElement(cx.elt("Math", pos, at + size));
             }
           }
         }
+        closers[size - 1] = cx.end;
         return -1;
       },
     },
   ],
 });
+
+function displayMathClose(text: string, from: number): number {
+  for (let at = from; at < text.length; at++) {
+    if (text[at] === "\\") at++;
+    else if (text.startsWith("$$", at)) return at;
+  }
+  return -1;
+}
 
 // Decode in one pass so an escaped ampersand cannot open a character reference.
 const MARKDOWN_ESCAPE_OR_REFERENCE = regex(
@@ -182,11 +322,13 @@ export function scanNote(text: string): NoteScanRecord {
   let commentIndex = 0;
   tree.iterate({
     enter({ name, from, to, node }) {
-      // A link's label stays masked, but its nested images are embeds.
+      // A link's label stays masked; nested wikilinks and images are references.
       if (
         node.parent?.name === "Link" &&
         node.parent.getChild("URL") &&
-        name !== "Image"
+        name !== "Image" &&
+        name !== "WikiLink" &&
+        name !== "Highlight"
       )
         return false;
       while (comments[commentIndex] && comments[commentIndex]!.to <= from)
@@ -195,7 +337,7 @@ export function scanNote(text: string): NoteScanRecord {
       if (
         ["WikiLink", "Link", "Image", "Autolink"].includes(name) &&
         comment &&
-        comment.from < to &&
+        comment.from <= from &&
         comment.to > from
       ) {
         mask(body, from, to);
