@@ -10,7 +10,7 @@ import {
 import { scanNote } from "./scan-note";
 import type { NoteScanRecord } from "./scan-note";
 
-const empty: NoteScanRecord = {
+const empty: Omit<NoteScanRecord, "links"> = {
   citations: [],
   citekeys: [],
   wikilinks: [],
@@ -720,7 +720,8 @@ const conformance: {
 ];
 
 it.each(conformance)("$name", ({ text, record }) => {
-  expect(scanNote(text)).toEqual({ ...empty, ...record });
+  const { links: _links, ...citations } = scanNote(text);
+  expect(citations).toEqual({ ...empty, ...record });
 });
 
 // These inputs are the existing scan.test.ts cases and the two syntax fixtures
@@ -811,5 +812,5 @@ it("excludes wikilinks that the old cache path included inside comments", () => 
   expect(old.occurrences).toEqual([
     { kind: "wikilink", raw: "Note", position: pos(3, 11) },
   ]);
-  expect(scanNote(text)).toEqual(empty);
+  expect(scanNote(text)).toEqual({ links: [], ...empty });
 });

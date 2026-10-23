@@ -62,6 +62,7 @@ it("bundles the scanner and classifier without Obsidian and scans in a worker (#
   );
   expect(await response).toEqual([
     {
+      links: [],
       citations: [],
       citekeys: [],
       wikilinks: [],
