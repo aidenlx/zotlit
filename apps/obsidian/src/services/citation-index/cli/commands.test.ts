@@ -1256,25 +1256,72 @@ describe("zotlit:annotation-uses", () => {
   });
 
   it.each([
-    ["missing key", {}, "key"],
-    ["empty key", { key: "" }, "key"],
-    ["bare key", { key: "true" }, "key"],
-    ["malformed key", { key: "short" }, "key"],
-    ["malformed group", { key: "EFGH6789gwrong" }, "key"],
-    ["citation selector", { key: "EFGH6789", citekey: "doe2024" }, "citekey"],
+    ["missing key", {}, { parameter: "key", message: "key is required." }],
+    [
+      "empty key",
+      { key: "" },
+      { parameter: "key", message: "key requires a value." },
+    ],
+    [
+      "bare key",
+      { key: "true" },
+      { parameter: "key", message: "key requires a value." },
+    ],
+    [
+      "malformed key",
+      { key: "short" },
+      {
+        parameter: "key",
+        message:
+          "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+      },
+    ],
+    [
+      "malformed group",
+      { key: "EFGH6789gwrong" },
+      {
+        parameter: "key",
+        message:
+          "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+      },
+    ],
+    [
+      "citation selector",
+      { key: "EFGH6789", citekey: "doe2024" },
+      {
+        parameter: "citekey",
+        message:
+          "Unknown parameter 'citekey' for annotation-uses. Accepted parameters: key, expect-source.",
+      },
+    ],
     [
       "bare source",
       { key: "EFGH6789", "expect-source": "true" },
-      "expect-source",
+      {
+        parameter: "expect-source",
+        message: "expect-source requires a value.",
+      },
     ],
-    ["unknown flag", { key: "EFGH6789", extra: "value" }, "extra"],
+    [
+      "unknown flag",
+      { key: "EFGH6789", extra: "value" },
+      {
+        parameter: "extra",
+        message:
+          "Unknown parameter 'extra' for annotation-uses. Accepted parameters: key, expect-source.",
+      },
+    ],
   ])(
     "rejects %s before reading the index (#1692)",
-    async (_label, params, parameter) => {
+    async (_label, params, { parameter, message }) => {
       const { annotationUses, getIdentity, getAnnotationUses } = setup();
       expect(JSON.parse(await annotationUses(params))).toMatchObject({
         ok: false,
-        diagnostic: { code: "INVALID_SELECTOR", details: { parameter } },
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message,
+          details: { parameter },
+        },
       });
       expect(getIdentity).not.toHaveBeenCalled();
       expect(getAnnotationUses).not.toHaveBeenCalled();
@@ -1308,7 +1355,10 @@ describe("zotlit:annotation-uses", () => {
       ),
     ).toMatchObject({
       ok: false,
-      diagnostic: { code: "TARGET_MISMATCH" },
+      diagnostic: {
+        code: "TARGET_MISMATCH",
+        message: "Expected Zotero source 'other', connected to 'a1b2c3d4'.",
+      },
     });
     expect(waitUntilSettled).not.toHaveBeenCalled();
     expect(getAnnotationUses).not.toHaveBeenCalled();

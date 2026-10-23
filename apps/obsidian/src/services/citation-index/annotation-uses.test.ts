@@ -64,17 +64,17 @@ it("reads all Annotation Occurrence forms in document order (#1692)", async () =
   expect(harness.index.getAnnotationUses("MISSING1")).toEqual([]);
 });
 
-it("rebuilds stored occurrences without link text after the schema upgrade (#1692)", async () => {
+it("restores schema v2 Annotation Occurrences with link text without a read (#1692)", async () => {
   const appId = crypto.randomUUID();
   const name = `${appId}-zotlit-citation-index`;
   const body =
     "[label](zotero://open/library/items/ABCD2345?annotation=EFGH6789)";
-  const legacy = await openDB(name, 2, {
+  const stored = await openDB(name, 2, {
     upgrade(db) {
       db.createObjectStore("scans", { keyPath: "path" });
     },
   });
-  await legacy.put("scans", {
+  await stored.put("scans", {
     path: "draft.md",
     ...makeFile("draft.md", body).stat,
     scannerRevision: 1,
@@ -88,6 +88,7 @@ it("rebuilds stored occurrences without link text after the schema upgrade (#169
         attachmentKey: "ABCD2345",
         pageLabel: null,
         form: "labelled",
+        text: "label",
         position: {
           start: { line: 0, col: 0, offset: 0 },
           end: { line: 0, col: 65, offset: 65 },
@@ -95,7 +96,7 @@ it("rebuilds stored occurrences without link text after the schema upgrade (#169
       },
     ],
   });
-  legacy.close();
+  stored.close();
   try {
     await using harness = await createCitationIndexHarness(
       { "draft.md": body },
@@ -104,11 +105,12 @@ it("rebuilds stored occurrences without link text after the schema upgrade (#169
         openStore: () => openCitekeyStore({ appId } as App),
       },
     );
-    harness.workspace.layoutReady();
-    await harness.index.whenIndexed();
     expect(harness.index.getAnnotationUses("EFGH6789")).toMatchObject([
       { path: "draft.md", occurrence: { text: "label", form: "labelled" } },
     ]);
+    harness.workspace.layoutReady();
+    await harness.index.whenIndexed();
+    expect(harness.vault.reads).toEqual([]);
   } finally {
     await deleteDB(name);
   }
