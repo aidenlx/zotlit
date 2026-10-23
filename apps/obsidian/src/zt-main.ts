@@ -212,7 +212,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
   #stack?: AsyncDisposableStack;
 
   // Debug/escape-hatch access only. Services should depend on each other via DI.
-  #services?: ReturnType<typeof buildServices>["services"];
+  #services?: Awaited<ReturnType<typeof buildServices>>["services"];
 
   /**
    * The service container, for `obsidian eval` callers outside the bundle —
@@ -286,7 +286,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Block load on too-old Obsidian installers before allocating any resources.
     assertElectronVersion();
 
-    // Local stack gives automatic rollback if any synchronous startup wiring
+    // Local stack gives automatic rollback if any startup acquisition or wiring
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
@@ -299,7 +299,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     void reapCslStore({ signal: reapAbort.signal });
     void reapExcerptTemps({ signal: reapAbort.signal });
 
-    const { services } = buildServices(this, stack);
+    const { services } = await buildServices(this, stack);
 
     // One Customize flow shared by every entry action.
     const customize = createCustomize({
