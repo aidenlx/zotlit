@@ -26,7 +26,7 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 export interface VaultTargetDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
 }
@@ -84,7 +84,7 @@ async function annotationImageTargets(
   item: Item,
   deps: VaultTargetDeps & { notePath: string | undefined },
 ): Promise<Record<string, string>> {
-  const settings = await deps.settings.loaded;
+  const settings = deps.settings.current;
   if (!settings["attachment.import"]) return {};
   const folder = await resolveAttachmentFolderPath(
     deps.app,

@@ -120,7 +120,7 @@ async function fixture(
     new AttachmentImportService({
       app,
       settings: {
-        loaded: Promise.resolve(settings),
+        current: settings,
         subscribe: () => () => {},
       } as unknown as PlainPluginSettings,
       zoteroPref: { ...paths, on: () => () => {} },

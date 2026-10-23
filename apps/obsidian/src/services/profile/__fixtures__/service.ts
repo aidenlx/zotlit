@@ -30,7 +30,7 @@ export async function profileServiceFixture(
   } as unknown as App;
   const plugin = new PluginStub(app, { __VERSION__: 10 });
   const settings = stack.use(
-    buildSettings({
+    await buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,

@@ -71,7 +71,7 @@ export interface LocalBridgeEvents {
 export interface LocalBridgeServiceDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
@@ -183,7 +183,7 @@ export class LocalBridgeService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     await using stack = new AsyncDisposableStack();
 
     this.#enabled = this.#webWorkbenchEnabled && settings["server.workbench"];
@@ -231,7 +231,7 @@ export class LocalBridgeService extends Service<void> {
   async #describeGrant(
     connection: BridgeConnection,
   ): Promise<ConnectionGrantDescription> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     return {
       installation: {
         id: this.#installationId,

@@ -96,7 +96,7 @@ import { createNativePreviewStore, NativePreviewSession } from "./session";
 import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
   profile: Pick<
     ProfileService,

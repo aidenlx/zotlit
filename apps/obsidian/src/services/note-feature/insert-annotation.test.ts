@@ -137,7 +137,6 @@ async function fixture(mode: string) {
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: {
       current: settings,
-      loaded: Promise.resolve(settings),
       update: () => settings,
     },
     profile: profileReader(settings),

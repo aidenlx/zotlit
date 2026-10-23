@@ -348,7 +348,7 @@ describe("CitekeyReading", () => {
       },
       citekeyEditor: {},
       settings: {
-        loaded: Promise.resolve(defaults),
+        current: defaults,
         subscribe: (listener: (settings: Readonly<Settings>) => void) => {
           notify = listener;
           listener(defaults);
@@ -915,12 +915,12 @@ describe("CitekeyReading refresh", () => {
 
 /** Hands out one settings snapshot, the way the service reads its toggles. */
 function settingsStub(overrides: Partial<Settings>): {
-  loaded: Promise<Readonly<Settings>>;
+  current: Readonly<Settings>;
   subscribe: (listener: (settings: Readonly<Settings>) => void) => () => void;
 } {
   const current: Readonly<Settings> = { ...defaults, ...overrides };
   return {
-    loaded: Promise.resolve({ ...defaults, ...overrides }),
+    current: { ...defaults, ...overrides },
     subscribe: (listener) => {
       listener(current);
       return () => undefined;

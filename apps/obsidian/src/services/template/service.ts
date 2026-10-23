@@ -109,7 +109,7 @@ export interface TemplateServiceEvents {
 
 export interface TemplateServiceOptions {
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
 }
 
 /**
@@ -1817,7 +1817,7 @@ export class TemplateService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const snapshot = await this.#settings.loaded;
+    const snapshot = this.#settings.current;
     this.#lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
     this.#lastAutoTrim = [
       snapshot["template.auto-trim-leading"],

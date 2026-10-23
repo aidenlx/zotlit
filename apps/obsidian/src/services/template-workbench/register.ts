@@ -72,7 +72,7 @@ interface TemplateWorkbenchRegistrationDeps {
   app: App;
   zoteroReads: ZoteroReadsService;
   noteIndex: NoteIndex;
-  settings: Pick<PlainPluginSettings, "current" | "update" | "loaded">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   profile: ProfileService;
   templates: TemplateService;
   zoteroPref: ZoteroPrefService;

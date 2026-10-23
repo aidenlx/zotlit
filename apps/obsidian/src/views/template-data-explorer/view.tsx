@@ -70,7 +70,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
     "state" | "ready" | "on" | "acquireRead"
   >;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   templates: Pick<
     TemplateService,
     "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"

@@ -64,7 +64,7 @@ function makeSettings(value: {
   "attachment.folder-path": string | null;
 }) {
   return {
-    loaded: Promise.resolve(value),
+    current: value,
     subscribe: () => () => undefined,
   };
 }

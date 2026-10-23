@@ -75,10 +75,7 @@ export interface LibraryScopeDeps {
     QueryClientService,
     "client" | "ask" | "invalidate" | "peek" | "watch"
   >;
-  settings: Pick<
-    PlainPluginSettings,
-    "current" | "loaded" | "diagnostics" | "subscribe"
-  >;
+  settings: Pick<PlainPluginSettings, "current" | "diagnostics" | "subscribe">;
 }
 
 export class LibraryScopeService extends Service<void> {
@@ -162,8 +159,6 @@ export class LibraryScopeService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    await this.#settings.loaded;
-
     await using stack = new AsyncDisposableStack();
     this.#queries.client.setQueryDefaults(LIBRARIES_KEY, { gcTime: Infinity });
     // An equal read keeps the held Libraries, so only a different answer

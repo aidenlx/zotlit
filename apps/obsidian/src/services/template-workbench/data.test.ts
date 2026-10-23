@@ -851,7 +851,7 @@ function createFixture(options?: {
           whenIndexed: async () => {},
         },
         settings: {
-          loaded: Promise.resolve(settingsDefaults),
+          current: settingsDefaults,
         },
         templates: {
           ready: Promise.resolve(),

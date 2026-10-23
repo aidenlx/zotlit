@@ -602,30 +602,13 @@ export class MemoryStore implements CitekeyStore {
 
 export class SettingsStub {
   current: Readonly<Settings>;
-  readonly #ready = Promise.withResolvers<void>();
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
+  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
 
-  constructor(
-    overrides: SettingsOverrides = {},
-    options: { readyImmediately?: boolean } = {},
-  ) {
+  constructor(overrides: SettingsOverrides = {}) {
     this.current = applySettingsOverrides(defaults, overrides);
-    if (options.readyImmediately ?? true) this.#ready.resolve();
   }
 
-  get loaded(): Promise<Readonly<Settings>> {
-    return this.#ready.promise.then(() => this.current);
-  }
-
-  settle(): void {
-    this.#ready.resolve();
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
+  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
     this.#listeners.add(listener);
     listener(this.current);
     return () => this.#listeners.delete(listener);

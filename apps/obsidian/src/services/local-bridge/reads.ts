@@ -70,7 +70,7 @@ export class SelectedItemUnavailableError extends Error {
 
 export interface LocalBridgeReadDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,

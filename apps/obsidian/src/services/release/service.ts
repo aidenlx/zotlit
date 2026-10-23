@@ -28,10 +28,7 @@ export interface ReleaseServiceOptions {
   app: App;
   /** The plugin's current version, from the manifest. */
   version: string;
-  settings: Pick<
-    PlainPluginSettings,
-    "current" | "loaded" | "hydrationOrigin" | "update"
-  >;
+  settings: Pick<PlainPluginSettings, "current" | "hydrationOrigin" | "update">;
   /**
    * Open the first screen, the Library View, where the Welcome View shows as
    * a banner; the Migration Prompt in it follows `release.migration-pending`,
@@ -45,7 +42,7 @@ export class ReleaseService extends Service<void> {
   readonly #version: string;
   readonly #settings: Pick<
     PlainPluginSettings,
-    "current" | "loaded" | "hydrationOrigin" | "update"
+    "current" | "hydrationOrigin" | "update"
   >;
   readonly #openFirstScreen?: () => void | Promise<void>;
   #stopped = false;
@@ -143,7 +140,7 @@ export class ReleaseService extends Service<void> {
   }
 
   async #runCheck(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     if (this.#stopped) return;
 
     const origin = this.#settings.hydrationOrigin ?? "current";

@@ -33,15 +33,18 @@ afterEach(async () => {
 });
 
 /** A vault whose plugin data holds `data`, beside a Zotero database of 3 Items. */
-async function setup(data: Record<string, unknown> = {}) {
+async function setup(
+  data: Record<string, unknown> = {},
+  files: Record<string, string> = {},
+) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
-  const host = createObsidianHost({});
+  const host = createObsidianHost(files);
   const app = host.app as unknown as App;
   // No Web Viewer: the Release Note opens in the browser.
   Object.assign(app, { internalPlugins: { getEnabledPluginById: () => null } });
   const plugin = new PluginStub(app, { __VERSION__: 10, ...data });
-  const settings = loadSettings(plugin);
+  const settings = await loadSettings(plugin);
   await settings.loaded;
   const deps = bannerDeps(app, settings);
   /**
@@ -51,7 +54,7 @@ async function setup(data: Record<string, unknown> = {}) {
   let latest = settings;
   const reload = async () => {
     await latest.flush();
-    latest = loadSettings(plugin);
+    latest = await loadSettings(plugin);
     await latest.loaded;
     return bannerDeps(app, latest);
   };
@@ -59,10 +62,10 @@ async function setup(data: Record<string, unknown> = {}) {
 }
 
 /** The settings of plugin data that `plugin` holds. */
-function loadSettings(plugin: PluginStub): PlainPluginSettings {
+async function loadSettings(plugin: PluginStub): Promise<PlainPluginSettings> {
   const identity = (raw: unknown) => raw;
   return cleanup.use(
-    buildSettings({
+    await buildSettings({
       plugin,
       migrateLegacy: identity,
       migrateV1: identity,
@@ -147,12 +150,13 @@ function dismissButton(el: HTMLElement): HTMLElement {
 }
 
 it("keeps the Migration Prompt of a v1 upgrade on screen until a dismissal acknowledges it", async () => {
-  const { deps, host, settings } = await setup({
-    "welcome.dismissed": true,
-    "release.migration-pending": true,
-  });
-  host.vault.addFile("literatures/Paper.md", "");
-  host.vault.addFile("templates/zt-note.eta.md", "");
+  const { deps, settings } = await setup(
+    {
+      "welcome.dismissed": true,
+      "release.migration-pending": true,
+    },
+    { "literatures/Paper.md": "", "templates/zt-note.eta.md": "" },
+  );
   // A v1 upgrader's templates live in the folder their settings name.
   settings.update({ "template.folder": "templates" });
   const el = await open(deps);

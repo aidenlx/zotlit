@@ -63,7 +63,7 @@ export interface CitekeyEditorDeps {
   citationPopover: CitationPopover;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   citationLookup: Pick<CitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -181,7 +181,6 @@ export class CitekeyEditor extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.loaded;
 
     // Registered once and for the plugin's lifetime, so the row in Obsidian's
     // Page preview settings stays put while the Hover Action changes. Mod is

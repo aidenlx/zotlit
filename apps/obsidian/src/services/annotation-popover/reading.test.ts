@@ -60,7 +60,7 @@ async function harness(stack: AsyncDisposableStack) {
         },
       },
       settings: {
-        loaded: Promise.resolve(defaults),
+        current: defaults,
         subscribe: (listener) => {
           listener(defaults);
           return () => undefined;

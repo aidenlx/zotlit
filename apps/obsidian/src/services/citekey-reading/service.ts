@@ -114,7 +114,7 @@ export interface CitekeyReadingDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
 }
 
 /**
@@ -176,7 +176,6 @@ export class CitekeyReading extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.loaded;
 
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),

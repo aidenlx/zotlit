@@ -5035,7 +5035,6 @@ function makeSettings(
   };
   return {
     current,
-    loaded: Promise.resolve(current),
     update: (patch) => {
       Object.assign(
         current,

@@ -23,33 +23,42 @@ export const settingsOf = Effect.fnUntraced(function* ({
 });
 
 /** A plain adapter with the test's Clock and logger; its runtime closes with the test Scope. */
-export const plainSettingsOf = Effect.fnUntraced(function* (
+export const settingsRuntimeOf = Effect.fnUntraced(function* (
   options: SettingsFixtureOptions,
 ) {
   const context = yield* Effect.context<never>();
   const handle = yield* Effect.acquireRelease(
-    Effect.sync(() => openSettings(options, context)),
+    Effect.promise(() => openSettings(options, context)),
     (handle) => Effect.promise(handle.close),
   );
-  return handle.settings;
+  return handle;
 });
 
 /** Consumer fixtures outside Effect own the adapter's runtime through this handle. */
-export function buildSettings(
+export async function buildSettings(
   options: SettingsFixtureOptions,
-): PlainPluginSettings & AsyncDisposable {
-  const { settings, close } = openSettings(options);
+): Promise<PlainPluginSettings & AsyncDisposable> {
+  const { settings, close } = await openSettings(options);
   return Object.assign(settings, { [Symbol.asyncDispose]: close });
 }
 
-function openSettings(
+async function openSettings(
   { plugin, ...options }: SettingsFixtureOptions,
   context = Context.empty(),
 ) {
-  const stack = new AsyncDisposableStack();
+  await using stack = new AsyncDisposableStack();
   const layer = layerPluginSettings(plugin, options).pipe(
     Layer.provideMerge(Layer.succeedContext(context)),
   );
-  const settings = plainPluginSettings(buildRuntime(layer, stack));
-  return { settings, close: () => stack.disposeAsync() };
+  const runtime = buildRuntime(layer, stack);
+  await runtime.context();
+  const settings = plainPluginSettings(runtime);
+  const lifetime = stack.move();
+  return { settings, close: () => lifetime.disposeAsync() };
 }
+
+export const plainSettingsOf = Effect.fnUntraced(function* (
+  options: SettingsFixtureOptions,
+) {
+  return (yield* settingsRuntimeOf(options)).settings;
+});

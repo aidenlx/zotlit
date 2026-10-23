@@ -138,7 +138,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {

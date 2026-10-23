@@ -17,7 +17,7 @@ import type { ReadsConfig, SegmenterBinary } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
 
 export interface WorkerClientDeps {
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   zoteroPref: ZoteroPrefService;
   chineseSegmenter: ChineseSegmenterService;
 }
@@ -76,7 +76,7 @@ export const workerClient = Effect.fnUntraced(function* ({
   let config = readsConfig(
     yield* Effect.promise(async () => {
       await Promise.all([zoteroPref.ready, chineseSegmenter.ready]);
-      return settings.loaded;
+      return settings.current;
     }),
     { zoteroPref, chineseSegmenter },
   );

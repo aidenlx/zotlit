@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, vi } from "vitest";
 
-import { Effect, Logger, Queue } from "@/lib/effect";
+import { Effect, Fiber, Logger, Queue } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 
@@ -269,14 +269,14 @@ describe("PluginSettings loading", () => {
     }),
   );
 
-  it.effect("subscribers receive null then the loaded value", () =>
+  it.effect("subscribers receive the settled value", () =>
     Effect.gen(function* () {
       const { service } = yield* makeService();
       const seen: (object | null)[] = [];
       const unsub = service.subscribe((v) => seen.push(v));
-      expect(seen).toEqual([null]);
+      expect(seen).toEqual([defaults]);
       yield* Effect.promise(() => service.loaded);
-      expect(seen[1]).toEqual(defaults);
+      expect(seen[0]).toEqual(defaults);
       unsub();
     }),
   );
@@ -309,7 +309,7 @@ describe("PluginSettings loading", () => {
         yield* Effect.promise(() =>
           expect(service.loaded).resolves.toEqual(defaults),
         );
-        expect(seen).toEqual([null, defaults]);
+        expect(seen).toEqual([defaults]);
         expect(errorSpy).toHaveBeenCalled();
       }),
   );
@@ -474,10 +474,10 @@ describe("PluginSettings default Profile", () => {
 });
 
 describe("PluginSettings hydrationOrigin", () => {
-  it.effect("is null before load finishes", () =>
+  it.effect("has a settled origin when acquired", () =>
     Effect.gen(function* () {
       const { service } = yield* makeService();
-      expect(service.hydrationOrigin).toBeNull();
+      expect(service.hydrationOrigin).toBe("absent");
     }),
   );
 
@@ -1251,10 +1251,12 @@ describe("PluginSettings broken overrides", () => {
       }),
     });
 
-  it.effect("has no diagnostics before load finishes", () =>
+  it.effect("has settled diagnostics when acquired", () =>
     Effect.gen(function* () {
       const { service } = yield* makeBrokenService();
-      expect(service.diagnostics).toEqual([]);
+      expect(service.diagnostics).toEqual([
+        { key: "server.enabled", value: "not-a-boolean" },
+      ]);
     }),
   );
 
@@ -1273,7 +1275,7 @@ describe("PluginSettings broken overrides", () => {
         };
         expect(service.current).toEqual(effective);
         expect(yield* Effect.promise(() => service.loaded)).toEqual(effective);
-        expect(seen[1]).toEqual(effective);
+        expect(seen[0]).toEqual(effective);
         expect(service.diagnostics).toEqual([
           { key: "server.enabled", value: "not-a-boolean" },
         ]);
@@ -1481,26 +1483,6 @@ describe("PluginSettings broken overrides", () => {
 });
 
 describe("PluginSettings mutations", () => {
-  it.effect(
-    "update() before hydration throws and points callers at loaded",
-    () =>
-      Effect.gen(function* () {
-        const { service } = yield* makeService();
-        expect(() => service.update({ "server.hostname": "/x" })).toThrow(
-          "await service.loaded",
-        );
-      }),
-  );
-
-  it.effect(
-    "reset() before hydration throws and points callers at loaded",
-    () =>
-      Effect.gen(function* () {
-        const { service } = yield* makeService();
-        expect(() => service.reset()).toThrow("await service.loaded");
-      }),
-  );
-
   it.effect("update() with unknown key throws and leaves state unchanged", () =>
     Effect.gen(function* () {
       const { service } = yield* makeService();
@@ -1645,9 +1627,12 @@ describe("PluginSettings persistence", () => {
         );
         before.update({ "citation.at-trigger": true });
         before.release();
-        const { service: after } = yield* makeService({ plugin, handoff });
+        const reopening = yield* Effect.forkChild(
+          makeService({ plugin, handoff }),
+          { startImmediately: true },
+        );
         finishWrite();
-        yield* Effect.promise(() => after.loaded);
+        const { service: after } = yield* Fiber.join(reopening);
         expect(after.current?.["citation.at-trigger"]).toBe(true);
       }),
   );
@@ -1676,10 +1661,13 @@ describe("PluginSettings persistence", () => {
         // The Library View closes after the plugin began to unload, and keeps
         // its document then.
         before.update({ "server.enabled": true });
-        const { service: after } = yield* makeService({ plugin, handoff });
+        const reopening = yield* Effect.forkChild(
+          makeService({ plugin, handoff }),
+          { startImmediately: true },
+        );
         (yield* Queue.take(writes))();
         (yield* Queue.take(writes))();
-        yield* Effect.promise(() => after.loaded);
+        const { service: after } = yield* Fiber.join(reopening);
         expect(after.current?.["citation.at-trigger"]).toBe(true);
         expect(after.current?.["server.enabled"]).toBe(true);
       }),
@@ -1744,27 +1732,11 @@ describe("PluginSettings persistence", () => {
     }),
   );
 
-  it.effect("flush() before load resolves without saving", () =>
+  it.effect("flush() without edits resolves without saving", () =>
     Effect.gen(function* () {
-      const plugin = new PluginStub();
-      let resolveLoad!: (value: unknown) => void;
-      vi.spyOn(plugin, "loadData").mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveLoad = resolve;
-          }),
-      );
-      const saveSpy = vi.spyOn(plugin, "saveData");
-      const { service } = yield* makeService({ plugin });
-      // Service is unloaded — flush() must not load settings or trigger a save.
-      yield* Effect.promise(() =>
-        expect(service.flush()).resolves.toBeUndefined(),
-      );
-      expect(saveSpy).not.toHaveBeenCalled();
+      const { service, plugin } = yield* makeService();
+      yield* Effect.promise(() => service.flush());
       expect(plugin.__data).toBeNull();
-      // Let the held load finish so the test's afterEach can clean up.
-      resolveLoad(null);
-      yield* Effect.promise(() => service.loaded);
     }),
   );
 

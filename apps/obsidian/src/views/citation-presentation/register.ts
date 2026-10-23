@@ -24,7 +24,7 @@ export interface CitationPresentationDeps {
   /** Where the installed styles the dialog lists are read from. */
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
   /** The vault selections a note inherits where it names none of its own. */
-  settings: Pick<PlainPluginSettings, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
 }
 
 /**
@@ -76,7 +76,8 @@ export async function setCitationPresentation(
   file: TFile,
   { app, zoteroPref, settings }: CitationPresentationDeps,
 ): Promise<void> {
-  const [vault] = await Promise.all([settings.loaded, zoteroPref.ready]);
+  await zoteroPref.ready;
+  const vault = settings.current;
   const choice = await openCitationPresentationModal(app, {
     dataDir: zoteroPref.dataDir,
     vaultStyleId:

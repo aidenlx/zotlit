@@ -28,7 +28,7 @@ export interface ExplorerRegistrationDeps {
   noteIndex: NoteIndex;
   zoteroPref: ZoteroPrefService;
   itemLookup: ItemLookup;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   templates: TemplateService;
 }
 

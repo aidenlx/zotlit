@@ -30,7 +30,7 @@ const LINK_SELECTOR = 'a.external-link[href^="zotero://open/"]';
 export interface AnnotationLinkReadingDeps {
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
 }
@@ -67,7 +67,7 @@ export class AnnotationLinkReading extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     const { settings, plugin } = this.#deps;
-    await settings.loaded;
+
     stack.defer(
       settings.subscribe((current) => {
         if (!current) return;

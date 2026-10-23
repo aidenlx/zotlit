@@ -202,8 +202,8 @@ async function harness(
   } as unknown as App;
 
   const settings = {
-    loaded: Promise.resolve({ ...defaults, "attachment.import": true }),
-  } as unknown as Pick<PlainPluginSettings, "loaded">;
+    current: { ...defaults, "attachment.import": true },
+  } as unknown as Pick<PlainPluginSettings, "current">;
 
   const partials = options.partials ?? [CITATION_TEMPLATE];
   const reads = createLocalBridgeReads({

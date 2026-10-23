@@ -35,7 +35,7 @@ function makeSettings(overrides: Partial<Settings>): SettingsStub {
   const subscribers = new Set<(value: Readonly<Settings>) => void>();
   return {
     service: {
-      loaded: Promise.resolve(current),
+      current: current,
       subscribe: (cb: (value: Readonly<Settings>) => void) => {
         subscribers.add(cb);
         return () => subscribers.delete(cb);

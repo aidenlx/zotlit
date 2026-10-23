@@ -184,12 +184,7 @@ export const checkProfileDocument = Effect.fn(
           },
         },
       };
-    const settings = draft
-      ? yield* Effect.tryPromise({
-          try: () => deps.data.settings.loaded,
-          catch: (error) => error,
-        })
-      : undefined;
+    const settings = draft ? deps.data.settings.current : undefined;
     const profile = yield* attempt(() =>
       selector === undefined
         ? undefined
@@ -241,7 +236,7 @@ export const checkProfileDocument = Effect.fn(
     };
     const profileData = {
       ...deps.data,
-      settings: { loaded: Promise.resolve(profile.settings) },
+      settings: { current: profile.settings },
     };
     const baseline = profileContext.baseline;
     const data = baseline?.path

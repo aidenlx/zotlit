@@ -187,7 +187,7 @@ export interface CitationIndexOptions {
   parseClient: Pick<PlainCitationParse, "parse">;
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
-  settings: Pick<PlainPluginSettings, "loaded" | "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   lookup: Pick<
     CitationLookup,
     "read" | "observe" | "status" | "on" | "whenResolved"
@@ -964,7 +964,7 @@ export class CitationIndex extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.loaded;
+
     const initial = this.#settings.current;
     if (initial) {
       this.#includePandocCitations = initial["citation.pandoc-citations"];

@@ -77,13 +77,14 @@ import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
 import {
+  Cause,
   Context,
-  Deferred,
   Effect,
   Exit,
   Fiber,
   Layer,
   PubSub,
+  Schema,
   Scope,
   Stream,
   SubscriptionRef,
@@ -193,25 +194,46 @@ export interface PluginSettingsOptions {
 const LAST_WRITE = Symbol.for("zotlit.settings.last-write");
 type Handoff = { [LAST_WRITE]?: Promise<void> };
 
-/** The settings store. The layer builds synchronously; `loaded` waits for disk hydration. */
+export class SettingsMutationError extends Schema.TaggedError<SettingsMutationError>()(
+  "SettingsMutationError",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+export class SettingsPersistenceError extends Schema.TaggedError<SettingsPersistenceError>()(
+  "SettingsPersistenceError",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const mutationFailure = (cause: unknown) =>
+  new SettingsMutationError({
+    message: cause instanceof Error ? cause.message : String(cause),
+    cause,
+  });
+const persistenceFailure = (cause: unknown) =>
+  new SettingsPersistenceError({
+    message: cause instanceof Error ? cause.message : String(cause),
+    cause,
+  });
+
+/** The settings store. Layer acquisition settles the first disk read. */
 export class PluginSettings extends Context.Service<
   PluginSettings,
   {
-    readonly current: Effect.Effect<Readonly<Settings> | null>;
+    readonly current: Effect.Effect<Readonly<Settings>>;
     readonly loaded: Effect.Effect<Readonly<Settings>>;
     readonly diagnostics: Effect.Effect<readonly SettingsDiagnostic[]>;
     readonly hydrationOrigin: Effect.Effect<HydrationOrigin | null>;
-    readonly changes: Stream.Stream<Readonly<Settings> | null>;
+    readonly changes: Stream.Stream<Readonly<Settings>>;
     update(
       patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch),
-    ): Effect.Effect<Readonly<Settings>, unknown>;
+    ): Effect.Effect<Readonly<Settings>, SettingsMutationError>;
     reset(
       keys?: readonly (keyof Settings)[],
-    ): Effect.Effect<Readonly<Settings>, unknown>;
+    ): Effect.Effect<Readonly<Settings>, SettingsMutationError>;
     updateDefaultLiteratureNoteProfileBindings(
       patch: Partial<ResolvedLiteratureNoteProfileBindings>,
-    ): Effect.Effect<void, unknown>;
-    flush(): Effect.Effect<void, unknown>;
+    ): Effect.Effect<void, SettingsMutationError>;
+    flush(): Effect.Effect<void, SettingsPersistenceError>;
     release(): Effect.Effect<void>;
   }
 >()("zotlit/settings/PluginSettings") {}
@@ -242,18 +264,17 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   } = { ...settingsMigrations, ...options };
   const handoff = (options.handoff ?? plugin.app) as Handoff | undefined;
   const state = yield* Effect.acquireRelease(
-    SubscriptionRef.make<Readonly<Settings> | null>(null),
+    SubscriptionRef.make<Readonly<Settings>>(defaults),
     (state) => PubSub.shutdown(state.pubsub),
   );
-  const hydrated = yield* Deferred.make<void>();
   let overrides: Partial<Settings> = {};
   let broken: BrokenOverrides = new Map();
   let hydrationOrigin: HydrationOrigin | null = null;
-  let loaded = false;
+  let loadFailure: Cause.Cause<unknown> | undefined;
   let released = false;
   let closed = false;
   let dirty = false;
-  let pendingWrite: Fiber.Fiber<void, unknown> | undefined;
+  let pendingWrite: Fiber.Fiber<void, SettingsPersistenceError> | undefined;
   let timer: Fiber.Fiber<void> | undefined;
   // Saves stay alive until the close finalizer has flushed the last edit.
   const writes = yield* Effect.acquireRelease(Scope.make(), (scope) =>
@@ -262,12 +283,12 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const context = yield* Effect.context<never>();
   const runPromise = Effect.runPromiseWith(context);
   const snapshot = (): Settings => ({ ...defaults, ...overrides });
-  const current = Effect.map(SubscriptionRef.get(state), (value) =>
-    value === null ? null : snapshot(),
-  );
+  const current = Effect.sync(snapshot);
 
   const performSave = Effect.fn("PluginSettings.save")(function* () {
     dirty = false;
+    if (loadFailure)
+      return yield* Effect.fail(persistenceFailure(Cause.squash(loadFailure)));
     const payload = {
       [VERSION_KEY]: CURRENT_VERSION,
       ...Object.fromEntries(broken),
@@ -275,12 +296,12 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     };
     const earlier = pendingWrite;
     // A storage call can throw before the immediately started fiber returns.
-    let fiber: Fiber.Fiber<void, unknown> | undefined;
+    let fiber: Fiber.Fiber<void, SettingsPersistenceError> | undefined;
     const write = Effect.gen(function* () {
       if (earlier) yield* Fiber.await(earlier);
       yield* Effect.tryPromise({
         try: () => plugin.saveData(payload),
-        catch: (error) => error,
+        catch: persistenceFailure,
       });
     }).pipe(
       Effect.uninterruptible,
@@ -302,12 +323,14 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   });
 
   const flush = Effect.fn("PluginSettings.flush")(function* () {
-    if (timer) {
-      timer.interruptUnsafe();
-      timer = undefined;
+    while (dirty || pendingWrite) {
+      if (timer) {
+        timer.interruptUnsafe();
+        timer = undefined;
+      }
+      const pending = dirty ? yield* performSave() : pendingWrite;
+      if (pending) yield* Fiber.join(pending);
     }
-    const pending = dirty ? yield* performSave() : pendingWrite;
-    if (pending) yield* Fiber.join(pending);
   }, Effect.uninterruptible);
 
   // Obsidian unload is synchronous. The Promise is also the reload handoff;
@@ -332,10 +355,10 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     const result = v.safeParse(schema, candidate);
     if (!result.success)
       return yield* Effect.fail(
-        new Error(
-          `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
-          { cause: result.issues },
-        ),
+        new SettingsMutationError({
+          message: `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
+          cause: result.issues,
+        }),
       );
     overrides = nextOverrides;
     broken = nextBroken;
@@ -353,25 +376,12 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     return snapshot();
   });
 
-  const requireLoaded = (op: string) =>
-    Effect.try({
-      try: () => {
-        if (closed)
-          throw new Error(`SettingsService.${op}(): settings scope is closed`);
-        if (!loaded)
-          throw new Error(
-            `SettingsService.${op}(): settings have not loaded yet — await service.loaded before mutating`,
-          );
-      },
-      catch: (error) => error,
-    });
-
   const update = Effect.fn("PluginSettings.update")(function* (
     patchOrUpdater:
       | SettingsPatch
       | ((current: Readonly<Settings>) => SettingsPatch),
   ) {
-    yield* requireLoaded("update");
+    if (closed) return snapshot();
     const patch = yield* Effect.try({
       try: () => {
         const patch =
@@ -381,7 +391,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
         for (const key of Object.keys(patch)) assertWritableKey(key, "update");
         return patch;
       },
-      catch: (error) => error,
+      catch: mutationFailure,
     });
     const nextOverrides = { ...overrides };
     const nextBroken = new Map(broken);
@@ -397,12 +407,12 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const reset = Effect.fn("PluginSettings.reset")(function* (
     keys?: readonly (keyof Settings)[],
   ) {
-    yield* requireLoaded("reset");
+    if (closed) return snapshot();
     yield* Effect.try({
       try: () => {
         for (const key of keys ?? []) assertWritableKey(key, "reset");
       },
-      catch: (error) => error,
+      catch: mutationFailure,
     });
     const nextOverrides = { ...overrides };
     const nextBroken = new Map(broken);
@@ -712,23 +722,28 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const load = Effect.gen(function* () {
     const last = handoff?.[LAST_WRITE];
     if (last) yield* Effect.promise(() => last);
-    const raw = yield* Effect.tryPromise(() => plugin.loadData());
+    const raw = yield* Effect.tryPromise({
+      try: () => plugin.loadData(),
+      catch: (error) => error,
+    });
     yield* hydrateFrom(raw);
   }).pipe(
-    Effect.catchCause((cause) =>
-      reportFailure("Could not read settings; using defaults", cause),
-    ),
+    Effect.catchCause((cause) => {
+      loadFailure = cause;
+      return reportFailure(
+        "Could not read settings; using defaults without saving",
+        cause,
+      );
+    }),
     Effect.andThen(
       Effect.gen(function* () {
         if (closed) return;
-        loaded = true;
         yield* SubscriptionRef.set(state, snapshot());
-        yield* Deferred.succeed(hydrated, undefined);
       }),
     ),
     withLogCategory("settings"),
   );
-  yield* Effect.forkScoped(load, { startImmediately: true });
+  yield* load;
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       closed = true;
@@ -742,9 +757,9 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
 
   return PluginSettings.of({
     current,
-    loaded: Deferred.await(hydrated).pipe(Effect.map(snapshot)),
+    loaded: current,
     changes: SubscriptionRef.changes(state).pipe(
-      Stream.map((value) => (value === null ? null : { ...value })),
+      Stream.map((value) => ({ ...value })),
     ),
     diagnostics: Effect.sync(() =>
       [...broken].map(([key, value]) => ({
@@ -767,6 +782,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     }),
     flush,
     release: Effect.fn("PluginSettings.release")(function* () {
+      if (closed) return;
       released = true;
       yield* handOff();
     }),
@@ -817,13 +833,15 @@ const runMigrationHook = Effect.fn("PluginSettings.migrate")(function* (
   try {
     migrated = hook(raw);
   } catch (error) {
-    yield* Effect.logWarning(`${stage} threw; falling back to defaults`, error);
+    yield* Effect.logWarning("Migration threw; falling back to defaults").pipe(
+      Effect.annotateLogs({ error, stage }),
+    );
     return null;
   }
   if (!isPlainObject(migrated)) {
     yield* Effect.logWarning(
-      `${stage} returned a non-plain value; falling back to defaults`,
-    );
+      "Migration returned a non-plain value; falling back to defaults",
+    ).pipe(Effect.annotateLogs({ error: migrated, stage }));
     return null;
   }
   return migrated;

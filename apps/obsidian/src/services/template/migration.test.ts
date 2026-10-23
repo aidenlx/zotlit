@@ -63,7 +63,6 @@ function makeHarness(options?: {
     files.delete(file.path);
   });
   const settings = {
-    loaded: Promise.resolve(state),
     current: state,
     update: vi.fn((patch: Partial<typeof state>) =>
       Object.assign(state, patch),
@@ -519,7 +518,7 @@ async function makeVaultHarness(
   // fails halfway still disposes what it already built.
   await using stack = new AsyncDisposableStack();
   const settings = stack.use(
-    buildSettings({
+    await buildSettings({
       plugin,
       migrateLegacy: noMigration,
       migrateV1: noMigration,

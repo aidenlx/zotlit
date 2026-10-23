@@ -24,7 +24,7 @@ const CONFIGURE_TIME = "1 second";
  * driving a fake LogTape that records what happens in `events`.
  */
 const logging = Effect.fnUntraced(function* (
-  saved?: Record<string, unknown>,
+  saved: Record<string, unknown> = {},
   options: { failFirstConfigure?: boolean } = {},
 ) {
   const events: string[] = [];
@@ -61,10 +61,7 @@ const logging = Effect.fnUntraced(function* (
     ),
   });
   const plugin = {
-    loadData: () =>
-      saved
-        ? Promise.resolve({ __VERSION__: 10, ...saved })
-        : new Promise(() => {}),
+    loadData: async () => ({ __VERSION__: 10, ...saved }),
     saveData: async () => {},
   } as unknown as Plugin;
   const settings = yield* settingsOf({ plugin, ...settingsMigrations });
@@ -83,7 +80,7 @@ const zotlitLogger = (config: LogConfig) =>
 // because LogTape has no sinks until the settings load.
 it.effect("logs to the console as soon as it builds", () =>
   Effect.gen(function* () {
-    const { layer, events, configs } = yield* logging();
+    const { layer, events, configs, started } = yield* logging();
     yield* Layer.build(layer);
 
     expect(events).toEqual(["configureSync"]);
@@ -91,6 +88,8 @@ it.effect("logs to the console as soon as it builds", () =>
       sinks: ["console"],
       lowestLevel: STARTUP_LOG_SETTINGS.level,
     });
+    yield* Queue.take(started);
+    yield* TestClock.adjust(CONFIGURE_TIME);
   }),
 );
 

@@ -106,7 +106,7 @@ export interface LocalServerEvents {
 }
 
 export interface LocalServerServiceDeps {
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   zoteroPref: ZoteroPrefService;
   noteIndex: NoteIndex;
 }
@@ -259,7 +259,7 @@ export class LocalServerService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     await using stack = new AsyncDisposableStack();
 
     this.#enabled = settings["server.enabled"];

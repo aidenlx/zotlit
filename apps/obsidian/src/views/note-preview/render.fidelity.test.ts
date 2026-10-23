@@ -99,7 +99,6 @@ async function realCreate(
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
     settings: {
       current,
-      loaded: Promise.resolve(current),
       update: () => current,
     },
     attachmentImport: {

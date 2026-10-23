@@ -126,7 +126,7 @@ export async function resolveBatchScope(
 /** The services a library-wide run reaches its Library Scope through. */
 export interface BatchScopePlanDeps {
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
-  settings: Pick<PlainPluginSettings, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }
 
@@ -156,10 +156,6 @@ export async function planBatchScope(
   kind: BatchScopeKind,
   target: BatchTarget,
 ): Promise<BatchScopePlan> {
-  // The saved scope is read through the settings snapshot, so wait for it before
-  // resolving against the Snapshot's Libraries.
-  await deps.settings.loaded;
-
   await using lease = await deps.zoteroReads.acquireRead();
   const libraries = await Effect.runPromise(lease.reads.Libraries({}));
   const libraryScope = deps.libraryScope.resolveLibraries(libraries);

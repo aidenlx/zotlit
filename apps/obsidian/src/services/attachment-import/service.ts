@@ -59,7 +59,7 @@ const SKIP_SUMMARY_DEBOUNCE_MS = 1500;
 
 export interface AttachmentImportServiceDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath"> & {
     /** Only the one event the root snapshot follows. */
     on(event: "resolved-changed", cb: () => void): () => void;
@@ -233,7 +233,7 @@ export class AttachmentImportService extends Service<void> {
     notePath: string,
     opts?: { folderCache?: Map<string, string> },
   ): Promise<AttachmentImport> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const importEnabled = settings["attachment.import"];
     let folderPath: string | null = null;
     if (importEnabled) {

@@ -39,7 +39,7 @@ export interface WikilinkEditorDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   citationLookup: {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -109,7 +109,6 @@ export class WikilinkEditor extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.loaded;
 
     this.#plugin.registerEditorExtension(this.#extensions);
     this.#extensions.push(this.#extension);

@@ -95,7 +95,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   } as unknown as App;
   const plugin = new PluginStub(app, { __VERSION__: 1, "note.template-conversion-pending": true, "citation.wikilink-citations": options.wikilinks ?? false });
   const identity = (raw: unknown) => raw;
-  const settings = buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
+  const settings = await buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
   await settings.loaded;
   if (options.defaultStyle) settings.updateDefaultLiteratureNoteProfileBindings({ "citation.references-style": options.defaultStyle });
   const templates = new TemplateService({ app, settings });

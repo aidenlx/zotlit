@@ -43,7 +43,7 @@ interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
   settings?: Partial<Settings> & Partial<ResolvedLiteratureNoteProfileBindings>;
-  /** Holds the vault selections back until `loadSettings()` hands them over. */
+  /** Holds the vault selections back until `loadPreferences()` hands them over. */
   loading?: boolean;
 }
 
@@ -57,7 +57,7 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
         : "",
   });
   const file = host.file("draft.md");
-  const vaultSettings = Promise.withResolvers<Settings>();
+  const preferences = Promise.withResolvers<void>();
   const {
     ["citation.references-style"]: referencesStyle,
     ...persistedSettings
@@ -77,7 +77,7 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
       },
     },
   };
-  if (!loading) vaultSettings.resolve(resolvedSettings);
+  if (!loading) preferences.resolve();
   const writes: string[] = [];
   host.vault.on("modify", (written) => writes.push((written as TFile).path));
   let command: Command | undefined;
@@ -97,8 +97,8 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
 
   const deps = {
     app,
-    zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-    settings: { loaded: vaultSettings.promise },
+    zoteroPref: { ready: preferences.promise, dataDir: DATA_DIR },
+    settings: { current: resolvedSettings },
   };
   registerCitationPresentation(
     {
@@ -144,9 +144,9 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
     begin() {
       palette.checkCallback?.(false);
     },
-    /** Hand over the vault selections a loading vault held back. */
-    loadSettings() {
-      vaultSettings.resolve(resolvedSettings);
+    /** Finish loading Zotero preferences. */
+    loadPreferences() {
+      preferences.resolve();
     },
     /** One menu this action was offered a place in, as Obsidian builds it. */
     menu(source: string, target: TAbstractFile = file as never) {
@@ -225,7 +225,7 @@ describe("the Set citation presentation action", () => {
     });
   });
 
-  it("opens on the vault selections a still-loading vault is about to hold", async () => {
+  it("opens on the vault selections the vault holds while Zotero preferences finish loading", async () => {
     const vault = openVault({
       note: {},
       settings: {
@@ -239,7 +239,7 @@ describe("the Set citation presentation action", () => {
     await Promise.resolve();
     expect(dialog.opened).toHaveLength(0);
 
-    vault.loadSettings();
+    vault.loadPreferences();
     await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
 
     expect(openedOn()).toMatchObject({

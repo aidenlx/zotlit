@@ -37,7 +37,7 @@ export interface SingleUpdateDeps {
    * updates read through it.
    */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready" | "state">;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   noteFeature: NoteFeature;
   noteIndex: NoteIndex;
   /** Which Libraries an unqualified library-wide update covers. */

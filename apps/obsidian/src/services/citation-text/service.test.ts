@@ -532,7 +532,7 @@ describe("CitationText", () => {
           db: { on: () => () => {} },
           zoteroPref: { dataDir: "/unused", on: () => () => {} },
           settings: {
-            loaded: Promise.resolve(defaults),
+            current: defaults,
             subscribe: () => () => {},
           },
           pandocEngine: {

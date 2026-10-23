@@ -72,7 +72,7 @@ export interface TemplateDataDeps {
     NoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
-  settings: Pick<PlainPluginSettings, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
   templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
   zoteroPref: Pick<
     ZoteroPrefService,
@@ -145,7 +145,7 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
   }
   const [settings] = yield* Effect.all(
     [
-      attempt(() => deps.settings.loaded),
+      Effect.sync(() => deps.settings.current),
       attempt(() => deps.noteIndex.whenIndexed()),
       attempt(() => deps.zoteroPref.ready),
       attempt(() => deps.templates.ready),
@@ -228,7 +228,6 @@ export const readCitationData = Effect.fn("TemplateData.readCitation")(
         ),
       };
     }
-    yield* attempt(() => deps.settings.loaded);
     const selected = yield* Effect.scoped(
       Effect.flatMap(readLease(deps), (reads) =>
         readNoteItem(reads, selector.key),

@@ -90,7 +90,7 @@ async function openLibrary() {
     "library.document": STORED_EARLIER,
   });
   const settings = cleanup.use(
-    buildSettings({
+    await buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,

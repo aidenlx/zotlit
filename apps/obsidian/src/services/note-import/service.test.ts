@@ -215,10 +215,10 @@ function makeBlockingAttachmentImport(): AttachmentImportService {
       saveLocalStorage: () => undefined,
     } as unknown as App,
     settings: {
-      loaded: Promise.resolve({
+      current: {
         "attachment.import": true,
         "attachment.folder-path": "Attachments",
-      }),
+      },
       subscribe: () => () => undefined,
     } as unknown as PlainPluginSettings,
     zoteroPref: {

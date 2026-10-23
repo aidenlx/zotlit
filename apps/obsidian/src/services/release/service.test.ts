@@ -105,13 +105,13 @@ async function runCheck(opts: {
   const openFirstScreen = vi.fn();
   let layoutReady: (() => void | Promise<void>) | undefined;
   const settings = {
-    loaded: Promise.resolve({
+    current: {
       "release.previous-version": opts.recordedVersion ?? null,
       "release.migration-pending": opts.migrationPending ?? false,
       "release.notices-enabled": opts.noticesEnabled ?? true,
       "release.update-pending": opts.updatePending ?? false,
       "template.folder": CONFIGURED_TEMPLATE_FOLDER,
-    } as Partial<Settings>),
+    } as Partial<Settings>,
     hydrationOrigin: opts.origin,
     update,
   } as unknown as PlainPluginSettings;
@@ -239,12 +239,12 @@ describe("ReleaseService checked", () => {
     let layoutReady: (() => void | Promise<void>) | undefined;
     const opened = Promise.withResolvers<void>();
     const settings = {
-      loaded: Promise.resolve({
+      current: {
         "release.previous-version": null,
         "release.migration-pending": false,
         "release.notices-enabled": true,
         "template.folder": CONFIGURED_TEMPLATE_FOLDER,
-      } as Partial<Settings>),
+      } as Partial<Settings>,
       hydrationOrigin: "absent",
       update: vi.fn(),
     } as unknown as PlainPluginSettings;

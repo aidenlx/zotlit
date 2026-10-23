@@ -32,15 +32,13 @@ import type {
 const logger = getLogger(["template", "migration"]);
 
 interface MigrationSettings {
-  loaded: Promise<
-    Readonly<
-      Pick<
-        Settings,
-        | "note.default-profile"
-        | "note.template-conversion-pending"
-        | "note.template-conversion-result"
-        | "template.folder"
-      >
+  current: Readonly<
+    Pick<
+      Settings,
+      | "note.default-profile"
+      | "note.template-conversion-pending"
+      | "note.template-conversion-result"
+      | "template.folder"
     >
   >;
   update(patch: Partial<Settings>): void;
@@ -92,7 +90,7 @@ export interface LiteratureNoteTemplateMigrationDataDeps {
   zoteroReads: ZoteroReadsService;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
   noteIndex: NoteIndex;
-  settings: Pick<PlainPluginSettings, "loaded" | "update" | "flush">;
+  settings: Pick<PlainPluginSettings, "current" | "update" | "flush">;
   templates: TemplateService;
   zoteroPref: ZoteroPrefService;
 }
@@ -274,7 +272,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 
   async convert(): Promise<LiteratureNoteTemplateMigrationResult> {
     await this.ready;
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const slotFiles = this.#template.getLegacyLiteratureNoteTemplateFiles();
     const legacy = this.#template.getLegacyTemplateDocuments();
     if (
@@ -419,7 +417,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>
   > {
     await this.ready;
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const accepted = settings["note.template-conversion-result"];
     if (!accepted) {
       throw new Error("Cleanup retry needs a completed conversion");
@@ -490,7 +488,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    await Promise.all([this.#settings.loaded, this.#template.ready]);
+    await this.#template.ready;
     await using stack = new AsyncDisposableStack();
     stack.defer(() => {
       this.#stopped = true;
@@ -501,7 +499,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 
   async #detectTemplates(layoutReady: boolean): Promise<void> {
     if (this.#stopped) return;
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const legacy = this.#template.getLegacyTemplateDocuments();
     const hasLegacyFiles =
       this.#template.getLegacyLiteratureNoteTemplateFiles().length > 0 ||

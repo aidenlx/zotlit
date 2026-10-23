@@ -104,7 +104,7 @@ export interface NoteFeatureDeps {
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (

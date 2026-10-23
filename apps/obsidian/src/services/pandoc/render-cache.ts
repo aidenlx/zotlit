@@ -59,7 +59,7 @@ export interface BibliographyRenderCacheOptions {
     "getStatus" | "subscribe" | "getEngine"
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
-  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: QueryClientService;
 }
@@ -299,7 +299,7 @@ export class BibliographyRenderCache extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await Promise.all([this.#settings.loaded, this.#profile.ready]);
+    await this.#profile.ready;
     stack.defer(this.#profile.on("changed", () => this.#invalidate()));
 
     stack.defer(this.#db.on("changed", () => this.#invalidate()));

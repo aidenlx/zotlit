@@ -10,7 +10,7 @@ import { PluginSettings } from "./service";
 import type { Settings, SettingsDiagnostic, SettingsPatch } from "./service";
 
 export interface PlainPluginSettings {
-  readonly current: Readonly<Settings> | null;
+  readonly current: Readonly<Settings>;
   readonly loaded: Promise<Readonly<Settings>>;
   readonly diagnostics: readonly SettingsDiagnostic[];
   readonly hydrationOrigin: HydrationOrigin | null;
@@ -23,43 +23,49 @@ export interface PlainPluginSettings {
   ): void;
   flush(): Promise<void>;
   release(): void;
-  subscribe(callback: (value: Readonly<Settings> | null) => void): () => void;
+  subscribe(callback: (value: Readonly<Settings>) => void): () => void;
 }
 
 export function plainPluginSettings(
   runtime: ManagedRuntime.ManagedRuntime<PluginSettings, never>,
 ): PlainPluginSettings {
   const settings = runtime.runSync(PluginSettings.use(Effect.succeed));
+  // Retain the runtime's context for unload races. The service Scope owns
+  // shutdown; its closed methods return the last snapshot or do no work.
+  const context = runtime.runSync(Effect.context<PluginSettings>());
+  const run = {
+    runSync: Effect.runSyncWith(context),
+    runPromise: Effect.runPromiseWith(context),
+    runFork: Effect.runForkWith(context),
+  };
   return {
     get current() {
-      return runtime.runSync(settings.current);
+      return run.runSync(settings.current);
     },
     get loaded() {
       // Take the snapshot in the Promise continuation, as with the old store.
-      return runtime
+      return run
         .runPromise(settings.loaded)
-        .then(() => runtime.runSync(settings.current)!);
+        .then(() => run.runSync(settings.current)!);
     },
     get diagnostics() {
-      return runtime.runSync(settings.diagnostics);
+      return run.runSync(settings.diagnostics);
     },
     get hydrationOrigin() {
-      return runtime.runSync(settings.hydrationOrigin);
+      return run.runSync(settings.hydrationOrigin);
     },
-    update: (patch) => runtime.runSync(settings.update(patch)),
-    reset: (keys) => runtime.runSync(settings.reset(keys)),
+    update: (patch) => run.runSync(settings.update(patch)),
+    reset: (keys) => run.runSync(settings.reset(keys)),
     updateDefaultLiteratureNoteProfileBindings: (patch) =>
-      runtime.runSync(
-        settings.updateDefaultLiteratureNoteProfileBindings(patch),
-      ),
-    flush: () => runtime.runPromise(settings.flush()),
-    release: () => runtime.runSync(settings.release()),
+      run.runSync(settings.updateDefaultLiteratureNoteProfileBindings(patch)),
+    flush: () => run.runPromise(settings.flush()),
+    release: () => run.runSync(settings.release()),
     subscribe: (callback) =>
-      subscribe(runtime, settings.changes, (value) => {
+      subscribe(run, settings.changes, (value) => {
         try {
           callback(value);
         } catch (error) {
-          runtime.runSync(
+          run.runSync(
             Effect.logError("subscriber threw").pipe(
               Effect.annotateLogs({ error }),
               withLogCategory("settings"),

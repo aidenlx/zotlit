@@ -8,12 +8,15 @@ import {
   Exit,
   Fiber,
   Layer,
+  Logger,
+  Queue,
+  References,
   Scope,
   Stream,
 } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
-import { settingsOf, plainSettingsOf } from "./__fixtures__";
+import { settingsOf, plainSettingsOf, settingsRuntimeOf } from "./__fixtures__";
 import { layerPluginSettings, PluginSettings } from "./service";
 
 // A pending edit must reach disk before the settings scope finishes closing.
@@ -59,29 +62,30 @@ it.effect("scope close flushes a pending edit and waits for its write", () =>
     write.resolve();
     yield* Fiber.join(closing);
     expect(closed).toBe(true);
-    expect(Exit.isFailure(duringClose)).toBe(true);
+    expect(Exit.isSuccess(duringClose)).toBe(true);
+    expect((yield* settings.current)["server.hostname"]).toBe("/on-close");
   }),
 );
 
-it.effect("changes emits loading, saved settings, and edits in order", () =>
+it.effect("changes emits saved settings and edits in order", () =>
   Effect.gen(function* () {
-    const read = Promise.withResolvers<unknown>();
     const settings = yield* settingsOf({
       plugin: {
-        loadData: () => read.promise,
+        loadData: async () => ({
+          __VERSION__: 10,
+          "server.hostname": "/saved",
+        }),
         saveData: async () => {},
       },
     });
     const changes = yield* Effect.forkChild(
-      settings.changes.pipe(Stream.take(3), Stream.runCollect),
+      settings.changes.pipe(Stream.take(2), Stream.runCollect),
       { startImmediately: true },
     );
-    read.resolve({ __VERSION__: 10, "server.hostname": "/saved" });
     yield* settings.loaded;
     yield* settings.update({ "server.hostname": "/edited" });
     const values = yield* Fiber.join(changes);
     expect(values.map((value) => value?.["server.hostname"] ?? null)).toEqual([
-      null,
       "/saved",
       "/edited",
     ]);
@@ -121,10 +125,12 @@ it.effect(
   "the adapter supplies snapshots, Promises, and an idempotent unsubscribe",
   () =>
     Effect.gen(function* () {
-      const read = Promise.withResolvers<unknown>();
       const settings = yield* plainSettingsOf({
         plugin: {
-          loadData: () => read.promise,
+          loadData: async () => ({
+            __VERSION__: 10,
+            "server.hostname": "/saved",
+          }),
           saveData: async () => {},
         },
       });
@@ -134,8 +140,7 @@ it.effect(
         seen.push(value?.["server.hostname"] ?? null);
         if (value?.["server.hostname"] === "/edited") changed.resolve();
       });
-      expect(seen).toEqual([null]);
-      read.resolve({ __VERSION__: 10, "server.hostname": "/saved" });
+      expect(seen).toEqual(["/saved"]);
       yield* Effect.promise(() => settings.loaded);
       const latest = settings.loaded;
       settings.update({ "server.hostname": "/edited" });
@@ -148,33 +153,28 @@ it.effect(
       stop();
       settings.update({ "server.hostname": "/after-unsubscribe" });
       yield* Effect.promise(() => settings.flush());
-      expect(seen).toEqual([null, "/saved", "/edited"]);
+      expect(seen).toEqual(["/saved", "/edited"]);
     }),
 );
 
-it.effect(
-  "scope close stops change subscriptions and cancels a pending load",
-  () =>
-    Effect.gen(function* () {
-      const scope = yield* Scope.make();
-      const read = Promise.withResolvers<unknown>();
-      const context = yield* Layer.buildWithScope(
-        layerPluginSettings({
-          loadData: () => read.promise,
-          saveData: async () => {},
-        }),
-        scope,
-      );
-      const settings = Context.get(context, PluginSettings);
-      const changes = yield* Effect.forkChild(
-        Stream.runCollect(settings.changes),
-        { startImmediately: true },
-      );
-      yield* Scope.close(scope, Exit.void);
-      read.resolve({ __VERSION__: 10, "server.hostname": "/too-late" });
-      expect(yield* Fiber.join(changes)).toEqual([null]);
-      expect(yield* settings.current).toBeNull();
-    }),
+it.effect("scope close stops change subscriptions", () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.make();
+    const context = yield* Layer.buildWithScope(
+      layerPluginSettings({
+        loadData: async () => null,
+        saveData: async () => {},
+      }),
+      scope,
+    );
+    const settings = Context.get(context, PluginSettings);
+    const changes = yield* Effect.forkChild(
+      Stream.runCollect(settings.changes),
+      { startImmediately: true },
+    );
+    yield* Scope.close(scope, Exit.void);
+    expect(yield* Fiber.join(changes)).toEqual([yield* settings.current]);
+  }),
 );
 
 it.effect("flush preserves a synchronous storage failure", () =>
@@ -191,7 +191,185 @@ it.effect("flush preserves a synchronous storage failure", () =>
     yield* settings.loaded;
     yield* settings.update({ "server.hostname": "/failure" });
     const exit = yield* Effect.exit(settings.flush());
-    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+      _tag: "SettingsPersistenceError",
+      cause: failure,
+    });
     expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(false);
+  }),
+);
+
+it.effect("#1705 a failed read blocks the release check's save", () =>
+  Effect.gen(function* () {
+    const original = { __VERSION__: 10, "server.hostname": "/saved" };
+    let data: unknown = original;
+    const settings = yield* settingsOf({
+      plugin: {
+        loadData: async () => {
+          throw new Error("read failed");
+        },
+        saveData: async (value) => {
+          data = value;
+        },
+      },
+    });
+    yield* settings.loaded;
+    yield* settings.update({ "release.previous-version": "2.2.0" });
+    yield* Effect.exit(settings.flush());
+    yield* settings.release();
+    expect(data).toBe(original);
+  }),
+);
+
+it.effect("#1705 reload drains an edit queued after it starts waiting", () =>
+  Effect.gen(function* () {
+    const handoff = {};
+    let data: unknown = null;
+    const writes = yield* Queue.unbounded<() => void>();
+    const plugin = {
+      loadData: async () => data,
+      saveData: (value: unknown) =>
+        new Promise<void>((resolve) => {
+          Queue.offerUnsafe(writes, () => {
+            data = value;
+            resolve();
+          });
+        }),
+    };
+    const before = yield* settingsOf({ plugin, handoff });
+    yield* before.loaded;
+    yield* before.update({ "server.hostname": "/a" });
+    yield* before.release();
+    const reopening = yield* Effect.forkChild(
+      Effect.gen(function* () {
+        const after = yield* settingsOf({ plugin, handoff });
+        yield* after.loaded;
+        return yield* after.current;
+      }),
+      { startImmediately: true },
+    );
+    yield* before.update({ "server.hostname": "/b" });
+    (yield* Queue.take(writes))();
+    (yield* Queue.take(writes))();
+    expect((yield* Fiber.join(reopening))?.["server.hostname"]).toBe("/b");
+  }),
+);
+
+it.effect(
+  "#1705 a built settings layer exposes the stored value immediately",
+  () =>
+    Effect.gen(function* () {
+      const settings = yield* settingsOf({
+        plugin: {
+          loadData: async () => ({
+            __VERSION__: 10,
+            "server.hostname": "/stored",
+          }),
+          saveData: async () => {},
+        },
+      });
+      expect((yield* settings.current)?.["server.hostname"]).toBe("/stored");
+    }),
+);
+
+it.effect("#1705 mutation failures retain their tag and original cause", () =>
+  Effect.gen(function* () {
+    const settings = yield* settingsOf({
+      plugin: { loadData: async () => null, saveData: async () => {} },
+    });
+    const failure = new Error("patch failed");
+    const exit = yield* Effect.exit(
+      settings.update(() => {
+        throw failure;
+      }),
+    );
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+      _tag: "SettingsMutationError",
+      cause: failure,
+    });
+  }),
+);
+
+it.effect("#1705 migration failures log the original error and stage", () =>
+  Effect.gen(function* () {
+    const failure = new Error("migration failed");
+    const records: Record<string, unknown>[] = [];
+    yield* settingsOf({
+      plugin: {
+        loadData: async () => ({ __VERSION__: 9 }),
+        saveData: async () => {},
+      },
+      migrateV9: () => {
+        throw failure;
+      },
+    }).pipe(
+      Effect.provide(
+        Logger.layer([
+          Logger.make(({ fiber }) => {
+            records.push(fiber.getRef(References.CurrentLogAnnotations));
+          }),
+        ]),
+      ),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({ error: failure, stage: "v9 migration" }),
+    );
+  }),
+);
+
+it.effect(
+  "#1705 subscribe receives both edits made immediately after it returns",
+  () =>
+    Effect.gen(function* () {
+      const settings = yield* plainSettingsOf({
+        plugin: { loadData: async () => null, saveData: async () => {} },
+      });
+      const seen: string[] = [];
+      const delivered = Promise.withResolvers<void>();
+      const stop = settings.subscribe((value) => {
+        seen.push(value["server.hostname"]);
+        if (value["server.hostname"] === "/b") delivered.resolve();
+      });
+      settings.update({ "server.hostname": "/a" });
+      settings.update({ "server.hostname": "/b" });
+      yield* Effect.promise(() => delivered.promise);
+      stop();
+      expect(seen.slice(-2)).toEqual(["/a", "/b"]);
+    }),
+);
+
+it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>
+  Effect.gen(function* () {
+    const writes: unknown[] = [];
+    const { settings, close } = yield* settingsRuntimeOf({
+      plugin: {
+        loadData: async () => ({
+          __VERSION__: 10,
+          "server.hostname": "/saved",
+        }),
+        saveData: async (value) => {
+          writes.push(value);
+        },
+      },
+    });
+    const snapshot = settings.current;
+    const loading = settings.loaded;
+    yield* Effect.promise(close);
+    expect(yield* Effect.promise(() => loading)).toEqual(snapshot);
+    expect(settings.current).toEqual(snapshot);
+    expect(yield* Effect.promise(() => settings.loaded)).toEqual(snapshot);
+    expect(settings.diagnostics).toEqual([]);
+    expect(settings.hydrationOrigin).toBe("current");
+    expect(settings.update({ "server.hostname": "/late" })).toEqual(snapshot);
+    expect(settings.reset()).toEqual(snapshot);
+    settings.updateDefaultLiteratureNoteProfileBindings({
+      "note.import-colored-highlights": true,
+    });
+    const stop = settings.subscribe(() => {});
+    stop();
+    stop();
+    settings.release();
+    yield* Effect.promise(() => settings.flush());
+    expect(writes).toEqual([]);
   }),
 );
