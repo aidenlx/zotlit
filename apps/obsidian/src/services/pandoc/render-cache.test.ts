@@ -9,8 +9,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { Held } from "@/services/query-client/service";
-import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
@@ -251,7 +251,7 @@ async function makeHarness(
     ...overrides,
   });
   const profileEvents = createNanoEvents<{ changed: () => void }>();
-  const queryClient = stack.use(new QueryClientService());
+  const queryClient = stack.use(queryClientsFixture());
   const cache = stack.use(
     new BibliographyRenderCache({
       profile: {

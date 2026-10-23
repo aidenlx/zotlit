@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -61,7 +61,7 @@ function fixture(
     }),
   });
   queryClients.push(shared);
-  const queryClient = new QueryClientService();
+  const queryClient = queryClientsFixture();
   queryClients.push(queryClient);
   const libraryScope = new LibraryScopeStub([personalLibrary()]);
   const reads = new CitationLookup({
@@ -89,7 +89,7 @@ it("builds once at startup with ready dependencies and no events", async () => {
   await using db = new DatabaseStub();
   const ready = await db.ready;
   const lookup = vi.spyOn(ready.client, "CitationLookup");
-  await using queryClient = new QueryClientService();
+  await using queryClient = queryClientsFixture();
   await using reads = new CitationLookup({
     queryClient,
     libraryScope: new LibraryScopeStub([personalLibrary()]),
