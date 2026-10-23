@@ -143,13 +143,27 @@ export class CitationLookup extends Service {
       enabled: request !== null,
       gcTime: GC_TIME,
       placeholderData: (answer) => answer ?? previous,
-      structuralSharing: (old, answer) =>
+      structuralSharing: (old, value) => {
+        const answer = value as CitationLookupAnswer;
         // Parent links can change while the Citekey Resolution Snapshot stays equal.
-        !request?.annotationKeys?.length &&
-        old instanceof CitationLookupAnswer &&
-        old.revision === (answer as CitationLookupAnswer).revision
+        return old instanceof CitationLookupAnswer &&
+          old.revision === answer.revision &&
+          (request?.annotationKeys ?? []).every((key) => {
+            if (
+              !old.coversAnnotationKey(key) ||
+              !answer.coversAnnotationKey(key)
+            )
+              return false;
+            const before = old.parentOfAnnotation(key);
+            const after = answer.parentOfAnnotation(key);
+            return (
+              before?.indexedKey === after?.indexedKey &&
+              before?.citekey === after?.citekey
+            );
+          })
           ? old
-          : answer,
+          : answer;
+      },
     });
     const observer = new QueryObserver(client, options());
     const publish = (): void => {

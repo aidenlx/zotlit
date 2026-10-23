@@ -110,43 +110,48 @@ const legacyAnnotationsByKeysQuery = defineKeyedQuery<
 
 type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
 
-const annotationParentQuery = defineQuery<{ key: string; libraryID: number }>()(
-  (db, { placeholder }) =>
-    db.query.items.findFirst({
+const annotationParentsQuery = defineKeyedQuery<
+  string,
+  { libraryID: number }
+>()(
+  (db, { placeholder, contains }) =>
+    db.query.itemAnnotations.findMany({
       where: {
-        key: placeholder("key"),
-        libraryID: placeholder("libraryID"),
-        deletedItem: false,
+        item: {
+          RAW: (item) => contains(item.key),
+          libraryID: placeholder("libraryID"),
+          deletedItem: false,
+        },
       },
       columns: {},
       with: {
-        annotation: {
+        item: { columns: { key: true } },
+        parentAttachment: {
           columns: {},
           with: {
-            parentAttachment: {
-              columns: {},
-              with: {
-                item_itemID: { columns: { key: true } },
-                item_parentItemID: { columns: { key: true } },
-              },
-            },
+            item_itemID: { columns: { key: true } },
+            item_parentItemID: { columns: { key: true } },
           },
         },
       },
     }),
+  { keyOf: (row) => row.item.key },
 );
 
-/** @returns The top-level parent key, or the standalone Attachment key; null for a missing Annotation. */
-export function getAnnotationParentKey(
+/** @returns Top-level parent keys, or standalone Attachment keys, for live Annotations in request order. */
+export function getAnnotationParentKeys(
   db: NodeDatabaseClient,
-  key: string,
+  keys: readonly string[],
   libraryID: number,
-): string | null {
-  const attachment = annotationParentQuery.prepared(db).get({ key, libraryID })
-    ?.annotation?.parentAttachment;
-  return attachment
-    ? (attachment.item_parentItemID?.key ?? attachment.item_itemID.key)
-    : null;
+): { key: string; parentKey: string }[] {
+  return annotationParentsQuery(db, keys, { params: { libraryID } }).map(
+    ({ item, parentAttachment }) => ({
+      key: item.key,
+      parentKey:
+        parentAttachment.item_parentItemID?.key ??
+        parentAttachment.item_itemID.key,
+    }),
+  );
 }
 
 export function getAnnotationsByParent(

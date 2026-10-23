@@ -3,9 +3,8 @@ import {
   getLastItemID,
   getCitekeyWindow,
   getLibraries,
-  getAnnotationParentKey,
-  parseIndexedKey,
-  resolveIndexedKeyLibrary,
+  getAnnotationParentKeys,
+  resolveIndexedKeyLibraryIn,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -130,36 +129,50 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
           const client = yield* connection.borrow;
           const current = published;
           if (current?.client === client && current.scope === scope) {
-            const annotationKeys = new Map<string, AnnotationParent | null>();
-            let deadline = performance.now() + 4;
-            for (const key of new Set(request.annotationKeys ?? [])) {
-              if (performance.now() >= deadline) {
-                yield* Effect.yieldNow;
-                deadline = performance.now() + 4;
-              }
-              const parent = yield* Effect.try({
-                try: () => {
-                  const identity = resolveIndexedKeyLibrary(client, key);
-                  if (!identity) return null;
-                  const parentKey = getAnnotationParentKey(
-                    client,
-                    identity.key,
-                    identity.libraryID,
-                  );
-                  if (parentKey === null) return null;
-                  const indexedKey = formatIndexedKey(
-                    parentKey,
-                    parseIndexedKey(key)!.groupID,
-                  );
-                  return {
+            const annotationKeys = yield* Effect.try({
+              try: () => {
+                const answers = new Map<string, AnnotationParent | null>(
+                  (request.annotationKeys ?? []).map((key) => [key, null]),
+                );
+                if (answers.size === 0) return answers;
+                const libraries = getLibraries(client);
+                const identities = [...answers.keys()].flatMap((indexedKey) => {
+                  const identity = resolveIndexedKeyLibraryIn(
+                    libraries,
                     indexedKey,
-                    citekey: current.snapshot.citekeyOf(indexedKey),
-                  };
-                },
-                catch: toDbUnavailable,
-              });
-              annotationKeys.set(key, parent);
-            }
+                  );
+                  return identity ? [{ ...identity, indexedKey }] : [];
+                });
+                for (const [libraryID, keys] of Map.groupBy(
+                  identities,
+                  (identity) => identity.libraryID,
+                )) {
+                  const groupID = libraries.find(
+                    (library) => library.libraryID === libraryID,
+                  )?.groupID;
+                  const parents = new Map(
+                    getAnnotationParentKeys(
+                      client,
+                      keys.map(({ key }) => key),
+                      libraryID,
+                    ).map(({ key, parentKey }) => [
+                      key,
+                      formatIndexedKey(parentKey, groupID),
+                    ]),
+                  );
+                  for (const { key, indexedKey } of keys) {
+                    const parentKey = parents.get(key);
+                    if (parentKey !== undefined)
+                      answers.set(indexedKey, {
+                        indexedKey: parentKey,
+                        citekey: current.snapshot.citekeyOf(parentKey),
+                      });
+                  }
+                }
+                return answers;
+              },
+              catch: toDbUnavailable,
+            });
             if (
               annotationKeys.size > 0 &&
               (yield* Effect.scoped(connection.borrow)) !== client
