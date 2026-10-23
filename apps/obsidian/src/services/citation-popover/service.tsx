@@ -25,7 +25,7 @@ import {
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -53,7 +53,7 @@ export interface CitationPopoverDeps {
   profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
-    BibliographyRenderCache,
+    PlainBibliographyRender,
     "render" | "readBibliography" | "on" | "vaultPresentation"
   >;
 }

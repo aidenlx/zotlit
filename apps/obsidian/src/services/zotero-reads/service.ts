@@ -16,6 +16,7 @@ import {
 } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { changesUntil } from "@/lib/effect-stream";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -234,9 +235,7 @@ export function layerZoteroReads<R>(
       );
       return ZoteroReads.of({
         current,
-        changes: SubscriptionRef.changes(state).pipe(
-          Stream.interruptWhen(Deferred.await(stopped)),
-        ),
+        changes: changesUntil(state, Deferred.await(stopped)),
         events: Stream.fromPubSub(events),
         reads: bindReads(client),
         snapshot,

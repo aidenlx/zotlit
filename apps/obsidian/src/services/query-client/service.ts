@@ -20,6 +20,7 @@ import {
 } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
+import { changesUntil } from "@/lib/effect-stream";
 
 /**
  * The answer one key holds, as one immutable snapshot: a surface reads a whole
@@ -505,9 +506,8 @@ const makeQueryClients = Effect.gen(function* () {
   return QueryClients.of({
     client,
     current: SubscriptionRef.get(latest),
-    changes: SubscriptionRef.changes(latest).pipe(
+    changes: changesUntil(latest, Deferred.await(stopped)).pipe(
       Stream.filter((change): change is HeldReadChange => change !== null),
-      Stream.interruptWhen(Deferred.await(stopped)),
     ),
     invalidate,
     update,

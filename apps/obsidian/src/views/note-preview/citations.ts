@@ -20,7 +20,7 @@ import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 export interface NativeCitationDeps {
@@ -28,7 +28,7 @@ export interface NativeCitationDeps {
   citationParse: Pick<PlainCitationParse, "parse">;
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   bibliographyRender: Pick<
-    BibliographyRenderCache,
+    PlainBibliographyRender,
     | "renderCitations"
     | "readCitations"
     | "readBibliography"

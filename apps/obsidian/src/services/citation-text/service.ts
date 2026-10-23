@@ -34,10 +34,8 @@ import {
   documentPresentation,
 } from "@/services/pandoc/document-presentation";
 import { holdsNote } from "@/services/pandoc/inline-content";
-import type {
-  BibliographyRenderCache,
-  RenderPresentation,
-} from "@/services/pandoc/render-cache";
+import type { RenderPresentation } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
@@ -96,7 +94,7 @@ export interface CitationTextDeps {
   profile: ProfileReader;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
-    BibliographyRenderCache,
+    PlainBibliographyRender,
     "readCitations" | "readBibliography" | "on" | "vaultPresentation"
   >;
   /** The plugin-wide query client every Held Read is realized on. */

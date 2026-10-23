@@ -3,7 +3,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import type { BibliographyRenderCache } from "./render-cache";
+import type { PlainBibliographyRender } from "./render-cache/plain";
 
 interface CitationStyleNoticeCopy {
   title: string;
@@ -17,7 +17,7 @@ interface CitationStyleNoticeHandle {
 
 /** Show one recovery notice when the render cache first finds its selected style unavailable. */
 export function registerCitationStyleNotice(
-  renderCache: Pick<BibliographyRenderCache, "onStyleMissing">,
+  renderCache: Pick<PlainBibliographyRender, "onStyleMissing">,
   openSettings: () => void,
 ): () => void {
   return subscribeCitationStyleMissing(renderCache, () =>
@@ -27,7 +27,7 @@ export function registerCitationStyleNotice(
 
 /** Subscribe the notice lifecycle without coupling its trigger to rendering. */
 export function subscribeCitationStyleMissing(
-  renderCache: Pick<BibliographyRenderCache, "onStyleMissing">,
+  renderCache: Pick<PlainBibliographyRender, "onStyleMissing">,
   showNotice: () => CitationStyleNoticeHandle,
 ): () => void {
   let notice: CitationStyleNoticeHandle | null = null;

@@ -13,6 +13,7 @@ import {
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
+import { changesUntil } from "@/lib/effect-stream";
 import { QueryClients } from "@/services/query-client/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -218,9 +219,7 @@ export const layerLibraryScope = Layer.effect(
     );
     return LibraryScope.of({
       state: SubscriptionRef.get(state),
-      changes: SubscriptionRef.changes(state).pipe(
-        Stream.interruptWhen(Deferred.await(stopped)),
-      ),
+      changes: changesUntil(state, Deferred.await(stopped)),
       current: Effect.andThen(
         heldLibraries(),
         Effect.map(SubscriptionRef.get(state), (snapshot) => snapshot.current),
