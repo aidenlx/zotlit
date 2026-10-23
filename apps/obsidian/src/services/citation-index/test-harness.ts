@@ -793,7 +793,15 @@ export async function createCitationIndexHarness(
       app,
       noteIndex,
       settings,
-      lookup,
+      lookup: {
+        read: (...args) => lookup.read(...args),
+        observe: (...args) => lookup.observe(...args),
+        on: (...args) => lookup.on(...args),
+        get status() {
+          return lookup.status;
+        },
+        whenResolved: () => lookup.whenResolved(),
+      },
       parseClient: options.parseClient ?? inProcessParseClient,
       openStore: options.openStore ?? (() => Promise.resolve(store)),
     }),
