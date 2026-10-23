@@ -455,7 +455,6 @@ export function buildServices(
         zoteroPref,
         settings,
         attachmentImport,
-        noteImport,
       }): NoteFeature =>
         createNoteFeature({
           singleExcerpt: (options) =>
@@ -482,7 +481,6 @@ export function buildServices(
           zoteroPref,
           settings,
           attachmentImport,
-          noteImport,
         }),
     })
     .useValue({

@@ -275,20 +275,10 @@ it("reuses one resolution across the notes of one initiating import batch", asyn
 
 it("reuses the bytes a store whose write failed never kept", async () => {
   await using f = await fixture({ failWrites: true });
-  const noteImport = await f.importer.prepare({
-    reads: f.reads,
-    sourcePath: "Literature/Paper.md",
-    settings: f.settings,
-  });
-  for (const key of ["NTES2345", "NTES3456"])
-    noteImport
-      .resolveChildNote(getNoteByKey(f.client, key, { libraryID: 1 })!)
-      .noteLink();
-  expect(await noteImport.flush()).toEqual({
-    created: 2,
-    skipped: 0,
-    failed: 0,
-  });
+  await using outcomes = new ExcerptOutcomeScope();
+  await f.importNote("NTES2345", outcomes);
+  await f.importNote("NTES3456", outcomes);
+  expect(f.notes()).toHaveLength(2);
   // The store kept nothing, and the batch still rendered the excerpt once.
   expect(f.entries.size).toBe(0);
   expect(f.render).toHaveBeenCalledTimes(1);
@@ -320,34 +310,4 @@ it("keeps a caller's batch scope open until the caller releases it", async () =>
   expect(outcomes.diagnostics).toMatchObject({ released: false, retained: 1 });
   await outcomes[Symbol.asyncDispose]();
   expect(outcomes.diagnostics).toMatchObject({ released: true, retained: 0 });
-});
-
-it("shares one retention across the Child Notes one flush imports", async () => {
-  await using f = await fixture();
-  const noteImport = await f.importer.prepare({
-    reads: f.reads,
-    sourcePath: "Literature/Paper.md",
-    settings: f.settings,
-  });
-  for (const key of ["NTES2345", "NTES3456"]) {
-    const link = noteImport.resolveChildNote(
-      getNoteByKey(f.client, key, { libraryID: 1 })!,
-    );
-    expect(link.noteLink()).toContain("Imported/");
-  }
-  expect(await noteImport.flush()).toEqual({
-    created: 2,
-    skipped: 0,
-    failed: 0,
-  });
-  // One flush is one initiating batch: its own scope answers the second note.
-  expect(f.render).toHaveBeenCalledTimes(1);
-  expect(f.scopes).toHaveLength(2);
-  expect(f.scopes[0]).toBe(f.scopes[1]);
-  expect(f.scopes[0]?.diagnostics).toMatchObject({
-    released: true,
-    retained: 0,
-    hits: 1,
-  });
-  expect(f.notes()).toHaveLength(2);
 });

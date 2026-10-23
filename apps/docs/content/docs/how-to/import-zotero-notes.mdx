@@ -11,38 +11,19 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit can import Zotero child notes as standalone Markdown files in your vault and link to them from the parent literature note.
+ZotLit can import Zotero child notes as standalone Markdown files in your vault. A literature note whose template uses `noteLink` links to them.
 
 ## How import is triggered
 
-Import is link-driven. When a template or frontmatter expression references the `noteLink` property on a child note, ZotLit imports that note as a Markdown file. If `noteLink` is never referenced, no file is created for that child note.
+Import is explicit. A child note becomes a Markdown file only when you run an import command, or start an import from Zotero. Creating, updating, or overwriting a literature note never imports its child notes.
 
-In Liquid templates, a property access triggers import automatically:
+A template can still link to child notes through the `noteLink` property:
 
 ```liquid
 {{ note.noteLink }}
 ```
 
-In frontmatter expressions, mapping over `noteLink` triggers import for each child note:
-
-```liquid
-zt.notes | map: "noteLink"
-```
-
-Accessing other properties (such as `title`) does not trigger import.
-
-## Import a single child note
-
-When you create, update, or overwrite a literature note whose template or frontmatter references `noteLink`, ZotLit imports the child notes during that operation. No separate command is needed.
-
-<Callout type="info" title="Metadata-only update">
-  A metadata-only update (
-  <Command inline name={m.command_update_note_metadata_name()} />) re-evaluates
-  frontmatter but does not re-render the note body. If a frontmatter expression
-  references `noteLink`, child notes are still imported during that update. A
-  `noteLink` reference that exists only in the body template has no effect
-  during a metadata-only update because the body is not re-rendered.
-</Callout>
+When an imported file exists for the child note, `noteLink` links to that file. Otherwise it renders a `zotero://` link that opens the note in Zotero. The Template Workbench preview shows the same link.
 
 ## Import all child notes at once
 
@@ -71,7 +52,7 @@ This command also appears in the right-click context menu on a literature note f
 
 ## Create-once behavior
 
-Imported notes are created once and not automatically updated. If an imported file already exists for a child note, `noteLink` links to the existing file without re-importing. Editing the Zotero note afterward does not change the imported file.
+Imported notes are created once and not automatically updated. If an imported file already exists for a child note, `noteLink` links to the existing file. Editing the Zotero note afterward does not change the imported file.
 
 To bring an imported note up to date, use the re-import commands described below.
 

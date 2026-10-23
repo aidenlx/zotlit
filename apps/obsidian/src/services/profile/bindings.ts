@@ -17,15 +17,6 @@ export interface ResolvedLiteratureNoteProfileBindings {
 export type ProfileBindingSettings = Readonly<Settings> &
   Partial<ResolvedLiteratureNoteProfileBindings>;
 
-const boundProfiles = new WeakMap<ProfileBindingSettings, ResolvedProfile>();
-
-/** Keep an in-flight operation on the Profile snapshot it resolved before its writes. */
-export function boundProfile(
-  settings: ProfileBindingSettings,
-): ResolvedProfile | undefined {
-  return boundProfiles.get(settings);
-}
-
 /** Read an effective binding from an optional resolved-Profile overlay. */
 export function getProfileBinding<
   K extends keyof ResolvedLiteratureNoteProfileBindings,
@@ -76,11 +67,7 @@ export interface ResolvedProfile {
   readonly stamp: string | undefined;
   readonly document: string | undefined;
   readonly bindings: ResolvedLiteratureNoteProfileBindings;
-  /**
-   * Settings snapshot with this Profile's effective bindings overlaid.
-   *
-   * @see boundProfile
-   */
+  /** Settings snapshot with this Profile's effective bindings overlaid. */
   readonly settings: ProfileBindingSettings;
   /** The Profile's own `citation.references-style` override, `undefined` when it inherits. Feeds the note's `citation-style` frontmatter, which states only what the Profile declares. */
   readonly citationStyle: string | null | undefined;
@@ -96,18 +83,15 @@ export function bindProfile(
 ): ResolvedProfile {
   const { selector, entry } = profile;
   const bindings = mergeBindings(settings, entry);
-  const boundSettings: ProfileBindingSettings = { ...settings, ...bindings };
-  const resolved: ResolvedProfile = {
+  return {
     selector,
     label: entry?.label,
     stamp: entry && formatProfileStamp(entry),
     document: profile.document,
     bindings,
-    settings: boundSettings,
+    settings: { ...settings, ...bindings },
     citationStyle: entry?.bindings?.["citation.references-style"],
   };
-  boundProfiles.set(boundSettings, resolved);
-  return resolved;
 }
 
 /** The Profile a note belongs to, or the parsed stamp that names no Profile. */

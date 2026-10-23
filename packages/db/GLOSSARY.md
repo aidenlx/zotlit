@@ -23,7 +23,7 @@ A rich-text HTML note attached to an Item. Distinguished from a Standalone Note 
 _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (still ambiguous)
 
 **Standalone Note** _(Zotero)_:
-A rich-text HTML note with no parent Item. Same schema as a Child Note, but top-level in the library. Only reachable via explicit import (not auto-materialized as a side effect of Literature Note operations).
+A rich-text HTML note with no parent Item. Same schema as a Child Note, but top-level in the library. Only reachable via explicit import, like a Child Note: rendering a Literature Note never imports either.
 
 **Library**:
 A Zotero library — either the user's personal library or a group library. Each Library has a `libraryID` (DB primary key); group libraries additionally carry a `groupID`.

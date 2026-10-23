@@ -32,9 +32,11 @@ These commands are available from the command palette and from the right-click c
 
     <Command name={m.command_update_note_name()} />
 
-    ZotLit refreshes the frontmatter and re-renders the managed region (`%%zt-managed%%` ... `%%/zt-managed%%`). Your writing outside the managed region stays untouched. When your note uses the default template's query block for annotations, ZotLit keeps the block and any custom view settings you saved in its toolbar.
+    ZotLit refreshes the frontmatter. A note made with the default template has no managed region, so its body stays as you wrote it, and the notice reads <UiLabel name={m.notice_updated_note_no_region()} /> Its annotations query block stays current on its own.
 
-    A notice confirms: <UiLabel name={m.notice_updated_note()} />
+    When your note has a managed region (`%%zt-managed%%` ... `%%/zt-managed%%`), ZotLit also re-renders it. A note has one when your own profile has a `{% managed %}` block, or when an earlier default created it. Your writing outside the managed region stays untouched, and a query block in the region keeps any view settings you saved in its toolbar. A notice confirms: <UiLabel name={m.notice_updated_note()} />
+
+    To stop ZotLit re-rendering a region, delete the `%%zt-managed%%` and `%%/zt-managed%%` lines. Later updates leave the body untouched.
 
     Image and ink excerpts are prepared before the note is written. Both PDF readers can stay closed. A changed image gets a new filename; other notes and old image files keep their saved versions.
 

@@ -11,6 +11,7 @@ import type {
   TemplateLink,
   TemplateNoteLink,
 } from "@zotlit/db";
+import { zoteroNoteLink } from "@zotlit/db";
 
 import { markInertPlaceholder } from "./inert-placeholder";
 
@@ -167,7 +168,7 @@ export function buildInertNoteResolvers<File extends InertNoteFile>(
                 subpath,
                 alias: alias ?? note.title ?? undefined,
               })
-          : notImportedPlaceholder(),
+          : (alias) => zoteroNoteLink(note, alias),
       };
     },
   };

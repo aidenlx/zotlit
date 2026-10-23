@@ -144,14 +144,14 @@ Two paths exist. Keep Eta: rename the files, update the data vocabulary, and ena
   <Step>
     ### Update child note access
 
-    v1 inlined child-note content as Markdown on `it.notes`. v2 writes each child note to a separate file and provides link-only entries:
+    v1 inlined child-note content as Markdown on `it.notes`. v2 provides link-only entries. A child note becomes a separate file only when you [import it](/docs/how-to/import-zotero-notes):
 
-    | v1                                      | v2                                                   |
-    | --------------------------------------- | ---------------------------------------------------- |
-    | `it.notes`: array of `{title, content}` | `zt.notes`: array of `{key, title, noteLink()}`      |
-    | Note content inlined                    | Content in a separate file; `noteLink()` links to it |
+    | v1                                      | v2                                                                        |
+    | --------------------------------------- | ------------------------------------------------------------------------- |
+    | `it.notes`: array of `{title, content}` | `zt.notes`: array of `{key, title, noteLink()}`                           |
+    | Note content inlined                    | `noteLink()` links to the imported file, or else opens the note in Zotero |
 
-    The default content template renders child notes as a bulleted list of links:
+    The default template no longer lists child notes. To list them as links, add a loop like this to your template:
 
     ```eta
     <% if (zt.notes.length) { %>
@@ -318,7 +318,7 @@ Two paths exist. Keep Eta: rename the files, update the data vocabulary, and ena
 
     <Command name={m.command_overwrite_note_name()} />
 
-    A confirmation modal appears. Click <UiLabel name={m.modal_overwrite_note_confirm()} /> to proceed. ZotLit regenerates the entire note body from the current templates, inserting the managed-region markers.
+    A confirmation modal appears. Click <UiLabel name={m.modal_overwrite_note_confirm()} /> to proceed. ZotLit regenerates the entire note body from the current templates. Your renamed `zotlit-content` template becomes the managed region, so ZotLit inserts the managed-region markers.
 
     After overwriting, the note responds to <Command inline name={m.command_update_note_name()} /> for incremental updates. You do not need to overwrite every note at once. Leave notes untouched until you are ready.
 

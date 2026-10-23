@@ -573,6 +573,7 @@ export class ProfileService extends Service {
       {
         id: DEFAULT_PROFILE,
         name: m.settings_profile_default_name(),
+        managed: false,
         frontmatter:
           this.#deps.settings.current?.["note.frontmatter-fields"] ??
           DEFAULT_FRONTMATTER_FIELDS,

@@ -1,4 +1,5 @@
-// Materializes a literature note's child Zotero notes into flat Markdown mirrors.
+// Materializes Zotero Child Notes into flat Markdown mirrors on command, and
+// links a Literature Note to each of its Child Notes.
 import { normalizePath, stringifyYaml } from "obsidian";
 import type {
   FileManager,
@@ -17,6 +18,7 @@ import type {
   Note,
   TemplateNoteLink,
 } from "@zotlit/db";
+import { zoteroNoteLink } from "@zotlit/db";
 import {
   MAX_SEGMENT_BYTES,
   normalizeFilename,
@@ -39,8 +41,7 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { processLiveText } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
-import { syntheticFile } from "@/lib/markdown-link";
-import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   ProfileSelector,
   UnknownProfileDiagnostic,
@@ -59,7 +60,7 @@ import type {
 } from "@/services/excerpt-image/prepare";
 import { randomFilenameId } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
-import { boundProfile, getProfileBinding } from "@/services/profile/bindings";
+import { getProfileBinding } from "@/services/profile/bindings";
 import type {
   ProfileBindingSettings,
   ResolvedProfile,
@@ -87,7 +88,7 @@ type WriteMode =
   | { action: "create"; path: string }
   | { action: "overwrite"; file: TFile };
 
-/** Shared per-run inputs threaded to every write in a `prepare`/`importNote` call. */
+/** Shared per-run inputs threaded to the write of an `importNote` call. */
 interface RunContext {
   /** Bound to the operation's Snapshot: every read of the run sees one database state. */
   reads: ZoteroReadsApi;
@@ -98,11 +99,6 @@ interface RunContext {
   reportExcerpts?: (summary: ExcerptSummary) => void;
   /** The initiating batch's retained outcomes; this run's notes all share it. */
   outcomes?: ExcerptOutcomeScope;
-}
-
-interface QueuedImport {
-  note: ChildNote;
-  path: string;
 }
 
 /** The vault + fileManager surface the import writer touches. */
@@ -134,36 +130,6 @@ interface NoteImporterDeps {
   excerptImages?: ExcerptPreparation;
 }
 
-export interface PrepareNoteImportOptions {
-  /**
-   * Bound to the calling operation's Snapshot, so the flush reads the Child
-   * Notes from the database state the Literature Note rendered from.
-   */
-  reads: ZoteroReadsApi;
-  /** The literature note's vault path; the link source for `noteLink`. */
-  sourcePath: string;
-  /** Caller-held settings snapshot (import folder and related note-import prefs). */
-  settings: ProfileBindingSettings;
-  /**
-   * The initiating batch's retained outcomes, so the Child Notes this run
-   * imports reuse the Literature Note's own excerpt resolutions.
-   */
-  outcomes?: ExcerptOutcomeScope;
-}
-
-export interface NoteImport {
-  /**
-   * Resolve a child note to its link-only template shape. An already-imported
-   * note (matched by identity, not path) links to the existing file and queues
-   * nothing; otherwise the path is minted and frozen now, and the import is
-   * queued lazily on the link's first render (an unrendered link imports nothing).
-   */
-  resolveChildNote(note: ChildNote): TemplateNoteLink;
-  flush(
-    reportExcerpts?: (summary: ExcerptSummary) => void,
-  ): Promise<{ created: number; skipped: number; failed: number }>;
-}
-
 export interface ImportNoteOptions {
   /** Bound to the calling operation's Snapshot. */
   reads: ZoteroReadsApi;
@@ -193,12 +159,11 @@ export interface PreparedExplicitImport {
 }
 
 /**
- * Stateless note-import surface: lazy child-note batching via `prepare` and
- * explicit single-note writes via `importNote`. Deps are captured once; one
+ * Stateless note-import surface: explicit single-note writes via `importNote`,
+ * previewed through `prepareExplicitImport`. Deps are captured once; one
  * shared `PQueue` bounds concurrent vault writes across all callers.
  */
 export interface NoteImporter {
-  prepare(options: PrepareNoteImportOptions): Promise<NoteImport>;
   /** Freeze the Profile and path for explicit-import confirmation without writing. */
   prepareExplicitImport(
     note: ChildNote,
@@ -214,65 +179,53 @@ export interface NoteImporter {
 }
 
 /** Per-factory state shared across all calls. */
-type Ctx = NoteImporterDeps & {
-  writes: PQueue;
-  /**
-   * Note key -> minted import path, recorded synchronously the moment a path
-   * is minted (before the write lands). `ctx.noteIndex` is populated from
-   * Obsidian's `metadataCache` 'changed' event, which fires asynchronously
-   * after `vault.create` resolves; a second `resolveChildNote` for the same
-   * note key (e.g. a double-triggered "Update in Obsidian") can otherwise run
-   * before that event lands and mint a second, distinct path for one Zotero
-   * note. Scoped to the whole factory instance (not a per-`prepare()` local)
-   * so it spans the separate `prepare()` calls each trigger creates. Entries
-   * are never evicted — once a note lands in the index the `existing` branch
-   * short-circuits before this map is even consulted, so a stale entry is
-   * inert, and note keys are bounded by the vault's imported notes.
-   */
-  pendingMints: Map<string, string>;
-};
+type Ctx = NoteImporterDeps & { writes: PQueue };
 
 export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
   const ctx: Ctx = {
     ...deps,
     writes: new PQueue({ concurrency: WRITE_CONCURRENCY }),
-    pendingMints: new Map(),
   };
   return {
-    prepare: (options) => prepareImport(ctx, options),
     prepareExplicitImport: (note, options) =>
       prepareExplicitImport(ctx, note, options),
     importNote: (note, options) => doImportNote(ctx, note, options),
   };
 }
 
-async function prepareImport(
-  ctx: Ctx,
-  options: PrepareNoteImportOptions,
-): Promise<NoteImport> {
-  await ctx.profile.ready;
-  const { settings, sourcePath } = options;
-  const importFolder = normalizeFolderPath(
-    normalizePath(getProfileBinding(settings, "note.import-folder")),
-  );
-  const profile =
-    boundProfile(settings) ?? ctx.profile.resolveProfile(DEFAULT_PROFILE);
-  if (!profile)
-    throw new NoteImportProfileError(DEFAULT_PROFILE, { path: sourcePath });
-  const run: RunContext = {
-    reads: options.reads,
-    settings,
-    attachmentFolderCache: new Map(),
-    profile,
-    outcomes: options.outcomes,
-  };
-  const queue: QueuedImport[] = [];
-  logger.debug("Prepared note import", { sourcePath, importFolder });
+/**
+ * A Child Note's link-only template shape. Its `noteLink` links the Child
+ * Note's Imported Note when one exists (matched by identity, not path) and
+ * otherwise opens the note in Zotero. Rendering it reads the note index and
+ * writes nothing: a Child Note becomes a file only through an import command.
+ * The default alias is the live note title, so a retitled Zotero note updates
+ * the link text without renaming the file.
+ */
+export function childNoteLink(
+  deps: {
+    app: Pick<ImportVaultApp, "fileManager">;
+    noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">;
+  },
+  note: ChildNote,
+  sourcePath: string,
+): TemplateNoteLink {
   return {
-    resolveChildNote: (note) =>
-      resolveChildNote(ctx, note, { sourcePath, importFolder, queue }),
-    flush: (reportExcerpts) =>
-      flushQueue(ctx, queue, { importFolder, run: { ...run, reportExcerpts } }),
+    key: note.key,
+    indexedKey: note.indexedKey,
+    title: note.title,
+    noteLink: (alias, subpath) => {
+      const imported = deps.noteIndex.getImportedNoteByNoteKey(
+        note.indexedKey,
+      )[0];
+      if (imported)
+        return deps.app.fileManager.generateMarkdownLink(
+          imported,
+          sourcePath,
+          subpath,
+          alias ?? note.title ?? undefined,
+        );
+      return zoteroNoteLink(note, alias);
+    },
   };
 }
 
@@ -432,123 +385,6 @@ async function explicitImportTarget(
   };
 }
 
-function resolveChildNote(
-  ctx: Ctx,
-  note: ChildNote,
-  scope: { sourcePath: string; importFolder: string; queue: QueuedImport[] },
-): TemplateNoteLink {
-  const existing = ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
-  if (existing) {
-    return buildNoteLink(ctx.app, note, {
-      target: existing,
-      sourcePath: scope.sourcePath,
-    });
-  }
-
-  // Reuse a path already minted for this note key (this run or an earlier,
-  // not-yet-indexed one) instead of minting a second one — see `pendingMints`.
-  const pending = ctx.pendingMints.get(note.indexedKey);
-  const path = pending ?? mintImportPath(ctx.app, scope.importFolder, note);
-  if (!pending) ctx.pendingMints.set(note.indexedKey, path);
-
-  let queued = false;
-  return buildNoteLink(ctx.app, note, {
-    target: syntheticFile(path),
-    sourcePath: scope.sourcePath,
-    onFirstRender: () => {
-      if (!queued) {
-        queued = true;
-        scope.queue.push({ note, path });
-      }
-    },
-  });
-}
-
-/**
- * A {@link TemplateNoteLink} whose `noteLink` links `target` from the lit note,
- * defaulting the alias to the live note title so a retitled Zotero note updates
- * the link text without renaming the file. `onFirstRender` (the minted path)
- * queues the import on first render — an unrendered link imports nothing.
- */
-function buildNoteLink(
-  app: ImportVaultApp,
-  note: ChildNote,
-  options: { target: TFile; sourcePath: string; onFirstRender?: () => void },
-): TemplateNoteLink {
-  return {
-    key: note.key,
-    indexedKey: note.indexedKey,
-    title: note.title,
-    noteLink: (alias, subpath) => {
-      options.onFirstRender?.();
-      return app.fileManager.generateMarkdownLink(
-        options.target,
-        options.sourcePath,
-        subpath,
-        alias ?? note.title ?? undefined,
-      );
-    },
-  };
-}
-
-async function flushQueue(
-  ctx: Ctx,
-  queue: QueuedImport[],
-  options: { importFolder: string; run: RunContext },
-): Promise<{ created: number; skipped: number; failed: number }> {
-  if (queue.length === 0) return { created: 0, skipped: 0, failed: 0 };
-  // One read under the operation's Snapshot: the bodies come from the
-  // database state the Literature Note rendered from.
-  const bodies = await readNoteBodies(
-    options.run.reads,
-    queue.map((entry) => entry.note),
-  );
-  await ensureImportFolder(ctx.app, options.importFolder);
-  await using stack = new AsyncDisposableStack();
-  // One flush is one initiating batch when nothing above owns a scope.
-  const run: RunContext = {
-    ...options.run,
-    outcomes: resolveOutcomeScope(options.run.outcomes, stack),
-  };
-
-  const results = await Promise.allSettled(
-    queue.map((entry) =>
-      ctx.writes.add(async () => {
-        const noteData = bodies.get(entry.note.indexedKey);
-        if (!noteData) {
-          logger.warn("Imported note vanished before flush; skipped", {
-            noteKey: entry.note.indexedKey,
-          });
-          return "skipped" as WriteOutcome;
-        }
-        return await writeNote(ctx, noteData, {
-          mode: { action: "create", path: entry.path },
-          run,
-        });
-      }),
-    ),
-  );
-
-  let created = 0;
-  let skipped = 0;
-  let failed = 0;
-  for (const [index, result] of results.entries()) {
-    if (result.status === "rejected") {
-      failed += 1;
-      logger.error("Failed to import note; siblings unaffected", {
-        noteKey: queue[index]!.note.indexedKey,
-        error: result.reason,
-      });
-    } else if (result.value === "created") {
-      created += 1;
-    } else {
-      skipped += 1;
-    }
-  }
-  logger.debug("Imported notes", { created, skipped, failed });
-  return { created, skipped, failed };
-}
-
 /**
  * Write (create or overwrite) a single imported-note file from a fully-fetched
  * {@link Note}. Steps: prepare attachment batch → parse note HTML (building the
@@ -678,26 +514,6 @@ async function parentLiteratureNote(
   const parent = await readDisplayRef(options.reads, note.parentItemID);
   if (!parent) return undefined;
   return ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
-}
-
-/** The live bodies of `notes`, keyed by Indexed Key; a vanished note is absent. */
-async function readNoteBodies(
-  reads: ZoteroReadsApi,
-  notes: readonly ChildNote[],
-): Promise<Map<string, Note>> {
-  const keysByLibrary = Map.groupBy(notes, (note) => note.libraryID);
-  const bodies = await Effect.runPromise(
-    Effect.forEach(
-      keysByLibrary,
-      ([libraryID, inLibrary]) =>
-        reads.NoteBodies({
-          libraryID,
-          keys: inLibrary.map((note) => note.key),
-        }),
-      { concurrency: "unbounded" },
-    ),
-  );
-  return new Map(bodies.flat().map((note) => [note.indexedKey, note]));
 }
 
 /** The rows {@link parseNote} and the annotation prepass read for one note. */
