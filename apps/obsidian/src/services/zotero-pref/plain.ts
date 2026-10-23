@@ -1,6 +1,7 @@
 /** Zotero preferences for settings, views, and legacy services. */
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 
 import type { PrefValue } from "./prefs-file";
 import { ZoteroPref } from "./service";
@@ -48,23 +49,11 @@ export function plainZoteroPref(
   ) => {
     if (closed()) return () => {};
     const seen = current();
-    let active = true;
-    const fiber = runtime.runFork(
-      Stream.dropWhile(pref.changes, (next) => next === seen).pipe(
-        Stream.runForEach((next) =>
-          Effect.sync(() => {
-            if (active) callback(next);
-          }),
-        ),
-      ),
+    return subscribe(
+      runtime,
+      Stream.dropWhile(pref.changes, (next) => next === seen),
+      callback,
     );
-    // interruptWhen forks the upstream subscription. Attach it before callers
-    // can publish two changes; latest-value replay cannot recover the first.
-    fiber.currentDispatcher.flush();
-    return () => {
-      active = false;
-      fiber.interruptUnsafe();
-    };
   };
   return {
     get state() {

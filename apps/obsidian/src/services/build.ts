@@ -49,7 +49,7 @@ import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
-import { LibraryScopeService } from "./library-scope/service";
+import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
 import { createNoteFeature } from "./note-feature";
@@ -69,11 +69,9 @@ import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { plainPluginSettings } from "./settings/plain";
-import {
-  LiteratureNoteTemplateMigrationService,
-  loadLiteratureNoteTemplateMigrationData,
-} from "./template/migration";
-import { TemplateService } from "./template/service";
+import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
+import type { TemplateMigrationOptions } from "./template/migration";
+import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
@@ -104,7 +102,18 @@ export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
 ) {
-  const runtime = buildRuntime(pluginLayer(plugin), stack);
+  let bindMigration!: (actions: TemplateMigrationOptions) => void;
+  const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
+    bindMigration = resolve;
+  });
+  const runtime = buildRuntime(
+    pluginLayer(plugin, {
+      loadVerificationData: async (options) =>
+        (await migrationActions).loadVerificationData(options),
+      openPrompt: async () => (await migrationActions).openPrompt(),
+    }),
+    stack,
+  );
   await runtime.context();
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
@@ -147,9 +156,8 @@ export async function buildServices(
           },
         }),
     })
-    .use({
-      template: ({ settings }) =>
-        new TemplateService({ app: plugin.app, settings }),
+    .useValue({
+      template: () => plainTemplate(runtime),
     })
     .useValue({
       noteIndex: () => plainNoteIndex(runtime),
@@ -317,14 +325,7 @@ export async function buildServices(
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
-    .use({
-      libraryScope: ({ zoteroReads, queryClient, settings }) =>
-        new LibraryScopeService({
-          reads: zoteroReads,
-          queries: queryClient,
-          settings,
-        }),
-    })
+    .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .use({
       query: ({ zoteroReads, libraryScope, zoteroPref, useLedger }) =>
         new QueryService({
@@ -395,7 +396,7 @@ export async function buildServices(
             })(options),
         }),
     })
-    .use({
+    .useValue({
       templateMigration: ({
         zoteroReads,
         libraryScope,
@@ -403,11 +404,8 @@ export async function buildServices(
         settings,
         template,
         zoteroPref,
-      }) =>
-        new LiteratureNoteTemplateMigrationService({
-          app: plugin.app,
-          settings,
-          template,
+      }) => {
+        bindMigration({
           loadVerificationData: (options) =>
             loadLiteratureNoteTemplateMigrationData(
               {
@@ -422,7 +420,9 @@ export async function buildServices(
               options,
             ),
           openPrompt: () => openWelcomeView(plugin.app, settings),
-        }),
+        });
+        return plainTemplateMigration(runtime);
+      },
     })
     .use({
       itemLookup: ({ zoteroReads, libraryScope, useLedger }) =>
@@ -525,7 +525,6 @@ export async function buildServices(
         libraryScope,
         noteImport,
         noteIndex,
-        template,
       }): BatchImport =>
         createBatchImport({
           view: createNoteImportView(plugin.app, {
@@ -541,7 +540,6 @@ export async function buildServices(
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,
-          template,
         }),
     })
     .use({

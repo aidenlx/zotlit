@@ -43,6 +43,7 @@ export function plainUseLedger(
     withoutNoteUse: (file, open) =>
       runtime.runPromise(ledger.withoutNoteUse(file, Effect.promise(open))),
     subscribe: (callback) => {
+      if (runtime.scope.state._tag === "Closed") return () => {};
       const seen = runtime.runSync(ledger.current);
       return subscribe(
         runtime,

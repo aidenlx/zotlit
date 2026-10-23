@@ -19,11 +19,11 @@ import { useUniqueId } from "@zotlit/ui";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ItemLookup, SearchSession } from "@/services/item-lookup/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   LibraryScope,
   LibrarySelector,
 } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { QueryViewState } from "@/views/query-view/view";
 
@@ -43,7 +43,7 @@ export const LIBRARY_SEARCH_LIMIT = 500;
 export interface LibrarySearchDeps {
   lookup: Pick<ItemLookup, "openSession">;
   reads: Pick<PlainZoteroReads, "on">;
-  libraryScope: Pick<LibraryScopeService, "on" | "current" | "libraries">;
+  libraryScope: Pick<PlainLibraryScope, "on" | "current" | "libraries">;
 }
 
 /** What a search found, as the derivation reads it. */

@@ -6,7 +6,7 @@ import { revealSetting } from "@/lib/open-settings";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
@@ -26,7 +26,7 @@ export interface ReferencesRegistrationDeps {
   db: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
   citationIndex: CitationIndex;
   citationLookup: ReferencesViewDeps["citationLookup"];
-  libraryScope: LibraryScopeService;
+  libraryScope: Pick<PlainLibraryScope, "current">;
   citationText: CitationText;
   citekeyEditor: CitekeyEditor;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;

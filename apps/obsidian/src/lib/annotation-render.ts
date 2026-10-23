@@ -28,7 +28,7 @@ import {
   createCommentTurndown,
 } from "@/lib/turndown/comment";
 import type { AttachmentImport } from "@/services/attachment-import/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 /**
@@ -97,7 +97,7 @@ export function buildAnnotationResolvers(options: {
 
 /** How {@link renderAnnotationSources} renders. */
 interface RenderAnnotationsOptions {
-  template: Pick<TemplateService, "render" | "renderCitation">;
+  template: Pick<PlainTemplate, "render" | "renderCitation">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
   renderAnnotation?: (data: AnnotationTemplateContext) => string;
@@ -162,7 +162,7 @@ function renderTemplateData(
 export function annotationCitation(
   parentItem: TemplateParentItemData | null,
   pageLabel: string | null,
-  template: Pick<TemplateService, "renderCitation">,
+  template: Pick<PlainTemplate, "renderCitation">,
 ): string | null {
   if (!parentItem?.citekey) return null;
   return template.renderCitation(

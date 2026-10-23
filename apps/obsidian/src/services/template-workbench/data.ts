@@ -37,7 +37,7 @@ import {
   findExistingLitNote,
   resolveObsidianExcerptImageContext,
 } from "@/services/template/inert-resolver-host";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -71,7 +71,7 @@ export interface TemplateDataDeps {
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
   settings: Pick<PlainPluginSettings, "current">;
-  templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
+  templates: Pick<PlainTemplate, "render" | "renderCitation">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
@@ -142,7 +142,6 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
     [
       Effect.sync(() => deps.settings.current),
       attempt(() => deps.noteIndex.whenIndexed()),
-      attempt(() => deps.templates.ready),
     ],
     { concurrency: "unbounded" },
   );

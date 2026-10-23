@@ -4,7 +4,6 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
-
 import type { App, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
@@ -17,7 +16,7 @@ import type { LocalServerService } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import {
   profileCustomization,
   saveProfileCustomization,
@@ -88,7 +87,7 @@ export interface CustomizeDeps {
     ProfileService,
     "ready" | "profiles" | "defaultDocumentPath" | "getSource"
   >;
-  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
+  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   localServer: Pick<LocalServerService, "effectivePort" | "on">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
   /** This build's version, which a Profile's `minAppVersion` is read against. */
@@ -180,7 +179,6 @@ async function withDependencies(
   deps: Pick<CustomizeDeps, "template">,
   source: string,
 ): Promise<string> {
-  await deps.template.ready;
   try {
     return await deps.template.exportLiteratureNotePackSource(source, {
       onMissingPartial: () => {},

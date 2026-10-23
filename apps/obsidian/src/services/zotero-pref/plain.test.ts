@@ -63,24 +63,27 @@ it.effect(
 );
 
 // #1705: SubscriptionRef only replays the latest value to a late subscriber.
-it.effect("delivers both changes made immediately after subscribing", () =>
-  Effect.gen(function* () {
-    const f = yield* zoteroPrefFixture();
-    const plain = plainZoteroPref(f.runtime);
-    const received: string[] = [];
-    const delivered = yield* Queue.unbounded<void>();
-    const run = Effect.runSyncWith(yield* Effect.context<never>());
-    const unsubscribe = plain.subscribe((next) => {
-      received.push(next.dataDir);
-      if (next.dataDir === "/library-two")
-        run(Queue.offer(delivered, undefined));
-    });
-    plain.setDataDir("/library-one");
-    plain.setDataDir("/library-two");
-    yield* Queue.take(delivered);
-    unsubscribe();
-    expect(received).toEqual(["/library-one", "/library-two"]);
-  }),
+it.effect(
+  "keeps a throwing listener subscribed for both immediate changes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* zoteroPrefFixture();
+      const plain = plainZoteroPref(f.runtime);
+      const received: string[] = [];
+      const delivered = yield* Queue.unbounded<void>();
+      const run = Effect.runSyncWith(yield* Effect.context<never>());
+      const unsubscribe = plain.subscribe((next) => {
+        received.push(next.dataDir);
+        if (received.length === 1) throw new Error("listener failed");
+        if (next.dataDir === "/library-two")
+          run(Queue.offer(delivered, undefined));
+      });
+      plain.setDataDir("/library-one");
+      plain.setDataDir("/library-two");
+      yield* Queue.take(delivered);
+      unsubscribe();
+      expect(received).toEqual(["/library-one", "/library-two"]);
+    }),
 );
 
 // Failure modes: the adapter returns an Effect instead of a Promise, misses a

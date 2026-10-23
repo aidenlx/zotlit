@@ -14,7 +14,7 @@ import type { ResolvedLibraryScope } from "./scope";
 function setup(current: ResolvedLibraryScope | null) {
   const { host, commands, command } = fakeCliHost();
   registerLibraryScopeCli(host, {
-    libraryScope: { ready: Promise.resolve(), current },
+    libraryScope: { current },
   });
   return {
     commands,

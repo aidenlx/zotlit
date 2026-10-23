@@ -3,12 +3,11 @@ import type { SettingDefinitionItem } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -62,7 +61,10 @@ export interface ZotLitSettingTabOptions {
     PlainZoteroReads,
     "refresh" | "state" | "error" | "on" | "activeReadMode"
   >;
-  libraryScope: LibraryScopeService;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "current" | "effective" | "invalid" | "libraries" | "on"
+  >;
   zoteroPref: SettingTabContext["zoteroPref"];
   localServer: LocalServerActions;
   localBridge: LocalBridgeActions;
@@ -73,7 +75,7 @@ export interface ZotLitSettingTabOptions {
   excerptDisplay: SettingTabContext["excerptDisplay"];
   annotations: AnnotationCapabilityActions;
   writeAuthorization: WriteAuthorizationActions;
-  template: TemplateService;
+  template: SettingTabContext["template"];
   release: ReleaseTabActions;
   pandocEngine: ManagedBinaryActions;
   chineseSegmenter: ManagedBinaryActions;
@@ -95,7 +97,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     PlainZoteroReads,
     "refresh" | "state" | "error" | "on" | "activeReadMode"
   >;
-  readonly #libraryScope: LibraryScopeService;
+  readonly #libraryScope: Pick<
+    PlainLibraryScope,
+    "current" | "effective" | "invalid" | "libraries" | "on"
+  >;
   readonly #zoteroPref: SettingTabContext["zoteroPref"];
   readonly #localServer: LocalServerActions;
   readonly #localBridge: LocalBridgeActions;
@@ -107,7 +112,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #annotations: AnnotationCapabilityActions;
   readonly #writeAuthorization: WriteAuthorizationActions;
   readonly #profile: ProfileService;
-  readonly #template: TemplateService;
+  readonly #template: SettingTabContext["template"];
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: ManagedBinaryActions;
   readonly #chineseSegmenter: ManagedBinaryActions;
@@ -172,7 +177,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       template.on("compile-status-changed", () => this.#requestUpdate()),
     );
     // Obsidian calls `update()` from `addSettingTab()`, so the first pass runs
-    // while `onload` is still wiring and TemplateService is still loading. The
+    // while `onload` is still wiring and PlainTemplate is still loading. The
     // rows that need it structurally are left out of that pass, so re-render
     // once the service reports ready. `compile-status-changed` can't stand in:
     // its load-time emit lands before the service flips to loaded.

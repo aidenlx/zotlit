@@ -19,7 +19,7 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -236,7 +236,7 @@ function makeService(
     literatureNotes?: TFile[];
     attachmentImport?: Pick<AttachmentImportService, "prepare">;
     template?: Pick<
-      TemplateService,
+      PlainTemplate,
       "render" | "renderCitation" | "renderProfileAnnotation"
     >;
   } = {},
@@ -258,7 +258,7 @@ function makeService(
         renderCitation: vi.fn(() => "[@cite]"),
         renderProfileAnnotation: vi.fn(() => "profile annotation"),
       } as Pick<
-        TemplateService,
+        PlainTemplate,
         "render" | "renderCitation" | "renderProfileAnnotation"
       >),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
@@ -622,7 +622,7 @@ describe("createNoteImporter", () => {
       renderCitation: vi.fn(() => "[@cite]"),
       renderProfileAnnotation,
     } as Pick<
-      TemplateService,
+      PlainTemplate,
       "render" | "renderCitation" | "renderProfileAnnotation"
     >;
     const { app, host } = makeApp({

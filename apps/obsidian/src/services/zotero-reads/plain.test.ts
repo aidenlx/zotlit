@@ -62,33 +62,34 @@ it.effect("settles pending adapter calls when the runtime closes", () =>
 );
 
 // #1705: both state and discrete-event subscriptions must attach synchronously.
-it.effect(
-  "delivers both immediate refresh requests and their state changes",
-  () =>
-    Effect.gen(function* () {
-      const { open } = memoryOpener(seed);
-      const { plain } = yield* readsFixture(inProcessClient(layerRcRef(open)));
-      const states = yield* Queue.unbounded<string>();
-      const requests: string[] = [];
-      const stop = plain.subscribe((next) =>
-        Queue.offerUnsafe(states, next.state),
-      );
-      const stopEvent = plain.on("refresh-requested", () =>
-        requests.push("refresh"),
-      );
-      const first = plain.refresh();
-      const second = plain.refresh();
-      yield* Effect.promise(() => Promise.all([first, second]));
-      expect(yield* Queue.take(states)).toBe("ready");
-      expect(yield* Queue.take(states)).toBe("ready");
-      expect(requests).toEqual(["refresh", "refresh"]);
-      stop();
-      stop();
-      stopEvent();
-      yield* Effect.promise(() => plain.refresh());
-      expect(requests).toHaveLength(2);
-      expect(Queue.sizeUnsafe(states)).toBe(0);
-    }),
+it.effect("keeps throwing state and event listeners subscribed (#1705)", () =>
+  Effect.gen(function* () {
+    const { open } = memoryOpener(seed);
+    const { plain } = yield* readsFixture(inProcessClient(layerRcRef(open)));
+    const states = yield* Queue.unbounded<string>();
+    const requests: string[] = [];
+    let changes = 0;
+    const stop = plain.subscribe((next) => {
+      Queue.offerUnsafe(states, next.state);
+      if (++changes === 1) throw new Error("state listener failed");
+    });
+    const stopEvent = plain.on("refresh-requested", () => {
+      requests.push("refresh");
+      if (requests.length === 1) throw new Error("event listener failed");
+    });
+    const first = plain.refresh();
+    const second = plain.refresh();
+    yield* Effect.promise(() => Promise.all([first, second]));
+    expect(yield* Queue.take(states)).toBe("ready");
+    expect(yield* Queue.take(states)).toBe("ready");
+    expect(requests).toEqual(["refresh", "refresh"]);
+    stop();
+    stop();
+    stopEvent();
+    yield* Effect.promise(() => plain.refresh());
+    expect(requests).toHaveLength(2);
+    expect(Queue.sizeUnsafe(states)).toBe(0);
+  }),
 );
 
 it.effect(

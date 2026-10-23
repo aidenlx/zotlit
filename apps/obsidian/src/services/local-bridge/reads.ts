@@ -5,7 +5,6 @@
 // Every answer is built from what a template renders. Absolute paths, note
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
-
 import type { App } from "obsidian";
 
 import type { Item } from "@zotlit/db";
@@ -38,7 +37,7 @@ import {
 } from "@/services/pandoc/styles";
 import type { ProfileReader, ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -75,7 +74,7 @@ export interface LocalBridgeReadDeps {
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   profile: BridgeProfileReader;
-  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
+  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** The device id the page keys its drafts on, minted by the service. */
   installationId(): string;
@@ -165,7 +164,6 @@ export function createLocalBridgeReads(
     },
 
     async templateDependencies(source) {
-      await deps.template.ready;
       return dependencyBundle(deps.template, source);
     },
 
@@ -192,7 +190,7 @@ const CITATION_TEMPLATE = "citation";
  * partial that did resolve.
  */
 async function dependencyBundle(
-  template: Pick<TemplateService, "exportLiteratureNotePackSource">,
+  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">,
   source: string,
 ): Promise<TemplateDependenciesResponse> {
   const missing: string[] = [];

@@ -29,7 +29,6 @@ export function plainManagedBinary<
   const context = runtime.runSync(Effect.context<R>());
   const runSync = Effect.runSyncWith(context);
   const runPromise = Effect.runPromiseWith(context);
-  const runner = { runFork: Effect.runForkWith(context) };
   let installing: Promise<void> | undefined;
   let installingSource: ManagedBinaryStatus | undefined;
   let installingSnapshot:
@@ -64,7 +63,7 @@ export function plainManagedBinary<
     subscribe: (listener) => {
       const seen = runSync(binary.getStatus());
       return subscribe(
-        runner,
+        runtime,
         Stream.dropWhile(binary.changes, (next) => next === seen),
         listener,
       );

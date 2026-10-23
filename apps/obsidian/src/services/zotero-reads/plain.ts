@@ -2,6 +2,7 @@
 import { Cause, Effect, Exit, Scope, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 
 import { DbUnavailable } from "./rpc";
 import { ZoteroReads } from "./service";
@@ -36,27 +37,6 @@ export function plainZoteroReads(
   const context = runtime.runSync(Effect.context<never>());
   const read = Effect.runSyncWith(context);
   const closed = () => runtime.scope.state._tag === "Closed";
-  const listen = <A>(
-    stream: Stream.Stream<A>,
-    callback: (value: A) => void,
-  ) => {
-    if (closed()) return () => {};
-    let active = true;
-    const fiber = runtime.runFork(
-      Stream.runForEach(stream, (value) =>
-        Effect.sync(() => {
-          if (active) callback(value);
-        }),
-      ),
-    );
-    // Attach before returning: neither state replay nor an event feed can
-    // recover two changes made before a late subscription starts.
-    fiber.currentDispatcher.flush();
-    return () => {
-      active = false;
-      fiber.interruptUnsafe();
-    };
-  };
   return {
     get state() {
       return read(service.current).state;
@@ -114,13 +94,14 @@ export function plainZoteroReads(
     },
     subscribe: (callback) => {
       const seen = read(service.current);
-      return listen(
+      return subscribe(
+        runtime,
         Stream.dropWhile(service.changes, (next) => next === seen),
         callback,
       );
     },
     on: (event, callback) =>
-      listen(service.events, (change) => {
+      subscribe(runtime, service.events, (change) => {
         if (change._tag !== event) return;
         switch (change._tag) {
           case "degraded":

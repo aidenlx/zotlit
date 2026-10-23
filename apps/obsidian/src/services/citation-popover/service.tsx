@@ -16,7 +16,7 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
   documentCitationPresentation,
@@ -47,7 +47,7 @@ export interface CitationPopoverDeps {
   citationLookup: Pick<CitationLookup, "read" | "status" | "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
   citationText: Pick<CitationText, "read">;
   profile: ProfileReader;

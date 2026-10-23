@@ -7,6 +7,7 @@ import type {
 
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 
 import { QueryClients } from "./service";
 import type { Held, HeldReadChange, HeldReadEvents } from "./service";
@@ -71,24 +72,11 @@ export function plainQueryClients(
     subscribe: (callback) => {
       if (closed()) return () => {};
       const seen = runtime.runSync(queries.current);
-      let active = true;
-      const fiber = runtime.runFork(
-        Stream.dropWhile(queries.changes, (next) => next === seen).pipe(
-          Stream.runForEach((change) =>
-            Effect.sync(() => {
-              if (active) callback(change);
-            }),
-          ),
-        ),
+      return subscribe(
+        runtime,
+        Stream.dropWhile(queries.changes, (next) => next === seen),
+        callback,
       );
-      // interruptWhen forks the upstream subscription. Drain its startup
-      // through SchedulerDispatcher.flush before a caller can change two keys;
-      // SubscriptionRef's latest-value replay cannot recover a missed change.
-      fiber.currentDispatcher.flush();
-      return () => {
-        active = false;
-        fiber.interruptUnsafe();
-      };
     },
   };
 }

@@ -17,8 +17,8 @@ import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { QueryViewValue } from "@/services/item-query/query-view";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { LibraryScope } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
@@ -85,7 +85,7 @@ export interface LibraryViewDeps extends QueryViewDeps {
   settings: Pick<PlainPluginSettings, "update" | "flush" | "current">;
   libraryScope: QueryViewDeps["libraryScope"] &
     LibraryTreeDeps["libraryScope"] &
-    Pick<LibraryScopeService, "effective">;
+    Pick<PlainLibraryScope, "effective">;
   lookup: LibrarySearchDeps["lookup"];
   /** What a row does with its Item. */
   items: ItemActions;

@@ -11,7 +11,7 @@ import { Effect } from "@/lib/effect";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -77,7 +77,35 @@ interface TemplateWorkbenchRegistrationDeps {
   >;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   profile: ProfileService;
-  templates: TemplateService;
+  templates: Pick<
+    PlainTemplate,
+    | "frontmatterFields"
+    | "prepareLiteratureNoteTemplateSource"
+    | "renderCitationSource"
+    | "renderPartialSource"
+    | "getTemplateFileStatuses"
+    | "getPartialDocument"
+    | "renderFilename"
+    | "renderCitationData"
+    | "waitUntilSettled"
+    | "analyzeRootVariables"
+    | "getTemplateSource"
+    | "getLiteratureNoteTemplateStatuses"
+    | "getLiteratureNoteTemplate"
+    | "renderLiteratureNoteTemplateSource"
+    | "getFrontmatterFieldStatus"
+    | "javascriptTemplatesEnabled"
+    | "evaluateFrontmatterFields"
+    | "validateFrontmatterExpr"
+    | "getCitationTemplateStatus"
+    | "compileErrors"
+    | "getPartialDocuments"
+    | "getReservedPartialFiles"
+    | "getLoadedDocumentSource"
+    | "on"
+    | "render"
+    | "renderCitation"
+  >;
   zoteroPref: Pick<
     PlainZoteroPref,
     "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"

@@ -22,7 +22,7 @@ import type {
 } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import {
   documentCitationPresentation,
   documentPresentation,
@@ -71,7 +71,7 @@ export interface ReferencesViewDeps {
   citationLookup: Pick<CitationLookup, "status" | "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
   /** Opens the Literature Note an Indexed Key names, creating it first when it has none. */
   citekeyEditor: Pick<CitekeyEditor, "openIndexedKey">;
   /**

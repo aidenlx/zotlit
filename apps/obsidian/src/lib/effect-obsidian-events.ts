@@ -22,10 +22,13 @@ export const obsidianEvents = Effect.fnUntraced(function* <
   yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
   const subscription = yield* PubSub.subscribe(bus);
 
+  let pending = 0;
   const callback =
     <K extends keyof E>(type: K) =>
     (...args: E[K]): void => {
-      PubSub.publishUnsafe(bus, { type, args } as Payload<E>);
+      pending += 1;
+      if (!PubSub.publishUnsafe(bus, { type, args } as Payload<E>))
+        pending -= 1;
     };
 
   const on = Effect.fnUntraced(function* (
@@ -48,6 +51,7 @@ export const obsidianEvents = Effect.fnUntraced(function* <
   ) {
     const dispatch = Effect.fnUntraced(
       function* (event: Payload<E>) {
+        pending -= 1;
         yield* handler(event);
       },
       (effect, event) =>
@@ -65,5 +69,14 @@ export const obsidianEvents = Effect.fnUntraced(function* <
     yield* Stream.runForEach(stream, dispatch);
   });
 
-  return { stream, consume, on, callback };
+  return {
+    stream,
+    consume,
+    on,
+    callback,
+    /** Payloads published but not yet dispatched by consume, including buffered chunks. */
+    get pending() {
+      return pending;
+    },
+  };
 });

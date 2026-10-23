@@ -1372,7 +1372,6 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        ready: Promise.resolve(),
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
@@ -1527,7 +1526,6 @@ describe("createNote", () => {
       app,
       template: {
         renderManagedContent: () => "",
-        ready: Promise.resolve(),
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
@@ -1783,7 +1781,7 @@ describe("createNote", () => {
     expect(app.vault.create).toHaveBeenCalledOnce();
   });
 
-  it.each(["template", "profile"] as const)(
+  it.each(["profile"] as const)(
     "awaits %s.ready before writing the note",
     async (service) => {
       // Protocol-driven creation waits for both document compilation and Profile discovery.
@@ -1818,11 +1816,6 @@ describe("createNote", () => {
         },
         template: {
           renderManagedContent: () => "",
-          get ready() {
-            if (service !== "template") return Promise.resolve();
-            readinessRequested.resolve();
-            return templateReady;
-          },
           loaded: true,
           frontmatterFields: [],
           getLiteratureNoteTemplate: () => undefined,
@@ -2440,7 +2433,6 @@ function makeUpdateHarness(options: {
 
   const template: TestDeps["template"] = {
     renderManagedContent: () => renderContent(),
-    ready: Promise.resolve(),
     loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
     getLiteratureNoteTemplate: () => undefined,
@@ -4642,7 +4634,6 @@ describe("renderCitation", () => {
       app: makeApp(),
       template: {
         renderManagedContent: () => "",
-        ready: Promise.resolve(),
         loaded: false,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
@@ -4713,7 +4704,6 @@ describe("renderCitation", () => {
       app: makeApp(),
       template: {
         renderManagedContent: () => "",
-        ready: Promise.resolve(),
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
@@ -4765,7 +4755,6 @@ function citationTemplate(
   return {
     renderManagedContent: <T extends object>(data: T): string =>
       facade.render("content", data),
-    ready: Promise.resolve(),
     loaded: true,
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => undefined,

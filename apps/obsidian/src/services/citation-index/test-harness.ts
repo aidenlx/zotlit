@@ -475,7 +475,7 @@ export class CitekeysStub {
 
 /**
  * The Libraries the active database holds and the scope resolved over them —
- * the stand-in for `LibraryScopeService` the Citation Index resolves against.
+ * the stand-in for `PlainLibraryScope` the Citation Index resolves against.
  */
 export class LibraryScopeStub {
   libraries: AvailableLibrary[];

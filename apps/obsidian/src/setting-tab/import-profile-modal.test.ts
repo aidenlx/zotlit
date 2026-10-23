@@ -328,7 +328,6 @@ async function importerFixture(kind: "fresh" | "replace" = "fresh") {
     ...f.deps,
     zoteroReads: { acquireRead },
     libraryScope: {
-      ready: Promise.resolve(),
       resolveLibraries: () => ({ available: [] }),
     },
     zoteroPref: { dataDir: null },
