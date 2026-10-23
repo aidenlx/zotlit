@@ -20,7 +20,7 @@ export const layerCitationParse = Layer.effect(
   CitationParse,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
-    const client = yield* makeRecoveringParseClient(() =>
+    const client = yield* makeRecoveringParseClient(
       connectParseWorker(workerSource),
     );
     const run = Effect.runSyncWith(yield* Effect.context<never>());

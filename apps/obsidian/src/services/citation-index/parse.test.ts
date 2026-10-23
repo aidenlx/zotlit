@@ -552,7 +552,12 @@ async function recoveringClient(connect: () => ParseConnection) {
     Layer.buildWithScope(TestClock.layer(), scope),
   );
   const client = await Effect.runPromiseWith(context)(
-    makeRecoveringParseClient(connect).pipe(Scope.provide(scope)),
+    makeRecoveringParseClient(
+      Effect.try({
+        try: connect,
+        catch: (error) => new ParseWorkerDied(String(error)),
+      }),
+    ).pipe(Scope.provide(scope)),
   );
   client.start();
   return {

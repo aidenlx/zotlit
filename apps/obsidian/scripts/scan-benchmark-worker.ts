@@ -1,52 +1,78 @@
-// Runs the guarded production parse bundle in Node, with timing at the message boundary.
-import { once } from "node:events";
+// Runs the production RPC worker in Node, timing receipt through reply posting.
+import type { RpcMessage } from "effect/rpc";
+import type { Worker as EffectWorker } from "effect/workers";
 import { Worker } from "node:worker_threads";
 
 import { scanWorkerBundle } from "./scan-worker-bundle.js";
 
-// The worker's wire shapes, restated: the Node program cannot load renderer
-// source. `citation-parse/worker.ts` owns them, and the bench names the reply.
-interface ParseRequest {
-  path: string;
-  generation: number;
-  text: string;
+interface TimedMessage {
+  data: EffectWorker.PlatformMessage;
+  workerMs?: number;
 }
 
-type WorkerReply = { id: number; json: string } | { id: number; error: string };
-
 export async function scanBenchmarkWorker<ParseReply>() {
-  const source = await scanWorkerBundle();
-  const worker = new Worker(
-    `
-    const { parentPort } = require("node:worker_threads");
-    let start;
-    globalThis.self = {
-      addEventListener: (_, listener) => parentPort.on("message", data => {
-        start = performance.now(); listener({ data });
-      }),
-      postMessage: data => parentPort.postMessage({data, workerMs: performance.now() - start}),
-    };
-    ${source}
-  `,
-    { eval: true },
-  );
-  await once(worker, "online");
-  let sequence = 0;
+  const bundle = await scanWorkerBundle<ParseReply>();
+  await using stack = new AsyncDisposableStack();
+  const workers = stack.use(new AsyncDisposableStack());
   let receivedAt = 0;
   let workerMs = 0;
-  const pending = new Map<number, PromiseWithResolvers<ParseReply>>();
-  worker.on("message", (message: { data: WorkerReply; workerMs: number }) => {
-    receivedAt = performance.now();
-    workerMs = message.workerMs;
-    const waiter = pending.get(message.data.id);
-    pending.delete(message.data.id);
-    if ("error" in message.data) waiter?.reject(new Error(message.data.error));
-    else waiter?.resolve(JSON.parse(message.data.json) as ParseReply);
-  });
-  worker.on("error", (error) => {
-    for (const waiter of pending.values()) waiter.reject(error);
-    pending.clear();
-  });
+  // Start the Node worker inside the RPC spawner so its ready message cannot
+  // arrive before the EventTarget bridge has an RPC listener.
+  const client = stack.use(
+    await bundle.connect(() => {
+      const worker = workers.use(
+        new Worker(
+          `
+        const { parentPort } = require("node:worker_threads");
+        const starts = new Map();
+        // Measure before the runner receives a request; measure its matching Exit
+        // before posting. Handshakes and cancellation never replace another timer.
+        parentPort.on("message", data => {
+          if (data[0] === 0 && data[1]?._tag === "Request") starts.set(data[1].id, performance.now());
+          if (data[0] === 0 && data[1]?._tag === "Interrupt") starts.delete(data[1].requestId);
+        });
+        const post = parentPort.postMessage.bind(parentPort);
+        parentPort.postMessage = (data, options) => {
+          const reply = data[0] === 1 ? data[1] : undefined;
+          const start = reply?._tag === "Exit" ? starts.get(reply.requestId) : undefined;
+          const workerMs = start === undefined ? undefined : performance.now() - start;
+          if (reply?._tag === "Exit") starts.delete(reply.requestId);
+          post({ data, workerMs }, options);
+        };
+        globalThis.self = parentPort;
+        ${bundle.default}
+      `,
+          { eval: true },
+        ),
+      );
+      const events = new EventTarget();
+      const port = {
+        addEventListener: events.addEventListener.bind(events),
+        removeEventListener: events.removeEventListener.bind(events),
+        postMessage: (data: unknown) => worker.postMessage(data),
+      };
+      worker.on("message", (message: TimedMessage) => {
+        const reply =
+          message.data[0] === 1
+            ? (message.data[1] as RpcMessage.FromServerEncoded)
+            : undefined;
+        if (reply?._tag === "Exit") {
+          receivedAt = performance.now();
+          workerMs = message.workerMs ?? 0;
+        }
+        events.dispatchEvent(
+          new MessageEvent("message", { data: message.data }),
+        );
+      });
+      worker.on("error", (error) => {
+        events.dispatchEvent(
+          Object.assign(new Event("error"), { error, message: String(error) }),
+        );
+      });
+      return port;
+    }),
+  );
+  const resources = stack.move();
   return {
     get receivedAt() {
       return receivedAt;
@@ -54,16 +80,7 @@ export async function scanBenchmarkWorker<ParseReply>() {
     get workerMs() {
       return workerMs;
     },
-    parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply> {
-      signal.throwIfAborted();
-      const id = ++sequence;
-      const waiter = Promise.withResolvers<ParseReply>();
-      pending.set(id, waiter);
-      worker.postMessage({ id, request });
-      return waiter.promise;
-    },
-    async [Symbol.asyncDispose]() {
-      await worker.terminate();
-    },
+    parse: client.parse,
+    [Symbol.asyncDispose]: () => resources[Symbol.asyncDispose](),
   };
 }

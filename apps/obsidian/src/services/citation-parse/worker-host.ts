@@ -1,76 +1,61 @@
-// Adapts worker events to individually cancellable Effect requests.
-import { Effect } from "@/lib/effect";
+// Owns one RPC connection; recovering-client owns replacement after a death.
+import { Deferred, Effect } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 
 import { ParseFailed, ParseWorkerDied } from "./client";
-import type { ParseReply } from "./client";
 import type { ParseConnection } from "./recovering-client";
-import type { WorkerReply, WorkerRequest } from "./worker";
+import { makeParseWorkerClient } from "./worker-client";
 
-export function connectParseWorker(source: string): ParseConnection {
-  const url = URL.createObjectURL(
-    new Blob([source], { type: "text/javascript" }),
+export const connectParseWorker = Effect.fnUntraced(function* (
+  source: string,
+): Effect.fn.Return<ParseConnection, ParseWorkerDied, Scope.Scope> {
+  const url = yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
+    ),
+    (url) => Effect.sync(() => URL.revokeObjectURL(url)),
   );
-  let worker: Worker;
-  try {
-    worker = new Worker(url, { name: "zotlit-citation-parse" });
-  } catch (error) {
-    URL.revokeObjectURL(url);
-    throw error;
-  }
   const died = Promise.withResolvers<void>();
-  const pending = new Map<
-    number,
-    (result: Effect.Effect<ParseReply, ParseFailed | ParseWorkerDied>) => void
-  >();
-  let sequence = 0;
+  const death = yield* Deferred.make<never, ParseWorkerDied>();
   let stopped = false;
+  const worker = yield* Effect.try({
+    try: () => new Worker(url, { name: "zotlit-citation-parse" }),
+    catch: (error) => new ParseWorkerDied(String(error)),
+  });
   const stop = (error: ParseWorkerDied): void => {
     if (stopped) return;
     stopped = true;
     worker.terminate();
-    URL.revokeObjectURL(url);
-    for (const resume of pending.values()) resume(Effect.fail(error));
-    pending.clear();
+    Deferred.doneUnsafe(death, Effect.fail(error));
     died.resolve();
   };
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => stop(new ParseWorkerDied("Parse worker disposed"))),
+  );
   worker.addEventListener("error", (event) =>
     stop(new ParseWorkerDied(event.message)),
   );
   worker.addEventListener("messageerror", () =>
     stop(new ParseWorkerDied("Parse worker message failed")),
   );
-  worker.addEventListener("message", ({ data }: MessageEvent<WorkerReply>) => {
-    const resume = pending.get(data.id);
-    pending.delete(data.id);
-    resume?.(
-      "error" in data
-        ? Effect.fail(new ParseFailed(data.error))
-        : Effect.succeed(JSON.parse(data.json) as ParseReply),
-    );
-  });
+  const client = yield* makeParseWorkerClient(() => worker).pipe(
+    Effect.mapError((error) => new ParseWorkerDied(String(error))),
+  );
+  const context = yield* Effect.context<never>();
   return {
     died: died.promise,
     parse: (request, signal) =>
-      Effect.runPromise(
-        Effect.callback<ParseReply, ParseFailed | ParseWorkerDied>((resume) => {
-          if (stopped) {
-            resume(Effect.fail(new ParseWorkerDied("Parse worker stopped")));
-            return;
-          }
-          const id = ++sequence;
-          pending.set(id, resume);
-          try {
-            worker.postMessage({ id, request } satisfies WorkerRequest);
-          } catch (error) {
-            pending.delete(id);
-            resume(Effect.fail(new ParseFailed(String(error))));
-          }
-          return Effect.sync(() => {
-            pending.delete(id);
-          });
-        }),
+      Effect.runPromiseWith(context)(
+        Effect.suspend(() =>
+          stopped
+            ? Effect.fail(new ParseWorkerDied("Parse worker stopped"))
+            : client.Parse(request).pipe(
+                Effect.mapError((error) => new ParseFailed(String(error))),
+                Effect.raceFirst(Deferred.await(death)),
+              ),
+        ),
         { signal },
       ),
     [Symbol.dispose]: () => stop(new ParseWorkerDied("Parse worker disposed")),
   };
-}
+});

@@ -98,20 +98,22 @@ describe("CitationIndex", () => {
   });
 
   it("groups wikilinks with the same local identity used for the reverse batch", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { index, draft, metadataCache } = await makeHarness(
+    const db = new DatabaseStub();
+    const { index, draft, metadataCache, lookup } = await makeHarness(
       { "draft.md": "[[Doe 2024]]" },
       { db, settings: { "citation.wikilink-citations": true } },
     );
     metadataCache.fileCache.set(draft.path, {
       links: [link("Doe 2024", 0)],
     } as CachedMetadata);
+    await lookup.whenResolved();
+    const held = db.holdLookup();
     const pending = index.getDocumentCitationSet(draft);
-    await yieldToMain();
+    await held.entered;
     metadataCache.fileCache.set("Doe 2024.md", {
       frontmatter: { "zotero-key": KEY_B },
     } as CachedMetadata);
-    db.settle();
+    held.release();
     const set = await pending;
     expect(set.citations[0]?.indexedKey).toBe(KEY_A);
     expect(set.lookup.citekeyOf(KEY_A)).toBe("doe2024");

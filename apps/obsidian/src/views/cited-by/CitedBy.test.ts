@@ -200,7 +200,7 @@ async function waitForState(assertion: () => void): Promise<void> {
       return;
     } catch (error) {
       if (attempt === 999) throw error;
-      await Promise.resolve();
+      await yieldToMain();
     }
   }
 }
@@ -876,14 +876,15 @@ describe("CitedBy", () => {
       gate.resolve();
       await harness.index.getDocumentCitationSet(harness.draft);
     });
-    await act(async () => {
-      await vi.waitFor(() => {
-        expect(container.textContent).toContain("More context.");
-        expect(container.querySelector("mark")?.textContent).toBe(
-          `[](${annotationUri})`,
-        );
-      });
-    });
+    await expect
+      .poll(async () => {
+        await act(yieldToMain);
+        return container.textContent;
+      })
+      .toContain("More context.");
+    expect(container.querySelector("mark")?.textContent).toBe(
+      `[](${annotationUri})`,
+    );
   });
 
   it("collapses and expands every source group from one toolbar toggle", async () => {
