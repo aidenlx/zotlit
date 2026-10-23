@@ -1442,6 +1442,36 @@ describe("CitationIndex resolution", () => {
     expect(publications).toBe(before);
   });
 
+  it.effect(
+    "#1705 follows lookup status until the observation is disposed",
+    () =>
+      Effect.promise(async () => {
+        await using h = await createCitationIndexHarness({});
+        const snapshots: CitedBySnapshot[] = [];
+        const stop = h.index.observeCitedBy(KEY_A, (snapshot) =>
+          snapshots.push(snapshot),
+        );
+        try {
+          await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
+
+          h.citekeys.error = new Error("database read failed");
+          h.db.changed();
+          await h.lookup.whenResolved();
+          await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
+
+          stop();
+          const before = snapshots.length;
+          h.citekeys.error = null;
+          h.db.changed();
+          await h.lookup.whenResolved();
+          expect(h.lookup.status).toBe("fresh");
+          expect(snapshots).toHaveLength(before);
+        } finally {
+          stop();
+        }
+      }),
+  );
+
   it("does not publish an observation after its disposer runs", async () => {
     const { index, workspace, metadataCache, draft } = await makeHarness({
       "draft.md": "@doe2024.",

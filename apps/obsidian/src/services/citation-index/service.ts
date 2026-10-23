@@ -17,7 +17,8 @@ import type { Settings } from "@/services/settings/schema";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
-import type { CitationLookup, CitationLookupStatus } from "./lookup-service";
+import type { CitationLookupStatus } from "./lookup-service";
+import type { PlainCitationLookup } from "./plain";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
 
@@ -189,7 +190,7 @@ export interface CitationIndexOptions {
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   lookup: Pick<
-    CitationLookup,
+    PlainCitationLookup,
     "read" | "observe" | "status" | "on" | "whenResolved"
   >;
   /**

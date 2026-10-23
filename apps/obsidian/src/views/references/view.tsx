@@ -8,7 +8,7 @@ import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
@@ -66,7 +66,7 @@ const logger = getLogger(["views", "references"]);
 export interface ReferencesViewDeps {
   app: App;
   db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead" | "on">;
-  citationLookup: Pick<CitationLookup, "status" | "on">;
+  citationLookup: Pick<PlainCitationLookup, "status" | "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;

@@ -10,7 +10,7 @@ import {
   describeCandidates,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
@@ -44,7 +44,7 @@ const logger = getLogger("citation-popover");
 export interface CitationPopoverDeps {
   app: App;
   db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
-  citationLookup: Pick<CitationLookup, "read" | "status" | "on">;
+  citationLookup: Pick<PlainCitationLookup, "read" | "status" | "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;

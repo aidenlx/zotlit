@@ -15,7 +15,7 @@ import {
   citationTarget,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
@@ -35,7 +35,7 @@ export interface NativeCitationDeps {
     | "vaultPresentation"
     | "on"
   >;
-  citationLookup: Pick<CitationLookup, "read">;
+  citationLookup: Pick<PlainCitationLookup, "read">;
 }
 export interface PreviewCitation extends PresentedCitation {
   source: string;

@@ -19,8 +19,8 @@ import {
   citationRuns,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { renderParsedCitation } from "@/services/citation-index/parsed-note";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
   Citation,
@@ -84,7 +84,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
-  citationLookup: Pick<CitationLookup, "on">;
+  citationLookup: Pick<PlainCitationLookup, "on">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "getParsedDocument" | "on"

@@ -16,7 +16,7 @@ import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { heldResolution } from "@/services/citation-index/lookup";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {
   CitationOccurrence,
   CitationSyntax,
@@ -87,7 +87,7 @@ export interface GraphCitationsDeps {
   reads: Pick<PlainZoteroReads, "reads" | "on">;
   libraryScope: Pick<PlainLibraryScope, "current">;
   citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
-  citationLookup: Pick<CitationLookup, "observe">;
+  citationLookup: Pick<PlainCitationLookup, "observe">;
   noteIndex: Pick<
     PlainNoteIndex,
     "getIndexedItemKeys" | "getNotesByItemKey" | "on"
