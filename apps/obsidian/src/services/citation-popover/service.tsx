@@ -8,7 +8,7 @@ import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
   describeCandidates,
-  readAmbiguousCandidates,
+  describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { readReferenceSources } from "@/services/citation-index/service";
@@ -415,17 +415,14 @@ async function readBlocks(
     };
   }
   const citekeys = request.works.map(({ citekey }) => citekey);
-  const { citations, lookup } = await deps.citationIndex.getDocumentCitationSet(
-    file,
-    {
+  const { citations, lookup, sources } =
+    await deps.citationIndex.getDocumentCitationSet(file, {
       signal,
       include: { citekeys },
-    },
-  );
+    });
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
   const pending = deps.citationLookup.status === "pending";
-  const { sources } = await readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
@@ -454,14 +451,18 @@ async function readBlocks(
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
   const text = await deps.citationText.read(file.path, { signal });
-  // Read as the popover fills, so an Ambiguous Citation Key states the
-  // candidates the current Library Scope names — and no candidate is
-  // described for the citations that resolve.
-  const ambiguous = await readAmbiguousCandidates(
-    deps,
-    (citekey) => lookup.resolve(citekey),
-    citekeys,
+  const libraries = new Map(
+    (deps.libraryScope.current?.available ?? []).map((library) => [
+      library.libraryID,
+      library,
+    ]),
   );
+  const ambiguous = (citekey: string) => {
+    const resolution = lookup.resolve(citekey);
+    return resolution.kind === "ambiguous"
+      ? describeJoinedCandidates(resolution.candidates, sources, libraries)
+      : null;
+  };
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the
   // formatted text of the very occurrence the pointer is on, and from no other

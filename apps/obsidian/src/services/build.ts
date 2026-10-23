@@ -566,6 +566,7 @@ export function buildServices(
         libraryScope,
       }) =>
         new CitationIndex({
+          runPromise: (effect) => runtime.runPromise(effect),
           db: zoteroReads,
           libraryScope,
           app: plugin.app,
@@ -599,7 +600,6 @@ export function buildServices(
     .use({
       citationText: ({
         profile,
-        zoteroReads,
         citationIndex,
         citationLookup,
         noteIndex,
@@ -609,7 +609,6 @@ export function buildServices(
         new CitationText({
           profile,
           app: plugin.app,
-          db: zoteroReads,
           citationIndex,
           citationLookup,
           noteIndex,

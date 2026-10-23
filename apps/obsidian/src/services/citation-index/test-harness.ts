@@ -42,7 +42,11 @@ import {
 
 import { CitationLookup } from "./lookup-service";
 import { CitationIndex } from "./service";
-import type { CitekeyRecord, CitekeyStore } from "./service";
+import type {
+  CitationIndexOptions,
+  CitekeyRecord,
+  CitekeyStore,
+} from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -268,6 +272,7 @@ export class NoteIndexStub {
 export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
   readonly citekeys = new CitekeysStub(defaultCitekeys());
+  itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: ZoteroReadsService;
   readonly #events = createNanoEvents<ZoteroReadsEvents>();
@@ -279,7 +284,18 @@ export class DatabaseStub implements AsyncDisposable {
   }: { readyImmediately?: boolean; seed?: string } = {}) {
     if (readyImmediately) this.#ready.resolve();
     this.#seed = seed;
-    this.#service = inProcessReadsService(memoryOpener(() => this.#sql()).open);
+    this.#service = inProcessReadsService(
+      memoryOpener(() => this.#sql()).open,
+      {
+        wrap: (client) => ({
+          ...client,
+          ItemsByIndexedKeys: (...args) => {
+            this.itemReads += 1;
+            return client.ItemsByIndexedKeys(...args);
+          },
+        }),
+      },
+    );
   }
 
   #seed?: string;
@@ -319,7 +335,7 @@ export class DatabaseStub implements AsyncDisposable {
           ? row.indexedKey.slice(0, -suffix.length)
           : row.indexedKey;
       statements.push(
-        `insert into items (itemID, itemTypeID, libraryID, key) values (${itemID}, 1, ${row.libraryID}, ${quote(key)});`,
+        `insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified) values (${itemID}, 1, ${row.libraryID}, ${quote(key)}, '2024-01-01 00:00:00', '2024-01-01 00:00:00');`,
       );
       statements.push(
         `insert into itemDataValues (valueID, value) values (${itemID}, ${quote(row.citekey)});`,
@@ -690,6 +706,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
+  runPromise?: CitationIndexOptions["runPromise"];
   parseClient?: ParseClient;
   openStore?: () => Promise<CitekeyStore>;
   settings?: Partial<Settings>;
@@ -770,6 +787,7 @@ export async function createCitationIndexHarness(
   );
   const index = stack.use(
     new CitationIndex({
+      runPromise: options.runPromise ?? Effect.runPromise,
       db,
       libraryScope,
       app,

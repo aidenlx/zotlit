@@ -40,7 +40,7 @@ const ENTRY_KINDS = {
   unreadable:
     "The database read failed. The answer has no verdict on whether this Item exists.",
   resolved:
-    "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note.",
+    "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note. An existing Zotero note or attachment has a null summary.",
   unresolved:
     "A citation key or Annotation Citation that names no item in the connected Zotero source. Adds citekey for a literal citation key, or annotationKey for an Annotation Citation.",
   ambiguous:

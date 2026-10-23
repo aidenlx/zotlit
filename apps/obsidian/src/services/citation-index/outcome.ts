@@ -7,6 +7,7 @@ import type { ReferenceSource, DatabaseReadability } from "./sources";
 export type CitationOutcome =
   | { kind: "resolved"; source: ReferenceSource }
   | { kind: "missing-item"; key: string }
+  | { kind: "ineligible-item"; key: string }
   | { kind: "missing-annotation"; annotationKey: string }
   | { kind: "unresolved-key"; citekey: string }
   | {
@@ -21,11 +22,13 @@ export function citationOutcome(
   citation: Citation,
   {
     sources,
+    presentKeys,
     database,
     resolution,
     candidates = [],
   }: {
     sources: ReadonlyMap<string, ReferenceSource>;
+    presentKeys: ReadonlySet<string>;
     database: DatabaseReadability;
     resolution?: CitekeyResolution | null;
     candidates?: readonly AmbiguousCandidate[];
@@ -36,7 +39,12 @@ export function citationOutcome(
     const source = sources.get(citation.indexedKey);
     return source
       ? { kind: "resolved", source }
-      : { kind: "missing-item", key: citation.indexedKey };
+      : {
+          kind: presentKeys.has(citation.indexedKey)
+            ? "ineligible-item"
+            : "missing-item",
+          key: citation.indexedKey,
+        };
   }
   const first = citation.occurrences[0]!;
   if (first.kind === "annotation")

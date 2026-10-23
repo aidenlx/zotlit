@@ -16,6 +16,7 @@ import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 // @vitest-environment happy-dom
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { Citation } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import {
   ALPHA_KEY,
@@ -182,7 +183,6 @@ async function makeHarness({
           getFileCache: () => ({ frontmatter }),
         },
       },
-      db: reads,
       citationIndex: {
         getParsedDocument: async () => ({
           facts: new ParsedNote(
@@ -199,8 +199,7 @@ async function makeHarness({
             citations: cited,
             errors: [],
             lookup: answer(occurrences.map((o) => o.raw)),
-            sources: new Map(),
-            database: "ready",
+            ...(await readReferenceSources(reads, cited)),
             syntaxes: {
               citekey: "included",
               wikilink: "excluded",

@@ -1,7 +1,10 @@
+import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect } from "vitest";
 
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
@@ -1693,17 +1696,28 @@ describe("CitationIndex one-shot reads", () => {
     });
   });
 
-  it("times out while coverage stays transitional, then settles", async () => {
-    const { index, workspace } = await makeHarness({
-      "review.md": "@doe2024.",
-    });
-
-    await expect(index.waitUntilSettled(5)).resolves.toBe("timeout");
-
-    workspace.layoutReady();
-    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-    expect((await index.getCitedBy(KEY_A)).coverage).toBe("complete");
-  });
+  it.effect("times out while coverage stays transitional, then settles", () =>
+    Effect.gen(function* () {
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const { index, workspace } = yield* Effect.promise(() =>
+        makeHarness({ "review.md": "@doe2024." }, { runPromise }),
+      );
+      let outcome: string | undefined;
+      const pending = index.waitUntilSettled(60_000).then((value) => {
+        outcome = value;
+      });
+      yield* TestClock.adjust(60_001);
+      expect(outcome).toBe("timeout");
+      yield* Effect.promise(() => pending);
+      workspace.layoutReady();
+      expect(yield* Effect.promise(() => index.waitUntilSettled(1_000))).toBe(
+        "settled",
+      );
+      expect(
+        (yield* Effect.promise(() => index.getCitedBy(KEY_A))).coverage,
+      ).toBe("complete");
+    }),
+  );
 
   it("counts a degraded resolution as settled", async () => {
     const db = new DatabaseStub();

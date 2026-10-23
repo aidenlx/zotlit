@@ -353,7 +353,6 @@ export async function openCitationVault({
       openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
-      db: harness.db,
       citationIndex: harness.index,
       citationLookup: harness.lookup,
       noteIndex: harness.noteIndex,

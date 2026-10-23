@@ -22,6 +22,7 @@ function buildReferenceEntries(
       ...c,
       outcome: citationOutcome(c, {
         sources,
+        presentKeys: new Set(sources.keys()),
         database: "ready",
         candidates: options.ambiguous?.(c.occurrences[0]!.raw) ?? [],
       }),
@@ -92,6 +93,7 @@ function source(indexedKey: string, id: string): ReferenceSource {
   return {
     csl: { id, type: "book", title: `Title of ${indexedKey}` },
     summary: `Rivers (2020): Title of ${indexedKey}`,
+    citationSummary: "Rivers (2020)",
     itemKey: indexedKey,
     itemID: 1,
     groupID: null,

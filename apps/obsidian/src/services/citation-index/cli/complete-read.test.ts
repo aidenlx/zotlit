@@ -192,27 +192,63 @@ it.effect(
     }),
 );
 
-it.effect(
-  "reads a changed note on demand before its metadata event arrives",
-  () =>
+it.effect.each(["references", "cited-by", "annotation-uses"])(
+  "#1683 refreshes saved text before its metadata event for %s",
+  (command) =>
     Effect.gen(function* () {
       const h = yield* acquireAsyncDisposable(() =>
         createCitationIndexHarness(
-          { "draft.md": "@doe2024" },
+          { "draft.md": `[@doe2024] [](${annotationUri})` },
           { zoteroRows: annotationRows },
         ),
       );
       h.workspace.layoutReady();
       yield* Effect.promise(() => h.index.whenIndexed());
-      const body = "@doe2024 @roe2025";
-      h.vault.bodies.set(h.draft.path, body);
-      h.draft.stat.mtime += 1;
-      h.draft.stat.size = body.length;
+      h.vault.write(h.draft, "[@roe2025]");
       const answer = JSON.parse(
-        yield* commands(h)("zotlit:references").handler({ file: "draft.md" }),
+        yield* commands(h)(`zotlit:${command}`).handler(
+          command === "references"
+            ? { file: "draft.md" }
+            : { key: command === "cited-by" ? "ABCD2345" : "ANN23456" },
+        ),
       );
-      expect(answer.entries.map((entry: { key: string }) => entry.key)).toEqual(
-        ["ABCD2345", "ZZZ99999g7"],
+      expect(answer.ok).toBe(true);
+      expect(answer.coverage).toBe("complete");
+      expect(answer).toMatchObject(
+        command === "references"
+          ? { entries: [{ kind: "resolved", key: "ZZZ99999g7" }] }
+          : { groups: [] },
       );
+    }),
+);
+
+it.effect.each(["references", "cited-by", "annotation-uses"])(
+  "#1683 bounds a stale saved scan refresh for %s",
+  (command) =>
+    Effect.gen(function* () {
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": `[@doe2024] [](${annotationUri})` },
+          { zoteroRows: annotationRows },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      h.vault.write(h.draft, "[@roe2025]");
+      const release = h.vault.hold(h.draft.path);
+      yield* Effect.addFinalizer(() => Effect.sync(release));
+      const fiber = yield* commands(h)(`zotlit:${command}`)
+        .handler(
+          command === "references"
+            ? { file: "draft.md" }
+            : { key: command === "cited-by" ? "ABCD2345" : "ANN23456" },
+        )
+        .pipe(Effect.forkChild);
+      yield* TestClock.adjust(5_001);
+      expect(JSON.parse(yield* Fiber.join(fiber))).toMatchObject({
+        ok: false,
+        coverage: "indexing",
+        diagnostic: { code: "INDEX_NOT_READY" },
+      });
     }),
 );

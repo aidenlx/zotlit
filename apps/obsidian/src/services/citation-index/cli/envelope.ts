@@ -259,7 +259,7 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       key: string;
       citekey: string | null;
       /** `Creators (Year): Title` from the shared item-summary rendering. */
-      summary: string;
+      summary: string | null;
       /** Linkpath of the Literature Note, or `null` when the Item has none yet. */
       linkpath: string | null;
     }

@@ -7,6 +7,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // @vitest-environment happy-dom
 import { ParsedNote } from "@/services/citation-index/parsed-note";
@@ -16,11 +17,11 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
 import {
   createCitationIndexHarness,
   DatabaseStub,
   GROUP_LIBRARY_ID,
-  KEY_A,
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -227,7 +228,6 @@ async function makeHarness({
           Object.hasOwn(notes, linkpath) ? { path: `${linkpath}.md` } : null,
       },
     },
-    db: reads,
     citationIndex: {
       getParsedDocument: async () => ({
         facts: new ParsedNote(
@@ -241,8 +241,7 @@ async function makeHarness({
         ),
         set: {
           ...set,
-          sources: new Map(),
-          database: "ready" as const,
+          ...(await readReferenceSources(reads, set.citations)),
           syntaxes: {
             citekey: "included" as const,
             wikilink: "excluded" as const,
@@ -405,15 +404,10 @@ describe("CitationText", () => {
     await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
       "snapshot database locked",
     );
-    // The work the citekey resolves to, read from its own database.
-    const items = cleanup.use(
-      inProcessReadsService(memoryOpener(() => citedWorkSeed([KEY_A])).open),
-    );
     const service = cleanup.use(
       new CitationText({
         openDocuments: new OpenDocumentsStub(),
         app: h.app,
-        db: items,
         citationIndex: h.index,
         citationLookup: h.lookup,
         noteIndex: h.noteIndex,
@@ -1478,4 +1472,31 @@ describe("CitationText Entry Serials", () => {
     expect(bibliographyRequests).toEqual([]);
     await dispose();
   });
+});
+
+it("#1683 renders a document with one source read", async () => {
+  await using h = await createCitationIndexHarness(
+    { "draft.md": "[@doe2024]" },
+    { zoteroRows: annotationRows },
+  );
+  await using service = new CitationText({
+    app: h.app,
+    citationIndex: h.index,
+    citationLookup: h.lookup,
+    noteIndex: h.noteIndex,
+    profile: profileReader(),
+    queryClient: h.queryClient,
+    openDocuments: new OpenDocumentsStub(),
+    bibliographyRender: {
+      vaultPresentation: { styleId: null, locale: null },
+      readCitations: async (sources) =>
+        sources.map((source) => rendered(source)),
+      readBibliography: async () => ({ entries: [], hasEntryMarkers: false }),
+      on: () => () => {},
+    } as CitationTextDeps["bibliographyRender"],
+  });
+  await service.ready;
+  const result = await service.read(h.draft.path);
+  expect(result?.formatted.size).toBe(1);
+  expect(h.db.itemReads).toBe(1);
 });

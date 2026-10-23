@@ -674,6 +674,25 @@ describe(
         absent: [],
       },
       {
+        name: "#1683 duplicate citation headings and links",
+        markdown: "# @a\n\n# @a\n\n[First](#a) [Second](#a-1)",
+        contains: ['id="a"', 'id="a-1"', 'href="#a"', 'href="#a-1"'],
+        absent: [],
+      },
+      {
+        name: "#1683 citation headings colliding with ordinary and explicit IDs",
+        markdown:
+          "# @a\n\n# A\n\n# @a {#explicit}\n\n# @a\n\n[First](#a) [Ordinary](#a-1) [Explicit](#explicit) [Last](#a-2)",
+        contains: [
+          'id="a"',
+          'id="a-1"',
+          'id="explicit"',
+          'id="a-2"',
+          'href="#a-2"',
+        ],
+        absent: [],
+      },
+      {
         name: "attributes on ordinary links",
         markdown: "[label](ordinary){#custom .tag}",
         contains: ['id="custom"', 'class="tag"', 'href="ordinary"'],

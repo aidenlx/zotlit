@@ -201,7 +201,7 @@ export function createCitationsCliHandlers(
 
 function referenceEntries(set: DocumentCitationSet): ReferenceEntry[] {
   const entries: ReferenceEntry[] = set.citations.map(
-    ({ indexedKey, outcome, refNumber, occurrences }) => {
+    ({ indexedKey, linkpath, outcome, refNumber, occurrences }) => {
       const base = { refNumber, occurrences: reportOccurrences(occurrences) };
       switch (outcome!.kind) {
         case "resolved": {
@@ -215,6 +215,15 @@ function referenceEntries(set: DocumentCitationSet): ReferenceEntry[] {
             linkpath: source.linkpath,
           };
         }
+        case "ineligible-item":
+          return {
+            ...base,
+            kind: "resolved",
+            key: outcome!.key,
+            citekey: null,
+            summary: null,
+            linkpath,
+          };
         case "missing-item":
           return { ...base, kind: "missing", key: outcome!.key };
         case "missing-annotation":

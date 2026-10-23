@@ -41,32 +41,88 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
   return { ...h, command: cli.command };
 });
 
-it.effect.each<[string, Record<string, string>, string]>([
-  ["cited-by", {}, "key"],
-  ["cited-by", { key: "ABCD2345", citekey: "doe2024" }, "citekey"],
-  ["cited-by", { key: "bad" }, "key"],
-  ["cited-by", { citekey: "" }, "citekey"],
-  ["cited-by", { citekey: "true" }, "citekey"],
-  ["cited-by", { key: "ABCD2345", extra: "x" }, "extra"],
-  ["cited-by", { key: "ABCD2345", "expect-source": "true" }, "expect-source"],
-  ["references", {}, "file"],
-  ["references", { file: "true" }, "file"],
-  ["references", { file: "draft.md", extra: "x" }, "extra"],
-  ["annotation-uses", {}, "key"],
-  ["annotation-uses", { key: "" }, "key"],
-  ["annotation-uses", { key: "true" }, "key"],
-  ["annotation-uses", { key: "bad" }, "key"],
-  ["annotation-uses", { key: "ANN23456gwrong" }, "key"],
-  ["annotation-uses", { key: "ANN23456", citekey: "doe2024" }, "citekey"],
+it.effect.each<[string, Record<string, string>, string, string]>([
+  [
+    "cited-by",
+    {},
+    "key",
+    "cited-by takes exactly one of key=<zotero-key> or citekey=<citation-key>. Neither was set.",
+  ],
+  [
+    "cited-by",
+    { key: "ABCD2345", citekey: "doe2024" },
+    "citekey",
+    "cited-by takes exactly one of key=<zotero-key> or citekey=<citation-key>. Both were set.",
+  ],
+  [
+    "cited-by",
+    { key: "bad" },
+    "key",
+    "'bad' is not a Zotero key. A Zotero key is an 8-character item key, with a 'g<group-id>' suffix for an item in a group library. To select by citation key instead, use citekey=<citation-key>.",
+  ],
+  ["cited-by", { citekey: "" }, "citekey", "citekey requires a value."],
+  ["cited-by", { citekey: "true" }, "citekey", "citekey requires a value."],
+  [
+    "cited-by",
+    { key: "ABCD2345", extra: "x" },
+    "extra",
+    "Unknown parameter 'extra' for cited-by. Accepted parameters: citekey, key, expect-source.",
+  ],
+  [
+    "cited-by",
+    { key: "ABCD2345", "expect-source": "true" },
+    "expect-source",
+    "expect-source requires a value.",
+  ],
+  [
+    "references",
+    {},
+    "file",
+    "references takes the vault-relative path of one Markdown note, as file=folder/note.md.",
+  ],
+  ["references", { file: "true" }, "file", "file requires a value."],
+  [
+    "references",
+    { file: "draft.md", extra: "x" },
+    "extra",
+    "Unknown parameter 'extra' for references. Accepted parameters: file, expect-source.",
+  ],
+  ["annotation-uses", {}, "key", "key is required."],
+  ["annotation-uses", { key: "" }, "key", "key requires a value."],
+  ["annotation-uses", { key: "true" }, "key", "key requires a value."],
+  [
+    "annotation-uses",
+    { key: "bad" },
+    "key",
+    "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+  ],
+  [
+    "annotation-uses",
+    { key: "ANN23456gwrong" },
+    "key",
+    "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+  ],
+  [
+    "annotation-uses",
+    { key: "ANN23456", citekey: "doe2024" },
+    "citekey",
+    "Unknown parameter 'citekey' for annotation-uses. Accepted parameters: key, expect-source.",
+  ],
   [
     "annotation-uses",
     { key: "ANN23456", "expect-source": "true" },
     "expect-source",
+    "expect-source requires a value.",
   ],
-  ["citations-guide", { topic: "positions" }, "topic"],
+  [
+    "citations-guide",
+    { topic: "positions" },
+    "topic",
+    "Unknown parameter 'topic': citations-guide takes no parameters.",
+  ],
 ])(
   "rejects invalid %s parameters with the exact parameter and an actionable message",
-  ([name, params, parameter]) =>
+  ([name, params, parameter, message]) =>
     Effect.gen(function* () {
       const h = yield* setup();
       const result = JSON.parse(
@@ -75,11 +131,12 @@ it.effect.each<[string, Record<string, string>, string]>([
       expect(result).toMatchObject({
         contractVersion: 4,
         ok: false,
-        diagnostic: { code: "INVALID_SELECTOR", details: { parameter } },
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message,
+          details: { parameter },
+        },
       });
-      expect(result.diagnostic.message).toEqual(expect.any(String));
-      expect(result.diagnostic.message.length).toBeGreaterThan(10);
-      expect(result.diagnostic.hint.length).toBeGreaterThan(10);
       expect(result.identity).toBeUndefined();
     }),
 );
@@ -324,5 +381,43 @@ it.effect(
         kind: "missing",
         key: "ABCD2345",
       });
+    }),
+);
+
+it.effect.each(["PDF23456", "NTEE2345"])(
+  "#1683 keeps existing child Item %s present with a null summary",
+  (key) =>
+    Effect.gen(function* () {
+      const h = yield* setup("[[Doe 2024]]", {
+        zoteroRows: `${annotationRows}
+        insert into itemTypes (itemTypeID, typeName) values (101, 'note');
+        insert into items (itemID, itemTypeID, libraryID, key) values (40, 101, 1, 'NTEE2345');
+        insert into itemNotes (itemID, parentItemID, note, title) values (40, 1, 'Note body', 'Note');
+      `,
+        settings: { "citation.wikilink-citations": true },
+      });
+      h.metadataCache.setFrontmatter(h.noteIndex.notes.get("ABCD2345")!, {
+        "zotero-key": key,
+      });
+      const answer = JSON.parse(
+        yield* h.command("zotlit:cited-by").handler({ key }),
+      );
+      expect(answer).toMatchObject({
+        ok: true,
+        item: { key, citekey: null, summary: null },
+      });
+      const set = yield* Effect.promise(() =>
+        h.index.getDocumentCitationSet(h.draft),
+      );
+      expect(set.citations[0]?.outcome).toEqual({
+        kind: "ineligible-item",
+        key,
+      });
+      const references = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(references.entries).toMatchObject([
+        { kind: "resolved", key, summary: null },
+      ]);
     }),
 );

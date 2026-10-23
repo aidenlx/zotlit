@@ -937,6 +937,7 @@
   "references_copy_failed": "无法复制参考文献。",
   "references_empty": "当前笔记没有引用任何文献笔记。",
   "references_db_unavailable": "打开 Zotero 数据库后即可查看参考文献。",
+  "references_item_ineligible": "Zotero 条目 {key} 无法格式化为参考文献。请引用书籍、文章或其他文献条目。",
   "references_item_missing": "{linkpath} 指向的条目已不在 Zotero 文库中。",
   "references_citekey_unresolved": "@{citekey} 在 Zotero 文库中没有对应的条目。",
   "references_citekey_pending": "正在 Zotero 文库中查找 @{citekey}…",

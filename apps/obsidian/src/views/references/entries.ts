@@ -76,6 +76,7 @@ type CitationReferenceEntry = NumberedReferenceEntryBase &
     | { kind: "summary"; source: ReferenceSource; linkpath: string | null }
     | { kind: "unrendered"; source: ReferenceSource; linkpath: string | null }
     | { kind: "missing"; linkpath: string | null }
+    | { kind: "ineligible"; key: string }
     | { kind: "unreadable" }
     | { kind: "unresolved"; citekey: string }
     | { kind: "unresolved"; annotationKey: string }
@@ -140,6 +141,9 @@ export function buildReferenceEntries(
     switch (outcome.kind) {
       case "unreadable":
         trailing.push({ ...base, kind: "unreadable" });
+        continue;
+      case "ineligible-item":
+        trailing.push({ ...base, kind: "ineligible", key: outcome.key });
         continue;
       case "missing-item":
         trailing.push({ ...base, linkpath, kind: "missing" });

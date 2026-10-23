@@ -608,6 +608,17 @@ function Pandoc(doc)
   citations = load_citations()
 --@variant sandbox
   if selected_literals then
+    -- The sandbox keeps its Markdown in stdin. Let the same reader assign IDs
+    -- without the citation markers, including collisions with explicit IDs.
+    local input = assert(io.open("stdin", "r"))
+    local unmarked = input:read("a"):gsub(literal_marker .. "%d+", "")
+    input:close()
+    local identifiers = {}
+    local original = pandoc.read(unmarked, "markdown", PANDOC_READER_OPTIONS)
+    pandoc.Pandoc(original.blocks):walk({ Header = function(header)
+      identifiers[#identifiers + 1] = header.identifier
+    end })
+    local heading = 0
     local body = pandoc.Pandoc(doc.blocks):walk({ Cite = function(cite)
       for _, citation in ipairs(cite.citations) do
         if not selected_literals[citation.id] then
@@ -615,7 +626,8 @@ function Pandoc(doc)
         end
       end
     end, Header = function(header)
-      header.identifier = header.identifier:gsub(literal_marker:lower() .. "%d+", "")
+      heading = heading + 1
+      header.identifier = identifiers[heading]
       return header
     end })
     doc.blocks = body.blocks

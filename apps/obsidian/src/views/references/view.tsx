@@ -386,6 +386,7 @@ export class ReferencesView extends ItemView {
         errors: [],
         lookup: null,
         sources: new Map(),
+        presentKeys: new Set(),
         database: "ready",
         syntaxes: {
           citekey: "included",

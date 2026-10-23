@@ -25,6 +25,7 @@ import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
+import { describeJoinedCandidates } from "./ambiguity";
 import { citationOutcome } from "./outcome";
 import type { CitationOutcome } from "./outcome";
 import { annotationCitations, readParsedNote } from "./parsed-note";
@@ -180,6 +181,7 @@ interface CitationIndexEvents {
 }
 
 export interface CitationIndexOptions {
+  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "current">;
   parseClient: Pick<PlainCitationParse, "parse">;
@@ -209,6 +211,7 @@ export class CitationIndex extends Service<void> {
   readonly #lookup;
   readonly #openStore;
   readonly #parseClient;
+  readonly #runPromise;
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
@@ -253,6 +256,7 @@ export class CitationIndex extends Service<void> {
   constructor(options: CitationIndexOptions) {
     super();
     this.#parseClient = options.parseClient;
+    this.#runPromise = options.runPromise;
     this.#db = options.db;
     this.#libraryScope = options.libraryScope;
     this.#app = options.app;
@@ -381,10 +385,13 @@ export class CitationIndex extends Service<void> {
       ),
     );
     errors.sort((a, b) => compareOccurrences(a.occurrence, b.occurrence));
-    const candidates = citations.flatMap((citation) => {
-      const first = citation.occurrences[0]!;
-      if (citation.indexedKey !== null || first.kind !== "citekey") return [];
-      const resolved = lookup.resolve(first.raw);
+    const candidates = [
+      ...new Set([
+        ...citekeys.map((occurrence) => occurrence.raw),
+        ...(include?.citekeys ?? []),
+      ]),
+    ].flatMap((citekey) => {
+      const resolved = lookup.resolve(citekey);
       return resolved.kind === "ambiguous" ? [...resolved.candidates] : [];
     });
     const libraries = new Map(
@@ -406,17 +413,16 @@ export class CitationIndex extends Service<void> {
         first.kind === "citekey" ? lookup.resolve(first.raw) : null;
       citation.outcome = citationOutcome(citation, {
         sources: joined.sources,
+        presentKeys: joined.presentKeys,
         database: joined.database,
         resolution: resolved,
         candidates:
           resolved?.kind === "ambiguous"
-            ? resolved.candidates.map((candidate) => ({
-                ...candidate,
-                summary:
-                  joined.sources.get(candidate.indexedKey)?.summary ??
-                  candidate.key,
-                library: libraries.get(candidate.libraryID) ?? null,
-              }))
+            ? describeJoinedCandidates(
+                resolved.candidates,
+                joined.sources,
+                libraries,
+              )
             : [],
       });
     }
@@ -608,12 +614,12 @@ export class CitationIndex extends Service<void> {
    */
   async waitUntilSettled(timeoutMs: number): Promise<CitationSettleOutcome> {
     if (timeoutMs <= 0) return "timeout";
-    return Effect.runPromise(this.#settle(timeoutMs));
+    return this.#runPromise(this.#settle(timeoutMs));
   }
 
-  #settle(timeoutMs: number): Effect.Effect<CitationSettleOutcome> {
-    if (timeoutMs <= 0) return Effect.succeed("timeout");
-    return Effect.gen({ self: this }, function* () {
+  readonly #settle = Effect.fn("CitationIndex.settle")(
+    function* (this: CitationIndex, timeoutMs: number) {
+      if (timeoutMs <= 0) return "timeout" as const;
       yield* Effect.all(
         [
           Effect.promise(() => this.whenIndexed()),
@@ -629,25 +635,66 @@ export class CitationIndex extends Service<void> {
         );
       }
       return "settled" as const;
-    }).pipe(
-      Effect.timeoutOrElse({
-        duration: timeoutMs,
-        orElse: () => Effect.succeed("timeout" as const),
-      }),
-    );
-  }
+    },
+    (effect, timeoutMs) =>
+      effect.pipe(
+        Effect.timeoutOrElse({
+          duration: Math.max(0, timeoutMs),
+          orElse: () => Effect.succeed("timeout" as const),
+        }),
+      ),
+  ).bind(this);
+
+  readonly #capture = Effect.fn("CitationIndex.capture")(function* (
+    this: CitationIndex,
+    timeoutMs: number,
+  ) {
+    const deadline = (yield* Clock.currentTimeMillis) + timeoutMs;
+    for (;;) {
+      const remaining = deadline - (yield* Clock.currentTimeMillis);
+      if ((yield* this.#settle(remaining)) === "timeout") return null;
+      const files = this.#app.vault.getMarkdownFiles();
+      const stale = files.filter(
+        (file) => !this.#covered(file) && !this.#failed.has(file.path),
+      );
+      if (stale.length === 0) {
+        return {
+          scans: new Map(
+            files.flatMap((file) => {
+              const scan = this.#covered(file);
+              return scan ? [[file.path, scan] as const] : [];
+            }),
+          ),
+          syntaxes: this.syntaxes(),
+          coverage: this.#coverage,
+        };
+      }
+      const refreshed = yield* Effect.forEach(
+        stale,
+        (file) => Effect.tryPromise(() => this.#coverFile(file)),
+        { concurrency: BACKFILL_CONCURRENCY },
+      ).pipe(Effect.timeoutOption(deadline - (yield* Clock.currentTimeMillis)));
+      if (Option.isNone(refreshed)) return null;
+    }
+  }).bind(this);
 
   readAnnotationUses = Effect.fn("CitationIndex.readAnnotationUses")(function* (
     this: CitationIndex,
     key: string,
     timeoutMs: number,
   ) {
-    if ((yield* this.#settle(timeoutMs)) === "timeout")
-      return { kind: "timeout", coverage: "indexing" } as const;
+    const captured = yield* this.#capture(timeoutMs);
+    if (!captured) return { kind: "timeout", coverage: "indexing" } as const;
     return {
       kind: "ready",
-      uses: this.getAnnotationUses(key),
-      coverage: this.#coverage,
+      uses: [...captured.scans]
+        .sort(([left], [right]) => comparePaths(left, right))
+        .flatMap(([path, scan]) =>
+          scan.annotations
+            .filter((occurrence) => occurrence.indexedKey === key)
+            .map((occurrence) => ({ path, occurrence })),
+        ),
+      coverage: captured.coverage,
     } as const;
   }).bind(this);
 
@@ -656,31 +703,17 @@ export class CitationIndex extends Service<void> {
     path: string,
     timeoutMs: number,
   ) {
-    const deadline = (yield* Clock.currentTimeMillis) + timeoutMs;
-    if ((yield* this.#settle(timeoutMs)) === "timeout")
-      return { kind: "timeout", coverage: "indexing" } as const;
+    const captured = yield* this.#capture(timeoutMs);
+    if (!captured) return { kind: "timeout", coverage: "indexing" } as const;
     const file = this.#app.vault.getFileByPath(path);
-    let scan = file ? this.#covered(file) : null;
-    if (file?.extension === "md" && scan === null) {
-      const remaining = deadline - (yield* Clock.currentTimeMillis);
-      if (remaining <= 0)
-        return { kind: "timeout", coverage: "indexing" } as const;
-      const parsed = yield* Effect.tryPromise(() => this.#coverFile(file)).pipe(
-        Effect.timeoutOption(remaining),
-      );
-      if (Option.isNone(parsed))
-        return { kind: "timeout", coverage: "indexing" } as const;
-      scan = parsed.value;
-    }
-    const captured = {
-      lifetime: this.#stop.signal,
-      syntaxes: this.syntaxes(),
-      coverage: this.#coverage,
-    };
+    const scan = captured.scans.get(path) ?? null;
     const document =
       file?.extension === "md"
         ? yield* Effect.tryPromise(() =>
-            this.#composeDocument(file, scan, captured),
+            this.#composeDocument(file, scan, {
+              ...captured,
+              lifetime: this.#stop.signal,
+            }),
           )
         : null;
     return { kind: "ready", document } as const;
@@ -691,11 +724,10 @@ export class CitationIndex extends Service<void> {
     selector: { key: string } | { citekey: string },
     timeoutMs: number,
   ) {
-    if ((yield* this.#settle(timeoutMs)) === "timeout")
-      return { kind: "timeout", coverage: "indexing" } as const;
-    const syntaxes = this.syntaxes();
-    const coverage = this.#coverage;
-    const captured = [...this.#scans]
+    const snapshot = yield* this.#capture(timeoutMs);
+    if (!snapshot) return { kind: "timeout", coverage: "indexing" } as const;
+    const { syntaxes, coverage } = snapshot;
+    const captured = [...snapshot.scans]
       .sort(([left], [right]) => comparePaths(left, right))
       .map(([path, scan]) => ({
         path,
@@ -747,7 +779,7 @@ export class CitationIndex extends Service<void> {
     const joined = yield* Effect.promise(() =>
       readReferenceSources(this.#db, [{ indexedKey: key, linkpath: null }]),
     );
-    if (joined.database === "ready" && !joined.sources.has(key))
+    if (joined.database === "ready" && !joined.presentKeys.has(key))
       return { kind: "missing", key } as const;
     const groups: CitedByGroup[] = [];
     const omitted = new Set<CitationSyntax>();

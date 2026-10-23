@@ -99,6 +99,7 @@ describe("readReferenceSources", () => {
       groupID: null,
       citekey: "doe2024",
       summary: "Doe (2024): Alpha kernels",
+      citationSummary: "Doe (2024)",
       linkpath: "Notes/Doe 2024.md",
     });
     expect(sources.get(KEY)?.csl.title).toBe("Alpha kernels");

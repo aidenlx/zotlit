@@ -71,6 +71,7 @@ class TestReferencesView extends ReferencesView {
 
 const citationSet: DocumentCitationSet = {
   sources: new Map(),
+  presentKeys: new Set(),
   database: "ready",
   syntaxes: {
     citekey: "included",
@@ -469,6 +470,7 @@ describe("ReferencesView citekey resolution", () => {
   /** One citation whose key the resolution snapshot answers nothing for. */
   const unresolvedSet: DocumentCitationSet = {
     sources: new Map(),
+    presentKeys: new Set(),
     database: "ready",
     syntaxes: {
       citekey: "included",

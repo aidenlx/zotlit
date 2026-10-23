@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { CachedMetadata, TFile } from "obsidian";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
@@ -26,16 +26,14 @@ import {
   makeFile,
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
-import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
+import type {
+  CitationIndexHarness,
+  CitationIndexHarnessOptions,
+} from "@/services/citation-index/test-harness";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText, noteContent } from "@/services/pandoc/inline-content";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
-import {
-  inProcessReadsService,
-  memoryOpener,
-} from "@/services/zotero-reads/test-utils";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
@@ -135,8 +133,8 @@ const KEY_E = "EEEE2345";
  */
 const ITEM_ROWS = `
   insert into libraries (libraryID, type, version, clientVersion)
-    values (1, 'user', 1, 1), (2, 'group', 1, 1);
-  insert into groups (groupID, libraryID, name) values (7, 2, 'Lab');
+    values (1, 'user', 1, 1), (4, 'group', 1, 1);
+  insert into groups (groupID, libraryID, name) values (7, 4, 'Lab');
   insert into settings (setting, key, value) values ('account', 'userID', 1);
   insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
   insert into fieldsCombined (fieldID, fieldName, custom)
@@ -147,7 +145,7 @@ const ITEM_ROWS = `
   insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
     values
       (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_A}'),
-      (2, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'ZZZ99999'),
+      (2, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 4, 'ZZZ99999'),
       (3, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_C}'),
       (4, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_D}'),
       (5, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_E}');
@@ -166,16 +164,31 @@ const ITEM_ROWS = `
            (5, 5, 1, 0);
 `;
 
-/** The reads every CitationText here formats from. */
-let items: ZoteroReadsService;
-
-beforeEach(() => {
-  items = inProcessReadsService(memoryOpener(() => ITEM_ROWS).open);
-});
-
-afterEach(async () => {
-  await items[Symbol.asyncDispose]();
-});
+function makeHarness(
+  documents: Record<string, string>,
+  options: CitationIndexHarnessOptions = {},
+) {
+  const citekeys = options.citekeys ?? [
+    { itemID: 1, citekey: "doe2024" },
+    { itemID: 2, citekey: "roe2025" },
+  ];
+  const keys = citekeys
+    .map(
+      ({ itemID, citekey }, index) => `
+    insert into itemDataValues (valueID, value) values (${100 + index}, '${citekey.replaceAll("'", "''")}');
+    insert into itemData (itemID, fieldID, valueID) values (${itemID}, 11, ${100 + index});
+  `,
+    )
+    .join("\n");
+  return createCitationIndexHarness(documents, {
+    ...options,
+    zoteroRows:
+      options.zoteroRows ??
+      `${ITEM_ROWS}
+      insert into fieldsCombined (fieldID, fieldName, custom) values (11, 'citationKey', 0);
+      ${keys}`,
+  });
+}
 
 async function readText(
   service: CitationText,
@@ -218,7 +231,7 @@ function addKeylessNote(
 
 describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   it("#1693 counts an earlier Annotation Citation in the shared numeric context", async () => {
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": `[](${annotationUri}) then @roe2025.` },
       { zoteroRows: annotationRows },
     );
@@ -255,7 +268,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   });
 
   it("#1693 preserves the Annotation Citation locator for a following ibid", async () => {
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": `[](${annotationUri}) then [@doe2024, p. 42]` },
       { zoteroRows: annotationRows },
     );
@@ -271,7 +284,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   });
 
   it("#1693 keeps a trimmed wikilink in inline and References numbering", async () => {
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": "[[ Doe 2024 ]] then @roe2025" },
       { settings: { "citation.wikilink-citations": true } },
     );
@@ -289,7 +302,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   });
 
   it("#1693 renders indexed wikilinks without metadata-cache links", async () => {
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": "[[Doe 2024]] then @roe2025." },
       { settings: { "citation.wikilink-citations": true } },
     );
@@ -309,7 +322,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   });
 
   it("keeps numeric in-text and sidebar assignments aligned across source changes", async () => {
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": BODY },
       { settings: { "citation.wikilink-citations": true } },
     );
@@ -383,7 +396,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   // with the digits inline and in the gutter reading the same.
   it("shows a note-class style's citations as the serials its sidebar gutter repeats", async () => {
     const body = "Both [@doe2024; @roe2025], then @roe2025 alone.";
-    await using harness = await createCitationIndexHarness({
+    await using harness = await makeHarness({
       "draft.md": body,
     });
     const { draft, index } = harness;
@@ -417,7 +430,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   it("#1683 omits masked comments from the CitationText render input", async () => {
     const body = "[@a and %% @hidden %%]";
     const inputs: string[] = [];
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": body },
       {
         citekeys: [
@@ -450,7 +463,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
   it("#1683 keeps resolved Items of a partial Author-in-text Citation in numeric context", async () => {
     const body = "@doe2024 [p. 3; @ghost], then @roe2025.";
-    await using harness = await createCitationIndexHarness({
+    await using harness = await makeHarness({
       "draft.md": body,
     });
     await using engine = await openEngine();
@@ -464,7 +477,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
   it("keeps resolved items from a partial cluster in numeric context", async () => {
     const body = "Partial [@doe2024; @ghost], then complete @roe2025.";
-    await using harness = await createCitationIndexHarness({
+    await using harness = await makeHarness({
       "draft.md": body,
     });
     const { draft, index } = harness;
@@ -485,7 +498,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   // citekey, so a render keyed by that spelling shows one Item for both.
   it("renders each work of a filename collision from its own Item", async () => {
     const body = "First [[folder1/Draft]] then [[folder2/Draft]].";
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": body },
       { settings: { "citation.wikilink-citations": true } },
     );
@@ -519,7 +532,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   // numbering style counts one physical source once however it is spelled.
   it("numbers one work cited under two spellings once", async () => {
     const body = "First [[Papers/Ess]] then [[Archive/Ess2]].";
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": body },
       { settings: { "citation.wikilink-citations": true } },
     );
@@ -554,7 +567,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   // neither candidate, while the wikilink names one Item exactly and renders.
   it("keeps an ambiguous literal key out of CSL while its wikilink still renders", async () => {
     const body = "@doe2024 then [[Roe 2025]].";
-    await using harness = await createCitationIndexHarness(
+    await using harness = await makeHarness(
       { "draft.md": body },
       {
         settings: { "citation.wikilink-citations": true },
@@ -615,7 +628,6 @@ function openText(
     openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
     app,
-    db: items,
     citationIndex: index,
     citationLookup: lookup,
     noteIndex,
@@ -659,7 +671,11 @@ async function sidebarEntries(
   return buildReferenceEntries(
     citations.map((c) => ({
       ...c,
-      outcome: citationOutcome(c, { sources, database: "ready" }),
+      outcome: citationOutcome(c, {
+        sources,
+        presentKeys: new Set(sources.keys()),
+        database: "ready",
+      }),
     })),
     {
       bibliography: {
@@ -689,6 +705,7 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
       issued: { "date-parts": [[2020 + itemID]] },
     },
     summary: `${family} (${2020 + itemID})`,
+    citationSummary: `${family} (${2020 + itemID})`,
     itemKey: id,
     itemID,
     groupID: null,
