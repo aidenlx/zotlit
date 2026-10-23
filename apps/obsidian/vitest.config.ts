@@ -1,6 +1,6 @@
 import preact from "@preact/preset-vite";
 import { resolve } from "node:path";
-import { configDefaults, defineConfig } from "vitest/config";
+import { defineConfig } from "vitest/config";
 
 import { testDefaults } from "@zotlit/config/vitest";
 
@@ -74,7 +74,7 @@ export default defineConfig({
         test: {
           include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
           exclude: [
-            ...configDefaults.exclude,
+            ...testDefaults.exclude,
             ...HAPPY_DOM_NATIVE_RESPONSE_FILES,
           ],
         },
