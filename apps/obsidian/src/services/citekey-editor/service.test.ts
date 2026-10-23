@@ -587,6 +587,7 @@ class LookupStub extends CitationLookupStub {
 
   #answer(citekeys: readonly string[]) {
     return new CitationLookupAnswer({
+      annotationKeys: new Map(),
       revision: "test",
       citekeys: new Map(
         citekeys.map((citekey) => [

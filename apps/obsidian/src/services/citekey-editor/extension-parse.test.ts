@@ -119,6 +119,7 @@ it.each([
               lookupObservation(
                 ({ citekeys = [] }) =>
                   new CitationLookupAnswer({
+                    annotationKeys: new Map(),
                     revision: "test",
                     citekeys: new Map(
                       citekeys.map((key) => [

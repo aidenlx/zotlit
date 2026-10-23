@@ -3,6 +3,8 @@ import {
   getLastItemID,
   getCitekeyWindow,
   getLibraries,
+  getAnnotationParentKeys,
+  resolveIndexedKeyLibraryIn,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -12,6 +14,7 @@ import { getLogger } from "@/lib/log";
 import type {
   CitationLookupRequest,
   CitationLookupWireAnswer,
+  AnnotationParent,
 } from "@/services/citation-index/lookup";
 import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -121,25 +124,81 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
   ): Effect.fn.Return<CitationLookupWireAnswer, DbUnavailable> {
     const scope = JSON.stringify(request.scope);
     while (true) {
-      const client = yield* Effect.scoped(connection.borrow);
-      const current = published;
-      if (current?.client === client && current.scope === scope) {
-        return {
-          revision: current.revision,
-          citekeys: new Map(
-            (request.citekeys ?? []).map((key) => [
-              key,
-              current.snapshot.resolve(key),
-            ]),
-          ),
-          indexedKeys: new Map(
-            (request.indexedKeys ?? []).map((key) => [
-              key,
-              current.snapshot.citekeyOf(key),
-            ]),
-          ),
-        };
-      }
+      const answer = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const client = yield* connection.borrow;
+          const current = published;
+          if (current?.client === client && current.scope === scope) {
+            const annotationKeys = yield* Effect.try({
+              try: () => {
+                const answers = new Map<string, AnnotationParent | null>(
+                  (request.annotationKeys ?? []).map((key) => [key, null]),
+                );
+                if (answers.size === 0) return answers;
+                const libraries = getLibraries(client);
+                const identities = [...answers.keys()].flatMap((indexedKey) => {
+                  const identity = resolveIndexedKeyLibraryIn(
+                    libraries,
+                    indexedKey,
+                  );
+                  return identity ? [{ ...identity, indexedKey }] : [];
+                });
+                for (const [libraryID, keys] of Map.groupBy(
+                  identities,
+                  (identity) => identity.libraryID,
+                )) {
+                  const groupID = libraries.find(
+                    (library) => library.libraryID === libraryID,
+                  )?.groupID;
+                  const parents = new Map(
+                    getAnnotationParentKeys(
+                      client,
+                      keys.map(({ key }) => key),
+                      libraryID,
+                    ).map(({ key, parentKey }) => [
+                      key,
+                      formatIndexedKey(parentKey, groupID),
+                    ]),
+                  );
+                  for (const { key, indexedKey } of keys) {
+                    const parentKey = parents.get(key);
+                    if (parentKey !== undefined)
+                      answers.set(indexedKey, {
+                        indexedKey: parentKey,
+                        citekey: current.snapshot.citekeyOf(parentKey),
+                      });
+                  }
+                }
+                return answers;
+              },
+              catch: toDbUnavailable,
+            });
+            if (
+              annotationKeys.size > 0 &&
+              (yield* Effect.scoped(connection.borrow)) !== client
+            )
+              return null;
+            return {
+              revision: current.revision,
+              annotationKeys,
+              citekeys: new Map(
+                (request.citekeys ?? []).map((key) => [
+                  key,
+                  current.snapshot.resolve(key),
+                ]),
+              ),
+              indexedKeys: new Map(
+                (request.indexedKeys ?? []).map((key) => [
+                  key,
+                  current.snapshot.citekeyOf(key),
+                ]),
+              ),
+            };
+          }
+          return null;
+        }),
+      );
+      if (answer !== null) return answer;
       // A caller owns only its wait. The worker lifetime owns the shared build
       // and its connection borrow, even if the initiating caller cancels.
       const running = yield* Effect.uninterruptible(

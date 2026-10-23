@@ -142,6 +142,7 @@ async function makeHarness({
   const resolutionListeners = new Set<() => void>();
   const answer = (requested: readonly string[]): CitationLookupAnswer =>
     new CitationLookupAnswer({
+      annotationKeys: new Map(),
       revision: JSON.stringify(ambiguous),
       citekeys: new Map(
         requested.map((citekey) => [
