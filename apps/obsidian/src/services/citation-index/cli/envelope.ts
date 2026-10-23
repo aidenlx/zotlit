@@ -23,7 +23,7 @@ import type {
 } from "@/services/citation-index/service";
 
 /** The wire format of the `zotlit:` citation commands, versioned on its own. */
-export const CONTRACT_VERSION = 3;
+export const CONTRACT_VERSION = 4;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface CitationsIdentity {
@@ -39,7 +39,7 @@ export interface CitationsIdentity {
 }
 
 /**
- * The documented diagnostic codes of contract version 3, each defined with
+ * The documented diagnostic codes of contract version 4, each defined with
  * the recovery action its diagnostic carries. This record is the single source
  * of both, so a new code arrives with its own hint.
  */
@@ -145,6 +145,7 @@ interface ReportedLoc {
 export interface ReportedOccurrence {
   kind: CitationSyntax;
   raw: string;
+  pageLabel?: string | null;
   position: { start: ReportedLoc; end: ReportedLoc };
 }
 
@@ -164,9 +165,10 @@ interface ReportedGroup {
 export function reportOccurrences(
   occurrences: readonly CitationOccurrence[],
 ): ReportedOccurrence[] {
-  return occurrences.map(({ kind, raw, position }) => ({
+  return occurrences.map(({ kind, raw, position, pageLabel }) => ({
     kind,
     raw,
+    ...(pageLabel === undefined ? {} : { pageLabel }),
     position: {
       start: reportLoc(position.start),
       end: reportLoc(position.end),
@@ -241,7 +243,7 @@ interface CitedByPayload {
  * distinction only reports Pandoc Engine state (ADR 0024):
  *
  * - `resolved` — a cited Item the connected Zotero source holds, with its identity.
- * - `unresolved` — a citation key that names no live Zotero Item.
+ * - `unresolved` — a citation key or Annotation Citation naming no live Zotero Item.
  * - `ambiguous` — a citation key several Items carry in the current library
  *   scope, so it names none of them; the candidates carry the exact keys that
  *   each select one.
@@ -262,6 +264,7 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       linkpath: string | null;
     }
   | { refNumber: number; kind: "unresolved"; citekey: string }
+  | { refNumber: number; kind: "unresolved"; annotationKey: string }
   | {
       refNumber: number;
       kind: "ambiguous";

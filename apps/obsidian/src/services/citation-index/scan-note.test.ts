@@ -551,7 +551,14 @@ const conformance: {
     name: "valid Citation Fragment",
     text: "[[Note#cite:locator=4]]",
     record: {
-      wikilinks: [{ kind: "wikilink", raw: "Note", position: pos(0, 23) }],
+      wikilinks: [
+        {
+          kind: "wikilink",
+          raw: "Note",
+          fragment: "locator=4",
+          position: pos(0, 23),
+        },
+      ],
     },
   },
   {

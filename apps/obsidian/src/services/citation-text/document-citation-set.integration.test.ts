@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { themeHook } from "@/lib/theme-hooks";
+import {
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
 import type {
   Citation,
   ReferenceSource,
@@ -24,7 +28,7 @@ import {
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
-import { inlineText } from "@/services/pandoc/inline-content";
+import { inlineText, noteContent } from "@/services/pandoc/inline-content";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
@@ -96,6 +100,23 @@ const NOTE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
       <text variable="title" prefix=". " suffix="."/>
     </layout>
   </bibliography>
+</style>`;
+
+const IBID_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+  <info>
+    <title>Annotation locator integration</title>
+    <id>http://example.com/annotation-locator-integration</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><choose>
+    <if position="ibid-with-locator">
+      <text value="ibid., "/><text variable="locator"/>
+    </if>
+    <else-if position="ibid"><text value="ibid."/></else-if>
+    <else><names variable="author"><name/></names><text variable="locator" prefix=", "/></else>
+  </choose></layout></citation>
+  <bibliography><layout><names variable="author"><name/></names></layout></bibliography>
 </style>`;
 
 const BODY =
@@ -195,6 +216,97 @@ function addKeylessNote(
 }
 
 describe("Document Citation Set integration", { timeout: 60_000 }, () => {
+  it("#1693 counts an earlier Annotation Citation in the shared numeric context", async () => {
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": `[](${annotationUri}) then @roe2025.` },
+      { zoteroRows: annotationRows },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NUMERIC_STYLE);
+    await text.ready;
+
+    const set = await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    expect(
+      set.citations.map(({ indexedKey, refNumber }) => [indexedKey, refNumber]),
+    ).toEqual([
+      [KEY_A, 1],
+      [KEY_B, 2],
+    ]);
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+    expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
+      "[1]",
+      "[2]",
+    ]);
+
+    harness.settings.update({ "citation.annotation-citations": false });
+    expect(
+      firstText(
+        (await readText(text, harness.draft)).formatted.get("@roe2025"),
+      ),
+    ).toBe("[1]");
+    harness.settings.update({ "citation.annotation-citations": true });
+    expect(
+      firstText(
+        (await readText(text, harness.draft)).formatted.get("@roe2025"),
+      ),
+    ).toBe("[2]");
+  });
+
+  it("#1693 preserves the Annotation Citation locator for a following ibid", async () => {
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": `[](${annotationUri}) then [@doe2024, p. 42]` },
+      { zoteroRows: annotationRows },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, IBID_STYLE);
+    await text.ready;
+    await harness.index.getDocumentCitationSet(harness.draft);
+
+    const rendered = await readText(text, harness.draft);
+    const second = rendered.formatted.get("[@doe2024, p. 42]")?.[0];
+    expect(second).toBeDefined();
+    expect(inlineText(noteContent(second!.text.content))).toBe("Ibid.");
+  });
+
+  it("#1693 keeps a trimmed wikilink in inline and References numbering", async () => {
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "[[ Doe 2024 ]] then @roe2025" },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NUMERIC_STYLE);
+    await text.ready;
+
+    const set = await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+    expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
+      "[1]",
+      "[2]",
+    ]);
+  });
+
+  it("#1693 renders indexed wikilinks without metadata-cache links", async () => {
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "[[Doe 2024]] then @roe2025." },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NUMERIC_STYLE);
+    await text.ready;
+    await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+    expect(
+      firstText(
+        rendered.formatted.get(
+          citationKey({ source: "[@doe2024]", works: [KEY_A] }),
+        ),
+      ),
+    ).toBe("[1]");
+  });
+
   it("keeps numeric in-text and sidebar assignments aligned across source changes", async () => {
     await using harness = await createCitationIndexHarness(
       { "draft.md": BODY },

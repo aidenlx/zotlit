@@ -8,9 +8,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type {
+  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
+import type { FileScan } from "@/services/citation-index/store";
 
 import { currentOccurrence, openCitedByOccurrence } from "./navigation";
 import {
@@ -82,9 +84,10 @@ export interface CitedByActions {
 
 export function createCitedByActions(options: {
   app: App;
+  citationIndex: Pick<CitationIndex, "getFileScan">;
   store: CitedByStore;
 }): CitedByActions {
-  const { app, store } = options;
+  const { app, citationIndex, store } = options;
   const generations = new Map<string, number>();
   let queued: CitedByGroup[] = [];
   let draining = false;
@@ -110,11 +113,18 @@ export function createCitedByActions(options: {
         (occurrence) => !(occurrenceID(occurrence) in current.contexts),
       );
       if (missing.length === 0) return;
+      const scan = await citationIndex.getFileScan(file);
+      if (
+        store.getState().previews[group.path] !== current ||
+        file.stat.mtime !== mtime
+      )
+        return;
       setPreview(group.path, {
         ...current,
         contexts: {
           ...current.contexts,
           ...contextsFrom({
+            scan,
             app,
             file,
             source: current.source,
@@ -129,8 +139,12 @@ export function createCitedByActions(options: {
     generations.set(group.path, generation);
     setPreview(group.path, { status: "loading", mtime });
     let source: string;
+    let scan: Readonly<FileScan> | null;
     try {
-      source = await app.vault.cachedRead(file);
+      [source, scan] = await Promise.all([
+        app.vault.cachedRead(file),
+        citationIndex.getFileScan(file),
+      ]);
     } catch {
       if (generations.get(group.path) === generation) {
         setPreview(group.path, { status: "unavailable", mtime });
@@ -145,6 +159,7 @@ export function createCitedByActions(options: {
       source,
       outline: sourceOutline(app.metadataCache.getFileCache(file)),
       contexts: contextsFrom({
+        scan,
         app,
         file,
         source,
@@ -276,7 +291,12 @@ export function createCitedByActions(options: {
       );
     },
     openOccurrence(group, occurrence, event) {
-      void openCitedByOccurrence(app, { group, occurrence, event });
+      void openCitedByOccurrence(app, {
+        citationIndex,
+        group,
+        occurrence,
+        event,
+      });
     },
   };
 }
@@ -310,18 +330,19 @@ function openSortMenu(
 
 function contextsFrom(options: {
   app: App;
+  scan: Readonly<FileScan> | null;
   file: TFile;
   source: string;
   occurrences: readonly CitationOccurrence[];
 }): Record<string, OccurrenceContext> {
-  const { app, file, source, occurrences } = options;
+  const { app, scan, file, source, occurrences } = options;
   const cache = app.metadataCache.getFileCache(file);
   return Object.fromEntries(
     occurrences.map((occurrence) => [
       occurrenceID(occurrence),
       citationContext(
         source,
-        currentOccurrence({ app, file, source, occurrence }),
+        currentOccurrence({ scan, source, occurrence }),
         cache,
       ),
     ]),

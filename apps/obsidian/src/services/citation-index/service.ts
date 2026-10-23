@@ -119,13 +119,13 @@ export interface DocumentCitationSet {
   citations: Citation[];
   /** Invalid explicit citation intent, excluded from CSL membership. */
   errors: DocumentCitationError[];
-  /** Both lookup directions used to compose this document, at one revision. */
+  /** The citation lookup used to compose this document, at one revision. */
   lookup: CitationLookupAnswer;
 }
 
 /** One citation source error a document-aware surface can help correct. */
 export interface DocumentCitationError {
-  kind: "malformed-wikilink";
+  kind: "malformed-wikilink" | "malformed-annotation";
   occurrence: CitationOccurrence;
 }
 
@@ -217,6 +217,7 @@ export class CitationIndex extends Service<void> {
   #build = 0;
   #includePandocCitations = true;
   #includeWikilinkCitations = false;
+  #includeAnnotationCitations = true;
   #backfilled = false;
   #backfillBuild = -1;
   #backfillFailed = false;
@@ -234,6 +235,17 @@ export class CitationIndex extends Service<void> {
     this.#lookup = options.lookup;
     this.#openStore = options.openStore ?? openCitekeyStore;
     this.ready = this.#load();
+  }
+
+  /** Wait for the file's pending parse; stale retained scans cannot validate navigation. */
+  async getFileScan(file: TFile): Promise<Readonly<FileScan> | null> {
+    await this.ready;
+    const scan = await this.#coverFile(file);
+    return scan &&
+      scan.mtime === file.stat.mtime &&
+      scan.size === file.stat.size
+      ? scan
+      : null;
   }
 
   /**
@@ -254,10 +266,9 @@ export class CitationIndex extends Service<void> {
       : this.#stop.signal;
     lifetime.throwIfAborted();
     await abortable(this.ready, lifetime);
-    const { citekeys, wikilinks } = this.#admitted(
-      await abortable(this.#coverFile(file), lifetime),
-    );
-    const local = new Map(
+    const { citekeys, wikilinks, annotations, malformedAnnotations } =
+      this.#admitted(await abortable(this.#coverFile(file), lifetime));
+    const local = new Map<CitationOccurrence, ResolvedNote | null>(
       [
         ...wikilinks.occurrences,
         ...wikilinks.malformed.map(({ occurrence }) => occurrence),
@@ -272,6 +283,10 @@ export class CitationIndex extends Service<void> {
           ...citekeys.map((occurrence) => occurrence.raw),
           ...(include?.citekeys ?? []),
         ],
+        annotationKeys: [
+          ...annotations.map((occurrence) => occurrence.raw),
+          ...(include?.annotationKeys ?? []),
+        ],
         indexedKeys: [
           ...wikilinks.occurrences.flatMap((occurrence) => {
             const key = local.get(occurrence)?.indexedKey;
@@ -283,7 +298,7 @@ export class CitationIndex extends Service<void> {
       { signal: lifetime },
     );
     const citations = groupCitations(
-      [...citekeys, ...wikilinks.occurrences].sort(
+      [...citekeys, ...wikilinks.occurrences, ...annotations].sort(
         (a, b) => a.position.start.offset - b.position.start.offset,
       ),
       (occurrence) =>
@@ -294,12 +309,21 @@ export class CitationIndex extends Service<void> {
     const occurrences = citations
       .flatMap((citation) => citation.occurrences)
       .sort((a, b) => a.position.start.offset - b.position.start.offset);
-    const errors = wikilinks.malformed
+    const errors: DocumentCitationError[] = wikilinks.malformed
       .filter(({ occurrence }) => local.get(occurrence) != null)
       .map(({ occurrence }) => ({
         kind: "malformed-wikilink" as const,
         occurrence,
       }));
+    errors.push(
+      ...malformedAnnotations.map(
+        ({ destination, position }): DocumentCitationError => ({
+          kind: "malformed-annotation",
+          occurrence: { kind: "annotation", raw: destination, position },
+        }),
+      ),
+    );
+    errors.sort((a, b) => compareOccurrences(a.occurrence, b.occurrence));
     return { occurrences, citations, errors, lookup };
   }
 
@@ -348,11 +372,26 @@ export class CitationIndex extends Service<void> {
 
     const publish = (): void => {
       if (disposed || this.#stopped || !published) return;
-      lookup.set({ citekeys: this.citationKeys() });
+      lookup.set({
+        citekeys: this.citationKeys(),
+        annotationKeys: this.annotationCitationKeys(),
+      });
       const next = this.#citedBy(
         indexedKey,
-        (citekey) => heldResolution(lookup.current?.value ?? null, citekey),
-        { includeNote, byPath: this.citationsByPath(["citekey", "wikilink"]) },
+        {
+          resolve: (citekey) =>
+            heldResolution(lookup.current?.value ?? null, citekey),
+          parentOfAnnotation: (key) => {
+            const answer = lookup.current?.value;
+            return answer?.coversAnnotationKey(key)
+              ? (answer.parentOfAnnotation(key)?.indexedKey ?? null)
+              : null;
+          },
+        },
+        {
+          includeNote,
+          byPath: this.citationsByPath(["citekey", "wikilink", "annotation"]),
+        },
       );
       if (previous && citedBySnapshotsEqual(previous, next)) return;
       previous = next;
@@ -399,20 +438,33 @@ export class CitationIndex extends Service<void> {
     indexedKey: string,
     answer?: CitationLookupAnswer,
   ): Promise<CitedBySnapshot> {
-    const occurrences = this.citationsByPath(["citekey", "wikilink"]);
+    const occurrences = this.citationsByPath([
+      "citekey",
+      "wikilink",
+      "annotation",
+    ]);
     const lookup =
       answer ??
       (await this.#lookup.read({
+        annotationKeys: this.annotationCitationKeys(),
         citekeys: [...occurrences.values()].flatMap((citations) =>
           citations.flatMap((occurrence) =>
             occurrence.kind === "citekey" ? [occurrence.raw] : [],
           ),
         ),
       }));
-    return this.#citedBy(indexedKey, (citekey) => lookup.resolve(citekey), {
-      includeNote: () => true,
-      byPath: occurrences,
-    });
+    return this.#citedBy(
+      indexedKey,
+      {
+        resolve: (citekey) => lookup.resolve(citekey),
+        parentOfAnnotation: (key) =>
+          lookup.parentOfAnnotation(key)?.indexedKey ?? null,
+      },
+      {
+        includeNote: () => true,
+        byPath: occurrences,
+      },
+    );
   }
 
   /**
@@ -438,13 +490,14 @@ export class CitationIndex extends Service<void> {
   /**
    * Which Citation Syntaxes admit their occurrences into an answer, for a
    * caller that declares the constraint beside its facts — the agent-facing
-   * CLI. Follows `citation.pandoc-citations` and `citation.wikilink-citations`,
-   * the same source choices {@link #admitted} gates both membership surfaces on.
+   * CLI. Follows the same source choices {@link #admitted} applies to the
+   * document set and Cited By.
    */
   syntaxes(): CitationSyntaxes {
     return {
       citekey: this.#includePandocCitations ? "included" : "excluded",
       wikilink: this.#includeWikilinkCitations ? "included" : "excluded",
+      annotation: this.#includeAnnotationCitations ? "included" : "excluded",
     };
   }
 
@@ -481,6 +534,14 @@ export class CitationIndex extends Service<void> {
         );
       if (held) omitted.push("wikilink");
     }
+    if (!this.#includeAnnotationCitations) {
+      const scan = await this.#coverFile(file);
+      if (
+        scan?.annotations.some(({ form }) => form === "citation") ||
+        scan?.malformedAnnotationCitations.length
+      )
+        omitted.push("annotation");
+    }
     return omitted;
   }
 
@@ -503,13 +564,16 @@ export class CitationIndex extends Service<void> {
   ): ReadonlyMap<string, readonly CitationOccurrence[]> {
     const wantCitekeys = syntaxes.includes("citekey");
     const wantWikilinks = syntaxes.includes("wikilink");
+    const wantAnnotations = syntaxes.includes("annotation");
     const byPath = new Map<string, readonly CitationOccurrence[]>();
     for (const file of this.#app.vault.getMarkdownFiles()) {
       const admitted = this.#admitted(this.#covered(file));
       const citekeys = wantCitekeys ? admitted.citekeys : [];
-      const occurrences = wantWikilinks
-        ? [...citekeys, ...admitted.wikilinks.occurrences]
-        : citekeys;
+      const occurrences = [
+        ...citekeys,
+        ...(wantWikilinks ? admitted.wikilinks.occurrences : []),
+        ...(wantAnnotations ? admitted.annotations : []),
+      ];
       if (occurrences.length > 0) byPath.set(file.path, occurrences);
     }
     return byPath;
@@ -916,6 +980,22 @@ export class CitationIndex extends Service<void> {
 
   #admitted(scan: FileScan | null) {
     return {
+      annotations: (this.#includeAnnotationCitations
+        ? (scan?.annotations ?? [])
+        : []
+      )
+        .filter(({ form }) => form === "citation")
+        .map(
+          ({ indexedKey, position, pageLabel }): CitationOccurrence => ({
+            kind: "annotation",
+            raw: indexedKey,
+            position,
+            pageLabel,
+          }),
+        ),
+      malformedAnnotations: this.#includeAnnotationCitations
+        ? (scan?.malformedAnnotationCitations ?? [])
+        : [],
       citekeys: this.#includePandocCitations ? (scan?.citekeys ?? []) : [],
       wikilinks: {
         occurrences: this.#includeWikilinkCitations
@@ -930,6 +1010,16 @@ export class CitationIndex extends Service<void> {
 
   citationKeys(): string[] {
     return [...this.#filesByCitekey.keys()];
+  }
+
+  annotationCitationKeys(): string[] {
+    return [...this.#annotationsByKey].flatMap(([key, paths]) =>
+      [...paths.values()].some((occurrences) =>
+        occurrences.some(({ form }) => form === "citation"),
+      )
+        ? [key]
+        : [],
+    );
   }
 
   get coverage(): CitationCoverage {
@@ -984,7 +1074,13 @@ export class CitationIndex extends Service<void> {
 
   #citedBy(
     indexedKey: string,
-    resolve: (citekey: string) => CitekeyResolution | null,
+    {
+      resolve,
+      parentOfAnnotation,
+    }: {
+      resolve: (citekey: string) => CitekeyResolution | null;
+      parentOfAnnotation: (key: string) => string | null;
+    },
     {
       includeNote,
       byPath,
@@ -1003,7 +1099,13 @@ export class CitationIndex extends Service<void> {
         .filter((occurrence) =>
           occurrence.kind === "citekey"
             ? this.#citekeyOccurrenceCites(resolve(occurrence.raw), indexedKey)
-            : this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
+            : occurrence.kind === "annotation"
+              ? parentOfAnnotation(occurrence.raw) === indexedKey
+              : this.#wikilinkOccurrenceCites(
+                  occurrence,
+                  file.path,
+                  indexedKey,
+                ),
         )
         .sort(compareOccurrences);
       if (occurrences.length > 0) {
@@ -1044,6 +1146,7 @@ export class CitationIndex extends Service<void> {
       answer ??
       (await this.#lookup.read({
         citekeys: citekeys.map((occurrence) => occurrence.raw),
+        annotationKeys: this.annotationCitationKeys(),
       }));
     if (!this.#includePandocCitations) {
       const held = citekeys.some((occurrence) =>
@@ -1062,6 +1165,13 @@ export class CitationIndex extends Service<void> {
       });
       if (held) omitted.push("wikilink");
     }
+    if (
+      !this.#includeAnnotationCitations &&
+      this.annotationCitationKeys().some(
+        (key) => lookup.parentOfAnnotation(key)?.indexedKey === indexedKey,
+      )
+    )
+      omitted.push("annotation");
     return omitted;
   }
 
@@ -1115,6 +1225,12 @@ export class CitationIndex extends Service<void> {
       );
       return indexedKey ? { indexedKey, linkpath: occurrence.raw } : null;
     }
+    if (occurrence.kind === "annotation") {
+      const parent = lookup!.parentOfAnnotation(occurrence.raw);
+      if (!parent) return null;
+      const [note] = this.#noteIndex.getNotesByItemKey(parent.indexedKey);
+      return { indexedKey: parent.indexedKey, linkpath: note?.path ?? null };
+    }
     // An Ambiguous Citation Key keeps its own identity here: it adopts no
     // candidate's Indexed Key, so it stays a Citation of the key itself and
     // contributes no CSL work.
@@ -1129,15 +1245,19 @@ export class CitationIndex extends Service<void> {
   #applySettings(settings: Readonly<Settings>): void {
     const nextPandoc = settings["citation.pandoc-citations"];
     const nextWikilinks = settings["citation.wikilink-citations"];
+    const nextAnnotations = settings["citation.annotation-citations"];
     const membershipChanged =
       nextPandoc !== this.#includePandocCitations ||
-      nextWikilinks !== this.#includeWikilinkCitations;
+      nextWikilinks !== this.#includeWikilinkCitations ||
+      nextAnnotations !== this.#includeAnnotationCitations;
     if (!membershipChanged) return;
     this.#includePandocCitations = nextPandoc;
     this.#includeWikilinkCitations = nextWikilinks;
+    this.#includeAnnotationCitations = nextAnnotations;
     logger.debug("Citation source membership changed", {
       pandocCitations: nextPandoc,
       wikilinkCitations: nextWikilinks,
+      annotationCitations: nextAnnotations,
     });
     this.#emitter.emit("membership-changed");
   }

@@ -109,6 +109,7 @@ interface CitationsCliDeps {
       request: CitationLookupRequest,
     ) => Promise<CitationLookupAnswer>;
     citationKeys: () => readonly string[];
+    annotationCitationKeys: () => readonly string[];
     getCitedBy: (
       indexedKey: string,
       lookup: CitationLookupAnswer,
@@ -225,6 +226,7 @@ export function createCitationsCliHandlers(
             ...("citekey" in request.value ? [request.value.citekey] : []),
           ],
           indexedKeys: "key" in request.value ? [request.value.key] : [],
+          annotationKeys: deps.index.annotationCitationKeys(),
         });
         const selected = await resolveItem(deps, request.value, lookup);
         if (selected.kind === "fault") {
@@ -405,7 +407,17 @@ function referenceEntries(
   for (const { indexedKey, refNumber, occurrences } of citations) {
     const reported = reportOccurrences(occurrences);
     if (indexedKey === null) {
-      // Every Citation naming no single Item is written as a citekey — a
+      const first = occurrences[0]!;
+      if (first.kind === "annotation") {
+        entries.push({
+          refNumber,
+          kind: "unresolved",
+          annotationKey: first.raw,
+          occurrences: reported,
+        });
+        continue;
+      }
+      // Every remaining Citation naming no single Item is written as a citekey — a
       // wikilink that resolves to no Item is no Citation at all — so its raw
       // text names it. A key several items carry adopts none of them, which is
       // why it reaches this branch alongside a key no item carries.

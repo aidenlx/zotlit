@@ -3,26 +3,25 @@ import { Keymap, TFile } from "obsidian";
 import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 
-import {
-  documentWikilinks,
-  occurrencesEqual,
-  scanCitekeyOccurrences,
-} from "@/services/citation-index/scan";
+import { occurrencesEqual } from "@/services/citation-index/scan";
 import type {
+  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
+import type { FileScan } from "@/services/citation-index/store";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 export async function openCitedByOccurrence(
   app: App,
   options: {
+    citationIndex: Pick<CitationIndex, "getFileScan">;
     group: CitedByGroup;
     occurrence: CitationOccurrence;
     event: MouseEvent;
   },
 ): Promise<void> {
-  const { group, occurrence, event } = options;
+  const { citationIndex, group, occurrence, event } = options;
   const pane = Keymap.isModEvent(event.nativeEvent);
   const file = app.vault.getAbstractFileByPath(group.path);
   if (!(file instanceof TFile)) {
@@ -32,8 +31,14 @@ export async function openCitedByOccurrence(
 
   let current: CitationOccurrence | null = null;
   try {
-    const source = await app.vault.cachedRead(file);
-    current = currentOccurrence({ app, file, source, occurrence });
+    const mtime = file.stat.mtime;
+    const [source, scan] = await Promise.all([
+      app.vault.cachedRead(file),
+      citationIndex.getFileScan(file),
+    ]);
+    if (file.stat.mtime === mtime) {
+      current = currentOccurrence({ scan, source, occurrence });
+    }
   } catch {
     // Opening the note remains useful when its current source cannot be read.
   }
@@ -52,36 +57,33 @@ export async function openCitedByOccurrence(
 }
 
 export function currentOccurrence(options: {
-  app: App;
-  file: TFile;
+  scan: Readonly<FileScan> | null;
   source: string;
   occurrence: CitationOccurrence;
 }): CitationOccurrence | null {
-  const { app, file, source, occurrence } = options;
-  if (occurrence.kind === "citekey") {
-    return (
-      scanCitekeyOccurrences(source).find((candidate) =>
-        occurrencesEqual([candidate], [occurrence]),
-      ) ?? null
-    );
-  }
-  for (const link of app.metadataCache.getFileCache(file)?.links ?? []) {
-    if (
-      source.slice(link.position.start.offset, link.position.end.offset) !==
-      link.original
-    ) {
-      continue;
-    }
-    const candidate = documentWikilinks([link]).occurrences[0];
-    if (
-      candidate &&
-      occurrencesEqual([candidate], [occurrence]) &&
-      positionMatchesSource(source, candidate)
-    ) {
-      return candidate;
-    }
-  }
-  return null;
+  const { scan, source, occurrence } = options;
+  if (scan === null) return null;
+  const candidates: CitationOccurrence[] = [
+    ...scan.citekeys,
+    ...scan.wikilinks,
+    ...scan.annotations
+      .filter(({ form }) => form === "citation")
+      .map(
+        ({ indexedKey, position, pageLabel }): CitationOccurrence => ({
+          kind: "annotation",
+          raw: indexedKey,
+          position,
+          pageLabel,
+        }),
+      ),
+  ];
+  return (
+    candidates.find(
+      (candidate) =>
+        occurrencesEqual([candidate], [occurrence]) &&
+        positionMatchesSource(source, candidate),
+    ) ?? null
+  );
 }
 
 function positionMatchesSource(

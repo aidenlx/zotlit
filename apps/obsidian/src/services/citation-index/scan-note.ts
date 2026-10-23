@@ -24,6 +24,7 @@ export interface SourcePosition {
 export interface NoteCitationOccurrence {
   kind: "citekey" | "wikilink";
   raw: string;
+  fragment?: string;
   position: SourcePosition;
 }
 
@@ -513,7 +514,10 @@ export function scanNote(text: string): NoteScanRecord {
           if (path && subpath === "") record.wikilinks.push(occurrence);
           else if (path && subpath.startsWith("#cite:")) {
             if (parseCitationFragment(subpath.slice(6)).ok)
-              record.wikilinks.push(occurrence);
+              record.wikilinks.push({
+                ...occurrence,
+                fragment: subpath.slice(6),
+              });
             else record.malformedWikilinks.push({ occurrence });
           }
         }

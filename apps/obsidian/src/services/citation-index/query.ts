@@ -13,8 +13,8 @@ export interface ResolvedNote {
 
 /**
  * Resolution is lazy and per occurrence: a citekey resolves through the
- * citekey resolution snapshot, a linkpath through the Literature Note it
- * points at.
+ * citekey resolution snapshot, a linkpath through its Literature Note, and
+ * an Annotation Indexed Key through its current parent Item.
  */
 export type ResolveOccurrence = (
   occurrence: CitationOccurrence,
@@ -22,7 +22,7 @@ export type ResolveOccurrence = (
 
 /** One cited work of a document, with every place the document cites it. */
 export interface Citation {
-  /** Indexed Key of the cited Item, or `null` when the citekey names no live Zotero Item. */
+  /** Indexed Key of the cited Item, or `null` when the occurrence names no live Zotero Item. */
   indexedKey: string | null;
   /** Linkpath that opens the Literature Note, or `null` when the Item has none yet. */
   linkpath: string | null;
@@ -54,7 +54,7 @@ export function groupCitations(
     if (!note && occurrence.kind === "wikilink") continue;
     const identity = note
       ? `key:${note.indexedKey}`
-      : `citekey:${occurrence.raw}`;
+      : `${occurrence.kind}:${occurrence.raw}`;
 
     const existing = byIdentity.get(identity);
     if (existing) {

@@ -23,7 +23,7 @@ export const CITED_BY_VIEW_TYPE = "zotlit-cited-by";
 
 export interface CitedByViewDeps {
   app: App;
-  citationIndex: Pick<CitationIndex, "observeCitedBy">;
+  citationIndex: Pick<CitationIndex, "observeCitedBy" | "getFileScan">;
 }
 
 export class CitedByView extends ItemView {
@@ -45,7 +45,11 @@ export class CitedByView extends ItemView {
     super(leaf);
     this.contentEl.addClass("zt-root", "zt-cited-by-view");
     this.#deps = deps;
-    this.#actions = createCitedByActions({ app: deps.app, store: this.#store });
+    this.#actions = createCitedByActions({
+      app: deps.app,
+      citationIndex: deps.citationIndex,
+      store: this.#store,
+    });
   }
 
   override getViewType(): string {

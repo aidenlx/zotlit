@@ -5,6 +5,7 @@ import { isChildItemFields, itemToCsl } from "@zotlit/db";
 // The formatted text of one document's Citations, held for every surface that shows them.
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { formatPandocCitation } from "@zotlit/templates/pandoc-citation";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
 import type { CitationKey } from "@/lib/citation-source";
@@ -103,9 +104,9 @@ export interface CitationTextDeps {
 }
 
 /**
- * Formats every Citation Occurrence one document writes in either citing
- * syntax, and hands the same answer to every surface that shows that document —
- * the reading view's post-processors and the editor's widgets alike.
+ * Formats literal and wikilink Citations in the context of the complete
+ * Document Citation Set, and hands the same answer to every surface that
+ * shows that document — the reading view's post-processors and the editor's widgets alike.
  *
  * Text is keyed by occurrence: under a position-dependent Citation and
  * References Style two occurrences of one source read differently, each showing
@@ -368,21 +369,49 @@ export class CitationText extends Service<void> {
     const set = await this.#citationIndex.getDocumentCitationSet(file);
     const wikilinks = this.#wikilinkCitations(file, body, set);
     const literal = worksByCitekey(set.citations);
-    const works = await this.#readCited([
-      ...literal.values(),
-      ...wikilinks.cited,
-    ]);
+    const works = await this.#readCited(
+      set.citations.flatMap(({ indexedKey }) =>
+        indexedKey === null ? [] : [indexedKey],
+      ),
+    );
 
-    // Both syntaxes go to one render in document order, so a numbering style
-    // counts every citation of the document once and in the order it reads.
+    // Every admitted syntax contributes to the same document render context.
     const placed = [
       ...literalCitations(body, set.occurrences, literal),
-      ...wikilinks.citations,
-    ].sort((a, b) => a.start - b.start);
+      ...wikilinks,
+    ];
     const citations = placed.flatMap((citation) => {
       const context = renderContextCitation(citation, works);
       return context === null ? [] : [context];
     });
+    for (const { indexedKey, occurrences } of set.citations) {
+      if (indexedKey === null || !works.has(indexedKey)) continue;
+      for (const occurrence of occurrences) {
+        if (occurrence.kind !== "annotation") continue;
+        citations.push({
+          identity: body.slice(
+            occurrence.position.start.offset,
+            occurrence.position.end.offset,
+          ),
+          start: occurrence.position.start.offset,
+          renderSource: formatPandocCitation([
+            {
+              citationKey: indexedKey,
+              prefix: null,
+              suffix: null,
+              suppressAuthor: false,
+              locator:
+                occurrence.pageLabel == null
+                  ? null
+                  : { label: "p.", value: occurrence.pageLabel },
+            },
+          ]),
+          // Annotation link replacement belongs to #1678.
+          complete: false,
+        });
+      }
+    }
+    citations.sort((a, b) => a.start - b.start);
     const sources = citations.map(({ renderSource }) => renderSource);
     // A citation source names each work by its Indexed Key, which is the one
     // CSL id a Pandoc citekey can spell; the bibliography addresses the same
@@ -455,7 +484,7 @@ export class CitationText extends Service<void> {
     logger.debug("Document citations read", () => ({
       path: file.path,
       citations: sources.length,
-      wikilinks: wikilinks.citations.length,
+      wikilinks: wikilinks.length,
       items: items.length,
       entrySerials,
       formatted: [...formatted.values()].reduce(
@@ -520,21 +549,14 @@ export class CitationText extends Service<void> {
    * The Citations one document's Literature Note wikilinks write, each as the
    * Pandoc source the exporter would write it as.
    *
-   * Link occurrences come from Obsidian's own metadata cache, which already
-   * omits links inside code, and a Citation Run is read from the document text
-   * that joins them. A Markdown-syntax link and an aliased one stay out, the
-   * same two exclusions the display surfaces make.
+   * Membership and resolved works come from the Document Citation Set;
+   * the body supplies the separators between admitted links.
    */
   #wikilinkCitations(
     file: TFile,
     body: string,
     { occurrences, lookup, citations: grouped }: DocumentCitationSet,
-  ): DocumentWikilinks {
-    const members = new Set(
-      occurrences
-        .filter((occurrence) => occurrence.kind === "wikilink")
-        .map((occurrence) => occurrence.position.start.offset),
-    );
+  ): PlacedCitation[] {
     const notes = new Map(
       grouped.flatMap((citation) =>
         citation.indexedKey === null
@@ -566,20 +588,18 @@ export class CitationText extends Service<void> {
     };
 
     const runs = citationRuns(
-      (this.#app.metadataCache.getFileCache(file)?.links ?? []).filter((link) =>
-        members.has(link.position.start.offset),
-      ),
-      (link) => wikilinkCitation(link.link, context),
+      occurrences.filter((occurrence) => occurrence.kind === "wikilink"),
+      ({ raw, fragment }) =>
+        wikilinkCitation(
+          fragment === undefined ? raw : `${raw}#cite:${fragment}`,
+          context,
+        ),
       (previous, next) =>
         body.slice(previous.position.end.offset, next.position.start.offset),
     );
 
-    const cited: string[] = [];
     const citations: PlacedCitation[] = [];
     for (const run of runs) {
-      for (const { citation } of run) {
-        cited.push(citation.indexedKey);
-      }
       const citation = citationOfRun(run);
       citations.push({
         start: run[0]!.source.position.start.offset,
@@ -587,7 +607,7 @@ export class CitationText extends Service<void> {
         identity: citationKey(citation),
       });
     }
-    return { citations, cited };
+    return citations;
   }
 
   /**
@@ -684,20 +704,8 @@ interface RenderContextCitation {
   complete: boolean;
 }
 
-/** What one document's Literature Note wikilinks cite. */
-interface DocumentWikilinks {
-  /** The Citations they write, one per Citation Run, in document order. */
-  citations: PlacedCitation[];
-  /**
-   * The Indexed Key of every Item they cite, in document order — the two Items
-   * of a shared spelling included, and a Citation no Pandoc source can name
-   * included too, because its work still carries the summary a surface shows.
-   */
-  cited: string[];
-}
-
 /**
- * @param cited the document's Citations, over both syntaxes.
+ * @param cited the document's Citations, across all admitted syntaxes.
  * @returns the Item each literal citekey names. One spelling names one Item —
  *   the citekey resolution snapshot decides which — so one entry answers for
  *   every occurrence of it.

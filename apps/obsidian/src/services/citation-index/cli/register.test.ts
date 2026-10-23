@@ -84,11 +84,16 @@ describe("Citations CLI registration", () => {
         citationLookup: { read: async () => lookupAnswer(), status: "fresh" },
         citationIndex: {
           citationKeys: () => [],
+          annotationCitationKeys: () => [],
           waitUntilSettled: () => Promise.resolve("settled"),
           getDocumentCitationSet,
           readLookup: async () => lookupAnswer(),
           resolution: "fresh",
-          syntaxes: () => ({ citekey: "included", wikilink: "excluded" }),
+          syntaxes: () => ({
+            citekey: "included",
+            wikilink: "excluded",
+            annotation: "included",
+          }),
           documentOmittedSyntaxes: () => Promise.resolve([]),
           citedByOmittedSyntaxes: () => Promise.resolve([]),
         },

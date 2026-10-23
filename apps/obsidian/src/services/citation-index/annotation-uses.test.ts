@@ -3,7 +3,7 @@ import { deleteDB, openDB } from "idb";
 import type { App } from "obsidian";
 import { expect, it } from "vitest";
 
-import { openCitekeyStore } from "./store";
+import { openCitekeyStore, SCANNER_REVISION } from "./store";
 import { createCitationIndexHarness, makeFile } from "./test-harness";
 
 it("reads all Annotation Occurrence forms in document order (#1692)", async () => {
@@ -77,7 +77,7 @@ it("restores schema v2 Annotation Occurrences with link text without a read (#16
   await stored.put("scans", {
     path: "draft.md",
     ...makeFile("draft.md", body).stat,
-    scannerRevision: 1,
+    scannerRevision: SCANNER_REVISION,
     citekeys: [],
     wikilinks: [],
     malformedWikilinks: [],
