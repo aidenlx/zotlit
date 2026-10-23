@@ -27,7 +27,7 @@ import { Data, Effect, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
@@ -69,7 +69,7 @@ export interface TemplateDataDeps {
   /** Each root reads its Item's bundle through a lease. */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
-    NoteIndex,
+    PlainNoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
   settings: Pick<SettingsService, "loaded">;

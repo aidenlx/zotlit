@@ -36,7 +36,7 @@ import type {
   ProfilePreview,
 } from "@/services/note-feature";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
@@ -81,7 +81,7 @@ export interface NoteImportDeps {
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
   /** Only template readiness is gated here; rendering lives in `noteImport`. */
   template: Pick<TemplateService, "ready">;

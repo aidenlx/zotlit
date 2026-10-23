@@ -8,6 +8,8 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLogging, layerLogOutput } from "./log/service";
+import { layerNoteIndex } from "./note-index/service";
+import type { NoteIndex } from "./note-index/service";
 import { QueryClients, QueryClientService } from "./query-client/service";
 import { serviceLayer } from "./service-layer";
 import { settingsMigrations } from "./settings/migrate";
@@ -24,9 +26,12 @@ import type { UseLedger } from "./use-ledger/service";
  */
 export function pluginLayer(
   plugin: Plugin,
-): Layer.Layer<PluginSettings | UseLedger | QueryClients | CitationParse> {
+): Layer.Layer<
+  PluginSettings | UseLedger | QueryClients | CitationParse | NoteIndex
+> {
   return Layer.mergeAll(
     layerUseLedger,
+    layerNoteIndex,
     layerCitationParse,
     serviceLayer(QueryClients, {
       key: "queryClient",

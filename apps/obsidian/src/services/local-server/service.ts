@@ -14,7 +14,7 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -107,7 +107,7 @@ export interface LocalServerEvents {
 export interface LocalServerServiceDeps {
   settings: SettingsService;
   zoteroPref: ZoteroPrefService;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getIndexedItemKeys">;
 }
 
 /**

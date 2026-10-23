@@ -59,7 +59,7 @@ import type {
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
 import { randomFilenameId } from "@/services/note-feature/filename";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type {
   ProfileBindingSettings,
@@ -120,7 +120,10 @@ export type ImportVaultApp = {
 interface NoteImporterDeps {
   profile: Pick<ProfileService, "ready" | "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
-  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "getImportedNoteByNoteKey" | "getNotesByItemKey"
+  >;
   template: Pick<
     TemplateService,
     "render" | "renderCitation" | "renderProfileAnnotation"
@@ -204,7 +207,7 @@ export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
 export function childNoteLink(
   deps: {
     app: Pick<ImportVaultApp, "fileManager">;
-    noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">;
+    noteIndex: Pick<PlainNoteIndex, "getImportedNoteByNoteKey">;
   },
   note: ChildNote,
   sourcePath: string,

@@ -33,7 +33,7 @@ import type {
   ReaderTarget,
 } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
@@ -136,7 +136,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
     ExcerptDisplayService,
     "open" | "refresh" | "revalidate"
   >;
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
+  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
   settings: SettingsService;
 }

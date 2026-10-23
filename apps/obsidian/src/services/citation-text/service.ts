@@ -28,7 +28,7 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import {
   documentCitationPresentation,
   documentPresentation,
@@ -91,7 +91,7 @@ export interface CitationTextDeps {
     "getDocumentCitationSet" | "getParsedDocument" | "on"
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
-  noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
+  noteIndex: Pick<PlainNoteIndex, "on" | "whenIndexed">;
   profile: ProfileReader;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<

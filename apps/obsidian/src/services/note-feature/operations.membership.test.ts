@@ -285,7 +285,6 @@ async function harness(
     template,
     settings,
     noteIndex: {
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: (key) => notesByKey.get(key) ?? [],
       getImportedNoteByNoteKey: () => [],

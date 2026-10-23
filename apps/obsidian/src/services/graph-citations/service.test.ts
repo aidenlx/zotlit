@@ -32,7 +32,7 @@ import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import type { Settings } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -652,7 +652,7 @@ function makeFixture(options: FixtureOptions = {}) {
     citationLookup: citationIndex.lookup,
     // The stub answers plain `{ path }` records where the index answers files.
     noteIndex: noteIndex as unknown as Pick<
-      NoteIndex,
+      PlainNoteIndex,
       "getIndexedItemKeys" | "getNotesByItemKey" | "on"
     >,
     citekeyEditor: { openCitekey, openIndexedKey },

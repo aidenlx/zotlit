@@ -35,7 +35,7 @@ import type {
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { QueryService } from "@/services/item-query/service";
 import { childNoteLink } from "@/services/note-import/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
@@ -100,8 +100,8 @@ export interface NoteFeatureDeps {
   /** ZotLit Query, which tests the Profile Matches of an Item. */
   query: Pick<QueryService, "run">;
   noteIndex: Pick<
-    NoteIndex,
-    "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   settings: Pick<SettingsService, "current" | "loaded" | "update">;

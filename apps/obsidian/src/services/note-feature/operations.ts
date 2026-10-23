@@ -526,11 +526,9 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
   return {
     reportExcerptImages: (summary) =>
       events.emit("excerpt-images-reported", summary),
-    ready: Promise.all([
-      deps.template.ready,
-      deps.noteIndex.ready,
-      deps.profile.ready,
-    ]).then(() => {}),
+    ready: Promise.all([deps.template.ready, deps.profile.ready]).then(
+      () => {},
+    ),
     createNote: createAtGate,
     resolveCompanionNote: (indexedKey, options) =>
       resolveCompanionNote(ctx, indexedKey, options),

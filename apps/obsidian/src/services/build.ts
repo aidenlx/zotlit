@@ -60,7 +60,7 @@ import type { BatchImport } from "./note-import/batch-import";
 import { createNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
-import { NoteIndex } from "./note-index/service";
+import { plainNoteIndex } from "./note-index/plain";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
@@ -151,8 +151,8 @@ export function buildServices(
       template: ({ settings }) =>
         new TemplateService({ app: plugin.app, settings }),
     })
-    .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+    .useValue({
+      noteIndex: () => plainNoteIndex(runtime),
     })
     .use({
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),

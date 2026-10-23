@@ -8,7 +8,7 @@ import { apiVersion } from "obsidian";
 
 import type { VersionedCliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
@@ -71,7 +71,10 @@ import { choices } from "./vocabulary";
 interface TemplateWorkbenchRegistrationDeps {
   app: App;
   zoteroReads: ZoteroReadsService;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
   settings: SettingsService;
   profile: ProfileService;
   templates: TemplateService;
