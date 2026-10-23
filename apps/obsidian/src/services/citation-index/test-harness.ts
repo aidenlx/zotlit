@@ -331,6 +331,18 @@ export class DatabaseStub implements AsyncDisposable {
     return statements.join("\n");
   }
 
+  #lookupBarrier: {
+    entered: PromiseWithResolvers<void>;
+    release: PromiseWithResolvers<void>;
+  } | null = null;
+
+  holdLookup() {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    this.#lookupBarrier = { entered, release };
+    return { entered: entered.promise, release: () => release.resolve() };
+  }
+
   readonly #client = () =>
     Effect.map(
       Effect.promise(() => this.#service.ready),
@@ -340,6 +352,12 @@ export class DatabaseStub implements AsyncDisposable {
           CitationLookup: (payload, options) =>
             Effect.gen({ self: this }, function* () {
               yield* Effect.promise(() => this.#ready.promise);
+              const barrier = this.#lookupBarrier;
+              this.#lookupBarrier = null;
+              if (barrier) {
+                barrier.entered.resolve();
+                yield* Effect.promise(() => barrier.release.promise);
+              }
               if (this.state === "degraded" || this.citekeys.error)
                 return yield* new DbUnavailable({
                   message:
@@ -752,6 +770,8 @@ export async function createCitationIndexHarness(
   );
   const index = stack.use(
     new CitationIndex({
+      db,
+      libraryScope,
       app,
       noteIndex,
       settings,

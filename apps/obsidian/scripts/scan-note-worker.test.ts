@@ -33,14 +33,15 @@ it("runs the production parse worker without Obsidian (#1691)", async () => {
       text: "[](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
     },
   });
-  expect(await response).toEqual([
+  const [message] = await response;
+  expect([{ id: message.id, reply: JSON.parse(message.json) }]).toEqual([
     {
       id: 7,
       reply: {
         path: "draft.md",
         generation: 12,
         record: {
-          ranges: [{ kind: "link-destination", from: 3, to: 61 }],
+          ranges: [],
           links: [],
           citations: [],
           citekeys: [],

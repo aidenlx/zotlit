@@ -17,6 +17,11 @@ PANDOC_VERSION:must_be_at_least(
 --- Collected before anything aborts, so one run reports every problem.
 local errors = {}
 
+--@variant sandbox
+local selected_literals
+local literal_marker
+--@end
+
 local function add_error(code, message, context)
   errors[#errors + 1] = { code = code, message = message, context = context }
 end
@@ -246,6 +251,10 @@ local function load_citations()
     end
     report_errors()
   end
+--@variant sandbox
+  selected_literals = payload.selectedLiterals
+  literal_marker = payload.literalMarker
+--@end
   return payload.citations or {}
 end
 
@@ -597,6 +606,21 @@ end
 function Pandoc(doc)
   doc.meta = resolve_style(doc.meta)
   citations = load_citations()
+--@variant sandbox
+  if selected_literals then
+    local body = pandoc.Pandoc(doc.blocks):walk({ Cite = function(cite)
+      for _, citation in ipairs(cite.citations) do
+        if not selected_literals[citation.id] then
+          return cite.content
+        end
+      end
+    end, Header = function(header)
+      header.identifier = header.identifier:gsub(literal_marker:lower() .. "%d+", "")
+      return header
+    end })
+    doc.blocks = body.blocks
+  end
+--@end
   local converted = doc:walk({ Inlines = process_inlines, BlockQuote = convert_callout })
   if #errors > 0 then
     report_errors()

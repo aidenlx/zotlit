@@ -12,6 +12,7 @@ import {
   annotationRows,
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
+import { citationOutcome } from "@/services/citation-index/outcome";
 import type {
   Citation,
   ReferenceSource,
@@ -26,7 +27,6 @@ import {
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
-import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText, noteContent } from "@/services/pandoc/inline-content";
@@ -414,6 +414,54 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     ).toEqual(["Doe. Doe study.", "Roe. Roe study."]);
   });
 
+  it("#1683 omits masked comments from the CitationText render input", async () => {
+    const body = "[@a and %% @hidden %%]";
+    const inputs: string[] = [];
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": body },
+      {
+        citekeys: [
+          {
+            itemID: 1,
+            libraryID: 1,
+            key: "ABCD2345",
+            indexedKey: KEY_A,
+            citekey: "a",
+          },
+        ],
+      },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, {
+      xml: AUTHOR_STYLE,
+      observeInput: (citations) => inputs.push(...citations),
+    });
+    await text.ready;
+    await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    const output = firstText(rendered.formatted.get(body));
+    expect(output).toContain("Zeta");
+    expect(output).not.toContain("hidden");
+    expect(output).not.toContain("%%");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).not.toContain("hidden");
+    expect(inputs[0]).not.toContain("%%");
+  });
+
+  it("#1683 keeps resolved Items of a partial Author-in-text Citation in numeric context", async () => {
+    const body = "@doe2024 [p. 3; @ghost], then @roe2025.";
+    await using harness = await createCitationIndexHarness({
+      "draft.md": body,
+    });
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NUMERIC_STYLE);
+    await text.ready;
+    await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    expect(rendered.formatted.has("@doe2024 [p. 3; @ghost]")).toBe(false);
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+  });
+
   it("keeps resolved items from a partial cluster in numeric context", async () => {
     const body = "Partial [@doe2024; @ghost], then complete @roe2025.";
     await using harness = await createCitationIndexHarness({
@@ -557,10 +605,13 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 function openText(
   { app, index, lookup, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
-  styleXml: string,
+  style:
+    | string
+    | { xml: string; observeInput: (citations: readonly string[]) => void },
 ): CitationText {
+  const { xml: styleXml, observeInput } =
+    typeof style === "string" ? { xml: style, observeInput: undefined } : style;
   return new CitationText({
-    citationParse: inProcessParseClient,
     openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
     app,
@@ -570,8 +621,10 @@ function openText(
     noteIndex,
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      readCitations: (citations, items) =>
-        engine.renderCitations({ citations, items, styleXml }),
+      readCitations: (citations, items) => {
+        observeInput?.(citations);
+        return engine.renderCitations({ citations, items, styleXml });
+      },
       readBibliography: async (items) => {
         const entries = await engine.renderBibliography({ items, styleXml });
         return {
@@ -603,17 +656,23 @@ async function sidebarEntries(
     items,
     styleXml,
   });
-  return buildReferenceEntries(citations, sources, {
-    bibliography: {
-      complete: true,
-      entries: new Map(
-        bibliography.map(({ id, marker, content }) => [
-          id,
-          { marker, content },
-        ]),
-      ),
+  return buildReferenceEntries(
+    citations.map((c) => ({
+      ...c,
+      outcome: citationOutcome(c, { sources, database: "ready" }),
+    })),
+    {
+      bibliography: {
+        complete: true,
+        entries: new Map(
+          bibliography.map(({ id, marker, content }) => [
+            id,
+            { marker, content },
+          ]),
+        ),
+      },
     },
-  });
+  );
 }
 
 function referenceSources(): ReadonlyMap<string, ReferenceSource> {

@@ -77,8 +77,10 @@ describe("minimalReferencesState", () => {
 
     store.setState(
       minimalReferencesState({
-        citations,
-        sources: new Map([["BOOK0001", source]]),
+        citations: citations.map((c) => ({
+          ...c,
+          outcome: { kind: "resolved", source },
+        })),
         errors: [],
         formattingFailed: true,
       }),

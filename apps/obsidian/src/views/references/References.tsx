@@ -401,6 +401,14 @@ function referencePresentation(
         noteDisabled: false,
         source: entry.source,
       };
+    case "unreadable":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_db_unavailable(),
+        noteDisabled: true,
+        source: undefined,
+      };
     case "missing":
       return {
         gutter: "⚠",
@@ -478,6 +486,8 @@ function ReferenceBody({
           {entry.source.summary}
         </span>
       );
+    case "unreadable":
+      return <span>{m.references_db_unavailable()}</span>;
     case "missing":
       return (
         <span className={cn(textClass, "zt:text-destructive")}>

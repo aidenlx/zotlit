@@ -13,8 +13,9 @@ import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
-import type { Citation } from "@/services/citation-index/service";
 // @vitest-environment happy-dom
+import { ParsedNote } from "@/services/citation-index/parsed-note";
+import type { Citation } from "@/services/citation-index/service";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import {
   ALPHA_KEY,
@@ -163,7 +164,6 @@ async function makeHarness({
   );
   const citationText = stack.use(
     new CitationText({
-      citationParse: inProcessParseClient,
       openDocuments: new OpenDocumentsStub(),
       citationLookup,
       profile: profileReader(defaults, {
@@ -184,6 +184,32 @@ async function makeHarness({
       },
       db: reads,
       citationIndex: {
+        getParsedDocument: async () => ({
+          facts: new ParsedNote(
+            body,
+            (
+              await inProcessParseClient.parse(
+                { path: "note.md", generation: 0, text: body },
+                new AbortController().signal,
+              )
+            ).record,
+          ),
+          set: {
+            occurrences,
+            citations: cited,
+            errors: [],
+            lookup: answer(occurrences.map((o) => o.raw)),
+            sources: new Map(),
+            database: "ready",
+            syntaxes: {
+              citekey: "included",
+              wikilink: "excluded",
+              annotation: "included",
+            },
+            omittedSyntaxes: [],
+            coverage: "complete",
+          },
+        }),
         getDocumentCitationSet: () =>
           Promise.resolve({
             occurrences,

@@ -5,7 +5,6 @@ import { buildReferenceEntries } from "@/views/references/entries";
 
 import { annotationRows, annotationUri } from "./__fixtures__/annotations";
 import type { CitedBySnapshot } from "./service";
-import { readReferenceSources } from "./sources";
 import { createCitationIndexHarness, KEY_A, KEY_B } from "./test-harness";
 
 it("#1693 numbers Annotation Citations with other sources and lists their notes in Cited By", async () => {
@@ -85,7 +84,7 @@ it("#1693 keeps a deleted Annotation as an unresolved reference distinct from a 
       occurrences: [{ kind: "citekey", raw: "ZZZZZZZZ" }],
     },
   ]);
-  expect(buildReferenceEntries(set.citations, new Map())).toMatchObject([
+  expect(buildReferenceEntries(set.citations)).toMatchObject([
     { kind: "unresolved", annotationKey: "ZZZZZZZZ" },
     { kind: "unresolved", citekey: "ZZZZZZZZ" },
   ]);
@@ -119,8 +118,7 @@ it.each([
     );
     const set = await harness.index.getDocumentCitationSet(harness.draft);
     expect(set.citations).toMatchObject([{ indexedKey: key, refNumber: 1 }]);
-    const { sources } = await readReferenceSources(harness.db, set.citations);
-    expect(buildReferenceEntries(set.citations, sources)).toMatchObject([
+    expect(buildReferenceEntries(set.citations)).toMatchObject([
       { kind: "summary", source: { citekey } },
     ]);
   },
@@ -145,7 +143,7 @@ it("#1693 reports an attachment-only empty link as a Reference Error", async () 
     },
   ]);
   expect(
-    buildReferenceEntries(set.citations, new Map(), { errors: set.errors }),
+    buildReferenceEntries(set.citations, { errors: set.errors }),
   ).toMatchObject([{ kind: "malformed" }]);
   settings.update({ "citation.annotation-citations": false });
   expect((await index.getDocumentCitationSet(draft)).errors).toEqual([]);

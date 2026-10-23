@@ -36,7 +36,7 @@ export async function scanBenchmarkWorker() {
     const waiter = pending.get(message.data.id);
     pending.delete(message.data.id);
     if ("error" in message.data) waiter?.reject(new Error(message.data.error));
-    else waiter?.resolve(message.data.reply);
+    else waiter?.resolve(JSON.parse(message.data.json) as ParseReply);
   });
   worker.on("error", (error) => {
     for (const waiter of pending.values()) waiter.reject(error);

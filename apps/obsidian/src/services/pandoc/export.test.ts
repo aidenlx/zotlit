@@ -352,7 +352,7 @@ describe("exportCitedDocument", () => {
       ];
       expect(
         JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-      ).toEqual({ citations: {} });
+      ).toMatchObject({ citations: {}, selectedLiterals: {} });
     },
   );
 
@@ -589,6 +589,24 @@ describe(
           "<pre><code>%% [@a] %%</code></pre>",
         ],
         absent: ["data-cites=", 'id="ref-'],
+      },
+      {
+        name: "#1683 preserves explicit identifiers that resemble internal citation markers",
+        markdown: "# Title {#zotlitparsedcitation0}\n\n[@a]",
+        contains: ['id="zotlitparsedcitation0"', 'id="ref-a"'],
+        absent: ['id="title"'],
+      },
+      {
+        name: "#1683 inline comment preserves the worker citation key boundary",
+        markdown: "[@a%% hidden %%b]",
+        contains: ['data-cites="a"', 'id="ref-a"'],
+        absent: ['data-cites="ab"', 'id="ref-ab"', "hidden", "%%"],
+      },
+      {
+        name: "#1683 worker-excluded math citation stays source text in Pandoc",
+        markdown: "$$\n[@hidden]\n\n[@a]",
+        contains: ["[@hidden]"],
+        absent: ['data-cites="hidden"', 'id="ref-hidden"'],
       },
       {
         name: "only the selected key in a comment-bearing citation",

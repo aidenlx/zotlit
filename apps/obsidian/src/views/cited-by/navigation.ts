@@ -3,19 +3,18 @@ import { Keymap, TFile } from "obsidian";
 import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 
-import { occurrencesEqual } from "@/services/citation-index/scan";
+export { currentOccurrence } from "@/services/citation-index/parsed-note";
 import type {
   CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
-import type { FileScan } from "@/services/citation-index/store";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 export async function openCitedByOccurrence(
   app: App,
   options: {
-    citationIndex: Pick<CitationIndex, "getFileScan">;
+    citationIndex: Pick<CitationIndex, "getParsedNote">;
     group: CitedByGroup;
     occurrence: CitationOccurrence;
     event: MouseEvent;
@@ -31,14 +30,8 @@ export async function openCitedByOccurrence(
 
   let current: CitationOccurrence | null = null;
   try {
-    const mtime = file.stat.mtime;
-    const [source, scan] = await Promise.all([
-      app.vault.cachedRead(file),
-      citationIndex.getFileScan(file),
-    ]);
-    if (file.stat.mtime === mtime) {
-      current = currentOccurrence({ scan, source, occurrence });
-    }
+    const facts = await citationIndex.getParsedNote(file);
+    current = facts.currentOccurrence(occurrence);
   } catch {
     // Opening the note remains useful when its current source cannot be read.
   }
@@ -54,47 +47,4 @@ export async function openCitedByOccurrence(
     occurrence: current,
     preferredLeaf: app.workspace.activeLeaf,
   });
-}
-
-export function currentOccurrence(options: {
-  scan: Readonly<FileScan> | null;
-  source: string;
-  occurrence: CitationOccurrence;
-}): CitationOccurrence | null {
-  const { scan, source, occurrence } = options;
-  if (scan === null) return null;
-  const candidates: CitationOccurrence[] = [
-    ...scan.citekeys,
-    ...scan.wikilinks,
-    ...scan.annotations
-      .filter(({ form }) => form === "citation")
-      .map(({ indexedKey, position, pageLabel }): CitationOccurrence => ({
-        kind: "annotation",
-        raw: indexedKey,
-        position,
-        pageLabel,
-      })),
-  ];
-  return (
-    candidates.find(
-      (candidate) =>
-        occurrencesEqual([candidate], [occurrence]) &&
-        positionMatchesSource(source, candidate),
-    ) ?? null
-  );
-}
-
-function positionMatchesSource(
-  source: string,
-  occurrence: CitationOccurrence,
-): boolean {
-  const { start, end } = occurrence.position;
-  const beforeStart = source.slice(0, start.offset);
-  const beforeEnd = source.slice(0, end.offset);
-  return (
-    start.line === beforeStart.split("\n").length - 1 &&
-    start.col === start.offset - (beforeStart.lastIndexOf("\n") + 1) &&
-    end.line === beforeEnd.split("\n").length - 1 &&
-    end.col === end.offset - (beforeEnd.lastIndexOf("\n") + 1)
-  );
 }

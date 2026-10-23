@@ -4,12 +4,10 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
 import type {
   Citation,
   CitationKeyResolution,
   DocumentCitationError,
-  ReferenceSource,
 } from "@/services/citation-index/service";
 import type { DocumentPresentationFailure } from "@/services/pandoc/document-presentation";
 import type { PandocEngineStatus } from "@/services/pandoc/service";
@@ -138,15 +136,12 @@ export function referencesCopyState({
 /** The current plain-list state after formatted entries become unusable. */
 export function minimalReferencesState(options: {
   citations: readonly Citation[];
-  sources: ReadonlyMap<string, ReferenceSource>;
   errors: readonly DocumentCitationError[];
   formattingFailed: boolean;
-  /** The candidates an Ambiguous Citation Key names; see {@link buildReferenceEntries}. */
-  ambiguous?: AmbiguousCandidatesOf;
 }): Pick<ReferencesState, "entries" | "listMode" | "formattingFailed"> {
-  const { citations, sources, errors, formattingFailed, ambiguous } = options;
+  const { citations, errors, formattingFailed } = options;
   return {
-    entries: buildReferenceEntries(citations, sources, { errors, ambiguous }),
+    entries: buildReferenceEntries(citations, { errors }),
     listMode: { kind: "minimal" },
     formattingFailed,
   };

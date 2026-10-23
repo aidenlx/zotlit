@@ -557,8 +557,17 @@ export function buildServices(
       citationParse: () => plainCitationParse(runtime),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, citationLookup, citationParse }) =>
+      citationIndex: ({
+        noteIndex,
+        settings,
+        citationLookup,
+        citationParse,
+        zoteroReads,
+        libraryScope,
+      }) =>
         new CitationIndex({
+          db: zoteroReads,
+          libraryScope,
           app: plugin.app,
           noteIndex,
           settings,
@@ -592,7 +601,6 @@ export function buildServices(
         profile,
         zoteroReads,
         citationIndex,
-        citationParse,
         citationLookup,
         noteIndex,
         bibliographyRender,
@@ -603,7 +611,6 @@ export function buildServices(
           app: plugin.app,
           db: zoteroReads,
           citationIndex,
-          citationParse,
           citationLookup,
           noteIndex,
           bibliographyRender,

@@ -660,8 +660,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerCitationsCli(this, {
       app: this.app,
       citationIndex: services.citationIndex,
-      citationLookup: services.citationLookup,
-      db: services.zoteroReads,
       zoteroPref: services.zoteroPref,
     });
 

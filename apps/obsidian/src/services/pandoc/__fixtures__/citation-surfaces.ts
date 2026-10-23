@@ -350,7 +350,6 @@ export async function openCitationVault({
 
   const citationText = stack.use(
     new CitationText({
-    citationParse: inProcessParseClient,
       openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,

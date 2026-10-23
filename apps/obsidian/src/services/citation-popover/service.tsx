@@ -441,7 +441,7 @@ async function readBlocks(
           presented.items,
           presented.presentation,
         );
-  const entries = buildReferenceEntries(citations, sources, {
+  const entries = buildReferenceEntries(citations, {
     bibliography:
       outcome?.kind === "held"
         ? {

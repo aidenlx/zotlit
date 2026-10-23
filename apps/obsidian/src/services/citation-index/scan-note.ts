@@ -5,6 +5,7 @@ import { regex } from "arkregex";
 import { decodeHTMLStrict } from "entities/decode";
 
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
+import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
 import type { AnnotationLink } from "@/lib/annotation-link";
 import { classifyAnnotationLink } from "@/lib/annotation-link";
@@ -38,12 +39,7 @@ export interface NoteScanRecord {
   /** Transient syntax ranges for whole-document export; never persisted. */
   ranges: (
     | {
-        kind:
-          | "code"
-          | "frontmatter"
-          | "link-destination"
-          | "comment"
-          | "text-dollar";
+        kind: "comment" | "text-dollar";
         from: number;
         to: number;
       }
@@ -64,11 +60,9 @@ export interface NoteScanRecord {
     position: SourcePosition;
   }[];
   /** Whole Pandoc spans retain author-in-text groups for rendering and export. */
-  citations: {
-    start: number;
-    end: number;
+  citations: (ScannedPandocCitation & {
     keys: { citekey: string; start: number; end: number }[];
-  }[];
+  })[];
   citekeys: NoteCitationOccurrence[];
   wikilinks: NoteCitationOccurrence[];
   malformedWikilinks: { occurrence: NoteCitationOccurrence }[];
@@ -480,18 +474,10 @@ export function scanNote(text: string): NoteScanRecord {
                 ? null
                 : text.slice(lineStart, from).replaceAll(/[^>\t ]/g, " "),
           });
-        } else {
-          record.ranges.push({
-            kind: name === "Frontmatter" ? "frontmatter" : "code",
-            from,
-            to,
-          });
         }
         mask(body, from, to);
         return false;
       }
-      if (name === "URL")
-        record.ranges.push({ kind: "link-destination", from, to });
     },
   });
   // Pair markers after parsing: comments can cross quote and list boundaries,
@@ -658,8 +644,7 @@ export function scanNote(text: string): NoteScanRecord {
   }
   for (const citation of scanPandocCitations(visible)) {
     record.citations.push({
-      start: citation.start,
-      end: citation.end,
+      ...citation,
       keys: citation.items.map(({ citationKey, start, end }) => ({
         citekey: citationKey,
         start,

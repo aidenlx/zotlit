@@ -1,0 +1,218 @@
+// Complete CLI reads over the real index, worker boundary and in-memory Zotero database.
+import { TestClock } from "effect/testing";
+import { expect } from "vitest";
+
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { Effect, Fiber } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
+import {
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
+import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
+import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
+
+import { registerCitationsCli } from "./register";
+
+function commands(h: CitationIndexHarness) {
+  Object.assign(h.app.vault, {
+    getName: () => "Test",
+    adapter: { getBasePath: () => "/test" },
+  });
+  const cli = fakeCliHost();
+  registerCitationsCli(cli.host, {
+    app: h.app,
+    citationIndex: h.index,
+    zoteroPref: {
+      ready: Promise.resolve(),
+      sourceId: "test",
+      databasePath: "/test/zotero.sqlite",
+    },
+  });
+  return cli.command;
+}
+
+it.effect.each(["annotation-uses", "cited-by"])(
+  "#1683 waits for an edited note before answering %s as complete",
+  (command) =>
+    Effect.gen(function* () {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let held = false;
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": `[](${annotationUri})` },
+          {
+            zoteroRows: annotationRows,
+            parseClient: {
+              async parse(request, signal) {
+                if (held) {
+                  entered.resolve();
+                  await release.promise;
+                }
+                return inProcessParseClient.parse(request, signal);
+              },
+            },
+          },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      const cli = commands(h);
+      held = true;
+      h.metadataCache.change(
+        h.draft,
+        `[](${annotationUri}) [](${annotationUri})`,
+      );
+      yield* Effect.promise(() => entered.promise);
+      const fiber = yield* cli(`zotlit:${command}`)
+        .handler({
+          key: command === "annotation-uses" ? "ANN23456" : "ABCD2345",
+        })
+        .pipe(Effect.forkChild);
+      // The worker reply is the completion boundary, released after the command starts.
+      yield* TestClock.adjust(100);
+      release.resolve();
+      const answer = JSON.parse(yield* Fiber.join(fiber));
+      expect(answer.coverage).toBe("complete");
+      expect(answer.groups[0].occurrences).toHaveLength(2);
+    }),
+);
+
+it.effect(
+  "#1683 keeps the captured annotation keys when a note changes during lookup",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": `[](${annotationUri})` },
+          { zoteroRows: annotationRows },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      const cli = commands(h);
+      const held = h.db.holdLookup();
+      const fiber = yield* cli("zotlit:cited-by")
+        .handler({ key: "ABCD2345" })
+        .pipe(Effect.forkChild);
+      yield* Effect.promise(() => held.entered);
+      h.metadataCache.change(
+        h.draft,
+        `[](${annotationUri}) [](zotero://open/library/items/PDFNCKEY?annotation=ANNNCKEY)`,
+      );
+      yield* Effect.promise(() => h.index.getFileScan(h.draft));
+      held.release();
+      const answer = JSON.parse(yield* Fiber.join(fiber));
+      expect(answer.ok).toBe(true);
+      expect(answer.groups[0].occurrences).toHaveLength(1);
+      const next = JSON.parse(
+        yield* cli("zotlit:cited-by").handler({ key: "NCKEY234" }),
+      );
+      expect(next.groups[0].occurrences[0].raw).toBe("ANNNCKEY");
+    }),
+);
+
+it.effect(
+  "#1683 captures References entries, omissions and source choices together",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": `[](${annotationUri})` },
+          { zoteroRows: annotationRows },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      const cli = commands(h);
+      const held = h.db.holdLookup();
+      const fiber = yield* cli("zotlit:references")
+        .handler({ file: "draft.md" })
+        .pipe(Effect.forkChild);
+      yield* Effect.promise(() => held.entered);
+      h.settings.update({ "citation.annotation-citations": false });
+      held.release();
+      const answer = JSON.parse(yield* Fiber.join(fiber));
+      expect(answer.entries).toMatchObject([
+        { kind: "resolved", key: "ABCD2345" },
+      ]);
+      expect(answer.omittedSyntaxes).toEqual([]);
+      expect(answer.syntaxes.annotation).toBe("included");
+      const next = JSON.parse(
+        yield* cli("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(next.entries).toEqual([]);
+      expect(next.omittedSyntaxes).toEqual(["annotation"]);
+      expect(next.syntaxes.annotation).toBe("excluded");
+    }),
+);
+
+it.effect(
+  "#1683 reports incomplete coverage when a pending edit exceeds the bounded wait",
+  () =>
+    Effect.gen(function* () {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let held = false;
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": "@doe2024" },
+          {
+            parseClient: {
+              async parse(request, signal) {
+                if (held) {
+                  entered.resolve();
+                  await release.promise;
+                }
+                return inProcessParseClient.parse(request, signal);
+              },
+            },
+          },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      held = true;
+      h.metadataCache.change(h.draft, "@doe2024 @roe2025");
+      yield* Effect.promise(() => entered.promise);
+      const fiber = yield* commands(h)("zotlit:cited-by")
+        .handler({ key: "ABCD2345" })
+        .pipe(Effect.forkChild);
+      yield* TestClock.adjust(5_001);
+      const answer = JSON.parse(yield* Fiber.join(fiber));
+      release.resolve();
+      expect(answer).toMatchObject({
+        ok: false,
+        coverage: "indexing",
+        diagnostic: { code: "INDEX_NOT_READY" },
+      });
+    }),
+);
+
+it.effect(
+  "reads a changed note on demand before its metadata event arrives",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": "@doe2024" },
+          { zoteroRows: annotationRows },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      const body = "@doe2024 @roe2025";
+      h.vault.bodies.set(h.draft.path, body);
+      h.draft.stat.mtime += 1;
+      h.draft.stat.size = body.length;
+      const answer = JSON.parse(
+        yield* commands(h)("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(answer.entries.map((entry: { key: string }) => entry.key)).toEqual(
+        ["ABCD2345", "ZZZ99999g7"],
+      );
+    }),
+);

@@ -117,6 +117,41 @@ export function formatPandocCitation(
   for (const { item, itemIndex } of keyed) {
     assertSafeItemProperties(item, itemIndex);
   }
+  const source = formatKeyedCitation(keyed, form);
+  assertFormattedSource(
+    source,
+    keyed,
+    form === "prefer-author-in-text" &&
+      keyed[0]!.item.prefix === null &&
+      !keyed[0]!.item.suppressAuthor,
+  );
+  return source;
+}
+
+/** Render already parsed Items, selecting and renaming their keys without re-parsing source. */
+export function rewriteScannedPandocCitation(
+  citation: ScannedPandocCitation,
+  keys: readonly (string | null)[],
+): string {
+  const keyed = citation.items.flatMap((item, itemIndex) => {
+    const citationKey = keys[itemIndex];
+    return citationKey == null
+      ? []
+      : [{ item: { ...item, citationKey }, itemIndex }];
+  });
+  if (keyed.length === 0) return "";
+  return formatKeyedCitation(
+    keyed,
+    citation.mode === "author-in-text" && keyed[0]!.itemIndex === 0
+      ? "prefer-author-in-text"
+      : "normal",
+  );
+}
+
+function formatKeyedCitation(
+  keyed: readonly { item: PandocCitationItem; itemIndex: number }[],
+  form: PandocCitationForm,
+): string {
   const first = keyed[0]!;
   const authorInText =
     form === "prefer-author-in-text" &&
@@ -127,7 +162,6 @@ export function formatPandocCitation(
     : `[${keyed
         .map(({ item, itemIndex }) => formatNormalItem(item, itemIndex))
         .join("; ")}]`;
-  assertFormattedSource(source, keyed, authorInText);
   return source;
 }
 

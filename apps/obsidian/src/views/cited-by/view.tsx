@@ -23,7 +23,7 @@ export const CITED_BY_VIEW_TYPE = "zotlit-cited-by";
 
 export interface CitedByViewDeps {
   app: App;
-  citationIndex: Pick<CitationIndex, "observeCitedBy" | "getFileScan">;
+  citationIndex: Pick<CitationIndex, "observeCitedBy" | "getParsedNote">;
 }
 
 export class CitedByView extends ItemView {

@@ -305,7 +305,17 @@ it.each(cases)("$id", ({ id, text, record, links }) => {
   const expectedLinks = difference ? linkFacts(text, difference.links) : links;
   const normalized = normalizedWikilinks[id];
   const { ranges: _ranges, ...occurrences } = scanNote(text);
-  expect(occurrences, difference?.reason).toEqual({
+  expect(
+    {
+      ...occurrences,
+      citations: occurrences.citations.map(({ start, end, keys }) => ({
+        start,
+        end,
+        keys,
+      })),
+    },
+    difference?.reason,
+  ).toEqual({
     ...empty,
     ...record,
     ...(normalized ? { wikilinks: normalized } : {}),
@@ -371,7 +381,14 @@ it("token/display-math/newline-escaped-close: an escaped $$ leaves the payload v
     pageLabel: null,
   };
   const { ranges: _ranges, ...occurrences } = scanNote(text);
-  expect(occurrences).toEqual({
+  expect({
+    ...occurrences,
+    citations: occurrences.citations.map(({ start, end, keys }) => ({
+      start,
+      end,
+      keys,
+    })),
+  }).toEqual({
     ...empty,
     links: [
       {
@@ -421,7 +438,14 @@ it("token/display-math/newline-escaped-close: an escaped $$ leaves the payload v
 
 it("an inline footnote in a link label keeps the Annotation link labelled (#1689)", () => {
   const { ranges: _ranges, ...occurrences } = scanNote(`[^[note]](${uri})`);
-  expect(occurrences).toEqual({
+  expect({
+    ...occurrences,
+    citations: occurrences.citations.map(({ start, end, keys }) => ({
+      start,
+      end,
+      keys,
+    })),
+  }).toEqual({
     ...empty,
     annotations: [
       {
@@ -438,7 +462,14 @@ it("an inline footnote in a link label keeps the Annotation link labelled (#1689
 
 it("a footnote definition ends at its first closing bracket, so a following Wikilink stays visible (#1689)", () => {
   const { ranges: _ranges, ...occurrences } = scanNote("[^a] [[Note]]: body");
-  expect(occurrences).toEqual({
+  expect({
+    ...occurrences,
+    citations: occurrences.citations.map(({ start, end, keys }) => ({
+      start,
+      end,
+      keys,
+    })),
+  }).toEqual({
     ...empty,
     links: [
       {

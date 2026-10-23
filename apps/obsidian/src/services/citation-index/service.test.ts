@@ -376,7 +376,7 @@ describe("CitationIndex", () => {
     const set = await index.getDocumentCitationSet(draft);
 
     expect(set.citations).toMatchObject([{ indexedKey: KEY_B, refNumber: 1 }]);
-    expect(set.errors).toEqual([
+    expect(set.errors).toMatchObject([
       {
         kind: "malformed-wikilink",
         occurrence: {
