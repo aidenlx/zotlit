@@ -1514,6 +1514,7 @@ describe("createNote", () => {
     const whenIndexed = new Promise<void>((resolve) => {
       resolveIndexed = resolve;
     });
+    const indexingRequested = Promise.withResolvers<void>();
     let createCalledBeforeSignal = false;
 
     const app = makeApp();
@@ -1538,7 +1539,10 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        whenIndexed: () => whenIndexed,
+        whenIndexed: () => {
+          indexingRequested.resolve();
+          return whenIndexed;
+        },
         getNotesByItemKey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
@@ -1547,9 +1551,7 @@ describe("createNote", () => {
     };
 
     const createPromise = createNoteFeature(deps).createNote(item);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await indexingRequested.promise;
     expect(createCalledBeforeSignal).toBe(false);
 
     resolveIndexed();
@@ -1800,6 +1802,7 @@ describe("createNote", () => {
       const templateReady = new Promise<void>((resolve) => {
         resolveReady = resolve;
       });
+      const readinessRequested = Promise.withResolvers<void>();
       let renderFilenameCalledBeforeSignal = false;
 
       const app = makeApp();
@@ -1807,11 +1810,19 @@ describe("createNote", () => {
         app,
         profile: {
           ...profileReader(makeSettings().current!),
-          ready: service === "profile" ? templateReady : Promise.resolve(),
+          get ready() {
+            if (service !== "profile") return Promise.resolve();
+            readinessRequested.resolve();
+            return templateReady;
+          },
         },
         template: {
           renderManagedContent: () => "",
-          ready: service === "template" ? templateReady : Promise.resolve(),
+          get ready() {
+            if (service !== "template") return Promise.resolve();
+            readinessRequested.resolve();
+            return templateReady;
+          },
           loaded: true,
           frontmatterFields: [],
           getLiteratureNoteTemplate: () => undefined,
@@ -1835,9 +1846,7 @@ describe("createNote", () => {
       };
 
       const createPromise = createNoteFeature(deps).createNote(item);
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      await readinessRequested.promise;
       expect(renderFilenameCalledBeforeSignal).toBe(false);
 
       resolveReady();

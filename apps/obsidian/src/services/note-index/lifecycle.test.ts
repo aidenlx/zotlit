@@ -22,6 +22,28 @@ import {
 import { NoteIndex } from "./service";
 import type { NoteIndexChange } from "./service";
 
+// #1705: completion covers every queued rename read, including key restoration.
+it.effect("whenSettled waits for queued renames to restore their keys", () =>
+  Effect.gen(function* () {
+    const host = createNoteHost(
+      {
+        "first.md": cache({ itemKey: "ABCD2345" }),
+        "second.md": cache({ itemKey: "ZZZ99999" }),
+      },
+      { enabledAtRuntime: true },
+    );
+    const index = yield* noteIndexOf(host.app);
+    yield* index.whenSettled();
+    host.vault.renameFile("first.md", "first.txt");
+    host.vault.renameFile("second.md", "second.txt");
+    expect(yield* index.getIndexedItemKeys()).toEqual([]);
+    host.vault.renameFile("first.txt", "first.md");
+    host.vault.renameFile("second.txt", "second.md");
+    yield* index.whenSettled();
+    expect(yield* index.getIndexedItemKeys()).toEqual(["ABCD2345", "ZZZ99999"]);
+  }),
+);
+
 // Failure modes: close leaves listeners active, or a pending Full Scan runs
 // after close and changes the index.
 it.effect("scope close stops metadata and vault updates", () =>

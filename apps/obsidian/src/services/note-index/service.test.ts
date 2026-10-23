@@ -505,14 +505,14 @@ describe.each([
         });
 
         vault.renameFile("literatures/paper.md", "Drafts/moved.md");
-        yield* Effect.promise(() => settled());
+        yield* Effect.promise(() => service.whenSettled());
         expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
           "Drafts/moved.md",
         ]);
         expect(changed).toEqual(["Drafts/moved.md"]);
 
         vault.renameFile("Drafts/moved.md", "literatures/paper.md");
-        yield* Effect.promise(() => settled());
+        yield* Effect.promise(() => service.whenSettled());
         expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
           "literatures/paper.md",
         ]);
@@ -528,12 +528,12 @@ describe.each([
         });
 
         vault.renameFile("paper.md", "paper.md.away");
-        yield* Effect.promise(() => settled());
+        yield* Effect.promise(() => service.whenSettled());
         expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
 
         // The cache still holds the parse under the restored path and reports no change.
         vault.renameFile("paper.md.away", "paper.md");
-        yield* Effect.promise(() => settled());
+        yield* Effect.promise(() => service.whenSettled());
         expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
         expect(changed).toEqual(["paper.md.away", "paper.md"]);
       }),
@@ -541,10 +541,12 @@ describe.each([
 
   it.effect("stays quiet for a renamed ordinary note", () =>
     Effect.gen(function* () {
-      const { vault, changed } = yield* loaded({ "plain.md": cache({}) });
+      const { service, vault, changed } = yield* loaded({
+        "plain.md": cache({}),
+      });
 
       vault.renameFile("plain.md", "Notes/plain.md");
-      yield* Effect.promise(() => settled());
+      yield* Effect.promise(() => service.whenSettled());
 
       expect(changed).toEqual([]);
     }),
@@ -559,7 +561,7 @@ describe.each([
 
         // The cache holds nothing for the file yet.
         const file = vault.renameFile("paper.txt", "paper.md");
-        yield* Effect.promise(() => settled());
+        yield* Effect.promise(() => service.whenSettled());
         expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
 
         metadataCache.change(file, cache({ itemKey: ITEM_A }));
@@ -567,8 +569,3 @@ describe.each([
       }),
   );
 });
-
-/** Lets the vault finish its synchronous rename dispatch and what follows it. */
-function settled(): Promise<void> {
-  return new Promise((resolve) => queueMicrotask(resolve));
-}

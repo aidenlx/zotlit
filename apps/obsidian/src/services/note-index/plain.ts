@@ -19,6 +19,8 @@ export interface PlainNoteIndex {
   getPropertyNames(): string[];
   getIndexedItemKeys(): string[];
   whenIndexed(): Promise<void>;
+  /** Waits for queued rename reads, including those that change no keys. */
+  whenSettled(): Promise<void>;
   /** Future index changes until the returned function stops the subscription. */
   subscribe(callback: (change: NoteIndexChange) => void): () => void;
   /** Compatibility surface for existing event consumers. */
@@ -48,6 +50,7 @@ export function plainNoteIndex(
       runtime.runSync(index.getNotesByProfile(selector)),
     getPropertyNames: () => runtime.runSync(index.getPropertyNames()),
     getIndexedItemKeys: () => runtime.runSync(index.getIndexedItemKeys()),
+    whenSettled: () => runtime.runPromise(index.whenSettled()),
     whenIndexed: async () => {
       // The runtime interrupts its callers before it closes the layer. A
       // caller waiting for the Full Scan still settles during teardown.

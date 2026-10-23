@@ -132,6 +132,8 @@ export class NoteIndex extends Context.Service<
      * create-vs-existing decisions: a pre-scan read can mint a duplicate.
      */
     whenIndexed(): Effect.Effect<void>;
+    /** Waits for queued rename reads, including those that change no keys. */
+    whenSettled(): Effect.Effect<void>;
   }
 >()("zotlit/note-index/NoteIndex") {}
 
@@ -141,6 +143,7 @@ const makeNoteIndex = Effect.gen(function* () {
     type: "initial",
   });
   const indexed = yield* Deferred.make<void>();
+  const pendingRenames = new Set<Deferred.Deferred<void>>();
   const notesByItemKey = new Map<string, Set<TFile>>();
   const notesByNoteKey = new Map<string, Set<TFile>>();
   const contribByFile = new Map<TFile, FileContributions>();
@@ -228,6 +231,12 @@ const makeNoteIndex = Effect.gen(function* () {
     yield* Deferred.await(indexed);
   });
 
+  const whenSettled = Effect.fn("NoteIndex.whenSettled")(function* () {
+    yield* Effect.forEach([...pendingRenames], Deferred.await, {
+      discard: true,
+    });
+  });
+
   // Acquire listeners after the functions below have been initialized.
   const listen = Effect.fn("NoteIndex.listen")(function* () {
     const { metadataCache, vault } = app;
@@ -272,8 +281,15 @@ const makeNoteIndex = Effect.gen(function* () {
             return;
           }
           if (contribByFile.has(file)) run(publish({ type: "changed", file }));
+          const settled = run(Deferred.make<void>());
+          pendingRenames.add(settled);
           queueMicrotask(() => {
-            if (!disposed) run(apply(file, read(file)));
+            try {
+              if (!disposed) run(apply(file, read(file)));
+            } finally {
+              pendingRenames.delete(settled);
+              run(Deferred.succeed(settled, undefined));
+            }
           });
         }),
       ),
@@ -288,6 +304,9 @@ const makeNoteIndex = Effect.gen(function* () {
         disposed = true;
         if (fallbackRef) metadataCache.offref(fallbackRef);
         yield* Deferred.succeed(indexed, undefined);
+        for (const settled of pendingRenames)
+          yield* Deferred.succeed(settled, undefined);
+        pendingRenames.clear();
       }),
     );
     app.workspace.onLayoutReady(() => run(scanWhenCacheClean()));
@@ -464,6 +483,7 @@ const makeNoteIndex = Effect.gen(function* () {
     getPropertyNames,
     getIndexedItemKeys,
     whenIndexed,
+    whenSettled,
   });
 });
 

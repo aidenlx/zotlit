@@ -3552,9 +3552,17 @@ describe("Graph Work Labels", () => {
       },
     });
     engine.renderer.pending = false;
+    const frameRequested = Promise.withResolvers<void>();
+    const changed = engine.renderer.changed.bind(engine.renderer);
+    using _changed = vi
+      .spyOn(engine.renderer, "changed")
+      .mockImplementation(() => {
+        changed();
+        frameRequested.resolve();
+      });
     node.text!.style = { fontFamily: "Arial", fontSize: 22, fill: 0xffffff };
     expect(node.text).toBe(container);
-    await Promise.resolve();
+    await frameRequested.promise;
     expect(node.text).toBeInstanceOf(FakeLabelText);
     expect(lines.every((line) => line.destroyed)).toBe(true);
     expect(engine.renderer.pending).toBe(true);
