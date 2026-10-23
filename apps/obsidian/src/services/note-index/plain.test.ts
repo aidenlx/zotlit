@@ -7,34 +7,33 @@ import { cache, makeHarness } from "./__fixtures__";
 import type { NoteIndexChange } from "./service";
 
 // #1705: attaching late loses the first invalidations to SubscriptionRef replay.
-it.effect(
-  "subscribe receives two edits made before the call stack yields",
-  () =>
-    Effect.gen(function* () {
-      const { metadataCache, vault, service } = yield* makeHarness(
-        { "first.md": cache({}), "second.md": cache({}) },
-        { enabledAtRuntime: true },
-      );
-      const first = vault.files.get("first.md")!;
-      const second = vault.files.get("second.md")!;
-      const received: NoteIndexChange[] = [];
-      const delivered = Promise.withResolvers<void>();
-      const stop = service.subscribe((change) => {
-        received.push(change);
-        if (change.type === "frontmatter-changed" && change.file === second)
-          delivered.resolve();
-      });
-      metadataCache.change(first, cache({ itemKey: "ABCD2345" }));
-      metadataCache.change(second, cache({ itemKey: "ZZZ99999" }));
-      yield* Effect.promise(() => delivered.promise);
-      expect(received).toEqual([
-        { type: "changed", file: first },
-        { type: "frontmatter-changed", file: first },
-        { type: "changed", file: second },
-        { type: "frontmatter-changed", file: second },
-      ]);
-      stop();
-    }),
+it.effect("a throwing subscriber receives both immediate edits (#1705)", () =>
+  Effect.gen(function* () {
+    const { metadataCache, vault, service } = yield* makeHarness(
+      { "first.md": cache({}), "second.md": cache({}) },
+      { enabledAtRuntime: true },
+    );
+    const first = vault.files.get("first.md")!;
+    const second = vault.files.get("second.md")!;
+    const received: NoteIndexChange[] = [];
+    const delivered = Promise.withResolvers<void>();
+    const stop = service.subscribe((change) => {
+      received.push(change);
+      if (received.length === 1) throw new Error("listener failed");
+      if (change.type === "frontmatter-changed" && change.file === second)
+        delivered.resolve();
+    });
+    metadataCache.change(first, cache({ itemKey: "ABCD2345" }));
+    metadataCache.change(second, cache({ itemKey: "ZZZ99999" }));
+    yield* Effect.promise(() => delivered.promise);
+    expect(received).toEqual([
+      { type: "changed", file: first },
+      { type: "frontmatter-changed", file: first },
+      { type: "changed", file: second },
+      { type: "frontmatter-changed", file: second },
+    ]);
+    stop();
+  }),
 );
 
 // #1705: the owning stack disposes the whole ManagedRuntime, not just its layer.

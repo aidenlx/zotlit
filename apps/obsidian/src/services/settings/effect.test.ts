@@ -317,25 +317,24 @@ it.effect("#1705 migration failures log the original error and stage", () =>
   }),
 );
 
-it.effect(
-  "#1705 subscribe receives both edits made immediately after it returns",
-  () =>
-    Effect.gen(function* () {
-      const settings = yield* plainSettingsOf({
-        plugin: { loadData: async () => null, saveData: async () => {} },
-      });
-      const seen: string[] = [];
-      const delivered = Promise.withResolvers<void>();
-      const stop = settings.subscribe((value) => {
-        seen.push(value["server.hostname"]);
-        if (value["server.hostname"] === "/b") delivered.resolve();
-      });
-      settings.update({ "server.hostname": "/a" });
-      settings.update({ "server.hostname": "/b" });
-      yield* Effect.promise(() => delivered.promise);
-      stop();
-      expect(seen.slice(-2)).toEqual(["/a", "/b"]);
-    }),
+it.effect("#1705 a throwing subscriber receives both immediate edits", () =>
+  Effect.gen(function* () {
+    const settings = yield* plainSettingsOf({
+      plugin: { loadData: async () => null, saveData: async () => {} },
+    });
+    const seen: string[] = [];
+    const delivered = Promise.withResolvers<void>();
+    const stop = settings.subscribe((value) => {
+      seen.push(value["server.hostname"]);
+      if (value["server.hostname"] === "/a") throw new Error("listener failed");
+      if (value["server.hostname"] === "/b") delivered.resolve();
+    });
+    settings.update({ "server.hostname": "/a" });
+    settings.update({ "server.hostname": "/b" });
+    yield* Effect.promise(() => delivered.promise);
+    stop();
+    expect(seen.slice(-2)).toEqual(["/a", "/b"]);
+  }),
 );
 
 it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>

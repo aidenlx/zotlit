@@ -8,7 +8,7 @@ import { queryClientsFixture, queryClientsOf } from "./__fixtures__";
 import type { HeldReadChange } from "./service";
 
 it.effect(
-  "receives both settlements immediately after subscribing (#1705)",
+  "keeps a throwing listener subscribed for both immediate settlements (#1705)",
   () =>
     Effect.gen(function* () {
       const queries = yield* queryClientsOf();
@@ -19,6 +19,7 @@ it.effect(
         const delivered = Promise.withResolvers<void>();
         const unsubscribe = queries.subscribe((change) => {
           seen.push(change);
+          if (seen.length === 1) throw new Error("listener failed");
           if (change.key[0] === "second") delivered.resolve();
         });
         queries.update<string>(["first"], () => "new first");

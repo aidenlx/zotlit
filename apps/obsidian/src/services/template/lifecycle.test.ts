@@ -34,7 +34,7 @@ it.effect("#1705: a built Template exposes its first loaded template", () =>
 );
 
 it.effect(
-  "#1705: subscribe receives consecutive reconciliations and stops on runtime disposal",
+  "#1705: throwing listeners receive later reconciliations and stop on disposal",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost({
@@ -53,14 +53,25 @@ it.effect(
       yield* Effect.promise(() => runtime.context());
       const template = plainTemplate(runtime);
       const received = yield* Queue.unbounded<void>();
+      let changes = 0;
       const unsubscribe = template.subscribe(() => {
         Queue.offerUnsafe(received, undefined);
+        if (++changes === 1) throw new Error("status listener failed");
+      });
+      const compiled = yield* Queue.unbounded<void>();
+      let compilations = 0;
+      const stopCompile = template.on("compile-status-changed", () => {
+        Queue.offerUnsafe(compiled, undefined);
+        if (++compilations === 1) throw new Error("compile listener failed");
       });
       yield* Queue.take(received);
       const both = template.refresh().then(() => template.refresh());
       yield* Effect.promise(() => both);
       yield* Queue.take(received);
       yield* Queue.take(received);
+      yield* Queue.take(compiled);
+      yield* Queue.take(compiled);
+      stopCompile();
       unsubscribe();
       yield* Effect.promise(() => runtime.dispose());
       expect(template.render("note", {})).toBe("First");

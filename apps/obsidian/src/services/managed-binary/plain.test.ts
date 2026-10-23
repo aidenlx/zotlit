@@ -76,7 +76,7 @@ it.effect(
 );
 
 // #1705: a listener attaches before subscribe returns, including same-task changes.
-it.effect("receives both changes made immediately after subscribing", () =>
+it.effect("keeps a throwing listener subscribed for immediate changes", () =>
   Effect.promise(async () => {
     const bytes = new TextEncoder().encode("binary");
     const download = Promise.withResolvers<Uint8Array<ArrayBuffer>>();
@@ -98,6 +98,7 @@ it.effect("receives both changes made immediately after subscribing", () =>
     const installed = Promise.withResolvers<void>();
     const unsubscribe = binary.subscribe(() => {
       changes++;
+      if (changes === 1) throw new Error("listener failed");
       if (binary.getStatus().kind === "installed") installed.resolve();
     });
     expect(changes).toBe(0);

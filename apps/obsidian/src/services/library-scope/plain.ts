@@ -3,6 +3,7 @@ import type { Library } from "@zotlit/db";
 
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 
 import type {
   AvailableLibrary,
@@ -38,24 +39,14 @@ export function plainLibraryScope(
 ): PlainLibraryScope {
   const service = runtime.runSync(LibraryScope);
   const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
-  const subscribe = (callback: (state: LibraryScopeState) => void) => {
+  const subscribeChanges = (callback: (state: LibraryScopeState) => void) => {
     if (runtime.scope.state._tag === "Closed") return () => {};
     const seen = run(service.state);
-    let active = true;
-    const fiber = runtime.runFork(
-      Stream.runForEach(
-        Stream.dropWhile(service.changes, (next) => next === seen),
-        (next) =>
-          Effect.sync(() => {
-            if (active) callback(next);
-          }),
-      ),
+    return subscribe(
+      runtime,
+      Stream.dropWhile(service.changes, (next) => next === seen),
+      callback,
     );
-    fiber.currentDispatcher.flush();
-    return () => {
-      active = false;
-      fiber.interruptUnsafe();
-    };
   };
   return {
     get current() {
@@ -74,10 +65,10 @@ export function plainLibraryScope(
       return run(service.libraryRows);
     },
     resolveLibraries: (libraries) => run(service.resolveLibraries(libraries)),
-    subscribe,
+    subscribe: subscribeChanges,
     on: (event, callback) => {
       let before = run(service.state);
-      return subscribe((next) => {
+      return subscribeChanges((next) => {
         const previous = before;
         before = next;
         if (

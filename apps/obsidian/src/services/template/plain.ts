@@ -44,9 +44,7 @@ export function plainTemplate(
     return exit.value;
   };
   const subscribeChanges = (callback: (status: TemplateStatus) => void) =>
-    runtime.scope.state._tag === "Closed"
-      ? () => {}
-      : subscribe(runtime, service.changes, callback);
+    subscribe(runtime, service.changes, callback);
   return {
     get status() {
       return read(service.status);
@@ -132,9 +130,7 @@ export function plainTemplate(
       run(service.setJavascriptTemplatesEnabled(enabled)),
     subscribe: subscribeChanges,
     on: (_event, callback) =>
-      runtime.scope.state._tag === "Closed"
-        ? () => {}
-        : subscribe(runtime, service.compileEvents, callback),
+      subscribe(runtime, service.compileEvents, callback),
   };
 }
 

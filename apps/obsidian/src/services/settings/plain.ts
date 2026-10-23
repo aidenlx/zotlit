@@ -1,7 +1,6 @@
 // Settings for the declarative setting tab, legacy services, and views.
 import { Effect } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
 import { subscribe } from "@/lib/effect-stream";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
@@ -36,7 +35,6 @@ export function plainPluginSettings(
   const run = {
     runSync: Effect.runSyncWith(context),
     runPromise: Effect.runPromiseWith(context),
-    runFork: Effect.runForkWith(context),
   };
   return {
     get current() {
@@ -60,18 +58,6 @@ export function plainPluginSettings(
       run.runSync(settings.updateDefaultLiteratureNoteProfileBindings(patch)),
     flush: () => run.runPromise(settings.flush()),
     release: () => run.runSync(settings.release()),
-    subscribe: (callback) =>
-      subscribe(run, settings.changes, (value) => {
-        try {
-          callback(value);
-        } catch (error) {
-          run.runSync(
-            Effect.logError("subscriber threw").pipe(
-              Effect.annotateLogs({ error }),
-              withLogCategory("settings"),
-            ),
-          );
-        }
-      }),
+    subscribe: (callback) => subscribe(runtime, settings.changes, callback),
   };
 }
