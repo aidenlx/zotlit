@@ -76,7 +76,7 @@ catalog:
   typescript: ^7.0.2
   valibot: ^1.0.0
   vite: ^8.1.5
-  vitest: ^4.0.13
+  vitest: ^5.0.5
   zustand: ^5.0.14
   zx: ^8.8.5
 
