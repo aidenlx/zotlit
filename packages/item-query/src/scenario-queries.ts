@@ -833,14 +833,12 @@ const NAMED_CASES: readonly ScenarioQuery[] = [];
 export const PINNED_FILTERS: readonly string[] = Object.keys(FILTER_MATCHES);
 
 export const SCENARIO_QUERIES: readonly ScenarioQuery[] = [
-  ...FILTERS.map(
-    (filter): ScenarioQuery => ({
-      name: `${filter} [both Libraries, key order]`,
-      libraries: ["personal", "group"],
-      request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
-      ...(FILTER_MATCHES[filter] ? { matches: FILTER_MATCHES[filter] } : {}),
-    }),
-  ),
+  ...FILTERS.map((filter): ScenarioQuery => ({
+    name: `${filter} [both Libraries, key order]`,
+    libraries: ["personal", "group"],
+    request: { filter, ...scenarioFormulas(filter), fields: [], sort: [] },
+    ...(FILTER_MATCHES[filter] ? { matches: FILTER_MATCHES[filter] } : {}),
+  })),
   ...REQUESTS,
   ...NAMED_CASES,
 ];

@@ -31,7 +31,7 @@ type RenderedBibliography = Extract<
   { kind: "held" }
 >;
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 vi.mock("@/components/obsidian/icon-button", async () => {
   const { createElement } = await import("react");

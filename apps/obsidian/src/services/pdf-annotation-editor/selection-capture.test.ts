@@ -71,12 +71,12 @@ const textOf = (layer: Element, index: number) =>
  * node, and the whole page for any range over an element.
  */
 function layOut(text: ClientBox, page: ClientBox) {
-  vi.spyOn(Range.prototype, "getClientRects").mockImplementation(
-    function (this: Range) {
-      const onText = this.startContainer.nodeType === Node.TEXT_NODE;
-      return [onText ? text : page] as never;
-    },
-  );
+  vi.spyOn(Range.prototype, "getClientRects").mockImplementation(function (
+    this: Range,
+  ) {
+    const onText = this.startContainer.nodeType === Node.TEXT_NODE;
+    return [onText ? text : page] as never;
+  });
 }
 
 /** The client box a PDF-point rectangle occupies on an unrotated page. */

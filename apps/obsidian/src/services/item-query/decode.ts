@@ -169,12 +169,10 @@ const library = v.lazy((input) =>
             (issue) =>
               `library names '${firstRepeat(issue.input)}' twice: name each Library once.`,
           ),
-          v.transform(
-            (selectors): LibraryScope => ({
-              mode: "selected",
-              libraries: selectors.toSorted(compareSelectors),
-            }),
-          ),
+          v.transform((selectors): LibraryScope => ({
+            mode: "selected",
+            libraries: selectors.toSorted(compareSelectors),
+          })),
         ),
       ),
 );

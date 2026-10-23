@@ -95,9 +95,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await cliCommand(run.vaultId, "zotlit:library-scope"),
     ) as LibraryScopeReport;
     const newest = itemsByModified(
-      (scope.available ?? []).map(
-        (entry) =>
-          LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
+      (scope.available ?? []).map((entry) =>
+        LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
       ),
     ).slice(0, 100);
     expect(newest.length).toBeGreaterThan(1);

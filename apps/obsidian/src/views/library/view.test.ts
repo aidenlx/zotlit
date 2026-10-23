@@ -53,7 +53,7 @@ import { openLibraryView } from "./register";
 import { LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const EMPTY = {
   kind: "result",

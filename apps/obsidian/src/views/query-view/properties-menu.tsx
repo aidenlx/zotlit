@@ -194,13 +194,11 @@ function PropertyList({
   const keys = useRef({ order, setOrder, page });
   keys.current = { order, setOrder, page };
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(() => {
-    const items = rows.map(
-      (entry): ChooserRow => ({
-        ...propertyRow(entry),
-        // The right arrow opens the property's page.
-        ...(pages && { next: () => openPage(entry.path) }),
-      }),
-    );
+    const items = rows.map((entry): ChooserRow => ({
+      ...propertyRow(entry),
+      // The right arrow opens the property's page.
+      ...(pages && { next: () => openPage(entry.path) }),
+    }));
     const actions: ChooserRow[] = [];
     const typedVault = vaultName(query);
     if (

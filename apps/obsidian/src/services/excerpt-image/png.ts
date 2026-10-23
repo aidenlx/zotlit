@@ -25,7 +25,7 @@ export function usableExcerptPng(bytes: Buffer): boolean {
     let paletteEntries = 0;
     let ended = false;
     let dataEnded = false;
-    for (let offset = 8; offset < bytes.length; ) {
+    for (let offset = 8; offset < bytes.length;) {
       if (offset + 12 > bytes.length || ended) return false;
       const length = bytes.readUInt32BE(offset);
       const end = offset + 12 + length;

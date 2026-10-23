@@ -733,18 +733,16 @@ export function suggestions(
     rootOption,
     ...[...locals]
       .filter(([name]) => name !== "zt")
-      .map(
-        ([name, type]): Suggestion => ({
-          label: name,
-          insert: name,
-          category: "field",
-          type: type ? describe(type) : "unknown",
-          continuation:
-            type !== undefined &&
-            (members(type).length > 0 || resolve(type).kind === "array"),
-          detail: "",
-        }),
-      ),
+      .map(([name, type]): Suggestion => ({
+        label: name,
+        insert: name,
+        category: "field",
+        type: type ? describe(type) : "unknown",
+        continuation:
+          type !== undefined &&
+          (members(type).length > 0 || resolve(type).kind === "array"),
+        detail: "",
+      })),
   ];
   const search = regex("^\\{\\{-?\\s*(?<query>[A-Za-z_]\\w*(?: +\\w*)*)$").exec(
     before,

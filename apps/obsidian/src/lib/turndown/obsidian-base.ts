@@ -45,12 +45,12 @@ const TABLE_ALIGN: Record<string, string> = {
 
 /** Collapse newline runs in `title` / `alt` attributes to a single newline. */
 function normalizeAttr(value: string | null): string {
-  return value ? value.replace(ATTR_WS, "\n") : "";
+  return value ? value.replaceAll(ATTR_WS, "\n") : "";
 }
 
 /** Percent-encode spaces and backslash-escape parentheses in a URL. */
 function encodeUrl(value: string): string {
-  return value.replaceAll(" ", "%20").replace(PARENS, "\\$1");
+  return value.replaceAll(" ", "%20").replaceAll(PARENS, "\\$1");
 }
 
 /** Render the optional ` "title"` suffix of a link/image, escaping quotes. */
@@ -151,7 +151,7 @@ export function addObsidianRules(td: TurndownService): void {
       const body = content
         .replace(LEAD_NL, "")
         .replace(TRAIL_NL, "\n")
-        .replace(INNER_NL, "\n    ");
+        .replaceAll(INNER_NL, "\n    ");
       const el = node as Element;
       const parent = el.parentElement;
       let prefix = `${options.bulletListMarker} `;
@@ -181,7 +181,7 @@ export function addObsidianRules(td: TurndownService): void {
       const parent = el.parentNode;
       const isFirst =
         !!parent && Array.prototype.indexOf.call(parent.childNodes, el) === 0;
-      const cell = `${content.trim().replace(PIPES, "\\|").replace(CELL_NL, "<br>")}|`;
+      const cell = `${content.trim().replaceAll(PIPES, "\\|").replaceAll(CELL_NL, "<br>")}|`;
       return `${isFirst ? "|" : ""}${cell}${colspanPad(el, "   |")}`;
     },
   });
@@ -218,7 +218,7 @@ export function addObsidianRules(td: TurndownService): void {
           `|${"---|".repeat(cols)}\n` +
           `${content.replace(LEAD_NLCR, "")}`;
       }
-      return `\n\n${body.replace(NLCR, "\n")}\n\n`;
+      return `\n\n${body.replaceAll(NLCR, "\n")}\n\n`;
     },
   });
 

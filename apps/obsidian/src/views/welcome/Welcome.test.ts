@@ -17,7 +17,7 @@ import { WelcomeStoreProvider, createWelcomeStore } from "./store";
 import type { WelcomeState, WelcomeStore } from "./store";
 import { Welcome } from "./Welcome";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 let root: Root | undefined;
 

@@ -25,7 +25,7 @@ vi.mock("@codemirror/language", async (importOriginal) => {
       iterate: ({ enter }: { enter: (node: object) => void }) => {
         const text = state.doc.toString();
         const nodes = [];
-        for (let at = text.indexOf("[["); at !== -1; ) {
+        for (let at = text.indexOf("[["); at !== -1;) {
           const closing = text.indexOf("]]", at);
           if (closing === -1) break;
           nodes.push(

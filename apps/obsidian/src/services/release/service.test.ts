@@ -146,12 +146,13 @@ describe("ReleaseService Companion update notice", () => {
         return this;
       },
     );
-    vi.spyOn(ButtonComponent.prototype, "onClick").mockImplementation(
-      function (this: ButtonComponent, callback) {
-        actions.set(labels.get(this)!, callback);
-        return this;
-      },
-    );
+    vi.spyOn(ButtonComponent.prototype, "onClick").mockImplementation(function (
+      this: ButtonComponent,
+      callback,
+    ) {
+      actions.set(labels.get(this)!, callback);
+      return this;
+    });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     await runCheck({

@@ -45,7 +45,7 @@ export const MAX_SEGMENT_BYTES = 255;
  */
 export function normalizeFilename(input: string): string {
   let result = input
-    .replace(FORBIDDEN_CHARS, "_")
+    .replaceAll(FORBIDDEN_CHARS, "_")
     .replace(/[. ]+$/, "")
     .replace(/^\.+/, "");
   if (WINDOWS_RESERVED.test(result)) result = `_${result}`;
