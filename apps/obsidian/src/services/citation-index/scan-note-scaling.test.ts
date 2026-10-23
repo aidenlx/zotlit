@@ -1,4 +1,5 @@
 // #1689: unmatched math openers must not repeatedly scan the paragraph suffix.
+// Same harness shape as packages/templates/src/pandoc-citation-scaling.test.ts: keep the two in step.
 import { expect, it } from "vitest";
 
 import { scanNote } from "./scan-note";

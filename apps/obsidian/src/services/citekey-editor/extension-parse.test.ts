@@ -4,8 +4,10 @@ import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import {
+  lookupAnswerFor,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 
 const { livePreview, parseState, tokenClassNodeProp, lineClassNodeProp } =
   vi.hoisted(() => ({
@@ -117,18 +119,7 @@ it.each([
             workspace: { trigger: () => {} },
             observeLookup: (changed) =>
               lookupObservation(
-                ({ citekeys = [] }) =>
-                  new CitationLookupAnswer({
-                    annotationKeys: new Map(),
-                    revision: "test",
-                    citekeys: new Map(
-                      citekeys.map((key) => [
-                        key,
-                        { kind: "missing" as const },
-                      ]),
-                    ),
-                    indexedKeys: new Map(),
-                  }),
+                ({ citekeys = [] }) => lookupAnswerFor(citekeys, {}, "test"),
                 changed,
               ),
             navigationEnabled: () => true,

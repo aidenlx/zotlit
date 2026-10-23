@@ -32,15 +32,27 @@ const pos = (from: number, to: number) => ({
   end: { line: 0, col: to, offset: to },
 });
 
-// #1689: wrong forms, lost group identity, and shifted source positions are
-// the failure modes at this text-in / record-out seam.
+const afterLink = (line: number, col: number, offset: number) => ({
+  kind: "wikilink" as const,
+  raw: "After",
+  position: {
+    start: { line, col, offset },
+    end: { line, col: col + 9, offset: offset + 9 },
+  },
+});
+
+// Every row below is a #1689 case. Wrong forms, lost group identity, and shifted
+// source positions are the failure modes at this text-in / record-out seam.
+// A row whose hidden region has an end carries a visible [[After]] tail, so it
+// proves the region ends as well as that it hides.
 const conformance: {
   name: string;
   text: string;
   record: Partial<NoteScanRecord>;
 }[] = [
+  // remark-obsidian/test/parity/corpus.ts: probe/math-marker/dash-then-opener.
   {
-    name: "probe/math-marker/dash-then-opener: list boundary (#1689)",
+    name: "unclosed display math in a list item ends at the list boundary",
     text: "- $$x\n  [[Note]]\n\n[[After]]",
     record: {
       wikilinks: [
@@ -63,8 +75,9 @@ const conformance: {
       ],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/math-unclosed/callout-title.
   {
-    name: "probe/math-unclosed/callout-title: unclosed body opener (#1689)",
+    name: "unclosed display math in a callout body ends with the callout",
     text: "> [!note]\n> $$x\n> [[Note]]\n\n[[After]]",
     record: {
       wikilinks: [
@@ -87,15 +100,17 @@ const conformance: {
       ],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: comment/inline.
   {
-    name: "comment/inline: comment inside an annotation image label (#1689)",
+    name: "a comment inside an Annotation embed label leaves the embed visible",
     text: `![%%hidden%%](${uri})`,
     record: {
       annotations: [{ ...annotation, form: "embed", position: pos(0, 71) }],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/math-unclosed/quote-same-line.
   {
-    name: "probe/math-unclosed/quote-same-line: following fenced code (#1689)",
+    name: "a fence after an unclosed math opener in a quote still opens code",
     text: "> $$x\n> ```\n> [[Note]]\n\n[[After]]",
     record: {
       wikilinks: [
@@ -110,8 +125,9 @@ const conformance: {
       ],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: math/in-blockquote.
   {
-    name: "math/in-blockquote: closed math across a bare quote marker (#1689)",
+    name: "display math in a quote continues across a bare quote marker",
     text: "> $$x\n>\n> [[Note]]\n> $$\n\n[[After]]",
     record: {
       wikilinks: [
@@ -126,56 +142,65 @@ const conformance: {
       ],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/cross/highlight-wikilink.
   {
-    name: "probe/cross/highlight-wikilink (#1689)",
+    name: "a highlight crossing a Wikilink opener leaves no Wikilink",
     text: "==a[[b==c]]\n",
     record: {},
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/label-wikilink/after-plain-bracket.
   {
-    name: "probe/label-wikilink/after-plain-bracket (#1689)",
+    name: "a double bracket after a bracketed label is a reference label, not a Wikilink",
     text: "a [x][[w]] b\n",
     record: {},
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/footnote-embed/ref-wikilink.
   {
-    name: "probe/footnote-embed/ref-wikilink (#1689)",
+    name: "a footnote reference wrapping a Wikilink yields no Wikilink",
     text: "[^[[target]]]\n",
     record: {},
   },
+  // remark-obsidian/test/parity/corpus.ts: context/footnote-definition/wikilink.
   {
-    name: "context/footnote-definition/wikilink (#1689)",
+    name: "a Wikilink in a footnote definition body is a Wikilink",
     text: "[^1]: [[target]]\n",
     record: {
       wikilinks: [{ kind: "wikilink", raw: "target", position: pos(6, 16) }],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: math/text-after-close.
   {
-    name: "math/text-after-close: a display closer needs its own line (#1689)",
+    name: "a display math closer followed by text does not close the math",
     text: "Here is an equation\n$$\nx = x + 1\n$$and text after\n\n[[Test 2]]\n",
     record: {},
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/footnote-embed/inline-wikilink.
   {
-    name: "probe/footnote-embed/inline-wikilink (#1689)",
+    name: "an inline footnote around a Wikilink keeps the Wikilink",
     text: "^[[[Note]]]",
     record: {
       wikilinks: [{ kind: "wikilink", raw: "Note", position: pos(2, 10) }],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: comment/inline.
   {
-    name: "comment/inline: comment within annotation label (#1689)",
+    name: "a comment inside a labelled Annotation link leaves the link visible",
     text: `[visible %%hidden%%](${uri})`,
     record: {
       annotations: [{ ...annotation, form: "labelled", position: pos(0, 78) }],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/label-precedence/wikilink-inside.
   {
-    name: "probe/label-precedence/wikilink-inside (#1689)",
+    name: "a Wikilink inside a link label is still a Wikilink",
     text: "[foo [[target]] bar](u)",
     record: {
       wikilinks: [{ kind: "wikilink", raw: "target", position: pos(5, 15) }],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/math-unclosed/quote-same-line.
   {
-    name: "probe/math-unclosed/quote-same-line: container boundary (#1689)",
+    name: "unclosed display math in a quote ends at the quote boundary",
     text: "> $$x\n> [[Note]]\n\n[[After]]",
     record: {
       wikilinks: [
@@ -198,8 +223,9 @@ const conformance: {
       ],
     },
   },
+  // remark-obsidian/test/parity/corpus.ts: probe/math/display-same-line.
   {
-    name: "probe/math/display-same-line: indented paragraph continuation (#1689)",
+    name: "an indented line after one-line display math stays paragraph text",
     text: "$$x$$ tail\n    [[Note]]",
     record: {
       wikilinks: [
@@ -215,41 +241,41 @@ const conformance: {
     },
   },
   {
-    name: "ATX heading before indented code (#1689)",
-    text: `## heading\n    ${hidden}`,
-    record: {},
+    name: "ATX heading before indented code",
+    text: `## heading\n    ${hidden}\n\n[[After]]`,
+    record: { wikilinks: [afterLink(3, 0, 128)] },
   },
   {
-    name: "setext underline before indented code (#1689)",
-    text: `heading\n===\n    ${hidden}`,
-    record: {},
+    name: "setext underline before indented code",
+    text: `heading\n===\n    ${hidden}\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 129)] },
   },
   {
-    name: "horizontal rule before indented code (#1689)",
-    text: `***\n    ${hidden}`,
-    record: {},
+    name: "horizontal rule before indented code",
+    text: `***\n    ${hidden}\n\n[[After]]`,
+    record: { wikilinks: [afterLink(3, 0, 121)] },
   },
   {
-    name: "annotation embed inside a Markdown link (#1689)",
+    name: "annotation embed inside a Markdown link",
     text: `[![quote](${uri})](https://example.org)`,
     record: {
       annotations: [{ ...annotation, form: "embed", position: pos(1, 67) }],
     },
   },
   {
-    name: "reference definition before indented code (#1689)",
-    text: `[a]: https://example.org\n    ${hidden}`,
-    record: {},
+    name: "reference definition before indented code",
+    text: `[a]: https://example.org\n    ${hidden}\n\n[[After]]`,
+    record: { wikilinks: [afterLink(3, 0, 142)] },
   },
   {
-    name: "visible autolink after a Markdown link and label (#1689)",
+    name: "visible autolink after a Markdown link and label",
     text: `[x](https://example.org) [a]: <${uri}>`,
     record: {
       annotations: [{ ...annotation, form: "labelled", position: pos(30, 88) }],
     },
   },
   {
-    name: "named character reference in link destination (#1689)",
+    name: "named character reference in link destination",
     text: "[](zotero://open/library/items/ABCD2345?page=1&amp;annotation=EFGH6789)",
     record: {
       annotations: [
@@ -263,7 +289,7 @@ const conformance: {
     },
   },
   {
-    name: "decimal character reference in image destination (#1689)",
+    name: "decimal character reference in image destination",
     text: "![](zotero://open/library/items/ABCD2345?page=1&#38;annotation=EFGH6789)",
     record: {
       annotations: [
@@ -272,7 +298,7 @@ const conformance: {
     },
   },
   {
-    name: "hex character reference in link destination (#1689)",
+    name: "hex character reference in link destination",
     text: "[](zotero://open/library/items/ABCD2345?page=1&#x26;annotation=EFGH6789)",
     record: {
       annotations: [
@@ -286,14 +312,14 @@ const conformance: {
     },
   },
   {
-    name: "autolink keeps character references literal (#1689)",
+    name: "autolink keeps character references literal",
     text: `<${uri}&page=&copy;>`,
     record: {
       annotations: [{ ...annotation, form: "labelled", position: pos(0, 70) }],
     },
   },
   {
-    name: "escaped ampersand keeps character reference literal (#1689)",
+    name: "escaped ampersand keeps character reference literal",
     text: `[](${uri}&page=\\&copy;)`,
     record: {
       annotations: [{ ...annotation, form: "citation", position: pos(0, 73) }],
@@ -314,8 +340,16 @@ const conformance: {
     },
   },
   // remark-obsidian/test/parity/corpus.ts: html/passthrough.
-  { name: "raw HTML block", text: `<div>\n${hidden}\n</div>`, record: {} },
-  { name: "HTML comment block", text: `<!--\n${hidden}\n-->`, record: {} },
+  {
+    name: "raw HTML block",
+    text: `<div>\n${hidden}\n</div>\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 126)] },
+  },
+  {
+    name: "HTML comment block",
+    text: `<!--\n${hidden}\n-->\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 122)] },
+  },
   {
     name: "reference definition with angle-bracket destination",
     text: `[quote][a]\n\n[a]: <${uri}>`,
@@ -523,34 +557,46 @@ const conformance: {
   },
   {
     name: "fenced code in quote",
-    text: `> \`\`\`\n> ${hidden}\n> \`\`\``,
-    record: {},
+    text: `> \`\`\`\n> ${hidden}\n> \`\`\`\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 127)] },
   },
   {
     name: "fenced code in callout",
-    text: `> [!note]\n> \`\`\`\n> ${hidden}\n> \`\`\``,
-    record: {},
+    text: `> [!note]\n> \`\`\`\n> ${hidden}\n> \`\`\`\n\n[[After]]`,
+    record: { wikilinks: [afterLink(5, 0, 137)] },
   },
   {
     name: "fenced code in list",
-    text: `- item\n\n  \`\`\`\n  ${hidden}\n  \`\`\``,
-    record: {},
+    text: `- item\n\n  \`\`\`\n  ${hidden}\n  \`\`\`\n\n[[After]]`,
+    record: { wikilinks: [afterLink(6, 0, 135)] },
   },
-  { name: "indented code in quote", text: `>     ${hidden}`, record: {} },
+  {
+    name: "indented code in quote",
+    text: `>     ${hidden}\n\n[[After]]`,
+    record: { wikilinks: [afterLink(2, 0, 119)] },
+  },
   {
     name: "indented code in list",
-    text: `- item\n\n      ${hidden}`,
-    record: {},
+    text: `- item\n\n      ${hidden}\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 127)] },
   },
   { name: "unclosed fence", text: `\`\`\`\n${hidden}`, record: {} },
-  { name: "inline code", text: `\`${hidden}\``, record: {} },
-  { name: "multiline inline code", text: `\`code\n${hidden}\``, record: {} },
+  {
+    name: "inline code",
+    text: `\`${hidden}\` [[After]]`,
+    record: { wikilinks: [afterLink(0, 114, 114)] },
+  },
+  {
+    name: "multiline inline code",
+    text: `\`code\n${hidden}\` [[After]]`,
+    record: { wikilinks: [afterLink(1, 113, 119)] },
+  },
   // remark-obsidian/test/parity/corpus.ts: probe/math/wikilink-inside,
   // with the payload expanded to all occurrence forms.
   {
     name: "inline math consumes every source",
-    text: `$x ${hidden}$`,
-    record: {},
+    text: `$x ${hidden}$ [[After]]`,
+    record: { wikilinks: [afterLink(0, 116, 116)] },
   },
   // remark-obsidian/test/parity/corpus.ts: math/currency and probe/math/currency-pair.
   {
@@ -587,18 +633,22 @@ const conformance: {
   },
   {
     name: "escaped dollar does not close math",
-    text: `$x\\$ ${hidden}$`,
-    record: {},
+    text: `$x\\$ ${hidden}$ [[After]]`,
+    record: { wikilinks: [afterLink(0, 118, 118)] },
   },
   // Same corpus: probe/math/inline-across-line and probe/math/display-same-line.
-  { name: "inline math across lines", text: `$x\n${hidden}$`, record: {} },
   {
-    name: "display math inline",
-    text: `before $$${hidden}$$ after`,
-    record: {},
+    name: "inline math across lines",
+    text: `$x\n${hidden}$ [[After]]`,
+    record: { wikilinks: [afterLink(1, 113, 116)] },
   },
   {
-    name: "display math closing-line tail preserves source positions (#1689)",
+    name: "display math inline",
+    text: `before $$${hidden}$$ after [[After]]`,
+    record: { wikilinks: [afterLink(0, 129, 129)] },
+  },
+  {
+    name: "display math closing-line tail preserves source positions",
     text: "$$x$$ [@k]",
     record: {
       citations: [
@@ -610,23 +660,23 @@ const conformance: {
   // Same corpus: probe/math/display-own-lines and math/empty-block.
   {
     name: "display math across blank lines",
-    text: `$$\n\n${hidden}\n\n$$`,
-    record: {},
+    text: `$$\n\n${hidden}\n\n$$\n\n[[After]]`,
+    record: { wikilinks: [afterLink(6, 0, 121)] },
   },
   // Same corpus: probe/math/display-open-only.
   { name: "unclosed display math", text: `$$\n${hidden}`, record: {} },
   {
-    name: "four hyphens do not close frontmatter (#1689)",
-    text: `---\nx: y\n----\n${hidden}\n---`,
-    record: {},
+    name: "four hyphens do not close frontmatter",
+    text: `---\nx: y\n----\n${hidden}\n---\n[[After]]`,
+    record: { wikilinks: [afterLink(5, 0, 130)] },
   },
   {
-    name: "hyphens with a suffix do not close frontmatter (#1689)",
-    text: `---\nx: y\n---x\n${hidden}\n---`,
-    record: {},
+    name: "hyphens with a suffix do not close frontmatter",
+    text: `---\nx: y\n---x\n${hidden}\n---\n[[After]]`,
+    record: { wikilinks: [afterLink(5, 0, 130)] },
   },
   {
-    name: "exact CRLF frontmatter close preserves following text (#1689)",
+    name: "exact CRLF frontmatter close preserves following text",
     text: "---\r\nx: y\r\n---\r\n[[Note]]",
     record: {
       wikilinks: [
@@ -644,8 +694,8 @@ const conformance: {
   // remark-obsidian/test/parity/corpus.ts: frontmatter/wikilink-value.
   {
     name: "closed frontmatter",
-    text: `---\nvalue: '${hidden}'\n---`,
-    record: {},
+    text: `---\nvalue: '${hidden}'\n---\n[[After]]`,
+    record: { wikilinks: [afterLink(3, 0, 129)] },
   },
   // Same corpus: frontmatter/unclosed-fence. The body is ordinary Markdown.
   {
@@ -689,8 +739,16 @@ const conformance: {
   },
   // remark-obsidian/test/parity/corpus.ts: comment/inline, comment/block,
   // comment/unterminated. Payloads exercise all five recorded occurrence kinds.
-  { name: "inline comment", text: `before %%${hidden}%% after`, record: {} },
-  { name: "block comment", text: `%%\n${hidden}\n%%`, record: {} },
+  {
+    name: "inline comment",
+    text: `before %%${hidden}%% [[After]]`,
+    record: { wikilinks: [afterLink(0, 123, 123)] },
+  },
+  {
+    name: "block comment",
+    text: `%%\n${hidden}\n%%\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 119)] },
+  },
   {
     name: "unclosed comment hides the rest",
     text: `%%\n${hidden}`,
@@ -699,13 +757,13 @@ const conformance: {
   // Same corpus: probe/quote-comment/crossing-text.
   {
     name: "comment crosses containers",
-    text: `> %%\n\n${hidden}\n%%`,
-    record: {},
+    text: `> %%\n\n${hidden}\n%%\n\n[[After]]`,
+    record: { wikilinks: [afterLink(5, 0, 122)] },
   },
   {
     name: "code markers cannot close a comment",
-    text: `%% \`%%\`\n${hidden}\n%%`,
-    record: {},
+    text: `%% \`%%\`\n${hidden}\n%%\n\n[[After]]`,
+    record: { wikilinks: [afterLink(4, 0, 124)] },
   },
   {
     name: "code markers cannot open a comment",
@@ -782,35 +840,29 @@ it.each([
   expect(record.malformedWikilinks).toEqual(old.malformed);
 });
 
-// Intentional #1689 / ADR 0079 changes; old output is pinned to make the
-// difference explicit, including the old unclosed-comment and escape behavior.
+// Intentional #1689 / ADR 0079 changes from the previous scanner (scan.ts).
+// Each row names what that scanner did; only the new scanner is asserted.
 it.each([
   {
-    name: "nested fenced code",
+    name: "fenced code nested in a quote hides its Citation (scan.ts read it)",
     text: "> ~~~\n> [@k]\n> ~~~",
-    old: ["k"],
-    current: [],
+    citekeys: [],
   },
   {
-    name: "digit after math opener",
+    name: "a digit after the math opener leaves a Citation visible (scan.ts hid it)",
     text: "$5 [@k] x$",
-    old: [],
-    current: ["k"],
+    citekeys: ["k"],
   },
-  { name: "escaped math closer", text: "$x\\$ [@k]$", old: ["k"], current: [] },
-  { name: "unclosed comment", text: "%% [@k]", old: ["k"], current: [] },
-])("changes $name", ({ text, old, current }) => {
-  expect(scanCitekeyOccurrences(text).map(({ raw }) => raw)).toEqual(old);
-  expect(scanNote(text).citekeys.map(({ raw }) => raw)).toEqual(current);
-});
-
-it("excludes wikilinks that the old cache path included inside comments", () => {
-  const text = "%% [[Note]] %%";
-  const old = documentWikilinks([
-    { original: "[[Note]]", link: "Note", position: pos(3, 11) },
-  ]);
-  expect(old.occurrences).toEqual([
-    { kind: "wikilink", raw: "Note", position: pos(3, 11) },
-  ]);
-  expect(scanNote(text)).toEqual({ links: [], ...empty });
+  {
+    name: "an escaped math closer leaves the math open over a Citation (scan.ts read it)",
+    text: "$x\\$ [@k]$",
+    citekeys: [],
+  },
+  {
+    name: "an unclosed comment hides the rest of the note (scan.ts read it)",
+    text: "%% [@k]",
+    citekeys: [],
+  },
+])("$name", ({ text, citekeys }) => {
+  expect(scanNote(text).citekeys.map(({ raw }) => raw)).toEqual(citekeys);
 });

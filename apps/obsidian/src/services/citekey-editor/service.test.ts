@@ -8,8 +8,10 @@ import type { Item } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { lookupForWorks } from "@/services/citation-index/__fixtures__/lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import {
+  lookupAnswerFor,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
@@ -586,17 +588,7 @@ class LookupStub extends CitationLookupStub {
   }
 
   #answer(citekeys: readonly string[]) {
-    return new CitationLookupAnswer({
-      annotationKeys: new Map(),
-      revision: "test",
-      citekeys: new Map(
-        citekeys.map((citekey) => [
-          citekey,
-          this.#resolutions[citekey] ?? { kind: "missing" as const },
-        ]),
-      ),
-      indexedKeys: new Map(),
-    });
+    return lookupAnswerFor(citekeys, this.#resolutions, "test");
   }
 }
 

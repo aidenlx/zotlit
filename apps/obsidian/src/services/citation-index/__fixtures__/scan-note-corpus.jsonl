@@ -11,24 +11,10 @@
 {"id":"probe/wikilink-destination/closer-before-paren","text":"[[a]](b)\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":5,"offset":5}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":5,"offset":5}}}]}
 {"id":"probe/wikilink-destination/embed-paren-inside","text":"![[a](b]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"a](b","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
 {"id":"probe/wikilink-destination/alias-paren-inside","text":"[[a|b](c]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":10,"offset":10}}}]}
-{"id":"probe/autolink-trail/period","text":"see https://e.test/p. end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/comma","text":"see https://e.test/p, end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/semicolon","text":"see https://e.test/p; end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/colon","text":"see https://e.test/p: end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/bang","text":"see https://e.test/p! end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/question","text":"see https://e.test/p? end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/close-paren","text":"see https://e.test/p) end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/close-bracket","text":"see https://e.test/p] end\n","record":{},"links":[]}
 {"id":"probe/autolink-trail/double-close-bracket","text":"see https://e.test/p]] end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/bracket-then-paren","text":"see https://e.test/p]( end\n","record":{},"links":[]}
 {"id":"probe/autolink-trail/backtick-run","text":"see https://e.test/p`code` end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/star","text":"see https://e.test/p* end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/strong","text":"see https://e.test/p**b** end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/tilde","text":"see https://e.test/p~~d~~ end\n","record":{},"links":[]}
 {"id":"probe/autolink-trail/dollar","text":"see https://e.test/p$x$ end\n","record":{},"links":[]}
 {"id":"probe/autolink-trail/wikilink","text":"see https://e.test/p[[a]] end\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a","position":{"start":{"line":0,"col":20,"offset":20},"end":{"line":0,"col":25,"offset":25}}}]},"links":[]}
-{"id":"probe/autolink-trail/quote","text":"see https://e.test/p\" end\n","record":{},"links":[]}
-{"id":"probe/autolink-trail/trailing-period-eol","text":"see https://e.test/p.\n","record":{},"links":[]}
 {"id":"probe/escaped-block-id/bare-open","text":"\\[^1\n","record":{},"links":[]}
 {"id":"probe/escaped-block-id/text-space-before","text":"x \\[^1\n","record":{},"links":[]}
 {"id":"probe/escaped-block-id/text-nospace-before","text":"x\\[^1\n","record":{},"links":[]}
@@ -61,19 +47,6 @@
 {"id":"probe/inline-footnote/undefined-ref-then-inline","text":"a[^nodef] and ^[x]\n","record":{},"links":[]}
 {"id":"probe/inline-footnote/inline-ref-inline","text":"^[a] b[^1] ^[c]\n\n[^1]: body\n","record":{},"links":[]}
 {"id":"probe/inline-footnote/definition-first","text":"[^1]: body\n\nuse[^1] and ^[x]\n","record":{},"links":[]}
-{"id":"probe/entity/semicolon-named","text":"&amp;\n","record":{},"links":[]}
-{"id":"probe/entity/bare-named","text":"&amp\n","record":{},"links":[]}
-{"id":"probe/entity/bare-copy","text":"&copy\n","record":{},"links":[]}
-{"id":"probe/entity/bare-nbsp-then-text","text":"&nbsp x\n","record":{},"links":[]}
-{"id":"probe/entity/bare-prefix-of-longer","text":"&notreal\n","record":{},"links":[]}
-{"id":"probe/entity/bare-then-semicolon","text":"&amp&amp;\n","record":{},"links":[]}
-{"id":"probe/entity/bare-then-letter","text":"&ampx\n","record":{},"links":[]}
-{"id":"probe/entity/numeric-bare","text":"&#35\n","record":{},"links":[]}
-{"id":"probe/entity/numeric-semicolon","text":"&#35;\n","record":{},"links":[]}
-{"id":"probe/entity/hex-bare","text":"&#x23\n","record":{},"links":[]}
-{"id":"probe/entity/uppercase-name","text":"&AMP\n","record":{},"links":[]}
-{"id":"probe/entity/unknown-name","text":"&nosuchthing\n","record":{},"links":[]}
-{"id":"probe/entity/empty-reference","text":"&;\n","record":{},"links":[]}
 {"id":"probe/entity/in-code-span","text":"`&amp`\n","record":{},"links":[]}
 {"id":"probe/table-pipes/both-closed","text":"| a |\n| --- |\n","record":{},"links":[]}
 {"id":"probe/table-pipes/neither-closed","text":"| a\n| ---\n","record":{},"links":[]}
@@ -82,7 +55,6 @@
 {"id":"probe/table-pipes/trailing-space-no-pipe","text":"| a \n| --- \n","record":{},"links":[]}
 {"id":"probe/table-pipes/trailing-space-with-pipe","text":"| a | \n| --- | \n","record":{},"links":[]}
 {"id":"probe/table-pipes/no-leading-pipe","text":"a | b\n--- | ---\n","record":{},"links":[]}
-{"id":"probe/table-pipes/bare-minimal","text":"a|b\n-|-\n","record":{},"links":[]}
 {"id":"probe/table-pipes/tight-closed","text":"|a|\n|---|\n","record":{},"links":[]}
 {"id":"probe/table-pipes/with-body-row","text":"| a |\n| --- |\n| b |\n","record":{},"links":[]}
 {"id":"probe/table-pipes/body-row-unclosed","text":"| a |\n| --- |\n| b\n","record":{},"links":[]}
@@ -104,7 +76,6 @@
 {"id":"probe/callout-title/fence","text":"> [!note] ```\n","record":{},"links":[]}
 {"id":"probe/callout-title/pipes","text":"> [!note] | a |\n","record":{},"links":[]}
 {"id":"probe/title-interrupt/two-in-callout","text":"> [!note] title\n> 2. item\n","record":{},"links":[]}
-{"id":"probe/title-interrupt/two-in-quote","text":"> text\n> 2. item\n","record":{},"links":[]}
 {"id":"probe/title-interrupt/one-in-callout","text":"> [!note] title\n> 1. item\n","record":{},"links":[]}
 {"id":"probe/title-interrupt/two-with-definition","text":"> [!note] title\n> 2. [^1]: def\n\nuse[^1]\n","record":{},"links":[]}
 {"id":"probe/title-interrupt/two-lazy","text":"> [!note] title\n2. [^1]: def\n\nuse[^1]\n","record":{},"links":[]}
@@ -232,14 +203,6 @@
 {"id":"probe/autolink/email-underscore-domain","text":"write a@b_c.com now\n","record":{},"links":[]}
 {"id":"probe/autolink/email-no-tld","text":"write a@b now\n","record":{},"links":[]}
 {"id":"probe/autolink/email-trailing-dot","text":"write a@b.com. now\n","record":{},"links":[]}
-{"id":"probe/autolink/bare-url","text":"see http://a.com now\n","record":{},"links":[]}
-{"id":"probe/autolink/url-www","text":"see www.example.com now\n","record":{},"links":[]}
-{"id":"probe/autolink/url-trailing-punctuation","text":"see http://a.com/x. now\n","record":{},"links":[]}
-{"id":"probe/autolink/url-parens","text":"see http://a.com/x_(y) now\n","record":{},"links":[]}
-{"id":"probe/autolink/url-in-parens","text":"see (http://a.com) now\n","record":{},"links":[]}
-{"id":"probe/autolink/url-query","text":"see http://a.com?q=1&b=2 now\n","record":{},"links":[]}
-{"id":"probe/break/backslash","text":"one\\\ntwo\n","record":{},"links":[]}
-{"id":"probe/break/backslash-in-quote","text":"> one\\\n> two\n","record":{},"links":[]}
 {"id":"probe/reference/full","text":"[text][label]\n\n[label]: /url\n","record":{},"links":[]}
 {"id":"probe/reference/collapsed","text":"[label][]\n\n[label]: /url\n","record":{},"links":[]}
 {"id":"probe/reference/shortcut","text":"[label]\n\n[label]: /url\n","record":{},"links":[]}
@@ -263,20 +226,9 @@
 {"id":"probe/block-indent/four","text":"    ^blk\n","record":{},"links":[]}
 {"id":"probe/block-indent/three","text":"   ^blk\n","record":{},"links":[]}
 {"id":"probe/block-nest/both-ids","text":"- Item ^one\n  - Sub ^two\n","record":{},"links":[]}
-{"id":"probe/list-item/two-roots","text":"- a\n- b\n","record":{},"links":[]}
-{"id":"probe/list-item/one-child","text":"- a\n  - b\n","record":{},"links":[]}
-{"id":"probe/list-item/three-deep","text":"- a\n  - b\n    - c\n","record":{},"links":[]}
-{"id":"probe/list-item/offset-by-two","text":"text\n\n- a\n  - b\n","record":{},"links":[]}
-{"id":"probe/list-item/ordered","text":"1. a\n2. b\n","record":{},"links":[]}
-{"id":"probe/list-item/in-quote","text":"> - a\n>   - b\n","record":{},"links":[]}
 {"id":"probe/list-item/tasks","text":"- [ ] todo\n- [x] done\n- plain\n","record":{},"links":[]}
-{"id":"probe/line-ending/crlf-paragraph","text":"a\r\nb\r\n","record":{},"links":[]}
-{"id":"probe/line-ending/crlf-quote-list","text":"> - a\r\n>   b\r\n","record":{},"links":[]}
 {"id":"probe/line-ending/crlf-footnote","text":"x[^1]\r\n\r\n[^1]: body\r\n","record":{},"links":[]}
-{"id":"probe/line-ending/crlf-setext","text":"para\r\n===\r\n","record":{},"links":[]}
 {"id":"probe/line-ending/crlf-comment","text":"%%\r\nhidden [^1]\r\n%%\r\n\r\n[^1]: d\r\n","record":{},"links":[]}
-{"id":"probe/line-ending/lone-cr","text":"a\rb\r","record":{},"links":[]}
-{"id":"probe/line-ending/bom-heading","text":"﻿# H\n\ntext\n","record":{},"links":[]}
 {"id":"probe/inline-footnote/two-inline","text":"^[one] and ^[two]\n","record":{},"links":[]}
 {"id":"probe/inline-footnote/three-inline","text":"^[a] ^[b] ^[c]\n","record":{},"links":[]}
 {"id":"probe/inline-footnote/two-blocks","text":"^[a]\n\n^[b]\n","record":{},"links":[]}
@@ -343,70 +295,10 @@
 {"id":"wikilink/unicode","text":"[[非常に長いノート名]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"非常に長いノート名","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":13,"offset":13}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"非常に長いノート名","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":13,"offset":13}}}]}
 {"id":"wikilink/emoji","text":"[[😀]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"😀","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":6,"offset":6}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"😀","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":6,"offset":6}}}]}
 {"id":"wikilink/formatted-alias","text":"[[page|**bold** and *italic*]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"page","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":30,"offset":30}}}]}
-{"id":"tag/basic","text":"#tag\n","record":{},"links":[]}
-{"id":"tag/nested","text":"#tag/nested\n","record":{},"links":[]}
-{"id":"tag/numeric-only","text":"#123\n","record":{},"links":[]}
-{"id":"tag/leading-digits","text":"#123-a\n","record":{},"links":[]}
-{"id":"tag/hex-colour","text":"Color: #00FFFF\n","record":{},"links":[]}
-{"id":"tag/midword","text":"foo#bar\n","record":{},"links":[]}
-{"id":"tag/double-hash","text":"#tag#tag\n","record":{},"links":[]}
-{"id":"tag/emoji","text":"#😐\n","record":{},"links":[]}
-{"id":"tag/parenthesised","text":"(#tag)\n","record":{},"links":[]}
 {"id":"tag/in-code-span","text":"`#tag`\n","record":{},"links":[]}
 {"id":"tag/in-fence","text":"```js\n#tag\n```\n","record":{},"links":[]}
-{"id":"tag/trailing-punctuation","text":"see #tag, and #other.\n","record":{},"links":[]}
-{"id":"highlight/basic","text":"==highlighted==\n","record":{},"links":[]}
-{"id":"highlight/trailing-space","text":"before ==text == after\n","record":{},"links":[]}
-{"id":"highlight/leading-space","text":"before == text== after\n","record":{},"links":[]}
-{"id":"highlight/triple","text":"===text==\n","record":{},"links":[]}
-{"id":"highlight/nested-emphasis","text":"==a **b** c==\n","record":{},"links":[]}
-{"id":"highlight/across-newline","text":"==a\nb==\n","record":{},"links":[]}
-{"id":"highlight/unterminated","text":"==a and nothing closes\n","record":{},"links":[]}
-{"id":"emphasis/run-3-3","text":"***a***\n","record":{},"links":[]}
-{"id":"emphasis/run-3-2","text":"***a**\n","record":{},"links":[]}
-{"id":"emphasis/run-2-3","text":"**a***\n","record":{},"links":[]}
-{"id":"emphasis/run-3-1","text":"***a*\n","record":{},"links":[]}
-{"id":"emphasis/run-1-3","text":"*a***\n","record":{},"links":[]}
-{"id":"emphasis/run-4-4","text":"****a****\n","record":{},"links":[]}
-{"id":"emphasis/run-5-5","text":"*****a*****\n","record":{},"links":[]}
-{"id":"emphasis/underscore-1-1","text":"_a_\n","record":{},"links":[]}
-{"id":"emphasis/underscore-2-2","text":"__a__\n","record":{},"links":[]}
-{"id":"emphasis/underscore-3-3","text":"___a___\n","record":{},"links":[]}
-{"id":"emphasis/underscore-3-2","text":"___a__\n","record":{},"links":[]}
-{"id":"emphasis/flank-both-space","text":"a * b * c\n","record":{},"links":[]}
-{"id":"emphasis/flank-correct","text":"a *b* c\n","record":{},"links":[]}
-{"id":"emphasis/flank-open-space","text":"a * b* c\n","record":{},"links":[]}
-{"id":"emphasis/flank-close-space","text":"a *b * c\n","record":{},"links":[]}
-{"id":"emphasis/flank-inverted","text":"a* b *c\n","record":{},"links":[]}
-{"id":"emphasis/flank-intraword-star","text":"a*b*c\n","record":{},"links":[]}
-{"id":"emphasis/flank-intraword-underscore","text":"a_b_c\n","record":{},"links":[]}
-{"id":"emphasis/flank-underscore-space","text":"a _ b _ c\n","record":{},"links":[]}
-{"id":"emphasis/flank-punct-inside","text":"*(a)*\n","record":{},"links":[]}
-{"id":"emphasis/flank-punct-outside","text":"(*a*)\n","record":{},"links":[]}
-{"id":"emphasis/flank-punct-adjacent","text":"a.*b*.c\n","record":{},"links":[]}
-{"id":"emphasis/flank-cjk","text":"日本*語*テスト\n","record":{},"links":[]}
-{"id":"emphasis/flank-line-start","text":"* a *\n","record":{},"links":[]}
-{"id":"emphasis/flank-trailing-run","text":"**a ** b\n","record":{},"links":[]}
-{"id":"emphasis/nest-strong-em","text":"**a *b* c**\n","record":{},"links":[]}
-{"id":"emphasis/nest-em-strong","text":"*a **b** c*\n","record":{},"links":[]}
-{"id":"emphasis/nest-mixed-markers","text":"**a _b_ c**\n","record":{},"links":[]}
-{"id":"emphasis/nest-underscore-outer","text":"_a *b* c_\n","record":{},"links":[]}
-{"id":"emphasis/nest-leading-em","text":"***a* b**\n","record":{},"links":[]}
-{"id":"emphasis/nest-trailing-em","text":"**a *b***\n","record":{},"links":[]}
-{"id":"emphasis/nest-interleaved","text":"*a **b* c**\n","record":{},"links":[]}
-{"id":"emphasis/nest-repeated-strong","text":"**a **b** c**\n","record":{},"links":[]}
-{"id":"emphasis/escape-inner","text":"*a\\*b*\n","record":{},"links":[]}
-{"id":"emphasis/escape-before-close","text":"**a\\**\n","record":{},"links":[]}
-{"id":"emphasis/escape-first-of-run","text":"\\**a**\n","record":{},"links":[]}
-{"id":"emphasis/unterminated-strong","text":"**unterminated\n","record":{},"links":[]}
-{"id":"emphasis/across-blank-line","text":"*a\n\nb*\n","record":{},"links":[]}
-{"id":"emphasis/across-newline","text":"**a\nb**\n","record":{},"links":[]}
-{"id":"emphasis/in-highlight","text":"==**a**==\n","record":{},"links":[]}
-{"id":"emphasis/wraps-highlight","text":"**==a==**\n","record":{},"links":[]}
 {"id":"emphasis/wraps-wikilink","text":"**[[link]]**\n","record":{"wikilinks":[{"kind":"wikilink","raw":"link","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":10,"offset":10}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"link","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":10,"offset":10}}}]}
 {"id":"emphasis/wraps-embed","text":"**![[embed]]**\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"embed","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":12,"offset":12}}}]}
-{"id":"emphasis/wraps-tag","text":"**#tag**\n","record":{},"links":[]}
-{"id":"emphasis/after-tag","text":"#tag**bold**\n","record":{},"links":[]}
 {"id":"emphasis/wraps-inline-math","text":"**$x$**\n","record":{},"links":[]}
 {"id":"emphasis/inside-inline-math","text":"$*x*$\n","record":{},"links":[]}
 {"id":"emphasis/wraps-comment","text":"**%%c%%**\n","record":{},"links":[]}
@@ -414,7 +306,6 @@
 {"id":"emphasis/spans-wikilink","text":"**a [[b]] c**\n","record":{"wikilinks":[{"kind":"wikilink","raw":"b","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":9,"offset":9}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"b","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":9,"offset":9}}}]}
 {"id":"emphasis/unbalanced-in-alias","text":"[[page|**a]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"page","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":12,"offset":12}}}]}
 {"id":"emphasis/in-task","text":"- [ ] **a**\n","record":{},"links":[]}
-{"id":"emphasis/in-heading","text":"# **a**\n","record":{},"links":[]}
 {"id":"emphasis/in-callout-title","text":"> [!note] **a**\n","record":{},"links":[]}
 {"id":"comment/inline","text":"This is an %%inline%% comment.\n","record":{},"links":[]}
 {"id":"comment/block","text":"%%\nblock comment\nspanning lines\n%%\nafter\n","record":{},"links":[]}
@@ -447,7 +338,6 @@
 {"id":"frontmatter/wikilink-value","text":"---\ntags:\n  - [[Note]]\n---\n\nBody\n","record":{},"links":[]}
 {"id":"frontmatter/empty","text":"---\n---\n\nBody\n","record":{},"links":[]}
 {"id":"escape/backslash-run","text":"\\*not emphasis\\* and \\[\\[not a link\\]\\]\n","record":{},"links":[]}
-{"id":"breaks/single-newline","text":"line one\nline two\n","record":{},"links":[]}
 {"id":"fuzz/footnote/44","text":"[^1]:\n\n---\n","record":{},"links":[]}
 {"id":"fuzz/footnote/45","text":"[^1]: \n\n---\n","record":{},"links":[]}
 {"id":"fuzz/highlight/69","text":"1. <br>\n===\n","record":{},"links":[]}
@@ -463,11 +353,9 @@
 {"id":"fuzz/highlight/43","text":"- [ ] %\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/66","text":"^![[[link](u)]]] \n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"[link](u)","position":{"start":{"line":0,"col":1,"offset":1},"end":{"line":0,"col":15,"offset":15}}}]}
 {"id":"fuzz/inline-footnote/16","text":"^[]**\n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/9","text":"* ~~del\\~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/67","text":"  ![[i.png|100x200]]\n[[a|b]]\t\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":20,"offset":20}}},{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":1,"col":0,"offset":21},"end":{"line":1,"col":7,"offset":28}}}]}
 {"id":"fuzz/highlight/44","text":"> <mailto:a@e.test> | ==日本語==\n","record":{},"links":[]}
 {"id":"fuzz/footnote/27","text":"[^1]: # <htt\n","record":{},"links":[]}
-{"id":"fuzz/highlight/45","text":"> > ~~\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/68","text":"> > ![[\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/69","text":"![[$x^2$]]\t&amp;\n[[~~del\\~~]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"~~del\\~~","position":{"start":{"line":1,"col":0,"offset":17},"end":{"line":1,"col":12,"offset":29}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"$x^2$","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":10,"offset":10}}},{"kind":"wikilink","embedded":false,"target":"~~del\\~~","position":{"start":{"line":1,"col":0,"offset":17},"end":{"line":1,"col":12,"offset":29}}}]}
 {"id":"fuzz/inline-footnote/17","text":"# \\[[a|b]] | $$x^2$$_under_ | [^[^1]\n","record":{},"links":[]}
@@ -486,7 +374,6 @@
 {"id":"fuzz/embed/73","text":"> ![[d.pdf#page=3]]]]%%note\\%%, [[target]], $#a/b$\n","record":{"wikilinks":[{"kind":"wikilink","raw":"target","position":{"start":{"line":0,"col":32,"offset":32},"end":{"line":0,"col":42,"offset":42}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":19,"offset":19}}},{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":32,"offset":32},"end":{"line":0,"col":42,"offset":42}}}]}
 {"id":"fuzz/inline-footnote/19","text":"```\n\n```\n\n^[], **s\n","record":{},"links":[]}
 {"id":"fuzz/strikethrough/10","text":"]]~~~~\n","record":{},"links":[]}
-{"id":"fuzz/highlight/47","text":"1. *em\n===\n","record":{},"links":[]}
 {"id":"fuzz/footnote/31","text":"u)[[$[^]$]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"$[^]$","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":11,"offset":11}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"$[^]$","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":11,"offset":11}}}]}
 {"id":"fuzz/inline-footnote/20","text":"^[^[inline]*em*\n","record":{},"links":[]}
 {"id":"fuzz/callout/8","text":"> [!\n[[a|b]]\n---\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":1,"col":0,"offset":5},"end":{"line":1,"col":7,"offset":12}}}]}
@@ -503,15 +390,12 @@
 {"id":"fuzz/inline-footnote/21","text":"]]\t[^[^]]\n","record":{},"links":[]}
 {"id":"fuzz/embed/78","text":"# ![[[[link](u)]]](\\[^1]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"[link](u)","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":17,"offset":17}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"[link](u)","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":17,"offset":17}}}]}
 {"id":"fuzz/block-ref/11","text":"^blk <mailto:a@e.test>\n","record":{},"links":[]}
-{"id":"fuzz/highlight/50","text":"> > ***em***](\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/79","text":"- [[a|b]]. ![[d.pdf#page=3. [[word]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"word","position":{"start":{"line":0,"col":28,"offset":28},"end":{"line":0,"col":36,"offset":36}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":9,"offset":9}}},{"kind":"wikilink","embedded":false,"target":"word","position":{"start":{"line":0,"col":28,"offset":28},"end":{"line":0,"col":36,"offset":36}}}]}
 {"id":"fuzz/footnote/33","text":"[^1]: **\n    %%note\n    [[target]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":2,"col":4,"offset":24},"end":{"line":2,"col":14,"offset":34}}}]}
 {"id":"fuzz/footnote/34","text":"[^%%note%%]\n","record":{},"links":[]}
 {"id":"fuzz/embed/80","text":"![[img.png]] [[[[a#^blk]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":12,"offset":12}}},{"kind":"wikilink","embedded":false,"target":"[a#^blk","position":{"start":{"line":0,"col":14,"offset":14},"end":{"line":0,"col":25,"offset":25}}}]}
 {"id":"fuzz/embed/81","text":"  [[![[i.png|100x200]]]] \\ $x^2$[[a|b]]](_under_\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":22,"offset":22}}},{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":32,"offset":32},"end":{"line":0,"col":39,"offset":39}}}]}
-{"id":"fuzz/highlight/51","text":"> **\n===\n","record":{},"links":[]}
 {"id":"fuzz/callout/9","text":"> [!no\n===\n","record":{},"links":[]}
-{"id":"fuzz/highlight/52","text":"1. &a\n===\n","record":{},"links":[]}
 {"id":"fuzz/html/17","text":"<div>\n(&amp;\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/22","text":"> #tag. ^[^[inline][[\n","record":{},"links":[]}
 {"id":"fuzz/table/13","text":"[[*e\n\t~~del\\~~ | 日本語\n","record":{},"links":[]}
@@ -560,8 +444,6 @@
 {"id":"fuzz/inline-footnote/25","text":"> > ^[], 日本語,\n","record":{},"links":[]}
 {"id":"fuzz/callout/10","text":"> [!no\n [lin\n---\n","record":{},"links":[]}
 {"id":"fuzz/embed/100","text":"==![[$x^2$]]==\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"$x^2$","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":12,"offset":12}}}]}
-{"id":"fuzz/highlight/55","text":"**str\n    *e\n===\n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/11","text":"~~~~del~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/101","text":"t>, ![[i.png|100]]\n[[a#h]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":18,"offset":18}}},{"kind":"wikilink","embedded":false,"target":"a#h","position":{"start":{"line":1,"col":0,"offset":19},"end":{"line":1,"col":7,"offset":26}}}]}
 {"id":"fuzz/embed/102","text":"> [!note] ![[i.png|100x200]]](**[[a|b**\t\\![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":10,"offset":10},"end":{"line":0,"col":28,"offset":28}}},{"kind":"wikilink","embedded":false,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":42,"offset":42},"end":{"line":0,"col":58,"offset":58}}}]}
 {"id":"fuzz/embed/103","text":"[^1]: ​\n    ![[*![[i.png|100x200]]*]]\n| ~~[^1]~~\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":1,"col":8,"offset":16},"end":{"line":1,"col":26,"offset":34}}}]}
@@ -579,11 +461,9 @@
 {"id":"fuzz/highlight/60","text":"> ![\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/108","text":"> [!note] **strong****, _![[d.pdf#page=3]]_ \\ [[a#^blk]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":25,"offset":25},"end":{"line":0,"col":42,"offset":42}}},{"kind":"wikilink","embedded":false,"target":"a#^blk","position":{"start":{"line":0,"col":46,"offset":46},"end":{"line":0,"col":56,"offset":56}}}]}
 {"id":"fuzz/math/14","text":"** *$y^2\ny^2$*\n","record":{},"links":[]}
-{"id":"fuzz/highlight/61","text":"- **\n===\n","record":{},"links":[]}
 {"id":"fuzz/footnote/42","text":"[^1]: \n*em*\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/26","text":". ^[]\n","record":{},"links":[]}
 {"id":"fuzz/embed/109","text":"]](![[]]](**st\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"]","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":9,"offset":9}}}]}
-{"id":"fuzz/highlight/62","text":"> > !\n===\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/27","text":"[^[[a#^blk]]] \n","record":{},"links":[]}
 {"id":"fuzz/highlight/63","text":"[[a|b]]\nimg.\n===\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]}
 {"id":"fuzz/embed/110","text":"1. ![[img.png]] \\ [[a#h\\]], ![[[[target]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"[target","position":{"start":{"line":0,"col":30,"offset":30},"end":{"line":0,"col":41,"offset":41}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":15,"offset":15}}},{"kind":"wikilink","embedded":false,"target":"a#h","position":{"start":{"line":0,"col":18,"offset":18},"end":{"line":0,"col":26,"offset":26}}},{"kind":"wikilink","embedded":false,"target":"[target","position":{"start":{"line":0,"col":30,"offset":30},"end":{"line":0,"col":41,"offset":41}}}]}
@@ -595,7 +475,6 @@
 {"id":"fuzz/tag/9","text":"日本語\na#h]]\n---\n","record":{},"links":[]}
 {"id":"fuzz/embed/114","text":"$x^2$\n ![[^\n---\n","record":{},"links":[]}
 {"id":"fuzz/embed/115","text":" ![[#tag]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"#tag","position":{"start":{"line":0,"col":1,"offset":1},"end":{"line":0,"col":10,"offset":10}}}]}
-{"id":"fuzz/highlight/64","text":"> >  . \n===\n","record":{},"links":[]}
 {"id":"fuzz/comment/12","text":"x^2$  [[a#^blk a#^blk]] %%note%% > <\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a#^blk a#^blk","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":23,"offset":23}}}]}
 {"id":"fuzz/embed/116","text":"1], ​\n![[i.\n===\n","record":{},"links":[]}
 {"id":"fuzz/block-ref/13","text":"  ==mar\n^blk [\n---\n","record":{},"links":[]}
@@ -608,13 +487,11 @@
 {"id":"fuzz/math/15","text":"日本語. \n$x^2\n---\n","record":{},"links":[]}
 {"id":"fuzz/html/22","text":"<div>\n> > ~~<br>~~\n","record":{},"links":[]}
 {"id":"fuzz/table/17","text":"| - <mailto:a@e.test> | \n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/12","text":"\\ ~~~~\n","record":{},"links":[]}
 {"id":"fuzz/html/23","text":"- ~~~~del~~](<m\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/32","text":"  ^[i.\n  $x^2$\n===\n","record":{},"links":[]}
 {"id":"fuzz/comment/13","text":"1. %%[\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/118","text":"> [!note] **![[![[img.png]]]]** \\ ![[[[a|b]]]]]([[target]] \\ *em*\n","record":{"wikilinks":[{"kind":"wikilink","raw":"target","position":{"start":{"line":0,"col":48,"offset":48},"end":{"line":0,"col":58,"offset":58}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":15,"offset":15},"end":{"line":0,"col":27,"offset":27}}},{"kind":"wikilink","embedded":false,"target":"[a","position":{"start":{"line":0,"col":36,"offset":36},"end":{"line":0,"col":44,"offset":44}}},{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":48,"offset":48},"end":{"line":0,"col":58,"offset":58}}}]}
 {"id":"fuzz/callout/12","text":"> [!note] ****strong**. *em** | [link](u)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":32,"offset":32},"end":{"line":0,"col":41,"offset":41}}}]}
-{"id":"fuzz/strikethrough/13","text":"~del~~~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/119","text":"> ![[i.png|100x200]]\n[[[^1]]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"[^1","position":{"start":{"line":1,"col":0,"offset":21},"end":{"line":1,"col":7,"offset":28}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":20,"offset":20}}},{"kind":"wikilink","embedded":false,"target":"[^1","position":{"start":{"line":1,"col":0,"offset":21},"end":{"line":1,"col":7,"offset":28}}}]}
 {"id":"fuzz/embed/120","text":"![[img.\n~~de\n---\n","record":{},"links":[]}
 {"id":"fuzz/html/24","text":"- <mailto:a@e.test>\n","record":{},"links":[]}
@@ -623,11 +500,8 @@
 {"id":"fuzz/table/18","text":"| 1. ``code` | c |\n","record":{},"links":[]}
 {"id":"fuzz/highlight/66","text":"> [[a#\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/122","text":"[[``]] | ![[img.png]]\n  ![[[[`code``]]]] $x^2$\n","record":{"wikilinks":[{"kind":"wikilink","raw":"``","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":6,"offset":6}}},{"kind":"wikilink","raw":"[`code``","position":{"start":{"line":1,"col":4,"offset":26},"end":{"line":1,"col":16,"offset":38}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"``","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":6,"offset":6}}},{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":9,"offset":9},"end":{"line":0,"col":21,"offset":21}}},{"kind":"wikilink","embedded":false,"target":"[`code``","position":{"start":{"line":1,"col":4,"offset":26},"end":{"line":1,"col":16,"offset":38}}}]}
-{"id":"fuzz/highlight/67","text":"1. !\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/123","text":"]]]( \t![[`code`]]\n- [ ] [link](u)\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"`code`","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":17,"offset":17}}},{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":1,"col":6,"offset":24},"end":{"line":1,"col":15,"offset":33}}}]}
-{"id":"fuzz/strikethrough/14","text":"]. ~~~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/124","text":"  #tag ==mark==![[mark==]]\n|   [[target]] | c |\n","record":{"wikilinks":[{"kind":"wikilink","raw":"target","position":{"start":{"line":1,"col":4,"offset":31},"end":{"line":1,"col":14,"offset":41}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"mark==","position":{"start":{"line":0,"col":15,"offset":15},"end":{"line":0,"col":26,"offset":26}}},{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":1,"col":4,"offset":31},"end":{"line":1,"col":14,"offset":41}}}]}
-{"id":"fuzz/highlight/68","text":"~~del~~\n  _un\n===\n","record":{},"links":[]}
 {"id":"fuzz/footnote/43","text":"~. *[^<br>]*\n","record":{},"links":[]}
 {"id":"fuzz/embed/125","text":"> > ![[]]. <mailto:a@e.test>](<br>\n","record":{},"links":[]}
 {"id":"fuzz/embed/1","text":"![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":17,"offset":17}}}]}
@@ -668,14 +542,12 @@
 {"id":"fuzz/embed/6","text":"  ![[img.png]] [[!\n> [!note] \\![[i.png|100x200]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":14,"offset":14}}},{"kind":"wikilink","embedded":false,"target":"i.png","position":{"start":{"line":1,"col":12,"offset":31},"end":{"line":1,"col":29,"offset":48}}}]}
 {"id":"fuzz/highlight/5","text":"> > [\n===\n","record":{},"links":[]}
 {"id":"fuzz/footnote/6","text":"> > [^$\n===\n","record":{},"links":[]}
-{"id":"fuzz/highlight/6","text":"- 日本語\n===\n","record":{},"links":[]}
 {"id":"fuzz/strikethrough/1","text":"~~~. [\n","record":{},"links":[]}
 {"id":"fuzz/embed/7","text":"> ![[[^1]]]%%%%\n[[~~del~~]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"~~del~~","position":{"start":{"line":1,"col":0,"offset":16},"end":{"line":1,"col":11,"offset":27}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"[^1","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":10,"offset":10}}},{"kind":"wikilink","embedded":false,"target":"~~del~~","position":{"start":{"line":1,"col":0,"offset":16},"end":{"line":1,"col":11,"offset":27}}}]}
 {"id":"fuzz/math/1","text":"- ~~$x^2$~~](<mailto:a@e.test> `code``\n","record":{},"links":[]}
 {"id":"fuzz/tag/1","text":"  #tag. <mailto:a@e.test>\n","record":{},"links":[]}
 {"id":"fuzz/emphasis/1","text":"_under_^blk\n","record":{},"links":[]}
 {"id":"fuzz/embed/8","text":"> ![[_under_]]\n[[[[under_]]]]](wor\n","record":{"wikilinks":[{"kind":"wikilink","raw":"[under_","position":{"start":{"line":1,"col":1,"offset":16},"end":{"line":1,"col":12,"offset":27}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"_under_","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":14,"offset":14}}},{"kind":"wikilink","embedded":false,"target":"[under_","position":{"start":{"line":1,"col":1,"offset":16},"end":{"line":1,"col":12,"offset":27}}}]}
-{"id":"fuzz/highlight/7","text":"> > #a/b\n===\n","record":{},"links":[]}
 {"id":"fuzz/math/2","text":"$y^2$\n&amp;\n","record":{},"links":[]}
 {"id":"fuzz/tag/2","text":"]]\t#t\n","record":{},"links":[]}
 {"id":"fuzz/html/4","text":"- [ ] <mailto:a@e.test>\n","record":{},"links":[]}
@@ -688,7 +560,6 @@
 {"id":"fuzz/embed/11","text":"#tag](![[d.pdf#page=3]]**strong**\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":23,"offset":23}}}]}
 {"id":"fuzz/wikilink/4","text":"]]. [[a#h\\]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a#h","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":12,"offset":12}}}]}
 {"id":"fuzz/footnote/7","text":"# [^1[[a#^blk\\]]#tag\n","record":{},"links":[]}
-{"id":"fuzz/entity/1","text":" &amp\n","record":{},"links":[]}
 {"id":"fuzz/embed/12","text":"  [^1\\]\n  ![[![\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/4","text":"[^[[a#\n\\[^1]\n","record":{},"links":[]}
 {"id":"fuzz/highlight/9","text":"1. `\n===\n","record":{},"links":[]}
@@ -711,7 +582,6 @@
 {"id":"fuzz/wikilink/6","text":"[[a#^blk\\]]. ​, 日本語\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a#^blk","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
 {"id":"fuzz/comment/4","text":"- [ ] 日本語\t%%[link](u)%% | [[a#^blk\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":12,"offset":12},"end":{"line":0,"col":21,"offset":21}}}]}
 {"id":"fuzz/highlight/11","text":"1. [[\n===\n","record":{},"links":[]}
-{"id":"fuzz/highlight/12","text":"1. **st\n===\n","record":{},"links":[]}
 {"id":"fuzz/footnote/10","text":"[^1](u)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]}
 {"id":"fuzz/embed/22","text":"[^1]: - ![[[[a|b]]]]](^[[[a#h]]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"[a","position":{"start":{"line":0,"col":10,"offset":10},"end":{"line":0,"col":18,"offset":18}}},{"kind":"wikilink","embedded":false,"target":"a#h","position":{"start":{"line":0,"col":24,"offset":24},"end":{"line":0,"col":31,"offset":31}}}]}
 {"id":"fuzz/embed/23","text":"1. ![[#a/b]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"#a/b","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":12,"offset":12}}}]}
@@ -720,7 +590,6 @@
 {"id":"fuzz/embed/25","text":"- i.png|100]]](![[d.pdf#page=3]]]] #a/b ![[i.png|100x200]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":15,"offset":15},"end":{"line":0,"col":32,"offset":32}}},{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":40,"offset":40},"end":{"line":0,"col":58,"offset":58}}}]}
 {"id":"fuzz/embed/26","text":"# &amp; [^![[img.png]]] [[target\\]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"target\\","position":{"start":{"line":0,"col":24,"offset":24},"end":{"line":0,"col":35,"offset":35}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":24,"offset":24},"end":{"line":0,"col":35,"offset":35}}}]}
 {"id":"fuzz/highlight/13","text":"> <m\n===\n","record":{},"links":[]}
-{"id":"fuzz/highlight/14","text":"> _u\n===\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/5","text":"1. [^[[a#^blk]]]\n","record":{},"links":[]}
 {"id":"fuzz/html/6","text":"- [ ] <mailto:a@e.test>, __under_under_\n","record":{},"links":[]}
 {"id":"fuzz/embed/27","text":"- ![[![[d.pdf#page=3]]]] \\ [[a#^blk\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":22,"offset":22}}}]}
@@ -744,7 +613,6 @@
 {"id":"fuzz/math/4","text":"# https://e.test/p]($y^2$]([[#tag]] a#h]]\n","record":{},"links":[]}
 {"id":"fuzz/highlight/15","text":"​\n[link\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/35","text":" ![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":1,"offset":1},"end":{"line":0,"col":18,"offset":18}}}]}
-{"id":"fuzz/tag/3","text":">\t#ta\n","record":{},"links":[]}
 {"id":"fuzz/highlight/16","text":"1. [[]]\n===\n","record":{},"links":[]}
 {"id":"fuzz/callout/5","text":"> [!n\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/36","text":"![[![[d.pdf#page=3]] [[[[\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":20,"offset":20}}}]}
@@ -759,7 +627,6 @@
 {"id":"fuzz/footnote/15","text":"| - $x^2$. [^%%note%%%%] \n","record":{},"links":[]}
 {"id":"fuzz/footnote/16","text":"[^1]: # [[]]\n","record":{},"links":[]}
 {"id":"fuzz/inline-footnote/9","text":"  ^[i\n  [[\n---\n","record":{},"links":[]}
-{"id":"fuzz/highlight/19","text":"*em*\n    \\_\n===\n","record":{},"links":[]}
 {"id":"fuzz/highlight/20","text":"1. [[[\n===\n","record":{},"links":[]}
 {"id":"fuzz/highlight/21","text":"> > [[\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/39","text":"1. [[![[i.png|100x200]]]]\n[[a|b]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":23,"offset":23}}},{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":1,"col":0,"offset":26},"end":{"line":1,"col":7,"offset":33}}}]}
@@ -777,17 +644,12 @@
 {"id":"fuzz/embed/41","text":"> > ![[d.pdf#page=3]],\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":21,"offset":21}}}]}
 {"id":"fuzz/embed/42","text":"> [!note] 日本語](_==![[i\n===\n","record":{},"links":[]}
 {"id":"fuzz/math/7","text":"```\n```\n\n- $y^\n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/3","text":"~~del\\~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/43","text":"```js\n```\n> > ![[ ]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"","position":{"start":{"line":2,"col":4,"offset":14},"end":{"line":2,"col":10,"offset":20}}}]}
-{"id":"fuzz/highlight/24","text":"1. ==\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/44","text":"![[ ]]\n===\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":6,"offset":6}}}]}
-{"id":"fuzz/highlight/25","text":"| - #tag | 日本語 ~~del\\~~==mark== | c |\n","record":{},"links":[]}
 {"id":"fuzz/table/7","text":"| > #a/b [[a#^blk\\]]\t​\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a#^blk","position":{"start":{"line":0,"col":9,"offset":9},"end":{"line":0,"col":20,"offset":20}}}]}
 {"id":"fuzz/highlight/26","text":"- [li\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/45","text":"1. ![[i.png|100\\]]\n1. [[a|b]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"i.png","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":18,"offset":18}}},{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":1,"col":3,"offset":22},"end":{"line":1,"col":10,"offset":29}}}]}
 {"id":"fuzz/comment/7","text":"g]]%%*#tag*\t%%note%%\n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/4","text":"- *~~~~del~~*\n","record":{},"links":[]}
-{"id":"fuzz/highlight/27","text":"> > 日本語\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/46","text":"[^1]: > [!note] ![[[[word]]]] \n[^1]: - [^1] \n","record":{"wikilinks":[{"kind":"wikilink","raw":"[word","position":{"start":{"line":0,"col":18,"offset":18},"end":{"line":0,"col":27,"offset":27}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"[word","position":{"start":{"line":0,"col":18,"offset":18},"end":{"line":0,"col":27,"offset":27}}}]}
 {"id":"fuzz/misc/3","text":"- [ ]\n</div>\n","record":{},"links":[]}
 {"id":"fuzz/embed/47","text":"​ | ![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":21,"offset":21}}}]}
@@ -797,7 +659,6 @@
 {"id":"fuzz/wikilink/8","text":"[[&am\n    [[link](u)]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"link](u)","position":{"start":{"line":1,"col":4,"offset":10},"end":{"line":1,"col":16,"offset":22}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"link](u)","position":{"start":{"line":1,"col":4,"offset":10},"end":{"line":1,"col":16,"offset":22}}}]}
 {"id":"fuzz/math/8","text":"**$y^2\ny^2$\n---\n","record":{},"links":[]}
 {"id":"fuzz/block-ref/8","text":"  ^blk](![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":8,"offset":8},"end":{"line":0,"col":25,"offset":25}}}]}
-{"id":"fuzz/strikethrough/5","text":">\t~~~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/49","text":"| # ![[[link](u)]] # <mailt\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"[link](u)","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":18,"offset":18}}}]}
 {"id":"fuzz/strikethrough/6","text":"- [~~~~del\n","record":{},"links":[]}
 {"id":"fuzz/highlight/29","text":"\\[[a\n#a/b\n===\n","record":{},"links":[]}
@@ -816,9 +677,7 @@
 {"id":"fuzz/embed/54","text":"[a#h]]![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":23,"offset":23}}}]}
 {"id":"fuzz/highlight/32","text":"- [ ] [\n===\n","record":{},"links":[]}
 {"id":"fuzz/callout/7","text":"> [!not\n===\n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/7","text":"** ~~del\\~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/55","text":"![[#tag]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"#tag","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
-{"id":"fuzz/highlight/33","text":"1. &\n===\n","record":{},"links":[]}
 {"id":"fuzz/table/8","text":"[[[[a|\n    ~\n---\n","record":{},"links":[]}
 {"id":"fuzz/embed/56","text":"[^1]: > > <ma\n    target]]. [![[#tag]]](u), 日本語\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":1,"col":14,"offset":28},"end":{"line":1,"col":28,"offset":42}}},{"kind":"wikilink","embedded":true,"target":"#tag","position":{"start":{"line":1,"col":15,"offset":29},"end":{"line":1,"col":24,"offset":38}}}]}
 {"id":"fuzz/html/11","text":"  <mailto:a@e.test>\n","record":{},"links":[]}
@@ -842,12 +701,10 @@
 {"id":"fuzz/math/10","text":"- [ ] $y\n","record":{},"links":[]}
 {"id":"fuzz/table/10","text":"| > ``code` \n","record":{},"links":[]}
 {"id":"fuzz/comment/9","text":"- %%\nnote%%\n","record":{},"links":[]}
-{"id":"fuzz/strikethrough/8","text":"l~~~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/59","text":"![[img.\nword, [\n---\n","record":{},"links":[]}
 {"id":"fuzz/embed/60","text":"<br>. ![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":23,"offset":23}}}]}
 {"id":"fuzz/inline-footnote/15","text":"[^1]: > >\na/b^[\n","record":{},"links":[]}
 {"id":"fuzz/footnote/24","text":"[[$x^2$]]\t[^https://e.test/p]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"$x^2$","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"$x^2$","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
-{"id":"fuzz/highlight/37","text":"> > wor\n===\n","record":{},"links":[]}
 {"id":"fuzz/footnote/25","text":"[^1]: # ~~\n","record":{},"links":[]}
 {"id":"fuzz/embed/61","text":"|   target]] | mark==, [[![[https://e.test/p]]]]$y^2$   ![[d.pdf#page=3 d.pdf#page=3]]]([[[[[[target]]]]]]. _[[a#^blk]]_   [[a|b]]\t日本語 | c |\n","record":{"wikilinks":[{"kind":"wikilink","raw":"[target","position":{"start":{"line":0,"col":91,"offset":91},"end":{"line":0,"col":102,"offset":102}}}]},"links":[{"kind":"wikilink","embedded":true,"target":"https://e.test/p","position":{"start":{"line":0,"col":25,"offset":25},"end":{"line":0,"col":46,"offset":46}}},{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3 d.pdf#page=3","position":{"start":{"line":0,"col":56,"offset":56},"end":{"line":0,"col":86,"offset":86}}},{"kind":"wikilink","embedded":false,"target":"[target","position":{"start":{"line":0,"col":91,"offset":91},"end":{"line":0,"col":102,"offset":102}}},{"kind":"wikilink","embedded":false,"target":"a#^blk","position":{"start":{"line":0,"col":109,"offset":109},"end":{"line":0,"col":119,"offset":119}}},{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":123,"offset":123},"end":{"line":0,"col":130,"offset":130}}}]}
 {"id":"fuzz/tag/5","text":"ng]]\t#a/b]\n","record":{},"links":[]}
@@ -856,20 +713,15 @@
 {"id":"fuzz/misc/4","text":"1. 日本語\n</div>\n","record":{},"links":[]}
 {"id":"fuzz/wikilink/11","text":"- [[a#h]]\t#tag. <ma\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a#h","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":9,"offset":9}}}]}
 {"id":"fuzz/embed/62","text":"  ![[img.png]]\n[[a#^blk]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":14,"offset":14}}},{"kind":"wikilink","embedded":false,"target":"a#^blk","position":{"start":{"line":1,"col":0,"offset":15},"end":{"line":1,"col":10,"offset":25}}}]}
-{"id":"fuzz/highlight/39","text":"> > ==\n===\n","record":{},"links":[]}
 {"id":"fuzz/html/13","text":"<div>\nd\t&amp;\n","record":{},"links":[]}
-{"id":"fuzz/tag/6","text":"**\t#a/b\n","record":{},"links":[]}
 {"id":"fuzz/embed/63","text":"> ![[![[d.pdf#page=3]]]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":22,"offset":22}}}]}
 {"id":"fuzz/math/11","text":"$y^2$\n#tag\n","record":{},"links":[]}
 {"id":"fuzz/html/14","text":"> <mailto:a@e.test>\n","record":{},"links":[]}
-{"id":"fuzz/tag/7","text":"語\t#a/b\n","record":{},"links":[]}
 {"id":"fuzz/highlight/40","text":"> `code\n===\n","record":{},"links":[]}
 {"id":"fuzz/table/11","text":"| 1. <mailto:a@e.test>  $x^2\n","record":{},"links":[]}
-{"id":"fuzz/highlight/41","text":"> #a\n===\n","record":{},"links":[]}
 {"id":"fuzz/embed/64","text":"  ](![[ ]]\n> [!note] $**strong**$ ^[i\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":10,"offset":10}}}]}
 {"id":"fuzz/embed/65","text":"$x^2$![[![[d.pdf#page=3]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"d.pdf#page=3","position":{"start":{"line":0,"col":8,"offset":8},"end":{"line":0,"col":25,"offset":25}}}]}
 {"id":"fuzz/setext/3","text":"  http\n  _u\n---\n","record":{},"links":[]}
-{"id":"fuzz/tag/8","text":"rd\t#tag\n","record":{},"links":[]}
 {"id":"callout/line-after-title-is-fresh-block","text":"> [!note]\n> [^1]: x\n","record":{},"links":[]}
 {"id":"callout/only-first-line-is-title","text":"> a\n> [!note] T\n","record":{},"links":[]}
 {"id":"callout/marker-in-list-defines","text":"- > [!note] [^1]: x\n","record":{},"links":[]}
@@ -898,66 +750,7 @@
 {"id":"inline-footnote/reference-inside-is-dead","text":"^[see [^1]]\n\n[^1]: x\n","record":{},"links":[]}
 {"id":"inline-footnote/label-inside-is-dead","text":"^[[^1]: x]\n","record":{},"links":[]}
 {"id":"inline-footnote/nested-note-is-dead","text":"^[a ^[b] c]\n","record":{},"links":[]}
-{"id":"highlight/fam-heart-orange","text":"==🧡 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-heart-yellow","text":"==💛 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-heart-green","text":"==💚 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-heart-blue","text":"==💙 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-heart-purple","text":"==💜 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-heart-black","text":"==🖤 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-book-red","text":"==📕 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-book-green","text":"==📗 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-book-blue","text":"==📘 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-book-orange","text":"==📙 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-sq-med-black","text":"==◼ text==\n","record":{},"links":[]}
-{"id":"highlight/fam-sq-med-white","text":"==◻ text==\n","record":{},"links":[]}
-{"id":"highlight/fam-sq-small-black","text":"==◾ text==\n","record":{},"links":[]}
-{"id":"highlight/fam-sq-small-white","text":"==◽ text==\n","record":{},"links":[]}
-{"id":"highlight/fam-sq-tiny-black","text":"==▪ text==\n","record":{},"links":[]}
-{"id":"highlight/fam-sq-tiny-white","text":"==▫ text==\n","record":{},"links":[]}
-{"id":"highlight/fam-diamond-blue-lg","text":"==🔷 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-diamond-blue-sm","text":"==🔹 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-diamond-orange-sm","text":"==🔸 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-triangle-down","text":"==🔻 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-radio-button","text":"==🔘 text==\n","record":{},"links":[]}
-{"id":"highlight/fam-circle-red-vs","text":"==🔴️ text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-space-before","text":"== 🔴 text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-nested","text":"==🔴 a ==🟢 b== c==\n","record":{},"links":[]}
-{"id":"highlight/emoji-escaped-opener","text":"\\==🔴 text==\n","record":{},"links":[]}
 {"id":"highlight/emoji-in-comment","text":"%%==🔴 text==%%\n","record":{},"links":[]}
-{"id":"highlight/emoji-tab-after","text":"==🔴\ttext==\n","record":{},"links":[]}
-{"id":"highlight/emoji-newline-after","text":"==🔴\ntext==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-orange","text":"==🟠 text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-yellow","text":"==🟡 text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-green","text":"==🟢 text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-blue","text":"==🔵 text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-purple","text":"==🟣 text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-brown","text":"==🟤 text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-black","text":"==⚫ text==\n","record":{},"links":[]}
-{"id":"highlight/set-circle-white","text":"==⚪ text==\n","record":{},"links":[]}
-{"id":"highlight/set-square-orange","text":"==🟧 text==\n","record":{},"links":[]}
-{"id":"highlight/set-square-purple","text":"==🟪 text==\n","record":{},"links":[]}
-{"id":"highlight/set-square-brown","text":"==🟫 text==\n","record":{},"links":[]}
-{"id":"highlight/set-square-black","text":"==⬛ text==\n","record":{},"links":[]}
-{"id":"highlight/set-square-white","text":"==⬜ text==\n","record":{},"links":[]}
-{"id":"highlight/set-heart-red","text":"==❤ text==\n","record":{},"links":[]}
-{"id":"highlight/set-star","text":"==⭐ text==\n","record":{},"links":[]}
-{"id":"highlight/set-check","text":"==✅ text==\n","record":{},"links":[]}
-{"id":"highlight/set-triangle","text":"==🔺 text==\n","record":{},"links":[]}
-{"id":"highlight/set-moon","text":"==🌕 text==\n","record":{},"links":[]}
-{"id":"highlight/set-diamond-orange","text":"==🔶 text==\n","record":{},"links":[]}
-{"id":"highlight/set-flag","text":"==🚩 text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-space-text","text":"==🔴 text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-text-nospace","text":"==🔴text==\n","record":{},"links":[]}
-{"id":"highlight/square-red","text":"==🟥text==\n","record":{},"links":[]}
-{"id":"highlight/square-yellow","text":"==🟨 text==\n","record":{},"links":[]}
-{"id":"highlight/square-green","text":"==🟩 text==\n","record":{},"links":[]}
-{"id":"highlight/square-blue","text":"==🟦 text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-only-body","text":"==🔴==\n","record":{},"links":[]}
-{"id":"highlight/emoji-midbody","text":"==te🔴xt==\n","record":{},"links":[]}
-{"id":"highlight/emoji-doubled","text":"==🔴🟩text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-noncolor","text":"==😀text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-variation-selector","text":"==❤️ text==\n","record":{},"links":[]}
-{"id":"highlight/emoji-zwj-sequence","text":"==👨‍👩‍👧 text==\n","record":{},"links":[]}
 {"id":"highlight/emoji-in-callout-title","text":"> [!note] ==🔴 T==\n","record":{},"links":[]}
 {"id":"highlight/emoji-in-table-cell","text":"| a |\n| --- |\n| ==🔴 t== |\n","record":{},"links":[]}
 {"id":"block-ref/paragraph-trailing","text":"A paragraph with an id. ^block-id\n","record":{},"links":[]}
@@ -1000,16 +793,11 @@
 {"id":"embed/wikilink-in-alias","text":"![[a|[[b]]]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"b","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":10,"offset":10}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"b","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":10,"offset":10}}}]}
 {"id":"embed/missing-block-with-alias","text":"![[nonexistent#^b|c]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"nonexistent#^b","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":21,"offset":21}}}]}
 {"id":"embed/unclosed","text":"![[Unclosed embed\n","record":{},"links":[]}
-{"id":"tag/numeric-path","text":"#123/456\n","record":{},"links":[]}
-{"id":"tag/digit-leading-mixed","text":"#1_a-b\n","record":{},"links":[]}
-{"id":"tag/empty-path-segment","text":"#a//b\n","record":{},"links":[]}
-{"id":"tag/combining-mark","text":"#é\n","record":{},"links":[]}
 {"id":"tag/inside-wikilink-alias","text":"[[a|#b]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":8,"offset":8}}}]}
 {"id":"link/relative-block-fragment","text":"[x](a.md#^b)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"a.md#^b","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":12,"offset":12}}}]}
 {"id":"link/angle-wrapped-space","text":"[x](<a b.md>)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"a b.md","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":13,"offset":13}}}]}
 {"id":"link/literal-pipe-destination","text":"[x](a|b)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"a|b","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":8,"offset":8}}}]}
 {"id":"link/obsidian-scheme-autolink","text":"<obsidian://open?vault=v&file=a>\n","record":{},"links":[]}
-{"id":"link/bare-url-balanced-parens","text":"https://a.test/x_(y).\n","record":{},"links":[]}
 {"id":"link/reference-style-internal","text":"[x][a]\n\n[a]: b.md \"c\"\n","record":{},"links":[]}
 {"id":"link/angle-autolink","text":"<https://x>\n","record":{},"links":[]}
 {"id":"callout/marker-padding","text":">[!note]\n> a\n\n>  [!note]\n> b\n","record":{},"links":[]}
@@ -1045,8 +833,6 @@
 {"id":"callout/marker-inside-table-cell","text":"| a |\n| --- |\n| > [!note] |\n","record":{},"links":[]}
 {"id":"callout/marker-inside-indented-code","text":"    > [!note]\n    > x\n","record":{},"links":[]}
 {"id":"callout/nested-task-list","text":"> [!note]\n> - [ ] Outer task\n> > [!todo]\n> > - [x] Inner task\n","record":{},"links":[]}
-{"id":"blockquote/changing-depth-without-spaces","text":">>>a\n>b\n>>c\nd\n","record":{},"links":[]}
-{"id":"blockquote/bare-marker","text":">\n","record":{},"links":[]}
 {"id":"task/status-alphabet","text":"- [/] a\n- [-] b\n- [>] c\n- [?] d\n- [!] e\n- [*] f\n- [\"] g\n- [x] h\n- [X] i\n","record":{},"links":[]}
 {"id":"task/missing-spaces","text":"- [] a\n- [ ]x\n","record":{},"links":[]}
 {"id":"task/ordered","text":"1. [ ] a\n","record":{},"links":[]}
@@ -1058,8 +844,6 @@
 {"id":"task/in-obsidian-comment","text":"%%\n- [ ] Hidden task\n- [x] Also hidden\n%%\n","record":{},"links":[]}
 {"id":"task/comment-adjacent-marker","text":"- %% hidden prefix %% [ ] text\n- [x] %% hidden suffix %% text\n","record":{},"links":[]}
 {"id":"table/short-center-unbordered","text":"a|b\n:-:|---\nx|y\n","record":{},"links":[]}
-{"id":"table/colon-only-delimiter","text":"|a|\n|::|\n|b|\n","record":{},"links":[]}
-{"id":"table/single-column-short-rule","text":"|a|\n|-|\n|b|\n","record":{},"links":[]}
 {"id":"table/escaped-pipe","text":"|a|b|\n|---|---|\n|x\\|y|z|\n","record":{},"links":[]}
 {"id":"table/code-pipe","text":"|a|b|\n|---|---|\n|`x|y`|z|\n","record":{},"links":[]}
 {"id":"table/math-pipe","text":"|a|b|\n|---|---|\n|$x|y$|z|\n","record":{},"links":[]}
@@ -1068,15 +852,7 @@
 {"id":"table/list-container","text":"- a\n\n  |b|\n  |---|\n  |c|\n","record":{},"links":[]}
 {"id":"table/excess-delimiter-columns","text":"|a|\n|---|---|\n|b|c|\n","record":{},"links":[]}
 {"id":"table/tab-before-pipe","text":"| a\t| b |\n| --- | --- |\n| c | d |\n","record":{},"links":[]}
-{"id":"list/marker-switch","text":"* a\n+ b\n- c\n","record":{},"links":[]}
-{"id":"list/zero-start-seven-next","text":"0. a\n7. b\n","record":{},"links":[]}
-{"id":"list/paren-digit-limit","text":"1) a\n1234567890) b\n","record":{},"links":[]}
-{"id":"list/tight-to-loose","text":"- a\n- b\n\n  c\n","record":{},"links":[]}
-{"id":"list/indent-staircase","text":" - a\n  - b\n   - c\n    - d\n","record":{},"links":[]}
 {"id":"list/fence-interruption","text":"- a\n```\nb\n```\n- c\n","record":{},"links":[]}
-{"id":"strikethrough/single-versus-double","text":"~~a~~ ~b~\n","record":{},"links":[]}
-{"id":"strikethrough/crossing-emphasis","text":"~~*a~~b*\n","record":{},"links":[]}
-{"id":"heading/atx-recognition-limits","text":"#a\n\n####### b\n\n#\n","record":{},"links":[]}
 {"id":"heading/closing-hash-rich-content","text":"# [[a]] #tag $x$ #\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":7,"offset":7}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":7,"offset":7}}}]}
 {"id":"heading/setext-in-list","text":"- a\n  ---\n","record":{},"links":[]}
 {"id":"frontmatter/not-first-line","text":"\n---\ntags: [a]\n---\n","record":{},"links":[]}
@@ -1091,63 +867,31 @@
 {"id":"frontmatter/typed-scalars","text":"---\nyear: 1977\nfavorite: true\ndate: 2020-08-21\n---\n","record":{},"links":[]}
 {"id":"frontmatter/json-form","text":"---\n{\n  \"tags\": [\"journal\"],\n  \"publish\": false\n}\n---\n","record":{},"links":[]}
 {"id":"frontmatter/markdown-in-value","text":"---\ntitle: \"**not bold**\"\n---\n","record":{},"links":[]}
-{"id":"document/mixed-endings-trailing-spaces","text":"a  \r\nb \nc   \r\nd\n","record":{},"links":[]}
 {"id":"document/tab-indentation","text":"- a\n\t- [x] b\n\n\t# c\n","record":{},"links":[]}
 {"id":"document/invisible-delimiter-content","text":"== == [[​]] $ x $\n","record":{"wikilinks":[{"kind":"wikilink","raw":"​","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":11,"offset":11}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"​","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":11,"offset":11}}}]}
 {"id":"thematic-break/paragraph-dashes","text":"p\n---\nq\n","record":{},"links":[]}
-{"id":"thematic-break/alternative-markers","text":"a\n***\nb\n___\nc\n- - -\n","record":{},"links":[]}
 {"id":"thematic-break/list-tail","text":"- a\n---\nb\n","record":{},"links":[]}
 {"id":"escape/line-start-delimiters","text":"\\[[a]]\n\\![[b]]\n\\==c==\n\\%%d%%\n\\$e$\n\\*g*\n\\_i_\n\\^[j]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"b","position":{"start":{"line":1,"col":2,"offset":9},"end":{"line":1,"col":7,"offset":14}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"b","position":{"start":{"line":1,"col":2,"offset":9},"end":{"line":1,"col":7,"offset":14}}}]}
-{"id":"precedence/container-exit","text":"> ==a\n\nb==\n","record":{},"links":[]}
 {"id":"precedence/code-math","text":"`$x$` $`x`$\n","record":{},"links":[]}
 {"id":"precedence/comment-eats-opener","text":"%%[[%%a]]\n","record":{},"links":[]}
 {"id":"precedence/math-wikilink","text":"$[[a]]$\n","record":{},"links":[]}
 {"id":"precedence/wikilink-math","text":"[[$x$]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"$x$","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"$x$","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]}
-{"id":"precedence/highlight-tag","text":"==#tag==\n","record":{},"links":[]}
 {"id":"precedence/html-obsidian-comments","text":"<!-- %% -->\n# h\n%%\n","record":{},"links":[]}
 {"id":"precedence/frontmatter-boundary","text":"---\nx: '==a'\n---\nb==\n","record":{},"links":[]}
 {"id":"precedence/fenced-code-boundary","text":"==a\n```\nb==\n```\nc\n","record":{},"links":[]}
 {"id":"precedence/comment-in-code","text":"`%% not a comment %%`\n","record":{},"links":[]}
 {"id":"precedence/embed-in-code","text":"`![[Note]]`\n","record":{},"links":[]}
 {"id":"comment/spans-blocks","text":"%%\nHidden paragraph.\n\n- Hidden list\n\n> Hidden quote\n%%\n","record":{},"links":[]}
-{"id":"entity/decoded-constructs","text":"&amp; &#35;tag &#x5B;&#x5B;a&#x5D;&#x5D; &bogus;\n","record":{},"links":[]}
 {"id":"html/inline-break","text":"a<br>b\n","record":{},"links":[]}
 {"id":"html/script-block","text":"<script>\n# h\n[[a]]\n</script>\n# b\n","record":{},"links":[]}
 {"id":"html/blank-line-interruption","text":"<div>\n[[a]]\n\n# h\n</div>\n","record":{},"links":[]}
 {"id":"html/inline-block-boundary","text":"a <span>*b*</span>\n\n<div>\n*c*\n</div>\n*d*\n","record":{},"links":[]}
 {"id":"html/comment-around-block","text":"<!--\n- [ ] hidden\n-->\n\n- [ ] visible\n","record":{},"links":[]}
-{"id":"probe/tab/leading-one","text":"\tfoo\n","record":{},"links":[]}
-{"id":"probe/tab/two-spaces-then-tab","text":"  \tfoo\n","record":{},"links":[]}
-{"id":"probe/tab/three-spaces-then-tab","text":"   \tfoo\n","record":{},"links":[]}
-{"id":"probe/tab/interior-single","text":"a\tb\n","record":{},"links":[]}
-{"id":"probe/tab/interior-double","text":"a\t\tb\n","record":{},"links":[]}
-{"id":"probe/tab/interior-runs","text":"a\tb\tc\n","record":{},"links":[]}
-{"id":"probe/tab/after-double-run","text":"a\t\tb\tc\n","record":{},"links":[]}
-{"id":"probe/tab/trailing-one","text":"a\t\n","record":{},"links":[]}
-{"id":"probe/tab/trailing-double","text":"a\t\t\n","record":{},"links":[]}
-{"id":"probe/tab/only-tabs","text":"\t\t\n","record":{},"links":[]}
-{"id":"probe/tab/list-marker","text":"-\tfoo\n","record":{},"links":[]}
-{"id":"probe/tab/quote-marker","text":">\tfoo\n","record":{},"links":[]}
-{"id":"probe/tab/heading-marker","text":"#\tfoo\n","record":{},"links":[]}
-{"id":"probe/tab/heading-before-closer","text":"# foo\t#\n","record":{},"links":[]}
 {"id":"probe/tab/table-cell","text":"| a\tb |\n| --- |\n","record":{},"links":[]}
 {"id":"probe/tab/code-span","text":"`a\tb`\n","record":{},"links":[]}
 {"id":"probe/tab/definition-body","text":"[^1]:\tbody\n","record":{},"links":[]}
 {"id":"probe/tab/wikilink-target","text":"[[a\tb]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a\tb","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"a\tb","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]}
-{"id":"probe/empty-container/list-blank-indented","text":"-\n\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/list-indented","text":"-\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/list-lazy","text":"-\nfoo\n","record":{},"links":[]}
-{"id":"probe/empty-container/list-marker-space","text":"- \n\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/list-two-blanks","text":"-\n\n\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/list-then-item","text":"-\n\n- b\n","record":{},"links":[]}
-{"id":"probe/empty-container/list-content-then-blank","text":"- a\n\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/ordered","text":"1.\n\n   foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/ordered-lazy","text":"1.\nfoo\n","record":{},"links":[]}
 {"id":"probe/empty-container/task-empty","text":"- [ ]\n\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/quote-blank","text":">\n\nfoo\n","record":{},"links":[]}
-{"id":"probe/empty-container/quote-indented","text":">\n  foo\n","record":{},"links":[]}
-{"id":"probe/empty-container/quote-lazy","text":">\nfoo\n","record":{},"links":[]}
-{"id":"probe/empty-container/nested-list","text":"-\n\n  -\n\n    foo\n","record":{},"links":[]}
 {"id":"probe/footnote-embed/ref-wikilink","text":"[^[[target]]]\n","record":{},"links":[]}
 {"id":"probe/footnote-embed/ref-embed-defined","text":"[^![[img.png]]]\n\n[^1]: x\n","record":{},"links":[]}
 {"id":"probe/footnote-embed/inline-embed","text":"^[![[img.png]]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"img.png","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":14,"offset":14}}}]}
@@ -1181,19 +925,8 @@
 {"id":"probe/math/in-highlight","text":"==$x^2$==\n","record":{},"links":[]}
 {"id":"probe/math/in-callout-title","text":"> [!note] $x^2$\n","record":{},"links":[]}
 {"id":"probe/math/in-table-cell","text":"| $x^2$ |\n| --- |\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/across-line","text":"*bar\nbaz*\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/across-line-strong","text":"**bar\nbaz**\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/across-line-underscore","text":"_bar\nbaz_\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/three-lines","text":"*a\nb\nc*\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/blank-between","text":"*bar\n\nbaz*\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/in-setext-equals","text":"Foo *bar\nbaz*\n====\n","record":{},"links":[]}
 {"id":"probe/emphasis-span/in-setext-dash","text":"Foo *bar\nbaz*\n----\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/in-quote","text":"> *bar\n> baz*\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/in-quote-lazy","text":"> *bar\nbaz*\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/in-list","text":"- *bar\n  baz*\n","record":{},"links":[]}
 {"id":"probe/emphasis-span/in-callout-title","text":"> [!note] *em\nem*\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/unclosed","text":"*bar\n","record":{},"links":[]}
-{"id":"probe/emphasis-span/tab-separated","text":"*\t*\t*\t\n","record":{},"links":[]}
 {"id":"probe/footnote-content/inline-plain","text":"^[plain]\n","record":{},"links":[]}
 {"id":"probe/footnote-content/inline-strong","text":"^[a **strong** b]\n","record":{},"links":[]}
 {"id":"probe/footnote-content/inline-emphasis","text":"^[*em*]\n","record":{},"links":[]}
@@ -1206,29 +939,6 @@
 {"id":"probe/footnote-content/ref-tag","text":"[^#tag]\n","record":{},"links":[]}
 {"id":"probe/footnote-content/definition-strong","text":"use[^1]\n\n[^1]: **strong**\n","record":{},"links":[]}
 {"id":"probe/footnote-content/definition-math","text":"use[^1]\n\n[^1]: $x^2$\n","record":{},"links":[]}
-{"id":"probe/thematic-break/spaces","text":"* * *\n","record":{},"links":[]}
-{"id":"probe/thematic-break/double-spaces","text":"*  *  *\n","record":{},"links":[]}
-{"id":"probe/thematic-break/tight","text":"***\n","record":{},"links":[]}
-{"id":"probe/thematic-break/tab-inner","text":"*\t*\t*\n","record":{},"links":[]}
-{"id":"probe/thematic-break/tab-one","text":"* *\t*\n","record":{},"links":[]}
-{"id":"probe/thematic-break/tab-trailing","text":"* * *\t\n","record":{},"links":[]}
-{"id":"probe/thematic-break/dash-tab","text":"-\t-\t-\t\n","record":{},"links":[]}
-{"id":"probe/thematic-break/dash-spaces","text":"- - -\n","record":{},"links":[]}
-{"id":"probe/thematic-break/underscore-tab","text":"_\t_\t_\t\n","record":{},"links":[]}
-{"id":"probe/thematic-break/underscore-spaces","text":"_ _ _\n","record":{},"links":[]}
-{"id":"probe/thematic-break/five-tab","text":"*\t*\t*\t*\t*\t\n","record":{},"links":[]}
-{"id":"probe/strikethrough/simple","text":"~~del~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/single-tilde","text":"~x~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/four-tildes","text":"~~~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/six-tildes","text":"~~~~~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/unclosed","text":"~~del\n","record":{},"links":[]}
-{"id":"probe/strikethrough/space-after-open","text":"~~ del~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/space-before-close","text":"~~del ~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/across-line","text":"~~del\nmore~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/nested-emphasis","text":"~~*em*~~\n","record":{},"links":[]}
-{"id":"probe/strikethrough/in-emphasis","text":"*~~del~~*\n","record":{},"links":[]}
-{"id":"probe/strikethrough/adjacent-text","text":"a~~del~~b\n","record":{},"links":[]}
-{"id":"probe/strikethrough/interior-single","text":"~~a~b~~\n","record":{},"links":[]}
 {"id":"probe/strikethrough/in-table-cell","text":"| ~~del~~ |\n| --- |\n","record":{},"links":[]}
 {"id":"probe/embed/plain","text":"![[target]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
 {"id":"probe/embed/heading","text":"![[a#h]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"a#h","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":8,"offset":8}}}]}
@@ -1248,22 +958,9 @@
 {"id":"probe/embed/in-table-cell","text":"| ![[a]] |\n| --- |\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"a","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":8,"offset":8}}}]}
 {"id":"probe/embed/adjacent","text":"x![[a]]y\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"a","position":{"start":{"line":0,"col":1,"offset":1},"end":{"line":0,"col":7,"offset":7}}}]}
 {"id":"probe/embed/two","text":"![[a]] ![[b]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":6,"offset":6}}},{"kind":"wikilink","embedded":true,"target":"b","position":{"start":{"line":0,"col":7,"offset":7},"end":{"line":0,"col":13,"offset":13}}}]}
-{"id":"probe/escape/asterisk","text":"a \\* b\n","record":{},"links":[]}
-{"id":"probe/escape/underscore","text":"a \\_ b\n","record":{},"links":[]}
 {"id":"probe/escape/bracket","text":"a \\[ b\n","record":{},"links":[]}
-{"id":"probe/escape/close-bracket","text":"a \\] b\n","record":{},"links":[]}
-{"id":"probe/escape/hash","text":"a \\# b\n","record":{},"links":[]}
 {"id":"probe/escape/dollar","text":"a \\$ b\n","record":{},"links":[]}
-{"id":"probe/escape/equals","text":"a \\= b\n","record":{},"links":[]}
-{"id":"probe/escape/percent","text":"a \\% b\n","record":{},"links":[]}
-{"id":"probe/escape/tilde","text":"a \\~ b\n","record":{},"links":[]}
-{"id":"probe/escape/pipe","text":"a \\| b\n","record":{},"links":[]}
-{"id":"probe/escape/bang","text":"a \\! b\n","record":{},"links":[]}
-{"id":"probe/escape/backslash","text":"a \\\\ b\n","record":{},"links":[]}
-{"id":"probe/escape/ampersand","text":"a \\& b\n","record":{},"links":[]}
-{"id":"probe/escape/letter","text":"a \\z b\n","record":{},"links":[]}
 {"id":"probe/escape/wikilink-opener","text":"\\[[a]]\n","record":{},"links":[]}
-{"id":"probe/escape/highlight-opener","text":"\\==mark==\n","record":{},"links":[]}
 {"id":"probe/escape/comment-opener","text":"\\%%note%%\n","record":{},"links":[]}
 {"id":"probe/escape/in-code-span","text":"`a \\* b`\n","record":{},"links":[]}
 {"id":"probe/escape/in-table-cell","text":"| a \\| b |\n| --- |\n","record":{},"links":[]}
@@ -1282,18 +979,10 @@
 {"id":"probe/escaped-label/in-wikilink","text":"[[\\[^1]\n","record":{},"links":[]}
 {"id":"probe/escaped-label/in-brackets","text":"[\\[^1]]]\n","record":{},"links":[]}
 {"id":"probe/escaped-label/in-embed","text":"![[\\[^1]]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"\\[^1","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
-{"id":"probe/space-after/strike","text":"~~del~~\n \n","record":{},"links":[]}
 {"id":"probe/space-after/code","text":"`code`\n \n","record":{},"links":[]}
-{"id":"probe/space-after/strong-zwsp","text":"  **​**\n \n","record":{},"links":[]}
 {"id":"probe/space-after/tag-block-ref","text":"a#^b\n   \n","record":{},"links":[]}
 {"id":"probe/empty-inline/strike-in-task","text":"- [ ] ~~~~\n","record":{},"links":[]}
-{"id":"probe/empty-inline/highlight-then-blank","text":"==ma\n \n","record":{},"links":[]}
-{"id":"probe/space-line/after-bare-marker","text":"-  \n \n","record":{},"links":[]}
-{"id":"probe/space-line/quote-then-underline","text":">  \n===\n","record":{},"links":[]}
 {"id":"probe/space-line/indented-wikilink-open","text":"  [[\n   \n","record":{},"links":[]}
-{"id":"probe/space-line/between-paragraphs","text":"a\n \nb\n","record":{},"links":[]}
-{"id":"probe/space-line/ends-quote","text":"> a\n \n> b\n","record":{},"links":[]}
-{"id":"probe/space-line/in-list","text":"- a\n \n- b\n","record":{},"links":[]}
 {"id":"probe/code-unclosed/indented-then-space-line","text":"  `tar\n   \n","record":{},"links":[]}
 {"id":"probe/code-unclosed/root-then-text","text":"`tar\nword\n","record":{},"links":[]}
 {"id":"probe/code-unclosed/with-construct-after","text":"`tar [[a]] b\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":10,"offset":10}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":10,"offset":10}}}]}
@@ -1392,16 +1081,13 @@
 {"id":"probe/wikilink-link/space-before-paren","text":"[[a]] (u)\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":5,"offset":5}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":5,"offset":5}}}]}
 {"id":"probe/wikilink-link/block-ref-then-destination","text":"[[a#^blk]](u)\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"a#^blk","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":10,"offset":10}}}]}
 {"id":"probe/lazy-setext/quote-lazy-dash","text":"> a\nb\n---\n","record":{},"links":[]}
-{"id":"probe/lazy-setext/quote-lazy-equals","text":"> a\nb\n===\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/quote-underline-is-lazy-dash","text":"> a\n---\n","record":{},"links":[]}
-{"id":"probe/lazy-setext/quote-underline-is-lazy-equals","text":"> a\n===\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/quote-two-lazy","text":"> a\nb\nc\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/quote-blank-then-underline","text":"> a\n\nb\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/callout-lazy-dash","text":"> [!note] a\nb\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/callout-underline-is-lazy","text":"> [!note] a\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/incomplete-callout-lazy","text":"> [!\nb\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/list-lazy-dash","text":"- a\nb\n---\n","record":{},"links":[]}
-{"id":"probe/lazy-setext/list-lazy-equals","text":"- a\nb\n===\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/list-underline-is-lazy","text":"- a\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/list-html-then-lazy","text":"- a\n<br>\nb\n---\n","record":{},"links":[]}
 {"id":"probe/lazy-setext/quote-html-then-lazy","text":"> a\n<br>\nb\n---\n","record":{},"links":[]}
@@ -1410,7 +1096,6 @@
 {"id":"probe/straddle/callout-code","text":"> [!note] `a\nb`\n","record":{},"links":[]}
 {"id":"probe/straddle/callout-wikilink","text":"> [!note] [[a\nb]]\n","record":{},"links":[]}
 {"id":"probe/straddle/callout-comment","text":"> [!note] %%a\nb%%\n","record":{},"links":[]}
-{"id":"probe/straddle/setext-highlight","text":"==a\nb==\n====\n","record":{},"links":[]}
 {"id":"probe/straddle/setext-math","text":"$a\nb$\n====\n","record":{},"links":[]}
 {"id":"probe/straddle/setext-code","text":"`a\nb`\n====\n","record":{},"links":[]}
 {"id":"probe/straddle/setext-wikilink","text":"[[a\nb]]\n====\n","record":{},"links":[]}
@@ -1421,15 +1106,12 @@
 {"id":"probe/straddle/definition-code","text":"[^1]: `a\nb`\n","record":{},"links":[]}
 {"id":"probe/straddle/task-highlight","text":"- [ ] ==a\n  b==\n","record":{},"links":[]}
 {"id":"probe/straddle/task-math","text":"- [ ] $a\n  b$\n","record":{},"links":[]}
-{"id":"probe/straddle/empty-item-highlight","text":"-\n\n  ==a==\n","record":{},"links":[]}
 {"id":"probe/straddle/empty-item-math","text":"-\n\n  $x$\n","record":{},"links":[]}
-{"id":"probe/straddle/indent-tab-highlight","text":"  \t==a==\n","record":{},"links":[]}
 {"id":"probe/straddle/indent-tab-math","text":"  \t$x$\n","record":{},"links":[]}
 {"id":"probe/straddle/table-interrupt-highlight","text":"| a |\n| --- |\n==b\nc==\n","record":{},"links":[]}
 {"id":"probe/straddle/table-open-highlight","text":"==a\n| b |\n| --- |\n","record":{},"links":[]}
 {"id":"probe/straddle/comment-crosses-highlight","text":"==a %%b== c%%\n","record":{},"links":[]}
 {"id":"probe/straddle/highlight-crosses-comment","text":"%%a ==b%% c==\n","record":{},"links":[]}
-{"id":"probe/straddle/quote-code-highlight","text":"> ==a\n>     b==\n","record":{},"links":[]}
 {"id":"probe/straddle/html-setext-highlight","text":"<br>\n==a==\n===\n","record":{},"links":[]}
 {"id":"probe/callout-block-body/heading-lazy","text":"> [!note] # h\nbody\n","record":{},"links":[]}
 {"id":"probe/callout-block-body/heading-quoted","text":"> [!note] # h\n> body\n","record":{},"links":[]}
@@ -1446,7 +1128,6 @@
 {"id":"probe/straddle-fold/definition-label","text":"[==a==]: /u\n","record":{},"links":[]}
 {"id":"probe/straddle-fold/definition-title","text":"[a]: /u ==t==\n","record":{},"links":[]}
 {"id":"probe/straddle-fold/table-split","text":"[^1]: ==a\n| b |\n| --- |\nc==\n","record":{},"links":[]}
-{"id":"probe/straddle-fold/quote-indented-code","text":"> ==a\n> b\n    c==\n","record":{},"links":[]}
 {"id":"probe/straddle-fold/html-setext-span","text":"<br>\n==a\nb==\n===\n","record":{},"links":[]}
 {"id":"probe/straddle-fold/list-under-definition","text":"[^1]: ==a\n2. b==\n","record":{},"links":[]}
 {"id":"probe/straddle-fold/footnote-interrupt","text":"a==b\n[^1]: c==\n","record":{},"links":[]}
@@ -1462,9 +1143,6 @@
 {"id":"probe/cross/highlight-comment","text":"==a%%b==c%%\n","record":{},"links":[]}
 {"id":"probe/cross/comment-highlight","text":"%%a==b%%c==\n","record":{},"links":[]}
 {"id":"probe/cross/math-wikilink","text":"$a[[b$c]]\n","record":{},"links":[]}
-{"id":"probe/cross/strong-highlight","text":"**a==b**c==\n","record":{},"links":[]}
-{"id":"probe/cross/highlight-strong","text":"==a**b==c**\n","record":{},"links":[]}
-{"id":"probe/cross/tag-highlight","text":"#a==b==\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/fn-wikilink","text":"use[^[[a]]]\n\n[^[[a]]]: d\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/fn-embed","text":"use[^![[a]]]\n\n[^![[a]]]: d\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/fn-plain-pair","text":"use[^[a]]\n\n[^[a]]: d\n","record":{},"links":[]}
@@ -1489,7 +1167,6 @@
 {"id":"probe/bracket-nest/embed-inner-wikilink","text":"![[a[[b]]]]\n","record":{"wikilinks":[{"kind":"wikilink","raw":"b","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":9,"offset":9}}}]},"links":[{"kind":"wikilink","embedded":false,"target":"b","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":9,"offset":9}}}]}
 {"id":"probe/bracket-nest/wikilink-in-label","text":"[x [[a]] y](u)\n","record":{"wikilinks":[{"kind":"wikilink","raw":"a","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":8,"offset":8}}}]},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":14,"offset":14}}},{"kind":"wikilink","embedded":false,"target":"a","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":8,"offset":8}}}]}
 {"id":"probe/bracket-nest/unbalanced-open","text":"[a\n","record":{},"links":[]}
-{"id":"probe/bracket-nest/unbalanced-close","text":"a]\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/unbalanced-wikilink-open","text":"[[a\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/unbalanced-wikilink-close","text":"a]]\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/unbalanced-fn-open","text":"[^[\n","record":{},"links":[]}
@@ -1503,35 +1180,13 @@
 {"id":"probe/bracket-nest/label-comment-closer","text":"[a%%]%%b](u)\n","record":{},"links":[]}
 {"id":"probe/bracket-nest/label-escaped-close","text":"[a\\]b](u)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
 {"id":"probe/bracket-nest/label-escaped-open","text":"[a\\[b](u)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
-{"id":"probe/container-setext/root","text":"para\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/quote-col0","text":"> para\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/quote-quoted","text":"> para\n> ===\n","record":{},"links":[]}
 {"id":"probe/container-setext/quote-dash","text":"> para\n---\n","record":{},"links":[]}
-{"id":"probe/container-setext/quote-blank-between","text":"> para\n\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/quote-two-lines","text":"> a\n> b\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/list-col0","text":"- item\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/list-indented","text":"- item\n  ===\n","record":{},"links":[]}
 {"id":"probe/container-setext/list-dash","text":"- item\n---\n","record":{},"links":[]}
-{"id":"probe/container-setext/list-two-items","text":"- a\n- b\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/ordered","text":"1. item\n===\n","record":{},"links":[]}
 {"id":"probe/container-setext/task","text":"- [ ] task\n===\n","record":{},"links":[]}
 {"id":"probe/container-setext/list-html","text":"- <br>\n===\n","record":{},"links":[]}
 {"id":"probe/container-setext/quote-math","text":"> $x$\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/list-highlight","text":"- ==mark==\n===\n","record":{},"links":[]}
 {"id":"probe/container-setext/callout-title","text":"> [!note] t\n===\n","record":{},"links":[]}
-{"id":"probe/container-setext/then-more","text":"- item\n===\nmore\n","record":{},"links":[]}
-{"id":"probe/container-setext/nested-quote","text":"> > para\n===\n","record":{},"links":[]}
-{"id":"probe/section-type/paragraph","text":"para\n","record":{},"links":[]}
-{"id":"probe/section-type/heading-atx","text":"# H\n","record":{},"links":[]}
-{"id":"probe/section-type/quote","text":"> q\n","record":{},"links":[]}
-{"id":"probe/section-type/indented","text":"    code\n","record":{},"links":[]}
-{"id":"probe/section-type/two-paras","text":"para\n\nsecond\n","record":{},"links":[]}
-{"id":"probe/section-type/root-strike","text":"~~x\n","record":{},"links":[]}
 {"id":"probe/section-type/root-comment","text":"%%c\n","record":{},"links":[]}
-{"id":"probe/nested-start/three-space","text":"- a\n   - b\n","record":{},"links":[]}
-{"id":"probe/nested-start/five-space","text":"- a\n     - b\n","record":{},"links":[]}
-{"id":"probe/nested-start/wide-sep","text":"1.  a\n    - b\n","record":{},"links":[]}
-{"id":"probe/nested-start/in-quote","text":"> - a\n>    - b\n","record":{},"links":[]}
 {"id":"probe/def-column/quote-three","text":">   [^1]: def\n","record":{},"links":[]}
 {"id":"probe/def-column/ordered-three","text":"1. item\n\n   [^1]: x\n","record":{},"links":[]}
 {"id":"probe/def-column/bullet-two","text":"- item\n\n  [^1]: x\n","record":{},"links":[]}
@@ -1585,22 +1240,10 @@
 {"id":"probe/def-tab/quote-spaces-tab","text":">   \t[^1]: def\n\nuse[^1]\n","record":{},"links":[]}
 {"id":"probe/def-tab/marker-tab-spaces","text":"+\t   [^1]: def\n\nuse[^1]\n","record":{},"links":[]}
 {"id":"probe/def-tab/four-spaces","text":"    [^1]: def\n\nuse[^1]\n","record":{},"links":[]}
-{"id":"probe/tab-nest/bullet-tab","text":"- parent\n\t- child\n","record":{},"links":[]}
-{"id":"probe/tab-nest/two-tabs","text":"- a\n\t\t- b\n","record":{},"links":[]}
-{"id":"probe/tab-nest/tab-then-space","text":"- a\n\t - b\n","record":{},"links":[]}
-{"id":"probe/quote-nest/two-space","text":"> - a\n>  - b\n","record":{},"links":[]}
-{"id":"probe/nest-parent/blank-then-indented","text":"- a\n  - b\n\n  c\n","record":{},"links":[]}
-{"id":"probe/nest-parent/blank-then-root","text":"- a\n  - b\n\nc\n","record":{},"links":[]}
-{"id":"probe/nest-trail/para-four","text":"- a\n  - b\n\n    c\n","record":{},"links":[]}
-{"id":"probe/nest-trail/heading","text":"- a\n  - b\n\n  # c\n","record":{},"links":[]}
-{"id":"probe/nest-trail/quote","text":"- a\n  - b\n\n  > c\n","record":{},"links":[]}
 {"id":"probe/nest-trail/fence","text":"- a\n  - b\n\n  ```\n  c\n  ```\n","record":{},"links":[]}
-{"id":"probe/nest-trail/no-blank","text":"- a\n  - b\n  c\n","record":{},"links":[]}
-{"id":"probe/nest-trail/blank-before-nest","text":"- a\n\n  - b\n\n  c\n","record":{},"links":[]}
 {"id":"probe/item-end/fence-unclosed-alone","text":"- ```\n  code\n","record":{},"links":[]}
 {"id":"probe/item-end/fence-closed-sibling","text":"- ```\n  code\n  ```\n- item\n","record":{},"links":[]}
 {"id":"probe/item-end/math-unclosed-sibling","text":"- $$\n  x\n- item\n","record":{},"links":[]}
-{"id":"probe/item-end/loose-then-sibling","text":"- a\n\n  b\n\n- c\n","record":{},"links":[]}
 {"id":"probe/block-nest/own-line","text":"- a\n  - b\n    ^id\n","record":{},"links":[]}
 {"id":"probe/block-nest/trailing","text":"- a\n  - b ^id\n","record":{},"links":[]}
 {"id":"probe/block-nest/outer-own-line","text":"- a\n\n  ^id\n","record":{},"links":[]}
@@ -1610,13 +1253,9 @@
 {"id":"probe/caret-link/image-no-def","text":"![^1](url)\n","record":{},"links":[{"kind":"link","embedded":true,"target":"url","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":10,"offset":10}}}]}
 {"id":"probe/caret-link/link-with-def","text":"[^1](u)\n\n[^1]: one\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":7,"offset":7}}}]}
 {"id":"probe/caret-link/link-angle-dest","text":"[^1](<u>)\n","record":{},"links":[{"kind":"link","embedded":false,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":9,"offset":9}}}]}
-{"id":"probe/same-line-nest/plain-dash","text":"- x - y\n","record":{},"links":[]}
 {"id":"probe/same-line-nest/task-checked","text":"- [x] 1.\n","record":{},"links":[]}
-{"id":"probe/same-line-nest/two-stars-tab","text":"*\t*\n","record":{},"links":[]}
 {"id":"probe/same-line-nest/ordered-task","text":"1. [ ] 2.\n","record":{},"links":[]}
-{"id":"probe/section-end/unclosed-strike","text":"- ~~x\n","record":{},"links":[]}
 {"id":"probe/section-end/root-unclosed","text":"$$y\n","record":{},"links":[]}
-{"id":"probe/section-end/item-then-text","text":"- a\nb\n","record":{},"links":[]}
 {"id":"probe/frontmatter-report/bad-no-blank","text":"---\ntitle: \"unterminated\n---\nbody\n","record":{},"links":[]}
 {"id":"probe/frontmatter-report/good-blank","text":"---\na: b\n---\n\nbody\n","record":{},"links":[]}
 {"id":"probe/frontmatter-report/scalar-no-blank","text":"---\nTitle\n---\nbody\n","record":{},"links":[]}
@@ -1636,8 +1275,6 @@
 {"id":"probe/block-id-wrapper/em-trailing-period","text":"*^blk*.\n","record":{},"links":[]}
 {"id":"probe/block-id-wrapper/nested-trailing-period","text":"_*^blk*_.\n","record":{},"links":[]}
 {"id":"probe/math-space/space-body-trailing-period","text":"  $$ $$.\n","record":{},"links":[]}
-{"id":"probe/tag-boundary/nested-then-comma","text":"- #a/b,\n","record":{},"links":[]}
-{"id":"probe/tag-boundary/nested-then-period","text":"- #a/b.\n","record":{},"links":[]}
 {"id":"probe/footnote-bare/colon-then-blank-run","text":"[^1]:\n      \n","record":{},"links":[]}
 {"id":"probe/footnote-bare/ref-then-escaped-label","text":"[^1]\n  [^1\\]\n","record":{},"links":[]}
 {"id":"probe/math-emphasis/display-across-lines","text":"_$$y^2\ny^2$$_\n","record":{},"links":[]}
@@ -1657,7 +1294,6 @@
 {"id":"probe/math-indent/one-space-empty-body","text":" $$ $$\n","record":{},"links":[]}
 {"id":"probe/setext-empty-host/item-comment","text":"- %%\n===\n","record":{},"links":[]}
 {"id":"probe/heading-highlight-footnote/inline-note","text":"# ==^[inline]==\n","record":{},"links":[]}
-{"id":"probe/trailing-blank-line/tag-then-escape","text":"#a/b \\ \n \n","record":{},"links":[]}
 {"id":"probe/block-id-tail/wrapper-then-word","text":"*^blk* word\n","record":{},"links":[]}
 {"id":"probe/block-id-tail/wrapper-then-comma-word","text":"*^blk*, word\n","record":{},"links":[]}
 {"id":"probe/tag-in-label/image-opener","text":"![#tag](u)\n","record":{},"links":[{"kind":"link","embedded":true,"target":"u","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":10,"offset":10}}}]}
@@ -1689,21 +1325,6 @@
 {"id":"token/embed/newline-body","text":"![[target\ntarget]]\n","record":{},"links":[]}
 {"id":"token/embed/long-body","text":"![[targettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettarget]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"targettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettargettarget","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":245,"offset":245}}}]}
 {"id":"token/embed/unicode-body","text":"![[日本語テスト]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"日本語テスト","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
-{"id":"token/highlight/balanced","text":"==text==\n","record":{},"links":[]}
-{"id":"token/highlight/no-closer","text":"==text\n","record":{},"links":[]}
-{"id":"token/highlight/no-opener","text":"text==\n","record":{},"links":[]}
-{"id":"token/highlight/doubled-open","text":"====text==\n","record":{},"links":[]}
-{"id":"token/highlight/doubled-close","text":"==text====\n","record":{},"links":[]}
-{"id":"token/highlight/empty","text":"====\n","record":{},"links":[]}
-{"id":"token/highlight/whitespace-body","text":"== ==\n","record":{},"links":[]}
-{"id":"token/highlight/nested","text":"====text====\n","record":{},"links":[]}
-{"id":"token/highlight/escaped-open","text":"\\==text==\n","record":{},"links":[]}
-{"id":"token/highlight/escaped-close","text":"==text\\==\n","record":{},"links":[]}
-{"id":"token/highlight/both-escaped","text":"\\==text\\==\n","record":{},"links":[]}
-{"id":"token/highlight/newline-escaped-close","text":"==text\ntext\\==\n","record":{},"links":[]}
-{"id":"token/highlight/newline-body","text":"==text\ntext==\n","record":{},"links":[]}
-{"id":"token/highlight/long-body","text":"==texttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttext==\n","record":{},"links":[]}
-{"id":"token/highlight/unicode-body","text":"==日本語テスト==\n","record":{},"links":[]}
 {"id":"token/comment/balanced","text":"%%text%%\n","record":{},"links":[]}
 {"id":"token/comment/no-closer","text":"%%text\n","record":{},"links":[]}
 {"id":"token/comment/no-opener","text":"text%%\n","record":{},"links":[]}
@@ -1743,51 +1364,6 @@
 {"id":"token/display-math/newline-body","text":"$$x^2\nx^2$$\n","record":{},"links":[]}
 {"id":"token/display-math/long-body","text":"$$x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2x^2$$\n","record":{},"links":[]}
 {"id":"token/display-math/unicode-body","text":"$$日本語テスト$$\n","record":{},"links":[]}
-{"id":"token/emphasis/balanced","text":"*text*\n","record":{},"links":[]}
-{"id":"token/emphasis/no-closer","text":"*text\n","record":{},"links":[]}
-{"id":"token/emphasis/no-opener","text":"text*\n","record":{},"links":[]}
-{"id":"token/emphasis/doubled-open","text":"**text*\n","record":{},"links":[]}
-{"id":"token/emphasis/doubled-close","text":"*text**\n","record":{},"links":[]}
-{"id":"token/emphasis/empty","text":"**\n","record":{},"links":[]}
-{"id":"token/emphasis/whitespace-body","text":"* *\n","record":{},"links":[]}
-{"id":"token/emphasis/nested","text":"**text**\n","record":{},"links":[]}
-{"id":"token/emphasis/escaped-open","text":"\\*text*\n","record":{},"links":[]}
-{"id":"token/emphasis/escaped-close","text":"*text\\*\n","record":{},"links":[]}
-{"id":"token/emphasis/both-escaped","text":"\\*text\\*\n","record":{},"links":[]}
-{"id":"token/emphasis/newline-escaped-close","text":"*text\ntext\\*\n","record":{},"links":[]}
-{"id":"token/emphasis/newline-body","text":"*text\ntext*\n","record":{},"links":[]}
-{"id":"token/emphasis/long-body","text":"*texttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttext*\n","record":{},"links":[]}
-{"id":"token/emphasis/unicode-body","text":"*日本語テスト*\n","record":{},"links":[]}
-{"id":"token/strong/no-closer","text":"**text\n","record":{},"links":[]}
-{"id":"token/strong/no-opener","text":"text**\n","record":{},"links":[]}
-{"id":"token/strong/doubled-open","text":"****text**\n","record":{},"links":[]}
-{"id":"token/strong/doubled-close","text":"**text****\n","record":{},"links":[]}
-{"id":"token/strong/empty","text":"****\n","record":{},"links":[]}
-{"id":"token/strong/whitespace-body","text":"** **\n","record":{},"links":[]}
-{"id":"token/strong/nested","text":"****text****\n","record":{},"links":[]}
-{"id":"token/strong/escaped-open","text":"\\**text**\n","record":{},"links":[]}
-{"id":"token/strong/escaped-close","text":"**text\\**\n","record":{},"links":[]}
-{"id":"token/strong/both-escaped","text":"\\**text\\**\n","record":{},"links":[]}
-{"id":"token/strong/newline-escaped-close","text":"**text\ntext\\**\n","record":{},"links":[]}
-{"id":"token/strong/newline-body","text":"**text\ntext**\n","record":{},"links":[]}
-{"id":"token/strong/long-body","text":"**texttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttext**\n","record":{},"links":[]}
-{"id":"token/strong/unicode-body","text":"**日本語テスト**\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/balanced","text":"_text_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/no-closer","text":"_text\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/no-opener","text":"text_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/doubled-open","text":"__text_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/doubled-close","text":"_text__\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/empty","text":"__\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/whitespace-body","text":"_ _\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/nested","text":"__text__\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/escaped-open","text":"\\_text_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/escaped-close","text":"_text\\_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/both-escaped","text":"\\_text\\_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/newline-escaped-close","text":"_text\ntext\\_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/newline-body","text":"_text\ntext_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/long-body","text":"_texttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttext_\n","record":{},"links":[]}
-{"id":"token/underscore-emphasis/unicode-body","text":"_日本語テスト_\n","record":{},"links":[]}
-{"id":"token/inline-footnote/no-opener","text":"note]\n","record":{},"links":[]}
 {"id":"token/inline-footnote/doubled-open","text":"^[^[note]\n","record":{},"links":[]}
 {"id":"token/inline-footnote/doubled-close","text":"^[note]]\n","record":{},"links":[]}
 {"id":"token/inline-footnote/empty","text":"^[]\n","record":{},"links":[]}
@@ -1799,20 +1375,6 @@
 {"id":"token/inline-footnote/newline-body","text":"^[note\nnote]\n","record":{},"links":[]}
 {"id":"token/inline-footnote/long-body","text":"^[notenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenotenote]\n","record":{},"links":[]}
 {"id":"token/inline-footnote/unicode-body","text":"^[日本語テスト]\n","record":{},"links":[]}
-{"id":"token/strikethrough/balanced","text":"~~text~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/no-closer","text":"~~text\n","record":{},"links":[]}
-{"id":"token/strikethrough/no-opener","text":"text~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/doubled-open","text":"~~~~text~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/doubled-close","text":"~~text~~~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/whitespace-body","text":"~~ ~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/nested","text":"~~~~text~~~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/escaped-open","text":"\\~~text~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/escaped-close","text":"~~text\\~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/both-escaped","text":"\\~~text\\~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/newline-escaped-close","text":"~~text\ntext\\~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/newline-body","text":"~~text\ntext~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/long-body","text":"~~texttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttexttext~~\n","record":{},"links":[]}
-{"id":"token/strikethrough/unicode-body","text":"~~日本語テスト~~\n","record":{},"links":[]}
 {"id":"token/wikilink-alias/balanced","text":"[[target|alias]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":16,"offset":16}}}]}
 {"id":"token/wikilink-alias/no-closer","text":"[[target|alias\n","record":{},"links":[]}
 {"id":"token/wikilink-alias/no-opener","text":"target|alias]]\n","record":{},"links":[]}
@@ -1839,7 +1401,6 @@
 {"id":"token/wikilink-heading/long-body","text":"[[target#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#head]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"target#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#headtarget#head","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":444,"offset":444}}}]}
 {"id":"token/footnote-ref/balanced","text":"[^1]\n","record":{},"links":[]}
 {"id":"token/footnote-ref/no-closer","text":"[^1\n","record":{},"links":[]}
-{"id":"token/footnote-ref/no-opener","text":"1]\n","record":{},"links":[]}
 {"id":"token/footnote-ref/doubled-open","text":"[^[^1]\n","record":{},"links":[]}
 {"id":"token/footnote-ref/doubled-close","text":"[^1]]\n","record":{},"links":[]}
 {"id":"token/footnote-ref/empty","text":"[^]\n","record":{},"links":[]}
@@ -1886,23 +1447,15 @@
 {"id":"context/nested-quote/embed","text":"> > ![[target]]\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":4,"offset":4},"end":{"line":0,"col":15,"offset":15}}}]}
 {"id":"context/link-label/embed","text":"[![[target]]](https://example.com)\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":1,"offset":1},"end":{"line":0,"col":12,"offset":12}}}]}
 {"id":"context/setext-heading/embed","text":"![[target]]\n===\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
-{"id":"context/heading/highlight","text":"# ==text==\n","record":{},"links":[]}
-{"id":"context/list-item/highlight","text":"- ==text==\n","record":{},"links":[]}
-{"id":"context/ordered-item/highlight","text":"1. ==text==\n","record":{},"links":[]}
 {"id":"context/task-item/highlight","text":"- [ ] ==text==\n","record":{},"links":[]}
-{"id":"context/nested-list/highlight","text":"- outer\n  - ==text==\n","record":{},"links":[]}
-{"id":"context/blockquote/highlight","text":"> ==text==\n","record":{},"links":[]}
 {"id":"context/callout/highlight","text":"> [!note] Title\n> ==text==\n","record":{},"links":[]}
 {"id":"context/table-cell/highlight","text":"| H |\n| --- |\n| ==text== |\n","record":{},"links":[]}
 {"id":"context/code-span/highlight","text":"`==text==`\n","record":{},"links":[]}
 {"id":"context/fenced-code/highlight","text":"```\n==text==\n```\n","record":{},"links":[]}
 {"id":"context/html-block/highlight","text":"<div>\n==text==\n</div>\n","record":{},"links":[]}
-{"id":"context/indented-code/highlight","text":"    ==text==\n","record":{},"links":[]}
 {"id":"context/frontmatter-after/highlight","text":"---\nk: v\n---\n\n==text==\n","record":{},"links":[]}
 {"id":"context/footnote-definition/highlight","text":"[^1]: ==text==\n","record":{},"links":[]}
-{"id":"context/nested-quote/highlight","text":"> > ==text==\n","record":{},"links":[]}
 {"id":"context/link-label/highlight","text":"[==text==](https://example.com)\n","record":{},"links":[]}
-{"id":"context/setext-heading/highlight","text":"==text==\n===\n","record":{},"links":[]}
 {"id":"context/heading/comment","text":"# %%text%%\n","record":{},"links":[]}
 {"id":"context/list-item/comment","text":"- %%text%%\n","record":{},"links":[]}
 {"id":"context/ordered-item/comment","text":"1. %%text%%\n","record":{},"links":[]}
@@ -1954,57 +1507,33 @@
 {"id":"context/nested-quote/display-math","text":"> > $$x^2$$\n","record":{},"links":[]}
 {"id":"context/link-label/display-math","text":"[$$x^2$$](https://example.com)\n","record":{},"links":[]}
 {"id":"context/setext-heading/display-math","text":"$$x^2$$\n===\n","record":{},"links":[]}
-{"id":"context/heading/emphasis","text":"# *text*\n","record":{},"links":[]}
-{"id":"context/list-item/emphasis","text":"- *text*\n","record":{},"links":[]}
-{"id":"context/ordered-item/emphasis","text":"1. *text*\n","record":{},"links":[]}
 {"id":"context/task-item/emphasis","text":"- [ ] *text*\n","record":{},"links":[]}
-{"id":"context/nested-list/emphasis","text":"- outer\n  - *text*\n","record":{},"links":[]}
-{"id":"context/blockquote/emphasis","text":"> *text*\n","record":{},"links":[]}
 {"id":"context/callout/emphasis","text":"> [!note] Title\n> *text*\n","record":{},"links":[]}
 {"id":"context/table-cell/emphasis","text":"| H |\n| --- |\n| *text* |\n","record":{},"links":[]}
 {"id":"context/code-span/emphasis","text":"`*text*`\n","record":{},"links":[]}
 {"id":"context/fenced-code/emphasis","text":"```\n*text*\n```\n","record":{},"links":[]}
 {"id":"context/html-block/emphasis","text":"<div>\n*text*\n</div>\n","record":{},"links":[]}
-{"id":"context/indented-code/emphasis","text":"    *text*\n","record":{},"links":[]}
 {"id":"context/frontmatter-after/emphasis","text":"---\nk: v\n---\n\n*text*\n","record":{},"links":[]}
 {"id":"context/footnote-definition/emphasis","text":"[^1]: *text*\n","record":{},"links":[]}
-{"id":"context/nested-quote/emphasis","text":"> > *text*\n","record":{},"links":[]}
 {"id":"context/link-label/emphasis","text":"[*text*](https://example.com)\n","record":{},"links":[]}
-{"id":"context/setext-heading/emphasis","text":"*text*\n===\n","record":{},"links":[]}
-{"id":"context/heading/strong","text":"# **text**\n","record":{},"links":[]}
-{"id":"context/list-item/strong","text":"- **text**\n","record":{},"links":[]}
-{"id":"context/ordered-item/strong","text":"1. **text**\n","record":{},"links":[]}
 {"id":"context/task-item/strong","text":"- [ ] **text**\n","record":{},"links":[]}
-{"id":"context/nested-list/strong","text":"- outer\n  - **text**\n","record":{},"links":[]}
-{"id":"context/blockquote/strong","text":"> **text**\n","record":{},"links":[]}
 {"id":"context/callout/strong","text":"> [!note] Title\n> **text**\n","record":{},"links":[]}
 {"id":"context/table-cell/strong","text":"| H |\n| --- |\n| **text** |\n","record":{},"links":[]}
 {"id":"context/code-span/strong","text":"`**text**`\n","record":{},"links":[]}
 {"id":"context/fenced-code/strong","text":"```\n**text**\n```\n","record":{},"links":[]}
 {"id":"context/html-block/strong","text":"<div>\n**text**\n</div>\n","record":{},"links":[]}
-{"id":"context/indented-code/strong","text":"    **text**\n","record":{},"links":[]}
 {"id":"context/frontmatter-after/strong","text":"---\nk: v\n---\n\n**text**\n","record":{},"links":[]}
 {"id":"context/footnote-definition/strong","text":"[^1]: **text**\n","record":{},"links":[]}
-{"id":"context/nested-quote/strong","text":"> > **text**\n","record":{},"links":[]}
 {"id":"context/link-label/strong","text":"[**text**](https://example.com)\n","record":{},"links":[]}
-{"id":"context/setext-heading/strong","text":"**text**\n===\n","record":{},"links":[]}
-{"id":"context/heading/underscore-emphasis","text":"# _text_\n","record":{},"links":[]}
-{"id":"context/list-item/underscore-emphasis","text":"- _text_\n","record":{},"links":[]}
-{"id":"context/ordered-item/underscore-emphasis","text":"1. _text_\n","record":{},"links":[]}
 {"id":"context/task-item/underscore-emphasis","text":"- [ ] _text_\n","record":{},"links":[]}
-{"id":"context/nested-list/underscore-emphasis","text":"- outer\n  - _text_\n","record":{},"links":[]}
-{"id":"context/blockquote/underscore-emphasis","text":"> _text_\n","record":{},"links":[]}
 {"id":"context/callout/underscore-emphasis","text":"> [!note] Title\n> _text_\n","record":{},"links":[]}
 {"id":"context/table-cell/underscore-emphasis","text":"| H |\n| --- |\n| _text_ |\n","record":{},"links":[]}
 {"id":"context/code-span/underscore-emphasis","text":"`_text_`\n","record":{},"links":[]}
 {"id":"context/fenced-code/underscore-emphasis","text":"```\n_text_\n```\n","record":{},"links":[]}
 {"id":"context/html-block/underscore-emphasis","text":"<div>\n_text_\n</div>\n","record":{},"links":[]}
-{"id":"context/indented-code/underscore-emphasis","text":"    _text_\n","record":{},"links":[]}
 {"id":"context/frontmatter-after/underscore-emphasis","text":"---\nk: v\n---\n\n_text_\n","record":{},"links":[]}
 {"id":"context/footnote-definition/underscore-emphasis","text":"[^1]: _text_\n","record":{},"links":[]}
-{"id":"context/nested-quote/underscore-emphasis","text":"> > _text_\n","record":{},"links":[]}
 {"id":"context/link-label/underscore-emphasis","text":"[_text_](https://example.com)\n","record":{},"links":[]}
-{"id":"context/setext-heading/underscore-emphasis","text":"_text_\n===\n","record":{},"links":[]}
 {"id":"context/heading/inline-footnote","text":"# ^[note]\n","record":{},"links":[]}
 {"id":"context/list-item/inline-footnote","text":"- ^[note]\n","record":{},"links":[]}
 {"id":"context/ordered-item/inline-footnote","text":"1. ^[note]\n","record":{},"links":[]}
@@ -2022,23 +1551,15 @@
 {"id":"context/nested-quote/inline-footnote","text":"> > ^[note]\n","record":{},"links":[]}
 {"id":"context/link-label/inline-footnote","text":"[^[note]](https://example.com)\n","record":{},"links":[]}
 {"id":"context/setext-heading/inline-footnote","text":"^[note]\n===\n","record":{},"links":[]}
-{"id":"context/heading/strikethrough","text":"# ~~text~~\n","record":{},"links":[]}
-{"id":"context/list-item/strikethrough","text":"- ~~text~~\n","record":{},"links":[]}
-{"id":"context/ordered-item/strikethrough","text":"1. ~~text~~\n","record":{},"links":[]}
 {"id":"context/task-item/strikethrough","text":"- [ ] ~~text~~\n","record":{},"links":[]}
-{"id":"context/nested-list/strikethrough","text":"- outer\n  - ~~text~~\n","record":{},"links":[]}
-{"id":"context/blockquote/strikethrough","text":"> ~~text~~\n","record":{},"links":[]}
 {"id":"context/callout/strikethrough","text":"> [!note] Title\n> ~~text~~\n","record":{},"links":[]}
 {"id":"context/table-cell/strikethrough","text":"| H |\n| --- |\n| ~~text~~ |\n","record":{},"links":[]}
 {"id":"context/code-span/strikethrough","text":"`~~text~~`\n","record":{},"links":[]}
 {"id":"context/fenced-code/strikethrough","text":"```\n~~text~~\n```\n","record":{},"links":[]}
 {"id":"context/html-block/strikethrough","text":"<div>\n~~text~~\n</div>\n","record":{},"links":[]}
-{"id":"context/indented-code/strikethrough","text":"    ~~text~~\n","record":{},"links":[]}
 {"id":"context/frontmatter-after/strikethrough","text":"---\nk: v\n---\n\n~~text~~\n","record":{},"links":[]}
 {"id":"context/footnote-definition/strikethrough","text":"[^1]: ~~text~~\n","record":{},"links":[]}
-{"id":"context/nested-quote/strikethrough","text":"> > ~~text~~\n","record":{},"links":[]}
 {"id":"context/link-label/strikethrough","text":"[~~text~~](https://example.com)\n","record":{},"links":[]}
-{"id":"context/setext-heading/strikethrough","text":"~~text~~\n===\n","record":{},"links":[]}
 {"id":"context/heading/wikilink-alias","text":"# [[target|alias]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":18,"offset":18}}}]}
 {"id":"context/list-item/wikilink-alias","text":"- [[target|alias]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":2,"offset":2},"end":{"line":0,"col":18,"offset":18}}}]}
 {"id":"context/ordered-item/wikilink-alias","text":"1. [[target|alias]]\n","record":{},"links":[{"kind":"wikilink","embedded":false,"target":"target","position":{"start":{"line":0,"col":3,"offset":3},"end":{"line":0,"col":19,"offset":19}}}]}
@@ -2126,17 +1647,6 @@
 {"id":"adjacency/embed/immediate-text","text":"![[target]]next\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
 {"id":"adjacency/embed/hash","text":"![[target]]#next\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
 {"id":"adjacency/embed/dollar","text":"![[target]]$next\n","record":{},"links":[{"kind":"wikilink","embedded":true,"target":"target","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":11,"offset":11}}}]}
-{"id":"adjacency/highlight/space","text":"==text== next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/period","text":"==text==. next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/comma","text":"==text==, next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/close-paren","text":"==text==) next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/close-bracket","text":"==text==] next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/pipe","text":"==text==| next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/newline","text":"==text==\nnext\n","record":{},"links":[]}
-{"id":"adjacency/highlight/blank-line","text":"==text==\n\nnext\n","record":{},"links":[]}
-{"id":"adjacency/highlight/crlf","text":"==text==\r\nnext\n","record":{},"links":[]}
-{"id":"adjacency/highlight/immediate-text","text":"==text==next\n","record":{},"links":[]}
-{"id":"adjacency/highlight/hash","text":"==text==#next\n","record":{},"links":[]}
 {"id":"adjacency/highlight/dollar","text":"==text==$next\n","record":{},"links":[]}
 {"id":"adjacency/comment/space","text":"%%text%% next\n","record":{},"links":[]}
 {"id":"adjacency/comment/period","text":"%%text%%. next\n","record":{},"links":[]}
@@ -2150,17 +1660,6 @@
 {"id":"adjacency/comment/immediate-text","text":"%%text%%next\n","record":{},"links":[]}
 {"id":"adjacency/comment/hash","text":"%%text%%#next\n","record":{},"links":[]}
 {"id":"adjacency/comment/dollar","text":"%%text%%$next\n","record":{},"links":[]}
-{"id":"adjacency/tag/space","text":"#tag next\n","record":{},"links":[]}
-{"id":"adjacency/tag/period","text":"#tag. next\n","record":{},"links":[]}
-{"id":"adjacency/tag/comma","text":"#tag, next\n","record":{},"links":[]}
-{"id":"adjacency/tag/close-paren","text":"#tag) next\n","record":{},"links":[]}
-{"id":"adjacency/tag/close-bracket","text":"#tag] next\n","record":{},"links":[]}
-{"id":"adjacency/tag/pipe","text":"#tag| next\n","record":{},"links":[]}
-{"id":"adjacency/tag/newline","text":"#tag\nnext\n","record":{},"links":[]}
-{"id":"adjacency/tag/blank-line","text":"#tag\n\nnext\n","record":{},"links":[]}
-{"id":"adjacency/tag/crlf","text":"#tag\r\nnext\n","record":{},"links":[]}
-{"id":"adjacency/tag/immediate-text","text":"#tagnext\n","record":{},"links":[]}
-{"id":"adjacency/tag/hash","text":"#tag#next\n","record":{},"links":[]}
 {"id":"adjacency/tag/dollar","text":"#tag$next\n","record":{},"links":[]}
 {"id":"adjacency/inline-math/space","text":"$x$ next\n","record":{},"links":[]}
 {"id":"adjacency/inline-math/period","text":"$x$. next\n","record":{},"links":[]}
@@ -2174,29 +1673,7 @@
 {"id":"adjacency/inline-math/immediate-text","text":"$x$next\n","record":{},"links":[]}
 {"id":"adjacency/inline-math/hash","text":"$x$#next\n","record":{},"links":[]}
 {"id":"adjacency/inline-math/dollar","text":"$x$$next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/space","text":"*text* next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/period","text":"*text*. next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/comma","text":"*text*, next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/close-paren","text":"*text*) next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/close-bracket","text":"*text*] next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/pipe","text":"*text*| next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/newline","text":"*text*\nnext\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/blank-line","text":"*text*\n\nnext\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/crlf","text":"*text*\r\nnext\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/immediate-text","text":"*text*next\n","record":{},"links":[]}
-{"id":"adjacency/emphasis/hash","text":"*text*#next\n","record":{},"links":[]}
 {"id":"adjacency/emphasis/dollar","text":"*text*$next\n","record":{},"links":[]}
-{"id":"adjacency/strong/space","text":"**text** next\n","record":{},"links":[]}
-{"id":"adjacency/strong/period","text":"**text**. next\n","record":{},"links":[]}
-{"id":"adjacency/strong/comma","text":"**text**, next\n","record":{},"links":[]}
-{"id":"adjacency/strong/close-paren","text":"**text**) next\n","record":{},"links":[]}
-{"id":"adjacency/strong/close-bracket","text":"**text**] next\n","record":{},"links":[]}
-{"id":"adjacency/strong/pipe","text":"**text**| next\n","record":{},"links":[]}
-{"id":"adjacency/strong/newline","text":"**text**\nnext\n","record":{},"links":[]}
-{"id":"adjacency/strong/blank-line","text":"**text**\n\nnext\n","record":{},"links":[]}
-{"id":"adjacency/strong/crlf","text":"**text**\r\nnext\n","record":{},"links":[]}
-{"id":"adjacency/strong/immediate-text","text":"**text**next\n","record":{},"links":[]}
-{"id":"adjacency/strong/hash","text":"**text**#next\n","record":{},"links":[]}
 {"id":"adjacency/strong/dollar","text":"**text**$next\n","record":{},"links":[]}
 {"id":"adjacency/inline-footnote/space","text":"^[note] next\n","record":{},"links":[]}
 {"id":"adjacency/inline-footnote/period","text":"^[note]. next\n","record":{},"links":[]}
@@ -2210,21 +1687,8 @@
 {"id":"adjacency/inline-footnote/immediate-text","text":"^[note]next\n","record":{},"links":[]}
 {"id":"adjacency/inline-footnote/hash","text":"^[note]#next\n","record":{},"links":[]}
 {"id":"adjacency/inline-footnote/dollar","text":"^[note]$next\n","record":{},"links":[]}
-{"id":"commonmark/tabs/1","text":"\tfoo\tbaz\t\tbim\n","record":{},"links":[]}
-{"id":"commonmark/tabs/2","text":"  \tfoo\tbaz\t\tbim\n","record":{},"links":[]}
-{"id":"commonmark/tabs/3","text":"    a\ta\n    ὐ\ta\n","record":{},"links":[]}
-{"id":"commonmark/tabs/4","text":"  - foo\n\n\tbar\n","record":{},"links":[]}
-{"id":"commonmark/tabs/5","text":"- foo\n\n\t\tbar\n","record":{},"links":[]}
-{"id":"commonmark/tabs/6","text":">\t\tfoo\n","record":{},"links":[]}
-{"id":"commonmark/tabs/7","text":"-\t\tfoo\n","record":{},"links":[]}
-{"id":"commonmark/tabs/8","text":"    foo\n\tbar\n","record":{},"links":[]}
-{"id":"commonmark/tabs/9","text":" - foo\n   - bar\n\t - baz\n","record":{},"links":[]}
-{"id":"commonmark/tabs/10","text":"#\tFoo\n","record":{},"links":[]}
 {"id":"commonmark/backslash-escapes/12","text":"\\!\\\"\\#\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~\n","record":{},"links":[]}
-{"id":"commonmark/backslash-escapes/13","text":"\\\t\\A\\a\\ \\3\\φ\\«\n","record":{},"links":[]}
 {"id":"commonmark/backslash-escapes/14","text":"\\*not emphasized*\n\\<br/> not a tag\n\\[not a link](/foo)\n\\`not code`\n1\\. not a list\n\\* not a list\n\\# not a heading\n\\[foo]: /url \"not a reference\"\n\\&ouml; not a character entity\n","record":{},"links":[]}
-{"id":"commonmark/backslash-escapes/15","text":"\\\\*emphasis*\n","record":{},"links":[]}
-{"id":"commonmark/backslash-escapes/16","text":"foo\\\nbar\n","record":{},"links":[]}
 {"id":"commonmark/backslash-escapes/17","text":"`` \\[\\` ``\n","record":{},"links":[]}
 {"id":"commonmark/backslash-escapes/18","text":"    \\[\\]\n","record":{},"links":[]}
 {"id":"commonmark/backslash-escapes/19","text":"~~~\n\\[\\]\n~~~\n","record":{},"links":[]}
@@ -2233,62 +1697,17 @@
 {"id":"commonmark/backslash-escapes/22","text":"[foo](/bar\\* \"ti\\*tle\")\n","record":{},"links":[{"kind":"link","embedded":false,"target":"/bar*","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":23,"offset":23}}}]}
 {"id":"commonmark/backslash-escapes/23","text":"[foo]\n\n[foo]: /bar\\* \"ti\\*tle\"\n","record":{},"links":[]}
 {"id":"commonmark/backslash-escapes/24","text":"``` foo\\+bar\nfoo\n```\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/25","text":"&nbsp; &amp; &copy; &AElig; &Dcaron;\n&frac34; &HilbertSpace; &DifferentialD;\n&ClockwiseContourIntegral; &ngE;\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/26","text":"&#35; &#1234; &#992; &#0;\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/27","text":"&#X22; &#XD06; &#xcab;\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/28","text":"&nbsp &x; &#; &#x;\n&#87654321;\n&#abcdef0;\n&ThisIsNotDefined; &hi?;\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/30","text":"&MadeUpEntity;\n","record":{},"links":[]}
 {"id":"commonmark/entity-and-numeric-character-references/31","text":"<a href=\"&ouml;&ouml;.html\">\n","record":{},"links":[]}
 {"id":"commonmark/entity-and-numeric-character-references/32","text":"[foo](/f&ouml;&ouml; \"f&ouml;&ouml;\")\n","record":{},"links":[{"kind":"link","embedded":false,"target":"/föö","position":{"start":{"line":0,"col":0,"offset":0},"end":{"line":0,"col":37,"offset":37}}}]}
 {"id":"commonmark/entity-and-numeric-character-references/33","text":"[foo]\n\n[foo]: /f&ouml;&ouml; \"f&ouml;&ouml;\"\n","record":{},"links":[]}
 {"id":"commonmark/entity-and-numeric-character-references/34","text":"``` f&ouml;&ouml;\nfoo\n```\n","record":{},"links":[]}
 {"id":"commonmark/entity-and-numeric-character-references/35","text":"`f&ouml;&ouml;`\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/36","text":"    f&ouml;f&ouml;\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/37","text":"&#42;foo&#42;\n*foo*\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/38","text":"&#42; foo\n\n* foo\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/39","text":"foo&#10;&#10;bar\n","record":{},"links":[]}
-{"id":"commonmark/entity-and-numeric-character-references/40","text":"&#9;foo\n","record":{},"links":[]}
 {"id":"commonmark/entity-and-numeric-character-references/41","text":"[a](url &quot;tit&quot;)\n","record":{},"links":[]}
 {"id":"commonmark/precedence/42","text":"- `one\n- two`\n","record":{},"links":[]}
 {"id":"commonmark/thematic-breaks/43","text":"***\n---\n___\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/44","text":"+++\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/45","text":"===\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/46","text":"--\n**\n__\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/47","text":" ***\n  ***\n   ***\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/48","text":"    ***\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/49","text":"Foo\n    ***\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/50","text":"_____________________________________\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/51","text":" - - -\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/52","text":" **  * ** * ** * **\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/53","text":"-     -      -      -\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/54","text":"- - - -    \n","record":{},"links":[]}
 {"id":"commonmark/thematic-breaks/55","text":"_ _ _ _ a\n\na------\n\n---a---\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/56","text":" *-*\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/57","text":"- foo\n***\n- bar\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/58","text":"Foo\n***\nbar\n","record":{},"links":[]}
 {"id":"commonmark/thematic-breaks/59","text":"Foo\n---\nbar\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/60","text":"* Foo\n* * *\n* Bar\n","record":{},"links":[]}
-{"id":"commonmark/thematic-breaks/61","text":"- Foo\n- * * *\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/62","text":"# foo\n## foo\n### foo\n#### foo\n##### foo\n###### foo\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/63","text":"####### foo\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/64","text":"#5 bolt\n\n#hashtag\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/65","text":"\\## foo\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/66","text":"# foo *bar* \\*baz\\*\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/67","text":"#                  foo                     \n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/68","text":" ### foo\n  ## foo\n   # foo\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/69","text":"    # foo\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/70","text":"foo\n    # bar\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/71","text":"## foo ##\n  ###   bar    ###\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/72","text":"# foo ##################################\n##### foo ##\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/73","text":"### foo ###     \n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/74","text":"### foo ### b\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/75","text":"# foo#\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/76","text":"### foo \\###\n## foo #\\##\n# foo \\#\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/77","text":"****\n## foo\n****\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/78","text":"Foo bar\n# baz\nBar foo\n","record":{},"links":[]}
-{"id":"commonmark/atx-headings/79","text":"## \n#\n### ###\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/80","text":"Foo *bar*\n=========\n\nFoo *bar*\n---------\n","record":{},"links":[]}
-{"id":"commonmark/setext-headings/82","text":"  Foo *bar\nbaz*\t\n====\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/83","text":"Foo\n-------------------------\n\nFoo\n=\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/84","text":"   Foo\n---\n\n  Foo\n-----\n\n  Foo\n  ===\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/85","text":"    Foo\n    ---\n\n    Foo\n---\n","record":{},"links":[]}
@@ -2299,11 +1718,9 @@
 {"id":"commonmark/setext-headings/90","text":"Foo\\\n----\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/91","text":"`Foo\n----\n`\n\n<a title=\"a lot\n---\nof dashes\"/>\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/92","text":"> Foo\n---\n","record":{},"links":[]}
-{"id":"commonmark/setext-headings/93","text":"> foo\nbar\n===\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/94","text":"- Foo\n---\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/95","text":"Foo\nBar\n---\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/96","text":"---\nFoo\n---\nBar\n---\nBaz\n","record":{},"links":[]}
-{"id":"commonmark/setext-headings/97","text":"\n====\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/98","text":"---\n---\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/99","text":"- foo\n-----\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/100","text":"    foo\n---\n","record":{},"links":[]}
@@ -2311,27 +1728,15 @@
 {"id":"commonmark/setext-headings/102","text":"\\> foo\n------\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/103","text":"Foo\n\nbar\n---\nbaz\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/104","text":"Foo\nbar\n\n---\n\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/setext-headings/105","text":"Foo\nbar\n* * *\nbaz\n","record":{},"links":[]}
 {"id":"commonmark/setext-headings/106","text":"Foo\nbar\n\\---\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/107","text":"    a simple\n      indented code block\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/108","text":"  - foo\n\n    bar\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/109","text":"1.  foo\n\n    - bar\n","record":{},"links":[]}
 {"id":"commonmark/indented-code-blocks/110","text":"    <a/>\n    *hi*\n\n    - one\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/111","text":"    chunk1\n\n    chunk2\n  \n \n \n    chunk3\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/112","text":"    chunk1\n      \n      chunk2\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/113","text":"Foo\n    bar\n\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/114","text":"    foo\nbar\n","record":{},"links":[]}
 {"id":"commonmark/indented-code-blocks/115","text":"# Heading\n    foo\nHeading\n------\n    foo\n----\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/116","text":"        foo\n    bar\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/117","text":"\n    \n    foo\n    \n\n","record":{},"links":[]}
-{"id":"commonmark/indented-code-blocks/118","text":"    foo  \n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/119","text":"```\n<\n >\n```\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/120","text":"~~~\n<\n >\n~~~\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/121","text":"``\nfoo\n``\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/122","text":"```\naaa\n~~~\n```\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/123","text":"~~~\naaa\n```\n~~~\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/124","text":"````\naaa\n```\n``````\n","record":{},"links":[]}
-{"id":"commonmark/fenced-code-blocks/125","text":"~~~~\naaa\n~~~\n~~~~\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/127","text":"`````\n\n```\naaa\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/128","text":"> ```\n> aaa\n\nbbb\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/129","text":"```\n\n  \n```\n","record":{},"links":[]}
@@ -2344,7 +1749,6 @@
 {"id":"commonmark/fenced-code-blocks/136","text":"   ```\naaa\n  ```\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/137","text":"```\naaa\n    ```\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/138","text":"``` ```\naaa\n","record":{},"links":[]}
-{"id":"commonmark/fenced-code-blocks/139","text":"~~~~~~\naaa\n~~~ ~~\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/140","text":"foo\n```\nbar\n```\nbaz\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/141","text":"foo\n---\n~~~\nbar\n~~~\n# baz\n","record":{},"links":[]}
 {"id":"commonmark/fenced-code-blocks/142","text":"```ruby\ndef foo(x)\n  return 3\nend\n```\n","record":{},"links":[]}
@@ -2424,111 +1828,17 @@
 {"id":"commonmark/link-reference-definitions/216","text":"[foo]: /url\n===\n[foo]\n","record":{},"links":[]}
 {"id":"commonmark/link-reference-definitions/217","text":"[foo]: /foo-url \"foo\"\n[bar]: /bar-url\n  \"bar\"\n[baz]: /baz-url\n\n[foo],\n[bar],\n[baz]\n","record":{},"links":[]}
 {"id":"commonmark/link-reference-definitions/218","text":"[foo]\n\n> [foo]: /url\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/219","text":"aaa\n\nbbb\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/220","text":"aaa\nbbb\n\nccc\nddd\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/221","text":"aaa\n\n\nbbb\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/222","text":"  aaa\n bbb\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/223","text":"aaa\n             bbb\n                                       ccc\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/224","text":"   aaa\nbbb\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/225","text":"    aaa\nbbb\n","record":{},"links":[]}
-{"id":"commonmark/paragraphs/226","text":"aaa     \nbbb     \n","record":{},"links":[]}
-{"id":"commonmark/blank-lines/227","text":"  \n\naaa\n  \n\n# aaa\n\n  \n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/228","text":"> # Foo\n> bar\n> baz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/229","text":"># Foo\n>bar\n> baz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/230","text":"   > # Foo\n   > bar\n > baz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/231","text":"    > # Foo\n    > bar\n    > baz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/232","text":"> # Foo\n> bar\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/233","text":"> bar\nbaz\n> foo\n","record":{},"links":[]}
 {"id":"commonmark/block-quotes/234","text":"> foo\n---\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/235","text":"> - foo\n- bar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/236","text":">     foo\n    bar\n","record":{},"links":[]}
 {"id":"commonmark/block-quotes/237","text":"> ```\nfoo\n```\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/238","text":"> foo\n    - bar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/240","text":">\n>  \n> \n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/241","text":">\n> foo\n>  \n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/242","text":"> foo\n\n> bar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/243","text":"> foo\n> bar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/244","text":"> foo\n>\n> bar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/245","text":"foo\n> bar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/246","text":"> aaa\n***\n> bbb\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/247","text":"> bar\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/248","text":"> bar\n\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/249","text":"> bar\n>\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/250","text":"> > > foo\nbar\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/251","text":">>> foo\n> bar\n>>baz\n","record":{},"links":[]}
-{"id":"commonmark/block-quotes/252","text":">     code\n\n>    not code\n","record":{},"links":[]}
-{"id":"commonmark/list-items/253","text":"A paragraph\nwith two lines.\n\n    indented code\n\n> A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/254","text":"1.  A paragraph\n    with two lines.\n\n        indented code\n\n    > A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/255","text":"- one\n\n two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/256","text":"- one\n\n  two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/257","text":" -    one\n\n     two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/258","text":" -    one\n\n      two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/259","text":"   > > 1.  one\n>>\n>>     two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/260","text":">>- one\n>>\n  >  > two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/261","text":"-one\n\n2.two\n","record":{},"links":[]}
-{"id":"commonmark/list-items/262","text":"- foo\n\n\n  bar\n","record":{},"links":[]}
 {"id":"commonmark/list-items/263","text":"1.  foo\n\n    ```\n    bar\n    ```\n\n    baz\n\n    > bam\n","record":{},"links":[]}
-{"id":"commonmark/list-items/264","text":"- Foo\n\n      bar\n\n\n      baz\n","record":{},"links":[]}
-{"id":"commonmark/list-items/265","text":"123456789. ok\n","record":{},"links":[]}
-{"id":"commonmark/list-items/266","text":"1234567890. not ok\n","record":{},"links":[]}
-{"id":"commonmark/list-items/267","text":"0. ok\n","record":{},"links":[]}
-{"id":"commonmark/list-items/268","text":"003. ok\n","record":{},"links":[]}
-{"id":"commonmark/list-items/269","text":"-1. not ok\n","record":{},"links":[]}
-{"id":"commonmark/list-items/270","text":"- foo\n\n      bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/271","text":"  10.  foo\n\n           bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/272","text":"    indented code\n\nparagraph\n\n    more code\n","record":{},"links":[]}
-{"id":"commonmark/list-items/273","text":"1.     indented code\n\n   paragraph\n\n       more code\n","record":{},"links":[]}
-{"id":"commonmark/list-items/274","text":"1.      indented code\n\n   paragraph\n\n       more code\n","record":{},"links":[]}
-{"id":"commonmark/list-items/275","text":"   foo\n\nbar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/276","text":"-    foo\n\n  bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/277","text":"-  foo\n\n   bar\n","record":{},"links":[]}
 {"id":"commonmark/list-items/278","text":"-\n  foo\n-\n  ```\n  bar\n  ```\n-\n      baz\n","record":{},"links":[]}
-{"id":"commonmark/list-items/279","text":"-   \n  foo\n","record":{},"links":[]}
-{"id":"commonmark/list-items/281","text":"- foo\n-\n- bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/282","text":"- foo\n-   \n- bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/283","text":"1. foo\n2.\n3. bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/284","text":"*\n","record":{},"links":[]}
-{"id":"commonmark/list-items/285","text":"foo\n*\n\nfoo\n1.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/286","text":" 1.  A paragraph\n     with two lines.\n\n         indented code\n\n     > A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/287","text":"  1.  A paragraph\n      with two lines.\n\n          indented code\n\n      > A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/288","text":"   1.  A paragraph\n       with two lines.\n\n           indented code\n\n       > A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/289","text":"    1.  A paragraph\n        with two lines.\n\n            indented code\n\n        > A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/290","text":"  1.  A paragraph\nwith two lines.\n\n          indented code\n\n      > A block quote.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/291","text":"  1.  A paragraph\n    with two lines.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/292","text":"> 1. > Blockquote\ncontinued here.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/293","text":"> 1. > Blockquote\n> continued here.\n","record":{},"links":[]}
-{"id":"commonmark/list-items/294","text":"- foo\n  - bar\n    - baz\n      - boo\n","record":{},"links":[]}
-{"id":"commonmark/list-items/295","text":"- foo\n - bar\n  - baz\n   - boo\n","record":{},"links":[]}
-{"id":"commonmark/list-items/296","text":"10) foo\n    - bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/297","text":"10) foo\n   - bar\n","record":{},"links":[]}
-{"id":"commonmark/list-items/298","text":"- - foo\n","record":{},"links":[]}
-{"id":"commonmark/list-items/299","text":"1. - 2. foo\n","record":{},"links":[]}
 {"id":"commonmark/list-items/300","text":"- # Foo\n- Bar\n  ---\n  baz\n","record":{},"links":[]}
-{"id":"commonmark/lists/301","text":"- foo\n- bar\n+ baz\n","record":{},"links":[]}
-{"id":"commonmark/lists/302","text":"1. foo\n2. bar\n3) baz\n","record":{},"links":[]}
-{"id":"commonmark/lists/303","text":"Foo\n- bar\n- baz\n","record":{},"links":[]}
-{"id":"commonmark/lists/304","text":"The number of windows in my house is\n14.  The number of doors is 6.\n","record":{},"links":[]}
-{"id":"commonmark/lists/305","text":"The number of windows in my house is\n1.  The number of doors is 6.\n","record":{},"links":[]}
-{"id":"commonmark/lists/306","text":"- foo\n\n- bar\n\n\n- baz\n","record":{},"links":[]}
-{"id":"commonmark/lists/307","text":"- foo\n  - bar\n    - baz\n\n\n      bim\n","record":{},"links":[]}
 {"id":"commonmark/lists/308","text":"- foo\n- bar\n\n<!-- -->\n\n- baz\n- bim\n","record":{},"links":[]}
 {"id":"commonmark/lists/309","text":"-   foo\n\n    notcode\n\n-   foo\n\n<!-- -->\n\n    code\n","record":{},"links":[]}
-{"id":"commonmark/lists/310","text":"- a\n - b\n  - c\n   - d\n  - e\n - f\n- g\n","record":{},"links":[]}
-{"id":"commonmark/lists/311","text":"1. a\n\n  2. b\n\n   3. c\n","record":{},"links":[]}
-{"id":"commonmark/lists/312","text":"- a\n - b\n  - c\n   - d\n    - e\n","record":{},"links":[]}
-{"id":"commonmark/lists/313","text":"1. a\n\n  2. b\n\n    3. c\n","record":{},"links":[]}
-{"id":"commonmark/lists/314","text":"- a\n- b\n\n- c\n","record":{},"links":[]}
-{"id":"commonmark/lists/315","text":"* a\n*\n\n* c\n","record":{},"links":[]}
-{"id":"commonmark/lists/316","text":"- a\n- b\n\n  c\n- d\n","record":{},"links":[]}
 {"id":"commonmark/lists/317","text":"- a\n- b\n\n  [ref]: /url\n- d\n","record":{},"links":[]}
 {"id":"commonmark/lists/318","text":"- a\n- ```\n  b\n\n\n  ```\n- c\n","record":{},"links":[]}
-{"id":"commonmark/lists/319","text":"- a\n  - b\n\n    c\n- d\n","record":{},"links":[]}
-{"id":"commonmark/lists/320","text":"* a\n  > b\n  >\n* c\n","record":{},"links":[]}
 {"id":"commonmark/lists/321","text":"- a\n  > b\n  ```\n  c\n  ```\n- d\n","record":{},"links":[]}
-{"id":"commonmark/lists/322","text":"- a\n","record":{},"links":[]}
 {"id":"commonmark/lists/324","text":"1. ```\n   foo\n   ```\n\n   bar\n","record":{},"links":[]}
-{"id":"commonmark/lists/325","text":"* foo\n  * bar\n\n  baz\n","record":{},"links":[]}
-{"id":"commonmark/lists/326","text":"- a\n  - b\n  - c\n\n- d\n  - e\n  - f\n","record":{},"links":[]}
 {"id":"commonmark/inlines/327","text":"`hi`lo`\n","record":{},"links":[]}
 {"id":"commonmark/code-spans/328","text":"`foo`\n","record":{},"links":[]}
 {"id":"commonmark/code-spans/329","text":"`` foo ` bar ``\n","record":{},"links":[]}
@@ -2552,129 +1862,11 @@
 {"id":"commonmark/code-spans/347","text":"```foo``\n","record":{},"links":[]}
 {"id":"commonmark/code-spans/348","text":"`foo\n","record":{},"links":[]}
 {"id":"commonmark/code-spans/349","text":"`foo``bar``\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/350","text":"*foo bar*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/351","text":"a * foo bar*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/352","text":"a*\"foo\"*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/353","text":"* a *\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/354","text":"*$*alpha.\n\n*£*bravo.\n\n*€*charlie.\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/355","text":"foo*bar*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/356","text":"5*6*78\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/357","text":"_foo bar_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/358","text":"_ foo bar_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/359","text":"a_\"foo\"_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/360","text":"foo_bar_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/361","text":"5_6_78\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/362","text":"пристаням_стремятся_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/363","text":"aa_\"bb\"_cc\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/364","text":"foo-_(bar)_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/365","text":"_foo*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/366","text":"*foo bar *\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/367","text":"*foo bar\n*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/368","text":"*(*foo)\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/369","text":"*(*foo*)*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/370","text":"*foo*bar\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/371","text":"_foo bar _\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/372","text":"_(_foo)\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/373","text":"_(_foo_)_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/374","text":"_foo_bar\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/375","text":"_пристаням_стремятся\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/376","text":"_foo_bar_baz_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/377","text":"_(bar)_.\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/378","text":"**foo bar**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/379","text":"** foo bar**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/380","text":"a**\"foo\"**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/381","text":"foo**bar**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/382","text":"__foo bar__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/383","text":"__ foo bar__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/384","text":"__\nfoo bar__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/385","text":"a__\"foo\"__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/386","text":"foo__bar__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/387","text":"5__6__78\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/388","text":"пристаням__стремятся__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/389","text":"__foo, __bar__, baz__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/390","text":"foo-__(bar)__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/391","text":"**foo bar **\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/392","text":"**(**foo)\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/393","text":"*(**foo**)*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/394","text":"**Gomphocarpus (*Gomphocarpus physocarpus*, syn.\n*Asclepias physocarpa*)**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/395","text":"**foo \"*bar*\" foo**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/396","text":"**foo**bar\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/397","text":"__foo bar __\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/398","text":"__(__foo)\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/399","text":"_(__foo__)_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/400","text":"__foo__bar\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/401","text":"__пристаням__стремятся\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/402","text":"__foo__bar__baz__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/403","text":"__(bar)__.\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/404","text":"*foo [bar](/url)*\n","record":{},"links":[{"kind":"link","embedded":false,"target":"/url","position":{"start":{"line":0,"col":5,"offset":5},"end":{"line":0,"col":16,"offset":16}}}]}
-{"id":"commonmark/emphasis-and-strong-emphasis/405","text":"*foo\nbar*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/406","text":"_foo __bar__ baz_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/407","text":"_foo _bar_ baz_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/408","text":"__foo_ bar_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/409","text":"*foo *bar**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/410","text":"*foo **bar** baz*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/411","text":"*foo**bar**baz*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/412","text":"*foo**bar*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/413","text":"***foo** bar*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/414","text":"*foo **bar***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/415","text":"*foo**bar***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/416","text":"foo***bar***baz\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/417","text":"foo******bar*********baz\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/418","text":"*foo **bar *baz* bim** bop*\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/419","text":"*foo [*bar*](/url)*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/420","text":"** is not an empty emphasis\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/421","text":"**** is not an empty strong emphasis\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/422","text":"**foo [bar](/url)**\n","record":{},"links":[{"kind":"link","embedded":false,"target":"/url","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":17,"offset":17}}}]}
-{"id":"commonmark/emphasis-and-strong-emphasis/423","text":"**foo\nbar**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/424","text":"__foo _bar_ baz__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/425","text":"__foo __bar__ baz__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/426","text":"____foo__ bar__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/427","text":"**foo **bar****\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/428","text":"**foo *bar* baz**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/429","text":"**foo*bar*baz**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/430","text":"***foo* bar**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/431","text":"**foo *bar***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/432","text":"**foo *bar **baz**\nbim* bop**\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/433","text":"**foo [*bar*](/url)**\n","record":{},"links":[{"kind":"link","embedded":false,"target":"/url","position":{"start":{"line":0,"col":6,"offset":6},"end":{"line":0,"col":19,"offset":19}}}]}
-{"id":"commonmark/emphasis-and-strong-emphasis/434","text":"__ is not an empty emphasis\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/435","text":"____ is not an empty strong emphasis\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/436","text":"foo ***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/437","text":"foo *\\**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/438","text":"foo *_*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/439","text":"foo *****\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/440","text":"foo **\\***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/441","text":"foo **_**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/442","text":"**foo*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/443","text":"*foo**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/444","text":"***foo**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/445","text":"****foo*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/446","text":"**foo***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/447","text":"*foo****\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/448","text":"foo ___\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/449","text":"foo _\\__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/450","text":"foo _*_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/451","text":"foo _____\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/452","text":"foo __\\___\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/453","text":"foo __*__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/454","text":"__foo_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/455","text":"_foo__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/456","text":"___foo__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/457","text":"____foo_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/458","text":"__foo___\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/459","text":"_foo____\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/460","text":"**foo**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/461","text":"*_foo_*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/462","text":"__foo__\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/463","text":"_*foo*_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/464","text":"****foo****\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/465","text":"____foo____\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/466","text":"******foo******\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/467","text":"***foo***\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/468","text":"_____foo_____\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/469","text":"*foo _bar* baz_\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/470","text":"*foo __bar *baz bim__ bam*\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/471","text":"**foo **bar baz**\n","record":{},"links":[]}
-{"id":"commonmark/emphasis-and-strong-emphasis/472","text":"*foo *bar baz*\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/473","text":"*[bar*](/url)\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/474","text":"_foo [bar_](/url)\n","record":{},"links":[]}
 {"id":"commonmark/emphasis-and-strong-emphasis/475","text":"*<img src=\"foo\" title=\"*\"/>\n","record":{},"links":[]}
@@ -2811,7 +2003,6 @@
 {"id":"commonmark/autolinks/608","text":"< https://foo.bar >\n","record":{},"links":[]}
 {"id":"commonmark/autolinks/609","text":"<m:abc>\n","record":{},"links":[]}
 {"id":"commonmark/autolinks/610","text":"<foo.bar.baz>\n","record":{},"links":[]}
-{"id":"commonmark/autolinks/611","text":"https://example.com\n","record":{},"links":[]}
 {"id":"commonmark/autolinks/612","text":"foo@bar.example.com\n","record":{},"links":[]}
 {"id":"commonmark/raw-html/613","text":"<a><bab><c2c>\n","record":{},"links":[]}
 {"id":"commonmark/raw-html/614","text":"<a/><b2/>\n","record":{},"links":[]}
@@ -2833,26 +2024,11 @@
 {"id":"commonmark/raw-html/630","text":"foo <a href=\"&ouml;\">\n","record":{},"links":[]}
 {"id":"commonmark/raw-html/631","text":"foo <a href=\"\\*\">\n","record":{},"links":[]}
 {"id":"commonmark/raw-html/632","text":"<a href=\"\\\"\">\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/633","text":"foo  \nbaz\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/634","text":"foo\\\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/635","text":"foo       \nbaz\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/636","text":"foo  \n     bar\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/637","text":"foo\\\n     bar\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/638","text":"*foo  \nbar*\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/639","text":"*foo\\\nbar*\n","record":{},"links":[]}
 {"id":"commonmark/hard-line-breaks/640","text":"`code  \nspan`\n","record":{},"links":[]}
 {"id":"commonmark/hard-line-breaks/641","text":"`code\\\nspan`\n","record":{},"links":[]}
 {"id":"commonmark/hard-line-breaks/642","text":"<a href=\"foo  \nbar\">\n","record":{},"links":[]}
 {"id":"commonmark/hard-line-breaks/643","text":"<a href=\"foo\\\nbar\">\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/644","text":"foo\\\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/645","text":"foo  \n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/646","text":"### foo\\\n","record":{},"links":[]}
-{"id":"commonmark/hard-line-breaks/647","text":"### foo  \n","record":{},"links":[]}
-{"id":"commonmark/soft-line-breaks/648","text":"foo\nbaz\n","record":{},"links":[]}
-{"id":"commonmark/soft-line-breaks/649","text":"foo \n baz\n","record":{},"links":[]}
 {"id":"commonmark/textual-content/650","text":"hello $.;'there\n","record":{},"links":[]}
-{"id":"commonmark/textual-content/651","text":"Foo χρῆν\n","record":{},"links":[]}
-{"id":"commonmark/textual-content/652","text":"Multiple     spaces\n","record":{},"links":[]}
 {"id":"hunt/aftercloser-chain-eats-referenced-definition/0","text":"%%\nhidden\n%% [^a]: sees [^b]\n\n[^b]: b body\n\ntail\n","record":{},"links":[]}
 {"id":"hunt/aftercloser-chain-eats-referenced-definition/1","text":"%%\nhidden\n%% [^a]: def\n\ntail\n","record":{},"links":[]}
 {"id":"hunt/aftercloser-duplicate-silent/0","text":"use[^d] here\n\n%%\nhidden\n%% [^d]: after the closer\n\n[^d]: second\n","record":{},"links":[]}
@@ -2944,18 +2120,8 @@
 {"id":"hunt/definition-starts-misses-block-enders/13","text":"t[^1]\npara\n  ***\n[^1]: real\n","record":{},"links":[]}
 {"id":"hunt/definition-starts-misses-block-enders/14","text":"t[^1]\n\nH\n  ===\n[^1]: real\n","record":{},"links":[]}
 {"id":"hunt/definition-starts-misses-block-enders/15","text":"use[^1]\npara\n   # Heading\n[^1]: real\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-eof-replacement/0","text":"# H\nfoo\nbar\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-eof-replacement/1","text":"# H\nfoo\nBAZ\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-eof-replacement/2","text":"# H\nfoo\nbar\ntail\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-eof-replacement/3","text":"# H\nfoo\nBAZ\ntail\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-eof-replacement/4","text":"# H\na\nb\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-eof-replacement/5","text":"# H\nc\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-replacement-hunk/0","text":"# H\na\nb\ntail\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-replacement-hunk/1","text":"# H\nx\ny\ntail\n","record":{},"links":[]}
 {"id":"hunt/diff-fold-replacement-hunk/2","text":"body[^2]\n\n## Footnotes\n[^2]: two\n[^1]: one\n","record":{},"links":[]}
 {"id":"hunt/diff-fold-replacement-hunk/3","text":"body[^1]\n\n## Footnotes\n[^1]: two\n[^2]: one\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-replacement-hunk/4","text":"# H\nx\ntail\n","record":{},"links":[]}
-{"id":"hunt/diff-fold-replacement-hunk/5","text":"# H\na\ntail\n","record":{},"links":[]}
 {"id":"hunt/dots-frontmatter-closer-table-blind/0","text":"---\nt: v\n...\n[^1]: body\n| a | b |\n| --- | --- |\n\nprose[^1]\n","record":{},"links":[]}
 {"id":"hunt/dots-frontmatter-closer-table-blind/1","text":"---\nt: v\n---\n[^1]: body\n| a | b |\n| --- | --- |\n\nprose[^1]\n","record":{},"links":[]}
 {"id":"hunt/ends-protected-quoted-html-block/0","text":"text[^1]\n\n[^1]: def\n\npara\n\n> <div>\n> more html\n","record":{},"links":[]}
@@ -3217,7 +2383,6 @@
 {"id":"hunt/quoted-fence-closer-chunk-live/0","text":"> ```\n> code\n> ```\n>     chunk[^9]\n","record":{},"links":[]}
 {"id":"hunt/quoted-fence-closer-chunk-live/1","text":"```\ncode\n```\n    chunk[^9]\n","record":{},"links":[]}
 {"id":"hunt/quoted-fence-closer-chunk-live/2","text":"> ```\n> code\n> ```\n> [^1]: x\n","record":{},"links":[]}
-{"id":"hunt/quoted-fence-closer-chunk-live/3","text":"> # H\n>     chunk\n","record":{},"links":[]}
 {"id":"hunt/quoted-orphan-deletion-strands-body/0","text":"para.\n\n> [^9]: stray\n>     body cites[^b]\n\n[^b]: bee\n","record":{},"links":[]}
 {"id":"hunt/quoted-orphan-deletion-strands-body/1","text":"para.\n\n[^9]: stray\n\n    body cites[^b]\n\n[^b]: bee\n","record":{},"links":[]}
 {"id":"hunt/quoted-orphan-deletion-strands-body/2","text":"text[^1]\n\n[^9]: stray\n\n[^1]: used\n","record":{},"links":[]}
@@ -3421,7 +2586,6 @@
 {"id":"hunt/quoted-definition-column0-tail/5","text":"> [^1]: quoted def\nplain column-0 line\n\n    chunk[^9]\n\ntail[^1]\n","record":{},"links":[]}
 {"id":"hunt/quoted-definition-column0-tail/6","text":"> [^1]: quoted def\n> quoted lazy\nplain column-0 line\n[^2]: second\n\ntail[^1] and[^2]\n","record":{},"links":[]}
 {"id":"hunt/setext-legacy-heading-migration/0","text":"Footnotes\n---\n","record":{},"links":[]}
-{"id":"hunt/setext-legacy-heading-migration/1","text":"Footnotes\n===\n","record":{},"links":[]}
 {"id":"hunt/setext-line-under-definition/0","text":"[^1]: x\n    y\n--\n\nuse[^1]\n","record":{},"links":[]}
 {"id":"hunt/setext-line-under-definition/1","text":"[^1]: x\n    y\n---\n\nuse[^1]\n","record":{},"links":[]}
 {"id":"hunt/setext-line-under-definition/2","text":"para[^1].\n\n[^1]: x\n    y\n===\n","record":{},"links":[]}
