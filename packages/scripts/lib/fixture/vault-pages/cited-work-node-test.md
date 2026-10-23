@@ -4,8 +4,8 @@ title: Cited Work Node Test
 # Cited Work Node Test
 
 This note cites works that the generated Zotero data holds and that no single Literature Note
-in the Fixture Vault ends on. The Fixture seeds a Literature Note for each My Library Item
-only, so a Citation Key naming a group-Library Item stays a cited work without a note, and the
+in the Fixture Vault ends on. Each unique key below names a group-Library Item without a
+Literature Note, so it stays a cited work without a note, and the
 last key here names two Items instead of one. Use this note for the Cited Work Node states of
 spec #1052 and the source-less Citation Popover of spec #1063.
 

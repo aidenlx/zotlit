@@ -1998,7 +1998,16 @@ describe("the generated Obsidian vault", () => {
       .map((entry) =>
         join(entry.parentPath, entry.name).slice(pages.length + 1),
       );
-    expect(names).not.toEqual([]);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "citation-scan-forms.md",
+        "citation-scan-exclusions.md",
+        "citation-scan-annotations.md",
+        "citation-scan-errors.md",
+        "Scan target.md",
+        "pandoc-export-scan-pipeline.md",
+      ]),
+    );
     for (const name of names) {
       const asset = await readFile(join(pages, name), "utf-8");
 

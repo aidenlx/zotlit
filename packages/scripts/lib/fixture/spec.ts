@@ -1087,6 +1087,7 @@ export const SEEDED_CITATION_KEYS: Readonly<
   nonexistentCitekeyForSmokeTest2099: "missing",
   rougierTenSimpleRules2014: "unique",
   sharedReadingAlpha2023: "unique",
+  sharedReadingBeta2022: "unique",
   smallCoCitationScientific1973: "unique",
   "wallgren-petterssonDistalMyopathyCaused2007": "unique",
   wangMutationalClinicalSpectrum2020a: "unique",

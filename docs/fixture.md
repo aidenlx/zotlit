@@ -202,6 +202,27 @@ Both commands hold a Desktop Slot while they run. They wait while another End-to
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
 
+### Trial the Citation Index scan cases
+
+Use the `all` Scope Case. Enable Pandoc Citations, Wikilink Citations, Annotation
+Citations, and Show Formatted Citations, with the Pandoc Engine installed. Each
+page gives inputs, expected outcomes, and CLI commands. Inspect the named page's
+group in vault-wide answers because other Fixture pages cite the same Items.
+
+| Fixture Vault page | Purpose |
+| --- | --- |
+| `citation-scan-forms.md` | Compare Pandoc citation forms, Citation Fragments, and normalised wikilinks across References, Cited By, the popover, CitationText, CLI, and export. |
+| `Scan target.md` | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, using the existing Shared Reading Item `FFFF6666g4200309`. |
+| `citation-scan-exclusions.md` | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases. |
+| `citation-scan-annotations.md` | Compare empty, labelled, whitespace-only, autolink, and embed uses of `PUPR5FG5`, then check source choices and immediate CLI reads after an edit. |
+| `citation-scan-errors.md` | Compare the reasons References and the CLI give for the declared unknown key, an ambiguous key, and an attachment-only empty link. |
+| `pandoc-export-scan-pipeline.md` | Run built-in export on the two confirmed membership regressions, a callout fence, and a fence on a list-marker line. |
+
+Cases marked `(final review round)` state the intended outcomes for S1, S3, S4,
+and #1704. Check them again after that round merges. Annotation Citation links
+remain unchanged in export pending #1684; direct Annotation link rendering is
+covered by #1678. The pages add no Zotero data.
+
 ### Trial the Pandoc export cases
 
 Use these cases to compare the built-in and native export workflows in one Paired Run:
