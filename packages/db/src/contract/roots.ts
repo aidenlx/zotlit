@@ -5,6 +5,7 @@
  * changes. Each `zotlit:*` command namespace versions its own CLI Contract
  * beside its envelope, so a bump here says nothing about an answer's shape.
  */
+// Persisted version: packages/scripts/lib/format-versions.ts.
 export const CONTRACT_VERSION = 3;
 
 /** Every emitted `zt` data root, in the order the contract documents them. */

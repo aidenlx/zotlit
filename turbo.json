@@ -93,6 +93,9 @@
     "//#lint:repo": {
       "dependsOn": ["//#lint:repo:deps"]
     },
+    "//#lint:format-versions": {
+      "cache": false
+    },
     "//#lint:test-gates": {
       "cache": false
     },

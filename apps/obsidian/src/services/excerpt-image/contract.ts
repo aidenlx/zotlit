@@ -18,6 +18,7 @@ export interface ExcerptRequest {
   zoteroPngPath: string | null;
 }
 
+// Persisted version: packages/scripts/lib/format-versions.ts.
 export const EXCERPT_RENDERER_VERSION = 2;
 
 /** Canonical pixel inputs exclude revision, text, labels, comments, and tags. */

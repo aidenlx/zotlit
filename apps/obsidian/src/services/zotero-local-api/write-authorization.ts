@@ -27,6 +27,7 @@ const RECORD_ID = "zotlit-zotero-write-authorization";
  * reads as no record rather than as a key this version cannot interpret, so a
  * downgrade asks for a fresh authorization instead of sending something wrong.
  */
+// Persisted version: packages/scripts/lib/format-versions.ts.
 const RECORD_VERSION = 1;
 
 const recordSchema = v.object({
