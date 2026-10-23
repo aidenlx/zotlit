@@ -94,6 +94,9 @@ afterAll(() => discardFixture(e2eFixture));
 
 const reachable = await isObsidianReachable(workspaceRoot);
 const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
+/** Whether the plugin under test was built with the Annotation Suggester. */
+const annotationSuggesterEnabled =
+  process.env.ANNOTATION_SUGGESTER_ENABLED === "true";
 const settingsContent = "app.setting.containerEl";
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
 
@@ -156,6 +159,7 @@ export function fixtureActivity(item: FixtureItem): string {
 }
 
 export {
+  annotationSuggesterEnabled,
   annotationAttachment,
   annotationItem,
   annotationKeys,

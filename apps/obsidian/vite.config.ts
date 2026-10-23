@@ -84,6 +84,9 @@ export default defineConfig(({ mode }) => {
     __WEB_WORKBENCH_ENABLED__: JSON.stringify(
       process.env.WEB_WORKBENCH_ENABLED === "true",
     ),
+    __ANNOTATION_SUGGESTER_ENABLED__: JSON.stringify(
+      process.env.ANNOTATION_SUGGESTER_ENABLED === "true",
+    ),
     __DOCS_SITE_URL__: JSON.stringify(
       parseDocsSiteUrl(process.env.DOCS_SITE_URL),
     ),

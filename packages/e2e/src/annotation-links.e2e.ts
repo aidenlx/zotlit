@@ -13,6 +13,7 @@ import {
   annotationAttachment,
   annotationItem,
   annotationKeys,
+  annotationSuggesterEnabled,
   attachmentAnnotations,
   e2eFixture,
   reachable,
@@ -1061,42 +1062,55 @@ describe.skipIf(!reachable)("Annotation links", () => {
   // the trigger, a word of the quote, and a narrowing token in the Library
   // View's grammar find the passage; choosing it writes the quote through
   // the annotation template, durable link and all, in place of the search.
-  it("searches annotations from the cursor and inserts the chosen one", async () => {
-    const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+  it.skipIf(!annotationSuggesterEnabled)(
+    "searches annotations from the cursor and inserts the chosen one",
+    async () => {
+      const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
 
-    const outcome = await searchAndInsert(
-      "[>MESSAGE tag:visualization color:blue",
-      FIRST_PAGE.text!,
-    );
+      const outcome = await searchAndInsert(
+        "[>MESSAGE tag:visualization color:blue",
+        FIRST_PAGE.text!,
+      );
 
-    expect(outcome.citationOpen).toBe(false);
-    // A row names the passage, its page as the Annotation View does, and
-    // the paper.
-    expect(outcome.rows).toEqual([
-      expect.stringContaining(
-        `${run.m.annot_view_page({ page: FIRST_PAGE.pageLabel })} · ${annotationItem.title}`,
-      ),
-    ]);
-    expect(outcome.rows[0]).toContain(FIRST_PAGE.text!);
-    expect(outcome.text).toContain(FIRST_PAGE.text!);
-    expect(outcome.text).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
-    expect(outcome.text).toContain(
-      `${FIRST_PAGE.text} ${citationOf(FIRST_PAGE)}`,
-    );
-    expect(outcome.text).not.toContain("[>");
-    expect(outcome.use).toBe("cited");
-  }, 120000);
+      expect(outcome.citationOpen).toBe(false);
+      // A row names the passage, its page as the Annotation View does, and
+      // the paper.
+      expect(outcome.rows).toEqual([
+        expect.stringContaining(
+          `${run.m.annot_view_page({ page: FIRST_PAGE.pageLabel })} · ${annotationItem.title}`,
+        ),
+      ]);
+      expect(outcome.rows[0]).toContain(FIRST_PAGE.text!);
+      expect(outcome.text).toContain(FIRST_PAGE.text!);
+      expect(outcome.text).toContain(`Page [${FIRST_PAGE.pageLabel}](${url})`);
+      expect(outcome.text).toContain(
+        `${FIRST_PAGE.text} ${citationOf(FIRST_PAGE)}`,
+      );
+      expect(outcome.text).not.toContain("[>");
+      expect(outcome.use).toBe("cited");
+    },
+    120000,
+  );
 
   // A note Annotation quotes nothing: its row shows its comment.
-  it("finds an Annotation by its comment, and its row shows the comment", async () => {
-    const outcome = await searchAndInsert("[>figures hard", COMMENTED.comment!);
+  it.skipIf(!annotationSuggesterEnabled)(
+    "finds an Annotation by its comment, and its row shows the comment",
+    async () => {
+      const outcome = await searchAndInsert(
+        "[>figures hard",
+        COMMENTED.comment!,
+      );
 
-    expect(outcome.rows).toEqual([expect.stringContaining(COMMENTED.comment!)]);
-  }, 120000);
+      expect(outcome.rows).toEqual([
+        expect.stringContaining(COMMENTED.comment!),
+      ]);
+    },
+    120000,
+  );
 
   // Zotero stores an Annotation's text as its own HTML subset: both the
   // popover and the Annotation Suggester's row draw it, never show it.
-  it("draws an Annotation's rich text in its popover and its suggestion row", async () => {
+  it("draws an Annotation's rich text in its popover", async () => {
     const text = `${RICH.text} E = mc<sup>2</sup>`;
     await using cleanup = new AsyncDisposableStack();
     // Disposed in reverse: the Fixture's text is written back, then read.
@@ -1108,15 +1122,35 @@ describe.skipIf(!reachable)("Annotation links", () => {
       url: durableLink(RICH.key, RICH.pageLabel),
       gesture: "reading",
     });
-    // Chosen by the rewritten text as drawn, so a row from an index that
-    // still holds the Fixture's text is never chosen.
-    const searched = await searchAndInsert("[>classically defined", "E = mc2");
 
     expect(hovered).toMatchObject({ popover: true, sup: "2" });
     expect(hovered.text).not.toContain("<sup>");
-    expect(searched.sup).toBe("2");
-    expect(searched.rows.join("")).not.toContain("<sup>");
   }, 180000);
+
+  it.skipIf(!annotationSuggesterEnabled)(
+    "draws an Annotation's rich text in its suggestion row",
+    async () => {
+      const text = `${RICH.text} E = mc<sup>2</sup>`;
+      await using cleanup = new AsyncDisposableStack();
+      // Disposed in reverse: the Fixture's text is written back, then read.
+      cleanup.defer(() => reread(RICH.key, RICH.text!));
+      cleanup.use(
+        rewriteAnnotationText(e2eFixture.databasePath, RICH.key, text),
+      );
+      await reread(RICH.key, text);
+
+      // Chosen by the rewritten text as drawn, so a row from an index that
+      // still holds the Fixture's text is never chosen.
+      const searched = await searchAndInsert(
+        "[>classically defined",
+        "E = mc2",
+      );
+
+      expect(searched.sup).toBe("2");
+      expect(searched.rows.join("")).not.toContain("<sup>");
+    },
+    180000,
+  );
 
   // A one-line template quotes inside a sentence; where the insert lands
   // around the words beside it is the insertion's own rule, tested with it.
@@ -1133,17 +1167,21 @@ describe.skipIf(!reachable)("Annotation links", () => {
     expect(text).toBe(`# Draft\n\nAs argued ${inlineOf(FIRST_PAGE)} next`);
   }, 120000);
 
-  it("places a one-line Annotation from the Annotation Suggester right after a word, typing on", async () => {
-    const outcome = await searchAndInsert(
-      "[>MESSAGE tag:visualization color:blue",
-      FIRST_PAGE.text!,
-      { line: "As argued", ch: 9, inline: true, typeOn: "next" },
-    );
+  it.skipIf(!annotationSuggesterEnabled)(
+    "places a one-line Annotation from the Annotation Suggester right after a word, typing on",
+    async () => {
+      const outcome = await searchAndInsert(
+        "[>MESSAGE tag:visualization color:blue",
+        FIRST_PAGE.text!,
+        { line: "As argued", ch: 9, inline: true, typeOn: "next" },
+      );
 
-    expect(outcome.text).toBe(
-      `# Draft\n\nAs argued${inlineOf(FIRST_PAGE)} next`,
-    );
-  }, 120000);
+      expect(outcome.text).toBe(
+        `# Draft\n\nAs argued${inlineOf(FIRST_PAGE)} next`,
+      );
+    },
+    120000,
+  );
 
   // The page chip of an Annotation View card opens the Annotation its
   // backlink names the way a followed link does, so it opens Obsidian's
