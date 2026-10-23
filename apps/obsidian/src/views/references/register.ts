@@ -1,9 +1,11 @@
 import type { App, Plugin } from "obsidian";
 
-import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
+
+import "./style.css";
 import { revealSetting } from "@/lib/open-settings";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -24,7 +26,7 @@ export interface ReferencesRegistrationDeps {
   profile: ProfileReader;
   app: App;
   db: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
-  citationIndex: CitationIndex;
+  citationIndex: PlainCitationIndex;
   citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: Pick<PlainLibraryScope, "current">;
   citationText: CitationText;

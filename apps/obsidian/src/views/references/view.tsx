@@ -8,6 +8,7 @@ import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import {
   citationsEqual,
@@ -15,7 +16,6 @@ import {
 } from "@/services/citation-index/service";
 import type {
   Citation,
-  CitationIndex,
   DocumentCitationError,
   DocumentCitationSet,
   ReferenceSource,
@@ -69,7 +69,7 @@ export interface ReferencesViewDeps {
   app: App;
   db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead" | "on">;
   citationLookup: Pick<PlainCitationLookup, "status" | "on">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
+  citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;
   /** Opens the Literature Note an Indexed Key names, creating it first when it has none. */

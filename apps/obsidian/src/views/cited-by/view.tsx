@@ -5,7 +5,8 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
 import { CitedByActionsContext, createCitedByActions } from "./actions";
@@ -23,7 +24,7 @@ export const CITED_BY_VIEW_TYPE = "zotlit-cited-by";
 
 export interface CitedByViewDeps {
   app: App;
-  citationIndex: Pick<CitationIndex, "observeCitedBy" | "getParsedNote">;
+  citationIndex: Pick<PlainCitationIndex, "observeCitedBy" | "getParsedNote">;
 }
 
 export class CitedByView extends ItemView {

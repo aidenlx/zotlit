@@ -4,7 +4,8 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -54,7 +55,7 @@ export type LocalBridgeActions = Pick<
 >;
 
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
-export type CitationIndexActions = Pick<CitationIndex, "reset">;
+export type CitationIndexActions = Pick<PlainCitationIndex, "reset">;
 
 /**
  * The Editing Capability the "Zotero editing" row renders, and the signal that

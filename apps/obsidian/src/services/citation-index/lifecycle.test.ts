@@ -1,0 +1,171 @@
+import { expect } from "vitest";
+
+import { Effect, Stream } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
+
+import type { CitationIndexState } from "./service";
+import { CitationIndex } from "./service";
+import { createCitationIndexHarness, MemoryStore } from "./test-harness";
+
+it.effect(
+  "replays a completed failed backfill to a late subscriber (#1705)",
+  () =>
+    Effect.promise(async () => {
+      await using h = await createCitationIndexHarness({
+        "draft.md": "@doe2024",
+      });
+      h.vault.fail("draft.md");
+      h.workspace.layoutReady();
+      await h.index.whenIndexed();
+      const delivered = Promise.withResolvers<CitationIndexState>();
+      const off = h.index.subscribe((state) => delivered.resolve(state));
+      expect(await delivered.promise).toMatchObject({
+        backfilled: true,
+        coverage: "degraded",
+      });
+      off();
+    }),
+);
+
+it.effect(
+  "restores scans and settings before acquisition, with backfill still pending (#1705)",
+  () =>
+    Effect.promise(async () => {
+      const store = new MemoryStore();
+      await using seed = await createCitationIndexHarness(
+        { "draft.md": "@doe2024" },
+        { store, notes: false },
+      );
+      await seed.index.getFileScan(seed.draft);
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      await using h = await createCitationIndexHarness(
+        { "draft.md": "@doe2024" },
+        {
+          notes: false,
+          awaitReady: false,
+          settings: {
+            "citation.pandoc-citations": false,
+            "citation.annotation-citations": false,
+          },
+          openStore: async () => {
+            entered.resolve();
+            await release.promise;
+            return store;
+          },
+        },
+      );
+      await entered.promise;
+      let acquired = false;
+      const ready = h.ready.then(() => {
+        acquired = true;
+      });
+      expect(acquired).toBe(false);
+      release.resolve();
+      await ready;
+      expect(h.index.citationKeys()).toEqual(["doe2024"]);
+      expect(h.index.syntaxes()).toEqual({
+        citekey: "excluded",
+        wikilink: "excluded",
+        annotation: "excluded",
+      });
+      expect(h.index.current.backfilled).toBe(false);
+      expect(h.vault.reads).toEqual([]);
+    }),
+);
+
+it.effect(
+  "attaches immediately and keeps throwing state and event subscribers through consecutive changes (#1705)",
+  () =>
+    Effect.promise(async () => {
+      await using h = await createCitationIndexHarness({
+        "draft.md": "@doe2024",
+      });
+      const states: string[] = [];
+      const memberships: string[] = [];
+      let initial = true;
+      const offState = h.index.subscribe((state) => {
+        if (initial) {
+          initial = false;
+          return;
+        }
+        states.push(state.syntaxes.citekey);
+        throw new Error("state listener failed");
+      });
+      const offEvent = h.index.subscribe("membership-changed", () => {
+        memberships.push(h.index.syntaxes().citekey);
+        throw new Error("event listener failed");
+      });
+      h.settings.update({ "citation.pandoc-citations": false });
+      h.settings.update({ "citation.pandoc-citations": true });
+      await expect.poll(() => states).toEqual(["excluded", "included"]);
+      await expect.poll(() => memberships.length).toBe(2);
+      offState();
+      offEvent();
+      h.settings.update({ "citation.pandoc-citations": false });
+      expect(h.index.syntaxes().citekey).toBe("excluded");
+      expect(states).toHaveLength(2);
+      expect(memberships).toHaveLength(2);
+    }),
+);
+
+it.effect("continues host event intake after a failed handler (#1705)", () =>
+  Effect.promise(async () => {
+    await using h = await createCitationIndexHarness({
+      "draft.md": "@doe2024",
+    });
+    let fail = true;
+    Object.defineProperty(h.draft, "extension", {
+      get() {
+        if (fail) {
+          fail = false;
+          throw new Error("Host metadata failed");
+        }
+        return "md";
+      },
+    });
+    const published = Promise.withResolvers<string>();
+    const off = h.index.subscribe("changed", (path) => published.resolve(path));
+    h.metadataCache.change(h.draft, "@discarded");
+    h.metadataCache.change(h.draft, "@roe2025");
+    expect(await published.promise).toBe("draft.md");
+    expect(h.index.citationKeys()).toEqual(["roe2025"]);
+    off();
+  }),
+);
+
+it.effect(
+  "settles parked readers and preserves the released adapter after whole-runtime disposal (#1705)",
+  () =>
+    Effect.promise(async () => {
+      await using h = await createCitationIndexHarness({
+        "draft.md": "@doe2024",
+      });
+      const service = h.runtime.runSync(CitationIndex);
+      const waiting = h.index.whenIndexed();
+      const release = h.vault.hold("draft.md");
+      const scan = h.index.getFileScan(h.draft);
+      await h.runtime.dispose();
+      release();
+      await waiting;
+      expect(await scan).toBeNull();
+      await expect(h.index.whenIndexed()).resolves.toBeUndefined();
+      await expect(h.index.reset()).resolves.toBeUndefined();
+      await expect(
+        h.index.getDocumentCitationSet(h.draft),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(h.index.current.stopped).toBe(true);
+      const delivered: string[] = [];
+      h.index.subscribe("changed", (path) => delivered.push(path));
+      h.metadataCache.change(h.draft, "@roe2025");
+      expect(delivered).toEqual([]);
+      return service;
+    }).pipe(
+      Effect.flatMap((service) => Stream.runHead(service.changes)),
+      Effect.tap((state) =>
+        Effect.sync(() =>
+          expect(state).toMatchObject({ value: { stopped: true } }),
+        ),
+      ),
+    ),
+);

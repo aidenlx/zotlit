@@ -494,7 +494,7 @@ class CitationIndexStub {
     return this.#answer(citekeys);
   });
 
-  on(event: string, cb: () => void): () => void {
+  on(event: string, cb: (path: string) => void): () => void {
     return this.#emitter.on(event, cb);
   }
 

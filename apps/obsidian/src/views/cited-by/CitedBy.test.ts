@@ -24,9 +24,9 @@ import {
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
 import type {
-  CitationIndex,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
@@ -238,7 +238,7 @@ function makeFile(
 
 async function render(options: {
   previewsPending?: boolean;
-  citationIndex?: Pick<CitationIndex, "getParsedNote">;
+  citationIndex?: Pick<PlainCitationIndex, "getParsedNote">;
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
   read?: (file: TFile) => Promise<string>;

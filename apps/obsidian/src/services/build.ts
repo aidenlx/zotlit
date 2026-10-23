@@ -32,8 +32,10 @@ import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { plainChineseSegmenter } from "./chinese-segmenter/plain";
-import { plainCitationLookup } from "./citation-index/plain";
-import { CitationIndex } from "./citation-index/service";
+import {
+  plainCitationIndex,
+  plainCitationLookup,
+} from "./citation-index/plain";
 import { plainCitationParse } from "./citation-parse/plain";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -540,26 +542,7 @@ export async function buildServices(
     .useValue({
       citationParse: () => plainCitationParse(runtime),
     })
-    .use({
-      citationIndex: ({
-        noteIndex,
-        settings,
-        citationLookup,
-        citationParse,
-        zoteroReads,
-        libraryScope,
-      }) =>
-        new CitationIndex({
-          runPromise: (effect) => runtime.runPromise(effect),
-          db: zoteroReads,
-          libraryScope,
-          app: plugin.app,
-          noteIndex,
-          settings,
-          lookup: citationLookup,
-          parseClient: citationParse,
-        }),
-    })
+    .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
       pandocEngine: () => plainPandocEngine(runtime),
     })

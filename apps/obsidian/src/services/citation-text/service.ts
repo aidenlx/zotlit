@@ -20,11 +20,11 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import { renderParsedCitation } from "@/services/citation-index/parsed-note";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
   Citation,
-  CitationIndex,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
@@ -88,7 +88,7 @@ export interface CitationTextDeps {
   app: App;
   citationLookup: Pick<PlainCitationLookup, "on">;
   citationIndex: Pick<
-    CitationIndex,
+    PlainCitationIndex,
     "getDocumentCitationSet" | "getParsedDocument" | "on"
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */

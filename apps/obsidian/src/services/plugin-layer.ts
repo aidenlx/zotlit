@@ -8,6 +8,8 @@ import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationLookup } from "./citation-index/lookup-service";
 import type { CitationLookup } from "./citation-index/lookup-service";
+import { layerCitationIndex } from "./citation-index/service";
+import type { CitationIndex } from "./citation-index/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLibraryScope } from "./library-scope/service";
@@ -50,6 +52,7 @@ export function pluginLayer(
   plugin: Plugin,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
+  | CitationIndex
   | CitationLookup
   | Profile
   | LibraryScope
@@ -65,7 +68,8 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return layerCitationLookup.pipe(
+  return layerCitationIndex().pipe(
+    Layer.provideMerge(layerCitationLookup),
     Layer.provideMerge(Layer.mergeAll(layerLibraryScope, layerProfile)),
     Layer.provideMerge(layerZoteroReads(workerClient())),
     Layer.provideMerge(
