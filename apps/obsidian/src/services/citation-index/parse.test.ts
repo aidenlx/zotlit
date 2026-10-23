@@ -564,6 +564,62 @@ async function recoveringClient(connect: () => ParseConnection) {
   };
 }
 
+it("keeps the connection when an edit supersedes a parse that replies before its deadline (#1691)", async () => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let connections = 0;
+  let terminations = 0;
+  await using recovery = await recoveringClient(() => {
+    connections++;
+    const died = Promise.withResolvers<void>();
+    let stopped = false;
+    return {
+      died: died.promise,
+      async parse(request, signal) {
+        entered.resolve();
+        await Promise.race([release.promise, died.promise]);
+        if (stopped) throw new ParseWorkerDied("Worker terminated");
+        return inProcessParseClient.parse(request, signal);
+      },
+      [Symbol.dispose]() {
+        if (stopped) return;
+        stopped = true;
+        terminations++;
+        died.resolve();
+      },
+    };
+  });
+  await using harness = await createCitationIndexHarness(
+    { "draft.md": "@doe2024" },
+    { notes: false, parseClient: recovery.client },
+  );
+  const publications: string[][] = [];
+  harness.index.on("changed", () =>
+    publications.push(harness.index.citationKeys()),
+  );
+  harness.workspace.layoutReady();
+  await entered.promise;
+  await recovery.advance(5_000);
+  harness.metadataCache.change(harness.draft, "@roe2025");
+  try {
+    await recovery.advance(100);
+    expect(terminations).toBe(0);
+    expect(connections).toBe(1);
+  } finally {
+    release.resolve();
+  }
+  expect(
+    (await harness.index.getDocumentCitationSet(harness.draft)).occurrences.map(
+      ({ raw }) => raw,
+    ),
+  ).toEqual(["roe2025"]);
+  await harness.index.whenIndexed();
+  expect(publications).toEqual([["roe2025"]]);
+  await recovery.advance(15_000);
+  expect(terminations).toBe(0);
+  expect(connections).toBe(1);
+});
+
 it.each([0, 10_000])(
   "replaces a stalled connection and replays neighbours queued %i ms later while retaining the failed note (#1691)",
   async (arrival) => {
@@ -674,8 +730,12 @@ it("replaces a blocked connection after its only note is deleted (#1691)", async
   await recovery.advance(5_000);
   harness.vault.deleteFile(harness.draft);
   await harness.index.whenIndexed();
-  await recovery.advance(10_100);
+  await recovery.advance(9_999);
+  expect(terminations).toBe(0);
+  expect(connections).toBe(1);
+  await recovery.advance(1);
   expect(terminations).toBe(1);
+  await recovery.advance(100);
   expect(connections).toBe(2);
   expect(harness.index.citationKeys()).toEqual([]);
   expect(
