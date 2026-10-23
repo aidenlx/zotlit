@@ -128,8 +128,9 @@ export default defineConfig({
       rules: { "zotlit-services/worker-rpc": "error" },
     },
     {
-      // ZoteroReads owns the effect/rpc launch, shutdown and log transport.
+      // These adapters own effect/rpc worker creation, shutdown and log transport.
       files: [
+        "src/services/citation-parse/worker-host.ts",
         "src/services/zotero-reads/worker-launch.ts",
         "src/services/zotero-reads/worker-host.ts",
         "src/services/zotero-reads/worker.ts",
@@ -139,12 +140,7 @@ export default defineConfig({
     {
       // Worker migration backlog: move snapshot integrity checks to effect/rpc,
       // then remove this file from the list.
-      files: [
-        "src/services/database/snapshot-integrity.ts",
-        // #1705 moves the citation parse worker to effect/rpc.
-        "src/services/citation-parse/worker-host.ts",
-        "src/services/citation-parse/worker.ts",
-      ],
+      files: ["src/services/database/snapshot-integrity.ts"],
       rules: { "zotlit-services/worker-rpc": "off" },
     },
     {
