@@ -1,5 +1,9 @@
 // Built-in export resolves the worker-selected citations, then formats them with Pandoc.
 // Export retains its own Literature Note link membership and bibliography contract.
+//
+// All-or-nothing: after the worker's parse selects the source, an unresolved
+// Citation or an incomplete bibliography stops export before citeproc runs,
+// so an exported document never carries a silently incomplete bibliography.
 
 import type { CslItemData } from "@zotlit/db";
 
@@ -218,31 +222,13 @@ export async function exportCitedDocument(
 /** Preserve document context while reconciling Pandoc with worker-classified syntax. */
 function exportSource(markdown: string, record: NoteScanRecord): string {
   const source = markdown.split("");
-  for (const { kind, from, to } of record.ranges) {
-    if (kind === "text-dollar") source[from] = "\\$";
-    if (kind !== "comment") continue;
-    for (let at = from; at < to; at++) {
-      if (markdown[at] === "\\") at++;
-      else if (markdown[at] === "@") source[at] = "\\@";
-      else if (markdown[at] === "[" && markdown[at + 1] === "[") {
-        source[at] = "\\[";
-        source[++at] = "\\[";
-      }
-    }
-  }
-  // Comments can cross code and destinations. Those bytes, and Pandoc's YAML
-  // metadata (including explicit nocite), retain their original contract.
-  for (const { kind, from, to } of record.ranges) {
-    if (kind === "comment" || kind === "text-dollar") continue;
-    for (let at = from; at < to; at++) source[at] = markdown[at]!;
-  }
   for (const range of record.ranges) {
-    if (range.kind !== "fenced-code" || range.lineStart === 0) continue;
-    const { lineStart, from } = range;
-    const previousStart = markdown.lastIndexOf("\n", lineStart - 2) + 1;
-    if (markdown.slice(previousStart, lineStart).trim() === "") continue;
-    const prefix = markdown.slice(lineStart, from).trimEnd();
-    source[lineStart] = `${prefix}\n${source[lineStart]}`;
+    if (range.kind === "text-dollar") source[range.from] = "\\$";
+    else if (range.kind === "comment") source.fill("", range.from, range.to);
+    else if (range.kind === "fenced-code" && range.blankLinePrefix !== null) {
+      source[range.lineStart] =
+        `${range.blankLinePrefix}\n${source[range.lineStart]}`;
+    }
   }
   return source.join("");
 }

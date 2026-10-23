@@ -557,10 +557,44 @@ describe(
   () => {
     it.each([
       {
+        name: "a valid citation link only inside a comment",
+        markdown: "%% [paper](./Note#cite:locator=2) %%",
+        contains: [],
+        absent: ["paper", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "paragraphs separated by a block comment containing HTML and math",
+        markdown:
+          'Before.\n%% <a href="https://example.com/@a"> $@a$ %%\nAfter.',
+        contains: ["<p>Before.</p> <p>After.</p>"],
+        absent: ["example.com/@a", "$@a$", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "paragraphs separated by a multiline block comment",
+        markdown: "Before.\n%%\nHidden paragraph [@a].\n%%\nAfter.",
+        contains: ["<p>Before.</p> <p>After.</p>"],
+        absent: ["Hidden paragraph", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "text joined around an inline comment",
+        markdown: "Before%% hidden [@a] %%after.",
+        contains: ["<p>Beforeafter.</p>"],
+        absent: ["hidden", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "comment markers inside inline and fenced code",
+        markdown: "`%% [@a] %%`\n\n~~~\n%% [@a] %%\n~~~",
+        contains: [
+          "<code>%% [@a] %%</code>",
+          "<pre><code>%% [@a] %%</code></pre>",
+        ],
+        absent: ["data-cites=", 'id="ref-'],
+      },
+      {
         name: "only the selected key in a comment-bearing citation",
         markdown: "[@a and %% @hidden %%]",
         contains: ['data-cites="a"', 'id="ref-a"'],
-        absent: ['id="ref-hidden"'],
+        absent: ['id="ref-hidden"', "hidden", "%%"],
       },
       {
         name: "document-wide note numbers and ibid",
@@ -583,10 +617,15 @@ describe(
         ibids: 2,
       },
       {
-        name: "an opening comment as body text",
+        name: "the citation after an opening comment",
         markdown: "%% [@hidden] %%\n\n[@a]",
         contains: ['id="ref-a"'],
-        absent: ['id="ref-hidden"', '<header id="title-block-header">'],
+        absent: [
+          'id="ref-hidden"',
+          '<header id="title-block-header">',
+          "hidden",
+          "%%",
+        ],
       },
       {
         name: "a selected vault link inside a citation suffix",
@@ -644,7 +683,7 @@ describe(
           {
             ...ports({
               citekeys: { a: "ZETA1234", b: "ADAM5678g5" },
-              notes: { Note: "ADAM5678g5" },
+              notes: { Note: "ADAM5678g5", "./Note": "ADAM5678g5" },
               placed: CITED.placed,
               items: CITED.items,
             }),
@@ -679,6 +718,8 @@ describe(
         (result as { output: Uint8Array }).output,
       );
       expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+      expect(html).not.toContain("[[Zeta 2020]]");
+      expect(html).not.toContain("%%");
     });
 
     it("exports a citation after a currency opener (#1694)", async () => {
@@ -710,6 +751,22 @@ describe(
     });
 
     it.each([
+      {
+        name: "a fence on a numbered list marker, retaining three items",
+        markdown:
+          "1. First\n2. ~~~\n   [@hidden] [[Missing#cite:locator=2]]\n   ~~~\n3. Third\n\n[@zeta2020]",
+        contains: [
+          '<ol type="1">\n<li><p>First</p></li>\n<li><pre><code>[@hidden] [[Missing#cite:locator=2]]</code></pre></li>\n<li><p>Third</p></li>\n</ol>',
+        ],
+      },
+      {
+        name: "fenced code in a quote nested in a list",
+        markdown:
+          "- > Example\n  > ~~~\n  > [@hidden] [[Missing#cite:locator=2]]\n  > ~~~\n- Next\n\n[@zeta2020]",
+        contains: [
+          "<ul>\n<li><blockquote>\n<p>Example</p>\n<pre><code>[@hidden] [[Missing#cite:locator=2]]</code></pre>\n</blockquote></li>\n<li>Next</li>\n</ul>",
+        ],
+      },
       {
         name: "fenced code nested in a callout",
         markdown:

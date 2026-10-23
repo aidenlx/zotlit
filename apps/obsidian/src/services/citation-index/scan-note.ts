@@ -47,7 +47,14 @@ export interface NoteScanRecord {
         from: number;
         to: number;
       }
-    | { kind: "fenced-code"; from: number; to: number; lineStart: number }
+    | {
+        kind: "fenced-code";
+        from: number;
+        to: number;
+        lineStart: number;
+        /** Container continuation for an inserted blank line; null if already separated. */
+        blankLinePrefix: string | null;
+      }
   )[];
   /** Vault references before citation eligibility, including aliases and embeds. */
   links: {
@@ -444,20 +451,27 @@ export function scanNote(text: string): NoteScanRecord {
       if (
         ["FencedCode", "CodeBlock", "InlineCode", "Frontmatter"].includes(name)
       ) {
-        record.ranges.push(
-          name === "FencedCode"
-            ? {
-                kind: "fenced-code",
-                from,
-                to,
-                lineStart: starts[location(starts, from).line]!,
-              }
-            : {
-                kind: name === "Frontmatter" ? "frontmatter" : "code",
-                from,
-                to,
-              },
-        );
+        if (name === "FencedCode") {
+          const line = location(starts, from).line;
+          const lineStart = starts[line]!;
+          record.ranges.push({
+            kind: "fenced-code",
+            from,
+            to,
+            lineStart,
+            blankLinePrefix:
+              line === 0 ||
+              text.slice(starts[line - 1], lineStart).trim() === ""
+                ? null
+                : text.slice(lineStart, from).replaceAll(/[^>\t ]/g, " "),
+          });
+        } else {
+          record.ranges.push({
+            kind: name === "Frontmatter" ? "frontmatter" : "code",
+            from,
+            to,
+          });
+        }
         mask(body, from, to);
         return false;
       }
