@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { BinaryPin } from "../src/services/managed-binary/service.ts";
+import type { BinaryPin } from "../src/services/managed-binary/pin.ts";
 
 /**
  * The pin a previous build verified for this version and these bytes, so a

@@ -76,6 +76,8 @@ export default defineConfig({
           exclude: [
             ...testDefaults.exclude,
             ...HAPPY_DOM_NATIVE_RESPONSE_FILES,
+            // Needs a native Pandoc; vitest.lua-filter.config.ts runs it.
+            "src/**/*.pandoc.test.ts",
           ],
         },
       },

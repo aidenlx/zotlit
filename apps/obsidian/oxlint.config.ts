@@ -183,7 +183,7 @@ export default defineConfig({
     {
       files: [
         "vite.config.ts",
-        "scripts/check-lua-filter.ts",
+        "src/services/pandoc/filter/zotlit-cite.pandoc.test.ts",
         "src/zt-main.ts",
         "src/services/build.ts",
         "src/services/service-base.ts",
@@ -331,11 +331,24 @@ export default defineConfig({
       rules: { "zotlit-tests/no-class-assertion": "off" },
     },
     {
-      // Node runs these straight from source, where the `@/` alias the rule
-      // points at does not resolve.
+      // Node runs these straight from source, where the `@/` alias does not
+      // resolve; and they stay independent of plugin code, which
+      // tsconfig.node.json cannot type-check. The pin is the one shared
+      // contract, a module with no imports.
       files: ["scripts/**"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: ["../src/**", "!../src/services/managed-binary/pin.ts"],
+                message:
+                  "Scripts stay independent of plugin code; a check of plugin code is a Vitest test under src/.",
+              },
+            ],
+          },
+        ],
       },
     },
   ],
