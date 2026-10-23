@@ -3,7 +3,7 @@
 import { FAILURE_COOLDOWN } from "./service";
 
 export interface TestClock {
-  /** The clock to hand {@link QueryClientService}. */
+  /** The clock to hand the QueryClients fixture. */
   readonly now: () => Temporal.Instant;
   /**
    * Moves one step past the failure cooldown deadline, which is what rearms a
@@ -13,8 +13,8 @@ export interface TestClock {
 }
 
 /**
- * Wall time shifted by what the test has passed: Query Core stamps a failure
- * with the wall clock, so the cooldown is measured from that stamp.
+ * Wall time shifted by what the consumer test has passed. The fixture provides
+ * this clock to the QueryClients layer for both failure stamps and cooldowns.
  */
 export function testClock(): TestClock {
   let offset = Temporal.Duration.from({ milliseconds: 0 });

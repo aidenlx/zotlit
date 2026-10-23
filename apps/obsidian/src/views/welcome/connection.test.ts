@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Effect } from "@/lib/effect";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -44,7 +44,7 @@ async function setup(
 ) {
   const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
   const reads = stack.use(inProcessReadsService(open));
-  const queries = stack.use(new QueryClientService());
+  const queries = stack.use(queryClientsFixture());
   stack.defer(holdConnectionReadout({ reads, queries }));
   const { reads: initial } = await reads.ready;
   await Effect.runPromise(Effect.ignore(initial.Libraries({})));

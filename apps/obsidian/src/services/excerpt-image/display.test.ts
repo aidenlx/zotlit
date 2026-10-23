@@ -10,7 +10,8 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { settledDisplay } from "./__fixtures__/display-state";
 import { redPng } from "./__fixtures__/png";
@@ -94,7 +95,7 @@ function image(byte: number): ExcerptImage {
 
 /** What one live display harness hands a test. */
 interface Live extends AsyncDisposable {
-  readonly queries: QueryClientService;
+  readonly queries: PlainQueryClients;
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayService;
   readonly renders: GatedRender[];
@@ -146,7 +147,7 @@ function harness(): Live {
       },
     }),
   );
-  const queries = stack.use(new QueryClientService());
+  const queries = stack.use(queryClientsFixture());
   const storedReads: Promise<void>[] = [];
   const display = stack.use(
     new ExcerptDisplayService({
@@ -314,7 +315,7 @@ function resident(): Resident {
       stamp: async () => ({ size: bytes.length, mtimeMs: 1 }),
     }),
   );
-  const queries = stack.use(new QueryClientService());
+  const queries = stack.use(queryClientsFixture());
   const display = stack.use(
     new ExcerptDisplayService({
       queries,
@@ -736,7 +737,7 @@ describe("Excerpt Image live display", () => {
 
   it("leaves the stored fallback unread when the Held Read holds an image", async () => {
     await using service = new ExcerptImageService({ read: async () => redPng });
-    await using queries = new QueryClientService();
+    await using queries = queryClientsFixture();
     const stored = vi.fn(async () => null);
     await using display = new ExcerptDisplayService({
       queries,

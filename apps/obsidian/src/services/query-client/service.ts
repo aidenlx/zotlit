@@ -9,11 +9,17 @@ import {
 } from "@tanstack/query-core";
 import type { Query, QueryFunction, QueryKey } from "@tanstack/query-core";
 
-import { Context } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
-import { Service } from "@/services/service-base";
-
-const logger = getLogger("query-client");
+import {
+  Clock,
+  Context,
+  Deferred,
+  Effect,
+  Layer,
+  Stream,
+  SubscriptionRef,
+} from "@/lib/effect";
+import { instantClock } from "@/lib/effect-clock";
+import { withLogCategory } from "@/lib/effect-log";
 
 /**
  * The answer one key holds, as one immutable snapshot: a surface reads a whole
@@ -47,16 +53,18 @@ type ReadResult<T> =
   | { kind: "released" };
 
 /** What one key prefix's owner is told about the reads under it. */
-interface HeldReadEvents<T> {
+export interface HeldReadEvents<T> {
   /** A read committed a value that is not the one the key held. */
   changed?: (key: QueryKey) => void;
   /** A read committed, including an equal or a failed one. */
   settled: (key: QueryKey, held: Held<T> | null) => void;
 }
 
-export interface QueryClientServiceDeps {
-  /** The clock the failure cooldown is read against. */
-  now?: () => Temporal.Instant;
+/** The last settlement, with its immutable Held Read snapshot. */
+export interface HeldReadChange {
+  readonly key: QueryKey;
+  readonly held: Held<unknown> | null;
+  readonly changed: boolean;
 }
 
 /**
@@ -70,46 +78,76 @@ export interface QueryClientServiceDeps {
  *
  * Owners namespace their keys, set their retention and their semantic equality
  * through {@link QueryClient.setQueryDefaults}, and drop what they hold through
- * {@link QueryClientService.invalidate}, which cancels the in-flight reads first
+ * {@link QueryClients}, which cancels the in-flight reads first
  * so a superseded read never publishes.
  */
-export class QueryClientService extends Service {
-  readonly #now;
-  readonly #client = new QueryClient({
-    defaultOptions: {
-      queries: {
-        // A held value goes stale by invalidation alone: an owner knows what
-        // makes its reads stale, and no clock does.
-        staleTime: Infinity,
-        retry: false,
-        // Every read is local — a vault file, a Zotero database, a Pandoc
-        // render — so none of them waits for an online event.
-        networkMode: "always",
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-      },
-    },
-  });
-
-  ready: Promise<void>;
-
-  constructor({
-    now = () => Temporal.Now.instant(),
-  }: QueryClientServiceDeps = {}) {
-    super();
-    this.#now = now;
-    // A mutation waiting its turn in a scope starts only while Query Core
-    // counts the window focused, which it reads from the document when no
-    // mounted client tracks focus. A minimised or covered window reports its
-    // document hidden, and would hold the waiting write for good.
-    focusManager.setFocused(true);
-    this.ready = this.#load();
+export class QueryClients extends Context.Service<
+  QueryClients,
+  {
+    readonly client: QueryClient;
+    readonly changes: Stream.Stream<HeldReadChange>;
+    readonly current: Effect.Effect<HeldReadChange | null>;
+    invalidate(key: QueryKey): Effect.Effect<void>;
+    update<T>(key: QueryKey, next: (held: T) => T): Effect.Effect<void>;
+    keysUnder(prefix: QueryKey): Effect.Effect<QueryKey[]>;
+    peek<T>(key: QueryKey): Effect.Effect<Held<T> | null>;
+    ask<T>(
+      key: QueryKey,
+      queryFn: QueryFunction<T>,
+    ): Effect.Effect<T | null, unknown>;
+    read<T>(
+      key: QueryKey,
+      queryFn: QueryFunction<T>,
+      signal?: AbortSignal,
+    ): Effect.Effect<T | null, unknown>;
+    readFresh<T>(
+      key: QueryKey,
+      queryFn: QueryFunction<T>,
+      signal?: AbortSignal,
+    ): Effect.Effect<T, unknown>;
+    watch<T>(
+      prefix: QueryKey,
+      on: HeldReadEvents<T>,
+    ): Effect.Effect<() => void>;
   }
+>()("zotlit/query-client/QueryClients") {}
 
-  /** The client itself, for the defaults and the removals an owner runs. */
-  get client(): QueryClient {
-    return this.#client;
-  }
+const makeQueryClients = Effect.gen(function* () {
+  const now = instantClock(yield* Clock.Clock);
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
+  let closed = false;
+  const stopped = yield* Deferred.make<void>();
+  const latest = yield* SubscriptionRef.make<HeldReadChange | null>(null);
+  // Query Core's errorUpdatedAt uses wall time. Keep both ends of this
+  // cooldown on the layer's Clock, including when that Clock starts at zero.
+  const failures = new Map<string, number>();
+  const watchers = new Set<() => void>();
+  const client = yield* Effect.acquireRelease(
+    Effect.sync(() => {
+      // Waiting local mutations must also run while the window is hidden.
+      focusManager.setFocused(true);
+      return new QueryClient({
+        defaultOptions: {
+          queries: {
+            // A held value goes stale by invalidation alone: an owner knows what
+            // makes its reads stale, and no clock does.
+            staleTime: Infinity,
+            retry: false,
+            // Every read is local — a vault file, a Zotero database, a Pandoc
+            // render — so none of them waits for an online event.
+            networkMode: "always",
+            refetchOnWindowFocus: false,
+            refetchOnReconnect: false,
+          },
+        },
+      });
+    }),
+    (client) =>
+      Effect.sync(() => {
+        closed = true;
+        client.clear();
+      }),
+  );
 
   /**
    * Marks stale what every key under one prefix holds, cancelling the reads
@@ -124,13 +162,18 @@ export class QueryClientService extends Service {
    *
    * @param queryKey the key, or the prefix of the keys, to mark stale.
    */
-  invalidate(queryKey: QueryKey): void {
-    void this.#client.cancelQueries({ queryKey }, { revert: true });
-    void this.#client.invalidateQueries({ queryKey, refetchType: "none" });
-    for (const query of this.#client.getQueryCache().findAll({ queryKey })) {
-      if (query.state.status === "error") query.setState({ errorUpdatedAt: 0 });
-    }
-  }
+  const invalidate = Effect.fn("QueryClients.invalidate")(
+    (queryKey: QueryKey) =>
+      Effect.sync(() => {
+        void client.cancelQueries({ queryKey }, { revert: true });
+        void client.invalidateQueries({ queryKey, refetchType: "none" });
+        for (const query of client.getQueryCache().findAll({ queryKey })) {
+          failures.delete(query.queryHash);
+          if (query.state.status === "error")
+            query.setState({ errorUpdatedAt: 0 });
+        }
+      }),
+  );
 
   /**
    * Replaces what one key holds, for an owner that learned the new value
@@ -142,13 +185,16 @@ export class QueryClientService extends Service {
    * @param key the key whose held value moves.
    * @param next what the held value becomes.
    */
-  update<T>(key: QueryKey, next: (held: T) => T): void {
-    const query = this.#client
-      .getQueryCache()
-      .find<T>({ queryKey: key, exact: true });
-    if (query === undefined || query.state.data === undefined) return;
-    this.#client.setQueryData<T>(key, next(query.state.data));
-  }
+  const update = Effect.fn("QueryClients.update")(
+    <T>(key: QueryKey, next: (held: T) => T) =>
+      Effect.sync(() => {
+        const query = client
+          .getQueryCache()
+          .find<T>({ queryKey: key, exact: true });
+        if (query === undefined || query.state.data === undefined) return;
+        client.setQueryData<T>(key, next(query.state.data));
+      }),
+  );
 
   /**
    * Every key under one prefix that the cache holds a read for, so an owner can
@@ -156,12 +202,14 @@ export class QueryClientService extends Service {
    *
    * @param prefix the key prefix to enumerate.
    */
-  keysUnder(prefix: QueryKey): QueryKey[] {
-    return this.#client
-      .getQueryCache()
-      .findAll({ queryKey: prefix })
-      .map((query) => query.queryKey);
-  }
+  const keysUnder = Effect.fn("QueryClients.keysUnder")((prefix: QueryKey) =>
+    Effect.sync(() => {
+      return client
+        .getQueryCache()
+        .findAll({ queryKey: prefix })
+        .map((query) => query.queryKey);
+    }),
+  );
 
   /**
    * What one key holds right now, for a caller that cannot wait — an editor
@@ -169,8 +217,8 @@ export class QueryClientService extends Service {
    *
    * @returns null while no read has committed a value for the key.
    */
-  peek<T>(key: QueryKey): Held<T> | null {
-    const query = this.#client
+  function peekValue<T>(key: QueryKey): Held<T> | null {
+    const query = client
       .getQueryCache()
       .find<T>({ queryKey: key, exact: true });
     if (query === undefined || query.state.data === undefined) return null;
@@ -197,11 +245,14 @@ export class QueryClientService extends Service {
    *
    * @returns the value the read committed, or null where it failed.
    */
-  async ask<T>(key: QueryKey, queryFn: QueryFunction<T>): Promise<T | null> {
-    const result = await this.#settle(key, queryFn, undefined);
+  const ask = Effect.fn("QueryClients.ask")(function* <T>(
+    key: QueryKey,
+    queryFn: QueryFunction<T>,
+  ): Effect.fn.Return<T | null, unknown> {
+    const result = yield* settle(key, queryFn, undefined);
     if (result.kind === "value") return result.value;
     return result.kind === "failed" && result.cooldown ? result.held : null;
-  }
+  });
 
   /**
    * Reads one key through to the value that stands, asking again where an
@@ -214,15 +265,15 @@ export class QueryClientService extends Service {
    * @returns the settled value, what the key still holds where the read failed,
    *   or null where it holds nothing.
    */
-  async read<T>(
+  const read = Effect.fn("QueryClients.read")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
     signal?: AbortSignal,
-  ): Promise<T | null> {
-    const result = await this.#settle(key, queryFn, signal);
+  ): Effect.fn.Return<T | null, unknown> {
+    const result = yield* settle(key, queryFn, signal);
     if (result.kind === "value") return result.value;
     return result.kind === "released" ? null : result.held;
-  }
+  });
 
   /**
    * Reads a dependency for composition. A failed dependency stays failed in
@@ -232,16 +283,18 @@ export class QueryClientService extends Service {
    * error rejects even during cooldown. Removal or disposal rejects with
    * AbortError. The caller's signal ends its wait alone.
    */
-  async readFresh<T>(
+  const readFresh = Effect.fn("QueryClients.readFresh")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
     signal?: AbortSignal,
-  ): Promise<T> {
-    const result = await this.#settle(key, queryFn, signal);
+  ): Effect.fn.Return<T, unknown> {
+    const result = yield* settle(key, queryFn, signal);
     if (result.kind === "value") return result.value;
-    if (result.kind === "failed") throw result.error;
-    throw new DOMException(`Held read ${result.kind}`, "AbortError");
-  }
+    if (result.kind === "failed") return yield* Effect.fail(result.error);
+    return yield* Effect.fail(
+      new DOMException(`Held read ${result.kind}`, "AbortError"),
+    );
+  });
 
   /**
    * Reports what the reads under one key prefix commit, which is how an owner
@@ -252,49 +305,49 @@ export class QueryClientService extends Service {
    * @param on what each settlement under that prefix is reported through.
    * @returns the unsubscribe the owner holds for its lifetime.
    */
-  watch<T>(prefix: QueryKey, on: HeldReadEvents<T>): () => void {
-    /** What each key held when its running read started, by query hash. */
-    const holding = new Map<string, unknown>();
-    return this.#client.getQueryCache().subscribe((event) => {
-      if (!partialMatchKey(event.query.queryKey, prefix)) return;
-      const { queryHash, queryKey } = event.query;
-      if (event.type === "removed") {
-        holding.delete(queryHash);
-        return;
-      }
-      if (event.type !== "updated") return;
-      switch (event.action.type) {
-        case "fetch":
-          holding.set(queryHash, event.query.state.data);
-          return;
-        case "success": {
-          // Semantic equality is structural sharing, so an equal value is the
-          // very value the key already held and changes nothing on screen.
-          const held = holding.get(queryHash);
-          holding.delete(queryHash);
-          if (held !== event.query.state.data) on.changed?.(queryKey);
-          on.settled(queryKey, this.peek<T>(queryKey));
-          return;
-        }
-        case "error":
-          holding.delete(queryHash);
-          on.settled(queryKey, this.peek<T>(queryKey));
-          return;
-        default:
-          return;
-      }
-    });
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    // Clearing cancels every in-flight read and releases every held value.
-    stack.adopt(this.#client, (client) => {
-      client.clear();
-    });
-
-    this.commit(stack.move());
-  }
+  const watch = Effect.fn("QueryClients.watch")(
+    <T>(prefix: QueryKey, on: HeldReadEvents<T>) =>
+      Effect.sync(() => {
+        if (closed) return () => {};
+        /** What each key held when its running read started, by query hash. */
+        const holding = new Map<string, unknown>();
+        const unsubscribe = client.getQueryCache().subscribe((event) => {
+          if (!partialMatchKey(event.query.queryKey, prefix)) return;
+          const { queryHash, queryKey } = event.query;
+          if (event.type === "removed") {
+            holding.delete(queryHash);
+            return;
+          }
+          if (event.type !== "updated") return;
+          switch (event.action.type) {
+            case "fetch":
+              holding.set(queryHash, event.query.state.data);
+              return;
+            case "success": {
+              // Semantic equality is structural sharing, so an equal value is the
+              // very value the key already held and changes nothing on screen.
+              const held = holding.get(queryHash);
+              holding.delete(queryHash);
+              if (held !== event.query.state.data) on.changed?.(queryKey);
+              on.settled(queryKey, peekValue<T>(queryKey));
+              return;
+            }
+            case "error":
+              holding.delete(queryHash);
+              on.settled(queryKey, peekValue<T>(queryKey));
+              return;
+            default:
+              return;
+          }
+        });
+        const stop = () => {
+          unsubscribe();
+          watchers.delete(stop);
+        };
+        watchers.add(stop);
+        return stop;
+      }),
+  );
 
   /**
    * One ask, and one more where an invalidation cancelled the read this joined:
@@ -303,32 +356,40 @@ export class QueryClientService extends Service {
    * Each attempt belongs to the same query lifetime. A later query using the
    * same key is a separate read, and disposal ends every lifetime.
    */
-  async #settle<T>(
+  const settle = Effect.fn("QueryClients.settle")(function* <T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
     signal: AbortSignal | undefined,
-  ): Promise<ReadResult<T>> {
-    if (this.disposing) return { kind: "released" };
-    const reading = this.#attempt(key, queryFn, signal);
-    const cache = this.#client.getQueryCache();
+  ): Effect.fn.Return<ReadResult<T>, unknown> {
+    if (closed) return { kind: "released" };
+    const reading = attempt(key, queryFn, signal);
+    const cache = client.getQueryCache();
     const query = cache.find({ queryKey: key, exact: true });
     const released = () =>
-      this.disposing || cache.find({ queryKey: key, exact: true }) !== query;
-    const joined = await reading;
+      closed || cache.find({ queryKey: key, exact: true }) !== query;
+    const joined = yield* Effect.tryPromise({
+      try: () => reading,
+      catch: (error) => error,
+    });
     if (released()) return { kind: "released" };
     if (joined.kind !== "cancelled") return joined;
-    logger.debug("Held read cancelled, asking again", { queryKey: key });
-    const retried = await this.#attempt(key, queryFn, signal);
+    yield* Effect.logDebug("Held read cancelled, asking again").pipe(
+      Effect.annotateLogs({ queryKey: key }),
+    );
+    const retried = yield* Effect.tryPromise({
+      try: () => attempt(key, queryFn, signal),
+      catch: (error) => error,
+    });
     return released() ? { kind: "released" } : retried;
-  }
+  }, withLogCategory("query-client"));
 
   /** One ask, raced against the caller's signal where it brought one. */
-  #attempt<T>(
+  function attempt<T>(
     key: QueryKey,
     queryFn: QueryFunction<T>,
     signal: AbortSignal | undefined,
   ): Promise<ReadResult<T>> {
-    const reading = this.#fetch(key, queryFn);
+    const reading = fetch(key, queryFn);
     return signal === undefined ? reading : abortable(reading, signal);
   }
 
@@ -342,17 +403,30 @@ export class QueryClientService extends Service {
    * Keeps failure and held data together so composition and display share the
    * same attempt without sharing their error policy.
    */
-  #fetch<T>(key: QueryKey, queryFn: QueryFunction<T>): Promise<ReadResult<T>> {
-    const state = this.#client.getQueryState<T>(key);
+  function fetch<T>(
+    key: QueryKey,
+    queryFn: QueryFunction<T>,
+  ): Promise<ReadResult<T>> {
+    const query = client
+      .getQueryCache()
+      .find<T>({ queryKey: key, exact: true });
+    const state = query?.state;
+    const failedAt = query && failures.get(query.queryHash);
     if (
       state?.status === "error" &&
-      this.#now().epochMilliseconds - state.errorUpdatedAt <
+      failedAt !== undefined &&
+      now().epochMilliseconds - failedAt <
         FAILURE_COOLDOWN.total("milliseconds")
     ) {
-      logger.trace("Failed held read served without a fresh one", {
-        queryKey: key,
-        held: state.data !== undefined,
-      });
+      run(
+        Effect.logTrace("Failed held read served without a fresh one").pipe(
+          Effect.annotateLogs({
+            queryKey: key,
+            held: state.data !== undefined,
+          }),
+          withLogCategory("query-client"),
+        ),
+      );
       return Promise.resolve({
         kind: "failed",
         error: state.error,
@@ -360,28 +434,93 @@ export class QueryClientService extends Service {
         cooldown: true,
       });
     }
-    return this.#client.fetchQuery<T>({ queryKey: key, queryFn }).then(
+    return client.fetchQuery<T>({ queryKey: key, queryFn }).then(
       // A read the invalidation reverted resolves with the value it reverted
       // to, and the stale mark it left is what tells that value apart from one
       // this read committed.
       () => {
-        const settled = this.#client.getQueryState<T>(key);
+        const settled = client.getQueryState<T>(key);
         if (settled === undefined) return { kind: "released" };
         return settled.isInvalidated
           ? { kind: "cancelled", held: settled.data ?? null }
           : { kind: "value", value: settled.data! };
       },
       (error: unknown) => {
-        const held = this.#client.getQueryData<T>(key) ?? null;
+        const held = client.getQueryData<T>(key) ?? null;
         if (!(error instanceof CancelledError))
           return { kind: "failed", error, held, cooldown: false };
         if (error.silent !== true) return { kind: "cancelled", held };
-        logger.debug("Held read released before it settled", { queryKey: key });
+        run(
+          Effect.logDebug("Held read released before it settled").pipe(
+            Effect.annotateLogs({ queryKey: key }),
+            withLogCategory("query-client"),
+          ),
+        );
         return { kind: "released" };
       },
     );
   }
-}
+  // Query Core emits synchronously. Capture the clock and snapshot before
+  // handing a settlement to either the Stream or an inline legacy watcher.
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      client.getQueryCache().subscribe((event) => {
+        if (event.type === "removed") failures.delete(event.query.queryHash);
+        if (event.type !== "updated") return;
+        if (event.action.type === "error")
+          failures.set(event.query.queryHash, now().epochMilliseconds);
+        if (event.action.type === "success")
+          failures.delete(event.query.queryHash);
+      }),
+    ),
+    (unsubscribe) => Effect.sync(unsubscribe),
+  );
+  let changed = false;
+  const stopChanges = yield* watch([], {
+    changed: () => {
+      changed = true;
+    },
+    settled: (key, held) => {
+      const next = { key, held, changed };
+      changed = false;
+      run(SubscriptionRef.set(latest, next));
+    },
+  });
+  yield* Effect.addFinalizer(() =>
+    Effect.gen(function* () {
+      closed = true;
+      stopChanges();
+      for (const stop of watchers) stop();
+      failures.clear();
+      yield* Deferred.succeed(stopped, undefined);
+      yield* SubscriptionRef.set(latest, null);
+    }),
+  );
+
+  const peek = Effect.fn("QueryClients.peek")(<T>(key: QueryKey) =>
+    Effect.sync(() => {
+      return peekValue<T>(key);
+    }),
+  );
+  return QueryClients.of({
+    client,
+    current: SubscriptionRef.get(latest),
+    changes: SubscriptionRef.changes(latest).pipe(
+      Stream.filter((change): change is HeldReadChange => change !== null),
+      Stream.interruptWhen(Deferred.await(stopped)),
+    ),
+    invalidate,
+    update,
+    keysUnder,
+    ask,
+    read,
+    readFresh,
+    watch,
+    peek,
+  });
+});
+
+export const layerQueryClients = Layer.effect(QueryClients, makeQueryClients);
 
 /** The current or most recent read of `query`, as the value it commits. */
 function settledValue<T>(query: Query<T>): Promise<T | null> {
@@ -395,9 +534,3 @@ function settledValue<T>(query: Query<T>): Promise<T | null> {
     query.state.status === "error" ? null : (query.state.data ?? null),
   );
 }
-
-/** {@link QueryClientService} in the plugin's Layer graph, bridged until it converts. */
-export class QueryClients extends Context.Service<
-  QueryClients,
-  QueryClientService
->()("zotlit/query-client/QueryClients") {}

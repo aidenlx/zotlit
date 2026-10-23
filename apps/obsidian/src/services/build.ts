@@ -66,7 +66,7 @@ import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { ProfileService } from "./profile/service";
-import { QueryClients } from "./query-client/service";
+import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
@@ -91,7 +91,8 @@ import { workerClient } from "./zotero-reads/worker-client";
  * This function does not own lifecycle. `zt-main.ts` creates the stack, passes
  * it here, and moves the stack only after all plugin startup wiring succeeds.
  *
- * The runtime over {@link pluginLayer} is built first, and the container
+ * The runtime over {@link pluginLayer} finishes acquisition first, including
+ * each layer's asynchronous first load. The container then
  * injects its services with `useValue`: a converted service through its plain
  * adapter, a bridged one as it is. The runtime's disposal sits under every
  * container registration on `stack`, so the whole graph closes after the last
@@ -101,11 +102,12 @@ import { workerClient } from "./zotero-reads/worker-client";
  *
  * Within the container, registration order matters: services dispose in LIFO.
  */
-export function buildServices(
+export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
 ) {
   const runtime = buildRuntime(pluginLayer(plugin), stack);
+  await runtime.context();
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -132,7 +134,7 @@ export function buildServices(
         cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
     })
     .useValue({
-      queryClient: () => runtime.runSync(QueryClients.use(Effect.succeed)),
+      queryClient: () => plainQueryClients(runtime),
     })
     .use({
       release: ({ settings }) =>
