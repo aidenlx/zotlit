@@ -120,6 +120,8 @@ Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-worksp
 
 ## Effect
 
+Build a new service's logic in Effect when it orchestrates async work: typed failures, retries or timeouts, concurrency, cancellation, or scoped resources. The service's lifecycle shell keeps the house pattern (`/obsidian-services`); Effect runs inside it. Plain synchronous logic stays plain TypeScript.
+
 Effect's API evolves between versions and may differ from your training data. Resolve the `effect` package from the relevant workspace. Read `AGENTS.md` inside the installed package before writing Effect code; follow its linked examples for the area being changed. Search the installed source before adding helpers.
 
 <!-- BEGIN:turborepo-agent-rules -->
