@@ -2,15 +2,10 @@
 // Source: https://github.com/quartz-community/remark-obsidian/blob/a80395a3d80f351e67a0afdb63b51a604e010c8e/test/parity/corpus.ts
 import { expect, it } from "vitest";
 
-import {
-  documentWikilinks,
-  scanCitekeyOccurrences,
-  scanDocumentCitations,
-} from "./scan";
 import { scanNote } from "./scan-note";
 import type { NoteScanRecord } from "./scan-note";
 
-const empty: Omit<NoteScanRecord, "links"> = {
+const empty: Omit<NoteScanRecord, "links" | "ranges"> = {
   citations: [],
   citekeys: [],
   wikilinks: [],
@@ -819,67 +814,93 @@ const conformance: {
 ];
 
 it.each(conformance)("$name", ({ text, record }) => {
-  const { links: _links, ...citations } = scanNote(text);
+  const { links: _links, ranges: _ranges, ...citations } = scanNote(text);
   expect(citations).toEqual({ ...empty, ...record });
 });
 
-// These inputs are the existing scan.test.ts cases and the two syntax fixtures
-// in citation-index/service.test.ts. The current scanner is the parity oracle.
-it.each([
-  "Before @a [{p. 3}; @b] after",
-  "See [[@a]] and ![[@b|B]], then [@c] and [[Note]] @d.",
-  "a [[@x]] b\n[[unclosed @y\n",
-  "As @roe2025 wrote, see [[@doe2024]].",
+// Existing citation syntax remains stable when the legacy scanner retires.
+it.each(
   [
-    "---",
-    "cite: @doe2024",
-    "---",
-    "",
-    "```md",
-    "@doe2024",
-    "```",
-    "",
-    "    @doe2024",
-    "",
-    "Inline `@doe2024`, math $x = @doe2024$, and %% @doe2024 %% too.",
-    "",
-    "$$",
-    "@doe2024",
-    "$$",
-    "",
-    "Only @roe2025 counts.",
-  ].join("\n"),
-  [
-    "- item",
-    "",
-    "    Indented under the list, citing @doe2024.",
-    "",
-    "It cost $5 and @roe2025 says $6 isn't a formula.",
-    "",
-    "A lone ` backtick keeps @doe2024 readable.",
-  ].join("\n"),
-])("preserves existing citekey scan: %s", (text) => {
-  expect(scanNote(text).citations).toEqual(scanDocumentCitations(text));
-  expect(scanNote(text).citekeys).toEqual(scanCitekeyOccurrences(text));
+    "Before @a [{p. 3}; @b] after",
+    "See [[@a]] and ![[@b|B]], then [@c] and [[Note]] @d.",
+    "a [[@x]] b\n[[unclosed @y\n",
+    "As @roe2025 wrote, see [[@doe2024]].",
+    [
+      "---",
+      "cite: @doe2024",
+      "---",
+      "",
+      "```md",
+      "@doe2024",
+      "```",
+      "",
+      "    @doe2024",
+      "",
+      "Inline `@doe2024`, math $x = @doe2024$, and %% @doe2024 %% too.",
+      "",
+      "$$",
+      "@doe2024",
+      "$$",
+      "",
+      "Only @roe2025 counts.",
+    ].join("\n"),
+    [
+      "- item",
+      "",
+      "    Indented under the list, citing @doe2024.",
+      "",
+      "It cost $5 and @roe2025 says $6 isn't a formula.",
+      "",
+      "A lone ` backtick keeps @doe2024 readable.",
+    ].join("\n"),
+  ].map((text, index) => ({ text, index })),
+)("preserves existing citekey scan: $text", ({ text, index }) => {
+  const expected = [
+    ["@a [{p. 3}; @b]"],
+    ["[@c]", "@d"],
+    ["@y"],
+    ["@roe2025"],
+    ["@roe2025"],
+    ["@doe2024", "@roe2025", "@doe2024"],
+  ];
+  const sources = scanNote(text).citations.map(({ start, end }) =>
+    text.slice(start, end),
+  );
+  expect(sources).toEqual(expected[index]);
 });
 
 it.each([
-  { text: "[[Doe 2024]]", link: "Doe 2024" },
-  { text: "[[Doe 2024#cite:locator=4]]", link: "Doe 2024#cite:locator=4" },
-  { text: "[[Doe 2024#cite:]]", link: "Doe 2024#cite:" },
-  { text: "[[Doe 2024#Heading]]", link: "Doe 2024#Heading" },
-  { text: "[[Doe 2024#^block]]", link: "Doe 2024#^block" },
-  { text: "[[Doe 2024|Doe]]", link: "Doe 2024" },
-  { text: "![[Doe 2024]]", link: "Doe 2024" },
-  { text: "[Doe](Doe%202024)", link: "Doe 2024" },
-])("preserves existing wikilink eligibility: $text", ({ text, link }) => {
-  const old = documentWikilinks([
-    { original: text, link, position: pos(0, text.length) },
-  ]);
-  const record = scanNote(text);
-  expect(record.wikilinks).toEqual(old.occurrences);
-  expect(record.malformedWikilinks).toEqual(old.malformed);
-});
+  { text: "[[Doe 2024]]", eligible: true },
+  {
+    text: "[[Doe 2024#cite:locator=4]]",
+    eligible: true,
+    fragment: "locator=4",
+  },
+  { text: "[[Doe 2024#cite:]]", malformed: true },
+  { text: "[[Doe 2024#Heading]]" },
+  { text: "[[Doe 2024#^block]]" },
+  { text: "[[Doe 2024|Doe]]" },
+  { text: "![[Doe 2024]]" },
+  { text: "[Doe](Doe%202024)" },
+])(
+  "preserves existing wikilink eligibility: $text",
+  ({ text, eligible, malformed, fragment }) => {
+    const occurrence = {
+      kind: "wikilink",
+      raw: "Doe 2024",
+      position: pos(0, text.length),
+    };
+    const record = scanNote(text);
+    expect(record.wikilinks).toEqual(
+      eligible
+        ? [{ ...occurrence, ...(fragment === undefined ? {} : { fragment }) }]
+        : [],
+    );
+    expect(record.malformedWikilinks).toEqual(
+      malformed ? [{ occurrence }] : [],
+    );
+  },
+);
 
 // Intentional #1689 / ADR 0079 changes from the previous scanner (scan.ts).
 // Each row names what that scanner did; only the new scanner is asserted.

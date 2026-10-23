@@ -81,6 +81,7 @@ it("runs the production parse worker without Obsidian (#1691)", async () => {
         path: "draft.md",
         generation: 12,
         record: {
+          ranges: [{ kind: "link-destination", from: 3, to: 61 }],
           links: [],
           citations: [],
           citekeys: [],

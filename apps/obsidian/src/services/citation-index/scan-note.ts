@@ -35,6 +35,27 @@ export interface AnnotationOccurrence extends AnnotationLink {
 }
 
 export interface NoteScanRecord {
+  /** Transient syntax ranges for whole-document export; never persisted. */
+  ranges: (
+    | {
+        kind:
+          | "code"
+          | "frontmatter"
+          | "link-destination"
+          | "comment"
+          | "text-dollar";
+        from: number;
+        to: number;
+      }
+    | {
+        kind: "fenced-code";
+        from: number;
+        to: number;
+        lineStart: number;
+        /** Container continuation for an inserted blank line; null if already separated. */
+        blankLinePrefix: string | null;
+      }
+  )[];
   /** Vault references before citation eligibility, including aliases and embeds. */
   links: {
     kind: "wikilink" | "link";
@@ -407,6 +428,7 @@ const MARKDOWN_ESCAPE_OR_REFERENCE = regex(
 /** @returns Raw, unresolved occurrences with half-open UTF-16 source positions. */
 export function scanNote(text: string): NoteScanRecord {
   const record: NoteScanRecord = {
+    ranges: [],
     links: [],
     citations: [],
     citekeys: [],
@@ -429,9 +451,32 @@ export function scanNote(text: string): NoteScanRecord {
       if (
         ["FencedCode", "CodeBlock", "InlineCode", "Frontmatter"].includes(name)
       ) {
+        if (name === "FencedCode") {
+          const line = location(starts, from).line;
+          const lineStart = starts[line]!;
+          record.ranges.push({
+            kind: "fenced-code",
+            from,
+            to,
+            lineStart,
+            blankLinePrefix:
+              line === 0 ||
+              text.slice(starts[line - 1], lineStart).trim() === ""
+                ? null
+                : text.slice(lineStart, from).replaceAll(/[^>\t ]/g, " "),
+          });
+        } else {
+          record.ranges.push({
+            kind: name === "Frontmatter" ? "frontmatter" : "code",
+            from,
+            to,
+          });
+        }
         mask(body, from, to);
         return false;
       }
+      if (name === "URL")
+        record.ranges.push({ kind: "link-destination", from, to });
     },
   });
   // Pair markers after parsing: comments can cross quote and list boundaries,
@@ -442,6 +487,7 @@ export function scanNote(text: string): NoteScanRecord {
     const close = commentText.indexOf("%%", from + 2);
     const to = close < 0 ? text.length : close + 2;
     comments.push({ from, to });
+    record.ranges.push({ kind: "comment", from, to });
     mask(body, from, to);
     from = commentText.indexOf("%%", to);
   }
@@ -589,6 +635,11 @@ export function scanNote(text: string): NoteScanRecord {
       }
     },
   });
+  for (let at = 0; at < body.length; at++) {
+    if (body[at] === "\\") at++;
+    else if (body[at] === "$")
+      record.ranges.push({ kind: "text-dollar", from: at, to: at + 1 });
+  }
   for (const citation of scanPandocCitations(body.join(""))) {
     record.citations.push({
       start: citation.start,

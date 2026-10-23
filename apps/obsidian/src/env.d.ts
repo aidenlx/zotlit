@@ -17,6 +17,11 @@ declare module "*.yaml?raw" {
 }
 
 /** Built by the `pandoc-filter-variants` Vite plugin, one variant per query. */
+declare module "*.lua?raw" {
+  const source: string;
+  export default source;
+}
+
 declare module "*.lua?variant=cli" {
   const source: string;
   export default source;

@@ -232,7 +232,7 @@ function linkFacts(text: string, facts: LinkFact[]): NoteScanRecord["links"] {
   }));
 }
 
-const empty: NoteScanRecord = {
+const empty: Omit<NoteScanRecord, "ranges"> = {
   links: [],
   citations: [],
   citekeys: [],
@@ -245,7 +245,8 @@ const empty: NoteScanRecord = {
 it.each(cases)("$id", ({ id, text, record, links }) => {
   const difference = deliberateDifferences[id];
   const expectedLinks = difference ? linkFacts(text, difference.links) : links;
-  expect(scanNote(text), difference?.reason).toEqual({
+  const { ranges: _ranges, ...occurrences } = scanNote(text);
+  expect(occurrences, difference?.reason).toEqual({
     ...empty,
     ...record,
     links: expectedLinks,
@@ -289,7 +290,8 @@ const hiddenPayloads = [
 it.each(hiddenPayloads)(
   "%s: hides every reference in the payload (#1689)",
   (_id, text) => {
-    expect(scanNote(text)).toEqual(empty);
+    const { ranges: _ranges, ...occurrences } = scanNote(text);
+    expect(occurrences).toEqual(empty);
   },
 );
 
@@ -308,7 +310,8 @@ it("token/display-math/newline-escaped-close: an escaped $$ leaves the payload v
     attachmentKey: "ABCD2345",
     pageLabel: null,
   };
-  expect(scanNote(text)).toEqual({
+  const { ranges: _ranges, ...occurrences } = scanNote(text);
+  expect(occurrences).toEqual({
     ...empty,
     links: [
       {
@@ -357,7 +360,8 @@ it("token/display-math/newline-escaped-close: an escaped $$ leaves the payload v
 });
 
 it("an inline footnote in a link label keeps the Annotation link labelled (#1689)", () => {
-  expect(scanNote(`[^[note]](${uri})`)).toEqual({
+  const { ranges: _ranges, ...occurrences } = scanNote(`[^[note]](${uri})`);
+  expect(occurrences).toEqual({
     ...empty,
     annotations: [
       {
@@ -373,7 +377,8 @@ it("an inline footnote in a link label keeps the Annotation link labelled (#1689
 });
 
 it("a footnote definition ends at its first closing bracket, so a following Wikilink stays visible (#1689)", () => {
-  expect(scanNote("[^a] [[Note]]: body")).toEqual({
+  const { ranges: _ranges, ...occurrences } = scanNote("[^a] [[Note]]: body");
+  expect(occurrences).toEqual({
     ...empty,
     links: [
       {

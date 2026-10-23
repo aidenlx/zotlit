@@ -1,10 +1,11 @@
 import { expect, it } from "vitest";
 
-import { maskWikilinks, scanDocumentCitations } from "./scan";
+import { maskWikilinks } from "./scan";
+import { scanNote } from "./scan-note";
 
 it("groups an Author-in-text Citation with its trailing items", () => {
   const source = "Before @a [{p. 3}; @b] after";
-  const citations = scanDocumentCitations(source);
+  const citations = scanNote(source).citations;
 
   expect(citations).toHaveLength(1);
   const citation = citations[0]!;
@@ -25,7 +26,7 @@ it("groups an Author-in-text Citation with its trailing items", () => {
 it("reads no citation inside a wikilink or an embed", () => {
   const source = "See [[@a]] and ![[@b|B]], then [@c] and [[Note]] @d.";
   expect(
-    scanDocumentCitations(source).map(({ start, end }) =>
+    scanNote(source).citations.map(({ start, end }) =>
       source.slice(start, end),
     ),
   ).toEqual(["[@c]", "@d"]);

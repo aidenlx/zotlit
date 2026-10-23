@@ -1,3 +1,4 @@
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
 // Document Citation Text, the References Sidebar, the Citation Popover, the
@@ -349,6 +350,7 @@ export async function openCitationVault({
 
   const citationText = stack.use(
     new CitationText({
+    citationParse: inProcessParseClient,
       openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
@@ -592,6 +594,7 @@ function exportAdapter({
   settings: SettingsStub;
 }): PandocExportDeps {
   return {
+    citationParse: inProcessParseClient,
     profile: profileReader(() => settings.current, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
