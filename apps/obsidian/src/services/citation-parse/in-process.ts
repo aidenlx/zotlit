@@ -11,6 +11,7 @@ import { decodeParseReply } from "./client";
 import type { ParseClient } from "./client";
 import { layerParseHandlers } from "./handlers";
 import { CitationParseRpc } from "./rpc";
+import { makeParseRpcClient } from "./rpc-client";
 
 /** The client interface every CitationParseRpc caller holds. */
 export type ParseRpcClient = RpcClient.RpcClient<
@@ -31,9 +32,9 @@ export const makeInProcessClient = Effect.fnUntraced(
       Effect.provideService(RpcServer.Protocol, protocols.server),
       Effect.forkScoped,
     );
-    return yield* RpcClient.make(CitationParseRpc, {
-      disableTracing: true,
-    }).pipe(Effect.provideService(RpcClient.Protocol, protocols.client));
+    return yield* makeParseRpcClient().pipe(
+      Effect.provideService(RpcClient.Protocol, protocols.client),
+    );
   },
 );
 

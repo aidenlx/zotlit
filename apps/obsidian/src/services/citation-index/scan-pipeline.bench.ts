@@ -180,12 +180,16 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
       0,
     );
     expect(backfill.files).toBeGreaterThan(0);
+    // Backfill uses the production path; codec timing belongs to the grid above.
+    await using backfillWorker = await scanBenchmarkWorker<ParseReply>({
+      measureEncoding: false,
+    });
     for (let run = -3; run < RUNS; run++) {
       // Alternate order to avoid consistently giving either path the warmer host.
       const modes = run % 2 === 0 ? ["legacy", "worker"] : ["worker", "legacy"];
       for (const mode of modes) {
         await using harness = await createCitationIndexHarness(documents, {
-          parseClient: worker,
+          parseClient: backfillWorker,
           notes: false,
         });
         // Both paths read the same files through the same host adapter. Setup and

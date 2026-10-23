@@ -6,7 +6,7 @@ import { Worker } from "effect/workers";
 
 import { Cause, Context, Effect, Layer, Schema } from "@/lib/effect";
 
-import { CitationParseRpc } from "./rpc";
+import { makeParseRpcClient } from "./rpc-client";
 
 // This connection owns one stateless worker. The recovery layer replaces the
 // entire connection on death, so requests need neither a pool lease nor a
@@ -67,24 +67,7 @@ export const makeParseWorkerClient = Effect.fnUntraced(function* (
     ),
   );
   const transport = Context.get(protocol, RpcClient.Protocol);
-  // The benchmark times codec work where the send fiber actually runs it.
-  // Production uses the original codec without an observer or timing overhead.
-  const measured = measureEncoding
-    ? {
-        ...transport,
-        codecFor: <S extends Schema.Top>(schema: S) =>
-          transport.codecFor(schema).pipe(
-            Schema.middlewareEncoding((encode) =>
-              Effect.suspend(() => {
-                const end = measureEncoding();
-                return encode.pipe(Effect.tap(() => Effect.sync(end)));
-              }),
-            ),
-          ),
-      }
-    : transport;
-  // The service call carries the trace; per-note transport spans add backfill cost.
-  return yield* RpcClient.make(CitationParseRpc, { disableTracing: true }).pipe(
-    Effect.provideService(RpcClient.Protocol, measured),
+  return yield* makeParseRpcClient(measureEncoding).pipe(
+    Effect.provideService(RpcClient.Protocol, transport),
   );
 });

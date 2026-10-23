@@ -72,6 +72,49 @@ const fakeWorkers = Effect.gen(function* () {
 });
 
 it.effect(
+  "rejects malformed input and replies, then completes a valid eager-codec request (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const { spawned } = yield* fakeWorkers;
+      const connection = yield* connectParseWorker("worker source");
+      const worker = yield* Queue.take(spawned);
+      worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
+      const parse = (text: string) =>
+        Effect.tryPromise({
+          try: (signal) =>
+            connection.parse({ path: "draft.md", generation: 1, text }, signal),
+          catch: (error) => error,
+        });
+      expect(Exit.isFailure(yield* Effect.exit(parse(null!)))).toBe(true);
+      expect(yield* Queue.size(worker.sent)).toBe(0);
+      const malformed = yield* parse("").pipe(Effect.forkChild);
+      const first = yield* Queue.take(worker.sent);
+      if (first._tag !== "Request") throw new Error("Expected parse request");
+      worker.dispatchEvent(
+        new MessageEvent("message", {
+          data: [
+            1,
+            {
+              _tag: "Exit",
+              requestId: first.id,
+              exit: { _tag: "Success", value: 42 },
+            },
+          ],
+        }),
+      );
+      expect(Exit.isFailure(yield* Fiber.await(malformed))).toBe(true);
+      const valid = yield* parse("").pipe(Effect.forkChild);
+      const second = yield* Queue.take(worker.sent);
+      if (second._tag !== "Request") throw new Error("Expected parse request");
+      worker.reply(second.id, "draft.md", 1);
+      expect(yield* Fiber.join(valid)).toMatchObject({
+        path: "draft.md",
+        generation: 1,
+      });
+    }),
+);
+
+it.effect(
   "accepts readiness from a worker that starts before the next task (#1705)",
   () =>
     Effect.gen(function* () {

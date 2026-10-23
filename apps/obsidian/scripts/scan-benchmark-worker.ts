@@ -10,7 +10,9 @@ interface TimedMessage {
   workerMs?: number;
 }
 
-export async function scanBenchmarkWorker<ParseReply>() {
+export async function scanBenchmarkWorker<ParseReply>(
+  options: { measureEncoding?: boolean } = {},
+) {
   const bundle = await scanWorkerBundle<ParseReply>();
   await using stack = new AsyncDisposableStack();
   const workers = stack.use(new AsyncDisposableStack());
@@ -82,9 +84,11 @@ export async function scanBenchmarkWorker<ParseReply>() {
         });
         return port;
       },
-      (milliseconds) => {
-        encodeMs = milliseconds;
-      },
+      options.measureEncoding === false
+        ? undefined
+        : (milliseconds) => {
+            encodeMs = milliseconds;
+          },
     ),
   );
   const resources = stack.move();
