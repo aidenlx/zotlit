@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-// ADR 0079 performance gate, run from the workspace root:
+// ADR 0080 performance gate, run from the workspace root:
 // mise exec -- pnpm --filter @zotlit/obsidian bench src/services/citation-index/scan-pipeline.bench.ts
 //
 // Run on an idle host. Three warm-ups precede 15 measured samples per case;

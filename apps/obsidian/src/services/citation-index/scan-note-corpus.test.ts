@@ -33,7 +33,7 @@ import type { NoteScanRecord } from "./scan-note";
 const labelPrecedence =
   "Retain Lezer's nested-label and inline-token precedence; matching Obsidian requires replacing the link/reference parser.";
 const comments =
-  "ADR 0079 excludes every reference in a %% comment; Obsidian's cache indexes these hidden references.";
+  "ADR 0080 excludes every reference in a %% comment; Obsidian's cache indexes these hidden references.";
 const bareUrls =
   "#1689 keeps GFM bare-URL recognition off, so it does not consume following wikilinks.";
 const emphasis =

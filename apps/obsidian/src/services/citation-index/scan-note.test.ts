@@ -914,7 +914,7 @@ it.each([
   },
 );
 
-// Intentional #1689 / ADR 0079 changes from the previous scanner (scan.ts).
+// Intentional #1689 / ADR 0080 changes from the previous scanner (scan.ts).
 // Each row names what that scanner did; only the new scanner is asserted.
 it.each([
   {
