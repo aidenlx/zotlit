@@ -616,6 +616,18 @@ describe("ProfileService", () => {
     ).toBe("Custom annotation");
   });
 
+  it("gives the built-in Default document a create-once body", async () => {
+    await using fixture = await harness();
+    const document = parseLiteratureNoteTemplate(
+      await fixture.profile.getSource("default"),
+    );
+    const { body } = document;
+
+    expect(document.managedBlock).toBeNull();
+    expect(body).toContain("## Annotations\n\n```zotquery\n");
+    expect(body).not.toContain("## Notes");
+  });
+
   it("duplicates the built-in Default body without ejecting Default", async () => {
     await using fixture = await harness();
     const source = await fixture.profile.getSource("default");

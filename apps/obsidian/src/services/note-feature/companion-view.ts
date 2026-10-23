@@ -9,7 +9,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import type { UseLedger } from "@/services/use-ledger/service";
+import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
@@ -26,7 +26,7 @@ import {
 } from "./update-single";
 
 export interface CompanionNoteDeps extends InteractiveCreationDeps {
-  useLedger: Pick<UseLedger, "withoutNoteUse">;
+  useLedger: Pick<PlainUseLedger, "withoutNoteUse">;
   zoteroReads: Pick<ZoteroReadsService, "ready">;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "resolveCompanionNote" | "updateNote">;

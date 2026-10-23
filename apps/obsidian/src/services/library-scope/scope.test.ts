@@ -1,13 +1,17 @@
 import * as v from "valibot";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 
 import type { Library } from "@zotlit/db";
+
+import { Effect, Schema } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 
 import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
   resolveLibraryScope,
   sameResolution,
+  selectorKeySchema,
 } from "./scope";
 import type { LibraryScope, ResolvedLibraryScope } from "./scope";
 
@@ -253,4 +257,28 @@ describe("sameResolution", () => {
       ),
     ).toBe(false);
   });
+});
+
+describe("selectorKeySchema", () => {
+  const decode = Schema.decodeUnknownEffect(
+    selectorKeySchema((text) => `'${text}' names no Library.`),
+  );
+
+  it.effect.each([
+    ["personal", { type: "personal" }],
+    ["group:4815", { type: "group", groupID: 4815 }],
+  ] as const)("decodes %s to its selector", ([text, selector]) =>
+    Effect.gen(function* () {
+      expect(yield* decode(text)).toEqual(selector);
+    }),
+  );
+
+  it.effect.each(["group:0", "group:", "My Library", "1"])(
+    "rejects %j with the caller's message",
+    (text) =>
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(decode(text));
+        expect(error.message).toBe(`'${text}' names no Library.`);
+      }),
+  );
 });

@@ -1,9 +1,6 @@
 // One document's reference list: cited Items, the engine's bibliography, and the order the list reads in.
 
-import type {
-  AmbiguousCandidate,
-  AmbiguousCandidatesOf,
-} from "@/services/citation-index/ambiguity";
+import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import type {
   Citation,
   CitationOccurrence,
@@ -79,6 +76,8 @@ type CitationReferenceEntry = NumberedReferenceEntryBase &
     | { kind: "summary"; source: ReferenceSource; linkpath: string | null }
     | { kind: "unrendered"; source: ReferenceSource; linkpath: string | null }
     | { kind: "missing"; linkpath: string | null }
+    | { kind: "ineligible"; key: string }
+    | { kind: "unreadable" }
     | { kind: "unresolved"; citekey: string }
     | { kind: "unresolved"; annotationKey: string }
     | {
@@ -97,12 +96,6 @@ export interface ReferenceBuildOptions {
   bibliography?: ReferenceBibliography;
   /** Citation source errors that stay outside the CSL bibliography. */
   errors?: readonly DocumentCitationError[];
-  /**
-   * The candidates an Ambiguous Citation Key names, which is what tells one
-   * apart from a citekey that names no Item at all. Omit it to read every
-   * citekey naming no one Item as `unresolved`.
-   */
-  ambiguous?: AmbiguousCandidatesOf;
 }
 
 /**
@@ -121,67 +114,85 @@ export interface ReferenceBuildOptions {
  * the same way: it adopts no candidate, so the bibliography holds no place for
  * it either.
  *
- * @param sources cited Items by Indexed Key; an Item the database no longer
- *   holds is simply absent, and its citation becomes a `missing` entry.
- * @param options rendered bibliography data, citation source errors, and the
- *   candidates of an Ambiguous Citation Key. Omit the bibliography for the
+ * @param options rendered bibliography data and citation source errors. Omit the bibliography for the
  *   minimal reference list. A source-backed id becomes `unrendered` only when a
  *   completed bibliography leaves it out.
  */
 export function buildReferenceEntries(
   citations: readonly Citation[],
-  sources: ReadonlyMap<string, ReferenceSource>,
   options: ReferenceBuildOptions = {},
 ): ReferenceEntry[] {
-  const { bibliography, errors = [], ambiguous } = options;
+  const { bibliography, errors = [] } = options;
   const placed = new Map<
     string,
     NumberedReferenceEntryBase & Omit<RenderedReferenceEntryBody, "serial">
   >();
   const trailing: ReferenceEntry[] = [];
-  for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
-    if (indexedKey === null) {
-      const first = occurrences[0]!;
-      if (first.kind === "annotation") {
+  for (const citation of citations) {
+    const { indexedKey, refNumber, linkpath, occurrences } = citation;
+    const outcome = citation.outcome!;
+    const base = {
+      id:
+        indexedKey ??
+        `${occurrences[0]!.kind === "annotation" ? "annotation:" : "@"}${occurrences[0]!.raw}`,
+      refNumber,
+      occurrences,
+    };
+    switch (outcome.kind) {
+      case "unreadable":
+        trailing.push({ ...base, kind: "unreadable" });
+        continue;
+      case "ineligible-item":
+        trailing.push({ ...base, kind: "ineligible", key: outcome.key });
+        continue;
+      case "missing-item":
+        trailing.push({ ...base, linkpath, kind: "missing" });
+        continue;
+      case "missing-annotation":
         trailing.push({
-          id: `annotation:${first.raw}`,
-          refNumber,
-          occurrences,
+          ...base,
           kind: "unresolved",
-          annotationKey: first.raw,
+          annotationKey: outcome.annotationKey,
         });
         continue;
-      }
-      // Every remaining Citation naming no single Item is
-      // written as a citekey, so its raw text is what the row shows. The
-      // identity keeps the `@` it is written with, which an Indexed Key never
-      // starts with.
-      const citekey = occurrences[0]!.raw;
-      const base = { id: `@${citekey}`, refNumber, occurrences, citekey };
-      const candidates = ambiguous?.(citekey) ?? null;
-      trailing.push(
-        candidates
-          ? { ...base, kind: "ambiguous", candidates }
-          : { ...base, kind: "unresolved" },
-      );
-      continue;
+      case "unresolved-key":
+        trailing.push({
+          ...base,
+          kind: "unresolved",
+          citekey: outcome.citekey,
+        });
+        continue;
+      case "ambiguous-key":
+        trailing.push({
+          ...base,
+          kind: "ambiguous",
+          citekey: outcome.citekey,
+          candidates: outcome.candidates,
+        });
+        continue;
+      case "malformed":
+        trailing.push({ ...base, kind: "malformed" });
+        continue;
+      case "resolved":
+        break;
     }
-    const base = { id: indexedKey, refNumber, linkpath, occurrences };
-    const source = sources.get(indexedKey);
-    if (!source) {
-      trailing.push({ ...base, kind: "missing" });
-      continue;
-    }
+    const source = outcome.source;
+    const resolvedBase = { ...base, linkpath };
     const entry = bibliography?.entries.get(source.csl.id);
     if (!entry) {
       trailing.push({
-        ...base,
+        ...resolvedBase,
         kind: bibliography?.complete ? "unrendered" : "summary",
         source,
       });
       continue;
     }
-    placed.set(source.csl.id, { ...base, kind: "rendered", source, ...entry });
+    placed.set(source.csl.id, {
+      ...resolvedBase,
+      kind: "rendered",
+      source,
+      ...entry,
+    });
   }
 
   for (const { occurrence } of errors) {

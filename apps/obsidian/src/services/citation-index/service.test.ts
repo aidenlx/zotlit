@@ -1,7 +1,10 @@
+import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect } from "vitest";
 
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
@@ -49,6 +52,31 @@ async function citationsOf(
 }
 
 describe("CitationIndex", () => {
+  it.each([
+    ["[[Doe\u00a02024]]", undefined],
+    ["[[Doe 2024\\]]", undefined],
+    ["[[Doe\u00a02024#cite:locator=4\\]]", "locator=4"],
+  ])(
+    "#1683 resolves normalized Wikilink Citations in References and Cited By: %s",
+    async (body, fragment) => {
+      await using harness = await createCitationIndexHarness(
+        { "draft.md": body },
+        { settings: { "citation.wikilink-citations": true } },
+      );
+      harness.workspace.layoutReady();
+      await harness.index.whenIndexed();
+      const set = await harness.index.getDocumentCitationSet(harness.draft);
+      expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
+        KEY_A,
+      ]);
+      expect(set.occurrences[0]).toMatchObject({ raw: "Doe 2024" });
+      expect(set.occurrences[0]?.fragment).toBe(fragment);
+      expect((await harness.index.getCitedBy(KEY_A)).groups).toMatchObject([
+        { path: "draft.md", occurrences: [{ raw: "Doe 2024" }] },
+      ]);
+    },
+  );
+
   it("keeps Cited By backlinks when membership changes after a failed refresh", async () => {
     const { index, citekeys, db, draft, metadataCache, workspace } =
       await makeHarness({ "draft.md": "@doe2024" });
@@ -351,7 +379,7 @@ describe("CitationIndex", () => {
     const set = await index.getDocumentCitationSet(draft);
 
     expect(set.citations).toMatchObject([{ indexedKey: KEY_B, refNumber: 1 }]);
-    expect(set.errors).toEqual([
+    expect(set.errors).toMatchObject([
       {
         kind: "malformed-wikilink",
         occurrence: {
@@ -1668,17 +1696,28 @@ describe("CitationIndex one-shot reads", () => {
     });
   });
 
-  it("times out while coverage stays transitional, then settles", async () => {
-    const { index, workspace } = await makeHarness({
-      "review.md": "@doe2024.",
-    });
-
-    await expect(index.waitUntilSettled(5)).resolves.toBe("timeout");
-
-    workspace.layoutReady();
-    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-    expect((await index.getCitedBy(KEY_A)).coverage).toBe("complete");
-  });
+  it.effect("times out while coverage stays transitional, then settles", () =>
+    Effect.gen(function* () {
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const { index, workspace } = yield* Effect.promise(() =>
+        makeHarness({ "review.md": "@doe2024." }, { runPromise }),
+      );
+      let outcome: string | undefined;
+      const pending = index.waitUntilSettled(60_000).then((value) => {
+        outcome = value;
+      });
+      yield* TestClock.adjust(60_001);
+      expect(outcome).toBe("timeout");
+      yield* Effect.promise(() => pending);
+      workspace.layoutReady();
+      expect(yield* Effect.promise(() => index.waitUntilSettled(1_000))).toBe(
+        "settled",
+      );
+      expect(
+        (yield* Effect.promise(() => index.getCitedBy(KEY_A))).coverage,
+      ).toBe("complete");
+    }),
+  );
 
   it("counts a degraded resolution as settled", async () => {
     const db = new DatabaseStub();

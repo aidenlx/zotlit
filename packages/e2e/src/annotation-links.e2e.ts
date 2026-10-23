@@ -791,6 +791,18 @@ interface HoverOutcome {
    * scenario that asks.
    */
   restored?: string;
+  /**
+   * The open popover once the pointer crossed from the link's text onto its
+   * URL; only for a scenario that asks.
+   */
+  crossed?: {
+    /** Whether the view still shows the popover the text opened. */
+    same: boolean;
+    /** Whether the popover moved. */
+    moved: boolean;
+    /** The popover's text after the crossing. */
+    text: string | null;
+  };
 }
 
 /** The link a hover that shows nothing is read against: one that shows a popover. */
@@ -827,6 +839,12 @@ interface HoverScenario {
   mod?: boolean;
   /** The hover is expected to show nothing; read against a control hover. */
   absent?: boolean;
+  /**
+   * Once the popover has filled, move the pointer from the link's text onto
+   * its URL, which Source mode draws as a span of its own, as
+   * {@link HoverOutcome.crossed}.
+   */
+  crossToUrl?: boolean;
 }
 
 /**
@@ -852,6 +870,7 @@ async function hover({
   image = false,
   mod = false,
   absent = hoverAction === "off",
+  crossToUrl = false,
 }: HoverScenario): Promise<HoverOutcome> {
   // The control link has a line of its own; the cursor stays on the empty
   // last line, which holds no link.
@@ -927,6 +946,18 @@ async function hover({
           if(${image})await until(painted,()=>'The popover painted no Excerpt Image: '+content().outerHTML.slice(0,300));
           const colored=content().querySelector('[style*="--zt-annot-color"]');
           outcome={popover:true,text:content().textContent,color:colored?colored.style.getPropertyValue('--zt-annot-color'):null,image:!!painted(),sup:content().querySelector('sup')?.textContent??null};
+          if(${crossToUrl}){
+            // Past the opening delay, so a popover the crossing moved or
+            // emptied has settled by the time it is read.
+            const before=popover.hoverEl.getBoundingClientRect();
+            const urlEl=[...link.closest('.cm-line').querySelectorAll('.cm-url')].find((el)=>!el.classList.contains('cm-formatting'));
+            if(!urlEl)throw new Error('The link shows no URL');
+            const urlBox=urlEl.getClientRects()[0];
+            urlEl.dispatchEvent(new MouseEvent('mouseover',{clientX:urlBox.left+Math.min(urlBox.width/2,12),clientY:urlBox.top+urlBox.height/2,bubbles:true,relatedTarget:link,metaKey:${mod},ctrlKey:${mod},view:urlEl.ownerDocument.defaultView}));
+            await sleep(500);
+            const after=popover.hoverEl.getBoundingClientRect();
+            outcome.crossed={same:opened(view)===popover,moved:before.left!==after.left||before.top!==after.top,text:content()?.textContent??null};
+          }
         }
       }
       return JSON.stringify(outcome);
@@ -1476,6 +1507,24 @@ describe.skipIf(!reachable)("Annotation links", () => {
       });
 
       expect(outcome.text).toContain(FIRST_PAGE.text);
+    }, 120000);
+
+    // Source mode draws the link's text and its URL as spans of their own; the
+    // popover anchors on the whole link, so crossing between them keeps it.
+    it("in one place in Source mode while the pointer crosses from the text to the URL", async () => {
+      const outcome = await hover({
+        url: durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel),
+        gesture: "source",
+        mod: true,
+        crossToUrl: true,
+      });
+
+      expect(outcome.text).toContain(FIRST_PAGE.text);
+      expect(outcome.crossed).toEqual({
+        same: true,
+        moved: false,
+        text: outcome.text,
+      });
     }, 120000);
 
     it("with nothing in Source mode while Mod is not held", async () => {

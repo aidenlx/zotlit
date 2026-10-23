@@ -7,6 +7,7 @@ import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
+import { Effect } from "@/lib/effect";
 import {
   parseProfileSelector,
   PROFILE_ID_LENGTH,
@@ -25,7 +26,8 @@ import type {
   InspectedSource,
   ProfileCheckBranch,
 } from "./check";
-import { loadTemplateData, withSelectedNote } from "./data";
+import { readTemplateData, withSelectedNote } from "./data";
+import type { TemplateDataDeps } from "./data";
 import { sourceRevision } from "./inspect";
 
 /** The refusal a Template Draft identity that fails the Profile ID rule carries. */
@@ -34,8 +36,22 @@ export const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
 /** The refusal a Template Draft whose manifest ID names another Profile carries. */
 export const PROFILE_ID_MISMATCH = "PROFILE_ID_MISMATCH";
 
+/** What the checked source, or a Template it runs, threw. */
+const attempt = <A>(evaluate: () => A) =>
+  Effect.try({ try: evaluate, catch: (error) => error });
+
+/** The data of one root, failing with what failed to read or build it. */
+const loadRoot = (
+  data: TemplateDataDeps,
+  key: string,
+  root: "note" | "filename" | "annotation",
+) =>
+  readTemplateData(data, key, root).pipe(Effect.mapError(({ cause }) => cause));
+
 /** Checks a Profile document or Profile draft, and returns the answer. */
-export async function checkProfileDocument({
+export const checkProfileDocument = Effect.fn(
+  "TemplateWorkbenchCli.checkProfileDocument",
+)(function* ({
   deps,
   params,
   draft,
@@ -46,7 +62,7 @@ export async function checkProfileDocument({
   source,
   context,
   attachReport,
-}: ProfileCheckBranch): Promise<CheckOutcome> {
+}: ProfileCheckBranch): Effect.fn.Return<CheckOutcome> {
   let profileContext = context;
   const checks: Record<string, ProfileCheck> = Object.fromEntries(
     ["structure", ...PROFILE_OUTPUTS].map((name) => [
@@ -55,8 +71,13 @@ export async function checkProfileDocument({
     ]),
   );
   let caller: RenderCallerSource = { source, language: "liquid" };
-  try {
-    const parsed = parseLiteratureNoteTemplate(source);
+  // A failure anywhere below is the check's answer, as the source or a
+  // Template it runs reported it.
+  return yield* Effect.gen(function* (): Effect.fn.Return<
+    CheckOutcome,
+    unknown
+  > {
+    const parsed = yield* attempt(() => parseLiteratureNoteTemplate(source));
     if (
       draft &&
       params.profile !== undefined &&
@@ -143,7 +164,9 @@ export async function checkProfileDocument({
         },
       };
     }
-    const document = deps.templates.prepareLiteratureNoteTemplateSource(source);
+    const document = yield* attempt(() =>
+      deps.templates.prepareLiteratureNoteTemplateSource(source),
+    );
     const selector = parseProfileSelector(document.manifest.id ?? "default");
     if (draft && selector === undefined)
       return {
@@ -161,17 +184,23 @@ export async function checkProfileDocument({
           },
         },
       };
-    const profile =
+    const settings = draft
+      ? yield* Effect.tryPromise({
+          try: () => deps.data.settings.loaded,
+          catch: (error) => error,
+        })
+      : undefined;
+    const profile = yield* attempt(() =>
       selector === undefined
         ? undefined
-        : draft
-          ? bindDraftProfile(
-              await deps.data.settings.loaded,
-              selector,
-              document.manifest,
-            )
-          : deps.profile.resolveProfile(selector);
-    if (!profile) throw new Error("The saved Profile does not resolve.");
+        : settings
+          ? bindDraftProfile(settings, selector, document.manifest)
+          : deps.profile.resolveProfile(selector),
+    );
+    if (!profile)
+      return yield* Effect.fail(
+        new Error("The saved Profile does not resolve."),
+      );
     if (draft)
       profileContext = {
         ...profileContext,
@@ -221,26 +250,32 @@ export async function checkProfileDocument({
           path: baseline.path,
         })
       : profileData;
-    const [note, filename] = await Promise.all([
-      loadTemplateData(data, params.key as string, "note"),
-      loadTemplateData(data, params.key as string, "filename"),
-    ]);
+    const [note, filename] = yield* Effect.all(
+      [
+        loadRoot(data, params.key as string, "note"),
+        loadRoot(data, params.key as string, "filename"),
+      ],
+      { concurrency: "unbounded" },
+    );
     if (note.kind !== "data" || filename.kind !== "data")
-      throw new Error("The selected Zotero item is unavailable.");
-    profileContext = {
-      ...profileContext,
-      dataRevision: sourceRevision(
+      return yield* Effect.fail(
+        new Error("The selected Zotero item is unavailable."),
+      );
+    const dataRevision = yield* attempt(() =>
+      sourceRevision(
         JSON.stringify({
           note: serializeTemplateData(note.data, "note"),
           filename: serializeTemplateData(filename.data, "filename"),
         }),
       ),
-    };
-    const annotations = await Promise.all(
-      (note.data as NoteTemplateContext).annotations.map(async (annotation) => {
+    );
+    profileContext = { ...profileContext, dataRevision };
+    const annotations = yield* Effect.forEach(
+      (note.data as NoteTemplateContext).annotations,
+      (annotation) => {
         const key = annotation.indexedKey;
-        try {
-          const loaded = await loadTemplateData(data, key, "annotation");
+        return Effect.gen(function* () {
+          const loaded = yield* loadRoot(data, key, "annotation");
           if (loaded.kind !== "data")
             return {
               key,
@@ -250,38 +285,45 @@ export async function checkProfileDocument({
           // fingerprint the loaded annotation data without invoking that getter.
           const { citation: _citation, ...descriptors } =
             Object.getOwnPropertyDescriptors(loaded.data);
-          const revision = sourceRevision(
-            JSON.stringify(
-              serializeTemplateData(
-                Object.defineProperties({}, descriptors),
-                "annotation",
+          const revision = yield* attempt(() =>
+            sourceRevision(
+              JSON.stringify(
+                serializeTemplateData(
+                  Object.defineProperties({}, descriptors),
+                  "annotation",
+                ),
               ),
             ),
           );
           return { key, data: loaded.data, revision };
-        } catch (error) {
-          return { key, error };
-        }
-      }),
+        }).pipe(Effect.catch((error) => Effect.succeed({ key, error })));
+      },
+      { concurrency: "unbounded" },
     );
     Object.assign(
       checks,
-      checkNativeProfile(deps.templates, {
-        document,
-        profile,
-        source,
-        note: note.data as NoteTemplateContext,
-        filename: filename.data,
-        annotations,
-        ...(baseline ? { existing: baseline.source } : {}),
-      }),
+      yield* attempt(() =>
+        checkNativeProfile(deps.templates, {
+          document,
+          profile,
+          source,
+          note: note.data as NoteTemplateContext,
+          filename: filename.data,
+          annotations,
+          ...(baseline ? { existing: baseline.source } : {}),
+        }),
+      ),
     );
-    const after = JSON.parse(
-      (await inspect(inspectRequest)) as string,
-    ) as InspectedSource;
+    const after = JSON.parse(yield* inspect(inspectRequest)) as InspectedSource;
     if (baseline?.kind === "real") {
       const file = deps.app.vault.getFileByPath(baseline.path!);
-      if (!file || (await deps.app.vault.read(file)) !== baseline.source)
+      const current = file
+        ? yield* Effect.tryPromise({
+            try: () => deps.app.vault.read(file),
+            catch: (error) => error,
+          })
+        : undefined;
+      if (current !== baseline.source)
         return {
           context: profileContext,
           result: {
@@ -326,16 +368,20 @@ export async function checkProfileDocument({
         rendering: "checked",
       },
     };
-  } catch (error) {
-    const diagnostic = attachReport(
-      profileContext,
-      checkDiagnostic(error, caller),
-    );
-    if (checks.structure?.status !== "passed")
-      checks.structure = { status: "failed", diagnostics: [diagnostic] };
-    return {
-      context: profileContext,
-      result: { ok: false, checks, diagnostic },
-    };
-  }
-}
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.sync((): CheckOutcome => {
+        const diagnostic = attachReport(
+          profileContext,
+          checkDiagnostic(error, caller),
+        );
+        if (checks.structure?.status !== "passed")
+          checks.structure = { status: "failed", diagnostics: [diagnostic] };
+        return {
+          context: profileContext,
+          result: { ok: false, checks, diagnostic },
+        };
+      }),
+    ),
+  );
+});

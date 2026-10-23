@@ -447,15 +447,13 @@ describe("a highlight's range dragged by one end", () => {
     const turned = pagesOf(
       page(
         0,
-        ["a", "b", "c"].map(
-          (c, index): Partial<StructuredChar> => ({
-            c,
-            rotation: 90,
-            rect: [100, 100 + index * 5, 108, 105 + index * 5],
-            inlineRect: [100, 100 + index * 5, 108, 105 + index * 5],
-            lineBreakAfter: index === 2,
-          }),
-        ),
+        ["a", "b", "c"].map((c, index): Partial<StructuredChar> => ({
+          c,
+          rotation: 90,
+          rect: [100, 100 + index * 5, 108, 105 + index * 5],
+          inlineRect: [100, 100 + index * 5, 108, 105 + index * 5],
+          lineBreakAfter: index === 2,
+        })),
       ),
     );
     const a = { pageIndex: 0, rects: [[100, 100, 108, 105]] as const };

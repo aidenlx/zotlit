@@ -35,6 +35,7 @@ const occurrence = (raw: string): CitationOccurrence => ({
 const source = (overrides: Partial<ReferenceSource> = {}): ReferenceSource => ({
   csl: { id: "BOOK0001", type: "book", title: "Book" },
   summary: "Doe (2024): Book",
+  citationSummary: "Doe (2024)",
   itemKey: "BOOK0001",
   itemID: 1,
   groupID: null,

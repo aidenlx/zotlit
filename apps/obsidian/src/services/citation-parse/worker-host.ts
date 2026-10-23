@@ -45,7 +45,7 @@ export function connectParseWorker(source: string): ParseConnection {
     resume?.(
       "error" in data
         ? Effect.fail(new ParseFailed(data.error))
-        : Effect.succeed(data.reply),
+        : Effect.succeed(JSON.parse(data.json) as ParseReply),
     );
   });
   return {

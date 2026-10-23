@@ -293,7 +293,7 @@ describe("buildInertNoteResolvers", () => {
       );
     });
 
-    it("returns a branded placeholder when the child note isn't imported", () => {
+    it("links a child note that isn't imported to Zotero", () => {
       const resolvers = buildResolvers();
       const unimported: ChildNote = {
         ...childNote,
@@ -301,8 +301,10 @@ describe("buildInertNoteResolvers", () => {
         indexedKey: "NOTE9999",
       };
       const result = resolvers.resolveChildNote?.(unimported);
-      expect(inertPlaceholderReason(result?.noteLink)).toBe("Not imported");
-      expect(result?.noteLink()).toBe("");
+      expect(inertPlaceholderReason(result?.noteLink)).toBeUndefined();
+      expect(result?.noteLink()).toBe(
+        "[Methods](zotero://select/library/items/NOTE9999)",
+      );
     });
   });
 });
@@ -500,8 +502,10 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
     expect(ctx.notes).toHaveLength(1);
     const childNote = ctx.notes[0]!;
     expect(childNote.key).toBe(CHILD_NOTE_KEY);
-    expect(inertPlaceholderReason(childNote.noteLink)).toBe("Not imported");
-    expect(childNote.noteLink()).toBe("");
+    expect(inertPlaceholderReason(childNote.noteLink)).toBeUndefined();
+    expect(childNote.noteLink()).toBe(
+      `[Methods](zotero://select/library/items/${CHILD_NOTE_KEY})`,
+    );
 
     fullyWalk(ctx, new WeakSet());
 

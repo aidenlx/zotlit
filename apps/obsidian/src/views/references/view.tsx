@@ -8,14 +8,10 @@ import { writeClipboardRichText } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { readAmbiguousCandidates } from "@/services/citation-index/ambiguity";
-import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
-import { heldResolution } from "@/services/citation-index/lookup";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
-  readReferenceSources,
 } from "@/services/citation-index/service";
 import type {
   Citation,
@@ -121,8 +117,6 @@ export class ReferencesView extends ItemView {
   #actions: ReferenceActions | null = null;
   /** Bumped when copy readiness moves to another on-screen result. */
   #copyGeneration = 0;
-  /** Bumped per reload, so only the latest reload's database read lands. */
-  #reloads = 0;
   /** The Held Read whose events can repaint this list. */
   #renderKey: string | null = null;
   /** Bumped per rescan, the same way, since a query may await a file read. */
@@ -134,6 +128,7 @@ export class ReferencesView extends ItemView {
   #path: string | null = null;
   /** Citations of that note, as the current list was built from. */
   #citations: readonly Citation[] = [];
+  #sources: ReadonlyMap<string, ReferenceSource> = new Map();
   #lookup:
     | import("@/services/citation-index/lookup").CitationLookupAnswer
     | null = null;
@@ -248,7 +243,12 @@ export class ReferencesView extends ItemView {
         if (path === this.#path) this.#reload();
       }),
     );
-    this.register(db.on("changed", () => this.#reload()));
+    this.register(
+      db.on("changed", () => {
+        this.#rescan();
+        this.#reload();
+      }),
+    );
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
     // for a Zotero change, a Citation and References Style change, or an engine
@@ -276,7 +276,6 @@ export class ReferencesView extends ItemView {
 
   protected override async onClose(): Promise<void> {
     this.#scan += 1;
-    this.#reloads += 1;
     this.#copyGeneration += 1;
     this.#scanController?.abort();
     this.#lookup = null;
@@ -320,7 +319,7 @@ export class ReferencesView extends ItemView {
     }
     this.#refreshCopy();
     void this.#readCitationSet(controller.signal)
-      .then(({ file, citations, errors, lookup }) => {
+      .then(({ file, citations, errors, lookup, sources }) => {
         if (scan !== this.#scan) return;
         this.#scanFailed = false;
         const path = file?.path ?? null;
@@ -342,6 +341,7 @@ export class ReferencesView extends ItemView {
         this.#file = file;
         this.#path = path;
         this.#citations = citations;
+        this.#sources = sources;
         this.#lookup = lookup;
         this.#errors = errors;
         this.#presentation = presentation;
@@ -385,6 +385,16 @@ export class ReferencesView extends ItemView {
         citations: [],
         errors: [],
         lookup: null,
+        sources: new Map(),
+        presentKeys: new Set(),
+        database: "ready",
+        syntaxes: {
+          citekey: "included",
+          wikilink: "excluded",
+          annotation: "included",
+        },
+        omittedSyntaxes: [],
+        coverage: "complete",
       };
     }
     return {
@@ -394,13 +404,6 @@ export class ReferencesView extends ItemView {
       })),
     };
   }
-
-  /**
-   * The Items an Ambiguous Citation Key names, or `null` for a citekey that
-   * names no Item at all. Read with the cited Items on each reload, so a row
-   * states the candidates the current Library Scope names.
-   */
-  #ambiguousCandidates: AmbiguousCandidatesOf = () => null;
 
   /** The Citation Presentation one note renders under; no note renders as none. */
   #readPresentation(file: TFile | null): DocumentPresentation {
@@ -427,9 +430,7 @@ export class ReferencesView extends ItemView {
     }
     this.#entrySerials = this.#readEntrySerials();
     this.#copyGeneration += 1;
-    const reload = ++this.#reloads;
     const citations = this.#citations;
-    const lookup = this.#lookup;
     // Retained formatted entries answer for the render that is about to be
     // replaced, so the reload alone puts copy out of reach, before its read.
     this.#formatting =
@@ -438,45 +439,29 @@ export class ReferencesView extends ItemView {
         : "unavailable";
     this.#refreshCopy();
     this.#publishResolution();
-    void Promise.all([
-      readReferenceSources(this.#deps.db, citations),
-      readAmbiguousCandidates(
-        this.#deps,
-        (citekey) => heldResolution(lookup, citekey),
-        citations.flatMap(({ indexedKey, occurrences }) =>
-          indexedKey === null && occurrences[0]!.kind === "citekey"
-            ? [occurrences[0]!.raw]
-            : [],
-        ),
-      ),
-    ]).then(([{ sources }, ambiguous]) => {
-      // A later reload read the list again; its answer is the one to show.
-      if (reload !== this.#reloads) return;
-      this.#ambiguousCandidates = ambiguous;
-      const engine = this.#deps.pandocEngine.getStatus();
-      const entries = buildReferenceEntries(citations, sources, {
-        bibliography: {
-          entries: this.#onScreen,
-          complete: false,
-        },
-        errors: this.#errors,
-        ambiguous,
-      });
-      this.#store.setState({
-        entries,
-        listMode: this.#listMode(),
-        engine,
-        formattingFailed: this.#formattingFailed,
-        documentPresentationError: this.#documentPresentationError,
-        dbReady: this.#deps.db.state === "ready",
-        citekeyResolution:
-          this.#deps.citationLookup.status === "pending"
-            ? null
-            : this.#deps.citationLookup.status,
-        copy: this.#trackCopy(entries),
-      });
-      void this.#render(citations, sources);
+    const sources = this.#sources;
+    const engine = this.#deps.pandocEngine.getStatus();
+    const entries = buildReferenceEntries(citations, {
+      bibliography: {
+        entries: this.#onScreen,
+        complete: false,
+      },
+      errors: this.#errors,
     });
+    this.#store.setState({
+      entries,
+      listMode: this.#listMode(),
+      engine,
+      formattingFailed: this.#formattingFailed,
+      documentPresentationError: this.#documentPresentationError,
+      dbReady: this.#deps.db.state === "ready",
+      citekeyResolution:
+        this.#deps.citationLookup.status === "pending"
+          ? null
+          : this.#deps.citationLookup.status,
+      copy: this.#trackCopy(entries),
+    });
+    void this.#render(citations, sources);
   }
 
   /** Republish the resolution state alone, for a settle the list survives. */
@@ -599,7 +584,7 @@ export class ReferencesView extends ItemView {
     if (presented.kind === "unusable") {
       this.#renderKey = null;
       this.#documentPresentationError = presented;
-      this.#showMinimal(citations, sources, false);
+      this.#showMinimal(citations, false);
       return;
     }
 
@@ -632,18 +617,17 @@ export class ReferencesView extends ItemView {
               }
             : { kind: "unusable", property: "style" }
           : null;
-      this.#showMinimal(citations, sources, outcome.reason === "failed");
+      this.#showMinimal(citations, outcome.reason === "failed");
       return;
     }
     this.#renderKey = outcome.key;
     this.#documentPresentationError = null;
-    this.#paint(outcome.record, citations, sources);
+    this.#paint(outcome.record, citations);
   }
 
   #paint(
     record: Held<BibliographyRenderResult>,
     citations: readonly Citation[],
-    sources: ReadonlyMap<string, ReferenceSource>,
   ): void {
     const { entries: rendered, hasEntryMarkers } = record.value;
     // Refilled rather than merged: the render covers every cited Item, so
@@ -666,13 +650,12 @@ export class ReferencesView extends ItemView {
       hasEntryMarkers,
       status: record.status,
     });
-    const entries = buildReferenceEntries(citations, sources, {
+    const entries = buildReferenceEntries(citations, {
       bibliography: {
         entries: this.#onScreen,
         complete: true,
       },
       errors: this.#errors,
-      ambiguous: this.#ambiguousCandidates,
     });
     this.#store.setState({
       entries,
@@ -719,7 +702,6 @@ export class ReferencesView extends ItemView {
   /** Replace stale formatted entries with the current minimal reference list. */
   #showMinimal(
     citations: readonly Citation[],
-    sources: ReadonlyMap<string, ReferenceSource>,
     formattingFailed: boolean,
   ): void {
     this.#onScreen.clear();
@@ -728,10 +710,8 @@ export class ReferencesView extends ItemView {
     this.#formatting = formattingFailed ? "failed" : "unavailable";
     const minimal = minimalReferencesState({
       citations,
-      sources,
       errors: this.#errors,
       formattingFailed,
-      ambiguous: this.#ambiguousCandidates,
     });
     this.#store.setState({
       ...minimal,

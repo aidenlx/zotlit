@@ -16,7 +16,7 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
@@ -25,7 +25,7 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 export interface NativeCitationDeps {
   app: App;
-  citationParse: ParseClient;
+  citationParse: Pick<PlainCitationParse, "parse">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   bibliographyRender: Pick<
     BibliographyRenderCache,

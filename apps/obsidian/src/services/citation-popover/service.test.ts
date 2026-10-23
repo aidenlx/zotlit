@@ -9,11 +9,13 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import {
   lookupAnswer,
   lookupForWorks,
 } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
+import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -149,6 +151,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
         occurrences: [],
         citations: [],
         errors: [],
+        sources: new Map(),
         lookup: await readLookup(include),
       }),
     },
@@ -719,3 +722,77 @@ describe("source-less empty bibliography entries", () => {
     ).not.toBeNull();
   });
 });
+
+it.each([false, true])(
+  "#1683 fills a document popover with one source read (ambiguous: %s)",
+  async (ambiguous) => {
+    await using h = await createCitationIndexHarness(
+      { "draft.md": "[@doe2024]" },
+      {
+        zoteroRows: ambiguous
+          ? seedWorksSql([
+              {
+                itemID: 1,
+                key: "ABCD2345",
+                citationKey: "doe2024",
+                title: "First study",
+              },
+              {
+                itemID: 2,
+                key: "EFGH2345",
+                citationKey: "doe2024",
+                title: "Second study",
+              },
+            ])
+          : annotationRows,
+      },
+    );
+    await using service = new CitationPopover({
+      app: h.app,
+      db: h.db,
+      citationIndex: h.index,
+      citationLookup: h.lookup,
+      libraryScope: h.libraryScope,
+      citationText: { read: () => Promise.resolve(null) },
+      profile: profileReader(),
+      bibliographyRender: {
+        vaultPresentation: { styleId: null, locale: null },
+        on: () => () => {},
+        render: () => Promise.resolve({ kind: "unavailable" }),
+      } as never,
+    });
+    await service.ready;
+    service.show({
+      event: new MouseEvent("mouseover"),
+      hoverParent: { hoverPopover: null },
+      sourcePath: h.draft.path,
+      targetEl: document.createElement("span"),
+      works: [{ citekey: "doe2024", indexedKey: "ABCD2345" }],
+      shown: {
+        citation: {
+          source: "[@doe2024]",
+          keys: [{ citekey: "doe2024", start: 1, end: 9 }],
+        },
+        at: { kind: "offset", start: 0 },
+      },
+      open: () => {},
+    });
+    await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
+    const content = popovers[0]!.render.mock
+      .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
+    expect(content.props.blocks).toMatchObject(
+      ambiguous
+        ? [
+            {
+              kind: "ambiguous",
+              candidates: [
+                { summary: "First study" },
+                { summary: "Second study" },
+              ],
+            },
+          ]
+        : [{ kind: "entry", itemKey: "ABCD2345" }],
+    );
+    expect(h.db.itemReads).toBe(1);
+  },
+);

@@ -45,7 +45,10 @@ import type {
   LiteratureNotePartialUnpack,
   LiteratureNoteTemplatePartial,
 } from "@zotlit/templates/literature-note-pack";
-import { managedRegionTransform } from "@zotlit/templates/obsidian";
+import {
+  formatManagedRegion,
+  managedRegionTransform,
+} from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
 import { ensureFolder } from "@/lib/ensure-folder";
@@ -443,11 +446,16 @@ interface SettledWaiter {
 /** Outcome of {@link TemplateService.waitUntilSettled}. */
 export type SettleOutcome = "settled" | "timeout" | "init-failed";
 
+const wrapManagedContent = managedRegionTransform(MANAGED_CONTENT_TEMPLATE);
+
 export class TemplateService extends Service<void> {
   readonly #app;
   readonly #settings;
   readonly #facade = new TemplateFacade({
-    transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+    // The built-in `content` renders inline; only a vault `content` template
+    // keeps its Managed Region on create.
+    transformRender: (name, output) =>
+      this.#contentIsVaultBacked() ? wrapManagedContent(name, output) : output,
   });
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, CompileError>();
@@ -1066,6 +1074,20 @@ export class TemplateService extends Service<void> {
       );
     }
     return this.#classifyRender(() => this.#facade.render(name, data));
+  }
+
+  /**
+   * The `content` slot's output as a Managed Region: what an Update of a
+   * documentless Literature Note writes into the region the note already has.
+   */
+  renderManagedContent<T extends object>(data: T): string {
+    const output = this.render(MANAGED_CONTENT_TEMPLATE, data);
+    return this.#contentIsVaultBacked() ? output : formatManagedRegion(output);
+  }
+
+  /** Whether a vault file backs the `content` slot; the facade wraps only that render. */
+  #contentIsVaultBacked(): boolean {
+    return this.#winners.get(MANAGED_CONTENT_TEMPLATE)?.source.kind === "vault";
   }
 
   /**
@@ -1749,6 +1771,7 @@ export class TemplateService extends Service<void> {
           frontmatter:
             this.#settings.current?.["note.frontmatter-fields"] ?? [],
           javascript: this.#javascriptTemplatesEnabled,
+          managed: this.#contentIsVaultBacked(),
         },
       ),
       legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),

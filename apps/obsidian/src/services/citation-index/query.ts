@@ -1,5 +1,6 @@
 // Grouping one document's Citation Occurrences into Citations with Reference Numbers.
 
+import type { CitationOutcome } from "./outcome";
 import { occurrencesEqual } from "./scan";
 import type { CitationOccurrence } from "./scan";
 
@@ -22,6 +23,7 @@ export type ResolveOccurrence = (
 
 /** One cited work of a document, with every place the document cites it. */
 export interface Citation {
+  outcome?: CitationOutcome;
   /** Indexed Key of the cited Item, or `null` when the occurrence names no live Zotero Item. */
   indexedKey: string | null;
   /** Linkpath that opens the Literature Note, or `null` when the Item has none yet. */
@@ -86,6 +88,7 @@ export function citationsEqual(
     const other = next[index]!;
     return (
       citation.indexedKey === other.indexedKey &&
+      JSON.stringify(citation.outcome) === JSON.stringify(other.outcome) &&
       citation.linkpath === other.linkpath &&
       citation.refNumber === other.refNumber &&
       occurrencesEqual(citation.occurrences, other.occurrences)

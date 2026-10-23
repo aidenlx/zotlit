@@ -37,8 +37,10 @@ const SELECTORS = {
 
 /** What each entry kind of a references answer reports (ADR 0024). */
 const ENTRY_KINDS = {
+  unreadable:
+    "The database read failed. The answer has no verdict on whether this Item exists.",
   resolved:
-    "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note.",
+    "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note. An existing Zotero note or attachment has a null summary.",
   unresolved:
     "A citation key or Annotation Citation that names no item in the connected Zotero source. Adds citekey for a literal citation key, or annotationKey for an Annotation Citation.",
   ambiguous:
@@ -100,7 +102,7 @@ const RESOLUTION_STATES = {
 const DATABASE_STATES = {
   ready: "The connected Zotero source answered the entry join.",
   unreadable:
-    "The Zotero source could not be read, so every cited work reports as missing whether or not the source still holds it.",
+    "The Zotero source could not be read. Entries report unreadable; whether the Items exist is unknown.",
 } as const satisfies Record<DatabaseReadability, string>;
 
 const LABEL_WIDTH = 12;
@@ -192,6 +194,7 @@ REFERENCES PAYLOAD
               answer left out. An empty list means the answer withheld
               nothing; a syntax it names means this document has citations
               the answer does not report.
+  coverage    See INDEX STATE.
   database    See INDEX STATE.
   resolution  See INDEX STATE.
   syntaxes    See INDEX STATE.
@@ -218,7 +221,7 @@ ${rows(OCCURRENCE_KINDS)}
   excluded before the index reads a note.
 
 INDEX STATE
-  coverage (cited-by and annotation-uses)
+  coverage (all citation answers)
 ${rows(COVERAGE_STATES, 4)}
 
   resolution (cited-by and references)

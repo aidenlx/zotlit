@@ -166,7 +166,7 @@ function withoutItem(draft: VaultDraft, at: number): VaultDraft {
 }
 
 /** The draft with the edit of the item in place dropped. */
-function withoutChip({ chip: _, ...rest }: VaultDraft): VaultDraft {
+function withoutChip({ chip: _chip, ...rest }: VaultDraft): VaultDraft {
   return rest;
 }
 
@@ -911,48 +911,47 @@ function ListEditor({
           >
             <Icon name="x" size="1em" />
           </span>
-          {at === editingAt &&
-            draft.chip && (
-              // An opaque base under the pill, so the neighbours it grows
-              // over do not show through.
+          {at === editingAt && draft.chip && (
+            // An opaque base under the pill, so the neighbours it grows
+            // over do not show through.
+            <span
+              ref={chipBox}
+              className="zt:absolute zt:inset-y-0 zt:start-0 zt:z-1 zt:flex zt:max-w-(--zt-chip-room) zt:min-w-full zt:rounded-(--radius-s) zt:bg-(--background-primary)"
+            >
               <span
-                ref={chipBox}
-                className="zt:absolute zt:inset-y-0 zt:start-0 zt:z-1 zt:flex zt:max-w-(--zt-chip-room) zt:min-w-full zt:rounded-(--radius-s) zt:bg-(--background-primary)"
+                className={cn(
+                  PILL,
+                  "zt:me-0 zt:max-w-none zt:flex-1 zt:ring-1 zt:ring-(--background-modifier-border-focus)",
+                  type === "tags" && TAG,
+                )}
               >
-                <span
-                  className={cn(
-                    PILL,
-                    "zt:me-0 zt:max-w-none zt:flex-1 zt:ring-1 zt:ring-(--background-modifier-border-focus)",
-                    type === "tags" && TAG,
-                  )}
-                >
-                  <input
-                    ref={chipField}
-                    data-query-vault-chip-input=""
-                    type="text"
-                    aria-labelledby={labelId}
-                    value={draft.chip.text}
-                    className="zt:[field-sizing:content] zt:w-full zt:min-w-0 zt:bg-transparent zt:p-0 zt:outline-none"
-                    onInput={(event) =>
-                      onDraft({
-                        ...draft,
-                        chip: { at, text: event.currentTarget.value },
-                      })
-                    }
-                    onKeyDown={onChipKey}
-                    // Focus that moves on inside the editor keeps the edit;
-                    // focus that leaves it is the cell's to end.
-                    onBlur={(event) => {
-                      if (chipEnded.current) return;
-                      if (!root.current?.contains(event.relatedTarget as Node))
-                        return;
-                      chipEnded.current = true;
-                      onDraft(withChip(latest.current));
-                    }}
-                  />
-                </span>
+                <input
+                  ref={chipField}
+                  data-query-vault-chip-input=""
+                  type="text"
+                  aria-labelledby={labelId}
+                  value={draft.chip.text}
+                  className="zt:[field-sizing:content] zt:w-full zt:min-w-0 zt:bg-transparent zt:p-0 zt:outline-none"
+                  onInput={(event) =>
+                    onDraft({
+                      ...draft,
+                      chip: { at, text: event.currentTarget.value },
+                    })
+                  }
+                  onKeyDown={onChipKey}
+                  // Focus that moves on inside the editor keeps the edit;
+                  // focus that leaves it is the cell's to end.
+                  onBlur={(event) => {
+                    if (chipEnded.current) return;
+                    if (!root.current?.contains(event.relatedTarget as Node))
+                      return;
+                    chipEnded.current = true;
+                    onDraft(withChip(latest.current));
+                  }}
+                />
               </span>
-            )}
+            </span>
+          )}
         </VaultChip>
       ))}
       <input

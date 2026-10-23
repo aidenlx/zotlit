@@ -8,8 +8,8 @@
 import type { CslItemData } from "@zotlit/db";
 
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
-import type { NoteScanRecord } from "@/services/citation-index/scan-note";
-import type { ParseClient } from "@/services/citation-parse/client";
+import { ParsedNote } from "@/services/citation-index/parsed-note";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 
 import type {
   BibliographyFailure,
@@ -45,7 +45,7 @@ export interface ExportRequest {
 }
 
 export interface ExportPorts {
-  citationParse: ParseClient;
+  citationParse: Pick<PlainCitationParse, "parse">;
   /**
    * Indexed Key of the Literature Note `linkpath` names, resolved from
    * `sourcePath`; `null` for a missing target or an ordinary note.
@@ -162,20 +162,25 @@ export async function exportCitedDocument(
     links.map(({ linkpath, indexedKey }) => [linkpath, injectedId(indexedKey)]),
   );
 
+  const input = new ParsedNote(request.markdown, record).exportInput();
   let prepared: PreparedDocument;
   try {
     prepared = await ports.engine.prepareDocument({
-      markdown: exportSource(request.markdown, record),
+      markdown: input.markdown,
       luaFilters: [pandocSandboxFilter],
       files: {
         [PANDOC_RESOLVE_MAP_FILENAME]: JSON.stringify({
           citations: Object.fromEntries(wikilinked),
+          selectedLiterals: Object.fromEntries(input.literalKeys),
+          literalMarker: input.literalMarker,
         }),
       },
     });
   } catch (error) {
     return { error: { kind: "engine", detail: describeError(error) } };
   }
+
+  prepared = prepared.withCitedIds(input.literalKeys);
 
   const spelled = await readCitations(prepared.citedIds, wikilinked, ports);
   if ("error" in spelled) return spelled;
@@ -217,20 +222,6 @@ export async function exportCitedDocument(
   } catch (error) {
     return { error: { kind: "engine", detail: describeError(error) } };
   }
-}
-
-/** Preserve document context while reconciling Pandoc with worker-classified syntax. */
-function exportSource(markdown: string, record: NoteScanRecord): string {
-  const source = markdown.split("");
-  for (const range of record.ranges) {
-    if (range.kind === "text-dollar") source[range.from] = "\\$";
-    else if (range.kind === "comment") source.fill("", range.from, range.to);
-    else if (range.kind === "fenced-code" && range.blankLinePrefix !== null) {
-      source[range.lineStart] =
-        `${range.blankLinePrefix}\n${source[range.lineStart]}`;
-    }
-  }
-  return source.join("");
 }
 
 /** One document's Citations, each placed on the Zotero Item it names. */

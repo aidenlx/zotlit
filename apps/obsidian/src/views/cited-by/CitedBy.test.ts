@@ -23,13 +23,13 @@ import {
   annotationRows,
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
+import { ParsedNote } from "@/services/citation-index/parsed-note";
 import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   CitationIndex,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
-import type { FileScan } from "@/services/citation-index/store";
 import {
   createCitationIndexHarness,
   KEY_A,
@@ -40,7 +40,7 @@ import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
 import { COMPACT_CAP, createCitedByStore, CitedByStoreProvider } from "./store";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const body = "A reason cites @doe2024 here.\n";
 const start = body.indexOf("@doe2024");
@@ -238,7 +238,7 @@ function makeFile(
 
 async function render(options: {
   previewsPending?: boolean;
-  citationIndex?: Pick<CitationIndex, "getFileScan">;
+  citationIndex?: Pick<CitationIndex, "getParsedNote">;
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
   read?: (file: TFile) => Promise<string>;
@@ -264,17 +264,9 @@ async function render(options: {
   );
   const file =
     files.get(group.path) ?? files.values().next().value ?? makeFile();
-  const scans = new Map<string, Promise<FileScan>>();
-  const read = vi.fn((file: TFile) => {
-    const result = options.read?.(file) ?? Promise.resolve(body);
-    const parsed = result.then((source) => {
-      file.stat.size = source.length;
-      return { ...scanNote(source), ...file.stat, scannerRevision: 1 };
-    });
-    void parsed.catch(() => undefined);
-    scans.set(file.path, parsed);
-    return result;
-  });
+  const read = vi.fn(
+    (file: TFile) => options.read?.(file) ?? Promise.resolve(body),
+  );
   const openLinkText = vi.fn(() => Promise.resolve());
   const setEphemeralState = vi.fn();
   const markdownView = new MarkdownView({} as WorkspaceLeaf);
@@ -327,7 +319,11 @@ async function render(options: {
     app,
     store,
     citationIndex: options.citationIndex ?? {
-      getFileScan: (file) => scans.get(file.path) ?? Promise.resolve(null),
+      getParsedNote: async (file) => {
+        const source = await read(file);
+        file.stat.size = source.length;
+        return new ParsedNote(source, scanNote(source));
+      },
     },
   });
   const container = document.createElement("div");

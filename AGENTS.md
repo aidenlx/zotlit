@@ -95,6 +95,15 @@ Choose the destination by purpose:
 - **Planned work** — the issue tracker: agreed specs and tickets, with progress, findings, and handoffs as comments on the owning ticket. See `docs/agents/issue-tracker.md`.
 - **Maintained reference** — `docs/`: architecture, runbooks, ADRs, research reports, process config. Create a new file there only with explicit user permission, skill output included; keep the draft in `.scratch/` until then.
 
+## Worktrees
+
+Worktrunk (`wt`) creates and removes every worktree. Its hooks place the worktree at the user's path template, bootstrap it through the `pre-start` hook in `.config/wt.toml`, and deinit submodules on removal.
+
+- **Create:** `wt switch --create <branch> --base <base>`; add `--no-cd` when the worktree is for another agent, and name the printed path in that agent's prompt. Name the branch by its change type, such as `feat/<topic>` or `fix/<topic>`.
+- **Remove:** `wt remove <branch>`.
+
+A plain `git worktree add` runs none of these hooks: the worktree has no dependencies or submodules and sits outside the path template.
+
 ## Agent skills
 
 ### Issue tracker
@@ -110,6 +119,8 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-workspace `GLOSSARY.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`. Context names there (e.g. "Zotero Data Model") are heading labels for that map; code, comments, and user-facing copy keep the casing their own convention calls for (see i18n above for UI text).
 
 ## Effect
+
+Build a new Obsidian service as an Effect service: a `Context.Service` tag and a scoped `Layer` that joins the plugin's Layer graph. Legacy `Service` classes keep their shape until converted, and hook into the graph through a bridge layer. Run `/obsidian-services` before creating, converting, or wiring a service.
 
 Effect's API evolves between versions and may differ from your training data. Resolve the `effect` package from the relevant workspace. Read `AGENTS.md` inside the installed package before writing Effect code; follow its linked examples for the area being changed. Search the installed source before adding helpers.
 

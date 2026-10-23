@@ -103,6 +103,8 @@ export function createReferenceActions(
         entry.kind === "unresolved" ||
         entry.kind === "ambiguous" ||
         entry.kind === "missing" ||
+        entry.kind === "ineligible" ||
+        entry.kind === "unreadable" ||
         entry.kind === "malformed"
       ) {
         return;

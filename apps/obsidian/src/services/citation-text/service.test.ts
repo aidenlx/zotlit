@@ -7,21 +7,23 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+// @vitest-environment happy-dom
+import { ParsedNote } from "@/services/citation-index/parsed-note";
 import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   Citation,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
 import {
   createCitationIndexHarness,
   DatabaseStub,
   GROUP_LIBRARY_ID,
-  KEY_A,
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
-// @vitest-environment happy-dom
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import type {
   BibliographyRequest,
@@ -125,7 +127,10 @@ async function makeHarness({
   /** The document properties read by its Citation Presentation. */
   frontmatter?: Record<string, unknown>;
   settings?: Partial<Settings>;
-  documentCitationSet?: Omit<DocumentCitationSet, "lookup">;
+  documentCitationSet?: Pick<
+    DocumentCitationSet,
+    "occurrences" | "citations" | "errors"
+  >;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
   queryClient?: QueryClientService;
   openDocuments?: OpenDocumentsStub;
@@ -198,7 +203,6 @@ async function makeHarness({
     },
   );
   const service = new CitationText({
-    citationParse: inProcessParseClient,
     openDocuments,
     citationLookup: {
       on: (_event: string, cb: () => void) => {
@@ -224,8 +228,33 @@ async function makeHarness({
           Object.hasOwn(notes, linkpath) ? { path: `${linkpath}.md` } : null,
       },
     },
-    db: reads,
     citationIndex: {
+      getParsedDocument: async () => ({
+        facts: new ParsedNote(
+          body,
+          (
+            await inProcessParseClient.parse(
+              { path: NOTE.path, generation: 0, text: body },
+              new AbortController().signal,
+            )
+          ).record,
+        ),
+        set: {
+          ...set,
+          ...(await readReferenceSources(reads, set.citations)),
+          syntaxes: {
+            citekey: "included" as const,
+            wikilink: "excluded" as const,
+            annotation: "included" as const,
+          },
+          omittedSyntaxes: [],
+          coverage: "complete" as const,
+          lookup: lookupAnswer(
+            {},
+            { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
+          ),
+        },
+      }),
       getDocumentCitationSet: () =>
         Promise.resolve({
           ...set,
@@ -375,16 +404,10 @@ describe("CitationText", () => {
     await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
       "snapshot database locked",
     );
-    // The work the citekey resolves to, read from its own database.
-    const items = cleanup.use(
-      inProcessReadsService(memoryOpener(() => citedWorkSeed([KEY_A])).open),
-    );
     const service = cleanup.use(
       new CitationText({
-        citationParse: inProcessParseClient,
         openDocuments: new OpenDocumentsStub(),
         app: h.app,
-        db: items,
         citationIndex: h.index,
         citationLookup: h.lookup,
         noteIndex: h.noteIndex,
@@ -1449,4 +1472,31 @@ describe("CitationText Entry Serials", () => {
     expect(bibliographyRequests).toEqual([]);
     await dispose();
   });
+});
+
+it("#1683 renders a document with one source read", async () => {
+  await using h = await createCitationIndexHarness(
+    { "draft.md": "[@doe2024]" },
+    { zoteroRows: annotationRows },
+  );
+  await using service = new CitationText({
+    app: h.app,
+    citationIndex: h.index,
+    citationLookup: h.lookup,
+    noteIndex: h.noteIndex,
+    profile: profileReader(),
+    queryClient: h.queryClient,
+    openDocuments: new OpenDocumentsStub(),
+    bibliographyRender: {
+      vaultPresentation: { styleId: null, locale: null },
+      readCitations: async (sources) =>
+        sources.map((source) => rendered(source)),
+      readBibliography: async () => ({ entries: [], hasEntryMarkers: false }),
+      on: () => () => {},
+    } as CitationTextDeps["bibliographyRender"],
+  });
+  await service.ready;
+  const result = await service.read(h.draft.path);
+  expect(result?.formatted.size).toBe(1);
+  expect(h.db.itemReads).toBe(1);
 });

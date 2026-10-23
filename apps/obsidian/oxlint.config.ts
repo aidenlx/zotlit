@@ -24,6 +24,15 @@ const obsidianImportPaths = [
   ...uniqueIdPaths,
 ];
 
+// Effect tests run with the services the plugin's entry points add.
+const effectTestPaths = [
+  {
+    name: "@effect/vitest",
+    message:
+      "Use @/lib/effect-vitest: its Effect tests run with the plugin's browser scheduler and loggers.",
+  },
+];
+
 const commonImports = {
   patterns: [
     parentImportPattern,
@@ -75,6 +84,7 @@ const runtimeImports = {
       message:
         "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
     },
+    ...effectTestPaths,
     ...commonImports.paths,
   ],
 };
@@ -88,6 +98,8 @@ export default defineConfig({
     "./scripts/oxlint-plugin-menu-sections.ts",
     "./scripts/oxlint-plugin-obsidian-css.ts",
     "./scripts/oxlint-plugin-private-api.ts",
+    "./scripts/oxlint-plugin-services.ts",
+    "./scripts/oxlint-plugin-effect-tests.ts",
     new URL("../../packages/config/oxlint-plugin-keyboard.ts", import.meta.url)
       .pathname,
   ],
@@ -96,6 +108,8 @@ export default defineConfig({
     "zotlit-obsidian/no-cross-window-instanceof": "error",
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
+    "zotlit-services/service-tag-id": "error",
+    "zotlit-services/cli-command-registration": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": ["error", runtimeImports],
   },
@@ -107,6 +121,26 @@ export default defineConfig({
           "error",
           { ...runtimeImports, patterns: [parentImportPattern] },
         ],
+      },
+    },
+    {
+      files: ["src/**/*.test.{ts,tsx}"],
+      rules: {
+        "zotlit-effect-tests/no-effect-run-in-test": "error",
+        "zotlit-effect-tests/no-real-timer-in-effect-test": "error",
+      },
+    },
+    {
+      // These tests exercise the run entry points themselves.
+      files: ["src/lib/effect-runtime.test.ts"],
+      rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
+    },
+    {
+      files: ["src/**"],
+      excludeFiles: ["**/*.test.{ts,tsx}"],
+      rules: {
+        "zotlit-services/effect-native-resources": "error",
+        "zotlit-services/no-legacy-service": "error",
       },
     },
     {
@@ -154,7 +188,7 @@ export default defineConfig({
           "error",
           {
             patterns: [parentImportPattern],
-            paths: obsidianImportPaths,
+            paths: [...effectTestPaths, ...obsidianImportPaths],
           },
         ],
       },
@@ -163,6 +197,10 @@ export default defineConfig({
       files: [
         "src/lib/effect.ts",
         "src/lib/effect-runtime.ts",
+        "src/lib/effect-layer.ts",
+        "src/lib/effect-log.ts",
+        "src/lib/effect-services.ts",
+        "src/lib/effect-vitest.ts",
         "src/lib/browser-scheduler.ts",
       ],
       rules: { "no-restricted-imports": ["error", commonImports] },
@@ -170,7 +208,7 @@ export default defineConfig({
     {
       files: [
         "vite.config.ts",
-        "scripts/check-lua-filter.ts",
+        "src/services/pandoc/filter/zotlit-cite.pandoc.test.ts",
         "src/zt-main.ts",
         "src/services/build.ts",
         "src/services/service-base.ts",
@@ -239,6 +277,64 @@ export default defineConfig({
       rules: { "zotlit-obsidian/no-global-timer": "off" },
     },
     {
+      // Effect tests written before the rule, in plain Vitest. A file moves
+      // off this list when its cases move to it.effect.
+      files: [
+        "src/services/note-feature/update-batch.test.ts",
+        "src/services/zotero-reads/citation-lookup.test.ts",
+        "src/services/zotero-reads/connection.test.ts",
+        "src/services/zotero-reads/handlers.test.ts",
+        "src/services/zotero-reads/service.test.ts",
+        "src/services/zotero-reads/source.test.ts",
+        "src/services/zotero-reads/worker-host.test.ts",
+        "src/services/zotero-reads/zotero-reads.test.ts",
+        "src/views/template-workbench/view.test.ts",
+      ],
+      rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
+    },
+    {
+      // Legacy services, written before the rule. A file moves off this list
+      // when its service converts to Effect (/obsidian-services).
+      files: [
+        "src/services/annotation-popover/reading.ts",
+        "src/services/annotation-popover/service.tsx",
+        "src/services/annotation-repository/notices.ts",
+        "src/services/annotation-repository/service.ts",
+        "src/services/attachment-import/service.ts",
+        "src/services/attachment-resolver/service.ts",
+        "src/services/citation-index/lookup-service.ts",
+        "src/services/citation-index/service.ts",
+        "src/services/citation-popover/service.tsx",
+        "src/services/citation-text/service.ts",
+        "src/services/citekey-editor/service.ts",
+        "src/services/citekey-reading/service.ts",
+        "src/services/excerpt-image/display.ts",
+        "src/services/excerpt-image/service.ts",
+        "src/services/graph-citations/service.ts",
+        "src/services/item-lookup/service.ts",
+        "src/services/item-query/service.ts",
+        "src/services/library-scope/service.ts",
+        "src/services/local-bridge/service.ts",
+        "src/services/local-server/service.ts",
+        "src/services/managed-binary/service.ts",
+        "src/services/note-index/service.ts",
+        "src/services/pandoc/render-cache.ts",
+        "src/services/pdf-annotation-editor/service.ts",
+        "src/services/profile/service.ts",
+        "src/services/query-client/service.ts",
+        "src/services/release/service.ts",
+        "src/services/settings/service.ts",
+        "src/services/template/migration.ts",
+        "src/services/template/service.ts",
+        "src/services/wikilink-editor/service.ts",
+        "src/services/wikilink-reading/service.ts",
+        "src/services/zotero-local-api/service.ts",
+        "src/services/zotero-pref/service.ts",
+        "src/services/zotero-reads/service.ts",
+      ],
+      rules: { "zotlit-services/no-legacy-service": "off" },
+    },
+    {
       // Tests written before the rule that assert zt: classes; a file moves off
       // this list when its assertions move to behavior.
       files: [
@@ -256,11 +352,25 @@ export default defineConfig({
       rules: { "zotlit-tests/no-class-assertion": "off" },
     },
     {
-      // Node runs these straight from source, where the `@/` alias the rule
-      // points at does not resolve.
+      // Node runs these straight from source, where the `@/` alias does not
+      // resolve; and they stay independent of plugin code, which
+      // tsconfig.node.json cannot type-check. The pin is the one shared
+      // contract, a module with no imports.
       files: ["scripts/**"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: ["../src/**", "!../src/services/managed-binary/pin.ts"],
+                allowTypeImports: true,
+                message:
+                  "Scripts stay independent of plugin code; a check of plugin code is a Vitest test under src/.",
+              },
+            ],
+          },
+        ],
       },
     },
   ],

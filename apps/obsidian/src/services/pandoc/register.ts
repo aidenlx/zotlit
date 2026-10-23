@@ -7,15 +7,17 @@ import { isAbsolute, relative } from "node:path";
 import { normalizePath } from "obsidian";
 import type {
   App,
+  CliData,
   CliFlag,
   CliFlags,
   FileSystemAdapter,
-  Plugin,
   TFile,
 } from "obsidian";
-import * as v from "valibot";
 
+import type { VersionedCliHost } from "@/lib/cli-command";
 import {
+  catchRejection,
+  cliMap,
   cliNotApplicable,
   cliParams,
   cliValue,
@@ -25,7 +27,7 @@ import {
 } from "@/lib/cli-params";
 import type { CliParamName } from "@/lib/cli-params";
 import { Effect } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -55,8 +57,6 @@ import { resolveCitations } from "./resolve";
 import type { ResolveDocument, ResolvedItem, ResolveResponse } from "./resolve";
 import { resolveInstalledStyle } from "./styles";
 
-const logger = getLogger(["pandoc", "resolve"]);
-
 export const RESOLVE_COMMAND = "zotlit:resolve";
 export { CSL_COMMAND };
 
@@ -68,9 +68,8 @@ export interface PandocResolveDeps {
   profile: ProfileReader;
 }
 
-const resolveParams = v.pipe(
-  cliParams({ file: cliValue("file") }),
-  v.transform(({ file }) => file),
+const resolveParams = cliParams({ file: cliValue("file") }).pipe(
+  cliMap(({ file }) => file),
 );
 
 function resolveFlags(): CliFlags {
@@ -109,97 +108,102 @@ function cslFlags(): CliFlags {
 }
 
 export function registerPandocResolve(
-  plugin: Plugin,
+  host: VersionedCliHost,
   deps: PandocResolveDeps,
 ): void {
-  const integration = createPandocIntegrationHandlers(plugin.manifest.version);
-  plugin.registerCliHandler(
-    PANDOC_FILES_COMMAND,
-    "Return the version-matched ZotLit Pandoc integration pair",
-    null,
-    integration[PANDOC_FILES_COMMAND],
-  );
-  plugin.registerCliHandler(
-    PANDOC_GUIDE_COMMAND,
-    "Print the ZotLit Pandoc CLI guide",
-    null,
-    integration[PANDOC_GUIDE_COMMAND],
-  );
-  plugin.registerCliHandler(
-    RESOLVE_COMMAND,
-    "Resolve the literature note links of one file to citation keys, for the ZotLit Pandoc filter",
-    resolveFlags(),
-    async (params) => {
-      const request = decodeCliParams(params, resolveParams, {
-        command: RESOLVE_COMMAND,
-      });
-      if (request.kind === "invalid") {
-        return JSON.stringify(
+  const integration = createPandocIntegrationHandlers(host.manifest.version);
+  host.registerCliCommand(PANDOC_FILES_COMMAND, {
+    description: "Return the version-matched ZotLit Pandoc integration pair",
+    flags: null,
+    handler: integration[PANDOC_FILES_COMMAND],
+  });
+  host.registerCliCommand(PANDOC_GUIDE_COMMAND, {
+    description: "Print the ZotLit Pandoc CLI guide",
+    flags: null,
+    handler: integration[PANDOC_GUIDE_COMMAND],
+  });
+  host.registerCliCommand(RESOLVE_COMMAND, {
+    description:
+      "Resolve the literature note links of one file to citation keys, for the ZotLit Pandoc filter",
+    flags: resolveFlags(),
+    handler: Effect.fn("PandocCli.resolve")(
+      function* (params: CliData) {
+        const file = yield* decodeCliParams(params, resolveParams, {
+          command: RESOLVE_COMMAND,
+        });
+        yield* Effect.promise(() => deps.zoteroPref.ready);
+        const response = yield* resolveCitations(file, {
+          readDocument: (absolutePath) => readDocument(deps.app, absolutePath),
+          resolveIndexedKey: (linkpath, sourcePath) =>
+            resolveIndexedKey(linkpath, sourcePath, deps.app),
+          database: {
+            describe: () => ({
+              dataDir: deps.zoteroPref.dataDir,
+              readMode: deps.reads.activeReadMode,
+            }),
+            read: (indexedKeys) => {
+              const unreadable = (error: unknown) =>
+                Effect.logWarning("Cannot read the Zotero database").pipe(
+                  Effect.annotateLogs({ error }),
+                  withLogCategory("pandoc", "resolve"),
+                  Effect.as(null),
+                );
+              return readItems(deps.reads, indexedKeys).pipe(
+                Effect.catch(unreadable),
+                Effect.catchDefect(unreadable),
+              );
+            },
+          },
+        });
+        return JSON.stringify(response, null, 2);
+      },
+      catchRejection((rejection) =>
+        JSON.stringify(
           {
             errors: [
-              { code: "flags-invalid", message: rejectionText(request) },
+              { code: "flags-invalid", message: rejectionText(rejection) },
             ],
           } satisfies ResolveResponse,
           null,
           2,
+        ),
+      ),
+    ),
+  });
+  host.registerCliCommand(CSL_COMMAND, {
+    description:
+      "Materialize the CSL file of one Zotero-installed style or of one note's style, for the ZotLit Pandoc filter",
+    flags: cslFlags(),
+    handler: Effect.fn("PandocCli.csl")(
+      function* (params: CliData) {
+        const selected = yield* decodeCliParams(params, cslParams, {
+          command: CSL_COMMAND,
+        });
+        yield* Effect.promise(() => deps.zoteroPref.ready);
+        yield* Effect.promise(() => deps.profile.ready);
+        const { dataDir } = deps.zoteroPref;
+        // A native run carries no vault Citation Locale: the installed style
+        // keeps the locale behavior Zotero installed it with.
+        const ports = {
+          resolve: (styleId: string) =>
+            resolveInstalledStyle(dataDir, { styleId }),
+        };
+        const response: CslResponse = yield* Effect.promise(() =>
+          "style" in selected
+            ? resolveCslStyle(selected.style, ports)
+            : resolveDocumentCslStyle(selected.file, {
+                ...ports,
+                readStyle: (absolutePath) =>
+                  readDocumentStyle(deps, absolutePath),
+              }),
         );
-      }
-      await deps.zoteroPref.ready;
-      const response = await resolveCitations(request.value, {
-        readDocument: (absolutePath) => readDocument(deps.app, absolutePath),
-        resolveIndexedKey: (linkpath, sourcePath) =>
-          resolveIndexedKey(linkpath, sourcePath, deps.app),
-        database: {
-          describe: () => ({
-            dataDir: deps.zoteroPref.dataDir,
-            readMode: deps.reads.activeReadMode,
-          }),
-          read: (indexedKeys) =>
-            readItems(deps.reads, indexedKeys).catch((error: unknown) => {
-              logger.warn("Cannot read the Zotero database", { error });
-              return null;
-            }),
-        },
-      });
-      return JSON.stringify(response, null, 2);
-    },
-  );
-  plugin.registerCliHandler(
-    CSL_COMMAND,
-    "Materialize the CSL file of one Zotero-installed style or of one note's style, for the ZotLit Pandoc filter",
-    cslFlags(),
-    async (params) => {
-      const request = decodeCliParams(params, cslParams, {
-        command: CSL_COMMAND,
-      });
-      if (request.kind === "invalid") {
-        return JSON.stringify(
-          flagsInvalidResponse(rejectionText(request)),
-          null,
-          2,
-        );
-      }
-      await deps.zoteroPref.ready;
-      await deps.profile.ready;
-      const { dataDir } = deps.zoteroPref;
-      // A native run carries no vault Citation Locale: the installed style
-      // keeps the locale behavior Zotero installed it with.
-      const ports = {
-        resolve: (styleId: string) =>
-          resolveInstalledStyle(dataDir, { styleId }),
-      };
-      const selected = request.value;
-      const response: CslResponse =
-        "style" in selected
-          ? await resolveCslStyle(selected.style, ports)
-          : await resolveDocumentCslStyle(selected.file, {
-              ...ports,
-              readStyle: (absolutePath) =>
-                readDocumentStyle(deps, absolutePath),
-            });
-      return JSON.stringify(response, null, 2);
-    },
-  );
+        return JSON.stringify(response, null, 2);
+      },
+      catchRejection((rejection) =>
+        JSON.stringify(flagsInvalidResponse(rejectionText(rejection)), null, 2),
+      ),
+    ),
+  });
 }
 
 /**
@@ -241,15 +245,13 @@ function vaultFile(app: App, absolutePath: string): TFile | null {
 }
 
 /** One database read per invocation, however many links the document carries. */
-async function readItems(
+const readItems = Effect.fn("PandocCli.readItems")(function* (
   reads: PandocResolveDeps["reads"],
   indexedKeys: readonly string[],
-): Promise<ReadonlyMap<string, ResolvedItem>> {
-  const { reads: api } = await reads.ready;
+) {
+  const { reads: api } = yield* Effect.tryPromise(() => reads.ready);
   const unique = [...new Set(indexedKeys)];
-  const found = await Effect.runPromise(
-    api.ItemsByIndexedKeys({ indexedKeys: unique }),
-  );
+  const found = yield* api.ItemsByIndexedKeys({ indexedKeys: unique });
   const items = new Map<string, ResolvedItem>();
   for (const indexedKey of unique) {
     const item = found.get(indexedKey);
@@ -263,4 +265,4 @@ async function readItems(
     });
   }
   return items;
-}
+});

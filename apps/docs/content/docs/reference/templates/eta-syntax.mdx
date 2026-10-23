@@ -150,7 +150,7 @@ The argument becomes the partial's `zt`. Omit it and the partial inherits the ca
 
 ### The `content` include
 
-When `include("content", zt)` is called from the note template, ZotLit automatically wraps the output with managed-region markers (`%%zt-managed%%` / `%%/zt-managed%%`). These markers never appear in a template document. They are injected at render time.
+When `include("content", zt)` is called from the note template and a `content` template file in your vault backs it, ZotLit wraps the output with managed-region markers (`%%zt-managed%%` / `%%/zt-managed%%`). These markers never appear in a template document. They are injected at render time. The built-in `content` template renders without markers.
 
 ## `bq()`: blockquote helper [#bq-blockquote-helper]
 
@@ -326,7 +326,7 @@ linkHelper(alias?, subpath?)
 | Helper            | Available on                  | Default subpath               | Returns                                                                                    |
 | ----------------- | ----------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------ |
 | `zt.noteLink()`   | item context                  | none                          | Markdown link to the item's literature note, or `null`                                     |
-| `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the child note                                                                     |
+| `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the imported note, or else a `zotero://` link that opens the note in Zotero        |
 | `a.fileLink()`    | each `zt.attachments[]` entry | none                          | Attachment file link                                                                       |
 | `zt.fileLink()`   | annotation context            | `#page=N&zt-annotation=<key>` | Deprecated. Attachment link anchored to the annotation's page and to the annotation itself |
 | `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, unavailable-image explanation and source link, or `null`               |

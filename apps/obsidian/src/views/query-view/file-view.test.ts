@@ -14,7 +14,7 @@ import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryFileView } from "./file-view";
 import type { QueryViewDeps } from "./view";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const FILE = `views:
   - type: annotations

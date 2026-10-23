@@ -1,5 +1,9 @@
-import type { CliFlags, CliHandler, Plugin } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import type { CliFlags } from "obsidian";
+import { describe, expect, vi } from "vitest";
+
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 
 import { TEMPLATE_DATA_COMMAND } from "./cli";
 import { registerTemplateWorkbench } from "./register";
@@ -10,18 +14,8 @@ import { registerTemplateWorkbench } from "./register";
  * would be rejected for; this reads the registration itself.
  */
 function declaredFlags(): Map<string, CliFlags | null> {
-  const flags = new Map<string, CliFlags | null>();
-  const plugin = {
-    manifest: { version: "1.2.3" },
-    registerCliHandler: (
-      command: string,
-      _text: string,
-      cli: CliFlags | null,
-    ) => {
-      flags.set(command, cli);
-    },
-  } as unknown as Plugin;
-  registerTemplateWorkbench(plugin, {
+  const { host, commands } = fakeCliHost();
+  registerTemplateWorkbench({ ...host, manifest: { version: "1.2.3" } }, {
     app: { vault: { getName: () => "Test Vault" } },
     settings: {},
     profile: {},
@@ -29,7 +23,7 @@ function declaredFlags(): Map<string, CliFlags | null> {
     zoteroPref: {},
     noteIndex: {},
   } as never);
-  return flags;
+  return new Map([...commands].map(([command, { flags }]) => [command, flags]));
 }
 
 describe("Template Workbench CLI registration", () => {
@@ -51,7 +45,7 @@ describe("Template Workbench CLI registration", () => {
     },
   );
 
-  it.each([
+  it.effect.each([
     "template-source",
     "template-schema",
     "template-render",
@@ -61,47 +55,34 @@ describe("Template Workbench CLI registration", () => {
     "frontmatter-set",
     "frontmatter-remove",
     "frontmatter-reorder",
-  ])("retires %s before reading or writing legacy settings", async (name) => {
-    const registered = new Map<
-      string,
-      { flags: CliFlags | null; handler: CliHandler }
-    >();
-    const update = vi.fn();
-    registerTemplateWorkbench(
-      {
-        manifest: { version: "test" },
-        registerCliHandler: (
-          ...[command, , flags, handler]: Parameters<
-            Plugin["registerCliHandler"]
-          >
-        ) => {
-          registered.set(command, { flags, handler });
-        },
-      } as unknown as Plugin,
-      {
+  ])("retires %s before reading or writing legacy settings", (name) =>
+    Effect.gen(function* () {
+      const { host, command } = fakeCliHost();
+      const update = vi.fn();
+      registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
         app: {},
         settings: { update },
         templates: {},
         profile: {},
         zoteroPref: {},
-      } as never,
-    );
-    const command = registered.get(`zotlit:${name}`)!;
-    expect(
-      Object.values(command.flags ?? {}).every((flag) => !flag.required),
-    ).toBe(true);
-    const result = JSON.parse(
-      (await command.handler({ field: "title", expr: "zt.title" })) as string,
-    );
-    expect(result).toMatchObject({
-      ok: false,
-      contractVersion: 8,
-      diagnostic: { code: "COMMAND_RETIRED" },
-    });
-    expect(result.diagnostic.hint).toContain(
-      "legacy template conversion in settings",
-    );
-    expect(result.diagnostic.hint).toContain("template-check");
-    expect(update).not.toHaveBeenCalled();
-  });
+      } as never);
+      const retired = command(`zotlit:${name}`);
+      expect(
+        Object.values(retired.flags ?? {}).every((flag) => !flag.required),
+      ).toBe(true);
+      const result = JSON.parse(
+        yield* retired.handler({ field: "title", expr: "zt.title" }),
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        contractVersion: 8,
+        diagnostic: { code: "COMMAND_RETIRED" },
+      });
+      expect(result.diagnostic.hint).toContain(
+        "legacy template conversion in settings",
+      );
+      expect(result.diagnostic.hint).toContain("template-check");
+      expect(update).not.toHaveBeenCalled();
+    }),
+  );
 });

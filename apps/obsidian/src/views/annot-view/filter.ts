@@ -22,7 +22,7 @@ const SWATCH_PALETTE_ORDER = ANNOTATION_COLORS.map((color) =>
 const HTML_TAG = /<[^>]*>/g;
 
 function stripHtml(html: string): string {
-  return html.replace(HTML_TAG, " ");
+  return html.replaceAll(HTML_TAG, " ");
 }
 
 function matchesQuery(annot: AnnotationRecord, query: string): boolean {

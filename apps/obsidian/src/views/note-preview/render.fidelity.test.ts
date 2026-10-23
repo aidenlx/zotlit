@@ -121,17 +121,6 @@ async function realCreate(
         discard: () => undefined,
       }),
     },
-    noteImport: {
-      prepare: async () => ({
-        resolveChildNote: () => ({
-          key: "",
-          indexedKey: "",
-          title: null,
-          noteLink: () => "",
-        }),
-        flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-      }),
-    },
   } as unknown as NoteFeatureDeps;
 
   const item = getItemsByKey(fixture.client, ["MAIN2345"], {

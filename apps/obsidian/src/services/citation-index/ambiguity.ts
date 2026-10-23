@@ -11,7 +11,7 @@ import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
-import type { CitekeyResolution, SnapshotItem } from "./snapshot";
+import type { SnapshotItem } from "./snapshot";
 
 const logger = getLogger("citation-index");
 
@@ -84,35 +84,6 @@ export async function describeCandidates(
   );
 }
 
-/**
- * The candidates of every Ambiguous Citation Key among `citekeys`, described
- * in one read, as the synchronous lookup a list build takes.
- *
- * @param resolveCitekey what a citekey names in the current Library Scope.
- */
-export async function readAmbiguousCandidates(
-  deps: CandidateDeps,
-  resolveCitekey: (citekey: string) => CitekeyResolution | null,
-  citekeys: Iterable<string>,
-): Promise<AmbiguousCandidatesOf> {
-  const ambiguous = new Map<string, readonly SnapshotItem[]>();
-  for (const citekey of citekeys) {
-    const resolution = resolveCitekey(citekey);
-    if (resolution?.kind === "ambiguous") {
-      ambiguous.set(citekey, resolution.candidates);
-    }
-  }
-  if (ambiguous.size === 0) return () => null;
-  const items = await readCandidateItems(deps, [...ambiguous.values()].flat());
-  const described = new Map(
-    [...ambiguous].map(([citekey, candidates]) => [
-      citekey,
-      describeWith(deps, items, candidates),
-    ]),
-  );
-  return (citekey) => described.get(citekey) ?? null;
-}
-
 /** The candidates' Items by Indexed Key; a failed read answers none. */
 async function readCandidateItems(
   { db }: CandidateDeps,
@@ -156,4 +127,17 @@ function describeWith(
       library: libraries.get(candidate.libraryID) ?? null,
     };
   });
+}
+
+/** Describe candidates from the source join already captured for a document. */
+export function describeJoinedCandidates(
+  candidates: readonly SnapshotItem[],
+  sources: ReadonlyMap<string, { summary: string }>,
+  libraries: ReadonlyMap<number, AvailableLibrary>,
+): AmbiguousCandidate[] {
+  return candidates.map((candidate) => ({
+    ...candidate,
+    summary: sources.get(candidate.indexedKey)?.summary ?? candidate.key,
+    library: libraries.get(candidate.libraryID) ?? null,
+  }));
 }

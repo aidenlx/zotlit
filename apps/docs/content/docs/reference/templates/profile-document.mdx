@@ -142,7 +142,7 @@ The note source may hold one `{% managed %}` block, closed by `{% endmanaged %}`
 
 The block renders in isolation: variables assigned outside it are not visible inside it. That is what makes an update-time render produce the same text as a create-time render. On create, the block renders in place in the body. On update, only the block re-renders, and its output refills the note's managed region.
 
-Zero blocks is valid. A body without a block is static, and updates to such a note touch frontmatter only. Two blocks, an unclosed block, and an unmatched `{% endmanaged %}` each fail validation.
+Zero blocks is valid. The document you get when you customize or duplicate the Default profile has none. A body without a block is static, and updates to such a note touch frontmatter only. That holds even for a note that still has managed-region markers from an earlier default: ZotLit reports <UiLabel name={m.notice_updated_note_no_managed_block()} /> Add a `{% managed %}` block to the document if you want the region re-rendered. Two blocks, an unclosed block, and an unmatched `{% endmanaged %}` each fail validation.
 
 The markers ZotLit writes around the block's output in the note, `%%zt-managed%%` and `%%/zt-managed%%`, belong to the note rather than to the document. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
 

@@ -66,6 +66,9 @@
     "typecheck:test": {
       "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
     },
+    "typecheck:node": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]
+    },
     "test": {
       "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/assets/logo/**"]

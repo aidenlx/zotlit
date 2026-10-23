@@ -42,7 +42,11 @@ import {
 
 import { CitationLookup } from "./lookup-service";
 import { CitationIndex } from "./service";
-import type { CitekeyRecord, CitekeyStore } from "./service";
+import type {
+  CitationIndexOptions,
+  CitekeyRecord,
+  CitekeyStore,
+} from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -268,6 +272,7 @@ export class NoteIndexStub {
 export class DatabaseStub implements AsyncDisposable {
   state: "loading" | "ready" | "degraded" = "ready";
   readonly citekeys = new CitekeysStub(defaultCitekeys());
+  itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: ZoteroReadsService;
   readonly #events = createNanoEvents<ZoteroReadsEvents>();
@@ -279,10 +284,21 @@ export class DatabaseStub implements AsyncDisposable {
   }: { readyImmediately?: boolean; seed?: string } = {}) {
     if (readyImmediately) this.#ready.resolve();
     this.#seed = seed;
-    this.#service = inProcessReadsService(memoryOpener(() => this.#sql()).open);
+    this.#service = inProcessReadsService(
+      memoryOpener(() => this.#sql()).open,
+      {
+        wrap: (client) => ({
+          ...client,
+          ItemsByIndexedKeys: (...args) => {
+            this.itemReads += 1;
+            return client.ItemsByIndexedKeys(...args);
+          },
+        }),
+      },
+    );
   }
 
-  readonly #seed?: string;
+  #seed?: string;
   #lastSql: string | null = null;
   #refresh: Promise<void> | null = null;
 
@@ -319,7 +335,7 @@ export class DatabaseStub implements AsyncDisposable {
           ? row.indexedKey.slice(0, -suffix.length)
           : row.indexedKey;
       statements.push(
-        `insert into items (itemID, itemTypeID, libraryID, key) values (${itemID}, 1, ${row.libraryID}, ${quote(key)});`,
+        `insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified) values (${itemID}, 1, ${row.libraryID}, ${quote(key)}, '2024-01-01 00:00:00', '2024-01-01 00:00:00');`,
       );
       statements.push(
         `insert into itemDataValues (valueID, value) values (${itemID}, ${quote(row.citekey)});`,
@@ -331,6 +347,18 @@ export class DatabaseStub implements AsyncDisposable {
     return statements.join("\n");
   }
 
+  #lookupBarrier: {
+    entered: PromiseWithResolvers<void>;
+    release: PromiseWithResolvers<void>;
+  } | null = null;
+
+  holdLookup() {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    this.#lookupBarrier = { entered, release };
+    return { entered: entered.promise, release: () => release.resolve() };
+  }
+
   readonly #client = () =>
     Effect.map(
       Effect.promise(() => this.#service.ready),
@@ -340,6 +368,12 @@ export class DatabaseStub implements AsyncDisposable {
           CitationLookup: (payload, options) =>
             Effect.gen({ self: this }, function* () {
               yield* Effect.promise(() => this.#ready.promise);
+              const barrier = this.#lookupBarrier;
+              this.#lookupBarrier = null;
+              if (barrier) {
+                barrier.entered.resolve();
+                yield* Effect.promise(() => barrier.release.promise);
+              }
               if (this.state === "degraded" || this.citekeys.error)
                 return yield* new DbUnavailable({
                   message:
@@ -393,6 +427,13 @@ export class DatabaseStub implements AsyncDisposable {
 
   changed(): void {
     this.#events.emit("changed");
+  }
+
+  async replaceRows(seed: string): Promise<void> {
+    this.#seed = seed;
+    this.#lastSql = seed;
+    await this.#service.refresh();
+    this.changed();
   }
 
   degrade(): void {
@@ -665,6 +706,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
+  runPromise?: CitationIndexOptions["runPromise"];
   parseClient?: ParseClient;
   openStore?: () => Promise<CitekeyStore>;
   settings?: Partial<Settings>;
@@ -745,6 +787,9 @@ export async function createCitationIndexHarness(
   );
   const index = stack.use(
     new CitationIndex({
+      runPromise: options.runPromise ?? Effect.runPromise,
+      db,
+      libraryScope,
       app,
       noteIndex,
       settings,

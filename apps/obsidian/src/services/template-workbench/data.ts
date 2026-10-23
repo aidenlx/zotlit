@@ -23,7 +23,8 @@ import { citationExampleData } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
-import { Effect } from "@/lib/effect";
+import { Data, Effect, Stream } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -38,7 +39,6 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -81,6 +81,35 @@ export interface TemplateDataDeps {
 }
 
 /**
+ * Template data could not be built: a wait for a service, the read lease, a
+ * database read, or the building itself failed with `cause`.
+ */
+export class TemplateDataError extends Data.TaggedError("TemplateDataError")<{
+  readonly cause: unknown;
+}> {}
+
+const failed = (cause: unknown) => new TemplateDataError({ cause });
+
+/** A wait or read outside Effect that the data depends on. */
+const attempt = <A>(evaluate: () => PromiseLike<A>) =>
+  Effect.tryPromise({ try: evaluate, catch: failed });
+
+/** A database read. */
+const query = <A, E>(read: Effect.Effect<A, E>) =>
+  Effect.mapError(read, failed);
+
+/** Building data that can throw, as a Template a getter runs. */
+const build = <A>(evaluate: () => A) =>
+  Effect.try({ try: evaluate, catch: failed });
+
+/** Reads under one Snapshot, released when the caller's scope closes. */
+const readLease = (deps: Pick<TemplateDataDeps, "zoteroReads">) =>
+  acquireAsyncDisposable(() => deps.zoteroReads.acquireRead()).pipe(
+    Effect.map((lease) => lease.reads),
+    Effect.mapError((error) => failed(error.cause)),
+  );
+
+/**
  * Scope one item's Literature Note lookups to the note the caller selected, so
  * data built for an explicit note path reports that note rather than the first
  * indexed note of the same item.
@@ -105,64 +134,78 @@ export function withSelectedNote(
   };
 }
 
-export async function loadTemplateData(
+/** The Template data of one root for the object an Indexed Key names. */
+export const readTemplateData = Effect.fn("TemplateData.read")(function* (
   deps: TemplateDataDeps,
   indexedKey: string,
   root: ContractRoot,
-): Promise<TemplateDataLoadResult> {
+): Effect.fn.Return<TemplateDataLoadResult, TemplateDataError> {
   if (root === "citation") {
-    return await loadCitationData(deps, { key: indexedKey }, "main");
+    return yield* readCitationData(deps, { key: indexedKey }, "main");
   }
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.noteIndex.whenIndexed(),
-    deps.zoteroPref.ready,
-    deps.templates.ready,
-  ]);
+  const [settings] = yield* Effect.all(
+    [
+      attempt(() => deps.settings.loaded),
+      attempt(() => deps.noteIndex.whenIndexed()),
+      attempt(() => deps.zoteroPref.ready),
+      attempt(() => deps.templates.ready),
+    ],
+    { concurrency: "unbounded" },
+  );
   if (root === "annotation") {
-    await using lease = await deps.zoteroReads.acquireRead();
-    const selected = await readAnnotationSources(lease.reads, indexedKey);
-    if (selected.kind !== "sources") return selected;
-    const { sources, item } = selected;
-    const resolvers = await createInertResolvers(deps, settings, item);
-    const data = buildAnnotationsTemplateData(sources, resolvers.annotation)
-      .values()
-      .next().value;
-    if (!data) return { kind: "not-found" };
-    return {
-      kind: "data",
-      data: withAnnotationCitation(data, () =>
-        renderAnnotationCitation(data.parentItem, data.pageLabel, deps),
-      ),
-    };
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* readLease(deps);
+        const selected = yield* readAnnotationSources(reads, indexedKey);
+        if (selected.kind !== "sources") return selected;
+        const { sources, item } = selected;
+        const resolvers = yield* createInertResolvers(deps, settings, item);
+        const data = yield* build(
+          () =>
+            buildAnnotationsTemplateData(sources, resolvers.annotation)
+              .values()
+              .next().value,
+        );
+        if (!data) return { kind: "not-found" } as const;
+        return {
+          kind: "data",
+          data: withAnnotationCitation(data, () =>
+            renderAnnotationCitation(data.parentItem, data.pageLabel, deps),
+          ),
+        } as const;
+      }),
+    );
   }
 
-  const selected = await (async () => {
-    await using lease = await deps.zoteroReads.acquireRead();
-    return await readNoteItemSource(lease.reads, indexedKey);
-  })();
+  const selected = yield* Effect.scoped(
+    Effect.flatMap(readLease(deps), (reads) =>
+      readNoteItemSource(reads, indexedKey),
+    ),
+  );
   if (selected.kind !== "source") return selected;
   const { source } = selected;
   if (root === "filename") {
     const { itemTags, itemCollections } = itemFacets(source);
     return {
       kind: "data",
-      data: buildFilenameContext({
-        item: source.item,
-        tags: itemTags,
-        collections: itemCollections,
-        authorsShort: creatorSummary,
-      }),
+      data: yield* build(() =>
+        buildFilenameContext({
+          item: source.item,
+          tags: itemTags,
+          collections: itemCollections,
+          authorsShort: creatorSummary,
+        }),
+      ),
     };
   }
 
-  const resolvers = await createInertResolvers(deps, settings, source.item);
+  const resolvers = yield* createInertResolvers(deps, settings, source.item);
 
   return {
     kind: "data",
-    data: buildNoteContextFromSource(source, resolvers),
+    data: yield* build(() => buildNoteContextFromSource(source, resolvers)),
   };
-}
+});
 
 /**
  * The Citation Template data one example set or one chosen Item produces:
@@ -171,28 +214,69 @@ export async function loadTemplateData(
  * suggester inserts for a plain Enter. An example set reads nothing from the
  * database.
  */
-export async function loadCitationData(
+export const readCitationData = Effect.fn("TemplateData.readCitation")(
+  function* (
+    deps: Pick<TemplateDataDeps, "zoteroReads" | "settings">,
+    selector: CitationSelector,
+    variant: CitationVariant,
+  ): Effect.fn.Return<CitationDataLoadResult, TemplateDataError> {
+    if ("example" in selector) {
+      return {
+        kind: "data",
+        data: yield* build(() =>
+          citationExampleData(selector.example, variant),
+        ),
+      };
+    }
+    yield* attempt(() => deps.settings.loaded);
+    const selected = yield* Effect.scoped(
+      Effect.flatMap(readLease(deps), (reads) =>
+        readNoteItem(reads, selector.key),
+      ),
+    );
+    if (selected.kind !== "item") return selected;
+    const { item } = selected;
+    const citationKey =
+      "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
+    return {
+      kind: "data",
+      data: yield* build(() =>
+        citekeysToCiteTemplateData([{ citationKey, item }], variant),
+      ),
+    };
+  },
+);
+
+/**
+ * {@link readTemplateData} for a caller outside Effect. It rejects with what
+ * failed, as a read or a Template does.
+ */
+export function loadTemplateData(
+  deps: TemplateDataDeps,
+  indexedKey: string,
+  root: ContractRoot,
+): Promise<TemplateDataLoadResult> {
+  return Effect.runPromise(
+    readTemplateData(deps, indexedKey, root).pipe(
+      Effect.mapError(({ cause }) => cause),
+    ),
+  );
+}
+
+/**
+ * {@link readCitationData} for a caller outside Effect. It rejects with what
+ * failed, as a read or a Template does.
+ */
+export function loadCitationData(
   deps: Pick<TemplateDataDeps, "zoteroReads" | "settings">,
   selector: CitationSelector,
   variant: CitationVariant,
 ): Promise<CitationDataLoadResult> {
-  if ("example" in selector) {
-    return {
-      kind: "data",
-      data: citationExampleData(selector.example, variant),
-    };
-  }
-  await deps.settings.loaded;
-  await using lease = await deps.zoteroReads.acquireRead();
-  const selected = await readNoteItem(lease.reads, selector.key);
-  if (selected.kind !== "item") return selected;
-  const { item } = selected;
-  const citationKey =
-    "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
-  return {
-    kind: "data",
-    data: citekeysToCiteTemplateData([{ citationKey, item }], variant),
-  };
+  return Effect.runPromise(
+    readCitationData(deps, selector, variant).pipe(
+      Effect.mapError(({ cause }) => cause),
+    ),
+  );
 }
 
 /**
@@ -223,30 +307,36 @@ function renderAnnotationCitation(
   }
 }
 
-async function createInertResolvers(
+const createInertResolvers = Effect.fnUntraced(function* (
   deps: TemplateDataDeps,
   settings: Readonly<Settings>,
   item: Item | null,
-): Promise<NoteResolvers> {
+): Effect.fn.Return<NoteResolvers, TemplateDataError> {
   const litNote = item
-    ? findExistingLitNote(deps.noteIndex, {
-        indexedKey: item.indexedKey,
-      })
+    ? yield* build(() =>
+        findExistingLitNote(deps.noteIndex, {
+          indexedKey: item.indexedKey,
+        }),
+      )
     : null;
-  const excerptImages = await resolveObsidianExcerptImageContext({
-    app: deps.app,
-    settings,
-    litNotePath: litNote?.path ?? null,
-  });
-  return buildObsidianInertNoteResolvers({
-    noteIndex: deps.noteIndex,
-    fileManager: deps.app.fileManager,
-    vault: deps.app.vault,
-    zoteroPref: deps.zoteroPref,
-    sourcePath: litNote?.path ?? "",
-    excerptImages,
-  });
-}
+  const excerptImages = yield* attempt(() =>
+    resolveObsidianExcerptImageContext({
+      app: deps.app,
+      settings,
+      litNotePath: litNote?.path ?? null,
+    }),
+  );
+  return yield* build(() =>
+    buildObsidianInertNoteResolvers({
+      noteIndex: deps.noteIndex,
+      fileManager: deps.app.fileManager,
+      vault: deps.app.vault,
+      zoteroPref: deps.zoteroPref,
+      sourcePath: litNote?.path ?? "",
+      excerptImages,
+    }),
+  );
+});
 
 type AnnotationResult =
   | { kind: "sources"; sources: AnnotationSources; item: Item | null }
@@ -258,15 +348,15 @@ type AnnotationResult =
  * The {@link AnnotationSources} of the Annotation an Indexed Key names, with
  * its parent Item, `null` for a standalone attachment.
  */
-async function readAnnotationSources(
+const readAnnotationSources = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   indexedKey: string,
-): Promise<AnnotationResult> {
-  const selected = await Effect.runPromise(reads.ItemType({ indexedKey }));
+): Effect.fn.Return<AnnotationResult, TemplateDataError> {
+  const selected = yield* query(reads.ItemType({ indexedKey }));
   if (!selected) return { kind: "not-found" };
   if (selected.itemType !== "annotation")
     return { kind: "annotation-required" };
-  const sources = await Effect.runPromise(
+  const sources = yield* query(
     reads.AnnotationSources({
       libraryID: selected.libraryID,
       keys: [selected.key],
@@ -279,7 +369,7 @@ async function readAnnotationSources(
       ({ itemID }) => itemID === attachment.parentItemID,
     ) ?? null;
   return { kind: "sources", sources, item };
-}
+});
 
 type NoteItemResult =
   | { kind: "item"; item: Item }
@@ -304,34 +394,33 @@ type NoteItemTarget =
  * attachment, note, or annotation it names. Pass Snapshot-bound reads, so
  * every step reads one database state.
  */
-async function resolveNoteItemID(
+const resolveNoteItemID = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   indexedKey: string,
-): Promise<NoteItemTarget> {
-  const run = Effect.runPromise;
-  const selected = await run(reads.ItemType({ indexedKey }));
+): Effect.fn.Return<NoteItemTarget, TemplateDataError> {
+  const selected = yield* query(reads.ItemType({ indexedKey }));
   if (!selected) return { kind: "not-found" };
   const { libraryID, key, itemType } = selected;
   let parentItemID: number | null;
   if (itemType === "annotation") {
-    const sources = await run(
+    const sources = yield* query(
       reads.AnnotationSources({ libraryID, keys: [key], username: null }),
     );
     const attachment = sources.attachments[0];
     if (!attachment) return { kind: "annotation-attachment-missing" };
     parentItemID = attachment.parentItemID;
   } else if (itemType === "attachment") {
-    const [attachment] = await run(
+    const [attachment] = yield* query(
       reads.AttachmentsByKeys({ libraryID, keys: [key] }),
     );
     if (!attachment) return { kind: "not-found" };
     parentItemID = attachment.parentItemID;
   } else if (itemType === "note") {
-    const [note] = await run(reads.NoteBodies({ libraryID, keys: [key] }));
+    const [note] = yield* query(reads.NoteBodies({ libraryID, keys: [key] }));
     if (!note) return { kind: "not-found" };
     parentItemID = note.parentItemID;
   } else {
-    const items = await run(
+    const items = yield* query(
       reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
     );
     const item = items.values().next().value;
@@ -341,42 +430,43 @@ async function resolveNoteItemID(
   }
   if (!parentItemID) return { kind: "no-parent-item" };
   return { kind: "target", itemID: parentItemID, missing: "no-parent-item" };
-}
+});
 
 /**
  * {@link resolveNoteItemID}'s Item, read as a {@link NoteSource}. Pass
  * Snapshot-bound reads.
  */
-async function readNoteItemSource(
+const readNoteItemSource = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   indexedKey: string,
-): Promise<
+): Effect.fn.Return<
   | { kind: "source"; source: NoteSource }
-  | Exclude<NoteItemResult, { kind: "item" }>
+  | Exclude<NoteItemResult, { kind: "item" }>,
+  TemplateDataError
 > {
-  const target = await resolveNoteItemID(reads, indexedKey);
+  const target = yield* resolveNoteItemID(reads, indexedKey);
   if (target.kind !== "target") return target;
-  const source = await Effect.runPromise(
-    reads.NoteSource({ itemID: target.itemID }),
-  );
+  const source = yield* query(reads.NoteSource({ itemID: target.itemID }));
   return source ? { kind: "source", source } : { kind: target.missing };
-}
+});
 
 /** {@link resolveNoteItemID}'s Item alone. Pass Snapshot-bound reads. */
-async function readNoteItem(
+const readNoteItem = Effect.fnUntraced(function* (
   reads: ZoteroReadsApi,
   indexedKey: string,
-): Promise<NoteItemResult> {
-  const target = await resolveNoteItemID(reads, indexedKey);
+): Effect.fn.Return<NoteItemResult, TemplateDataError> {
+  const target = yield* resolveNoteItemID(reads, indexedKey);
   if (target.kind !== "target") return target;
   if (target.item) return { kind: "item", item: target.item };
-  const ref = await readDisplayRef(reads, target.itemID);
+  // The display ref names the Item by the Indexed Key it is read by.
+  const slices = yield* query(
+    Stream.runCollect(reads.DisplayRefs({ itemIDs: [target.itemID] })),
+  );
+  const ref = slices.flat()[0]?.ref ?? null;
   const item =
     ref &&
-    (
-      await Effect.runPromise(
-        reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
-      )
-    ).get(ref.indexedKey);
+    (yield* query(
+      reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
+    )).get(ref.indexedKey);
   return item ? { kind: "item", item } : { kind: target.missing };
-}
+});

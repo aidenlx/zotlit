@@ -1,8 +1,10 @@
 ---
-status: amended by ADR-0031
+status: amended by ADR-0031, ADR-0079
 ---
 
 # Imported Notes render under Profiles with explicit stamps
+
+> **Amended by [ADR 0079](0079-the-literature-note-body-is-the-users-and-rendering-has-no-side-effects.md).** Side-effect imports no longer exist, so the stamp comes only from an explicit import: an item-attached note copies the parent's Literature Note stamp, and any other note gets the default Profile.
 
 > **Amended by [ADR 0035](0035-profile-annotation-section.md).** The required final Annotation Section replaces the Annotation Block and supplies all annotation rendering under its Profile. Profile inheritance and stamps remain unchanged.
 

@@ -9,7 +9,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/obsidian dev` — Vite watch build.
 - `I18N_DEV_SERVER=true pnpm --filter @zotlit/obsidian dev` — the Language Pack source for a dev build in any non-English locale: serves the generated Language Pack JSONs at `http://127.0.0.1:9092` (or pass a port number) and points the dev build's pack download URL there. A dev build's manifest carries a Dev Build version (`2.2.0-beta.1.dev`, from `scripts/dev-version.ts`) that has no Resource Release, so without this server the pack download fails and the build stays on the bundled English pack.
 - `pnpm --filter @zotlit/obsidian generate:language-packs` — regenerate the typed message facade and bundled English pack. Only needed when bypassing turbo; turbo `typecheck`/`test` depend on it.
-- `pnpm --filter @zotlit/obsidian test:lua-filter` — drive a native Pandoc (3.1.1 or newer) over fixture Markdown to check both `zotlit-cite.lua` variants. Needs `pandoc` on PATH; set `PANDOC_BIN` to check another Pandoc version. Outside `pnpm test`, since it needs a binary the workspace does not install.
+- `pnpm --filter @zotlit/obsidian test:lua-filter` — drive a native Pandoc (3.1.1 or newer) over fixture Markdown to check both `zotlit-cite.lua` variants. Needs `pandoc` on PATH; set `PANDOC_BIN` to check another Pandoc version. `pnpm test` runs it too, and skips it where no `pandoc` is on PATH.
 - `pnpm --filter @zotlit/obsidian analyze` — production build with an interactive bundle-size report at `bundle-stats.html`. Set `ANALYZE=json` for a machine-readable `bundle-stats.json` instead.
 
 ## UI stack
@@ -34,7 +34,7 @@ Project-specific: settings live in `SettingsService` under flat dot-notation key
 
 ## Logging
 
-`src/lib/log.ts` provides the logger; `LoggingService` owns configuration.
+Log through Effect, filed under a category with `withLogCategory` from `src/lib/effect-log.ts`. Every `@/lib/effect` run entry point writes Effect's records to LogTape, where `layerLogging` (`src/services/log/service.ts`) owns the sinks and levels. `getLogger` from `src/lib/log.ts` is the legacy LogTape logger.
 
 ## UI text (JSON Language Packs)
 
@@ -48,17 +48,19 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 **Tailwind-first.** Run `/obsidian-css` before you write a class list or a stylesheet rule.
 
-## CLI parameters
+## CLI commands
 
-When adding or changing the parameters of a `zotlit:*` command, decode them with one valibot schema through `src/lib/cli-params.ts`; `src/services/item-query/decode.ts` is the pattern. The adapter's header states how Obsidian turns the caller's tokens into `CliData`.
+When adding or changing a `zotlit:*` command, register its Effect handler with `registerCliCommand` (`src/lib/cli-command.ts`) and decode its parameters with one Effect Schema through `src/lib/cli-params.ts`; `src/services/item-query/decode.ts` is the pattern. The adapter's header states how Obsidian turns the caller's tokens into `CliData`.
 
 ## CLI schemas and resources
 
 When adding or changing a CLI schema or downloadable resource, inspect `src/services/template-workbench/schema.ts`, [ADR 0019](../../docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md), and `.github/workflows/release.yml` at the repository root. They own the version-pinned Resource Release pattern.
 
-## Debugging
+## Effect
 
-Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers, and log through LogTape. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+
+## Debugging
 
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.
 
@@ -70,6 +72,8 @@ Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alia
 
 - `pnpm exec vitest run path/to/file.test.ts` — single file.
 - `pnpm exec vitest` — watch mode.
+
+Write an Effect case with `it.effect` from `@/lib/effect-vitest`: it adds the plugin's runtime services (browser scheduler, LogTape logger) to `@effect/vitest`'s TestClock and TestConsole. Provide a `Logger.layer` to capture logs (`src/services/service-layer.test.ts`).
 
 `sleep` is an Obsidian global that doesn't exist in Node. Use `delay` from `@std/async` instead.
 

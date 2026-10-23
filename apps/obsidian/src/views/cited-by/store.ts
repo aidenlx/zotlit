@@ -9,6 +9,7 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
+import type { ParsedNote } from "@/services/citation-index/parsed-note";
 import type {
   CitationOccurrence,
   CitedByGroup,
@@ -53,6 +54,7 @@ export type CitedByPreview =
   | { status: "unavailable"; mtime: number }
   | {
       status: "ready";
+      facts: ParsedNote;
       mtime: number;
       source: string;
       /** Read together with {@link source}, so both describe one revision. */

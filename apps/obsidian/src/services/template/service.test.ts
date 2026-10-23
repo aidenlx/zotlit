@@ -638,6 +638,49 @@ partials:
     ).toContain("# Paper");
   });
 
+  it("renders the built-in default body once, with no Managed Region and no child-note list", async () => {
+    const { service } = await makeHarness();
+    const data = {
+      title: "Paper",
+      backlink: "zotero://select/items/1",
+      attachments: [],
+      annotations: [],
+      notes: [{ noteLink: () => "[[Child note]]" }],
+    };
+
+    const body = service.render("note", data);
+
+    expect(body).toContain("## Annotations\n\n```zotquery\n");
+    expect(body).not.toContain("%%zt-managed%%");
+    expect(body).not.toContain("## Notes");
+    expect(body).not.toContain("[[Child note]]");
+  });
+
+  it("refills an existing Managed Region from the built-in content", async () => {
+    const { service } = await makeHarness();
+
+    const region = service.renderManagedContent({ notes: [] });
+
+    expect(region.startsWith("%%zt-managed%%\n## Annotations\n")).toBe(true);
+    expect(region.endsWith("```\n\n%%/zt-managed%%")).toBe(true);
+  });
+
+  it("wraps a vault content template in a Managed Region", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-content.liquid.md",
+      "Managed {{ zt.title }}",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service.render("note", { title: "Paper", attachments: [] }),
+    ).toContain("%%zt-managed%%\nManaged Paper\n\n%%/zt-managed%%");
+    expect(service.renderManagedContent({ title: "Paper" })).toBe(
+      "%%zt-managed%%\nManaged Paper\n\n%%/zt-managed%%",
+    );
+  });
+
   it("renders a vault template when present", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.eta.md", "custom <%= zt.title %>");
@@ -1198,6 +1241,24 @@ partials:
     expect(converted.document.annotationSection.source).toBe(
       "Annotation {{ zt.text }}",
     );
+  });
+
+  it("converts a note override over the built-in content into a create-once document", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-note.liquid.md",
+      '# {{ zt.title }}\n\n{% render "content" with zt as zt %}',
+    );
+    const { service } = await makeHarness({ vault });
+
+    const converted = await service.convertLegacyLiteratureNoteTemplates({
+      note: { title: "Paper", notes: [] },
+      filename: { citationKey: "doePaper" },
+    });
+
+    expect(converted.document.managedBlock).toBeNull();
+    expect(converted.rendered.create).toContain("# Paper\n\n## Annotations\n");
+    expect(converted.rendered.create).not.toContain("%%zt-managed%%");
   });
 
   it("refuses conversion while an Eta Literature Note slot is inert", async () => {

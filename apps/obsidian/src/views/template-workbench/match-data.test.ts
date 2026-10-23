@@ -7,6 +7,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { QueryService } from "@/services/item-query/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -45,7 +46,7 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     },
   };
   await using query = new QueryService({
-    useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
+    useLedger: inertUseLedger,
     pluginVersion: "2.2.0",
     reads: service,
     zoteroPref: {

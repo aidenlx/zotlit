@@ -3,9 +3,12 @@ import { TFile } from "@mock/obsidian";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Plugin } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { Effect } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 
@@ -66,155 +69,181 @@ async function cslVault({
       },
     },
   };
-  const registerCliHandler = vi.fn();
-  registerPandocResolve(
-    {
-      manifest: { version: "2.0.1-test" },
-      registerCliHandler,
-    } as unknown as Plugin,
-    {
-      app: {
-        vault: {
-          adapter: { getBasePath: () => "/vault" },
-          getFileByPath: (path: string) => (path === file.path ? file : null),
-        },
-        metadataCache,
+  const { host, command } = fakeCliHost();
+  registerPandocResolve({ ...host, manifest: { version: "2.0.1-test" } }, {
+    app: {
+      vault: {
+        adapter: { getBasePath: () => "/vault" },
+        getFileByPath: (path: string) => (path === file.path ? file : null),
       },
-      db: {},
-      zoteroPref: { ready: Promise.resolve(), dataDir },
-      settings: { current: settings },
-      profile: profileReader(settings, metadataCache),
-    } as unknown as PandocResolveDeps,
-  );
-  const handlerOf = (name: string) =>
-    registerCliHandler.mock.calls.find(([command]) => command === name)![3] as (
-      params: Record<string, string>,
-    ) => Promise<string>;
+      metadataCache,
+    },
+    zoteroPref: { ready: Promise.resolve(), dataDir },
+    settings: { current: settings },
+    profile: profileReader(settings, metadataCache),
+  } as unknown as PandocResolveDeps);
+  const handlerOf = (name: string) => command(name).handler;
 
   const held = stack.move();
   return {
-    csl: async (params: Record<string, string>) =>
-      JSON.parse(await handlerOf(CSL_COMMAND)(params)) as CslResponse,
-    resolve: async (params: Record<string, string>) =>
-      JSON.parse(await handlerOf(RESOLVE_COMMAND)(params)) as ResolveResponse,
+    csl: (params: Record<string, string>) =>
+      handlerOf(CSL_COMMAND)(params).pipe(
+        Effect.map((output) => JSON.parse(output) as CslResponse),
+      ),
+    resolve: (params: Record<string, string>) =>
+      handlerOf(RESOLVE_COMMAND)(params).pipe(
+        Effect.map((output) => JSON.parse(output) as ResolveResponse),
+      ),
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
 }
 
+/** {@link cslVault}, removed when the test's scope closes. */
+const scopedCslVault = (options: Parameters<typeof cslVault>[0]) =>
+  acquireAsyncDisposable(() => cslVault(options));
+
 describe("zotlit:csl for one note", () => {
-  it("answers the vault style for a note that selects none of its own", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+  it.effect(
+    "answers the vault style for a note that selects none of its own",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
 
-    const response = await vault.csl({ file: NOTE_PATH });
+        const response = yield* vault.csl({ file: NOTE_PATH });
 
-    expect(response).toMatchObject({
-      styleId: APA,
-      title: "APA Style 7th edition",
-      source: { kind: "vault" },
-    });
-    await expect(
-      readFile((response as { path: string }).path, "utf8"),
-    ).resolves.toContain(`<id>${APA}</id>`);
-  });
+        expect(response).toMatchObject({
+          styleId: APA,
+          title: "APA Style 7th edition",
+          source: { kind: "vault" },
+        });
+        const written = yield* Effect.promise(() =>
+          readFile((response as { path: string }).path, "utf8"),
+        );
+        expect(written).toContain(`<id>${APA}</id>`);
+      }),
+  );
 
-  it("answers the note's own style where it names one", async () => {
-    await using vault = await cslVault({
-      note: { "zotlit-csl": APA },
-      vaultStyle: null,
-    });
+  it.effect("answers the note's own style where it names one", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({
+        note: { "zotlit-csl": APA },
+        vaultStyle: null,
+      });
 
-    expect(await vault.csl({ file: NOTE_PATH })).toMatchObject({
-      styleId: APA,
-      source: { kind: "note" },
-    });
-  });
+      expect(yield* vault.csl({ file: NOTE_PATH })).toMatchObject({
+        styleId: APA,
+        source: { kind: "note" },
+      });
+    }),
+  );
 
-  it("answers no style file where the vault selects Default", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: null });
+  it.effect("answers no style file where the vault selects Default", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: null });
 
-    const response = await vault.csl({ file: NOTE_PATH });
+      const response = yield* vault.csl({ file: NOTE_PATH });
 
-    expect(response).toMatchObject({
-      styleId: null,
-      source: { kind: "vault" },
-    });
-    expect(response).not.toHaveProperty("path");
-  });
+      expect(response).toMatchObject({
+        styleId: null,
+        source: { kind: "vault" },
+      });
+      expect(response).not.toHaveProperty("path");
+    }),
+  );
 
-  it("stops on a vault style Zotero lacks, naming the settings to repair", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: UNINSTALLED });
+  it.effect(
+    "stops on a vault style Zotero lacks, naming the settings to repair",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* scopedCslVault({
+          note: {},
+          vaultStyle: UNINSTALLED,
+        });
 
-    expect(await vault.csl({ file: NOTE_PATH })).toMatchObject({
-      errors: [
-        {
-          code: "style-missing",
-          styleId: UNINSTALLED,
-          message: expect.stringContaining("ZotLit settings"),
-        },
-      ],
-    });
-  });
+        expect(yield* vault.csl({ file: NOTE_PATH })).toMatchObject({
+          errors: [
+            {
+              code: "style-missing",
+              styleId: UNINSTALLED,
+              message: expect.stringContaining("ZotLit settings"),
+            },
+          ],
+        });
+      }),
+  );
 
-  it("reports a path that names no vault note", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+  it.effect("reports a path that names no vault note", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
 
-    expect(await vault.csl({ file: "/elsewhere/draft.md" })).toMatchObject({
-      errors: [{ code: "file-not-found" }],
-    });
-  });
+      expect(yield* vault.csl({ file: "/elsewhere/draft.md" })).toMatchObject({
+        errors: [{ code: "file-not-found" }],
+      });
+    }),
+  );
 
-  it("refuses a request that names both a style and a note", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+  it.effect("refuses a request that names both a style and a note", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
 
-    expect(await vault.csl({ style: APA, file: NOTE_PATH })).toMatchObject({
-      errors: [{ code: "flags-invalid" }],
-    });
-  });
+      expect(yield* vault.csl({ style: APA, file: NOTE_PATH })).toMatchObject({
+        errors: [{ code: "flags-invalid" }],
+      });
+    }),
+  );
 
-  it.each<[Record<string, string>, string]>([
+  it.effect.each<[Record<string, string>, string]>([
     [{ file: NOTE_PATH, colour: "red" }, "Unknown parameter 'colour'"],
     [{ "--file": NOTE_PATH }, "Run the command with file=<value>, without --."],
     [{ file: "true" }, "file requires a value."],
-  ])("refuses the parameters %j", async (params, message) => {
-    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+  ])("refuses the parameters %j", ([params, message]) =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
 
-    expect(await vault.csl(params)).toMatchObject({
-      errors: [
-        { code: "flags-invalid", message: expect.stringContaining(message) },
-      ],
-    });
-  });
+      expect(yield* vault.csl(params)).toMatchObject({
+        errors: [
+          { code: "flags-invalid", message: expect.stringContaining(message) },
+        ],
+      });
+    }),
+  );
 });
 
 describe("zotlit:resolve parameters", () => {
-  it("refuses a bare file and gives the recovery for a -- token", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+  it.effect("refuses a bare file and gives the recovery for a -- token", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
 
-    expect(await vault.resolve({ file: "true" })).toMatchObject({
-      errors: [{ code: "flags-invalid", message: "file requires a value." }],
-    });
-    expect(await vault.resolve({ "--verbose": "true" })).toMatchObject({
-      errors: [
-        {
-          code: "flags-invalid",
-          message: expect.stringContaining(
-            "Use a supported parameter as name=value, without --",
-          ),
-        },
-      ],
-    });
-  });
+      expect(yield* vault.resolve({ file: "true" })).toMatchObject({
+        errors: [{ code: "flags-invalid", message: "file requires a value." }],
+      });
+      expect(yield* vault.resolve({ "--verbose": "true" })).toMatchObject({
+        errors: [
+          {
+            code: "flags-invalid",
+            message: expect.stringContaining(
+              "Use a supported parameter as name=value, without --",
+            ),
+          },
+        ],
+      });
+    }),
+  );
 
-  it("refuses a parameter it does not take", async () => {
-    await using vault = await cslVault({ note: {}, vaultStyle: APA });
+  it.effect("refuses a parameter it does not take", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
 
-    expect(await vault.resolve({ file: NOTE_PATH, style: APA })).toMatchObject({
-      errors: [
-        {
-          code: "flags-invalid",
-          message: expect.stringContaining("Unknown parameter 'style'"),
-        },
-      ],
-    });
-  });
+      expect(
+        yield* vault.resolve({ file: NOTE_PATH, style: APA }),
+      ).toMatchObject({
+        errors: [
+          {
+            code: "flags-invalid",
+            message: expect.stringContaining("Unknown parameter 'style'"),
+          },
+        ],
+      });
+    }),
+  );
 });

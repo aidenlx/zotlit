@@ -1,17 +1,16 @@
 import { QueryObserver } from "@tanstack/query-core";
 import type { App, TFile } from "obsidian";
 
-import { isChildItemFields, itemToCsl } from "@zotlit/db";
 // The formatted text of one document's Citations, held for every surface that shows them.
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
-import { formatPandocCitation } from "@zotlit/templates/pandoc-citation";
-import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
+import {
+  formatPandocCitation,
+  scanPandocCitations,
+} from "@zotlit/templates/pandoc-citation";
+import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
-import type { CitationKey, ScannedCitation } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
-import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
 import type { OpenDocuments } from "@/lib/open-documents";
@@ -21,13 +20,14 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import { renderParsedCitation } from "@/services/citation-index/parsed-note";
+import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
   Citation,
   CitationIndex,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import type { ParseClient } from "@/services/citation-parse/client";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -41,7 +41,6 @@ import type {
 import type { ProfileReader } from "@/services/profile/service";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { citationKey, presentedCitationEqual } from "./present";
 import type {
@@ -86,10 +85,11 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
-  citationParse: ParseClient;
-  db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationLookup: Pick<CitationLookup, "on">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
+  citationIndex: Pick<
+    CitationIndex,
+    "getDocumentCitationSet" | "getParsedDocument" | "on"
+  >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   profile: ProfileReader;
@@ -129,8 +129,6 @@ export interface CitationTextDeps {
  */
 export class CitationText extends Service<void> {
   readonly #app;
-  readonly #citationParse;
-  readonly #db;
   readonly #citationIndex;
   readonly #citationLookup;
   readonly #noteIndex;
@@ -147,8 +145,6 @@ export class CitationText extends Service<void> {
   constructor(deps: CitationTextDeps) {
     super();
     this.#app = deps.app;
-    this.#citationParse = deps.citationParse;
-    this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#citationLookup = deps.citationLookup;
     this.#noteIndex = deps.noteIndex;
@@ -368,18 +364,25 @@ export class CitationText extends Service<void> {
    */
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
-    const body = await this.#app.vault.cachedRead(file);
-    const { record } = await this.#citationParse.parse(
-      { path: file.path, generation: 0, text: body },
-      new AbortController().signal,
-    );
-    const set = await this.#citationIndex.getDocumentCitationSet(file);
+    const { facts, set } = await this.#citationIndex.getParsedDocument(file);
+    const { source: body, record } = facts;
     const wikilinks = this.#wikilinkCitations(file, body, set);
     const literal = worksByCitekey(set.citations);
-    const works = await this.#readCited(
-      set.citations.flatMap(({ indexedKey }) =>
-        indexedKey === null ? [] : [indexedKey],
-      ),
+    if (set.database === "unreadable")
+      throw new Error("The Zotero database cannot be read");
+    const works = new Map(
+      set.citations.flatMap(({ indexedKey }) => {
+        const source =
+          indexedKey === null ? undefined : set.sources.get(indexedKey);
+        return source && indexedKey !== null
+          ? [
+              [
+                indexedKey,
+                { csl: source.csl, summary: source.citationSummary },
+              ] as const,
+            ]
+          : [];
+      }),
     );
 
     // Every admitted syntax contributes to the same document render context.
@@ -616,66 +619,11 @@ export class CitationText extends Service<void> {
       citations.push({
         start: run[0]!.source.position.start.offset,
         ...citation,
+        parsed: scanPandocCitations(citation.source)[0]!,
         identity: citationKey(citation),
       });
     }
     return citations;
-  }
-
-  /**
-   * The cited works, read straight from the database so the surfaces keep
-   * working while Zotero is closed.
-   *
-   * Citeproc matches a citation by the CSL `id`, and the identity a citation
-   * names is its Item, so each work is handed over under its Indexed Key and
-   * every render source names it by that key. Two Literature Notes for one
-   * keyless Item, or a literal citekey beside a wikilink reaching the same
-   * Item, therefore reach one entry — which is what lets a numbering style
-   * count one physical source once.
-   *
-   * @see HeldCitation — why a citekey spelling identifies no Item.
-   *
-   * @param cited the Indexed Key of each work the document cites, in the order
-   *   the document cites them; repeats are read once.
-   * @returns the readable works by Indexed Key, in first-cited order.
-   * @throws a database read failure, so the document retains its failure and retry cooldown.
-   */
-  async #readCited(cited: readonly string[]): Promise<Map<string, CitedItem>> {
-    const works = new Map<string, CitedItem>();
-    if (cited.length === 0) return works;
-    if (this.#db.state === "degraded")
-      throw new Error("The Zotero database cannot be read");
-
-    try {
-      await using lease = await this.#db.acquireRead();
-      const { reads } = lease;
-      const [user, items] = await Effect.runPromise(
-        Effect.all(
-          [
-            reads.DatabaseIdentity({}),
-            reads.ItemsByIndexedKeys({ indexedKeys: [...new Set(cited)] }),
-          ],
-          { concurrency: "unbounded" },
-        ),
-      );
-      for (const indexedKey of cited) {
-        if (works.has(indexedKey)) continue;
-        const item = items.get(indexedKey);
-        if (!item) continue;
-        const { fields } = item;
-        if (isChildItemFields(fields)) continue;
-
-        const { title, subtitle } = itemSummary(item, fields);
-        works.set(indexedKey, {
-          csl: itemToCsl(item, user),
-          summary: subtitle || title,
-        });
-      }
-    } catch (error) {
-      logger.warn("Cannot read the cited items", { error });
-      throw error;
-    }
-    return works;
   }
 }
 
@@ -699,6 +647,7 @@ interface CitedItem {
 
 /** One Citation of a document, at the offset the document writes it. */
 interface PlacedCitation extends CitationSource {
+  parsed: ScannedPandocCitation;
   start: number;
   /** The Indexed Key each of `keys` names, or `null` for one naming no Item. */
   works: (string | null)[];
@@ -745,7 +694,7 @@ function literalCitations({
   works,
 }: {
   body: string;
-  scanned: readonly ScannedCitation[];
+  scanned: NoteScanRecord["citations"];
   occurrences: readonly CitationOccurrence[];
   works: ReadonlyMap<string, string>;
 }): PlacedCitation[] {
@@ -756,11 +705,13 @@ function literalCitations({
   );
   return scanned
     .filter(({ keys }) => keys.every((key) => members.has(key.start)))
-    .map(({ start, end, keys }) => {
+    .map((parsed) => {
+      const { start, end, keys } = parsed;
       const source = body.slice(start, end);
       return {
         start,
         source,
+        parsed,
         // The works below say what this citation renders from; they stay out
         // of its identity, because one literal spelling names one Item.
         identity: citationKey({ source }),
@@ -789,85 +740,12 @@ function renderContextCitation(
   );
   if (ids.every((id) => id === null)) return null;
 
-  const named = namedByWork(citation.source, citation.keys, ids);
-  if (ids.every((id) => id !== null)) {
-    return {
-      identity: citation.identity,
-      start: citation.start,
-      renderSource: named.source,
-      complete: true,
-    };
-  }
-  const members = resolvedMembers(named.source, named.keys, ids);
-  if (members === null) return null;
   return {
     identity: citation.identity,
     start: citation.start,
-    renderSource: members,
-    complete: false,
+    renderSource: renderParsedCitation(citation.parsed, ids),
+    complete: ids.every((id) => id !== null),
   };
-}
-
-/**
- * `source` with every resolved key token rewritten to the Indexed Key of the
- * work it cites, which is the CSL `id` that work is handed to the engine under.
- *
- * A key span covers the complete citation token, the author-suppression `-`
- * included, so the marker is read off the source and written back. An Indexed
- * Key is letters and digits alone, so the rewritten token is always a Pandoc
- * key even where the spelling it replaces was not.
- *
- * @returns the rewritten source and the key spans relocated in it.
- */
-function namedByWork(
-  source: string,
-  keys: readonly CitationKey[],
-  ids: readonly (string | null)[],
-): { source: string; keys: TextSpan[] } {
-  const spans: TextSpan[] = [];
-  let named = "";
-  let read = 0;
-  for (const [index, key] of keys.entries()) {
-    const id = ids[index]!;
-    named += source.slice(read, key.start);
-    const start = named.length;
-    named +=
-      id === null
-        ? source.slice(key.start, key.end)
-        : `${source[key.start] === "-" ? "-" : ""}@${id}`;
-    spans.push({ start, end: named.length });
-    read = key.end;
-  }
-  return { source: named + source.slice(read), keys: spans };
-}
-
-/**
- * The cluster of `source` with its unresolved members cut out, so the resolved
- * ones still enter the document's render context.
- *
- * @returns null when `source` is no cluster the members can be cut out of.
- */
-function resolvedMembers(
-  source: string,
-  keys: readonly TextSpan[],
-  ids: readonly (string | null)[],
-): string | null {
-  if (!source.startsWith("[") || !source.endsWith("]")) return null;
-  const separators: number[] = [];
-  for (let index = 0; index < keys.length - 1; index += 1) {
-    const separator = source.indexOf(";", keys[index]!.end);
-    if (separator === -1 || separator >= keys[index + 1]!.start) return null;
-    separators.push(separator);
-  }
-  const members: string[] = [];
-  for (const [index, id] of ids.entries()) {
-    if (id === null) continue;
-    const from = index === 0 ? 1 : separators[index - 1]! + 1;
-    const to =
-      index === keys.length - 1 ? source.length - 1 : separators[index]!;
-    members.push(source.slice(from, to).trim());
-  }
-  return `[${members.join("; ")}]`;
 }
 
 function documentCitationsEqual(

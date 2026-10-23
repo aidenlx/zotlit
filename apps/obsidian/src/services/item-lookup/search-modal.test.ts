@@ -189,12 +189,12 @@ describe("pickItem", () => {
   function openPicker() {
     const { answers, deps } = searches();
     let opened: ItemSearchModal | undefined;
-    vi.spyOn(SuggestModal.prototype, "open").mockImplementation(
-      function (this: SuggestModal<SearchHit>) {
-        opened = this as unknown as ItemSearchModal;
-        opened.onOpen();
-      },
-    );
+    vi.spyOn(SuggestModal.prototype, "open").mockImplementation(function (
+      this: SuggestModal<SearchHit>,
+    ) {
+      opened = this as unknown as ItemSearchModal;
+      opened.onOpen();
+    });
     const picked = pickItem(deps, "Pick an Item");
     return { picked, modal: opened!, ...driver(opened!, answers) };
   }

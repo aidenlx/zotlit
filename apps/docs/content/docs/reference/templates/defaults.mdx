@@ -34,16 +34,9 @@ In a Profile document: the note body, above the Annotation Section.
 
 ## Content template
 
-In a Profile document: the part of the note body inside the `{% managed %}` / `{% endmanaged %}` block.
+In a Profile document: the end of the note body, written in place. The default has no `{% managed %}` block.
 
 ````liquid
-{% if zt.notes.size > 0 %}
-## Notes
-
-{% for note in zt.notes -%}
-- {{ note.noteLink }}
-{% endfor %}
-{% endif %}
 ## Annotations
 
 ```zotquery
@@ -60,16 +53,15 @@ views:
 ```
 ````
 
-The `content` template is the one whose rendered output is wrapped in managed-region markers. Running <Command inline name={m.command_update_note_name()} /> re-renders this section while leaving the rest of the note body untouched.
+The default body renders once, when ZotLit creates the note. After that it is yours: <Command inline name={m.command_update_note_name()} /> refreshes the frontmatter and leaves the body as written. The default has no **Notes** list; see [Import Zotero notes](/docs/how-to/import-zotero-notes) to bring child notes into the vault.
 
 | Section     | What it renders                                                                                                                                                                                                                    |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Notes       | A bulleted list of linked child notes. Each `note.noteLink` resolves to an Obsidian wiki-link pointing at the imported note file. It appears only when the item has child notes.                                                   |
 | Annotations | A `zotquery` block that shows the annotations of the note's own item as live cards. `this.item` is the item that the note's `zotero-key` property names. The cards sort by attachment, oldest first, then by position in the file. |
 
 The annotation cards stay current with Zotero, and you can edit a comment or tags on a card in the note. A change you make in the block's toolbar, such as a new sort, changes the block text. <Command inline name={m.command_update_note_name()} /> keeps the block text that the note holds, so your change stays.
 
-A note that you made with an earlier default lists its annotations as text. Its next update replaces that list with the block.
+A note that you made with an earlier default lists its annotations as text. When that note still has its managed region, its next update replaces that list with the block.
 
 To list the annotations as text in the note, put the loop below in your own Profile in place of the block. Each annotation renders through the annotation template, and the `render_annotation` tag passes each annotation as `zt`. See [Annotation rendering](/docs/reference/templates/syntax#render-annotation) for the equivalent native syntax.
 

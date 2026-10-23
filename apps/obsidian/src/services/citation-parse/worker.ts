@@ -9,7 +9,7 @@ export interface WorkerRequest {
 }
 
 export type WorkerReply =
-  | { id: number; reply: ParseReply }
+  | { id: number; json: string }
   | { id: number; error: string };
 
 self.addEventListener("message", ({ data }: MessageEvent<WorkerRequest>) => {
@@ -19,7 +19,8 @@ self.addEventListener("message", ({ data }: MessageEvent<WorkerRequest>) => {
   } = data;
   let result: WorkerReply;
   try {
-    result = { id, reply: { path, generation, record: scanNote(text) } };
+    const reply: ParseReply = { path, generation, record: scanNote(text) };
+    result = { id, json: JSON.stringify(reply) };
   } catch (error) {
     result = { id, error: String(error) };
   }

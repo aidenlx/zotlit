@@ -26,7 +26,7 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
-import type { UseLedger } from "@/services/use-ledger/service";
+import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { SearchHit as ReadsSearchHit } from "@/services/zotero-reads/rpc";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -52,7 +52,7 @@ export interface SearchHit extends ReadsSearchHit {
 }
 
 export interface ItemLookupDeps {
-  useLedger: Pick<UseLedger, "ready" | "uses">;
+  useLedger: Pick<PlainUseLedger, "uses">;
   reads: Pick<ZoteroReadsService, "ready">;
   libraryScope: Pick<LibraryScopeService, "ready" | "on" | "current">;
 }
@@ -216,11 +216,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
     this.commit(stack.move());
 
-    await Promise.all([
-      this.#reads.ready,
-      this.#libraryScope.ready,
-      this.#useLedger.ready,
-    ]);
+    await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
     logger.info("Item lookup ready");
     scopeKey = scopeKeyOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);
@@ -258,13 +254,11 @@ export class ItemLookup extends Service<ItemLookupReady> {
           hits: hits.length,
           durationMs: performance.now() - t0,
         });
-        return hits.map(
-          (hit): SearchHit => ({
-            ...hit,
-            library: labels?.get(hit.item.libraryID) ?? null,
-            cited: citedKeys.has(hit.item.indexedKey),
-          }),
-        );
+        return hits.map((hit): SearchHit => ({
+          ...hit,
+          library: labels?.get(hit.item.libraryID) ?? null,
+          cited: citedKeys.has(hit.item.indexedKey),
+        }));
       }),
       Effect.catchTag("DbUnavailable", (error) =>
         Effect.sync(() => {

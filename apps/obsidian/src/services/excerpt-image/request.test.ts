@@ -1,12 +1,14 @@
 // One Annotation reached through the Local API and the database must reuse pixels.
-import { Effect } from "effect";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { Effect } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -109,330 +111,388 @@ async function fixture(serverID: string | null = SERVER_ID): Promise<
   return Object.assign(stack, { reads, zoteroReads });
 }
 
+/** {@link fixture}, held for the case's scope. */
+const fixtureDb = (serverID?: string | null) =>
+  acquireAsyncDisposable(() => fixture(serverID));
+
+/** An Excerpt Image service over `render` and an in-memory cache. */
+const serviceOf = (
+  options: ConstructorParameters<typeof ExcerptImageService>[0],
+) =>
+  acquireAsyncDisposable(() =>
+    Promise.resolve(new ExcerptImageService(options)),
+  );
+
 describe("Saved excerpt request", () => {
-  it("resolves to nothing where the database cannot answer", async () => {
-    const closed = createClient(":memory:");
-    closed.$client.close();
-    await using zoteroReads = inProcessReadsService(sharedClientOpener(closed));
+  it.effect("resolves to nothing where the database cannot answer", () =>
+    Effect.gen(function* () {
+      const closed = createClient(":memory:");
+      closed.$client.close();
+      const zoteroReads = yield* acquireAsyncDisposable(() =>
+        Promise.resolve(inProcessReadsService(sharedClientOpener(closed))),
+      );
 
-    expect(
-      await savedExcerptRequest({
-        annotation,
-        source: apiSource,
-        sourceScope: paths.dataDir,
-        zoteroReads,
-        paths,
+      expect(
+        yield* Effect.promise(() =>
+          savedExcerptRequest({
+            annotation,
+            source: apiSource,
+            sourceScope: paths.dataDir,
+            zoteroReads,
+            paths,
+          }),
+        ),
+      ).toBeNull();
+    }),
+  );
+
+  it.effect(
+    "resolves to nothing where the data directory moves during the read",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const moving = { ...paths };
+
+        const request = yield* Effect.promise(() =>
+          savedExcerptRequest({
+            annotation,
+            source: apiSource,
+            sourceScope: paths.dataDir,
+            zoteroReads: {
+              acquireRead: async () => {
+                const lease = await db.zoteroReads.acquireRead();
+                moving.dataDir = "/other-zotero";
+                return lease;
+              },
+            },
+            paths: moving,
+          }),
+        );
+
+        expect(request).toBeNull();
       }),
-    ).toBeNull();
-  });
-
-  it("resolves to nothing where the data directory moves during the read", async () => {
-    await using db = await fixture();
-    const moving = { ...paths };
-
-    const request = await savedExcerptRequest({
-      annotation,
-      source: apiSource,
-      sourceScope: paths.dataDir,
-      zoteroReads: {
-        acquireRead: async () => {
-          const lease = await db.zoteroReads.acquireRead();
-          moving.dataDir = "/other-zotero";
-          return lease;
-        },
-      },
-      paths: moving,
-    });
-
-    expect(request).toBeNull();
-  });
+  );
 });
 
 describe("Excerpt request verification", () => {
-  it("gives one identity to the API and database representations of an Annotation", async () => {
-    await using db = await fixture();
-    const fromDatabase = await excerptRequest({
-      annotation,
-      source: databaseSource,
-      reads: db.reads,
-      paths,
-    });
-    const fromApi = await excerptRequest({
-      annotation,
-      source: apiSource,
-      reads: db.reads,
-      paths,
-    });
-    expect(fromApi).not.toBeNull();
-    expect(excerptKey(fromApi!)).toBe(excerptKey(fromDatabase!));
-    expect(fromApi!.pdfPath).toBe(fromDatabase!.pdfPath);
-    expect(fromApi!.attachmentKey).toBe(ATTACHMENT);
-  });
-
-  it("reuses one render for an API request followed by a database request", async () => {
-    await using db = await fixture();
-    const fromApi = (await excerptRequest({
-      annotation,
-      source: apiSource,
-      reads: db.reads,
-      paths,
-    }))!;
-    const fromDatabase = (await excerptRequest({
-      annotation,
-      source: databaseSource,
-      reads: db.reads,
-      paths,
-    }))!;
-    const bytes = new Uint8Array([1, 2, 3]);
-    const entries = new Map<string, ExcerptEntry>();
-    const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
-    // The cache evidence the record in docs/excerpt-image-reuse-measurements.md
-    // states: reads, the reads that answered an entry, and writes, counted on
-    // the double the production preflight and the render path actually drive.
-    const cache = { reads: 0, hits: 0, writes: 0 };
-    await using service = new ExcerptImageService({
-      stamp: async () => ({ size: 100, mtimeMs: 10 }),
-      render,
-      cache: {
-        get: async (key) => {
-          cache.reads++;
-          const entry = entries.get(key);
-          if (entry) cache.hits++;
-          return entry;
-        },
-        put: async (key, entry) => {
-          cache.writes++;
-          entries.set(key, entry);
-        },
-      },
-    });
-    expect(await service.resolve(fromApi)).toMatchObject({
-      provenance: "rendered",
-      bytes,
-    });
-    expect(await service.resolve(fromDatabase)).toMatchObject({
-      provenance: "cache",
-      bytes,
-      identity: { key: excerptKey(fromApi), pdf: { size: 100, mtimeMs: 10 } },
-    });
-    expect(render).toHaveBeenCalledTimes(1);
-    // One read misses and stores the bytes; the second reads them and hits.
-    expect(cache).toEqual({ reads: 2, hits: 1, writes: 1 });
-  });
-
-  it("isolates an identical key in another Library", async () => {
-    await using db = await fixture();
-    const group = (await excerptRequest({
-      annotation: groupRecord,
-      source: apiSource,
-      reads: db.reads,
-      paths,
-    }))!;
-    const user = (await excerptRequest({
-      annotation,
-      source: apiSource,
-      reads: db.reads,
-      paths,
-    }))!;
-    const bytes = new Uint8Array([1, 2, 3]);
-    const entries = new Map<string, ExcerptEntry>();
-    const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
-    await using service = new ExcerptImageService({
-      stamp: async () => ({ size: 100, mtimeMs: 10 }),
-      render,
-      cache: {
-        get: async (key) => entries.get(key),
-        put: async (key, entry) => {
-          entries.set(key, entry);
-        },
-      },
-    });
-    await service.resolve(user);
-    expect(await service.resolve(group)).toMatchObject({
-      provenance: "rendered",
-    });
-    expect(render).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps a database with no Server ID on a local identity", async () => {
-    await using db = await fixture(null);
-    const standalone = {
-      annotation,
-      source: {
-        ...databaseSource,
-        database: { ...databaseSource.database, serverID: null },
-      },
-      reads: db.reads,
-      paths,
-    };
-    const request = await excerptRequest(standalone);
-    expect(request).not.toBeNull();
-    // No Local API session can be verified against this database, so no API
-    // source may claim its pixels.
-    expect(
-      await excerptRequest({ ...standalone, source: apiSource }),
-    ).toBeNull();
-    // A copy of the database keeps its own identity through its source scope.
-    expect(excerptKey(request!)).not.toBe(
-      excerptKey(
-        (await excerptRequest({
-          ...standalone,
-          paths: { ...paths, dataDir: "/copied-zotero" },
-        }))!,
-      ),
-    );
-  });
-
-  it("refuses a source that names another database or Library", async () => {
-    await using db = await fixture();
-    const options = {
-      annotation,
-      source: databaseSource,
-      reads: db.reads,
-      paths,
-    };
-    expect(
-      await excerptRequest({
-        ...options,
-        source: { ...apiSource, serverID: "OTHER1234567" },
+  it.effect(
+    "gives one identity to the API and database representations of an Annotation",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const fromDatabase = yield* excerptRequest({
+          annotation,
+          source: databaseSource,
+          reads: db.reads,
+          paths,
+        });
+        const fromApi = yield* excerptRequest({
+          annotation,
+          source: apiSource,
+          reads: db.reads,
+          paths,
+        });
+        expect(fromApi).not.toBeNull();
+        expect(excerptKey(fromApi!)).toBe(excerptKey(fromDatabase!));
+        expect(fromApi!.pdfPath).toBe(fromDatabase!.pdfPath);
+        expect(fromApi!.attachmentKey).toBe(ATTACHMENT);
       }),
-    ).toBeNull();
-    for (const database of [
-      { ...databaseSource.database, serverID: "OTHER1234567" },
-      { ...databaseSource.database, serverID: null },
-      { ...databaseSource.database, localUserKey: "OTHER" },
-      { ...databaseSource.database, userID: null },
-    ])
+  );
+
+  it.effect(
+    "reuses one render for an API request followed by a database request",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const fromApi = (yield* excerptRequest({
+          annotation,
+          source: apiSource,
+          reads: db.reads,
+          paths,
+        }))!;
+        const fromDatabase = (yield* excerptRequest({
+          annotation,
+          source: databaseSource,
+          reads: db.reads,
+          paths,
+        }))!;
+        const bytes = new Uint8Array([1, 2, 3]);
+        const entries = new Map<string, ExcerptEntry>();
+        const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
+        // The cache evidence the record in docs/excerpt-image-reuse-measurements.md
+        // states: reads, the reads that answered an entry, and writes, counted on
+        // the double the production preflight and the render path actually drive.
+        const cache = { reads: 0, hits: 0, writes: 0 };
+        const service = yield* serviceOf({
+          stamp: async () => ({ size: 100, mtimeMs: 10 }),
+          render,
+          cache: {
+            get: async (key) => {
+              cache.reads++;
+              const entry = entries.get(key);
+              if (entry) cache.hits++;
+              return entry;
+            },
+            put: async (key, entry) => {
+              cache.writes++;
+              entries.set(key, entry);
+            },
+          },
+        });
+        expect(
+          yield* Effect.promise(() => service.resolve(fromApi)),
+        ).toMatchObject({
+          provenance: "rendered",
+          bytes,
+        });
+        expect(
+          yield* Effect.promise(() => service.resolve(fromDatabase)),
+        ).toMatchObject({
+          provenance: "cache",
+          bytes,
+          identity: {
+            key: excerptKey(fromApi),
+            pdf: { size: 100, mtimeMs: 10 },
+          },
+        });
+        expect(render).toHaveBeenCalledTimes(1);
+        // One read misses and stores the bytes; the second reads them and hits.
+        expect(cache).toEqual({ reads: 2, hits: 1, writes: 1 });
+      }),
+  );
+
+  it.effect("isolates an identical key in another Library", () =>
+    Effect.gen(function* () {
+      const db = yield* fixtureDb();
+      const group = (yield* excerptRequest({
+        annotation: groupRecord,
+        source: apiSource,
+        reads: db.reads,
+        paths,
+      }))!;
+      const user = (yield* excerptRequest({
+        annotation,
+        source: apiSource,
+        reads: db.reads,
+        paths,
+      }))!;
+      const bytes = new Uint8Array([1, 2, 3]);
+      const entries = new Map<string, ExcerptEntry>();
+      const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
+      const service = yield* serviceOf({
+        stamp: async () => ({ size: 100, mtimeMs: 10 }),
+        render,
+        cache: {
+          get: async (key) => entries.get(key),
+          put: async (key, entry) => {
+            entries.set(key, entry);
+          },
+        },
+      });
+      yield* Effect.promise(() => service.resolve(user));
+      expect(yield* Effect.promise(() => service.resolve(group))).toMatchObject(
+        {
+          provenance: "rendered",
+        },
+      );
+      expect(render).toHaveBeenCalledTimes(2);
+    }),
+  );
+
+  it.effect("keeps a database with no Server ID on a local identity", () =>
+    Effect.gen(function* () {
+      const db = yield* fixtureDb(null);
+      const standalone = {
+        annotation,
+        source: {
+          ...databaseSource,
+          database: { ...databaseSource.database, serverID: null },
+        },
+        reads: db.reads,
+        paths,
+      };
+      const request = yield* excerptRequest(standalone);
+      expect(request).not.toBeNull();
+      // No Local API session can be verified against this database, so no API
+      // source may claim its pixels.
       expect(
-        await excerptRequest({
+        yield* excerptRequest({ ...standalone, source: apiSource }),
+      ).toBeNull();
+      // A copy of the database keeps its own identity through its source scope.
+      expect(excerptKey(request!)).not.toBe(
+        excerptKey(
+          (yield* excerptRequest({
+            ...standalone,
+            paths: { ...paths, dataDir: "/copied-zotero" },
+          }))!,
+        ),
+      );
+    }),
+  );
+
+  it.effect("refuses a source that names another database or Library", () =>
+    Effect.gen(function* () {
+      const db = yield* fixtureDb();
+      const options = {
+        annotation,
+        source: databaseSource,
+        reads: db.reads,
+        paths,
+      };
+      expect(
+        yield* excerptRequest({
           ...options,
-          source: { ...databaseSource, database },
+          source: { ...apiSource, serverID: "OTHER1234567" },
         }),
       ).toBeNull();
-    expect(
-      await excerptRequest({
-        ...options,
-        source: { ...databaseSource, libraryID: 2 },
-      }),
-    ).toBeNull();
-    expect(
-      await excerptRequest({
-        ...options,
-        annotation: { ...annotation, key: "ANNOT001" },
-      }),
-    ).toBeNull();
-  });
+      for (const database of [
+        { ...databaseSource.database, serverID: "OTHER1234567" },
+        { ...databaseSource.database, serverID: null },
+        { ...databaseSource.database, localUserKey: "OTHER" },
+        { ...databaseSource.database, userID: null },
+      ])
+        expect(
+          yield* excerptRequest({
+            ...options,
+            source: { ...databaseSource, database },
+          }),
+        ).toBeNull();
+      expect(
+        yield* excerptRequest({
+          ...options,
+          source: { ...databaseSource, libraryID: 2 },
+        }),
+      ).toBeNull();
+      expect(
+        yield* excerptRequest({
+          ...options,
+          annotation: { ...annotation, key: "ANNOT001" },
+        }),
+      ).toBeNull();
+    }),
+  );
 });
 
 describe("Excerpt request for an Indexed Key", () => {
   const dataDir = "/zotero";
   const keyPaths = { dataDir, baseAttachmentPath: "/linked" };
 
-  async function scenarioReads(wrap?: InProcessReadsOptions["wrap"]) {
-    const stack = new AsyncDisposableStack();
-    const scenario = stack.use(openScenarioDatabase({ annotations: true }));
-    const zoteroReads = stack.use(
-      inProcessReadsService(sharedClientOpener(scenario.db), { wrap }),
-    );
-    const lease = stack.use(await zoteroReads.acquireRead());
-    return Object.assign(stack, { reads: lease.reads });
-  }
-
-  it("builds the request of an image Annotation from its row and Attachment", async () => {
-    await using db = await scenarioReads();
-
-    const request = await excerptRequestForKey({
-      reads: db.reads,
-      key: "ANN2IMAG",
-      paths: keyPaths,
+  /** Snapshot-bound reads of the scenario database, held for the case's scope. */
+  const scenarioReads = (wrap?: InProcessReadsOptions["wrap"]) =>
+    acquireAsyncDisposable(async () => {
+      await using stack = new AsyncDisposableStack();
+      const scenario = stack.use(openScenarioDatabase({ annotations: true }));
+      const zoteroReads = stack.use(
+        inProcessReadsService(sharedClientOpener(scenario.db), { wrap }),
+      );
+      const lease = stack.use(await zoteroReads.acquireRead());
+      return Object.assign(stack.move(), { reads: lease.reads });
     });
 
-    expect(request).toMatchObject({
-      annotation: {
-        key: "ANN2IMAG",
-        parentKey: "PDF2LIVE",
-        type: "image",
-        color: "#ffd400",
-        pageLabel: "iv",
-        sortIndex: "00000|000003|00000",
-        lock: null,
-      },
-      source: { kind: "zotero-db", libraryID: 1 },
-      sourceScope: dataDir,
-      attachmentKey: "PDF2LIVE",
-      libraryID: 1,
-      pdfPath: join(dataDir, "storage", "PDF2LIVE", "exact.pdf"),
-      zoteroPngPath: join(dataDir, "cache", "library", "ANN2IMAG.png"),
-    });
-  });
+  it.effect(
+    "builds the request of an image Annotation from its row and Attachment",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* scenarioReads();
 
-  it("builds the request of a non-image Annotation, which the image command rejects", async () => {
-    await using db = await scenarioReads();
+        const request = yield* excerptRequestForKey({
+          reads: db.reads,
+          key: "ANN2IMAG",
+          paths: keyPaths,
+        });
 
-    const request = await excerptRequestForKey({
-      reads: db.reads,
-      key: "ANN2HGHT",
-      paths: keyPaths,
-    });
-
-    expect(request).toMatchObject({
-      annotation: { key: "ANN2HGHT", type: "highlight" },
-      zoteroPngPath: null,
-    });
-    const answer = JSON.parse(
-      await answerAnnotationImage(
-        { key: "ANN2HGHT" },
-        {
-          read: (key, signal) =>
-            excerptRequestForKey({
-              reads: db.reads,
-              key,
-              paths: keyPaths,
-              signal,
-            }),
-          resolve: () => {
-            throw new Error("A non-image Annotation is never resolved");
+        expect(request).toMatchObject({
+          annotation: {
+            key: "ANN2IMAG",
+            parentKey: "PDF2LIVE",
+            type: "image",
+            color: "#ffd400",
+            pageLabel: "iv",
+            sortIndex: "00000|000003|00000",
+            lock: null,
           },
-          publish: () => {
-            throw new Error("A non-image Annotation is never published");
-          },
-          exists: async () => false,
-        },
-      ),
-    );
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: { code: "not-an-image-annotation" },
-    });
-  });
+          source: { kind: "zotero-db", libraryID: 1 },
+          sourceScope: dataDir,
+          attachmentKey: "PDF2LIVE",
+          libraryID: 1,
+          pdfPath: join(dataDir, "storage", "PDF2LIVE", "exact.pdf"),
+          zoteroPngPath: join(dataDir, "cache", "library", "ANN2IMAG.png"),
+        });
+      }),
+  );
 
-  it.each([
+  it.effect(
+    "builds the request of a non-image Annotation, which the image command rejects",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* scenarioReads();
+
+        const request = yield* excerptRequestForKey({
+          reads: db.reads,
+          key: "ANN2HGHT",
+          paths: keyPaths,
+        });
+
+        expect(request).toMatchObject({
+          annotation: { key: "ANN2HGHT", type: "highlight" },
+          zoteroPngPath: null,
+        });
+        const answer = JSON.parse(
+          yield* answerAnnotationImage(
+            { key: "ANN2HGHT" },
+            {
+              read: (key) =>
+                excerptRequestForKey({ reads: db.reads, key, paths: keyPaths }),
+              resolve: () => {
+                throw new Error("A non-image Annotation is never resolved");
+              },
+              publish: () => {
+                throw new Error("A non-image Annotation is never published");
+              },
+              exists: async () => false,
+            },
+          ),
+        );
+        expect(answer).toMatchObject({
+          ok: false,
+          diagnostic: { code: "not-an-image-annotation" },
+        });
+      }),
+  );
+
+  it.effect.each([
     ["no Annotation has the key", "ZZZZZZZZ"],
     ["the source holds no Library of the key", "ANN2IMAGg9999"],
-  ])("resolves to nothing where %s", async (_, key) => {
-    await using db = await scenarioReads();
+  ] as const)("resolves to nothing where %s", ([, key]) =>
+    Effect.gen(function* () {
+      const db = yield* scenarioReads();
 
-    expect(
-      await excerptRequestForKey({ reads: db.reads, key, paths: keyPaths }),
-    ).toBeNull();
-  });
+      expect(
+        yield* excerptRequestForKey({ reads: db.reads, key, paths: keyPaths }),
+      ).toBeNull();
+    }),
+  );
 
-  it("fails with the reader's own message where a read fails", async () => {
-    await using db = await scenarioReads((client) => ({
-      ...client,
-      AnnotationSources: (() =>
-        Effect.fail(
-          new DbUnavailable({ message: "database disk is locked" }),
-        )) as typeof client.AnnotationSources,
-    }));
+  it.effect("fails with the reader's own message where a read fails", () =>
+    Effect.gen(function* () {
+      const db = yield* scenarioReads((client) => ({
+        ...client,
+        AnnotationSources: (() =>
+          Effect.fail(
+            new DbUnavailable({ message: "database disk is locked" }),
+          )) as typeof client.AnnotationSources,
+      }));
 
-    const failure = await excerptRequestForKey({
-      reads: db.reads,
-      key: "ANN2IMAG",
-      paths: keyPaths,
-    }).catch((error: unknown) => error);
+      const failure = yield* Effect.flip(
+        excerptRequestForKey({
+          reads: db.reads,
+          key: "ANN2IMAG",
+          paths: keyPaths,
+        }),
+      );
 
-    expect(failure).toBeInstanceOf(ExcerptSourceUnavailable);
-    expect(failure).toMatchObject({ message: "database disk is locked" });
-  });
+      expect(failure).toBeInstanceOf(ExcerptSourceUnavailable);
+      expect(failure).toMatchObject({ message: "database disk is locked" });
+    }),
+  );
 });

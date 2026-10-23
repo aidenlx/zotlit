@@ -5,6 +5,7 @@ import { regex } from "arkregex";
 import { decodeHTMLStrict } from "entities/decode";
 
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
+import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
 import type { AnnotationLink } from "@/lib/annotation-link";
 import { classifyAnnotationLink } from "@/lib/annotation-link";
@@ -38,12 +39,7 @@ export interface NoteScanRecord {
   /** Transient syntax ranges for whole-document export; never persisted. */
   ranges: (
     | {
-        kind:
-          | "code"
-          | "frontmatter"
-          | "link-destination"
-          | "comment"
-          | "text-dollar";
+        kind: "comment" | "text-dollar";
         from: number;
         to: number;
       }
@@ -64,11 +60,9 @@ export interface NoteScanRecord {
     position: SourcePosition;
   }[];
   /** Whole Pandoc spans retain author-in-text groups for rendering and export. */
-  citations: {
-    start: number;
-    end: number;
+  citations: (ScannedPandocCitation & {
     keys: { citekey: string; start: number; end: number }[];
-  }[];
+  })[];
   citekeys: NoteCitationOccurrence[];
   wikilinks: NoteCitationOccurrence[];
   malformedWikilinks: { occurrence: NoteCitationOccurrence }[];
@@ -480,25 +474,17 @@ export function scanNote(text: string): NoteScanRecord {
                 ? null
                 : text.slice(lineStart, from).replaceAll(/[^>\t ]/g, " "),
           });
-        } else {
-          record.ranges.push({
-            kind: name === "Frontmatter" ? "frontmatter" : "code",
-            from,
-            to,
-          });
         }
         mask(body, from, to);
         return false;
       }
-      if (name === "URL")
-        record.ranges.push({ kind: "link-destination", from, to });
     },
   });
   // Pair markers after parsing: comments can cross quote and list boundaries,
   // while a marker inside code cannot open or close one.
   const commentText = text.includes("%%") ? maskedText(text, body) : text;
   const comments: { from: number; to: number }[] = [];
-  for (let from = commentText.indexOf("%%"); from >= 0; ) {
+  for (let from = commentText.indexOf("%%"); from >= 0;) {
     const close = commentText.indexOf("%%", from + 2);
     const to = close < 0 ? text.length : close + 2;
     comments.push({ from, to });
@@ -563,7 +549,7 @@ export function scanNote(text: string): NoteScanRecord {
           position: position(from, to),
         });
         if (raw.startsWith("[[") && !raw.includes("|")) {
-          const link = raw.slice(2, -2).trim();
+          const link = target;
           const hash = link.indexOf("#");
           const path = hash < 0 ? link : link.slice(0, hash);
           const subpath = hash < 0 ? "" : link.slice(hash);
@@ -658,8 +644,7 @@ export function scanNote(text: string): NoteScanRecord {
   }
   for (const citation of scanPandocCitations(visible)) {
     record.citations.push({
-      start: citation.start,
-      end: citation.end,
+      ...citation,
       keys: citation.items.map(({ citationKey, start, end }) => ({
         citekey: citationKey,
         start,

@@ -2,12 +2,13 @@
 // plain draft, rendered against one caller root. The entry module keeps request
 // parsing, the flag guards, Check Attempt retention, and answer assembly, and
 // hands this branch every input it reads.
-import type { CitationVariant } from "@zotlit/db";
+import type { CitationTemplateData, CitationVariant } from "@zotlit/db";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import { isCitationExampleId } from "@zotlit/workbench/render";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
+import { Effect } from "@/lib/effect";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { checkDiagnostic } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
@@ -18,7 +19,7 @@ import type {
   InspectedSource,
   PlainCheckBranch,
 } from "./check";
-import { loadCitationData, loadTemplateData } from "./data";
+import { readCitationData, readTemplateData } from "./data";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import type { InspectDiagnosticCode } from "./inspect-contract";
@@ -27,8 +28,14 @@ import type { InspectDiagnosticCode } from "./inspect-contract";
 export const RESERVED_PARTIAL_NAME =
   "RESERVED_PARTIAL_NAME" satisfies InspectDiagnosticCode;
 
+/** What the checked source, or a Template it runs, threw. */
+const attempt = <A>(evaluate: () => A) =>
+  Effect.try({ try: evaluate, catch: (error) => error });
+
 /** Checks a document the Profile branch does not own, and returns the answer. */
-export async function checkPlainDocument({
+export const checkPlainDocument = Effect.fn(
+  "TemplateWorkbenchCli.checkPlainDocument",
+)(function* ({
   deps,
   params,
   draft,
@@ -39,7 +46,7 @@ export async function checkPlainDocument({
   root,
   context,
   attachReport,
-}: PlainCheckBranch): Promise<CheckOutcome> {
+}: PlainCheckBranch): Effect.fn.Return<CheckOutcome> {
   const document = inspected.document!;
   let documentContext: CheckContext = context;
   if (
@@ -60,8 +67,13 @@ export async function checkPlainDocument({
     [document.kind]: { status: "not-checked", diagnostics: [] },
   };
   let caller: RenderCallerSource = { source, language: "liquid" };
-  try {
-    const parsed = parsePlainTemplateDocument(source);
+  // A failure anywhere below is the check's answer, as the source or a
+  // Template it runs reported it.
+  return yield* Effect.gen(function* (): Effect.fn.Return<
+    CheckOutcome,
+    unknown
+  > {
+    const parsed = yield* attempt(() => parsePlainTemplateDocument(source));
     documentContext = {
       ...documentContext,
       language: parsed.manifest.language,
@@ -101,10 +113,10 @@ export async function checkPlainDocument({
       draft ? document.id : undefined,
     );
     const profileInspection = JSON.parse(
-      (await inspectBindings({
+      yield* inspectBindings({
         profile: params.profile ?? "default",
         source: "full",
-      })) as string,
+      }),
     ) as InspectedSource;
     if (!profileInspection.ok)
       return {
@@ -129,7 +141,10 @@ export async function checkPlainDocument({
       selector === undefined
         ? undefined
         : deps.profile.resolveProfile(selector);
-    if (!profile) throw new Error("The selected Profile does not resolve.");
+    if (!profile)
+      return yield* Effect.fail(
+        new Error("The selected Profile does not resolve."),
+      );
     documentContext = {
       ...documentContext,
       answer: {
@@ -160,9 +175,9 @@ export async function checkPlainDocument({
       ...deps.data,
       settings: { loaded: Promise.resolve(profile.settings) },
     };
-    const loaded =
+    const loaded = yield* (
       root === "citation"
-        ? await loadCitationData(
+        ? readCitationData(
             data,
             typeof params.example === "string" &&
               isCitationExampleId(params.example)
@@ -170,11 +185,12 @@ export async function checkPlainDocument({
               : { key: params.key as string },
             (params.variant ?? "main") as CitationVariant,
           )
-        : await loadTemplateData(
+        : readTemplateData(
             data,
             params.key as string,
             root as "note" | "annotation",
-          );
+          )
+    ).pipe(Effect.mapError(({ cause }) => cause));
     if (loaded.kind !== "data")
       return {
         context: documentContext,
@@ -193,9 +209,8 @@ export async function checkPlainDocument({
       };
     const { citation: _citation, ...annotationDescriptors } =
       Object.getOwnPropertyDescriptors(loaded.data);
-    documentContext = {
-      ...documentContext,
-      dataRevision: sourceRevision(
+    const dataRevision = yield* attempt(() =>
+      sourceRevision(
         JSON.stringify(
           serializeTemplateData(
             root === "annotation"
@@ -205,13 +220,14 @@ export async function checkPlainDocument({
           ),
         ),
       ),
-    };
+    );
+    documentContext = { ...documentContext, dataRevision };
     try {
       const rendered =
         document.kind === "citation"
           ? deps.templates.renderCitationSource(
               source,
-              loaded.data as import("@zotlit/db").CitationTemplateData,
+              loaded.data as CitationTemplateData,
             )
           : deps.templates.renderPartialSource(source, loaded.data, {
               name: document.label,
@@ -227,14 +243,12 @@ export async function checkPlainDocument({
         diagnostics: [checkDiagnostic(error, caller)],
       };
     }
-    const after = JSON.parse(
-      (await inspect(inspectRequest)) as string,
-    ) as InspectedSource;
+    const after = JSON.parse(yield* inspect(inspectRequest)) as InspectedSource;
     const profileAfter = JSON.parse(
-      (await inspectBindings({
+      yield* inspectBindings({
         profile: params.profile ?? "default",
         source: "full",
-      })) as string,
+      }),
     ) as InspectedSource;
     if (
       !after.ok ||
@@ -279,16 +293,20 @@ export async function checkPlainDocument({
         rendering: "checked",
       },
     };
-  } catch (error) {
-    const diagnostic = checkDiagnostic(error, caller);
-    checks.structure = { status: "failed", diagnostics: [diagnostic] };
-    return {
-      context: documentContext,
-      result: {
-        ok: false,
-        checks,
-        diagnostic: attachReport(documentContext, diagnostic),
-      },
-    };
-  }
-}
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.sync((): CheckOutcome => {
+        const diagnostic = checkDiagnostic(error, caller);
+        checks.structure = { status: "failed", diagnostics: [diagnostic] };
+        return {
+          context: documentContext,
+          result: {
+            ok: false,
+            checks,
+            diagnostic: attachReport(documentContext, diagnostic),
+          },
+        };
+      }),
+    ),
+  );
+});

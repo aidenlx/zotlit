@@ -1,0 +1,39 @@
+---
+version: "2.2.0-beta.5"
+date: "2026-10-23"
+description: "Default note body is written once, child notes import only on request"
+---
+
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit copies text from Zotero to Obsidian only when you ask. There is no automatic sync in either direction.
+
+## Breaking Changes
+
+### The default literature note body is yours after creation
+
+A new literature note made with the default template is written once, as a copy of what Zotero holds when you create it. The body has the title, the Zotero link, attachment links, and the Annotations section with its query block. After that, the body is yours to edit. Your edits to it never go back to Zotero, and a later change in Zotero reaches it only if you overwrite the note.
+
+<Command inline name={m.command_update_note_name()} /> now refreshes the note's
+properties and leaves the body as you wrote it. The annotations query block
+reads Zotero live, so new highlights appear without an update. It is a view of
+Zotero rather than a copy. See [Keep notes up to
+date](/docs/how-to/keep-notes-updated).
+
+The default template no longer adds `%%zt-managed%%` markers. It also no longer lists the paper's Zotero child notes under a "Notes" heading. <Command inline name={m.command_overwrite_note_name()} /> still replaces the whole body after you confirm.
+
+### Child notes import only when you ask
+
+Creating, updating, or overwriting a literature note no longer imports Zotero child notes into your vault. Before, a template that used `noteLink` created a Markdown file for each child note along the way.
+
+A child note now becomes a file only when you import it. Run <Command inline name={m.command_import_child_notes_name()} /> or <Command inline name={m.command_import_all_notes_name()} />, or start an import from Zotero. The imported file is a copy. Your edits to it never go back to Zotero, and later edits to the Zotero note reach it only when you re-import that note.
+
+In a template, `noteLink` links to the imported file when one exists. Otherwise it gives a link that opens the note in Zotero. See [Import Zotero notes](/docs/how-to/import-zotero-notes).
+
+### Existing notes stay as they are
+
+Notes you already have don't change. A note with the managed markers keeps them, and an update still refreshes the text between them. To stop that, delete the two marker lines. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+If you customized or duplicated the Default profile, its document now has no managed block. Updating an older note with markers then shows <UiLabel name={m.notice_updated_note_no_managed_block()} /> To keep refreshing that region, add a `{% managed %}` block to the profile document.

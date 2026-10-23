@@ -1,16 +1,21 @@
 // The renderer-side answer of the local Annotation image command.
 import type { CliData } from "obsidian";
-import * as v from "valibot";
 
-import { parseIndexedKey } from "@zotlit/db";
 import { renderDiagnostic } from "@zotlit/item-query";
 
-import { cliParams, decodeCliParams } from "@/lib/cli-params";
+import {
+  catchRejection,
+  cliIndexedKey,
+  cliParams,
+  decodeCliParams,
+} from "@/lib/cli-params";
+import { Data, Effect, Result, Schema } from "@/lib/effect";
 import { diagnostic } from "@/services/item-query/contract";
 import { rejectionDiagnostic } from "@/services/item-query/contract";
 
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
+import type { ExcerptSourceUnavailable } from "./request";
 import type { ExcerptOutcome } from "./service";
 
 // Annotation Image keeps its existing envelope independently of Query v3.
@@ -20,19 +25,18 @@ export const ANNOTATION_IMAGE_COMMAND = "zotlit:annotation-image";
 
 const imageParams = cliParams(
   {
-    key: v.pipe(
-      v.string(),
-      v.check(
-        (key) => parseIndexedKey(key) !== null,
-        "Give one Annotation Indexed Key as key=<indexed-key>.",
-      ),
+    key: Schema.String.check(
+      cliIndexedKey("Give one Annotation Indexed Key as key=<indexed-key>."),
     ),
   },
   { key: "Give one Annotation Indexed Key as key=<indexed-key>." },
 );
 
 export interface AnnotationImagePorts {
-  read(key: string, signal?: AbortSignal): Promise<ExcerptRequest | null>;
+  /** The request of the Annotation `key` names; `null` where none has it. */
+  read(
+    key: string,
+  ): Effect.Effect<ExcerptRequest | null, ExcerptSourceUnavailable>;
   resolve(
     request: ExcerptRequest,
     signal?: AbortSignal,
@@ -40,6 +44,18 @@ export interface AnnotationImagePorts {
   publish(fingerprint: string, bytes: Uint8Array): Promise<string>;
   exists(path: string): Promise<boolean>;
 }
+
+/** A step of the image answer failed; `cause` is what it threw. */
+class ImageAnswerError extends Data.TaggedError("ImageAnswerError")<{
+  readonly cause: unknown;
+}> {}
+
+/** The Promise `run` gives, failing with what it rejects with. */
+const attempt = <A>(run: (signal: AbortSignal) => PromiseLike<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) => new ImageAnswerError({ cause }),
+  });
 
 function envelope(tail: object): string {
   return JSON.stringify(
@@ -49,91 +65,103 @@ function envelope(tail: object): string {
   );
 }
 
-export async function answerAnnotationImage(
-  params: CliData,
-  ports: AnnotationImagePorts,
-  signal?: AbortSignal,
-): Promise<string> {
-  const decoded = decodeCliParams(params, imageParams, {
-    command: ANNOTATION_IMAGE_COMMAND,
-  });
-  if (decoded.kind === "invalid")
-    return envelope({ ok: false, diagnostic: rejectionDiagnostic(decoded) });
-  const { key } = decoded.value;
-  let request: ExcerptRequest | null;
-  try {
-    request = await ports.read(key, signal);
-  } catch (error) {
-    signal?.throwIfAborted();
-    return envelope({
-      ok: false,
-      diagnostic: diagnostic(
-        "source-unavailable",
-        error instanceof Error ? error.message : String(error),
-      ),
+/**
+ * The answer to one call of the command. Interrupting it aborts the signal
+ * each Promise port receives.
+ */
+export const answerAnnotationImage = Effect.fn("AnnotationImageCli.answer")(
+  function* (params: CliData, ports: AnnotationImagePorts) {
+    const { key } = yield* decodeCliParams(params, imageParams, {
+      command: ANNOTATION_IMAGE_COMMAND,
     });
-  }
-  if (!request)
-    return imageFailure(
-      "annotation-not-found",
-      `No Annotation has the key '${key}'.`,
-    );
-  if (request.annotation.type !== "image" && request.annotation.type !== "ink")
-    return imageFailure(
-      "not-an-image-annotation",
-      `Annotation '${key}' has no Excerpt Image.`,
-    );
-  try {
-    const outcome = await ports.resolve(request, signal);
-    signal?.throwIfAborted();
-    if (outcome.kind === "available") {
-      const path =
-        outcome.provenance === "zotero"
-          ? request.zoteroPngPath
-          : await ports.publish(
-              outcome.identity.key,
-              await pngBytes(outcome, signal),
-            );
-      if (!path)
-        return imageFailure(
-          "render-failed",
-          "The Excerpt Image has no file path.",
-        );
+    const read = yield* Effect.result(ports.read(key));
+    if (Result.isFailure(read)) {
       return envelope({
-        ok: true,
-        key,
-        path,
-        format: "png",
-        provenance: outcome.provenance,
+        ok: false,
+        diagnostic: diagnostic("source-unavailable", read.failure.message),
       });
     }
-    const pdfExists =
-      request.pdfPath !== null && (await ports.exists(request.pdfPath));
-    const cacheExists =
-      request.zoteroPngPath !== null &&
-      (await ports.exists(request.zoteroPngPath));
-    return !pdfExists && !cacheExists
-      ? imageFailure(
-          "file-unavailable",
-          "The PDF and Zotero cache image are unavailable on this device.",
-        )
-      : imageFailure(
-          "render-failed",
-          "The Excerpt Image could not be rendered.",
-        );
-  } catch (error) {
-    signal?.throwIfAborted();
-    return error instanceof Error && error.name === "TimeoutError"
-      ? imageFailure(
-          "render-timeout",
-          "The Excerpt Image exceeded the 35 second rendering deadline.",
-        )
-      : imageFailure(
-          "render-failed",
-          `The Excerpt Image could not be prepared: ${String(error)}`,
-        );
+    const request = read.success;
+    if (!request)
+      return imageFailure(
+        "annotation-not-found",
+        `No Annotation has the key '${key}'.`,
+      );
+    if (
+      request.annotation.type !== "image" &&
+      request.annotation.type !== "ink"
+    )
+      return imageFailure(
+        "not-an-image-annotation",
+        `Annotation '${key}' has no Excerpt Image.`,
+      );
+    return yield* imageAnswer({ key, request, ports }).pipe(
+      Effect.catchTag("ImageAnswerError", ({ cause }) =>
+        Effect.succeed(
+          cause instanceof Error && cause.name === "TimeoutError"
+            ? imageFailure(
+                "render-timeout",
+                "The Excerpt Image exceeded the 35 second rendering deadline.",
+              )
+            : imageFailure(
+                "render-failed",
+                `The Excerpt Image could not be prepared: ${String(cause)}`,
+              ),
+        ),
+      ),
+    );
+  },
+  catchRejection((rejected) =>
+    envelope({ ok: false, diagnostic: rejectionDiagnostic(rejected) }),
+  ),
+);
+
+/** The answer for the image or ink Annotation that `request` reads. */
+const imageAnswer = Effect.fn("AnnotationImageCli.image")(function* ({
+  key,
+  request,
+  ports,
+}: {
+  key: string;
+  request: ExcerptRequest;
+  ports: AnnotationImagePorts;
+}) {
+  const outcome = yield* attempt((signal) => ports.resolve(request, signal));
+  if (outcome.kind === "available") {
+    const path =
+      outcome.provenance === "zotero"
+        ? request.zoteroPngPath
+        : yield* pngBytes(outcome).pipe(
+            Effect.flatMap((bytes) =>
+              attempt(() => ports.publish(outcome.identity.key, bytes)),
+            ),
+          );
+    if (!path)
+      return imageFailure(
+        "render-failed",
+        "The Excerpt Image has no file path.",
+      );
+    return envelope({
+      ok: true,
+      key,
+      path,
+      format: "png",
+      provenance: outcome.provenance,
+    });
   }
-}
+  const pdfExists =
+    request.pdfPath !== null &&
+    (yield* attempt(() => ports.exists(request.pdfPath!)));
+  const cacheExists =
+    request.zoteroPngPath !== null &&
+    (yield* attempt(() => ports.exists(request.zoteroPngPath!)));
+  return !pdfExists && !cacheExists
+    ? imageFailure(
+        "file-unavailable",
+        "The PDF and Zotero cache image are unavailable on this device.",
+      )
+    : imageFailure("render-failed", "The Excerpt Image could not be rendered.");
+});
 
 const IMAGE_HINTS = {
   "annotation-not-found":
@@ -156,33 +184,41 @@ function imageFailure(code: keyof typeof IMAGE_HINTS, message: string): string {
 }
 
 /** The CLI publishes PNG while the shared renderer and cache keep their format. */
-async function pngBytes(
+function pngBytes(
   image: ExcerptImage,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  if (image.format.format === "png") return image.bytes;
-  const bitmap = await createImageBitmap(
-    new Blob([image.bytes as BlobPart], { type: image.format.mimeType }),
-  );
-  try {
-    signal?.throwIfAborted();
+): Effect.Effect<Uint8Array, ImageAnswerError> {
+  if (image.format.format === "png") return Effect.succeed(image.bytes);
+  return Effect.gen(function* () {
+    const bitmap = yield* Effect.acquireRelease(
+      attempt(() =>
+        createImageBitmap(
+          new Blob([image.bytes as BlobPart], { type: image.format.mimeType }),
+        ),
+      ),
+      (bitmap) => Effect.sync(() => bitmap.close()),
+    );
     // eslint-disable-next-line obsidianmd/prefer-create-el -- runs in the CLI renderer, outside any Obsidian window
     const canvas = document.createElement("canvas");
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Cannot create the Excerpt Image canvas");
+    if (!context)
+      return yield* new ImageAnswerError({
+        cause: new Error("Cannot create the Excerpt Image canvas"),
+      });
     context.drawImage(bitmap, 0, 0);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (encoded) =>
-          encoded ? resolve(encoded) : reject(new Error("PNG encoding failed")),
-        "image/png",
-      ),
+    const blob = yield* attempt(
+      () =>
+        new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob(
+            (encoded) =>
+              encoded
+                ? resolve(encoded)
+                : reject(new Error("PNG encoding failed")),
+            "image/png",
+          ),
+        ),
     );
-    signal?.throwIfAborted();
-    return new Uint8Array(await blob.arrayBuffer());
-  } finally {
-    bitmap.close();
-  }
+    return new Uint8Array(yield* attempt(() => blob.arrayBuffer()));
+  }).pipe(Effect.scoped);
 }

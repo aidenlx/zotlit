@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { citationOutcome } from "@/services/citation-index/outcome";
 import type {
   CitationKeyResolution,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
@@ -31,7 +33,7 @@ type RenderedBibliography = Extract<
   { kind: "held" }
 >;
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 vi.mock("@/components/obsidian/icon-button", async () => {
   const { createElement } = await import("react");
@@ -68,6 +70,16 @@ class TestReferencesView extends ReferencesView {
 }
 
 const citationSet: DocumentCitationSet = {
+  sources: new Map(),
+  presentKeys: new Set(),
+  database: "ready",
+  syntaxes: {
+    citekey: "included",
+    wikilink: "excluded",
+    annotation: "included",
+  },
+  omittedSyntaxes: [],
+  coverage: "complete",
   lookup: lookupAnswer(),
   occurrences: [],
   citations: [
@@ -203,7 +215,15 @@ async function finishScan(
 ): Promise<void> {
   const before = renders.length;
   await act(async () => {
-    scans.at(-1)!.resolve(set);
+    const joined = await readReferenceSources(reads!, set.citations);
+    scans.at(-1)!.resolve({
+      ...set,
+      ...joined,
+      citations: set.citations.map((c) => ({
+        ...c,
+        outcome: citationOutcome(c, joined),
+      })),
+    });
     await vi.waitFor(() => {
       if (renders.length === before)
         throw new Error("The rescan has not reloaded the list");
@@ -449,6 +469,16 @@ describe("ReferencesView copy readiness", () => {
 describe("ReferencesView citekey resolution", () => {
   /** One citation whose key the resolution snapshot answers nothing for. */
   const unresolvedSet: DocumentCitationSet = {
+    sources: new Map(),
+    presentKeys: new Set(),
+    database: "ready",
+    syntaxes: {
+      citekey: "included",
+      wikilink: "excluded",
+      annotation: "included",
+    },
+    omittedSyntaxes: [],
+    coverage: "complete",
     lookup: lookupAnswer(),
     occurrences: [],
     citations: [

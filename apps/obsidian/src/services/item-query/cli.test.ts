@@ -1,13 +1,16 @@
-import { Effect, Scheduler } from "effect";
 import { isDeepStrictEqual } from "node:util";
-import type { CliData, CliHandler, Plugin } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import type { CliData } from "obsidian";
+import { describe, expect } from "vitest";
 
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { Deferred, Effect, Fiber, Scheduler } from "@/lib/effect";
+import { acquireDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 
@@ -33,51 +36,57 @@ import { GUIDE_EXAMPLES, GUIDE_FILTERS } from "./guide";
 const itemQueryGuideHandler = guideHandler;
 
 /**
- * Runs the Item Query of flat arguments on `scenario`, as a Query Job would,
- * and gives the answer text.
+ * The answer text of the Item Query of flat arguments on `scenario`, as a
+ * Query Job gives it. A malformed test query fails with its rejection.
  */
-function rawRunnerOf(
+function answerTextOf(
   scenario: ScenarioDatabase,
   scope: LibraryScope = MY_LIBRARY_SCOPE,
 ) {
-  return async (params: CliData = {}) => {
-    const query = decodeQuery(params);
-    if (query.kind === "invalid")
-      throw new Error(`Malformed test query: ${query.message}`);
-    const reply = await Effect.runPromise(
-      answer(
-        {
-          schema: false,
-          dataset: query.value.from,
-          command: QUERY_COMMAND,
-          query: query.value,
-          scope,
-        },
-        {
-          identity: {
-            vault: { name: "Research", path: "/vaults/research" },
-            source: { id: "source-1", databasePath: "/zotero/zotero.sqlite" },
+  return (params: CliData = {}) =>
+    decodeQuery(params).pipe(
+      Effect.flatMap((query) =>
+        answer(
+          {
+            schema: false,
+            dataset: query.from,
+            command: QUERY_COMMAND,
+            query,
+            scope,
           },
-        },
-      ).pipe(
-        Effect.scoped,
-        Effect.provideService(ItemQueryDatabase, { client: scenario.db }),
-        Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
+          {
+            identity: {
+              vault: { name: "Research", path: "/vaults/research" },
+              source: {
+                id: "source-1",
+                databasePath: "/zotero/zotero.sqlite",
+              },
+            },
+          },
+        ),
       ),
+      Effect.scoped,
+      Effect.provideService(ItemQueryDatabase, { client: scenario.db }),
+      Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
+      Effect.map((reply) => reply.answer),
     );
-    return reply.answer;
-  };
 }
 
-/** Runs the Item Query of flat arguments on `scenario` and parses the answer. */
-function runnerOf(
+/** The parsed answer of the Item Query of flat arguments on `scenario`. */
+function answerOf(
   scenario: ScenarioDatabase,
   scope: LibraryScope = MY_LIBRARY_SCOPE,
 ) {
-  const run = rawRunnerOf(scenario, scope);
-  return async (params: CliData = {}) =>
-    JSON.parse(await run(params)) as Record<string, unknown>;
+  const answerText = answerTextOf(scenario, scope);
+  return (params: CliData = {}) =>
+    answerText(params).pipe(
+      Effect.map((text) => JSON.parse(text) as Record<string, unknown>),
+    );
 }
+
+/** The scenario database, held for the case's scope. */
+const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
+  acquireDisposable(() => openScenarioDatabase(options));
 
 describe("zotlit:query-cancel", () => {
   function cancelOf(active: readonly string[]) {
@@ -88,109 +97,123 @@ describe("zotlit:query-cancel", () => {
     });
     return {
       requested,
-      run: async (params: CliData) =>
-        JSON.parse(await handler(params)) as Record<string, unknown>,
+      run: (params: CliData) =>
+        handler(params).pipe(
+          Effect.map((text) => JSON.parse(text) as Record<string, unknown>),
+        ),
     };
   }
 
-  it("answers that it requested the cancel of an active query", async () => {
-    const { run, requested } = cancelOf(["export-a"]);
+  it.effect("answers that it requested the cancel of an active query", () =>
+    Effect.gen(function* () {
+      const { run, requested } = cancelOf(["export-a"]);
 
-    const answer = await run({ id: "export-a" });
+      const answer = yield* run({ id: "export-a" });
 
-    expect(answer).toEqual({
-      contractVersion: 3,
-      command: QUERY_CANCEL_COMMAND,
-      ok: true,
-      id: "export-a",
-      cancelRequested: true,
-    });
-    expect(requested).toEqual(["export-a"]);
-  });
+      expect(answer).toEqual({
+        contractVersion: 3,
+        command: QUERY_CANCEL_COMMAND,
+        ok: true,
+        id: "export-a",
+        cancelRequested: true,
+      });
+      expect(requested).toEqual(["export-a"]);
+    }),
+  );
 
-  it("answers that it requested no cancel for an ID with no active query", async () => {
-    const { run } = cancelOf(["export-a"]);
+  it.effect(
+    "answers that it requested no cancel for an ID with no active query",
+    () =>
+      Effect.gen(function* () {
+        const { run } = cancelOf(["export-a"]);
 
-    expect(await run({ id: "export-b" })).toEqual({
-      contractVersion: 3,
-      command: QUERY_CANCEL_COMMAND,
-      ok: true,
-      id: "export-b",
-      cancelRequested: false,
-    });
-  });
+        expect(yield* run({ id: "export-b" })).toEqual({
+          contractVersion: 3,
+          command: QUERY_CANCEL_COMMAND,
+          ok: true,
+          id: "export-b",
+          cancelRequested: false,
+        });
+      }),
+  );
 
-  it.each<[CliData, string]>([
+  it.effect.each<[CliData, string]>([
     [{}, "id"],
     [{ id: "" }, "id"],
     [{ id: "a b" }, "id"],
     [{ id: "export-a", limit: "1" }, "limit"],
-  ])("rejects %j and cancels nothing", async (params, parameter) => {
-    const { run, requested } = cancelOf(["export-a"]);
+  ])("rejects %j and cancels nothing", ([params, parameter]) =>
+    Effect.gen(function* () {
+      const { run, requested } = cancelOf(["export-a"]);
 
-    expect(await run(params)).toMatchObject({
-      command: QUERY_CANCEL_COMMAND,
-      ok: false,
-      diagnostic: { code: "invalid-argument", details: { parameter } },
-    });
-    expect(requested).toEqual([]);
-  });
+      expect(yield* run(params)).toMatchObject({
+        command: QUERY_CANCEL_COMMAND,
+        ok: false,
+        diagnostic: { code: "invalid-argument", details: { parameter } },
+      });
+      expect(requested).toEqual([]);
+    }),
+  );
 });
 
 describe("zotlit:query formulas", () => {
-  it("answers formula.<name> in each row and echoes formulas in the request", async () => {
-    using scenario = openScenarioDatabase();
-    const run = runnerOf(scenario);
+  it.effect(
+    "answers formula.<name> in each row and echoes formulas in the request",
+    () =>
+      Effect.gen(function* () {
+        const run = answerOf(yield* scenarioOf());
 
-    const answer = await run({
-      filter: 'indexedKey == "BK2MNTH2"',
-      formulas: '{"year":"date.year","unused":"title"}',
-      fields: "formula.year",
-    });
+        const answer = yield* run({
+          filter: 'indexedKey == "BK2MNTH2"',
+          formulas: '{"year":"date.year","unused":"title"}',
+          fields: "formula.year",
+        });
 
-    expect(answer).toMatchObject({
-      ok: true,
-      request: {
-        formulas: { year: "date.year", unused: "title" },
-        fields: ["formula.year"],
-      },
-      warnings: [
-        {
-          code: "unused-formula",
-          location: { argument: "formulas", path: "unused" },
+        expect(answer).toMatchObject({
+          ok: true,
+          request: {
+            formulas: { year: "date.year", unused: "title" },
+            fields: ["formula.year"],
+          },
+          warnings: [
+            {
+              code: "unused-formula",
+              location: { argument: "formulas", path: "unused" },
+            },
+          ],
+          rows: [{ indexedKey: "BK2MNTH2", values: { "formula.year": 2019 } }],
+        });
+      }),
+  );
+
+  it.effect("fails a wrong Formula with a diagnostic that names it", () =>
+    Effect.gen(function* () {
+      const run = answerOf(yield* scenarioOf());
+
+      const answer = yield* run({
+        formulas: '{"short":"title.nope()"}',
+        fields: "formula.short",
+      });
+
+      expect(answer).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "unknown-function",
+          location: { argument: "formulas", path: "short" },
+          report: expect.arrayContaining([
+            expect.stringContaining("formula.short"),
+          ]),
         },
-      ],
-      rows: [{ indexedKey: "BK2MNTH2", values: { "formula.year": 2019 } }],
-    });
-  });
-
-  it("fails a wrong Formula with a diagnostic that names it", async () => {
-    using scenario = openScenarioDatabase();
-    const run = runnerOf(scenario);
-
-    const answer = await run({
-      formulas: '{"short":"title.nope()"}',
-      fields: "formula.short",
-    });
-
-    expect(answer).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "unknown-function",
-        location: { argument: "formulas", path: "short" },
-        report: expect.arrayContaining([
-          expect.stringContaining("formula.short"),
-        ]),
-      },
-    });
-  });
+      });
+    }),
+  );
 });
 
 describe("zotlit:query formula answer text", () => {
   // The CLI fails a wrong Formula with the Fault in its own text, and keeps
   // each answer byte-identical when the engine leaves Formulas out for
   // another caller.
-  it.each<[string, CliData]>([
+  it.effect.each<[string, CliData]>([
     [
       "a Formula that fields reads",
       {
@@ -222,53 +245,61 @@ describe("zotlit:query formula answer text", () => {
       "a Formula that fields reads and no request defines",
       { formulas: '{"year":"date.year"}', fields: "title,formula.yeer" },
     ],
-  ])("keeps the answer text for %s", async (_, params) => {
-    using scenario = openScenarioDatabase();
+  ])("keeps the answer text for %s", ([, params]) =>
+    Effect.gen(function* () {
+      const scenario = yield* scenarioOf();
 
-    expect(await rawRunnerOf(scenario)(params)).toMatchSnapshot();
-  });
+      expect(yield* answerTextOf(scenario)(params)).toMatchSnapshot();
+    }),
+  );
 });
 
 describe("zotlit:query-guide", () => {
-  it("answers an unknown topic with the diagnostic envelope", () => {
-    const answer = JSON.parse(itemQueryGuideHandler({ topic: "bogus" }));
+  it.effect("answers an unknown topic with the diagnostic envelope", () =>
+    Effect.gen(function* () {
+      const answer = JSON.parse(
+        yield* itemQueryGuideHandler({ topic: "bogus" }),
+      );
 
-    expect(answer).toMatchObject({
-      contractVersion: 3,
-      command: QUERY_GUIDE_COMMAND,
-      ok: false,
-      diagnostic: {
-        code: "invalid-argument",
-        details: { parameter: "topic" },
-      },
-    });
-  });
+      expect(answer).toMatchObject({
+        contractVersion: 3,
+        command: QUERY_GUIDE_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "invalid-argument",
+          details: { parameter: "topic" },
+        },
+      });
+    }),
+  );
 
-  it("shows only commands and filters that run", async () => {
-    using scenario = openScenarioDatabase({ annotations: true });
-    scenario.sqlite
-      .prepare(
-        "insert into collections (collectionName, libraryID, key) values ('Shared key', 1, 'SHAREDCL')",
-      )
-      .run();
-    const run = runnerOf(scenario);
-    const failures: string[] = [];
+  it.effect("shows only commands and filters that run", () =>
+    Effect.gen(function* () {
+      const scenario = yield* scenarioOf({ annotations: true });
+      scenario.sqlite
+        .prepare(
+          "insert into collections (collectionName, libraryID, key) values ('Shared key', 1, 'SHAREDCL')",
+        )
+        .run();
+      const run = answerOf(scenario);
+      const failures: string[] = [];
 
-    for (const args of GUIDE_EXAMPLES) {
-      const answer = await run(args);
-      if (!answer.ok || !isDeepStrictEqual(answer.warnings, []))
-        failures.push(JSON.stringify({ args, answer }));
-    }
-    for (const filter of GUIDE_FILTERS) {
-      const answer = await run({ filter, fields: "[]" });
-      if (!answer.ok || !isDeepStrictEqual(answer.warnings, []))
-        failures.push(JSON.stringify({ filter, answer }));
-    }
+      for (const args of GUIDE_EXAMPLES) {
+        const answer = yield* run(args);
+        if (!answer.ok || !isDeepStrictEqual(answer.warnings, []))
+          failures.push(JSON.stringify({ args, answer }));
+      }
+      for (const filter of GUIDE_FILTERS) {
+        const answer = yield* run({ filter, fields: "[]" });
+        if (!answer.ok || !isDeepStrictEqual(answer.warnings, []))
+          failures.push(JSON.stringify({ filter, answer }));
+      }
 
-    expect(GUIDE_EXAMPLES.length).toBeGreaterThan(0);
-    expect(GUIDE_FILTERS.length).toBeGreaterThan(0);
-    expect(failures).toEqual([]);
-  });
+      expect(GUIDE_EXAMPLES.length).toBeGreaterThan(0);
+      expect(GUIDE_FILTERS.length).toBeGreaterThan(0);
+      expect(failures).toEqual([]);
+    }),
+  );
 
   it("shows each example where a shell passes it through unchanged", () => {
     const quoted = GUIDE_EXAMPLES.flatMap(Object.values).filter((value) =>
@@ -280,88 +311,74 @@ describe("zotlit:query-guide", () => {
 });
 
 describe("registerQueryCli", () => {
-  it("registers the command with its flags and cancels runs when the plugin unloads", async () => {
-    const registerCliHandler = vi.fn();
-    const onUnload: (() => void)[] = [];
-    const plugin = {
-      registerCliHandler,
-      register: (callback: () => void) => onUnload.push(callback),
-    } as unknown as Plugin;
+  it.effect(
+    "registers the command with its flags and cancels a run when its handler is interrupted",
+    () =>
+      Effect.gen(function* () {
+        const { host, commands, command } = fakeCliHost();
+        const started = yield* Deferred.make<AbortSignal>();
 
-    registerQueryCli(plugin, {
-      query: async (_params, signal) => {
-        signal.throwIfAborted();
-        return "";
-      },
-      cancel: (id) => id === "export-a",
-      schema: async () => "",
-      values: async () => "values",
-    });
+        registerQueryCli(host, {
+          query: (_params, signal) => {
+            Deferred.doneUnsafe(started, Effect.succeed(signal));
+            return new Promise<string>(() => {});
+          },
+          cancel: (id) => id === "export-a",
+          schema: async () => "",
+          values: async () => "values",
+        });
 
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      QUERY_COMMAND,
-      expect.any(String),
-      expect.objectContaining({
-        filter: expect.any(Object),
-        fields: expect.any(Object),
-        sort: expect.any(Object),
-        limit: expect.any(Object),
-        library: expect.any(Object),
-        from: expect.any(Object),
-        id: expect.any(Object),
+        expect(command(QUERY_COMMAND).flags).toEqual(
+          expect.objectContaining({
+            filter: expect.any(Object),
+            fields: expect.any(Object),
+            sort: expect.any(Object),
+            limit: expect.any(Object),
+            library: expect.any(Object),
+            from: expect.any(Object),
+            id: expect.any(Object),
+          }),
+        );
+        expect(command(QUERY_CANCEL_COMMAND).flags).toEqual(
+          expect.objectContaining({ id: expect.any(Object) }),
+        );
+        expect(command("zotlit:query-values").flags).toEqual(
+          expect.objectContaining({
+            kind: expect.any(Object),
+            library: expect.any(Object),
+            match: expect.any(Object),
+            limit: expect.any(Object),
+          }),
+        );
+        const handlerFor = (name: string) => command(name).handler;
+        expect(
+          yield* handlerFor("zotlit:query-values")({ kind: "collections" }),
+        ).toBe("values");
+        expect(
+          JSON.parse(
+            yield* handlerFor(QUERY_CANCEL_COMMAND)({ id: "export-a" }),
+          ),
+        ).toMatchObject({ cancelRequested: true });
+        expect(command(QUERY_SCHEMA_COMMAND).flags).toEqual(
+          expect.objectContaining({ from: expect.any(Object) }),
+        );
+        expect(command(QUERY_GUIDE_COMMAND).flags).toEqual(
+          expect.objectContaining({ topic: expect.any(Object) }),
+        );
+        expect([...commands.keys()]).toEqual([
+          "zotlit:query",
+          "zotlit:query-schema",
+          "zotlit:query-values",
+          "zotlit:query-guide",
+          "zotlit:query-cancel",
+        ]);
+        const run = yield* Effect.forkChild(handlerFor(QUERY_COMMAND)({}));
+        const signal = yield* Deferred.await(started);
+        expect(signal.aborted).toBe(false);
+        yield* Fiber.interrupt(run);
+        expect(signal.aborted).toBe(true);
       }),
-      expect.any(Function),
-    );
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      QUERY_CANCEL_COMMAND,
-      expect.any(String),
-      expect.objectContaining({ id: expect.any(Object) }),
-      expect.any(Function),
-    );
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      "zotlit:query-values",
-      expect.any(String),
-      expect.objectContaining({
-        kind: expect.any(Object),
-        library: expect.any(Object),
-        match: expect.any(Object),
-        limit: expect.any(Object),
-      }),
-      expect.any(Function),
-    );
-    const values = registerCliHandler.mock.calls.find(
-      ([command]) => command === "zotlit:query-values",
-    )![3] as CliHandler;
-    expect(await values({ kind: "collections" })).toBe("values");
-    const cancel = registerCliHandler.mock.calls.find(
-      ([command]) => command === QUERY_CANCEL_COMMAND,
-    )![3] as CliHandler;
-    expect(JSON.parse(await cancel({ id: "export-a" }))).toMatchObject({
-      cancelRequested: true,
-    });
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      QUERY_SCHEMA_COMMAND,
-      expect.any(String),
-      expect.objectContaining({ from: expect.any(Object) }),
-      expect.any(Function),
-    );
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      QUERY_GUIDE_COMMAND,
-      expect.any(String),
-      expect.objectContaining({ topic: expect.any(Object) }),
-      expect.any(Function),
-    );
-    expect(registerCliHandler.mock.calls.map(([name]) => name)).toEqual([
-      "zotlit:query",
-      "zotlit:query-schema",
-      "zotlit:query-values",
-      "zotlit:query-guide",
-      "zotlit:query-cancel",
-    ]);
-    const handler = registerCliHandler.mock.calls[0]![3] as CliHandler;
-    for (const callback of onUnload) callback();
-    await expect(handler({})).rejects.toMatchObject({ name: "AbortError" });
-  });
+  );
 });
 
 it.each(Object.keys(DIAGNOSTIC_HINTS) as (keyof typeof DIAGNOSTIC_HINTS)[])(

@@ -315,6 +315,78 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(oneNote).toBe(true);
   });
 
+  it("creates a default note whose body renders once and imports no Child Note", async () => {
+    const item = ITEMS.find(({ itemID }) => itemID === 1)!;
+    const childNoteKey = "NNNNAAAA";
+    const services = "app.plugins.plugins.zotlit.services";
+    expect(
+      await obEvalUntil(
+        run.vaultId,
+        `String(${services}.profile.resolveProfile('default')?.document===undefined)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    // Set the Item's seeded notes aside, so the default Profile writes a new
+    // one; the cleanup puts them back.
+    await using cleanup = new AsyncDisposableStack();
+    const seeded = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{await ${services}.noteIndex.whenIndexed();const notes=[];for(const note of ${services}.noteIndex.getNotesByItemKey(${JSON.stringify(item.key)})){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
+      ),
+    ) as { path: string; text: string }[];
+    let created = "";
+    cleanup.defer(async () => {
+      await obEval(
+        run.vaultId,
+        `(async()=>{const created=app.vault.getFileByPath(${JSON.stringify(created)});if(created)await app.vault.delete(created);for(const {path,text} of ${JSON.stringify(seeded)})await app.vault.create(path,text);return true;})()`,
+      );
+    });
+    expect(await hasIndexedNotes(run.vaultId, item.key, 0)).toBe(true);
+    const markdownFiles = () =>
+      obEval(run.vaultId, "String(app.vault.getMarkdownFiles().length)");
+    const filesBefore = await markdownFiles();
+    const importedNotes = () =>
+      obEval(
+        run.vaultId,
+        `String(${services}.noteIndex.getImportedNoteByNoteKey(${JSON.stringify(childNoteKey)}).length)`,
+      );
+    const importedBefore = await importedNotes();
+
+    const result = await createFixtureNote(run.vaultId, item.itemID, "default");
+    expect(result.outcome).toBe("created");
+    if (result.outcome !== "created")
+      throw new Error("The default Profile did not create a Literature Note");
+    created = result.path;
+    const text = await readFile(join(e2eVaultPath, created), "utf-8");
+    expect(noteBody(text)).toContain("## Annotations\n\n```zotquery\n");
+    expect(text).not.toContain("%%zt-managed%%");
+    expect(text).not.toContain("## Notes");
+    // Rendering the note wrote one file: the note. The Child Note stays in
+    // Zotero until an import command brings it in.
+    expect(await markdownFiles()).toBe(String(Number(filesBefore) + 1));
+    expect(await importedNotes()).toBe(importedBefore);
+
+    // A full Update refreshes the Properties and leaves the body as written.
+    const personal = "\nMy own reading of this paper.\n";
+    await obEval(
+      run.vaultId,
+      `(async()=>{await app.vault.append(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(personal)});return true;})()`,
+    );
+    const before = await readFile(join(e2eVaultPath, created), "utf-8");
+    const update = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{const result=await ${services}.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(item.key)},scope:'full'});return JSON.stringify({bodyUpdated:result.bodyUpdated,diagnostic:result.diagnostic??null});})()`,
+      ),
+    ) as { bodyUpdated: boolean; diagnostic: unknown };
+    expect(update).toEqual({ bodyUpdated: false, diagnostic: null });
+    const after = await readFile(join(e2eVaultPath, created), "utf-8");
+    expect(noteBody(after)).toBe(noteBody(before));
+    expect(after).toContain(personal);
+    expect(await markdownFiles()).toBe(String(Number(filesBefore) + 1));
+  });
+
   it("creates through the citekey command with an explicitly chosen Profile", async () => {
     const defaultResult = await createFixtureNote(
       run.vaultId,

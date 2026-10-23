@@ -352,7 +352,7 @@ describe("exportCitedDocument", () => {
       ];
       expect(
         JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-      ).toEqual({ citations: {} });
+      ).toMatchObject({ citations: {}, selectedLiterals: {} });
     },
   );
 
@@ -591,6 +591,24 @@ describe(
         absent: ["data-cites=", 'id="ref-'],
       },
       {
+        name: "#1683 preserves explicit identifiers that resemble internal citation markers",
+        markdown: "# Title {#zotlitparsedcitation0}\n\n[@a]",
+        contains: ['id="zotlitparsedcitation0"', 'id="ref-a"'],
+        absent: ['id="title"'],
+      },
+      {
+        name: "#1683 inline comment preserves the worker citation key boundary",
+        markdown: "[@a%% hidden %%b]",
+        contains: ['data-cites="a"', 'id="ref-a"'],
+        absent: ['data-cites="ab"', 'id="ref-ab"', "hidden", "%%"],
+      },
+      {
+        name: "#1683 worker-excluded math citation stays source text in Pandoc",
+        markdown: "$$\n[@hidden]\n\n[@a]",
+        contains: ["[@hidden]"],
+        absent: ['data-cites="hidden"', 'id="ref-hidden"'],
+      },
+      {
         name: "only the selected key in a comment-bearing citation",
         markdown: "[@a and %% @hidden %%]",
         contains: ['data-cites="a"', 'id="ref-a"'],
@@ -653,6 +671,25 @@ describe(
         name: "generated heading identifiers",
         markdown: "# Results by @a",
         contains: ['id="results-by-a"'],
+        absent: [],
+      },
+      {
+        name: "#1683 duplicate citation headings and links",
+        markdown: "# @a\n\n# @a\n\n[First](#a) [Second](#a-1)",
+        contains: ['id="a"', 'id="a-1"', 'href="#a"', 'href="#a-1"'],
+        absent: [],
+      },
+      {
+        name: "#1683 citation headings colliding with ordinary and explicit IDs",
+        markdown:
+          "# @a\n\n# A\n\n# @a {#explicit}\n\n# @a\n\n[First](#a) [Ordinary](#a-1) [Explicit](#explicit) [Last](#a-2)",
+        contains: [
+          'id="a"',
+          'id="a-1"',
+          'id="explicit"',
+          'id="a-2"',
+          'href="#a-2"',
+        ],
         absent: [],
       },
       {

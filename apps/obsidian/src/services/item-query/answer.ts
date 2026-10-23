@@ -60,7 +60,7 @@ import {
 } from "./contract";
 import type { Diagnostic, QueryCliCommand, LibraryWire } from "./contract";
 import { CLI_DATASETS } from "./datasets";
-import type { DecodedQuery, NamedLibraries } from "./decode";
+import type { DecodedQuery, NamedLibraries } from "./query-codec";
 import type {
   QueryViewGroup,
   QueryViewResult,
@@ -273,12 +273,10 @@ export function answerCustomFields(
   command: QueryCustomFieldsCommand["command"],
 ): Effect.Effect<QueryAnswer, never, ItemQueryDatabase> {
   return describeQueryCustomFields(ITEMS).pipe(
-    Effect.map(
-      (fields): QueryAnswer => ({
-        ...inline(command, ""),
-        customFields: fields.map(({ name }) => name),
-      }),
-    ),
+    Effect.map((fields): QueryAnswer => ({
+      ...inline(command, ""),
+      customFields: fields.map(({ name }) => name),
+    })),
     answerFailure(command),
   );
 }
@@ -664,7 +662,7 @@ const createAnswer = Effect.fnUntraced(function* (
         activeGroup = groupIndex;
       }
       let stepMs = 0;
-      for (let start = 0; start < rows.length; ) {
+      for (let start = 0; start < rows.length;) {
         const stepStart = performance.now();
         const chunk = rows.slice(start, start + chunkRows);
         const part = encoder.rows(chunk, groupIndex);

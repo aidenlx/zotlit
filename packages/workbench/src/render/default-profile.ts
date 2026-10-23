@@ -30,14 +30,6 @@ frontmatter:
 
 [Zotero]({{ zt.backlink }}) {{ zt.attachments | map: "fileLink" | compact | join: " " }}
 
-{% managed %}
-{% if zt.notes.size > 0 %}
-## Notes
-
-{% for note in zt.notes -%}
-- {{ note.noteLink }}
-{% endfor %}
-{% endif %}
 ## Annotations
 
 \`\`\`zotquery
@@ -52,7 +44,6 @@ views:
       - property: sortIndex
         direction: ASC
 \`\`\`
-{% endmanaged %}
 
 --- zotlit:annotation ---
 ${DEFAULT_ANNOTATION_LIQUID}`;

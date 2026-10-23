@@ -28,6 +28,8 @@ export type DatabaseReadability = "ready" | "unreadable";
 
 /** The cited Items of one document, with the state that says what an Item the join left out means. */
 export interface ReferenceSourceJoin {
+  /** Items present in the source, including Notes and Attachments. */
+  presentKeys: ReadonlySet<string>;
   /** The readable sources by Indexed Key. */
   sources: Map<string, ReferenceSource>;
   /**
@@ -43,6 +45,8 @@ export interface ReferenceSource {
   csl: CslItemData;
   /** `Creators (Year): Title` from the shared item-summary rendering. */
   summary: string;
+  /** Short author/year label used beside in-text citations. */
+  citationSummary: string;
   /** Bare Zotero item key, for the `zotero://select` action. */
   itemKey: string;
   /** Zotero `itemID`, the parent the attachment read looks under. */
@@ -119,8 +123,11 @@ export async function readReferenceSources(
   citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
 ): Promise<ReferenceSourceJoin> {
   const sources = new Map<string, ReferenceSource>();
-  if (db.state === "degraded") return { sources, database: "unreadable" };
-  if (citations.length === 0) return { sources, database: "ready" };
+  const presentKeys = new Set<string>();
+  if (db.state === "degraded")
+    return { sources, presentKeys, database: "unreadable" };
+  if (citations.length === 0)
+    return { sources, presentKeys, database: "ready" };
 
   try {
     // One Snapshot: the Attachment read names Items by the itemIDs the Item
@@ -140,11 +147,24 @@ export async function readReferenceSources(
         { concurrency: "unbounded" },
       ),
     );
+    for (const key of items.keys()) presentKeys.add(key);
+    const otherItems = await Effect.runPromise(
+      Effect.forEach(
+        indexedKeys.filter((key) => !items.has(key)),
+        (indexedKey) =>
+          Effect.map(reads.ItemType({ indexedKey }), (item) =>
+            item ? indexedKey : null,
+          ),
+        { concurrency: "unbounded" },
+      ),
+    );
+    for (const key of otherItems) if (key !== null) presentKeys.add(key);
     const cited: {
       indexedKey: string;
       linkpath: string | null;
       item: Item;
       summary: string;
+      citationSummary: string;
       citekey: string | null;
     }[] = [];
     for (const { indexedKey, linkpath } of citations) {
@@ -153,11 +173,13 @@ export async function readReferenceSources(
       if (!item) continue;
       const { fields } = item;
       if (isChildItemFields(fields)) continue;
+      const summary = itemSummary(item, fields);
       cited.push({
         indexedKey,
         linkpath,
         item,
-        summary: itemSummary(item, fields).formatted,
+        summary: summary.formatted,
+        citationSummary: summary.subtitle || summary.title,
         citekey: fields.citationKey ?? null,
       });
     }
@@ -177,10 +199,18 @@ export async function readReferenceSources(
       logger.warn("Cannot read the attachments of the cited items", { error });
     }
 
-    for (const { indexedKey, linkpath, item, summary, citekey } of cited) {
+    for (const {
+      indexedKey,
+      linkpath,
+      item,
+      summary,
+      citationSummary,
+      citekey,
+    } of cited) {
       sources.set(indexedKey, {
         csl: itemToCsl(item, user),
         summary,
+        citationSummary,
         itemKey: item.key,
         itemID: item.itemID,
         groupID: item.groupID,
@@ -191,7 +221,7 @@ export async function readReferenceSources(
     }
   } catch (error) {
     logger.warn("Cannot read the cited items", { error });
-    return { sources, database: "unreadable" };
+    return { sources, presentKeys, database: "unreadable" };
   }
-  return { sources, database: "ready" };
+  return { sources, presentKeys, database: "ready" };
 }

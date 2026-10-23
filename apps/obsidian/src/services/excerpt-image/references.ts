@@ -33,7 +33,7 @@ const markdown = parser.configure({
 const WHITESPACE = /\s+/g;
 const ESCAPE = regex("\\\\([!-/:-@\\[-`{-~])", "g");
 const labelKey = (text: string) =>
-  text.trim().replace(WHITESPACE, " ").toLowerCase();
+  text.trim().replaceAll(WHITESPACE, " ").toLowerCase();
 
 function markdownTarget(raw: string): string {
   const unwrapped = raw.startsWith("<") ? raw.slice(1, -1) : raw;

@@ -15,7 +15,7 @@ import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
@@ -44,7 +44,7 @@ import { showEngineMissing, showExportFailure } from "./notices";
 const logger = getLogger(["views", "pandoc-export"]);
 
 export interface PandocExportDeps {
-  citationParse: ParseClient;
+  citationParse: Pick<PlainCitationParse, "parse">;
   app: App;
   db: Pick<ZoteroReadsService, "ready">;
   /** Resolves the literal citation keys of the exported document. */

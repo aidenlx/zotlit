@@ -259,7 +259,7 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       key: string;
       citekey: string | null;
       /** `Creators (Year): Title` from the shared item-summary rendering. */
-      summary: string;
+      summary: string | null;
       /** Linkpath of the Literature Note, or `null` when the Item has none yet. */
       linkpath: string | null;
     }
@@ -273,24 +273,23 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       candidates: readonly AmbiguousCandidateKey[];
     }
   | { refNumber: number; kind: "missing"; key: string }
+  | { refNumber: number; kind: "unreadable" }
   | { kind: "malformed" }
 );
 
 /**
  * `zotlit:references`'s result: index facts, never view presentation (ADR 0024).
  *
- * The two states are what an entry kind means: they report a degraded read as
- * data instead of as entries. Coverage stays out — a document is read on
- * demand, so the vault-wide scan cannot change this answer.
+ * Membership, source choices and coverage describe the same captured records.
  */
 interface ReferencesPayload {
+  coverage: CitationCoverage;
   /** The document's entries in first-occurrence order. */
   entries: readonly ReferenceEntry[];
   /** The excluded Citation Syntaxes that wrote occurrences in this document
    *  this answer left out. `[]` means the answer withheld nothing. */
   omittedSyntaxes: readonly CitationSyntax[];
-  /** `"unreadable"` reports every cited work as `missing`, whether or not the
-   *  Zotero source still holds it. */
+  /** A failed source read is distinct from a missing Item. */
   database: DatabaseReadability;
   /** An `unresolved` entry names a citation key no Item carries only while
    *  this is `"fresh"`; a stale snapshot resolves a live key to nothing. */

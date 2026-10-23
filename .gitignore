@@ -8,6 +8,9 @@ node_modules
 # Turbo
 .turbo
 
+# Vitest reports and attachments
+.vitest/
+
 
 # Build Outputs
 output-file.txt

@@ -3,27 +3,11 @@
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-import type {
-  App,
-  CliFlag,
-  CliFlags,
-  FileSystemAdapter,
-  Plugin,
-} from "obsidian";
+import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
-import { isChildItemFields } from "@zotlit/db";
-
-import { Effect } from "@/lib/effect";
-import { itemSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import { readReferenceSources } from "@/services/citation-index/service";
-import type {
-  CitationIndex,
-  CitationSyntax,
-} from "@/services/citation-index/service";
+import type { CliHost } from "@/lib/cli-command";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
   ANNOTATION_USES_COMMAND,
@@ -32,20 +16,18 @@ import {
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
 } from "./commands";
-import type { DocumentReferences, ItemLookup } from "./commands";
 import type {
   AnnotationUsesParam,
   CitedByParam,
   ReferencesParam,
 } from "./request";
 
-const logger = getLogger(["citation-index", "cli"]);
-
 interface CitationsCliRegistrationDeps {
   app: App;
-  citationIndex: CitationIndex;
-  citationLookup: Pick<CitationLookup, "read" | "status">;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
+  citationIndex: Pick<
+    CitationIndex,
+    "readCitedBy" | "readReferences" | "readAnnotationUses"
+  >;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
 }
 
@@ -82,7 +64,7 @@ function referencesFlags(): CliFlags {
 }
 
 export function registerCitationsCli(
-  plugin: Plugin,
+  host: CliHost,
   deps: CitationsCliRegistrationDeps,
 ): void {
   const handlers = createCitationsCliHandlers({
@@ -100,34 +82,13 @@ export function registerCitationsCli(
         },
       };
     },
-    index: {
-      getAnnotationUses: (indexedKey) =>
-        deps.citationIndex.getAnnotationUses(indexedKey),
-      coverage: () => deps.citationIndex.coverage,
-      waitUntilSettled: (timeoutMs) =>
-        deps.citationIndex.waitUntilSettled(timeoutMs),
-      readLookup: (request) => deps.citationLookup.read(request),
-      citationKeys: () => deps.citationIndex.citationKeys(),
-      annotationCitationKeys: () => deps.citationIndex.annotationCitationKeys(),
-      getCitedBy: (indexedKey, lookup) =>
-        deps.citationIndex.getCitedBy(indexedKey, lookup),
-      resolution: () =>
-        deps.citationLookup.status === "pending"
-          ? null
-          : deps.citationLookup.status,
-      syntaxes: () => deps.citationIndex.syntaxes(),
-      documentOmittedSyntaxes: (path) => documentOmittedSyntaxes(deps, path),
-      citedByOmittedSyntaxes: (indexedKey, lookup) =>
-        deps.citationIndex.citedByOmittedSyntaxes(indexedKey, lookup),
-    },
-    lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
-    readDocument: (path) => readDocument(deps, path),
+    index: deps.citationIndex,
   });
 
-  plugin.registerCliHandler(
-    ANNOTATION_USES_COMMAND,
-    "List the notes that use one Zotero annotation, with every occurrence",
-    {
+  host.registerCliCommand(ANNOTATION_USES_COMMAND, {
+    description:
+      "List the notes that use one Zotero annotation, with every occurrence",
+    flags: {
       key: {
         value: "<annotation-key>",
         description:
@@ -139,79 +100,23 @@ export function registerCitationsCli(
         description: "Zotero source ID the call must match",
       },
     } satisfies Record<AnnotationUsesParam, CliFlag>,
-    handlers[ANNOTATION_USES_COMMAND],
-  );
-  plugin.registerCliHandler(
-    CITED_BY_COMMAND,
-    "List the notes that cite one Zotero item, with the position of every citation",
-    citedByFlags(),
-    handlers[CITED_BY_COMMAND],
-  );
-  plugin.registerCliHandler(
-    REFERENCES_COMMAND,
-    "List what one note cites, with the position of every citation",
-    referencesFlags(),
-    handlers[REFERENCES_COMMAND],
-  );
-  plugin.registerCliHandler(
-    CITATIONS_GUIDE_COMMAND,
-    "Print the ZotLit citations CLI guide",
-    null,
-    handlers[CITATIONS_GUIDE_COMMAND],
-  );
-}
-
-/** Any Markdown note answers: a document need not be a Literature Note to cite
- *  works. A path the vault holds no note at names no document to read. */
-async function readDocument(
-  deps: CitationsCliRegistrationDeps,
-  path: string,
-): Promise<DocumentReferences | null> {
-  const file = deps.app.vault.getFileByPath(path);
-  if (!file || file.extension !== "md") return null;
-  const { citations, errors, lookup } =
-    await deps.citationIndex.getDocumentCitationSet(file);
-  const { sources, database } = await readReferenceSources(deps.db, citations);
-  return { citations, errors, sources, database, lookup };
-}
-
-/** Any Markdown note answers, as {@link readDocument} does; a path the vault
- *  holds no note at holds no occurrence to omit. */
-async function documentOmittedSyntaxes(
-  deps: CitationsCliRegistrationDeps,
-  path: string,
-): Promise<CitationSyntax[]> {
-  const file = deps.app.vault.getFileByPath(path);
-  if (!file || file.extension !== "md") return [];
-  return deps.citationIndex.documentOmittedSyntaxes(file);
-}
-
-/** A well-formed Zotero key names an Item only when the connected library
- *  holds one; a read that fails leaves the verdict `"unreadable"` rather than
- *  reporting every Item as missing. The same read renders the Item's summary,
- *  so one answer carries both. */
-async function lookupItem(
-  db: CitationsCliRegistrationDeps["db"],
-  indexedKey: string,
-): Promise<ItemLookup> {
-  if (db.state === "degraded") return { presence: "unreadable", summary: null };
-  try {
-    const { reads } = await db.ready;
-    const item = (
-      await Effect.runPromise(
-        reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
-      )
-    ).get(indexedKey);
-    if (!item) return { presence: "absent", summary: null };
-    // A note or an attachment carries no work fields, so the source holds it
-    // and renders no summary for it, as the reference list reads it too.
-    const { fields } = item;
-    const summary = isChildItemFields(fields)
-      ? null
-      : itemSummary(item, fields).formatted;
-    return { presence: "present", summary };
-  } catch (error) {
-    logger.warn("Cannot look up the selected item", { indexedKey, error });
-    return { presence: "unreadable", summary: null };
-  }
+    handler: handlers[ANNOTATION_USES_COMMAND],
+  });
+  host.registerCliCommand(CITED_BY_COMMAND, {
+    description:
+      "List the notes that cite one Zotero item, with the position of every citation",
+    flags: citedByFlags(),
+    handler: handlers[CITED_BY_COMMAND],
+  });
+  host.registerCliCommand(REFERENCES_COMMAND, {
+    description:
+      "List what one note cites, with the position of every citation",
+    flags: referencesFlags(),
+    handler: handlers[REFERENCES_COMMAND],
+  });
+  host.registerCliCommand(CITATIONS_GUIDE_COMMAND, {
+    description: "Print the ZotLit citations CLI guide",
+    flags: null,
+    handler: handlers[CITATIONS_GUIDE_COMMAND],
+  });
 }
