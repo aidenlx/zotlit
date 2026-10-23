@@ -49,6 +49,31 @@ async function citationsOf(
 }
 
 describe("CitationIndex", () => {
+  it.each([
+    ["[[Doe\u00a02024]]", undefined],
+    ["[[Doe 2024\\]]", undefined],
+    ["[[Doe\u00a02024#cite:locator=4\\]]", "locator=4"],
+  ])(
+    "#1683 resolves normalized Wikilink Citations in References and Cited By: %s",
+    async (body, fragment) => {
+      await using harness = await createCitationIndexHarness(
+        { "draft.md": body },
+        { settings: { "citation.wikilink-citations": true } },
+      );
+      harness.workspace.layoutReady();
+      await harness.index.whenIndexed();
+      const set = await harness.index.getDocumentCitationSet(harness.draft);
+      expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
+        KEY_A,
+      ]);
+      expect(set.occurrences[0]).toMatchObject({ raw: "Doe 2024" });
+      expect(set.occurrences[0]?.fragment).toBe(fragment);
+      expect((await harness.index.getCitedBy(KEY_A)).groups).toMatchObject([
+        { path: "draft.md", occurrences: [{ raw: "Doe 2024" }] },
+      ]);
+    },
+  );
+
   it("keeps Cited By backlinks when membership changes after a failed refresh", async () => {
     const { index, citekeys, db, draft, metadataCache, workspace } =
       await makeHarness({ "draft.md": "@doe2024" });

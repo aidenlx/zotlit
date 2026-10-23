@@ -282,7 +282,7 @@ export class DatabaseStub implements AsyncDisposable {
     this.#service = inProcessReadsService(memoryOpener(() => this.#sql()).open);
   }
 
-  readonly #seed?: string;
+  #seed?: string;
   #lastSql: string | null = null;
   #refresh: Promise<void> | null = null;
 
@@ -393,6 +393,13 @@ export class DatabaseStub implements AsyncDisposable {
 
   changed(): void {
     this.#events.emit("changed");
+  }
+
+  async replaceRows(seed: string): Promise<void> {
+    this.#seed = seed;
+    this.#lastSql = seed;
+    await this.#service.refresh();
+    this.changed();
   }
 
   degrade(): void {

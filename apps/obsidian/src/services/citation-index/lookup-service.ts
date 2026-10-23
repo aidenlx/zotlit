@@ -286,10 +286,15 @@ export class CitationLookup extends Service {
   #revalidate(): void {
     if (this.disposing) return;
     this.#invalidate();
-    this.#refresh = this.read({}).catch((error: unknown) => {
-      if (!this.disposing)
-        logger.warn("Citation lookup refresh failed", { error });
-    });
+    this.#refresh = this.read({})
+      .then(() => {
+        // Annotation parents and Item data can change at the same citekey revision.
+        if (!this.disposing) this.#events.emit("changed");
+      })
+      .catch((error: unknown) => {
+        if (!this.disposing)
+          logger.warn("Citation lookup refresh failed", { error });
+      });
   }
 
   #invalidate(): void {

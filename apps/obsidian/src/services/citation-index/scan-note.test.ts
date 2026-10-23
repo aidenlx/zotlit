@@ -573,10 +573,10 @@ const conformance: {
   // remark-obsidian/test/parity/corpus.ts: token/wikilink/escaped-close;
   // src/lib/syntax/wikilink.ts documents that a backslash cannot escape `]]`.
   {
-    name: "wikilink backslash is literal",
+    name: "wikilink trailing backslash is normalized",
     text: "[[Note\\]]",
     record: {
-      wikilinks: [{ kind: "wikilink", raw: "Note\\", position: pos(0, 9) }],
+      wikilinks: [{ kind: "wikilink", raw: "Note", position: pos(0, 9) }],
     },
   },
   // remark-obsidian/test/parity/corpus.ts: probe/escape/wikilink-opener.

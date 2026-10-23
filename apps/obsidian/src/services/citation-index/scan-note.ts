@@ -563,7 +563,7 @@ export function scanNote(text: string): NoteScanRecord {
           position: position(from, to),
         });
         if (raw.startsWith("[[") && !raw.includes("|")) {
-          const link = raw.slice(2, -2).trim();
+          const link = target;
           const hash = link.indexOf("#");
           const path = hash < 0 ? link : link.slice(0, hash);
           const subpath = hash < 0 ? "" : link.slice(hash);
