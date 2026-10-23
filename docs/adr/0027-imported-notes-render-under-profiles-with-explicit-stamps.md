@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0031
+status: amended by ADR-0031, ADR-0079
 ---
 
 # Imported Notes render under Profiles with explicit stamps

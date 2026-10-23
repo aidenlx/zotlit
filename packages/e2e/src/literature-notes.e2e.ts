@@ -315,7 +315,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(oneNote).toBe(true);
   });
 
-  it("creates a default note whose body renders once and links its Child Note without importing it", async () => {
+  it("creates a default note whose body renders once and imports no Child Note", async () => {
     const item = ITEMS.find(({ itemID }) => itemID === 1)!;
     const childNoteKey = "NNNNAAAA";
     const services = "app.plugins.plugins.zotlit.services";
