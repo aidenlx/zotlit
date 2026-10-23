@@ -90,6 +90,7 @@ it("runs the production parse worker without Obsidian (#1691)", async () => {
           annotations: [
             {
               form: "citation",
+              text: "",
               indexedKey: "EFGH6789g42",
               attachmentKey: "ABCD2345",
               pageLabel: null,

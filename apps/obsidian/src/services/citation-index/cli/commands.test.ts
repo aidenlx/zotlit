@@ -1,3 +1,4 @@
+import type { Plugin } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
@@ -5,6 +6,7 @@ import type { CslItemData } from "@zotlit/db";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type {
+  AnnotationUse,
   Citation,
   CitationKeyResolution,
   CitationOccurrence,
@@ -16,6 +18,7 @@ import type {
   ReferenceSource,
   SnapshotItem,
 } from "@/services/citation-index/service";
+import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
 
 import {
   CITATIONS_GUIDE_COMMAND,
@@ -25,6 +28,7 @@ import {
 } from "./commands";
 import type { DocumentReferences, ItemLookup } from "./commands";
 import { DIAGNOSTIC_HINTS } from "./envelope";
+import { registerCitationsCli } from "./register";
 
 const IDENTITY = {
   vault: { name: "Test Vault", path: "/vaults/test" },
@@ -192,6 +196,7 @@ const DOCUMENT: Omit<DocumentReferences, "lookup"> = {
 };
 
 interface SetupOptions {
+  annotationUses?: readonly AnnotationUse[];
   settle?: CitationSettleOutcome;
   settleTimeoutMs?: number;
   snapshot?: CitedBySnapshot;
@@ -226,6 +231,7 @@ function setup(options: SetupOptions = {}) {
         ),
       ),
   );
+  const getAnnotationUses = vi.fn(() => options.annotationUses ?? []);
   const getCitedBy = vi.fn(async () => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => Promise.resolve(lookup));
   const readDocument = vi.fn(
@@ -259,6 +265,8 @@ function setup(options: SetupOptions = {}) {
       waitUntilSettled,
       readLookup,
       getCitedBy,
+      getAnnotationUses,
+      coverage: () => "complete",
       resolution,
       syntaxes,
       documentOmittedSyntaxes,
@@ -273,7 +281,11 @@ function setup(options: SetupOptions = {}) {
     Promise.resolve(handlers[REFERENCES_COMMAND](params));
   const guide = (params: Record<string, string>): Promise<string> =>
     Promise.resolve(handlers[CITATIONS_GUIDE_COMMAND](params));
+  const annotationUses = (params: Record<string, string>): Promise<string> =>
+    Promise.resolve(handlers["zotlit:annotation-uses"](params));
   return {
+    annotationUses,
+    getAnnotationUses,
     citedBy,
     references,
     guide,
@@ -715,6 +727,8 @@ describe("zotlit:cited-by", () => {
         return IDENTITY;
       },
       index: {
+        getAnnotationUses: () => [],
+        coverage: () => "complete",
         citationKeys: () => [],
         waitUntilSettled: () => {
           order.push("settle");
@@ -1139,6 +1153,7 @@ describe("zotlit:citations-guide", () => {
     expect(output).toContain("ZOTLIT-CITATIONS(1)");
     expect(output).toContain(CITED_BY_COMMAND);
     expect(output).toContain(REFERENCES_COMMAND);
+    expect(output).toContain("zotlit:annotation-uses key=<annotation-key>");
     expect(output).toContain(CITATIONS_GUIDE_COMMAND);
     expect(getIdentity).not.toHaveBeenCalled();
     expect(waitUntilSettled).not.toHaveBeenCalled();
@@ -1159,5 +1174,299 @@ describe("zotlit:citations-guide", () => {
         details: { parameter: "topic" },
       },
     });
+  });
+});
+
+describe("zotlit:annotation-uses", () => {
+  it("registers the command against the live index and reports partial coverage (#1692)", async () => {
+    await using harness = await createCitationIndexHarness(
+      {
+        "z.md":
+          "[label](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
+        "a.md":
+          "[](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
+        "unreadable.md": "",
+      },
+      {
+        notes: false,
+        settings: {
+          "citation.pandoc-citations": false,
+          "citation.wikilink-citations": false,
+        },
+      },
+    );
+    harness.vault.fail("unreadable.md");
+    harness.workspace.layoutReady();
+    Object.assign(harness.app.vault, {
+      getName: () => "Test Vault",
+      adapter: { getBasePath: () => "/vaults/test" },
+    });
+    const registerCliHandler = vi.fn<Plugin["registerCliHandler"]>();
+    registerCitationsCli({ registerCliHandler } as unknown as Plugin, {
+      app: harness.app,
+      citationIndex: harness.index,
+      citationLookup: harness.lookup,
+      db: harness.db,
+      zoteroPref: {
+        ready: Promise.resolve(),
+        sourceId: "a1b2c3d4",
+        databasePath: "/Zotero/zotero.sqlite",
+      },
+    });
+    const handler = registerCliHandler.mock.calls.find(
+      ([command]) => command === "zotlit:annotation-uses",
+    )![3];
+    const response = JSON.parse(await handler({ key: "EFGH6789g42" }));
+    expect(response).toEqual({
+      command: "zotlit:annotation-uses",
+      contractVersion: 3,
+      ok: true,
+      request: { key: "EFGH6789g42" },
+      identity: IDENTITY,
+      coverage: "degraded",
+      groups: [
+        {
+          path: "a.md",
+          occurrences: [
+            {
+              form: "citation",
+              text: "",
+              position: {
+                start: { line: 1, col: 1, offset: 0 },
+                end: { line: 1, col: 63, offset: 62 },
+              },
+            },
+          ],
+        },
+        {
+          path: "z.md",
+          occurrences: [
+            {
+              form: "labelled",
+              text: "label",
+              position: {
+                start: { line: 1, col: 1, offset: 0 },
+                end: { line: 1, col: 68, offset: 67 },
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ["missing key", {}, { parameter: "key", message: "key is required." }],
+    [
+      "empty key",
+      { key: "" },
+      { parameter: "key", message: "key requires a value." },
+    ],
+    [
+      "bare key",
+      { key: "true" },
+      { parameter: "key", message: "key requires a value." },
+    ],
+    [
+      "malformed key",
+      { key: "short" },
+      {
+        parameter: "key",
+        message:
+          "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+      },
+    ],
+    [
+      "malformed group",
+      { key: "EFGH6789gwrong" },
+      {
+        parameter: "key",
+        message:
+          "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+      },
+    ],
+    [
+      "citation selector",
+      { key: "EFGH6789", citekey: "doe2024" },
+      {
+        parameter: "citekey",
+        message:
+          "Unknown parameter 'citekey' for annotation-uses. Accepted parameters: key, expect-source.",
+      },
+    ],
+    [
+      "bare source",
+      { key: "EFGH6789", "expect-source": "true" },
+      {
+        parameter: "expect-source",
+        message: "expect-source requires a value.",
+      },
+    ],
+    [
+      "unknown flag",
+      { key: "EFGH6789", extra: "value" },
+      {
+        parameter: "extra",
+        message:
+          "Unknown parameter 'extra' for annotation-uses. Accepted parameters: key, expect-source.",
+      },
+    ],
+  ])(
+    "rejects %s before reading the index (#1692)",
+    async (_label, params, { parameter, message }) => {
+      const { annotationUses, getIdentity, getAnnotationUses } = setup();
+      expect(JSON.parse(await annotationUses(params))).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message,
+          details: { parameter },
+        },
+      });
+      expect(getIdentity).not.toHaveBeenCalled();
+      expect(getAnnotationUses).not.toHaveBeenCalled();
+    },
+  );
+
+  it("answers an unused Annotation with an empty list without a Zotero lookup (#1692)", async () => {
+    const { annotationUses, getAnnotationUses, lookupItem, readLookup } = setup(
+      { lookup: { presence: "absent", summary: null } },
+    );
+    expect(
+      JSON.parse(
+        await annotationUses({ key: "EFGH6789", "expect-source": "a1b2c3d4" }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      request: { key: "EFGH6789" },
+      groups: [],
+      coverage: "complete",
+    });
+    expect(getAnnotationUses).toHaveBeenCalledWith("EFGH6789");
+    expect(lookupItem).not.toHaveBeenCalled();
+    expect(readLookup).not.toHaveBeenCalled();
+  });
+
+  it("rejects a different source before waiting or reading (#1692)", async () => {
+    const { annotationUses, waitUntilSettled, getAnnotationUses } = setup();
+    expect(
+      JSON.parse(
+        await annotationUses({ key: "EFGH6789", "expect-source": "other" }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "TARGET_MISMATCH",
+        message: "Expected Zotero source 'other', connected to 'a1b2c3d4'.",
+      },
+    });
+    expect(waitUntilSettled).not.toHaveBeenCalled();
+    expect(getAnnotationUses).not.toHaveBeenCalled();
+  });
+
+  it("reports an index that has not settled before reading (#1692)", async () => {
+    const { annotationUses, getAnnotationUses } = setup({ settle: "timeout" });
+    expect(JSON.parse(await annotationUses({ key: "EFGH6789" }))).toMatchObject(
+      {
+        ok: false,
+        diagnostic: { code: "INDEX_NOT_READY" },
+      },
+    );
+    expect(getAnnotationUses).not.toHaveBeenCalled();
+  });
+
+  it("groups all forms by note and reports link text and one-based positions (#1692)", async () => {
+    const { annotationUses, lookupItem, readLookup } = setup({
+      annotationUses: [
+        {
+          path: "a.md",
+          occurrence: {
+            indexedKey: "EFGH6789g42",
+            attachmentKey: "ABCD2345",
+            pageLabel: null,
+            form: "citation",
+            text: "",
+            position: {
+              start: { line: 0, col: 0, offset: 0 },
+              end: { line: 0, col: 62, offset: 62 },
+            },
+          },
+        },
+        {
+          path: "a.md",
+          occurrence: {
+            indexedKey: "EFGH6789g42",
+            attachmentKey: "ABCD2345",
+            pageLabel: null,
+            form: "labelled",
+            text: "label",
+            position: {
+              start: { line: 1, col: 0, offset: 63 },
+              end: { line: 1, col: 67, offset: 130 },
+            },
+          },
+        },
+        {
+          path: "b.md",
+          occurrence: {
+            indexedKey: "EFGH6789g42",
+            attachmentKey: "ABCD2345",
+            pageLabel: null,
+            form: "embed",
+            text: "crop",
+            position: {
+              start: { line: 0, col: 0, offset: 0 },
+              end: { line: 0, col: 67, offset: 67 },
+            },
+          },
+        },
+      ],
+    });
+    expect(JSON.parse(await annotationUses({ key: "EFGH6789g42" }))).toEqual({
+      contractVersion: 3,
+      command: "zotlit:annotation-uses",
+      ok: true,
+      request: { key: "EFGH6789g42" },
+      identity: IDENTITY,
+      coverage: "complete",
+      groups: [
+        {
+          path: "a.md",
+          occurrences: [
+            {
+              form: "citation",
+              text: "",
+              position: {
+                start: { line: 1, col: 1, offset: 0 },
+                end: { line: 1, col: 63, offset: 62 },
+              },
+            },
+            {
+              form: "labelled",
+              text: "label",
+              position: {
+                start: { line: 2, col: 1, offset: 63 },
+                end: { line: 2, col: 68, offset: 130 },
+              },
+            },
+          ],
+        },
+        {
+          path: "b.md",
+          occurrences: [
+            {
+              form: "embed",
+              text: "crop",
+              position: {
+                start: { line: 1, col: 1, offset: 0 },
+                end: { line: 1, col: 68, offset: 67 },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(lookupItem).not.toHaveBeenCalled();
+    expect(readLookup).not.toHaveBeenCalled();
   });
 });
