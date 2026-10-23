@@ -7,7 +7,7 @@ import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 import type { CitationIndex } from "@/services/citation-index/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
   ANNOTATION_USES_COMMAND,
@@ -28,7 +28,7 @@ interface CitationsCliRegistrationDeps {
     CitationIndex,
     "readCitedBy" | "readReferences" | "readAnnotationUses"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
+  zoteroPref: Pick<PlainZoteroPref, "sourceId" | "databasePath">;
 }
 
 /** Neither selector is `required`: the command takes exactly one. */
@@ -69,7 +69,6 @@ export function registerCitationsCli(
 ): void {
   const handlers = createCitationsCliHandlers({
     getIdentity: async () => {
-      await deps.zoteroPref.ready;
       return {
         vault: {
           name: deps.app.vault.getName(),

@@ -10,12 +10,12 @@ import type { Root } from "react-dom/client";
 
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { ReleaseService } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { WelcomeActionsContext } from "./actions";
@@ -44,8 +44,8 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 export interface WelcomeBannerDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
-  queries: Pick<QueryClientService, "peek" | "read">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  queries: Pick<PlainQueryClients, "peek" | "read">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   settings: Pick<PlainPluginSettings, "subscribe" | "update" | "flush">;
   setupActions: SetupActions;
   templateMigration: Pick<

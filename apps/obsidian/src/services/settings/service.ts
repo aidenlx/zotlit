@@ -295,8 +295,6 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
       ...overrides,
     };
     const earlier = pendingWrite;
-    // A storage call can throw before the immediately started fiber returns.
-    let fiber: Fiber.Fiber<void, SettingsPersistenceError> | undefined;
     const write = Effect.gen(function* () {
       if (earlier) yield* Fiber.await(earlier);
       yield* Effect.tryPromise({
@@ -308,17 +306,17 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
       Effect.tapCause((cause) =>
         reportFailure("background save failed", cause),
       ),
-      Effect.ensuring(
-        Effect.sync(() => {
-          if (pendingWrite === fiber) pendingWrite = undefined;
-        }),
-      ),
       withLogCategory("settings"),
     );
-    fiber = yield* Effect.forkIn(write, writes, {
+    const fiber = yield* Effect.forkIn(write, writes, {
       startImmediately: true,
     });
     pendingWrite = fiber;
+    // Observers also run for an already completed fiber: saveData can throw
+    // before forkIn returns, and that failed write must still leave the queue.
+    fiber.addObserver(() => {
+      if (pendingWrite === fiber) pendingWrite = undefined;
+    });
     return fiber;
   });
 

@@ -15,7 +15,7 @@ import {
 } from "@/lib/__fixtures__/obsidian-host";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { ReleaseService } from "@/services/release/service";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -97,7 +97,7 @@ function bannerDeps(
       }),
       on: events.on.bind(events),
     } as unknown as WelcomeBannerDeps["reads"],
-    queries: new QueryClientService(),
+    queries: queryClientsFixture(),
     zoteroPref: { dataDir: "/Zotero" },
     settings,
     setupActions: {

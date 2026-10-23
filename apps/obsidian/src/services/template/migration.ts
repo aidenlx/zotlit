@@ -15,7 +15,7 @@ import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import { loadTemplateData } from "@/services/template-workbench/data";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -92,7 +92,7 @@ export interface LiteratureNoteTemplateMigrationDataDeps {
   noteIndex: NoteIndex;
   settings: Pick<PlainPluginSettings, "current" | "update" | "flush">;
   templates: TemplateService;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
 /** Load one real in-scope Zotero item through the Workbench's inert render seam. */

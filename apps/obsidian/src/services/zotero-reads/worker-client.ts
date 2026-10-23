@@ -10,7 +10,7 @@ import type { Scope } from "@/lib/effect";
 import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import type { ZoteroReadsClient } from "./in-process";
 import type { ReadsConfig, SegmenterBinary } from "./rpc";
@@ -18,7 +18,7 @@ import { connectWorker, makeWorkerReads } from "./worker-host";
 
 export interface WorkerClientDeps {
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<PlainZoteroPref, "databasePath" | "on">;
   chineseSegmenter: ChineseSegmenterService;
 }
 
@@ -75,7 +75,7 @@ export const workerClient = Effect.fnUntraced(function* ({
 }: WorkerClientDeps): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
   let config = readsConfig(
     yield* Effect.promise(async () => {
-      await Promise.all([zoteroPref.ready, chineseSegmenter.ready]);
+      await chineseSegmenter.ready;
       return settings.current;
     }),
     { zoteroPref, chineseSegmenter },
@@ -107,5 +107,7 @@ export const workerClient = Effect.fnUntraced(function* ({
       for (const unsubscribe of unsubscribes) unsubscribe();
     }),
   );
+  // Reconcile changes made while the worker connection was being acquired.
+  push();
   return reads;
 });

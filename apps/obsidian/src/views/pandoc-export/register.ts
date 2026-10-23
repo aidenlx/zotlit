@@ -35,7 +35,7 @@ import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { openPandocExportModal } from "./modal";
@@ -50,7 +50,7 @@ export interface PandocExportDeps {
   /** Resolves the literal citation keys of the exported document. */
   citationLookup: Pick<CitationLookup, "read">;
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
   settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
@@ -123,7 +123,6 @@ export async function runPandocExport(
     declared.presentation,
     vaultPresentation(settings.current),
   );
-  await zoteroPref.ready;
   // A literal citation key resolves through the snapshot, so this export waits
   // for its first rebuild the way every in-app surface does.
 

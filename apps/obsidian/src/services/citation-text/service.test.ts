@@ -31,8 +31,9 @@ import type {
 } from "@/services/pandoc/engine";
 import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
-import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -83,7 +84,7 @@ interface Harness {
   /** Deletes the document, as Obsidian reports a file the vault no longer has. */
   deleteNote: () => void;
   /** The client the text is held on, for reading what one path holds. */
-  queryClient: QueryClientService;
+  queryClient: PlainQueryClients & AsyncDisposable;
   /** How many cited-item reads the database answered or failed. */
   readonly itemReads: number;
   /** Fails the next cited-item read, as a locked database would. */
@@ -103,7 +104,7 @@ async function makeHarness({
   settings = {},
   documentCitationSet,
   bibliographyRender,
-  queryClient = new QueryClientService(),
+  queryClient = queryClientsFixture(),
   openDocuments = new OpenDocumentsStub(),
 }: {
   body: string;
@@ -132,7 +133,7 @@ async function makeHarness({
     "occurrences" | "citations" | "errors"
   >;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
-  queryClient?: QueryClientService;
+  queryClient?: PlainQueryClients & AsyncDisposable;
   openDocuments?: OpenDocumentsStub;
 }): Promise<Harness> {
   const citationRequests: { citations: readonly string[] }[] = [];
@@ -455,9 +456,7 @@ describe("CitationText", () => {
       });
       let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
       vi.setSystemTime(now.epochMilliseconds);
-      const queryClient = cleanup.use(
-        new QueryClientService({ now: () => now }),
-      );
+      const queryClient = cleanup.use(queryClientsFixture(() => now));
       const h = cleanup.adopt(
         await makeHarness({ body: "@alpha", queryClient }),
         (h) => h.dispose(),
@@ -497,11 +496,7 @@ describe("CitationText", () => {
       });
       let now = Temporal.Instant.from("2026-10-06T00:00:00Z");
       vi.setSystemTime(now.epochMilliseconds);
-      const queryClient = cleanup.use(
-        new QueryClientService({
-          now: () => now,
-        }),
-      );
+      const queryClient = cleanup.use(queryClientsFixture(() => now));
       let fails = kind === "first read";
       const renderCitations = vi.fn(async () => {
         if (fails && format === "citation")

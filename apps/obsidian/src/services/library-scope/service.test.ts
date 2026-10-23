@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Library } from "@zotlit/db";
 
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -281,7 +281,7 @@ async function makeService(
       }),
     }),
   );
-  const queries = stack.use(new QueryClientService({ now: () => now }));
+  const queries = stack.use(queryClientsFixture(() => now));
   const settings = new FakeSettings(
     options.scope === undefined ? { mode: "all" } : options.scope,
     options.broken ?? false,

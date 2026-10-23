@@ -18,7 +18,7 @@ import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import type { ImportProfile } from "./import-profile-modal";
@@ -109,7 +109,24 @@ export interface SettingTabContext {
   db: ZoteroReadsService;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    | "state"
+    | "resolvedProfileDir"
+    | "profileDirOverride"
+    | "dataDirOverride"
+    | "dataDir"
+    | "databasePath"
+    | "sourceId"
+    | "baseAttachmentPath"
+    | "httpPort"
+    | "get"
+    | "on"
+    | "setProfileDir"
+    | "setDataDir"
+    | "companionInstalled"
+    | "listProfiles"
+  >;
   /** The one loopback listener, read by the Local server rows. */
   localServer: LocalServerActions;
   /** The Workbench Connection the Local server rows name and end. */

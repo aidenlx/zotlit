@@ -7,11 +7,12 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import type { ProfileService } from "@/services/profile/service";
-import type { Held, QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
@@ -58,10 +59,13 @@ export interface BibliographyRenderCacheOptions {
     PandocEngineService,
     "getStatus" | "subscribe" | "getEngine"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "on">;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   /** The plugin-wide query client every Held Read is realized on. */
-  queryClient: QueryClientService;
+  queryClient: Pick<
+    PlainQueryClients,
+    "ask" | "readFresh" | "peek" | "invalidate" | "watch"
+  >;
 }
 
 /**

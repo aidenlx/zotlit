@@ -34,7 +34,7 @@ import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
@@ -157,7 +157,7 @@ export interface AnnotationsLayoutDeps {
   reportBlockedGesture: (attachmentKey: string) => void;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
   libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<ExcerptDisplayService, "open" | "refresh">;
   noteFeature: Pick<

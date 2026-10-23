@@ -31,7 +31,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
@@ -63,7 +63,7 @@ export { CSL_COMMAND };
 export interface PandocResolveDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "ready" | "activeReadMode">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
 }
@@ -131,7 +131,6 @@ export function registerPandocResolve(
         const file = yield* decodeCliParams(params, resolveParams, {
           command: RESOLVE_COMMAND,
         });
-        yield* Effect.promise(() => deps.zoteroPref.ready);
         const response = yield* resolveCitations(file, {
           readDocument: (absolutePath) => readDocument(deps.app, absolutePath),
           resolveIndexedKey: (linkpath, sourcePath) =>
@@ -179,7 +178,6 @@ export function registerPandocResolve(
         const selected = yield* decodeCliParams(params, cslParams, {
           command: CSL_COMMAND,
         });
-        yield* Effect.promise(() => deps.zoteroPref.ready);
         yield* Effect.promise(() => deps.profile.ready);
         const { dataDir } = deps.zoteroPref;
         // A native run carries no vault Citation Locale: the installed style

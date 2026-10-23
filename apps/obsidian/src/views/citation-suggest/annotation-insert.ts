@@ -6,7 +6,7 @@ import { getLogger } from "@/lib/log";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { prepareAndCommit } from "@/views/annot-view/drag-insert";
 
@@ -18,7 +18,7 @@ export interface AnnotationInsertDeps {
   app: App;
   annotations: Pick<AnnotationRepository, "read">;
   noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   useLedger: Pick<PlainUseLedger, "record">;
   notify: (message: string | DocumentFragment) => void;
 }

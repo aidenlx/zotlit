@@ -6,7 +6,7 @@ import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
@@ -21,7 +21,7 @@ export interface QuickSwitchDeps {
   noteIndex: NoteIndex;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
   settings: Pick<PlainPluginSettings, "current">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   /** Opens the PDF a result asks for. */
   opener: Pick<TargetOpener, "open">;
   /** Open the Library View with the Item selected. */

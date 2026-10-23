@@ -43,7 +43,7 @@ import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { resolveFreeNotePath } from "./filename";
@@ -103,7 +103,7 @@ export interface NoteFeatureDeps {
     NoteIndex,
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;

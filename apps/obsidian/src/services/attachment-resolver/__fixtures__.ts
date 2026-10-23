@@ -8,8 +8,8 @@ import { vi } from "vitest";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect, Stream } from "@/lib/effect";
-import { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,
@@ -92,7 +92,7 @@ export async function resolverHarness(
     });
   }
   let now = Temporal.Now.instant();
-  const queries = stack.use(new QueryClientService({ now: () => now }));
+  const queries = stack.use(queryClientsFixture(() => now));
 
   const prefEvents = createNanoEvents<ZoteroPrefEvents>();
   const zoteroPref = {

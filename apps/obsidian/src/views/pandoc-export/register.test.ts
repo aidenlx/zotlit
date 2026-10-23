@@ -158,7 +158,7 @@ function openVault({
         getStatus: () => ({ kind: engineInstalled ? "installed" : "absent" }),
         getEngine,
       },
-      zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
+      zoteroPref: { dataDir: DATA_DIR },
       citationLookup: {
         read: async () => lookupAnswer(),
       },

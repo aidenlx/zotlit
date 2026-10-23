@@ -78,7 +78,7 @@ async function cslVault({
       },
       metadataCache,
     },
-    zoteroPref: { ready: Promise.resolve(), dataDir },
+    zoteroPref: { dataDir },
     settings: { current: settings },
     profile: profileReader(settings, metadataCache),
   } as unknown as PandocResolveDeps);

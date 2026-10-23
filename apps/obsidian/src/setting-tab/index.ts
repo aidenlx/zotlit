@@ -9,7 +9,6 @@ import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -61,7 +60,7 @@ export interface ZotLitSettingTabOptions {
   profile: ProfileService;
   db: ZoteroReadsService;
   libraryScope: LibraryScopeService;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: SettingTabContext["zoteroPref"];
   localServer: LocalServerActions;
   localBridge: LocalBridgeActions;
   customize: CustomizeAction;
@@ -91,7 +90,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   >;
   readonly #db: ZoteroReadsService;
   readonly #libraryScope: LibraryScopeService;
-  readonly #zoteroPref: ZoteroPrefService;
+  readonly #zoteroPref: SettingTabContext["zoteroPref"];
   readonly #localServer: LocalServerActions;
   readonly #localBridge: LocalBridgeActions;
   readonly #customize: CustomizeAction;

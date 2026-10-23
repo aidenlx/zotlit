@@ -3,8 +3,8 @@
 import { homedir } from "node:os";
 
 import { Effect } from "@/lib/effect";
-import type { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 export type ConnectionReadout =
@@ -22,13 +22,13 @@ const ITEM_COUNT_KEY = ["welcome", "connection-readout"] as const;
 
 interface ConnectionQueryDeps {
   reads: Pick<ZoteroReadsService, "state" | "error" | "moved">;
-  queries: Pick<QueryClientService, "peek">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  queries: Pick<PlainQueryClients, "peek">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
 export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
   reads: Pick<ZoteroReadsService, "state" | "error" | "moved" | "ready">;
-  queries: Pick<QueryClientService, "peek" | "read">;
+  queries: Pick<PlainQueryClients, "peek" | "read">;
 }
 
 export type ReadConnectionSyncDeps = ConnectionQueryDeps;
@@ -42,7 +42,7 @@ export type ReadConnectionSyncDeps = ConnectionQueryDeps;
  */
 export function holdConnectionReadout(deps: {
   reads: Pick<ZoteroReadsService, "on">;
-  queries: Pick<QueryClientService, "invalidate">;
+  queries: Pick<PlainQueryClients, "invalidate">;
 }): () => void {
   return deps.reads.on("changed", () =>
     deps.queries.invalidate(ITEM_COUNT_KEY),

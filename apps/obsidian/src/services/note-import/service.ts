@@ -67,7 +67,7 @@ import type {
 } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -125,7 +125,7 @@ interface NoteImporterDeps {
     TemplateService,
     "render" | "renderCitation" | "renderProfileAnnotation"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
 }

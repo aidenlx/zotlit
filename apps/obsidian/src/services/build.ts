@@ -3,7 +3,6 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
@@ -66,7 +65,7 @@ import { createPandocEngineService } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { ProfileService } from "./profile/service";
-import { QueryClients } from "./query-client/service";
+import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { plainPluginSettings } from "./settings/plain";
@@ -81,7 +80,7 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
-import { ZoteroPrefService } from "./zotero-pref/service";
+import { plainZoteroPref } from "./zotero-pref/plain";
 import { ZoteroReadsService } from "./zotero-reads/service";
 import { workerClient } from "./zotero-reads/worker-client";
 
@@ -134,7 +133,7 @@ export async function buildServices(
         cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
     })
     .useValue({
-      queryClient: () => runtime.runSync(QueryClients.use(Effect.succeed)),
+      queryClient: () => plainQueryClients(runtime),
     })
     .use({
       release: ({ settings }) =>
@@ -156,8 +155,8 @@ export async function buildServices(
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
-    .use({
-      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
+    .useValue({
+      zoteroPref: () => plainZoteroPref(runtime),
     })
     .use({
       localServer: ({ settings, zoteroPref, noteIndex }) =>

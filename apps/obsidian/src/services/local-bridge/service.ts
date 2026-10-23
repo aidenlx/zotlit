@@ -25,7 +25,7 @@ import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { createLocalBridgeApp } from "./app";
@@ -81,7 +81,7 @@ export interface LocalBridgeServiceDeps {
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** This build's version, which the grant carries so the page can name it. */
   pluginVersion: string;
 }

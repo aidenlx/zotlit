@@ -70,7 +70,7 @@ function makeSettings(value: {
 }
 
 /**
- * A mutable stand-in for `ZoteroPrefService`, carrying the `resolved-changed`
+ * A mutable stand-in for `PlainZoteroPref`, carrying the `resolved-changed`
  * event the import service rebuilds its root snapshot on.
  */
 function makeZoteroPref(values: {

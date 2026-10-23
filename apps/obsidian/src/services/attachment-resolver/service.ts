@@ -7,9 +7,9 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { Effect, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { isPdfAttachment } from "@/services/attachment-open/resolve";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import { Service } from "@/services/service-base";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 const logger = getLogger("attachment-resolver");
@@ -88,10 +88,10 @@ export type AttachedFile = Extract<AttachmentLookup, { kind: "resolved" }> & {
 export interface AttachmentResolverDeps {
   reads: Pick<ZoteroReadsService, "ready" | "on" | "acquireRead">;
   queries: Pick<
-    QueryClientService,
+    PlainQueryClients,
     "client" | "ask" | "invalidate" | "peek" | "watch"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath" | "on">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath" | "on">;
   /**
    * The filesystem's platform, which decides whether the lookup key folds case.
    *

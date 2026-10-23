@@ -28,7 +28,7 @@ import { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import {
@@ -239,7 +239,7 @@ async function makeHarness({
         },
         on: () => () => undefined,
       },
-      queryClient: stack.use(new QueryClientService()),
+      queryClient: stack.use(queryClientsFixture()),
     } as never),
   );
   await citationText.ready;

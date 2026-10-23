@@ -16,7 +16,7 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { activateAnnotView } from "@/views/annot-view/register";
 
@@ -30,7 +30,7 @@ const logger = getLogger("attachment-open");
 export interface AttachmentOpenLookupDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "acquireRead">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
 /** What opening a PDF in Obsidian needs, wherever the gesture came from. */

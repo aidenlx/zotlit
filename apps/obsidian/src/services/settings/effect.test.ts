@@ -373,3 +373,22 @@ it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>
     expect(writes).toEqual([]);
   }),
 );
+
+it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
+  Effect.gen(function* () {
+    const { settings, close } = yield* settingsRuntimeOf({
+      plugin: {
+        loadData: async () => null,
+        saveData: () => {
+          throw new Error("storage closed");
+        },
+      },
+    });
+    settings.update({ "server.hostname": "/edited" });
+    yield* Effect.promise(() => settings.flush().catch(() => {}));
+    yield* Effect.promise(close);
+    yield* Effect.promise(() =>
+      expect(settings.flush()).resolves.toBeUndefined(),
+    );
+  }),
+);
