@@ -63,15 +63,16 @@ catalog:
   fflate: ^0.8.2
   jieba-wasm: 2.4.0
   monkey-around: 3.0.0
-  oxfmt: ^0.55.0
-  oxlint: ^1.70.0
+  oxc-parser: ^0.155.0
+  oxfmt: ^0.74.0
+  oxlint: ^1.89.0
   p-queue: ^9.3.3
   preact: 11.0.0-rc.2
   react: ^19.2.0
   react-dom: ^19.2.0
   semver: ^7.7.2
   tailwindcss: ^4.3.0
-  tsdown: ^0.22.5
+  tsdown: ^0.23.1
   typescript: ^7.0.2
   valibot: ^1.0.0
   vite: ^8.1.5

@@ -73,9 +73,9 @@ function creationHarness(selection: CreationProfileSelection) {
     },
     zoteroPref: { dataDir: null },
     noteFeature: {
-      resolveCompanionNote: vi.fn(
-        async (): Promise<CompanionNoteTarget> => ({ outcome: "create" }),
-      ),
+      resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
+        outcome: "create",
+      })),
       planCreations,
       createNote: create,
       updateNote: vi.fn(async () => ({

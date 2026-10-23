@@ -258,13 +258,11 @@ export class ItemLookup extends Service<ItemLookupReady> {
           hits: hits.length,
           durationMs: performance.now() - t0,
         });
-        return hits.map(
-          (hit): SearchHit => ({
-            ...hit,
-            library: labels?.get(hit.item.libraryID) ?? null,
-            cited: citedKeys.has(hit.item.indexedKey),
-          }),
-        );
+        return hits.map((hit): SearchHit => ({
+          ...hit,
+          library: labels?.get(hit.item.libraryID) ?? null,
+          cited: citedKeys.has(hit.item.indexedKey),
+        }));
       }),
       Effect.catchTag("DbUnavailable", (error) =>
         Effect.sync(() => {

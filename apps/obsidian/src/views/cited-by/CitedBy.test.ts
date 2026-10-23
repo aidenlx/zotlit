@@ -28,7 +28,7 @@ import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
 import { COMPACT_CAP, createCitedByStore, CitedByStoreProvider } from "./store";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const body = "A reason cites @doe2024 here.\n";
 const start = body.indexOf("@doe2024");

@@ -349,15 +349,13 @@ export function annotationReads(
     })),
     refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
-    annotationState: vi.fn(
-      (): AnnotationState => ({
-        mutation: IDLE,
-        textDrafts: { comment: null, text: null },
-        tagDraft: null,
-        hidden: false,
-        gone: false,
-      }),
-    ),
+    annotationState: vi.fn((): AnnotationState => ({
+      mutation: IDLE,
+      textDrafts: { comment: null, text: null },
+      tagDraft: null,
+      hidden: false,
+      gone: false,
+    })),
     textDraftFor: vi.fn(() => null),
     editTextField: vi.fn(() => null),
     submitTextField: vi.fn(() => Promise.resolve(IDLE)),
@@ -382,11 +380,9 @@ export function annotationReads(
       return current;
     },
     probe: vi.fn(() => Promise.resolve()),
-    hold: vi.fn(
-      (_attachmentKeys: Iterable<string>): Disposable => ({
-        [Symbol.dispose]: () => {},
-      }),
-    ),
+    hold: vi.fn((_attachmentKeys: Iterable<string>): Disposable => ({
+      [Symbol.dispose]: () => {},
+    })),
     openHistory: vi.fn((attachmentKey: string) => {
       histories.set(attachmentKey, (histories.get(attachmentKey) ?? 0) + 1);
     }),
@@ -395,13 +391,11 @@ export function annotationReads(
       if (left > 0) histories.set(attachmentKey, left);
       else histories.delete(attachmentKey);
     }),
-    undo: vi.fn(
-      (_attachmentKey: string): Promise<HistoryOutcome> =>
-        Promise.resolve({ kind: "idle" }),
+    undo: vi.fn((_attachmentKey: string): Promise<HistoryOutcome> =>
+      Promise.resolve({ kind: "idle" }),
     ),
-    redo: vi.fn(
-      (_attachmentKey: string): Promise<HistoryOutcome> =>
-        Promise.resolve({ kind: "idle" }),
+    redo: vi.fn((_attachmentKey: string): Promise<HistoryOutcome> =>
+      Promise.resolve({ kind: "idle" }),
     ),
     /** The Attachments a history stands open for, and how many views hold each. */
     get histories(): ReadonlyMap<string, number> {

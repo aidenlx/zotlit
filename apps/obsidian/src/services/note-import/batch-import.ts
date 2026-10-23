@@ -618,17 +618,15 @@ function openChildImportModal(
       runnableActions = allActions.filter(needsImport);
       const upToDateChildren = allActions.filter((a) => !needsImport(a));
       return new HierarchyManifest({
-        parents: parents.map(
-          (parent): HierarchyParent => ({
-            label: parent.label,
-            profileChoice: parent.actions.some(
-              (action) => action.profilePlan?.source === "orphan",
-            )
-              ? profileChoice
-              : undefined,
-            children: parent.actions.filter(needsImport).map(actionToTask),
-          }),
-        ),
+        parents: parents.map((parent): HierarchyParent => ({
+          label: parent.label,
+          profileChoice: parent.actions.some(
+            (action) => action.profilePlan?.source === "orphan",
+          )
+            ? profileChoice
+            : undefined,
+          children: parent.actions.filter(needsImport).map(actionToTask),
+        })),
         upToDate: upToDateChildren.map(importRow),
         upToDateHeader: m.batch_import_group_up_to_date,
         doneHeader: m.batch_import_child_group_done,

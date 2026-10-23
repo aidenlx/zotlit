@@ -584,19 +584,18 @@ export function ProblemsFooter({
           // still here to report. It is the last one inspected, not a history.
           <div id={bodyId} {...part("problems-body")}>
             <div ref={scroll} tabIndex={0} {...part("problems-scroll")}>
-              {next !== null &&
-                inspected !== null && (
-                  // Others were found, so this says which one went rather than
-                  // presenting the whole preview as successful.
-                  <>
-                    <p {...part("problems-object")}>
-                      {diagnosisLabel(m, inspected)}
-                    </p>
-                    <p {...part("problems-text")}>
-                      {m.workbench_problems_resolved()}
-                    </p>
-                  </>
-                )}
+              {next !== null && inspected !== null && (
+                // Others were found, so this says which one went rather than
+                // presenting the whole preview as successful.
+                <>
+                  <p {...part("problems-object")}>
+                    {diagnosisLabel(m, inspected)}
+                  </p>
+                  <p {...part("problems-text")}>
+                    {m.workbench_problems_resolved()}
+                  </p>
+                </>
+              )}
               {reportText !== null && reporting(reportText, null)}
             </div>
             <div {...part("problems-controls")}>

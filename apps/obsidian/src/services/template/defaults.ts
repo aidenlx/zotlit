@@ -177,7 +177,7 @@ export type PartialNameRefusal =
  * `venue-line`.
  */
 export function normalizePartialName(input: string): string {
-  return input.trim().replace(PARTIAL_NAME_SPACES, "-").toLowerCase();
+  return input.trim().replaceAll(PARTIAL_NAME_SPACES, "-").toLowerCase();
 }
 
 /**

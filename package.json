@@ -54,7 +54,7 @@
     "obsidian": "workspace:*",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "oxlint-tsgolint": "^0.23.0",
+    "oxlint-tsgolint": "^7.0.2004",
     "sharp": "^0.35.2",
     "turbo": "^2.11.7",
     "typescript": "npm:@typescript/typescript6@^6.0.2",

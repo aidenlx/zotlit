@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "arkregex": "catalog:",
-    "oxc-parser": "^0.129.0",
+    "oxc-parser": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "postcss": "^8.5.23",

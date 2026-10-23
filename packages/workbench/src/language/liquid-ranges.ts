@@ -42,7 +42,7 @@ export function liquidCodeRange(
   if (!header || position <= range.from + header[0].length) return range;
   let block: "raw" | "comment" | undefined;
   const end = range.closed ? range.to - 2 : range.to;
-  for (let from = range.from + header[0].length; from <= end; ) {
+  for (let from = range.from + header[0].length; from <= end;) {
     const newline = source.indexOf("\n", from);
     const to = Math.min(newline < 0 ? source.length : newline, end);
     const name =

@@ -320,15 +320,13 @@ it("refreshes the chip and every path after choosing, and blocks Run while previ
       Object.assign(choice, { label: "Books", source: "asked" });
     },
   };
-  const onRun = vi.fn(
-    async (): Promise<BatchRunResult> => ({
-      created: 1,
-      updated: 0,
-      skipped: 0,
-      failed: 0,
-      cancelled: false,
-    }),
-  );
+  const onRun = vi.fn(async (): Promise<BatchRunResult> => ({
+    created: 1,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    cancelled: false,
+  }));
   const modal = new BatchModal({} as App, {
     total: 1,
     text: {

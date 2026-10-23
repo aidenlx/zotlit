@@ -31,7 +31,7 @@ function stringSource(source: string, node: Node) {
   let text = "";
   const offsets = [node.offset + 1];
   const end = node.offset + node.length;
-  for (let at = node.offset + 1; at < end && source[at] !== '"'; ) {
+  for (let at = node.offset + 1; at < end && source[at] !== '"';) {
     const start = at;
     let char = source[at++]!;
     if (char === "\\") {
@@ -86,7 +86,7 @@ function pathBinding(text: string, scope: Scope): Binding {
   if (!PATH.test(text.trim())) return {};
   const tokens = jsonExpressionTokens(text);
   let value = scope.get(tokens.shift()!.text) ?? {};
-  for (let i = 0; i < tokens.length; ) {
+  for (let i = 0; i < tokens.length;) {
     const separator = tokens[i++]!.text;
     let key = tokens[i++]!.text;
     if (key === "-") key += tokens[i++]!.text;

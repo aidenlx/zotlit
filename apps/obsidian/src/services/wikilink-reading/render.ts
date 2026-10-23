@@ -171,7 +171,7 @@ function textBetween(
 
 /** Drops the separator nodes a run's anchors were joined by. */
 function removeBetween(from: ChildNode, to: ChildNode): void {
-  for (let node = from.nextSibling; node !== null && node !== to; ) {
+  for (let node = from.nextSibling; node !== null && node !== to;) {
     const next = node.nextSibling;
     node.remove();
     node = next;

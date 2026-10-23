@@ -171,9 +171,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const scope = JSON.parse(
       await cliCommand(run.vaultId, "zotlit:library-scope"),
     ) as LibraryScopeReport;
-    const inScope = (scope.available ?? []).map(
-      (entry) =>
-        LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
+    const inScope = (scope.available ?? []).map((entry) =>
+      LIBRARIES.find((library) => library.libraryID === entry.libraryID)!,
     );
     expect(inScope.length).toBeGreaterThan(1);
 

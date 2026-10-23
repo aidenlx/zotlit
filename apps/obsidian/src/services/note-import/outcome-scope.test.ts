@@ -129,9 +129,10 @@ async function fixture(
   await attachments.ready;
 
   const entries = new Map<string, ExcerptEntry>();
-  const render = vi.fn(
-    async (): Promise<ExcerptImage> => ({ bytes: bluePng, format: PNG_FORMAT }),
-  );
+  const render = vi.fn(async (): Promise<ExcerptImage> => ({
+    bytes: bluePng,
+    format: PNG_FORMAT,
+  }));
   const service = stack.use(
     new ExcerptImageService({
       cache: {

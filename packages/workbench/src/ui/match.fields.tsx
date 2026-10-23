@@ -317,31 +317,29 @@ export function filterVocabulary(
   },
 ): MatchVocabulary<FilterRow> {
   const fields = [...filterFields(dataset), ...extra];
-  const kinds = fields.map(
-    (field): MatchConditionKind<FilterRow> => ({
-      kind: field.kind,
-      label: label?.(field) ?? field.label ?? kindLabel(field.kind, m),
-      icon: icon ? icon(field) : <FieldIcon field={field} />,
-      detail: field.path,
-      fresh: () => freshFilterRow(field),
-      parse: (text) => {
-        const row = parseFilterRow(text, fields);
-        return row?.kind === field.kind ? row : null;
-      },
-      format: (row) => formatFilterRow(row, fields),
-      renderOperator: ({ condition, onChange }) => (
-        <RowOperator field={field} condition={condition} onChange={onChange} />
-      ),
-      renderValue: ({ condition, onChange }) => (
-        <RowValue
-          field={field}
-          condition={condition}
-          values={values}
-          onChange={onChange}
-        />
-      ),
-    }),
-  );
+  const kinds = fields.map((field): MatchConditionKind<FilterRow> => ({
+    kind: field.kind,
+    label: label?.(field) ?? field.label ?? kindLabel(field.kind, m),
+    icon: icon ? icon(field) : <FieldIcon field={field} />,
+    detail: field.path,
+    fresh: () => freshFilterRow(field),
+    parse: (text) => {
+      const row = parseFilterRow(text, fields);
+      return row?.kind === field.kind ? row : null;
+    },
+    format: (row) => formatFilterRow(row, fields),
+    renderOperator: ({ condition, onChange }) => (
+      <RowOperator field={field} condition={condition} onChange={onChange} />
+    ),
+    renderValue: ({ condition, onChange }) => (
+      <RowValue
+        field={field}
+        condition={condition}
+        values={values}
+        onChange={onChange}
+      />
+    ),
+  }));
   const first = fields[0]!.kind;
   return {
     kinds,

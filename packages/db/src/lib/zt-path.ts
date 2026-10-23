@@ -122,7 +122,7 @@ const TRAILING_SEPARATOR_RE = /(?<=.)\/+$/;
  */
 export function normalizeAbsolutePath(path: string): string {
   return posix
-    .normalize(path.replace(SEPARATOR_RUN_RE, "/"))
+    .normalize(path.replaceAll(SEPARATOR_RUN_RE, "/"))
     .replace(TRAILING_SEPARATOR_RE, "");
 }
 

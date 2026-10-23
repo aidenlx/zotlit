@@ -191,7 +191,7 @@ export async function open({
       // together. Each step doubles, so a wait still reads the page before any
       // time passes and a long quiet time costs a few flushes rather than one
       // for every 50 ms of it.
-      for (let elapsed = 0, step = 0; ; ) {
+      for (let elapsed = 0, step = 0; ;) {
         await act(async () => {
           await vi.advanceTimersByTimeAsync(step);
           await vi.dynamicImportSettled();

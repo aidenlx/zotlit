@@ -25,7 +25,7 @@ import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotationsLayout } from "./layout";
 import type { AnnotationsLayoutDeps, AnnotationsLayoutHost } from "./layout";
 
-vi.mock("zustand", () => import("../__fixtures__/zustand"));
+vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 function record(
   key: string,

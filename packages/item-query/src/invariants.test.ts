@@ -182,7 +182,7 @@ function pauseCheckpoints(events: readonly RunEvent[]): number[] {
     );
     if (pause !== -1) selected.add(pause);
   }
-  for (let index = 0; index < pauses.length; ) {
+  for (let index = 0; index < pauses.length;) {
     const start = index;
     while (
       index + 1 < pauses.length &&
