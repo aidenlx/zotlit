@@ -7,8 +7,8 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -29,7 +29,7 @@ export interface ReferencesRegistrationDeps {
   libraryScope: LibraryScopeService;
   citationText: CitationText;
   citekeyEditor: CitekeyEditor;
-  pandocEngine: PandocEngineService;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
   bibliographyRender: BibliographyRenderCache;
 }
 

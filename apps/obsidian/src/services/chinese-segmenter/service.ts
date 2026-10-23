@@ -1,12 +1,11 @@
 // The Chinese Segmenter as a Managed Binary: the pinned web-target `jieba-wasm` binary.
 
-import type { App } from "obsidian";
-
-import {
-  ManagedBinaryService,
-  obsidianBinaryPorts,
+import { Context } from "@/lib/effect";
+import { layerManagedBinary } from "@/services/managed-binary/service";
+import type {
+  ManagedBinary,
+  ManagedBinaryApi,
 } from "@/services/managed-binary/service";
-import type { ManagedBinary } from "@/services/managed-binary/service";
 
 /**
  * The verified binary, compiled. The ZoteroReads worker instantiates the
@@ -33,12 +32,12 @@ export const CHINESE_SEGMENTER: ManagedBinary<ChineseSegmenterModule> = {
   startOnInstall: true,
 };
 
-export type ChineseSegmenterService =
-  ManagedBinaryService<ChineseSegmenterModule>;
+export class ChineseSegmenter extends Context.Service<
+  ChineseSegmenter,
+  ManagedBinaryApi<ChineseSegmenterModule>
+>()("zotlit/chinese-segmenter/ChineseSegmenter") {}
 
-/** The service over Obsidian's own ports: `requestUrl` and the origin's OPFS. */
-export function createChineseSegmenterService(
-  app: App,
-): ChineseSegmenterService {
-  return new ManagedBinaryService(CHINESE_SEGMENTER, obsidianBinaryPorts(app));
-}
+export const layerChineseSegmenter = layerManagedBinary(
+  ChineseSegmenter,
+  CHINESE_SEGMENTER,
+);

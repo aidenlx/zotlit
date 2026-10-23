@@ -16,7 +16,7 @@ import {
   isColor,
   withRecentColor,
 } from "@/lib/annotation-colors";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 /** Every tool of the toggle group, in Zotero's own toolbar order. */
 export const ANNOTATION_TOOLS = [
@@ -221,7 +221,7 @@ export interface ToolColorStore {
  * settings have loaded is dropped rather than written over what is on disk.
  */
 export function toolColorStore(
-  settings: Pick<SettingsService, "current" | "update">,
+  settings: Pick<PlainPluginSettings, "current" | "update">,
 ): ToolColorStore {
   return {
     current: () => resolveToolColors(settings.current?.[TOOL_COLORS_SETTING]),

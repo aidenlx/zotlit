@@ -292,17 +292,13 @@ describe("WikilinkDisplaySettings", () => {
 
 class SettingsStub {
   current: Readonly<Settings>;
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
+  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
 
   constructor(overrides: Partial<Settings> = {}) {
     this.current = { ...defaults, ...overrides };
   }
 
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
+  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
     this.#listeners.add(listener);
     listener(this.current);
     return () => this.#listeners.delete(listener);

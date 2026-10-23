@@ -1,5 +1,5 @@
-import "@mock/dom-parser";
 import { configureSync, resetSync } from "@logtape/logtape";
+import "@mock/dom-parser";
 import type { LogRecord } from "@logtape/logtape";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,8 +20,8 @@ import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -202,8 +202,8 @@ async function harness(
   } as unknown as App;
 
   const settings = {
-    loaded: Promise.resolve({ ...defaults, "attachment.import": true }),
-  } as unknown as Pick<SettingsService, "loaded">;
+    current: { ...defaults, "attachment.import": true },
+  } as unknown as Pick<PlainPluginSettings, "current">;
 
   const partials = options.partials ?? [CITATION_TEMPLATE];
   const reads = createLocalBridgeReads({

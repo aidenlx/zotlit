@@ -17,7 +17,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
 import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
@@ -185,7 +185,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   ) {
     const preview = new Preview({ app } as unknown as WorkspaceLeaf, "zotlit", {
       ...fixture.deps,
-      settings: fixture.deps.settings as SettingsService,
+      settings: fixture.deps.settings as PlainPluginSettings,
       profile,
       itemLookup: { search: vi.fn(), openSession: vi.fn() },
     });

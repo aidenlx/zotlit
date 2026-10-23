@@ -24,8 +24,8 @@ import type {
   AttachmentLookup,
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
 import { filename, obsidianOpenPath } from "./resolve";
@@ -88,7 +88,7 @@ export interface TargetOpenerDeps {
    * `citation.open-annotation-links` decide whether a Durable Annotation Link
    * is ZotLit's to follow at all.
    */
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
   /** The vault's own directory, for telling an in-vault file from one outside. */
   vaultBasePath: string;
   /** @default process.platform */

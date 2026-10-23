@@ -3,7 +3,6 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
@@ -32,7 +31,7 @@ import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
-import { createChineseSegmenterService } from "./chinese-segmenter/service";
+import { plainChineseSegmenter } from "./chinese-segmenter/plain";
 import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
 import { plainCitationParse } from "./citation-parse/plain";
@@ -60,16 +59,16 @@ import type { BatchImport } from "./note-import/batch-import";
 import { createNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
-import { NoteIndex } from "./note-index/service";
+import { plainNoteIndex } from "./note-index/plain";
+import { plainPandocEngine } from "./pandoc/plain";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
-import { createPandocEngineService } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { ProfileService } from "./profile/service";
 import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { PluginSettings } from "./settings/service";
+import { plainPluginSettings } from "./settings/plain";
 import {
   LiteratureNoteTemplateMigrationService,
   loadLiteratureNoteTemplateMigrationData,
@@ -122,7 +121,7 @@ export async function buildServices(
 
   return container
     .useValue({
-      settings: () => runtime.runSync(PluginSettings.use(Effect.succeed)),
+      settings: () => plainPluginSettings(runtime),
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),
@@ -153,8 +152,8 @@ export async function buildServices(
       template: ({ settings }) =>
         new TemplateService({ app: plugin.app, settings }),
     })
-    .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+    .useValue({
+      noteIndex: () => plainNoteIndex(runtime),
     })
     .useValue({
       zoteroPref: () => plainZoteroPref(runtime),
@@ -163,8 +162,8 @@ export async function buildServices(
       localServer: ({ settings, zoteroPref, noteIndex }) =>
         new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
-    .use({
-      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
+    .useValue({
+      chineseSegmenter: () => plainChineseSegmenter(runtime),
     })
     .use({
       // Interactive reads use their own worker; Citation Index bulk reads
@@ -578,8 +577,8 @@ export async function buildServices(
           parseClient: citationParse,
         }),
     })
-    .use({
-      pandocEngine: () => createPandocEngineService(plugin.app),
+    .useValue({
+      pandocEngine: () => plainPandocEngine(runtime),
     })
     .use({
       bibliographyRender: ({

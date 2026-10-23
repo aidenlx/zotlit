@@ -21,7 +21,7 @@ import {
 import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { loadApprovedFolders, saveApprovedFolders } from "./approved-folders";
@@ -59,7 +59,7 @@ const SKIP_SUMMARY_DEBOUNCE_MS = 1500;
 
 export interface AttachmentImportServiceDeps {
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath"> & {
     /** Only the one event the root snapshot follows. */
     on(event: "resolved-changed", cb: () => void): () => void;
@@ -233,7 +233,7 @@ export class AttachmentImportService extends Service<void> {
     notePath: string,
     opts?: { folderCache?: Map<string, string> },
   ): Promise<AttachmentImport> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const importEnabled = settings["attachment.import"];
     let folderPath: string | null = null;
     if (importEnabled) {

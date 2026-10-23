@@ -14,9 +14,10 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { createLiveUpdateApp } from "./live-update-app";
@@ -105,9 +106,9 @@ export interface LocalServerEvents {
 }
 
 export interface LocalServerServiceDeps {
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   zoteroPref: Pick<PlainZoteroPref, "sourceId">;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getIndexedItemKeys">;
 }
 
 /**
@@ -258,7 +259,7 @@ export class LocalServerService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     await using stack = new AsyncDisposableStack();
 
     this.#enabled = settings["server.enabled"];

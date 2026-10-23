@@ -32,11 +32,11 @@ import type {
   DocumentPresentationFailure,
   DocumentPresentation,
 } from "@/services/pandoc/document-presentation";
+import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import type {
   BibliographyRenderCache,
   BibliographyRenderResult,
 } from "@/services/pandoc/render-cache";
-import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { Held } from "@/services/query-client/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -79,10 +79,7 @@ export interface ReferencesViewDeps {
    * shows Entry Serials — the gutter follows what the citations show.
    */
   citationText: Pick<CitationText, "peek" | "on">;
-  pandocEngine: Pick<
-    PandocEngineService,
-    "getStatus" | "subscribe" | "decline"
-  >;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,

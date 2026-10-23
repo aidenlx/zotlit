@@ -10,8 +10,8 @@ import type { ProfileService } from "@/services/profile/service";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -21,7 +21,7 @@ import {
 } from "./document-presentation";
 import type { EffectivePresentation } from "./document-presentation";
 import type { BibliographyEntry, RenderedCitation } from "./engine";
-import type { PandocEngineService } from "./service";
+import type { PlainPandocEngine } from "./plain";
 import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
@@ -56,11 +56,11 @@ export interface BibliographyRenderCacheOptions {
   profile: Pick<ProfileService, "ready" | "on">;
   db: Pick<ZoteroReadsService, "on">;
   pandocEngine: Pick<
-    PandocEngineService,
+    PlainPandocEngine,
     "getStatus" | "subscribe" | "getEngine"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "on">;
-  settings: Pick<SettingsService, "ready" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: Pick<
     PlainQueryClients,
@@ -303,7 +303,7 @@ export class BibliographyRenderCache extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await Promise.all([this.#settings.ready, this.#profile.ready]);
+    await this.#profile.ready;
     stack.defer(this.#profile.on("changed", () => this.#invalidate()));
 
     stack.defer(this.#db.on("changed", () => this.#invalidate()));
@@ -401,6 +401,7 @@ export class BibliographyRenderCache extends Service<void> {
     try {
       const presentation = enginePresentation(style);
       const engine = await this.#engine.getEngine();
+      if (!engine) return { entries: [], hasEntryMarkers: false };
       const entries = await engine.renderBibliography({
         items,
         ...presentation,
@@ -427,6 +428,7 @@ export class BibliographyRenderCache extends Service<void> {
     if (citations.length === 0) return [];
     try {
       const engine = await this.#engine.getEngine();
+      if (!engine) return [];
       const rendered = await engine.renderCitations({
         citations,
         items,

@@ -1,12 +1,12 @@
-import "./style.css";
 import type { App, Plugin } from "obsidian";
 
+import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 
 import { AnnotationEditorSuggest } from "./annotation-suggest";
@@ -18,7 +18,7 @@ export interface CitationSuggestDeps {
   app: App;
   lookup: ItemLookup;
   noteFeature: Pick<NoteFeature, "renderCitation">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current">;
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
   citationLookup: Pick<CitationLookup, "read" | "status">;

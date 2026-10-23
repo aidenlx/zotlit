@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DOCS_COMPANION } from "@/lib/constants";
 import type { HydrationOrigin } from "@/services/settings/classify";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 import { ReleaseService } from "./service";
@@ -18,11 +18,11 @@ function fakeApp(): App {
 function fakeSettings(
   pending: boolean,
   update: (patch: unknown) => void,
-): SettingsService {
+): PlainPluginSettings {
   return {
     current: { "release.migration-pending": pending } as Partial<Settings>,
     update,
-  } as unknown as SettingsService;
+  } as unknown as PlainPluginSettings;
 }
 
 function makeService(pending: boolean, update: (patch: unknown) => void) {
@@ -105,16 +105,16 @@ async function runCheck(opts: {
   const openFirstScreen = vi.fn();
   let layoutReady: (() => void | Promise<void>) | undefined;
   const settings = {
-    loaded: Promise.resolve({
+    current: {
       "release.previous-version": opts.recordedVersion ?? null,
       "release.migration-pending": opts.migrationPending ?? false,
       "release.notices-enabled": opts.noticesEnabled ?? true,
       "release.update-pending": opts.updatePending ?? false,
       "template.folder": CONFIGURED_TEMPLATE_FOLDER,
-    } as Partial<Settings>),
+    } as Partial<Settings>,
     hydrationOrigin: opts.origin,
     update,
-  } as unknown as SettingsService;
+  } as unknown as PlainPluginSettings;
   const app = {
     workspace: {
       onLayoutReady: (cb: () => void | Promise<void>) => {
@@ -227,7 +227,7 @@ describe("ReleaseService update", () => {
       settings: {
         current: { "release.update-pending": true } as Partial<Settings>,
         update,
-      } as unknown as SettingsService,
+      } as unknown as PlainPluginSettings,
     });
     service.acknowledgeUpdate();
     expect(update).toHaveBeenCalledWith({ "release.update-pending": false });
@@ -239,15 +239,15 @@ describe("ReleaseService checked", () => {
     let layoutReady: (() => void | Promise<void>) | undefined;
     const opened = Promise.withResolvers<void>();
     const settings = {
-      loaded: Promise.resolve({
+      current: {
         "release.previous-version": null,
         "release.migration-pending": false,
         "release.notices-enabled": true,
         "template.folder": CONFIGURED_TEMPLATE_FOLDER,
-      } as Partial<Settings>),
+      } as Partial<Settings>,
       hydrationOrigin: "absent",
       update: vi.fn(),
-    } as unknown as SettingsService;
+    } as unknown as PlainPluginSettings;
     await using service = new ReleaseService({
       app: {
         workspace: {

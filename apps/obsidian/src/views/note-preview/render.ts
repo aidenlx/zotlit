@@ -205,7 +205,7 @@ async function partialRootData(
   { kind: "data"; data: object } | { kind: "unavailable"; message: string }
 > {
   await deps.templates.ready;
-  const settings = await deps.settings.loaded;
+  const settings = deps.settings.current;
   const chosen =
     selection.profile === null
       ? undefined
@@ -221,7 +221,7 @@ async function partialRootData(
       ? bindUnvalidatedDraftProfile(settings, draft)
       : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
-    { ...deps, settings: { loaded: Promise.resolve(profile.settings) } },
+    { ...deps, settings: { current: profile.settings } },
     request,
     selection.context,
   );
@@ -389,12 +389,12 @@ export async function renderNativeProfile(
     const document = deps.templates.prepareLiteratureNoteTemplateSource(
       request.source,
     );
-    const settings = await deps.settings.loaded;
+    const settings = deps.settings.current;
     const manifest = document.manifest;
     const profile = bindUnvalidatedDraftProfile(settings, manifest);
     const dataDeps = {
       ...deps,
-      settings: { loaded: Promise.resolve(profile.settings) },
+      settings: { current: profile.settings },
     };
     const indexedKey = request.snapshot.item.indexedKey;
     const sample = request.snapshot.provenance.kind === "sample";

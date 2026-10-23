@@ -17,7 +17,6 @@ import {
   Effect,
   Exit,
   Layer,
-  Queue,
   Scope,
   Stream,
 } from "@/lib/effect";
@@ -145,17 +144,10 @@ const reportFailure =
 function logSettingsChanges(
   settings: PluginSettings["Service"],
 ): Stream.Stream<LogSettings> {
-  return Stream.callback<LogSettings>(
-    (queue) =>
-      Effect.acquireRelease(
-        Effect.sync(() =>
-          settings.subscribe((value) => {
-            if (value !== null) Queue.offerUnsafe(queue, logSettingsOf(value));
-          }),
-        ),
-        (unsubscribe) => Effect.sync(unsubscribe),
-      ),
-    { bufferSize: 1, strategy: "sliding" },
+  return settings.changes.pipe(
+    Stream.filter((value): value is Readonly<Settings> => value !== null),
+    Stream.map(logSettingsOf),
+    Stream.buffer({ capacity: 1, strategy: "sliding" }),
   );
 }
 

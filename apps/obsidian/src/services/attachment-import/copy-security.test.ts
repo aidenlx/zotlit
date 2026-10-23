@@ -113,7 +113,7 @@ function makeSettings(value: {
   "attachment.import": boolean;
   "attachment.folder-path": string | null;
 }) {
-  return { loaded: Promise.resolve(value), subscribe: () => () => undefined };
+  return { current: value, subscribe: () => () => undefined };
 }
 
 async function makeService(): Promise<AttachmentImportService> {

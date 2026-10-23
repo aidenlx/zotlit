@@ -41,7 +41,7 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
 import { bindProfile } from "@/services/profile/bindings";
@@ -52,8 +52,8 @@ import type {
 } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_TEMPLATES,
@@ -231,9 +231,9 @@ export interface ProfileDeletionResult {
 
 interface ProfileServiceDeps {
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   template: TemplateService;
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByProfile">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
 export type ProfileReader = Pick<

@@ -1854,3 +1854,9 @@ export class ConfirmationModal {
     this.#closed?.();
   }
 }
+
+/** Host boundary for exercising a plugin's declarative control bridge. */
+export class PluginSettingTab {
+  constructor(_app: App, _plugin: unknown) {}
+  update(): void {}
+}

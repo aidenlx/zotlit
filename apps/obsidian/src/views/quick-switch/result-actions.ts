@@ -17,10 +17,10 @@ import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { createNoteInteractively } from "@/services/note-feature";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 
 export interface NoteResultDeps extends InteractiveCreationDeps {
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByItemKey">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
 }
 
 /**

@@ -36,9 +36,9 @@ import type {
   ProfilePreview,
 } from "@/services/note-feature";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type {
@@ -77,11 +77,11 @@ export interface NoteImportDeps {
   view: NoteImportView;
   /** A note write's reads: one lease spans the write and what it imports. */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "state">;
-  settings: Pick<SettingsService, "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
   /** Only template readiness is gated here; rendering lives in `noteImport`. */
   template: Pick<TemplateService, "ready">;
@@ -728,10 +728,8 @@ async function importOne(
   ref: ChildNote,
   targetFile: TFile | undefined,
 ): Promise<WriteOutcome> {
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.template.ready,
-  ]);
+  await deps.template.ready;
+  const settings = deps.settings.current;
   // One Snapshot for the read and the write it feeds.
   await using lease = await deps.zoteroReads.acquireRead();
   const [note] = await Effect.runPromise(
@@ -769,10 +767,8 @@ async function executeImportRun(
     profileCounts?: Map<ProfileSelector, BatchProfileCount>;
   },
 ): Promise<BatchRunResult> {
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.template.ready,
-  ]);
+  await deps.template.ready;
+  const settings = deps.settings.current;
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   // One run is one initiating batch: every note it writes reuses one retention,
@@ -907,7 +903,7 @@ async function reimportNoteByKey(
   const note = await readNoteByIndexedKey(lease.reads, noteKey);
   if (!note) return { outcome: "not-found" };
 
-  const settings = await deps.settings.loaded;
+  const settings = deps.settings.current;
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   const writeOutcome = await deps.noteImport.importNote(note, {
     reads: lease.reads,

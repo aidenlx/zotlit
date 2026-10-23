@@ -19,15 +19,18 @@ import {
   isOwnedExcerptAssetPath,
 } from "@/services/excerpt-image/materialize";
 import { referencedExcerptPaths } from "@/services/excerpt-image/references";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 export interface VaultTargetDeps {
   app: App;
-  settings: Pick<SettingsService, "loaded">;
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
+  settings: Pick<PlainPluginSettings, "current">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
@@ -84,7 +87,7 @@ async function annotationImageTargets(
   item: Item,
   deps: VaultTargetDeps & { notePath: string | undefined },
 ): Promise<Record<string, string>> {
-  const settings = await deps.settings.loaded;
+  const settings = deps.settings.current;
   if (!settings["attachment.import"]) return {};
   const folder = await resolveAttachmentFolderPath(
     deps.app,

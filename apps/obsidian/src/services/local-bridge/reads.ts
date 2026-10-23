@@ -31,13 +31,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import {
   listInstalledStyles,
   resolveInstalledStyle,
 } from "@/services/pandoc/styles";
 import type { ProfileReader, ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type {
@@ -70,10 +70,10 @@ export class SelectedItemUnavailableError extends Error {
 
 export interface LocalBridgeReadDeps {
   app: App;
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
-    NoteIndex,
+    PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   profile: BridgeProfileReader;

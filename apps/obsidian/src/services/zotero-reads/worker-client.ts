@@ -7,9 +7,9 @@ import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
 import { Effect, FiberSet } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
-import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
+import type { PlainChineseSegmenter } from "@/services/chinese-segmenter/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -17,9 +17,9 @@ import type { ReadsConfig, SegmenterBinary } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
 
 export interface WorkerClientDeps {
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   zoteroPref: Pick<PlainZoteroPref, "databasePath" | "on">;
-  chineseSegmenter: ChineseSegmenterService;
+  chineseSegmenter: Pick<PlainChineseSegmenter, "getStatus" | "subscribe">;
 }
 
 /**
@@ -28,7 +28,7 @@ export interface WorkerClientDeps {
  * reinstall pushes no segmenter change until it lands.
  */
 function installedSegmenter(
-  chineseSegmenter: ChineseSegmenterService,
+  chineseSegmenter: Pick<PlainChineseSegmenter, "getStatus">,
 ): SegmenterBinary | null {
   const status = chineseSegmenter.getStatus();
   switch (status.kind) {
@@ -73,13 +73,7 @@ export const workerClient = Effect.fnUntraced(function* ({
   zoteroPref,
   chineseSegmenter,
 }: WorkerClientDeps): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
-  let config = readsConfig(
-    yield* Effect.promise(async () => {
-      await chineseSegmenter.ready;
-      return settings.loaded;
-    }),
-    { zoteroPref, chineseSegmenter },
-  );
+  let config = readsConfig(settings.current, { zoteroPref, chineseSegmenter });
   // Pushes run in this scope, so the scope's end interrupts one in flight.
   const run = yield* FiberSet.runtime(yield* FiberSet.make())();
   const reads = yield* makeWorkerReads(

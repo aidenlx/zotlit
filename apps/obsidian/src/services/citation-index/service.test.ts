@@ -868,8 +868,8 @@ describe("CitationIndex resolution", () => {
       ]);
   });
 
-  it("publishes first only after listener registration is ready", async () => {
-    const settings = new SettingsStub({}, { readyImmediately: false });
+  it("publishes after listener registration with settled settings", async () => {
+    const settings = new SettingsStub();
     const { index } = await makeHarness(
       { "draft.md": "@doe2024." },
       { settingsService: settings, awaitReady: false },
@@ -877,10 +877,6 @@ describe("CitationIndex resolution", () => {
     const snapshots: CitedBySnapshot[] = [];
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
-    await yieldToMain();
-    await expect.poll(() => snapshots).toEqual([]);
-
-    settings.settle();
     await index.ready;
     await yieldToMain();
     await expect
@@ -889,7 +885,7 @@ describe("CitationIndex resolution", () => {
   });
 
   it("stays silent when disposed during listener registration", async () => {
-    const settings = new SettingsStub({}, { readyImmediately: false });
+    const settings = new SettingsStub();
     const { index } = await makeHarness(
       { "draft.md": "@doe2024." },
       { settingsService: settings, awaitReady: false },
@@ -900,7 +896,6 @@ describe("CitationIndex resolution", () => {
     );
 
     stop();
-    settings.settle();
     await index.ready;
     await yieldToMain();
 

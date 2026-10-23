@@ -8,7 +8,7 @@ import { getLogger } from "@/lib/log";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { FileMenuSegment } from "@/services/file-menu";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { openCitationPresentationModal } from "./modal";
@@ -24,7 +24,7 @@ export interface CitationPresentationDeps {
   /** Where the installed styles the dialog lists are read from. */
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** The vault selections a note inherits where it names none of its own. */
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
 }
 
 /**
@@ -76,7 +76,7 @@ export async function setCitationPresentation(
   file: TFile,
   { app, zoteroPref, settings }: CitationPresentationDeps,
 ): Promise<void> {
-  const vault = await settings.loaded;
+  const vault = settings.current;
   const choice = await openCitationPresentationModal(app, {
     dataDir: zoteroPref.dataDir,
     vaultStyleId:

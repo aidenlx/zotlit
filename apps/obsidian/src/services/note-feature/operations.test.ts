@@ -1295,7 +1295,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: (key) =>
           key === byItemKey.indexedKey ? [existingByItemKey] : [],
@@ -1400,7 +1399,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1468,7 +1466,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1517,6 +1514,7 @@ describe("createNote", () => {
     const whenIndexed = new Promise<void>((resolve) => {
       resolveIndexed = resolve;
     });
+    const indexingRequested = Promise.withResolvers<void>();
     let createCalledBeforeSignal = false;
 
     const app = makeApp();
@@ -1541,8 +1539,10 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: () => whenIndexed,
+        whenIndexed: () => {
+          indexingRequested.resolve();
+          return whenIndexed;
+        },
         getNotesByItemKey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
@@ -1551,9 +1551,7 @@ describe("createNote", () => {
     };
 
     const createPromise = createNoteFeature(deps).createNote(item);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await indexingRequested.promise;
     expect(createCalledBeforeSignal).toBe(false);
 
     resolveIndexed();
@@ -1572,7 +1570,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {
           indexed = true;
         },
@@ -1613,7 +1610,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [
           makeFile("Literature/Newer.md"),
@@ -1660,7 +1656,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1699,7 +1694,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1730,7 +1724,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1764,7 +1757,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1810,6 +1802,7 @@ describe("createNote", () => {
       const templateReady = new Promise<void>((resolve) => {
         resolveReady = resolve;
       });
+      const readinessRequested = Promise.withResolvers<void>();
       let renderFilenameCalledBeforeSignal = false;
 
       const app = makeApp();
@@ -1817,11 +1810,19 @@ describe("createNote", () => {
         app,
         profile: {
           ...profileReader(makeSettings().current!),
-          ready: service === "profile" ? templateReady : Promise.resolve(),
+          get ready() {
+            if (service !== "profile") return Promise.resolve();
+            readinessRequested.resolve();
+            return templateReady;
+          },
         },
         template: {
           renderManagedContent: () => "",
-          ready: service === "template" ? templateReady : Promise.resolve(),
+          get ready() {
+            if (service !== "template") return Promise.resolve();
+            readinessRequested.resolve();
+            return templateReady;
+          },
           loaded: true,
           frontmatterFields: [],
           getLiteratureNoteTemplate: () => undefined,
@@ -1836,7 +1837,6 @@ describe("createNote", () => {
         ...makeDbDeps(),
         noteIndex: {
           getImportedNoteByNoteKey: () => [],
-          ready: Promise.resolve(),
           whenIndexed: async () => {},
           getNotesByItemKey: () => [],
         },
@@ -1846,9 +1846,7 @@ describe("createNote", () => {
       };
 
       const createPromise = createNoteFeature(deps).createNote(item);
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      await readinessRequested.promise;
       expect(renderFilenameCalledBeforeSignal).toBe(false);
 
       resolveReady();
@@ -1874,7 +1872,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1918,7 +1915,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1940,7 +1936,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -1981,7 +1976,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -2024,7 +2018,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -2092,7 +2085,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -2137,7 +2129,6 @@ describe("createNote", () => {
         },
         ...makeDbDeps(),
         noteIndex: {
-          ready: Promise.resolve(),
           whenIndexed: async () => {},
           getImportedNoteByNoteKey: () => [],
           getNotesByItemKey: () => [],
@@ -2179,7 +2170,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -2226,7 +2216,6 @@ describe("createNote", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [existing],
       },
@@ -2474,7 +2463,6 @@ function makeUpdateHarness(options: {
     ...makeDbDeps(),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
     },
@@ -4669,7 +4657,6 @@ describe("renderCitation", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -4741,7 +4728,6 @@ describe("renderCitation", () => {
       ...makeDbDeps(),
       noteIndex: {
         getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
       },
@@ -4802,7 +4788,6 @@ function annotDeps(template: TestDeps["template"]): TestDeps {
     ...makeDbDeps(),
     noteIndex: {
       getImportedNoteByNoteKey: () => [],
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
     },
@@ -5035,7 +5020,6 @@ function makeSettings(
   };
   return {
     current,
-    loaded: Promise.resolve(current),
     update: (patch) => {
       Object.assign(
         current,

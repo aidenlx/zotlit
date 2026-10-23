@@ -1,8 +1,9 @@
 import { delay } from "@std/async";
-import type { App, EventRef, Plugin } from "obsidian";
+import type { App, EventRef } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { NoteIndex } from "./note-index/service";
+import { buildNoteIndex } from "./note-index/__fixtures__";
+import type { PlainNoteIndex } from "./note-index/plain";
 import { Service, ServiceContainer } from "./service-base";
 
 vi.mock("@/lib/log", () => ({
@@ -48,7 +49,7 @@ class ReadsOnTeardown extends Service {
   readonly #finish = Promise.withResolvers<void>();
   readonly started = Promise.withResolvers<void>();
 
-  constructor(noteIndex: NoteIndex) {
+  constructor(noteIndex: Pick<PlainNoteIndex, "getIndexedItemKeys">) {
     super();
     const stack = new AsyncDisposableStack();
     stack.defer(async () => {
@@ -75,9 +76,8 @@ it("disposes services newest first, so an older service keeps its vault and meta
 
   const stack = new AsyncDisposableStack();
   const { services } = new ServiceContainer(stack, () => undefined)
-    .use({ noteIndex: () => new NoteIndex({ plugin: {} as Plugin, app }) })
+    .useValue({ noteIndex: () => buildNoteIndex(app, stack) })
     .use({ newer: ({ noteIndex }) => new ReadsOnTeardown(noteIndex) });
-  await services.noteIndex.ready;
   expect(vault.listened().sort()).toEqual(["delete", "rename"]);
   expect(metadataCache.listened().sort()).toEqual(["changed", "deleted"]);
 

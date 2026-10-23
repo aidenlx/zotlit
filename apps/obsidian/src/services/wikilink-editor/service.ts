@@ -17,10 +17,10 @@ import type {
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import {
   wikilinkDecorationsChanged,
@@ -32,14 +32,14 @@ const logger = getLogger("wikilink-editor");
 export interface WikilinkEditorDeps {
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension">;
-  noteIndex: Pick<NoteIndex, "on">;
+  noteIndex: Pick<PlainNoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   citationLookup: {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -109,7 +109,6 @@ export class WikilinkEditor extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
 
     this.#plugin.registerEditorExtension(this.#extensions);
     this.#extensions.push(this.#extension);

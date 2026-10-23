@@ -34,11 +34,11 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
@@ -53,7 +53,7 @@ export interface CitekeyEditorDeps {
   importProfile: ImportProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: NoteFeature;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   db: Pick<ZoteroReadsService, "state" | "ready">;
@@ -63,7 +63,7 @@ export interface CitekeyEditorDeps {
   citationPopover: CitationPopover;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   citationLookup: Pick<CitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -181,7 +181,6 @@ export class CitekeyEditor extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
 
     // Registered once and for the plugin's lifetime, so the row in Obsidian's
     // Page preview settings stays put while the Hover Action changes. Mod is

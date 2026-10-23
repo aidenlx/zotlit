@@ -9,8 +9,9 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/service";
 
 import { LocalServerService } from "./service";
 import type { LocalServerServiceDeps } from "./service";
@@ -23,7 +24,7 @@ const companionHeaders = {
 };
 
 interface SettingsStub {
-  service: SettingsService;
+  service: PlainPluginSettings;
   /** Push a settings change the way the settings tab's toggles do. */
   update(patch: Partial<Settings>): void;
 }
@@ -33,12 +34,12 @@ function makeSettings(overrides: Partial<Settings>): SettingsStub {
   const subscribers = new Set<(value: Readonly<Settings>) => void>();
   return {
     service: {
-      loaded: Promise.resolve(current),
+      current: current,
       subscribe: (cb: (value: Readonly<Settings>) => void) => {
         subscribers.add(cb);
         return () => subscribers.delete(cb);
       },
-    } as unknown as SettingsService,
+    } as unknown as PlainPluginSettings,
     update(patch) {
       current = { ...current, ...patch };
       for (const cb of subscribers) cb(current);
@@ -46,7 +47,7 @@ function makeSettings(overrides: Partial<Settings>): SettingsStub {
   };
 }
 
-function makeDeps(settings: SettingsService): LocalServerServiceDeps {
+function makeDeps(settings: PlainPluginSettings): LocalServerServiceDeps {
   return {
     settings,
     zoteroPref: { sourceId: SOURCE_ID },
@@ -54,7 +55,7 @@ function makeDeps(settings: SettingsService): LocalServerServiceDeps {
       whenIndexed: () => Promise.resolve(),
       getIndexedItemKeys: () => ["ABCD2345"],
     },
-  } as LocalServerServiceDeps;
+  } as unknown as LocalServerServiceDeps;
 }
 
 /** Resolve the port once the listener binds one. */

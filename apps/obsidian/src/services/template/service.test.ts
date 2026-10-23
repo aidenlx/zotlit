@@ -12,9 +12,9 @@ import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveProfile } from "@/services/profile/__fixtures__/reader";
-import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import { buildSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import { SettingsService } from "@/services/settings/service";
 
 import { CITATION_TEMPLATE_SOURCE, DEFAULT_TEMPLATES } from "./defaults";
 import { InertTemplateError } from "./errors";
@@ -30,7 +30,7 @@ interface Harness {
   };
   plugin: PluginStub;
   service: TemplateService;
-  settings: SettingsService;
+  settings: PlainPluginSettings & AsyncDisposable;
   vault: MockVault;
   localStorage: Map<string, unknown>;
 }
@@ -562,9 +562,14 @@ partials:
     ).toContain("Bundled Paper");
   });
 
-  it("bounds the settle wait while initial settings are still loading", async () => {
-    const loaded = deferred<Readonly<Settings>>();
+  it("bounds the settle wait while the initial template read is pending", async () => {
+    const read = deferred<string>();
     const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books"),
+    );
+    vi.spyOn(vault, "cachedRead").mockReturnValueOnce(read.promise);
     const localStorage = new Map<string, unknown>();
     const app = {
       vault,
@@ -576,10 +581,9 @@ partials:
       },
     } as unknown as Harness["app"];
     const settings = {
-      current: null,
-      loaded: loaded.promise,
+      current: { ...defaults, "template.folder": "templates" },
       subscribe: vi.fn(() => () => {}),
-    } as unknown as SettingsService;
+    } as unknown as PlainPluginSettings;
     await using service = new TemplateService({
       app,
       settings,
@@ -591,12 +595,11 @@ partials:
 
     expect(result).toHaveBeenCalledWith("timeout");
 
-    loaded.resolve(defaults);
+    read.resolve(literatureNoteDocument("Books"));
     await service.ready;
   });
 
   it("distinguishes a failed startup from an expired settle wait", async () => {
-    const loaded = deferred<Readonly<Settings>>();
     const vault = new MockVault();
     const app = {
       vault,
@@ -605,10 +608,12 @@ partials:
       saveLocalStorage: () => {},
     } as unknown as Harness["app"];
     const settings = {
-      current: null,
-      loaded: loaded.promise,
+      current: defaults,
       subscribe: vi.fn(() => () => {}),
-    } as unknown as SettingsService;
+    } as unknown as PlainPluginSettings;
+    vi.spyOn(vault, "on").mockImplementationOnce(() => {
+      throw new Error("vault unavailable");
+    });
     const service = new TemplateService({
       app,
       settings,
@@ -616,7 +621,6 @@ partials:
     service.ready.catch(() => {});
 
     const outcome = service.waitUntilSettled(25);
-    loaded.reject(new Error("settings failed to load"));
     await flushAsync();
 
     expect(await outcome).toBe("init-failed");
@@ -2539,7 +2543,7 @@ async function makeHarness(options?: {
     "note.template-conversion-pending": true,
     ...options?.settings,
   });
-  const settings = new SettingsService({
+  const settings = await buildSettings({
     plugin,
     migrateLegacy: (raw) => raw,
     migrateV1: (raw) => raw,
@@ -2552,7 +2556,7 @@ async function makeHarness(options?: {
     migrateV8: (raw) => raw,
     migrateV9: (raw) => raw,
   });
-  await settings.ready;
+  await settings.loaded;
 
   const service = new TemplateService({
     app,

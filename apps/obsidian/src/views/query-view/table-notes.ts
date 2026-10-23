@@ -25,7 +25,7 @@ import {
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteFeature } from "@/services/note-feature/operations";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -182,7 +182,7 @@ export interface LiteratureNotes {
 export interface LiteratureNotesDeps extends InteractiveCreationDeps {
   app: App & LiveTextApp;
   noteIndex: Pick<
-    NoteIndex,
+    PlainNoteIndex,
     "getNotesByItemKey" | "getIndexedItemKeys" | "getPropertyNames" | "on"
   >;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
