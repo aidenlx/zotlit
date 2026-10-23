@@ -18,8 +18,8 @@ import type {
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
@@ -39,7 +39,7 @@ export interface SingleUpdateDeps {
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready" | "state">;
   settings: SettingsService;
   noteFeature: NoteFeature;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
   /** Which Libraries an unqualified library-wide update covers. */
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }

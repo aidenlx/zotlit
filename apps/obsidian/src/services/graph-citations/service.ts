@@ -29,8 +29,8 @@ import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -88,7 +88,10 @@ export interface GraphCitationsDeps {
   libraryScope: Pick<LibraryScopeService, "current">;
   citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
   citationLookup: Pick<CitationLookup, "observe">;
-  noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "getIndexedItemKeys" | "getNotesByItemKey" | "on"
+  >;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: Pick<CitationPopover, "showWork" | "hide">;

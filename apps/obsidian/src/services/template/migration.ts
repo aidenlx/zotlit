@@ -10,7 +10,7 @@ import {
 import { Effect, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -91,7 +91,10 @@ export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
   zoteroReads: ZoteroReadsService;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
   settings: SettingsService;
   templates: TemplateService;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;

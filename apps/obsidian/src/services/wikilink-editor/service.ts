@@ -17,8 +17,8 @@ import type {
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -32,7 +32,7 @@ const logger = getLogger("wikilink-editor");
 export interface WikilinkEditorDeps {
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension">;
-  noteIndex: Pick<NoteIndex, "on">;
+  noteIndex: Pick<PlainNoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;
   /** The open-or-create flow every citation surface shares. */

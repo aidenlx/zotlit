@@ -39,8 +39,8 @@ import {
   markCitationClick,
 } from "@/services/citekey-navigation";
 import type { CitationHover } from "@/services/citekey-navigation";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -57,7 +57,7 @@ const logger = getLogger("wikilink-reading");
 export interface WikilinkReadingDeps {
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  noteIndex: Pick<NoteIndex, "on">;
+  noteIndex: Pick<PlainNoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "on" | "peek">;
   /** The open-or-create flow every citation surface shares. */

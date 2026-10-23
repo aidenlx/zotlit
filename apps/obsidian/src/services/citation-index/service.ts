@@ -9,8 +9,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { registerEvent } from "@/lib/disposables";
 import { Clock, Effect, Option } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveIndexedKey } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -186,7 +186,7 @@ export interface CitationIndexOptions {
   libraryScope: Pick<LibraryScopeService, "current">;
   parseClient: Pick<PlainCitationParse, "parse">;
   app: App;
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
+  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
   lookup: Pick<
     CitationLookup,

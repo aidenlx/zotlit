@@ -91,7 +91,6 @@ async function realCreate(
     },
     zoteroReads: fixture.deps.zoteroReads,
     noteIndex: {
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
       getImportedNoteByNoteKey: () => [],

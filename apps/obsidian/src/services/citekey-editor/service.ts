@@ -34,7 +34,7 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -53,7 +53,7 @@ export interface CitekeyEditorDeps {
   importProfile: ImportProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: NoteFeature;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   db: Pick<ZoteroReadsService, "state" | "ready">;

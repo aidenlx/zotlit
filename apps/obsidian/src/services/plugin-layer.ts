@@ -10,6 +10,8 @@ import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import { layerNoteIndex } from "./note-index/service";
+import type { NoteIndex } from "./note-index/service";
 import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
 import { layerQueryClients } from "./query-client/service";
@@ -39,6 +41,7 @@ export function pluginLayer(
   | ZoteroPref
   | ChineseSegmenter
   | PandocEngine
+  | NoteIndex
 > {
   return Layer.mergeAll(
     layerUseLedger,
@@ -46,6 +49,7 @@ export function pluginLayer(
     Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
       Layer.provide(layerManagedBinaryPlatform),
     ),
+    layerNoteIndex,
     layerCitationParse,
     layerQueryClients,
   ).pipe(

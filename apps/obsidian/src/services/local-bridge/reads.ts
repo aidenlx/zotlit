@@ -31,7 +31,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import {
   listInstalledStyles,
   resolveInstalledStyle,
@@ -73,7 +73,7 @@ export interface LocalBridgeReadDeps {
   settings: Pick<SettingsService, "loaded">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
-    NoteIndex,
+    PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   profile: BridgeProfileReader;

@@ -200,10 +200,6 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/note-index/service.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
-  ],
   "apps/obsidian/src/services/pandoc/inline-content.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-markup-assertion",

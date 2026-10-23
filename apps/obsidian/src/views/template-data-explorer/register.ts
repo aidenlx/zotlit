@@ -5,7 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -25,7 +25,10 @@ type ExplorerPlugin = Pick<
 export interface ExplorerRegistrationDeps {
   app: App;
   zoteroReads: ZoteroReadsService;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   itemLookup: ItemLookup;
   settings: SettingsService;

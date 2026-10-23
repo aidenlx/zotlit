@@ -41,7 +41,7 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
 import { bindProfile } from "@/services/profile/bindings";
@@ -233,7 +233,7 @@ interface ProfileServiceDeps {
   app: App;
   settings: SettingsService;
   template: TemplateService;
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByProfile">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
 export type ProfileReader = Pick<

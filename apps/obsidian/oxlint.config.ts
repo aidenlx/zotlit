@@ -340,7 +340,6 @@ export default defineConfig({
         "src/services/library-scope/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/local-server/service.ts",
-        "src/services/note-index/service.ts",
         "src/services/pandoc/render-cache.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/profile/service.ts",

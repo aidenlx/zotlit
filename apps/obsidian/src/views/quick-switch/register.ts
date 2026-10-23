@@ -4,7 +4,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { SettingsService } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -18,7 +18,7 @@ export interface QuickSwitchDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "acquireRead">;
   lookup: ItemLookup;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
   settings: SettingsService;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;

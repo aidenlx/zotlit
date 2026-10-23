@@ -153,7 +153,6 @@ async function fixture(mode: string) {
       getLiteratureNoteTemplate: () => undefined,
     },
     noteIndex: {
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
       getImportedNoteByNoteKey: () => [],

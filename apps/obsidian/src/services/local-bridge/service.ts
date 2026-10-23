@@ -20,7 +20,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
@@ -76,7 +76,7 @@ export interface LocalBridgeServiceDeps {
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
-    NoteIndex,
+    PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
