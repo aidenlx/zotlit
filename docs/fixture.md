@@ -595,10 +595,10 @@ Stress Build content uses fixed seeds. An ordinary `pnpm fixture` build returns 
 
 ## Inspect, discard, or change the Fixture
 
-Use the CLI help as the current reference for data-derived Library, Collection, Item, Note, and collision details:
+Use the CLI help as the current reference for data-derived Library, Collection, Item, Note, and collision details. Run the script directly to print help without starting Turbo or rebuilding workspace packages:
 
 ```sh
-pnpm fixture --help
+node packages/scripts/scripts/fixture.ts --help
 ```
 
 Discard the complete generated tree:
@@ -610,3 +610,36 @@ pnpm fixture discard
 The discard command first closes the Paired Zotero that holds this Fixture, as `pnpm fixture stop` does, so no Zotero stays open on a deleted profile.
 
 To change semantic content, edit `packages/scripts/lib/fixture/spec.ts` and rebuild. The generator tests in `packages/scripts/lib/fixture/build.test.ts` guard the Fixture Spec properties. A build stops when a Citation Key listed in the Spec's `SEEDED_CITATION_KEYS` resolves differently from its declaration, so declare the new resolution with the Item edit, and list a key there as you seed a page that cites it.
+
+## Write to a data fork
+
+For a check that needs database writes, use a named copy of the built Zotero data. The fork contains the data directory's assets and a consistent SQLite snapshot, including committed WAL data. The built data and the committed pristine template stay intact ([ADR 0022](adr/0022-fixture-database-copies-a-committed-pristine-template.md)). Linked files outside the data directory keep their original paths; use the fork for database and copied-asset writes.
+
+1. Build the Fixture if needed with `pnpm fixture`, then create the fork:
+
+   ```sh
+   node packages/scripts/scripts/fixture.ts fork scan-check
+   ```
+
+   The command prints the absolute `.scratch/acceptance-fixture/forks/scan-check` path. An existing name fails and keeps its contents. `pnpm fixture fork scan-check` runs the same command through Turbo.
+2. Hold a Desktop Slot for the app check as `/obsidian-debug` describes. Read and save the current Device Override:
+
+   ```sh
+   packages/scripts/scripts/obsidian-cli.ts --code 'app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride' vault=<id>
+   ```
+
+3. Point the plugin at the printed fork path:
+
+   ```sh
+   packages/scripts/scripts/obsidian-cli.ts --code 'app.plugins.plugins.zotlit.services.zoteroPref.setDataDir("<absolute fork path>")' vault=<id>
+   ```
+
+4. Write to `<absolute fork path>/zotero.sqlite` and run the app check. Keep the database handle closed between writes and plugin reads.
+5. Restore the saved override with `zoteroPref.setDataDir(<previous value>)`, using `null` if that was the saved value. Restore it in the cleanup path even when the check fails.
+6. Close any database handle on the fork and remove it:
+
+   ```sh
+   node packages/scripts/scripts/fixture.ts fork --remove scan-check
+   ```
+
+Rebuilding or discarding the Fixture also removes its forks. Restore the previous override before either operation.
