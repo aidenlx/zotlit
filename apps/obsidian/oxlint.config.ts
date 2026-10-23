@@ -318,7 +318,6 @@ export default defineConfig({
         "src/services/annotation-repository/service.ts",
         "src/services/attachment-import/service.ts",
         "src/services/attachment-resolver/service.ts",
-        "src/services/citation-index/service.ts",
         "src/services/citation-popover/service.tsx",
         "src/services/citation-text/service.ts",
         "src/services/citekey-editor/service.ts",

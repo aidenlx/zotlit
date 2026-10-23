@@ -11,7 +11,8 @@ import type {
 import type { Library, LibraryCitekey } from "@zotlit/db";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
+import type { Context } from "@/lib/effect";
+import { Effect, SubscriptionRef } from "@/lib/effect";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -40,13 +41,10 @@ import {
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { citationLookupFixture } from "./__fixtures__";
-import { CitationIndex } from "./service";
-import type {
-  CitationIndexOptions,
-  CitekeyRecord,
-  CitekeyStore,
-} from "./service";
+import { citationIndexFixture, citationLookupFixture } from "./__fixtures__";
+import { CitationLookup } from "./lookup-service";
+import type { PlainCitationIndex } from "./plain";
+import type { CitekeyRecord, CitekeyStore } from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -618,22 +616,35 @@ export class MemoryStore implements CitekeyStore {
 }
 
 export class SettingsStub {
-  current: Readonly<Settings>;
   readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
-
+  readonly #state;
+  readonly changes;
   constructor(overrides: SettingsOverrides = {}) {
-    this.current = applySettingsOverrides(defaults, overrides);
+    this.#state = Effect.runSync(
+      SubscriptionRef.make<Readonly<Settings>>(
+        applySettingsOverrides(defaults, overrides),
+      ),
+    );
+    this.changes = SubscriptionRef.changes(this.#state);
   }
-
+  get current(): Readonly<Settings> {
+    return Effect.runSync(SubscriptionRef.get(this.#state));
+  }
+  update(overrides: SettingsOverrides): void {
+    Effect.runSync(
+      SubscriptionRef.set(
+        this.#state,
+        applySettingsOverrides(this.current, overrides),
+      ),
+    );
+    for (const listener of this.#listeners) listener(this.current);
+  }
   subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
     this.#listeners.add(listener);
     listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: SettingsOverrides): void {
-    this.current = applySettingsOverrides(this.current, overrides);
-    for (const listener of this.#listeners) listener(this.current);
+    return () => {
+      this.#listeners.delete(listener);
+    };
   }
 }
 
@@ -688,7 +699,10 @@ function applySettingsOverrides(
 export interface CitationIndexHarness extends AsyncDisposable {
   app: App;
   draft: TFile;
-  index: CitationIndex;
+  index: PlainCitationIndex;
+  ready: Promise<void>;
+  runtime: ReturnType<typeof citationIndexFixture>["runtime"];
+  closeIndex: () => Promise<void>;
   lookup: Awaited<ReturnType<typeof citationLookupFixture>>;
   metadataCache: MockMetadataCache;
   noteIndex: NoteIndexStub;
@@ -706,7 +720,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
-  runPromise?: CitationIndexOptions["runPromise"];
+  context?: Context.Context<never>;
   parseClient?: ParseClient;
   openStore?: () => Promise<CitekeyStore>;
   settings?: Partial<Settings>;
@@ -785,29 +799,26 @@ export async function createCitationIndexHarness(
       queryClient,
     }),
   );
-  const index = stack.use(
-    new CitationIndex({
-      runPromise: options.runPromise ?? Effect.runPromise,
+  const fixture = citationIndexFixture(
+    {
+      app,
       db,
       libraryScope,
-      app,
       noteIndex,
       settings,
-      lookup: {
-        read: (...args) => lookup.read(...args),
-        observe: (...args) => lookup.observe(...args),
-        on: (...args) => lookup.on(...args),
-        get status() {
-          return lookup.status;
-        },
-        whenResolved: () => lookup.whenResolved(),
-      },
+      lookup: lookup.runtime.runSync(CitationLookup),
       parseClient: options.parseClient ?? inProcessParseClient,
       openStore: options.openStore ?? (() => Promise.resolve(store)),
-    }),
+      context: options.context,
+    },
+    stack,
   );
+  let index: PlainCitationIndex;
+  const ready = fixture.ready.then((value) => {
+    index = value;
+  });
   const awaitReady = options.awaitReady ?? true;
-  if (awaitReady) await index.ready;
+  if (awaitReady) await ready;
   if (awaitReady && !options.db) await lookup.whenResolved();
   vault.reads.length = 0;
   store.writes.length = 0;
@@ -816,7 +827,12 @@ export async function createCitationIndexHarness(
   return {
     app,
     draft: metadataCache.files.get("draft.md")!,
-    index,
+    get index() {
+      return index;
+    },
+    ready,
+    runtime: fixture.runtime,
+    closeIndex: () => fixture.runtime.dispose(),
     lookup,
     metadataCache,
     noteIndex,

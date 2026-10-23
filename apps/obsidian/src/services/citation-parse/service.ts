@@ -6,13 +6,15 @@ import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { ParseFailed } from "./client";
-import type { ParseRequest, ParseReply } from "./client";
+import type { ParseClient, ParseRequest, ParseReply } from "./client";
 import { makeRecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
 
 export class CitationParse extends Context.Service<
   CitationParse,
   {
+    /** Scoped Promise client for the per-note plain adapter. */
+    readonly client: ParseClient;
     parse(request: ParseRequest): Effect.Effect<ParseReply, ParseFailed>;
   }
 >()("zotlit/citation-parse/CitationParse") {}
@@ -30,6 +32,7 @@ export const layerCitationParse = Layer.effect(
       Effect.sync(() => client.start()),
     ).pipe(Effect.forkScoped);
     return CitationParse.of({
+      client,
       parse: Effect.fn("CitationParse.parse")(function* (
         request: ParseRequest,
       ) {

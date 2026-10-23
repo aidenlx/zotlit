@@ -5,7 +5,7 @@ import { afterEach, describe, expect } from "vitest";
 
 import { Effect } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
-import { yieldToMain } from "@/lib/yield-to-main";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import {
@@ -16,7 +16,7 @@ import {
   bothLibraries,
 } from "./__fixtures__/ambiguous";
 import type { CitationSyntax } from "./scan";
-import type { CitedBySnapshot, Citation, CitationIndex } from "./service";
+import type { CitedBySnapshot, Citation } from "./service";
 import {
   createCitationIndexHarness,
   DatabaseStub,
@@ -45,544 +45,640 @@ afterEach(async () => {
 });
 
 async function citationsOf(
-  index: CitationIndex,
+  index: PlainCitationIndex,
   file: TFile,
 ): Promise<Citation[]> {
   return (await index.getDocumentCitationSet(file)).citations;
 }
 
 describe("CitationIndex", () => {
-  it.each([
+  it.effect.each([
     ["[[Doe\u00a02024]]", undefined],
     ["[[Doe 2024\\]]", undefined],
     ["[[Doe\u00a02024#cite:locator=4\\]]", "locator=4"],
-  ])(
+  ] as const)(
     "#1683 resolves normalized Wikilink Citations in References and Cited By: %s",
-    async (body, fragment) => {
-      await using harness = await createCitationIndexHarness(
+    ([body, fragment]) =>
+      Effect.promise(async () => {
+        await using harness = await createCitationIndexHarness(
+          { "draft.md": body },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        harness.workspace.layoutReady();
+        await harness.index.whenIndexed();
+        const set = await harness.index.getDocumentCitationSet(harness.draft);
+        expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
+          KEY_A,
+        ]);
+        expect(set.occurrences[0]).toMatchObject({ raw: "Doe 2024" });
+        expect(set.occurrences[0]?.fragment).toBe(fragment);
+        expect((await harness.index.getCitedBy(KEY_A)).groups).toMatchObject([
+          { path: "draft.md", occurrences: [{ raw: "Doe 2024" }] },
+        ]);
+      }),
+  );
+
+  it.effect(
+    "keeps Cited By backlinks when membership changes after a failed refresh",
+    () =>
+      Effect.promise(async () => {
+        const { index, citekeys, db, draft, metadataCache, workspace } =
+          await makeHarness({ "draft.md": "@doe2024" });
+        workspace.layoutReady();
+        const snapshots: CitedBySnapshot[] = [];
+        const stop = index.observeCitedBy(KEY_A, (snapshot) =>
+          snapshots.push(snapshot),
+        );
+        await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
+        citekeys.error = new Error("unavailable");
+        db.changed();
+        await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
+        metadataCache.change(draft, "@doe2024 @newKey");
+        await index.getFileScan(draft);
+
+        expect(snapshots.at(-1)?.groups.map((group) => group.path)).toEqual([
+          "draft.md",
+        ]);
+        stop();
+      }),
+  );
+
+  it.effect(
+    "groups wikilinks with the same local identity used for the reverse batch",
+    () =>
+      Effect.promise(async () => {
+        const db = new DatabaseStub();
+        const { index, draft, metadataCache, lookup } = await makeHarness(
+          { "draft.md": "[[Doe 2024]]" },
+          { db, settings: { "citation.wikilink-citations": true } },
+        );
+        metadataCache.fileCache.set(draft.path, {
+          links: [link("Doe 2024", 0)],
+        } as CachedMetadata);
+        await lookup.whenResolved();
+        const held = db.holdLookup();
+        const pending = index.getDocumentCitationSet(draft);
+        await held.entered;
+        metadataCache.fileCache.set("Doe 2024.md", {
+          frontmatter: { "zotero-key": KEY_B },
+        } as CachedMetadata);
+        held.release();
+        const set = await pending;
+        expect(set.citations[0]?.indexedKey).toBe(KEY_A);
+        expect(set.lookup.citekeyOf(KEY_A)).toBe("doe2024");
+        expect(() => set.lookup.citekeyOf(KEY_B)).toThrow(KEY_B);
+      }),
+  );
+
+  it.effect(
+    "lists the literal citekeys of a document with their Reference Numbers",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index } = await makeHarness({
+          "draft.md": "Cited by @doe2024 and @roe2025, then @doe2024 again.",
+        });
+
+        const citations = await citationsOf(index, draft);
+
+        expect(citations).toMatchObject([
+          { indexedKey: KEY_A, linkpath: "Doe 2024.md", refNumber: 1 },
+          { indexedKey: KEY_B, linkpath: "Roe 2025.md", refNumber: 2 },
+        ]);
+        expect(citations[0]!.occurrences).toHaveLength(2);
+      }),
+  );
+
+  it.effect("keeps a citekey no Literature Note carries", () =>
+    Effect.promise(async () => {
+      const { draft, index } = await makeHarness({
+        "draft.md": "See @typo2024.",
+      });
+
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: null, linkpath: null, refNumber: 1 },
+      ]);
+    }),
+  );
+
+  it.effect("positions an occurrence at its place in the source", () =>
+    Effect.promise(async () => {
+      const { draft, index } = await makeHarness({
+        "draft.md": "# Title\n\nAs @doe2024 wrote.\n",
+      });
+
+      const [citation] = await citationsOf(index, draft);
+
+      expect(citation!.occurrences[0]!.position).toEqual({
+        start: { line: 2, col: 3, offset: 12 },
+        end: { line: 2, col: 11, offset: 20 },
+      });
+    }),
+  );
+
+  it.effect("merges stored wikilink occurrences in document order", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache } = await makeHarness(
+        { "draft.md": "As @roe2025 wrote, see [[Doe 2024]]." },
+        { settings: { "citation.wikilink-citations": true } },
+      );
+      metadataCache.fileCache.set("draft.md", {
+        links: [link("Doe 2024", 23)],
+      } as CachedMetadata);
+
+      const citations = await citationsOf(index, draft);
+
+      expect(citations).toMatchObject([
+        { indexedKey: KEY_B, refNumber: 1 },
+        { indexedKey: KEY_A, linkpath: "Doe 2024", refNumber: 2 },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "returns one ordered Document Citation Set for both consumers",
+    () =>
+      Effect.promise(async () => {
+        const body = "First @roe2025, then [[Doe 2024]], then @roe2025.";
+        const { draft, index, metadataCache } = await makeHarness(
+          { "draft.md": body },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024", body.indexOf("[["))],
+        } as CachedMetadata);
+
+        const set = await index.getDocumentCitationSet(draft);
+
+        expect(set.occurrences.map(({ kind, raw }) => [kind, raw])).toEqual([
+          ["citekey", "roe2025"],
+          ["wikilink", "Doe 2024"],
+          ["citekey", "roe2025"],
+        ]);
+        expect(set.citations).toMatchObject([
+          { indexedKey: KEY_B, refNumber: 1, occurrences: [{}, {}] },
+          { indexedKey: KEY_A, refNumber: 2, occurrences: [{}] },
+        ]);
+      }),
+  );
+
+  it.effect(
+    "admits only eligible Literature Note wikilinks to the shared set",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache } = await makeHarness(
+          {
+            "draft.md":
+              "[[Doe 2024]] [[Doe 2024#cite:locator=4]] [[Doe 2024#cite:]] [[Doe 2024#Heading]] [[Doe 2024#^block]] [[Doe 2024|Doe]] ![[Doe 2024]] [Doe](Doe%202024)",
+          },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        metadataCache.fileCache.set("draft.md", {
+          links: [
+            link("Doe 2024", 0),
+            link("Doe 2024#cite:locator=4", 20),
+            link("Doe 2024#cite:", 40),
+            link("Doe 2024#Heading", 60),
+            link("Doe 2024#^block", 80),
+            link("Doe 2024", 100, "[[Doe 2024|Doe]]"),
+            link("Doe 2024", 120, "![[Doe 2024]]"),
+            link("Doe 2024", 140, "[Doe](Doe 2024)"),
+          ],
+        } as CachedMetadata);
+
+        const set = await index.getDocumentCitationSet(draft);
+
+        expect(set.occurrences.map(({ raw }) => raw)).toEqual([
+          "Doe 2024",
+          "Doe 2024",
+        ]);
+      }),
+  );
+
+  it.effect(
+    "recomputes membership after a source choice without rebuilding the scan",
+    () =>
+      Effect.promise(async () => {
+        const body = "See @roe2025 and [[Doe 2024]].";
+        const { draft, index, metadataCache, settings, vault } =
+          await makeHarness({
+            "draft.md": body,
+          });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024", body.indexOf("[["))],
+        } as CachedMetadata);
+        let changed = 0;
+        index.on("membership-changed", () => changed++);
+
+        expect(
+          (await index.getDocumentCitationSet(draft)).occurrences.map(
+            ({ kind }) => kind,
+          ),
+        ).toEqual(["citekey"]);
+        settings.update({
+          "citation.pandoc-citations": false,
+          "citation.wikilink-citations": true,
+        });
+        expect(
+          (await index.getDocumentCitationSet(draft)).occurrences.map(
+            ({ kind }) => kind,
+          ),
+        ).toEqual(["wikilink"]);
+
+        expect(changed).toBe(1);
+        expect(vault.reads).toEqual(["draft.md"]);
+      }),
+  );
+
+  it.effect("applies all four independent source combinations", () =>
+    Effect.promise(async () => {
+      const body = "See @roe2025 and [[Doe 2024]].";
+      const { draft, index, metadataCache, settings } = await makeHarness({
+        "draft.md": body,
+      });
+      metadataCache.fileCache.set("draft.md", {
+        links: [link("Doe 2024", body.indexOf("[["))],
+      } as CachedMetadata);
+
+      expect(
+        (await index.getDocumentCitationSet(draft)).occurrences.map(
+          ({ kind }) => kind,
+        ),
+      ).toEqual(["citekey"]);
+
+      settings.update({ "citation.wikilink-citations": true });
+      expect(
+        (await index.getDocumentCitationSet(draft)).occurrences.map(
+          ({ kind }) => kind,
+        ),
+      ).toEqual(["citekey", "wikilink"]);
+
+      settings.update({ "citation.pandoc-citations": false });
+      expect(
+        (await index.getDocumentCitationSet(draft)).occurrences.map(
+          ({ kind }) => kind,
+        ),
+      ).toEqual(["wikilink"]);
+
+      settings.update({ "citation.wikilink-citations": false });
+      expect(await index.getDocumentCitationSet(draft)).toMatchObject({
+        occurrences: [],
+        citations: [],
+        errors: [],
+      });
+    }),
+  );
+
+  it.effect(
+    "reports which syntaxes admit their occurrences, and follows a settings update",
+    () =>
+      Effect.promise(async () => {
+        const { index, settings } = await makeHarness({});
+
+        expect(index.syntaxes()).toEqual({
+          citekey: "included",
+          wikilink: "excluded",
+          annotation: "included",
+        });
+
+        settings.update({
+          "citation.pandoc-citations": false,
+          "citation.wikilink-citations": true,
+        });
+
+        expect(index.syntaxes()).toEqual({
+          citekey: "excluded",
+          wikilink: "included",
+          annotation: "included",
+        });
+      }),
+  );
+
+  it.effect(
+    "answers the admitted occurrences of every covered document by path",
+    () =>
+      Effect.promise(async () => {
+        const { index, metadataCache, settings, workspace } = await makeHarness(
+          {
+            "draft.md": "As @doe2024 and [[Roe 2025]] say; @doe2024 again.",
+            "plain.md": "No citation here.",
+            "other.md": "Only [[Doe 2024]].",
+          },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Roe 2025", 15)],
+        } as CachedMetadata);
+        metadataCache.fileCache.set("other.md", {
+          links: [link("Doe 2024", 5)],
+        } as CachedMetadata);
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        const summary = (
+          syntaxes: CitationSyntax[] = ["citekey", "wikilink"],
+        ) =>
+          [...index.citationsByPath(syntaxes)].map(([path, occurrences]) => [
+            path,
+            occurrences.map(({ kind, raw }) => `${kind}:${raw}`),
+          ]);
+
+        expect(summary()).toEqual([
+          [
+            "draft.md",
+            ["citekey:doe2024", "citekey:doe2024", "wikilink:Roe 2025"],
+          ],
+          ["other.md", ["wikilink:Doe 2024"]],
+        ]);
+        expect(summary(["citekey"])).toEqual([
+          ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
+        ]);
+
+        settings.update({ "citation.wikilink-citations": false });
+        expect(summary()).toEqual([
+          ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
+        ]);
+
+        settings.update({
+          "citation.pandoc-citations": false,
+          "citation.wikilink-citations": true,
+        });
+        expect(summary()).toEqual([
+          ["draft.md", ["wikilink:Roe 2025"]],
+          ["other.md", ["wikilink:Doe 2024"]],
+        ]);
+      }),
+  );
+
+  it.effect(
+    "leaves a document the backfill has not reached out of the per-path read",
+    () =>
+      Effect.promise(async () => {
+        const { index } = await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+        });
+
+        expect(index.citationsByPath(["citekey", "wikilink"]).size).toBe(0);
+      }),
+  );
+
+  it.effect("reports malformed Citation Fragments without numbering them", () =>
+    Effect.promise(async () => {
+      const body = "Bad [[Doe 2024#cite:locator=]] then @roe2025.";
+      const { draft, index, metadataCache } = await makeHarness(
         { "draft.md": body },
         { settings: { "citation.wikilink-citations": true } },
       );
-      harness.workspace.layoutReady();
-      await harness.index.whenIndexed();
-      const set = await harness.index.getDocumentCitationSet(harness.draft);
-      expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
-        KEY_A,
+      const offset = body.indexOf("[[");
+      metadataCache.fileCache.set("draft.md", {
+        links: [link("Doe 2024#cite:locator=", offset)],
+      } as CachedMetadata);
+
+      const set = await index.getDocumentCitationSet(draft);
+
+      expect(set.citations).toMatchObject([
+        { indexedKey: KEY_B, refNumber: 1 },
       ]);
-      expect(set.occurrences[0]).toMatchObject({ raw: "Doe 2024" });
-      expect(set.occurrences[0]?.fragment).toBe(fragment);
-      expect((await harness.index.getCitedBy(KEY_A)).groups).toMatchObject([
-        { path: "draft.md", occurrences: [{ raw: "Doe 2024" }] },
+      expect(set.errors).toMatchObject([
+        {
+          kind: "malformed-wikilink",
+          occurrence: {
+            kind: "wikilink",
+            raw: "Doe 2024",
+            position: link("Doe 2024#cite:locator=", offset).position,
+          },
+        },
       ]);
-    },
+    }),
   );
 
-  it("keeps Cited By backlinks when membership changes after a failed refresh", async () => {
-    const { index, citekeys, db, draft, metadataCache, workspace } =
-      await makeHarness({ "draft.md": "@doe2024" });
-    workspace.layoutReady();
-    const snapshots: CitedBySnapshot[] = [];
-    const stop = index.observeCitedBy(KEY_A, (snapshot) =>
-      snapshots.push(snapshot),
-    );
-    await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
-    citekeys.error = new Error("unavailable");
-    db.changed();
-    await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
-    metadataCache.change(draft, "@doe2024 @newKey");
-    await yieldToMain();
-    expect(snapshots.at(-1)?.groups.map((group) => group.path)).toEqual([
-      "draft.md",
-    ]);
-    stop();
-  });
+  it.effect("leaves wikilinks out while Wikilink Citations is off", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache } = await makeHarness({
+        "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
+      });
+      metadataCache.fileCache.set("draft.md", {
+        links: [link("Doe 2024", 23)],
+      } as CachedMetadata);
 
-  it("groups wikilinks with the same local identity used for the reverse batch", async () => {
-    const db = new DatabaseStub();
-    const { index, draft, metadataCache, lookup } = await makeHarness(
-      { "draft.md": "[[Doe 2024]]" },
-      { db, settings: { "citation.wikilink-citations": true } },
-    );
-    metadataCache.fileCache.set(draft.path, {
-      links: [link("Doe 2024", 0)],
-    } as CachedMetadata);
-    await lookup.whenResolved();
-    const held = db.holdLookup();
-    const pending = index.getDocumentCitationSet(draft);
-    await held.entered;
-    metadataCache.fileCache.set("Doe 2024.md", {
-      frontmatter: { "zotero-key": KEY_B },
-    } as CachedMetadata);
-    held.release();
-    const set = await pending;
-    expect(set.citations[0]?.indexedKey).toBe(KEY_A);
-    expect(set.lookup.citekeyOf(KEY_A)).toBe("doe2024");
-    expect(() => set.lookup.citekeyOf(KEY_B)).toThrow(KEY_B);
-  });
-
-  it("lists the literal citekeys of a document with their Reference Numbers", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": "Cited by @doe2024 and @roe2025, then @doe2024 again.",
-    });
-
-    const citations = await citationsOf(index, draft);
-
-    expect(citations).toMatchObject([
-      { indexedKey: KEY_A, linkpath: "Doe 2024.md", refNumber: 1 },
-      { indexedKey: KEY_B, linkpath: "Roe 2025.md", refNumber: 2 },
-    ]);
-    expect(citations[0]!.occurrences).toHaveLength(2);
-  });
-
-  it("keeps a citekey no Literature Note carries", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": "See @typo2024.",
-    });
-
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: null, linkpath: null, refNumber: 1 },
-    ]);
-  });
-
-  it("positions an occurrence at its place in the source", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": "# Title\n\nAs @doe2024 wrote.\n",
-    });
-
-    const [citation] = await citationsOf(index, draft);
-
-    expect(citation!.occurrences[0]!.position).toEqual({
-      start: { line: 2, col: 3, offset: 12 },
-      end: { line: 2, col: 11, offset: 20 },
-    });
-  });
-
-  it("merges stored wikilink occurrences in document order", async () => {
-    const { draft, index, metadataCache } = await makeHarness(
-      { "draft.md": "As @roe2025 wrote, see [[Doe 2024]]." },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", 23)],
-    } as CachedMetadata);
-
-    const citations = await citationsOf(index, draft);
-
-    expect(citations).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-      { indexedKey: KEY_A, linkpath: "Doe 2024", refNumber: 2 },
-    ]);
-  });
-
-  it("returns one ordered Document Citation Set for both consumers", async () => {
-    const body = "First @roe2025, then [[Doe 2024]], then @roe2025.";
-    const { draft, index, metadataCache } = await makeHarness(
-      { "draft.md": body },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-
-    const set = await index.getDocumentCitationSet(draft);
-
-    expect(set.occurrences.map(({ kind, raw }) => [kind, raw])).toEqual([
-      ["citekey", "roe2025"],
-      ["wikilink", "Doe 2024"],
-      ["citekey", "roe2025"],
-    ]);
-    expect(set.citations).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1, occurrences: [{}, {}] },
-      { indexedKey: KEY_A, refNumber: 2, occurrences: [{}] },
-    ]);
-  });
-
-  it("admits only eligible Literature Note wikilinks to the shared set", async () => {
-    const { draft, index, metadataCache } = await makeHarness(
-      {
-        "draft.md":
-          "[[Doe 2024]] [[Doe 2024#cite:locator=4]] [[Doe 2024#cite:]] [[Doe 2024#Heading]] [[Doe 2024#^block]] [[Doe 2024|Doe]] ![[Doe 2024]] [Doe](Doe%202024)",
-      },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    metadataCache.fileCache.set("draft.md", {
-      links: [
-        link("Doe 2024", 0),
-        link("Doe 2024#cite:locator=4", 20),
-        link("Doe 2024#cite:", 40),
-        link("Doe 2024#Heading", 60),
-        link("Doe 2024#^block", 80),
-        link("Doe 2024", 100, "[[Doe 2024|Doe]]"),
-        link("Doe 2024", 120, "![[Doe 2024]]"),
-        link("Doe 2024", 140, "[Doe](Doe 2024)"),
-      ],
-    } as CachedMetadata);
-
-    const set = await index.getDocumentCitationSet(draft);
-
-    expect(set.occurrences.map(({ raw }) => raw)).toEqual([
-      "Doe 2024",
-      "Doe 2024",
-    ]);
-  });
-
-  it("recomputes membership after a source choice without rebuilding the scan", async () => {
-    const body = "See @roe2025 and [[Doe 2024]].";
-    const { draft, index, metadataCache, settings, vault } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-    let changed = 0;
-    index.on("membership-changed", () => changed++);
-
-    expect(
-      (await index.getDocumentCitationSet(draft)).occurrences.map(
-        ({ kind }) => kind,
-      ),
-    ).toEqual(["citekey"]);
-    settings.update({
-      "citation.pandoc-citations": false,
-      "citation.wikilink-citations": true,
-    });
-    expect(
-      (await index.getDocumentCitationSet(draft)).occurrences.map(
-        ({ kind }) => kind,
-      ),
-    ).toEqual(["wikilink"]);
-
-    expect(changed).toBe(1);
-    expect(vault.reads).toEqual(["draft.md"]);
-  });
-
-  it("applies all four independent source combinations", async () => {
-    const body = "See @roe2025 and [[Doe 2024]].";
-    const { draft, index, metadataCache, settings } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-
-    expect(
-      (await index.getDocumentCitationSet(draft)).occurrences.map(
-        ({ kind }) => kind,
-      ),
-    ).toEqual(["citekey"]);
-
-    settings.update({ "citation.wikilink-citations": true });
-    expect(
-      (await index.getDocumentCitationSet(draft)).occurrences.map(
-        ({ kind }) => kind,
-      ),
-    ).toEqual(["citekey", "wikilink"]);
-
-    settings.update({ "citation.pandoc-citations": false });
-    expect(
-      (await index.getDocumentCitationSet(draft)).occurrences.map(
-        ({ kind }) => kind,
-      ),
-    ).toEqual(["wikilink"]);
-
-    settings.update({ "citation.wikilink-citations": false });
-    expect(await index.getDocumentCitationSet(draft)).toMatchObject({
-      occurrences: [],
-      citations: [],
-      errors: [],
-    });
-  });
-
-  it("reports which syntaxes admit their occurrences, and follows a settings update", async () => {
-    const { index, settings } = await makeHarness({});
-
-    expect(index.syntaxes()).toEqual({
-      citekey: "included",
-      wikilink: "excluded",
-      annotation: "included",
-    });
-
-    settings.update({
-      "citation.pandoc-citations": false,
-      "citation.wikilink-citations": true,
-    });
-
-    expect(index.syntaxes()).toEqual({
-      citekey: "excluded",
-      wikilink: "included",
-      annotation: "included",
-    });
-  });
-
-  it("answers the admitted occurrences of every covered document by path", async () => {
-    const { index, metadataCache, settings, workspace } = await makeHarness(
-      {
-        "draft.md": "As @doe2024 and [[Roe 2025]] say; @doe2024 again.",
-        "plain.md": "No citation here.",
-        "other.md": "Only [[Doe 2024]].",
-      },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Roe 2025", 15)],
-    } as CachedMetadata);
-    metadataCache.fileCache.set("other.md", {
-      links: [link("Doe 2024", 5)],
-    } as CachedMetadata);
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    const summary = (syntaxes: CitationSyntax[] = ["citekey", "wikilink"]) =>
-      [...index.citationsByPath(syntaxes)].map(([path, occurrences]) => [
-        path,
-        occurrences.map(({ kind, raw }) => `${kind}:${raw}`),
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_B, refNumber: 1 },
       ]);
-
-    expect(summary()).toEqual([
-      ["draft.md", ["citekey:doe2024", "citekey:doe2024", "wikilink:Roe 2025"]],
-      ["other.md", ["wikilink:Doe 2024"]],
-    ]);
-    expect(summary(["citekey"])).toEqual([
-      ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
-    ]);
-
-    settings.update({ "citation.wikilink-citations": false });
-    expect(summary()).toEqual([
-      ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
-    ]);
-
-    settings.update({
-      "citation.pandoc-citations": false,
-      "citation.wikilink-citations": true,
-    });
-    expect(summary()).toEqual([
-      ["draft.md", ["wikilink:Roe 2025"]],
-      ["other.md", ["wikilink:Doe 2024"]],
-    ]);
-  });
-
-  it("leaves a document the backfill has not reached out of the per-path read", async () => {
-    const { index } = await makeHarness({ "draft.md": "As @doe2024 wrote." });
-
-    expect(index.citationsByPath(["citekey", "wikilink"]).size).toBe(0);
-  });
-
-  it("reports malformed Citation Fragments without numbering them", async () => {
-    const body = "Bad [[Doe 2024#cite:locator=]] then @roe2025.";
-    const { draft, index, metadataCache } = await makeHarness(
-      { "draft.md": body },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    const offset = body.indexOf("[[");
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024#cite:locator=", offset)],
-    } as CachedMetadata);
-
-    const set = await index.getDocumentCitationSet(draft);
-
-    expect(set.citations).toMatchObject([{ indexedKey: KEY_B, refNumber: 1 }]);
-    expect(set.errors).toMatchObject([
-      {
-        kind: "malformed-wikilink",
-        occurrence: {
-          kind: "wikilink",
-          raw: "Doe 2024",
-          position: link("Doe 2024#cite:locator=", offset).position,
-        },
-      },
-    ]);
-  });
-
-  it("leaves wikilinks out while Wikilink Citations is off", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "As @roe2025 wrote, see [[Doe 2024]].",
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", 23)],
-    } as CachedMetadata);
-
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-    ]);
-  });
+    }),
+  );
 
   // Pandoc reads `[[@doe2024]]` as a wikilink, so the export cites nothing
   // there; the References sidebar must agree.
-  it("reads no citekey inside a wikilink while Wikilink Citations is off", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "As @roe2025 wrote, see [[@doe2024]].",
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("@doe2024", 23)],
-    } as CachedMetadata);
+  it.effect(
+    "reads no citekey inside a wikilink while Wikilink Citations is off",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache } = await makeHarness({
+          "draft.md": "As @roe2025 wrote, see [[@doe2024]].",
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("@doe2024", 23)],
+        } as CachedMetadata);
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-    ]);
-  });
+        expect(await citationsOf(index, draft)).toMatchObject([
+          { indexedKey: KEY_B, refNumber: 1 },
+        ]);
+      }),
+  );
 
-  it("leaves citekeys inside code, math, comments, and frontmatter out", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": [
-        "---",
-        "cite: @doe2024",
-        "---",
-        "",
-        "```md",
-        "@doe2024",
-        "```",
-        "",
-        "    @doe2024",
-        "",
-        "Inline `@doe2024`, math $x = @doe2024$, and %% @doe2024 %% too.",
-        "",
-        "$$",
-        "@doe2024",
-        "$$",
-        "",
-        "Only @roe2025 counts.",
-      ].join("\n"),
-    });
+  it.effect(
+    "leaves citekeys inside code, math, comments, and frontmatter out",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index } = await makeHarness({
+          "draft.md": [
+            "---",
+            "cite: @doe2024",
+            "---",
+            "",
+            "```md",
+            "@doe2024",
+            "```",
+            "",
+            "    @doe2024",
+            "",
+            "Inline `@doe2024`, math $x = @doe2024$, and %% @doe2024 %% too.",
+            "",
+            "$$",
+            "@doe2024",
+            "$$",
+            "",
+            "Only @roe2025 counts.",
+          ].join("\n"),
+        });
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-    ]);
-  });
+        expect(await citationsOf(index, draft)).toMatchObject([
+          { indexedKey: KEY_B, refNumber: 1 },
+        ]);
+      }),
+  );
 
   // Indented list content is no code block, an unpaired backtick opens no code
   // span, and a price pair is no math — each would swallow a real citation.
-  it("keeps citekeys that only look like code or math", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": [
-        "- item",
-        "",
-        "    Indented under the list, citing @doe2024.",
-        "",
-        "It cost $5 and @roe2025 says $6 isn't a formula.",
-        "",
-        "A lone ` backtick keeps @doe2024 readable.",
-      ].join("\n"),
-    });
+  it.effect("keeps citekeys that only look like code or math", () =>
+    Effect.promise(async () => {
+      const { draft, index } = await makeHarness({
+        "draft.md": [
+          "- item",
+          "",
+          "    Indented under the list, citing @doe2024.",
+          "",
+          "It cost $5 and @roe2025 says $6 isn't a formula.",
+          "",
+          "A lone ` backtick keeps @doe2024 readable.",
+        ].join("\n"),
+      });
 
-    const citations = await citationsOf(index, draft);
+      const citations = await citationsOf(index, draft);
 
-    expect(citations).toMatchObject([
-      { indexedKey: KEY_A, refNumber: 1 },
-      { indexedKey: KEY_B, refNumber: 2 },
-    ]);
-    expect(citations[0]!.occurrences).toHaveLength(2);
-  });
+      expect(citations).toMatchObject([
+        { indexedKey: KEY_A, refNumber: 1 },
+        { indexedKey: KEY_B, refNumber: 2 },
+      ]);
+      expect(citations[0]!.occurrences).toHaveLength(2);
+    }),
+  );
 
-  it("rescans a document when its metadata changes", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    await citationsOf(index, draft);
+  it.effect("rescans a document when its metadata changes", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
+      await citationsOf(index, draft);
 
-    metadataCache.change(draft, "As @roe2025 wrote.");
+      metadataCache.change(draft, "As @roe2025 wrote.");
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-    ]);
-  });
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_B, refNumber: 1 },
+      ]);
+    }),
+  );
 
-  it("stays quiet when a change leaves the citekeys identical", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    await citationsOf(index, draft);
-    let notified = 0;
-    index.on("changed", () => notified++);
+  it.effect("stays quiet when a change leaves the citekeys identical", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
+      await citationsOf(index, draft);
+      let notified = 0;
+      index.on("changed", () => notified++);
 
-    metadataCache.change(draft, "As @doe2024 wrote.");
-    await citationsOf(index, draft);
+      metadataCache.change(draft, "As @doe2024 wrote.");
+      await citationsOf(index, draft);
 
-    expect(notified).toBe(0);
-  });
+      expect(notified).toBe(0);
+    }),
+  );
 
-  it("reports a document whose citekeys changed", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    await citationsOf(index, draft);
-    const changed: string[] = [];
-    index.on("changed", (path) => changed.push(path));
+  it.effect("reports a document whose citekeys changed", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
+      await citationsOf(index, draft);
+      const changed: string[] = [];
+      index.on("changed", (path) => changed.push(path));
 
-    metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
+      metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
 
-    await expect.poll(() => changed).toEqual(["draft.md"]);
-  });
+      await expect.poll(() => changed).toEqual(["draft.md"]);
+    }),
+  );
 
-  it("keeps a renamed document indexed under its new path", async () => {
-    const { draft, index, vault } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    await citationsOf(index, draft);
+  it.effect("keeps a renamed document indexed under its new path", () =>
+    Effect.promise(async () => {
+      const { draft, index, vault } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
+      await citationsOf(index, draft);
 
-    vault.rename(draft, "Notes/paper.md");
+      vault.rename(draft, "Notes/paper.md");
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A },
-    ]);
-    expect(vault.bodies.has("draft.md")).toBe(false);
-  });
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A },
+      ]);
+      expect(vault.bodies.has("draft.md")).toBe(false);
+    }),
+  );
 
-  it("drops a deleted document", async () => {
-    const { draft, index, vault, workspace } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    workspace.layoutReady();
-    await index.whenIndexed();
-    const changed: string[] = [];
-    index.on("changed", (path) => changed.push(path));
+  it.effect("drops a deleted document", () =>
+    Effect.promise(async () => {
+      const { draft, index, vault, workspace } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
+      workspace.layoutReady();
+      await index.whenIndexed();
+      const changed: string[] = [];
+      index.on("changed", (path) => changed.push(path));
 
-    vault.deleteFile(draft);
+      vault.deleteFile(draft);
 
-    expect(changed).toEqual(["draft.md"]);
-    expect(await citationsOf(index, draft)).toEqual([]);
-  });
+      expect(changed).toEqual(["draft.md"]);
+      expect(await citationsOf(index, draft)).toEqual([]);
+    }),
+  );
 
-  it("answers for a document the backfill has not reached", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
+  it.effect("answers for a document the backfill has not reached", () =>
+    Effect.promise(async () => {
+      const { draft, index } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A },
-    ]);
-  });
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A },
+      ]);
+    }),
+  );
 
-  it("covers the vault once the backfill finishes", async () => {
-    const { index, metadataCache, workspace } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-      "other.md": "As @roe2025 wrote.",
-    });
-    let backfilled = false;
-    void index.whenIndexed().then(() => (backfilled = true));
+  it.effect("covers the vault once the backfill finishes", () =>
+    Effect.promise(async () => {
+      const { index, metadataCache, workspace } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+        "other.md": "As @roe2025 wrote.",
+      });
+      let backfilled = false;
+      void index.whenIndexed().then(() => (backfilled = true));
 
-    expect(backfilled).toBe(false);
-    workspace.layoutReady();
-    await index.whenIndexed();
+      expect(backfilled).toBe(false);
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    const other = metadataCache.files.get("other.md")!;
-    expect(await citationsOf(index, other)).toMatchObject([
-      { indexedKey: KEY_B },
-    ]);
-  });
+      const other = metadataCache.files.get("other.md")!;
+      expect(await citationsOf(index, other)).toMatchObject([
+        { indexedKey: KEY_B },
+      ]);
+    }),
+  );
 
-  it("settles whenIndexed when disposal precedes the backfill", async () => {
-    const { index } = await makeHarness({ "draft.md": "As @doe2024 wrote." });
-    const waiting = index.whenIndexed();
+  it.effect("settles whenIndexed when disposal precedes the backfill", () =>
+    Effect.promise(async () => {
+      const { index, closeIndex } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
+      const waiting = index.whenIndexed();
 
-    await index[Symbol.asyncDispose]();
+      await closeIndex();
 
-    await expect(waiting).resolves.toBeUndefined();
-    await expect(index.whenIndexed()).resolves.toBeUndefined();
-  });
+      await expect(waiting).resolves.toBeUndefined();
+      await expect(index.whenIndexed()).resolves.toBeUndefined();
+    }),
+  );
 
-  it("keeps internal scans active while Pandoc Citations is off", async () => {
-    const { draft, lookup, index, metadataCache, settings, vault, workspace } =
-      await makeHarness(
+  it.effect("keeps internal scans active while Pandoc Citations is off", () =>
+    Effect.promise(async () => {
+      const {
+        draft,
+        lookup,
+        index,
+        metadataCache,
+        settings,
+        vault,
+        workspace,
+      } = await makeHarness(
         { "draft.md": "As @doe2024 wrote, see [[Roe 2025]]." },
         {
           settings: {
@@ -591,856 +687,988 @@ describe("CitationIndex", () => {
           },
         },
       );
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Roe 2025", 23)],
-    } as CachedMetadata);
+      metadataCache.fileCache.set("draft.md", {
+        links: [link("Roe 2025", 23)],
+      } as CachedMetadata);
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-    ]);
-    expect(
-      (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
-    ).toMatchObject({
-      kind: "unique",
-      item: { indexedKey: KEY_A },
-    });
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_B, refNumber: 1 },
+      ]);
+      expect(
+        (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+      ).toMatchObject({
+        kind: "unique",
+        item: { indexedKey: KEY_A },
+      });
 
-    metadataCache.change(draft, "As @roe2025 wrote.");
-    settings.update({ "citation.pandoc-citations": true });
-    expect(await citationsOf(index, draft)).toMatchObject([
-      {
-        indexedKey: KEY_B,
-        refNumber: 1,
-        occurrences: [{ kind: "citekey", raw: "roe2025" }],
-      },
-    ]);
+      metadataCache.change(draft, "As @roe2025 wrote.");
+      settings.update({ "citation.pandoc-citations": true });
+      expect(await citationsOf(index, draft)).toMatchObject([
+        {
+          indexedKey: KEY_B,
+          refNumber: 1,
+          occurrences: [{ kind: "citekey", raw: "roe2025" }],
+        },
+      ]);
 
-    settings.update({ "citation.pandoc-citations": false });
-    workspace.layoutReady();
-    await index.whenIndexed();
-    vault.reads.length = 0;
-    await index.reset();
-    await index.whenIndexed();
-    expect(vault.reads).toContain("draft.md");
-  });
+      settings.update({ "citation.pandoc-citations": false });
+      workspace.layoutReady();
+      await index.whenIndexed();
+      vault.reads.length = 0;
+      await index.reset();
+      await index.whenIndexed();
+      expect(vault.reads).toContain("draft.md");
+    }),
+  );
 
-  it("stops indexing after disposal", async () => {
-    const { draft, index, metadataCache, store } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    await citationsOf(index, draft);
-    store.writes.length = 0;
-    const changed: string[] = [];
-    index.on("changed", (path) => changed.push(path));
+  it.effect("stops indexing after disposal", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache, store, closeIndex } =
+        await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+        });
+      await citationsOf(index, draft);
+      store.writes.length = 0;
+      const changed: string[] = [];
+      index.on("changed", (path) => changed.push(path));
 
-    await index[Symbol.asyncDispose]();
-    metadataCache.change(draft, "As @roe2025 wrote.");
+      await closeIndex();
+      metadataCache.change(draft, "As @roe2025 wrote.");
 
-    expect(changed).toEqual([]);
-    expect(store.writes).toEqual([]);
-  });
+      expect(changed).toEqual([]);
+      expect(store.writes).toEqual([]);
+    }),
+  );
 });
 
 describe("CitationIndex persistence", () => {
-  it("adopts a stored scan for a file the vault has not touched", async () => {
-    const store = new MemoryStore();
-    await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
+  it.effect("adopts a stored scan for a file the vault has not touched", () =>
+    Effect.promise(async () => {
+      const store = new MemoryStore();
+      await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
 
-    const { draft, index, vault, workspace } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { store },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
+      const { draft, index, vault, workspace } = await makeHarness(
+        { "draft.md": "As @doe2024 wrote." },
+        { store },
+      );
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    expect(vault.reads).toEqual([]);
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A, refNumber: 1 },
-    ]);
-  });
+      expect(vault.reads).toEqual([]);
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A, refNumber: 1 },
+      ]);
+    }),
+  );
 
-  it("re-scans a file edited to the same length while the app was closed", async () => {
-    const store = new MemoryStore();
-    await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
+  it.effect(
+    "re-scans a file edited to the same length while the app was closed",
+    () =>
+      Effect.promise(async () => {
+        const store = new MemoryStore();
+        await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
 
-    const { draft, index, vault, workspace } = await makeHarness(
-      { "draft.md": "As @roe2025 wrote." },
-      { store },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
+        const { draft, index, vault, workspace } = await makeHarness(
+          { "draft.md": "As @roe2025 wrote." },
+          { store },
+        );
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    expect(vault.reads).toEqual(["draft.md"]);
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_B, refNumber: 1 },
-    ]);
-  });
+        expect(vault.reads).toEqual(["draft.md"]);
+        expect(await citationsOf(index, draft)).toMatchObject([
+          { indexedKey: KEY_B, refNumber: 1 },
+        ]);
+      }),
+  );
 
-  it("writes the record of the one file that changed", async () => {
-    const { draft, index, metadataCache, store, workspace } = await makeHarness(
-      {
+  it.effect("writes the record of the one file that changed", () =>
+    Effect.promise(async () => {
+      const { draft, index, metadataCache, store, workspace } =
+        await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+          "other.md": "As @roe2025 wrote.",
+        });
+      workspace.layoutReady();
+      await index.whenIndexed();
+      store.writes.length = 0;
+
+      metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
+
+      await expect.poll(() => store.writes).toEqual(["draft.md"]);
+    }),
+  );
+
+  it.effect("forgets the stored scan of a deleted document", () =>
+    Effect.promise(async () => {
+      const { draft, index, store, vault, workspace } = await makeHarness({
         "draft.md": "As @doe2024 wrote.",
-        "other.md": "As @roe2025 wrote.",
-      },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
-    store.writes.length = 0;
+      });
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
+      vault.deleteFile(draft);
 
-    await expect.poll(() => store.writes).toEqual(["draft.md"]);
-  });
+      expect(store.records.has("draft.md")).toBe(false);
+    }),
+  );
 
-  it("forgets the stored scan of a deleted document", async () => {
-    const { draft, index, store, vault, workspace } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect("clears the stored scans and rebuilds on reset", () =>
+    Effect.promise(async () => {
+      const store = new MemoryStore();
+      const { draft, index, vault, workspace } = await makeHarness(
+        { "draft.md": "As @doe2024 wrote." },
+        { store },
+      );
+      workspace.layoutReady();
+      await index.whenIndexed();
+      vault.reads.length = 0;
 
-    vault.deleteFile(draft);
+      await index.reset();
+      await index.whenIndexed();
 
-    expect(store.records.has("draft.md")).toBe(false);
-  });
+      expect(vault.reads).toContain("draft.md");
+      expect(store.records.has("draft.md")).toBe(true);
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A },
+      ]);
+    }),
+  );
 
-  it("clears the stored scans and rebuilds on reset", async () => {
-    const store = new MemoryStore();
-    const { draft, index, vault, workspace } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { store },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
-    vault.reads.length = 0;
+  it.effect(
+    "keeps a backfill in flight from writing its scan past a reset",
+    () =>
+      Effect.promise(async () => {
+        const store = new MemoryStore();
+        const { draft, index, vault, workspace } = await makeHarness(
+          { "draft.md": "As @doe2024 wrote." },
+          { store },
+        );
+        const release = vault.hold("draft.md");
+        workspace.layoutReady();
+        // Wait until the backfill parks on the held host read.
+        await expect.poll(() => vault.reads).toContain("draft.md");
 
-    await index.reset();
-    await index.whenIndexed();
+        vault.write(draft, "As @roe2025 wrote.");
+        await index.reset();
+        await index.whenIndexed();
+        release();
 
-    expect(vault.reads).toContain("draft.md");
-    expect(store.records.has("draft.md")).toBe(true);
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A },
-    ]);
-  });
+        // The parked read still holds the pre-reset body; a later session must not
+        // find it, so the restart adopts what the rebuild wrote and reads nothing.
+        const restored = await makeHarness(
+          { "draft.md": "As @roe2025 wrote." },
+          { store },
+        );
+        restored.workspace.layoutReady();
+        await restored.index.whenIndexed();
 
-  it("keeps a backfill in flight from writing its scan past a reset", async () => {
-    const store = new MemoryStore();
-    const { draft, index, vault, workspace } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { store },
-    );
-    const release = vault.hold("draft.md");
-    workspace.layoutReady();
-    // The backfill runs until it parks on the read of `draft.md`.
-    await yieldToMain();
-
-    vault.write(draft, "As @roe2025 wrote.");
-    await index.reset();
-    await index.whenIndexed();
-    release();
-    await yieldToMain();
-
-    // The parked read still holds the pre-reset body; a later session must not
-    // find it, so the restart adopts what the rebuild wrote and reads nothing.
-    const restored = await makeHarness(
-      { "draft.md": "As @roe2025 wrote." },
-      { store },
-    );
-    restored.workspace.layoutReady();
-    await restored.index.whenIndexed();
-
-    expect(restored.vault.reads).toEqual([]);
-    expect(await citationsOf(restored.index, restored.draft)).toMatchObject([
-      { indexedKey: KEY_B },
-    ]);
-  });
+        expect(restored.vault.reads).toEqual([]);
+        expect(await citationsOf(restored.index, restored.draft)).toMatchObject(
+          [{ indexedKey: KEY_B }],
+        );
+      }),
+  );
 });
 
 describe("CitationIndex resolution", () => {
-  it("resolves a citekey with no Literature Note in the vault", async () => {
-    const { lookup, draft, index } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { notes: false },
-    );
+  it.effect("resolves a citekey with no Literature Note in the vault", () =>
+    Effect.promise(async () => {
+      const { lookup, draft, index } = await makeHarness(
+        { "draft.md": "As @doe2024 wrote." },
+        { notes: false },
+      );
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A, linkpath: null },
-    ]);
-    expect((await lookup.read({ indexedKeys: [KEY_A] })).citekeyOf(KEY_A)).toBe(
-      "doe2024",
-    );
-  });
-
-  it("waits for a successful lookup when reading a document", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    const { lookup, index, citekeys, draft, passCooldown } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { db, notes: false },
-    );
-    citekeys.error = new Error("torn read");
-    db.settle();
-    await lookup.whenResolved();
-    await expect(citationsOf(index, draft)).rejects.toThrow();
-    citekeys.error = null;
-    passCooldown();
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A },
-    ]);
-  });
-
-  it("observes resolved literal citekeys grouped by path and source position", async () => {
-    const { index, workspace } = await makeHarness({
-      "z-last.md": "@doe2024 later, @doe2024 first.",
-      "a-first.md": "@doe2024.",
-      "unresolved.md": "@missing.",
-    });
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-
-    await yieldToMain();
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({ coverage: "indexing", resolution: "fresh", groups: [] });
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        coverage: "complete",
-        resolution: "fresh",
-        groups: [
-          { path: "a-first.md", occurrences: [{ raw: "doe2024" }] },
-          {
-            path: "z-last.md",
-            occurrences: [{ raw: "doe2024" }, { raw: "doe2024" }],
-          },
-        ],
-      });
-    await expect
-      .poll(
-        () =>
-          snapshots.at(-1)!.groups[1]!.occurrences[0]!.position.start.offset,
-      )
-      .toBe(0);
-  });
-
-  it("orders occurrences with the same start position deterministically", async () => {
-    const { index, workspace } = await makeHarness(
-      { "draft.md": "@doe2024" },
-      {
-        settings: { "citation.wikilink-citations": true },
-        parseClient: {
-          async parse(request, signal) {
-            const reply = await inProcessParseClient.parse(request, signal);
-            if (request.path === "draft.md") {
-              reply.record.wikilinks = [
-                {
-                  kind: "wikilink",
-                  raw: "Doe 2024",
-                  position: link("Doe 2024", 0).position,
-                },
-              ];
-            }
-            return reply;
-          },
-        },
-      },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    await expect
-      .poll(() =>
-        snapshots
-          .at(-1)
-          ?.groups[0]?.occurrences.map(
-            ({ kind, position }) => [kind, position.end.offset] as const,
-          ),
-      )
-      .toEqual([
-        ["citekey", 8],
-        ["wikilink", 12],
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A, linkpath: null },
       ]);
-  });
+      expect(
+        (await lookup.read({ indexedKeys: [KEY_A] })).citekeyOf(KEY_A),
+      ).toBe("doe2024");
+    }),
+  );
 
-  it("publishes after listener registration with settled settings", async () => {
-    const settings = new SettingsStub();
-    const { index } = await makeHarness(
-      { "draft.md": "@doe2024." },
-      { settingsService: settings, awaitReady: false },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+  it.effect("waits for a successful lookup when reading a document", () =>
+    Effect.promise(async () => {
+      const db = new DatabaseStub({ readyImmediately: false });
+      const { lookup, index, citekeys, draft, passCooldown } =
+        await makeHarness(
+          { "draft.md": "As @doe2024 wrote." },
+          { db, notes: false },
+        );
+      citekeys.error = new Error("torn read");
+      db.settle();
+      await lookup.whenResolved();
+      await expect(citationsOf(index, draft)).rejects.toThrow();
+      citekeys.error = null;
+      passCooldown();
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A },
+      ]);
+    }),
+  );
 
-    await index.ready;
-    await yieldToMain();
-    await expect
-      .poll(() => snapshots)
-      .toMatchObject([{ resolution: null }, { resolution: "fresh" }]);
-  });
+  it.effect(
+    "observes resolved literal citekeys grouped by path and source position",
+    () =>
+      Effect.promise(async () => {
+        const { index, workspace } = await makeHarness({
+          "z-last.md": "@doe2024 later, @doe2024 first.",
+          "a-first.md": "@doe2024.",
+          "unresolved.md": "@missing.",
+        });
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
-  it("stays silent when disposed during listener registration", async () => {
-    const settings = new SettingsStub();
-    const { index } = await makeHarness(
-      { "draft.md": "@doe2024." },
-      { settingsService: settings, awaitReady: false },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    const stop = index.observeCitedBy(KEY_A, (snapshot) =>
-      snapshots.push(snapshot),
-    );
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            coverage: "indexing",
+            resolution: "fresh",
+            groups: [],
+          });
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    stop();
-    await index.ready;
-    await yieldToMain();
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            coverage: "complete",
+            resolution: "fresh",
+            groups: [
+              { path: "a-first.md", occurrences: [{ raw: "doe2024" }] },
+              {
+                path: "z-last.md",
+                occurrences: [{ raw: "doe2024" }, { raw: "doe2024" }],
+              },
+            ],
+          });
+        await expect
+          .poll(
+            () =>
+              snapshots.at(-1)!.groups[1]!.occurrences[0]!.position.start
+                .offset,
+          )
+          .toBe(0);
+      }),
+  );
 
-    await expect.poll(() => snapshots).toEqual([]);
-  });
+  it.effect(
+    "orders occurrences with the same start position deterministically",
+    () =>
+      Effect.promise(async () => {
+        const { index, workspace } = await makeHarness(
+          { "draft.md": "@doe2024" },
+          {
+            settings: { "citation.wikilink-citations": true },
+            parseClient: {
+              async parse(request, signal) {
+                const reply = await inProcessParseClient.parse(request, signal);
+                if (request.path === "draft.md") {
+                  reply.record.wikilinks = [
+                    {
+                      kind: "wikilink",
+                      raw: "Doe 2024",
+                      position: link("Doe 2024", 0).position,
+                    },
+                  ];
+                }
+                return reply;
+              },
+            },
+          },
+        );
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
-  it("omits literal occurrences while Pandoc citation membership is off", async () => {
-    const { index, workspace } = await makeHarness(
-      { "draft.md": "@doe2024." },
-      { settings: { "citation.pandoc-citations": false } },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    workspace.layoutReady();
-    await index.whenIndexed();
+        await expect
+          .poll(() =>
+            snapshots
+              .at(-1)
+              ?.groups[0]?.occurrences.map(
+                ({ kind, position }) => [kind, position.end.offset] as const,
+              ),
+          )
+          .toEqual([
+            ["citekey", 8],
+            ["wikilink", 12],
+          ]);
+      }),
+  );
 
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        groups: [],
-        coverage: "complete",
-      });
-  });
-
-  it("omits wikilink occurrences while Wikilink citation membership is off", async () => {
-    const body = "See [[Doe 2024]].";
-    const { index, metadataCache, workspace } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        groups: [],
-        coverage: "complete",
-      });
-  });
-
-  it("republishes the reverse observation after a source choice", async () => {
-    const { index, settings, workspace } = await makeHarness(
-      { "draft.md": "@doe2024." },
-      { settings: { "citation.pandoc-citations": false } },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect.poll(() => snapshots.at(-1)).toMatchObject({ groups: [] });
-
-    settings.update({ "citation.pandoc-citations": true });
-    await yieldToMain();
-
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        groups: [{ path: "draft.md" }],
-      });
-  });
-
-  it("omits a restored scan that no longer describes its file", async () => {
-    const store = new MemoryStore();
-    await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
-    const { index } = await makeHarness(
-      { "draft.md": "As @roe2025 wrote." },
-      { store },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    await yieldToMain();
-
-    await expect
-      .poll(() => snapshots)
-      .toMatchObject([{ coverage: "indexing", groups: [] }]);
-  });
-
-  it("reports degraded coverage while retaining successful scans", async () => {
-    const { index, vault, workspace } = await makeHarness({
-      "a-good.md": "@doe2024.",
-      "z-bad.md": "@doe2024.",
-    });
-    vault.fail("z-bad.md");
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        coverage: "degraded",
-        groups: [{ path: "a-good.md" }],
-      });
-  });
-
-  it("retains resolved results when citation-key resolution degrades", async () => {
-    const { citekeys, db, index, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    await expect
-      .poll(() => snapshots.at(-1)?.groups)
-      .toMatchObject([{ path: "draft.md" }]);
-    citekeys.error = new Error("database read failed");
-    db.changed();
-    await yieldToMain();
-
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        resolution: "failed",
-        groups: [{ path: "draft.md" }],
-      });
-  });
-
-  it("retains wikilinks while the first resolution read settles without a value", async () => {
-    const db = new DatabaseStub();
-    const pending = db.holdLookup();
-    const body = "See [[Doe 2024]].";
-    const { draft, lookup, index, metadataCache, workspace } =
-      await makeHarness(
-        { "draft.md": body },
-        { db, settings: { "citation.wikilink-citations": true } },
+  it.effect("publishes after listener registration with settled settings", () =>
+    Effect.promise(async () => {
+      const settings = new SettingsStub();
+      const { index } = await makeHarness(
+        { "draft.md": "@doe2024." },
+        { settingsService: settings },
       );
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      const snapshots: CitedBySnapshot[] = [];
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        resolution: null,
-        groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
-      });
+      await expect
+        .poll(() => snapshots)
+        .toMatchObject([{ resolution: "fresh" }]);
+    }),
+  );
 
-    db.state = "degraded";
-    pending.release();
-    await lookup.whenResolved();
-    await yieldToMain();
-    await expect
-      .poll(() => snapshots.at(-1))
-      .toMatchObject({
-        resolution: "failed",
-        groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
-      });
-  });
-
-  it("returns to indexing when reset starts a new pass", async () => {
-    const { index, vault, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-    const release = vault.hold("draft.md");
-
-    await index.reset();
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.coverage).toBe("indexing");
-
-    release();
-    await index.whenIndexed();
-    await expect.poll(() => snapshots.at(-1)?.coverage).toBe("complete");
-  });
-
-  it("combines eligible wikilinks and literal citekeys through Item identity", async () => {
-    const body = [
-      "@doe2024",
-      "[[Doe 2024]]",
-      "[[Doe 2024#cite:locator=4]]",
-      "[[Doe 2024|alias]]",
-      "![[Doe 2024]]",
-      "[[Doe 2024#Heading]]",
-      "[[Doe 2024#^block]]",
-      "[[Doe 2024#cite:locator=]]",
-      "[[ordinary]]",
-      "[[missing]]",
-    ].join(" ");
-    const { draft, index, metadataCache, settings, workspace } =
-      await makeHarness(
-        { "draft.md": body, "ordinary.md": "" },
-        { settings: { "citation.wikilink-citations": true } },
+  it.effect("stays silent when disposed during listener registration", () =>
+    Effect.promise(async () => {
+      const settings = new SettingsStub();
+      const { index } = await makeHarness(
+        { "draft.md": "@doe2024." },
+        { settingsService: settings },
       );
-    metadataCache.fileCache.set("draft.md", {
-      links: [
-        link("Doe 2024", body.indexOf("[[Doe 2024]]")),
-        link(
-          "Doe 2024#cite:locator=4",
-          body.indexOf("[[Doe 2024#cite:locator=4]]"),
-        ),
-        link(
-          "Doe 2024",
-          body.indexOf("[[Doe 2024|alias]]"),
+      const snapshots: CitedBySnapshot[] = [];
+      const stop = index.observeCitedBy(KEY_A, (snapshot) =>
+        snapshots.push(snapshot),
+      );
+
+      stop();
+
+      await expect.poll(() => snapshots).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "omits literal occurrences while Pandoc citation membership is off",
+    () =>
+      Effect.promise(async () => {
+        const { index, workspace } = await makeHarness(
+          { "draft.md": "@doe2024." },
+          { settings: { "citation.pandoc-citations": false } },
+        );
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            groups: [],
+            coverage: "complete",
+          });
+      }),
+  );
+
+  it.effect(
+    "omits wikilink occurrences while Wikilink citation membership is off",
+    () =>
+      Effect.promise(async () => {
+        const body = "See [[Doe 2024]].";
+        const { index, metadataCache, workspace } = await makeHarness({
+          "draft.md": body,
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024", body.indexOf("[["))],
+        } as CachedMetadata);
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            groups: [],
+            coverage: "complete",
+          });
+      }),
+  );
+
+  it.effect("republishes the reverse observation after a source choice", () =>
+    Effect.promise(async () => {
+      const { index, settings, workspace } = await makeHarness(
+        { "draft.md": "@doe2024." },
+        { settings: { "citation.pandoc-citations": false } },
+      );
+      const snapshots: CitedBySnapshot[] = [];
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+      workspace.layoutReady();
+      await index.whenIndexed();
+      await expect.poll(() => snapshots.at(-1)).toMatchObject({ groups: [] });
+
+      settings.update({ "citation.pandoc-citations": true });
+
+      await expect
+        .poll(() => snapshots.at(-1))
+        .toMatchObject({
+          groups: [{ path: "draft.md" }],
+        });
+    }),
+  );
+
+  it.effect("omits a restored scan that no longer describes its file", () =>
+    Effect.promise(async () => {
+      const store = new MemoryStore();
+      await warmVault({ "draft.md": "As @doe2024 wrote." }, store);
+      const { index } = await makeHarness(
+        { "draft.md": "As @roe2025 wrote." },
+        { store },
+      );
+      const snapshots: CitedBySnapshot[] = [];
+
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+      await expect
+        .poll(() => snapshots)
+        .toMatchObject([{ coverage: "indexing", groups: [] }]);
+    }),
+  );
+
+  it.effect("reports degraded coverage while retaining successful scans", () =>
+    Effect.promise(async () => {
+      const { index, vault, workspace } = await makeHarness({
+        "a-good.md": "@doe2024.",
+        "z-bad.md": "@doe2024.",
+      });
+      vault.fail("z-bad.md");
+      const snapshots: CitedBySnapshot[] = [];
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+      workspace.layoutReady();
+      await index.whenIndexed();
+
+      await expect
+        .poll(() => snapshots.at(-1))
+        .toMatchObject({
+          coverage: "degraded",
+          groups: [{ path: "a-good.md" }],
+        });
+    }),
+  );
+
+  it.effect(
+    "retains resolved results when citation-key resolution degrades",
+    () =>
+      Effect.promise(async () => {
+        const { citekeys, db, index, workspace } = await makeHarness({
+          "draft.md": "@doe2024.",
+        });
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        await expect
+          .poll(() => snapshots.at(-1)?.groups)
+          .toMatchObject([{ path: "draft.md" }]);
+        citekeys.error = new Error("database read failed");
+        db.changed();
+
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            resolution: "failed",
+            groups: [{ path: "draft.md" }],
+          });
+      }),
+  );
+
+  it.effect(
+    "retains wikilinks while the first resolution read settles without a value",
+    () =>
+      Effect.promise(async () => {
+        const db = new DatabaseStub();
+        const pending = db.holdLookup();
+        const body = "See [[Doe 2024]].";
+        const { draft, lookup, index, metadataCache, workspace } =
+          await makeHarness(
+            { "draft.md": body },
+            { db, settings: { "citation.wikilink-citations": true } },
+          );
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024", body.indexOf("[["))],
+        } as CachedMetadata);
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+        workspace.layoutReady();
+        await index.whenIndexed();
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            resolution: null,
+            groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
+          });
+
+        db.state = "degraded";
+        pending.release();
+        await lookup.whenResolved();
+
+        await expect
+          .poll(() => snapshots.at(-1))
+          .toMatchObject({
+            resolution: "failed",
+            groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
+          });
+      }),
+  );
+
+  it.effect("returns to indexing when reset starts a new pass", () =>
+    Effect.promise(async () => {
+      const { index, vault, workspace } = await makeHarness({
+        "draft.md": "@doe2024.",
+      });
+      const snapshots: CitedBySnapshot[] = [];
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      workspace.layoutReady();
+      await index.whenIndexed();
+      const release = vault.hold("draft.md");
+
+      await index.reset();
+
+      await expect.poll(() => snapshots.at(-1)?.coverage).toBe("indexing");
+
+      release();
+      await index.whenIndexed();
+      await expect.poll(() => snapshots.at(-1)?.coverage).toBe("complete");
+    }),
+  );
+
+  it.effect(
+    "combines eligible wikilinks and literal citekeys through Item identity",
+    () =>
+      Effect.promise(async () => {
+        const body = [
+          "@doe2024",
+          "[[Doe 2024]]",
+          "[[Doe 2024#cite:locator=4]]",
           "[[Doe 2024|alias]]",
-        ),
-        link("Doe 2024", body.indexOf("![[Doe 2024]]"), "![[Doe 2024]]"),
-        link("Doe 2024#Heading", body.indexOf("[[Doe 2024#Heading]]")),
-        link("Doe 2024#^block", body.indexOf("[[Doe 2024#^block]]")),
-        link(
-          "Doe 2024#cite:locator=",
-          body.indexOf("[[Doe 2024#cite:locator=]]"),
-        ),
-        link("ordinary", body.indexOf("[[ordinary]]")),
-        link("missing", body.indexOf("[[missing]]")),
-      ],
-    } as CachedMetadata);
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    await expect
-      .poll(() => snapshots.at(-1)?.groups)
-      .toMatchObject([
-        {
-          path: draft.path,
-          occurrences: [
-            { kind: "citekey", raw: "doe2024" },
-            { kind: "wikilink", raw: "Doe 2024" },
-            { kind: "wikilink", raw: "Doe 2024" },
+          "![[Doe 2024]]",
+          "[[Doe 2024#Heading]]",
+          "[[Doe 2024#^block]]",
+          "[[Doe 2024#cite:locator=]]",
+          "[[ordinary]]",
+          "[[missing]]",
+        ].join(" ");
+        const { draft, index, metadataCache, settings, workspace } =
+          await makeHarness(
+            { "draft.md": body, "ordinary.md": "" },
+            { settings: { "citation.wikilink-citations": true } },
+          );
+        metadataCache.fileCache.set("draft.md", {
+          links: [
+            link("Doe 2024", body.indexOf("[[Doe 2024]]")),
+            link(
+              "Doe 2024#cite:locator=4",
+              body.indexOf("[[Doe 2024#cite:locator=4]]"),
+            ),
+            link(
+              "Doe 2024",
+              body.indexOf("[[Doe 2024|alias]]"),
+              "[[Doe 2024|alias]]",
+            ),
+            link("Doe 2024", body.indexOf("![[Doe 2024]]"), "![[Doe 2024]]"),
+            link("Doe 2024#Heading", body.indexOf("[[Doe 2024#Heading]]")),
+            link("Doe 2024#^block", body.indexOf("[[Doe 2024#^block]]")),
+            link(
+              "Doe 2024#cite:locator=",
+              body.indexOf("[[Doe 2024#cite:locator=]]"),
+            ),
+            link("ordinary", body.indexOf("[[ordinary]]")),
+            link("missing", body.indexOf("[[missing]]")),
           ],
-        },
-      ]);
-    settings.update({
-      "citation.pandoc-citations": false,
-      "citation.wikilink-citations": false,
-    });
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-  });
+        } as CachedMetadata);
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 
-  it("observes a Literature Note that cites its own Item", async () => {
-    const { index, metadataCache, workspace } = await makeHarness({});
-    const target = metadataCache.files.get("Doe 2024.md")!;
-    metadataCache.change(target, "@doe2024.");
-    metadataCache.fileCache.set(target.path, {
-      frontmatter: { "zotero-key": KEY_A },
-      links: [],
-    } as CachedMetadata);
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    workspace.layoutReady();
-    await index.whenIndexed();
+        await expect
+          .poll(() => snapshots.at(-1)?.groups)
+          .toMatchObject([
+            {
+              path: draft.path,
+              occurrences: [
+                { kind: "citekey", raw: "doe2024" },
+                { kind: "wikilink", raw: "Doe 2024" },
+                { kind: "wikilink", raw: "Doe 2024" },
+              ],
+            },
+          ]);
+        settings.update({
+          "citation.pandoc-citations": false,
+          "citation.wikilink-citations": false,
+        });
 
-    await expect
-      .poll(() => snapshots.at(-1)?.groups)
-      .toMatchObject([
-        {
-          path: target.path,
-          occurrences: [{ kind: "citekey", raw: "doe2024" }],
-        },
-      ]);
-  });
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+      }),
+  );
 
-  it("keeps a cross-library wikilink while literal resolution changes library", async () => {
-    const body = "@roe2025 [[Roe 2025]]";
-    const libraryScope = new LibraryScopeStub([
-      personalLibrary(),
-      groupLibrary(),
-    ]);
-    libraryScope.select([personalLibrary()]);
-    const { draft, index, metadataCache, workspace } = await makeHarness(
-      { "draft.md": body },
-      {
-        citekeys: [
+  it.effect("observes a Literature Note that cites its own Item", () =>
+    Effect.promise(async () => {
+      const { index, metadataCache, workspace } = await makeHarness({});
+      const target = metadataCache.files.get("Doe 2024.md")!;
+      metadataCache.change(target, "@doe2024.");
+      metadataCache.fileCache.set(target.path, {
+        frontmatter: { "zotero-key": KEY_A },
+        links: [],
+      } as CachedMetadata);
+      const snapshots: CitedBySnapshot[] = [];
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+
+      workspace.layoutReady();
+      await index.whenIndexed();
+
+      await expect
+        .poll(() => snapshots.at(-1)?.groups)
+        .toMatchObject([
           {
-            itemID: 1,
-            libraryID: MY_LIBRARY_ID,
-            key: KEY_A,
-            indexedKey: KEY_A,
-            citekey: "doe2024",
+            path: target.path,
+            occurrences: [{ kind: "citekey", raw: "doe2024" }],
           },
+        ]);
+    }),
+  );
+
+  it.effect(
+    "keeps a cross-library wikilink while literal resolution changes library",
+    () =>
+      Effect.promise(async () => {
+        const body = "@roe2025 [[Roe 2025]]";
+        const libraryScope = new LibraryScopeStub([
+          personalLibrary(),
+          groupLibrary(),
+        ]);
+        libraryScope.select([personalLibrary()]);
+        const { draft, index, metadataCache, workspace } = await makeHarness(
+          { "draft.md": body },
+          {
+            citekeys: [
+              {
+                itemID: 1,
+                libraryID: MY_LIBRARY_ID,
+                key: KEY_A,
+                indexedKey: KEY_A,
+                citekey: "doe2024",
+              },
+              {
+                itemID: 2,
+                libraryID: GROUP_LIBRARY_ID,
+                key: "ROE2025",
+                indexedKey: KEY_B,
+                citekey: "roe2025",
+              },
+            ],
+            libraryScope,
+            settings: { "citation.wikilink-citations": true },
+          },
+        );
+        metadataCache.fileCache.set(draft.path, {
+          links: [link("Roe 2025", body.indexOf("[["))],
+        } as CachedMetadata);
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_B, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        await expect
+          .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
+          .toMatchObject([{ kind: "wikilink" }]);
+
+        libraryScope.select([personalLibrary(), groupLibrary()]);
+
+        await expect
+          .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
+          .toMatchObject([{ kind: "citekey" }, { kind: "wikilink" }]);
+      }),
+  );
+
+  it.effect(
+    "applies the optional Markdown-note predicate before grouping",
+    () =>
+      Effect.promise(async () => {
+        const { index, workspace } = await makeHarness({
+          "Keep/a.md": "@doe2024.",
+          "Skip/b.md": "@doe2024.",
+        });
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(
+          KEY_A,
+          (snapshot) => snapshots.push(snapshot),
+          (file) => file.path.startsWith("Keep/"),
+        );
+
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        await expect
+          .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
+          .toEqual(["Keep/a.md"]);
+      }),
+  );
+
+  it.effect(
+    "coalesces related edits and publishes only the final changed structure",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache, workspace } = await makeHarness({
+          "draft.md": "@doe2024.",
+        });
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
+        const before = snapshots.length;
+
+        metadataCache.change(draft, "moved @doe2024.");
+        metadataCache.change(draft, "moved again @doe2024.");
+
+        await expect.poll(() => snapshots).toHaveLength(before + 1);
+        await expect
+          .poll(
+            () =>
+              snapshots.at(-1)?.groups[0]?.occurrences[0]?.position.start
+                .offset,
+          )
+          .toBe(12);
+      }),
+  );
+
+  it.effect(
+    "refreshes wikilink-only metadata and link-resolution changes",
+    () =>
+      Effect.promise(async () => {
+        const body = "See [[Doe 2024]].";
+        const { draft, index, metadataCache, workspace } = await makeHarness(
+          { "draft.md": body },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+
+        metadataCache.change(draft, body, [link("Doe 2024", 4)]);
+
+        await expect
+          .poll(() => snapshots.at(-1)?.groups)
+          .toMatchObject([
+            { path: "draft.md", occurrences: [{ kind: "wikilink" }] },
+          ]);
+
+        const target = metadataCache.files.get("Doe 2024.md")!;
+        metadataCache.fileCache.set("Doe 2024.md", {
+          frontmatter: { "zotero-key": KEY_B },
+        } as CachedMetadata);
+        metadataCache.resolve(target);
+
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "refreshes wikilinks when their target Literature Note moves or is deleted",
+    () =>
+      Effect.promise(async () => {
+        const body = "See [[Doe 2024]].";
+        const { draft, index, metadataCache, vault, workspace } =
+          await makeHarness(
+            { "draft.md": body },
+            { settings: { "citation.wikilink-citations": true } },
+          );
+        metadataCache.fileCache.set(draft.path, {
+          links: [link("Doe 2024", body.indexOf("[["))],
+        } as CachedMetadata);
+        const target = metadataCache.files.get("Doe 2024.md")!;
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+
+        vault.rename(target, "Literature/Moved.md");
+
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+
+        vault.rename(target, "Doe 2024.md");
+
+        await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+
+        vault.deleteFile(target);
+
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "refreshes reverse literal membership after a database change",
+    () =>
+      Effect.promise(async () => {
+        const { citekeys, db, index, workspace } = await makeHarness({
+          "draft.md": "@doe2024.",
+        });
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+
+        citekeys.rows = [
           {
             itemID: 2,
             libraryID: GROUP_LIBRARY_ID,
-            key: "ROE2025",
+            key: "ZZZ99999",
             indexedKey: KEY_B,
-            citekey: "roe2025",
+            citekey: "doe2024",
           },
-        ],
-        libraryScope,
-        settings: { "citation.wikilink-citations": true },
-      },
-    );
-    metadataCache.fileCache.set(draft.path, {
-      links: [link("Roe 2025", body.indexOf("[["))],
-    } as CachedMetadata);
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_B, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
+        ];
+        db.changed();
 
-    await expect
-      .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
-      .toMatchObject([{ kind: "wikilink" }]);
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+      }),
+  );
 
-    libraryScope.select([personalLibrary(), groupLibrary()]);
-    await yieldToMain();
+  it.effect(
+    "keeps a superseded backfill read out of reverse publications",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache, vault, workspace } =
+          await makeHarness({ "draft.md": "@doe2024." });
+        const snapshots: CitedBySnapshot[] = [];
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        workspace.layoutReady();
+        await index.whenIndexed();
+        const release = vault.hold(draft.path);
 
-    await expect
-      .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
-      .toMatchObject([{ kind: "citekey" }, { kind: "wikilink" }]);
-  });
+        await index.reset();
 
-  it("applies the optional Markdown-note predicate before grouping", async () => {
-    const { index, workspace } = await makeHarness({
-      "Keep/a.md": "@doe2024.",
-      "Skip/b.md": "@doe2024.",
-    });
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(
-      KEY_A,
-      (snapshot) => snapshots.push(snapshot),
-      (file) => file.path.startsWith("Keep/"),
-    );
+        await expect.poll(() => vault.reads.at(-1)).toBe(draft.path);
+        metadataCache.change(draft, "@roe2025.");
 
-    workspace.layoutReady();
-    await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
 
-    await expect
-      .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
-      .toEqual(["Keep/a.md"]);
-  });
+        release();
+        await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+      }),
+  );
 
-  it("coalesces related edits and publishes only the final changed structure", async () => {
-    const { draft, index, metadataCache, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
-    const before = snapshots.length;
+  it.effect(
+    "recomputes reverse facts without body reads or reverse writes",
+    () =>
+      Effect.promise(async () => {
+        const { index, metadataCache, store, vault, workspace } =
+          await makeHarness({ "draft.md": "@doe2024." });
+        const snapshots: CitedBySnapshot[] = [];
+        let observed: PromiseWithResolvers<void> | undefined;
+        index.observeCitedBy(
+          KEY_A,
+          (snapshot) => snapshots.push(snapshot),
+          () => {
+            observed?.resolve();
+            return true;
+          },
+        );
+        workspace.layoutReady();
+        await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+        observed = Promise.withResolvers<void>();
+        vault.reads.length = 0;
+        store.writes.length = 0;
 
-    metadataCache.change(draft, "moved @doe2024.");
-    metadataCache.change(draft, "moved again @doe2024.");
-    await yieldToMain();
+        metadataCache.resolve(metadataCache.files.get("Doe 2024.md")!);
 
-    await expect.poll(() => snapshots).toHaveLength(before + 1);
-    await expect
-      .poll(
-        () =>
-          snapshots.at(-1)?.groups[0]?.occurrences[0]?.position.start.offset,
-      )
-      .toBe(12);
-  });
+        await observed.promise;
+        expect(vault.reads).toEqual([]);
+        expect(store.writes).toEqual([]);
+        expect(snapshots.at(-1)?.groups).toHaveLength(1);
+      }),
+  );
 
-  it("refreshes wikilink-only metadata and link-resolution changes", async () => {
-    const body = "See [[Doe 2024]].";
-    const { draft, index, metadataCache, workspace } = await makeHarness(
-      { "draft.md": body },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect("adds, moves, and removes citing notes as vault facts change", () =>
+    Effect.promise(async () => {
+      const { index, metadataCache, vault, workspace } = await makeHarness({});
+      const snapshots: CitedBySnapshot[] = [];
+      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    metadataCache.change(draft, body, [link("Doe 2024", 4)]);
-    await yieldToMain();
-    await expect
-      .poll(() => snapshots.at(-1)?.groups)
-      .toMatchObject([
-        { path: "draft.md", occurrences: [{ kind: "wikilink" }] },
-      ]);
+      const created = new TFile();
+      created.path = "created.md";
+      created.name = "created.md";
+      created.basename = "created";
+      created.extension = "md";
+      created.stat = { ctime: 0, mtime: 0, size: 0 };
+      metadataCache.change(created, "@doe2024.");
 
-    const target = metadataCache.files.get("Doe 2024.md")!;
-    metadataCache.fileCache.set("Doe 2024.md", {
-      frontmatter: { "zotero-key": KEY_B },
-    } as CachedMetadata);
-    metadataCache.resolve(target);
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-  });
+      await expect
+        .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
+        .toEqual(["created.md"]);
 
-  it("refreshes wikilinks when their target Literature Note moves or is deleted", async () => {
-    const body = "See [[Doe 2024]].";
-    const { draft, index, metadataCache, vault, workspace } = await makeHarness(
-      { "draft.md": body },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    metadataCache.fileCache.set(draft.path, {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-    const target = metadataCache.files.get("Doe 2024.md")!;
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+      vault.rename(created, "Folder/moved.md");
 
-    vault.rename(target, "Literature/Moved.md");
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+      await expect
+        .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
+        .toEqual(["Folder/moved.md"]);
 
-    vault.rename(target, "Doe 2024.md");
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+      vault.deleteFile(created);
 
-    vault.deleteFile(target);
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-  });
+      await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
+    }),
+  );
 
-  it("refreshes reverse literal membership after a database change", async () => {
-    const { citekeys, db, index, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+  it.effect(
+    "suppresses identical snapshots and isolates observer failures",
+    () =>
+      Effect.promise(async () => {
+        let scanStarted:
+          | ReturnType<typeof Promise.withResolvers<void>>
+          | undefined;
+        let observed:
+          | ReturnType<typeof Promise.withResolvers<void>>
+          | undefined;
+        const { draft, lookup, index, metadataCache, workspace } =
+          await makeHarness(
+            { "draft.md": "@doe2024." },
+            {
+              parseClient: {
+                parse(request, signal) {
+                  scanStarted?.resolve();
+                  return inProcessParseClient.parse(request, signal);
+                },
+              },
+            },
+          );
+        let publications = 0;
+        index.observeCitedBy(KEY_A, () => {
+          throw new Error("observer failed");
+        });
+        index.observeCitedBy(
+          KEY_A,
+          () => publications++,
+          () => {
+            observed?.resolve();
+            return true;
+          },
+        );
+        workspace.layoutReady();
+        await index.whenIndexed();
+        await expect.poll(() => publications).toBeGreaterThan(0);
+        await lookup.read({ citekeys: ["doe2024"] });
 
-    citekeys.rows = [
-      {
-        itemID: 2,
-        libraryID: GROUP_LIBRARY_ID,
-        key: "ZZZ99999",
-        indexedKey: KEY_B,
-        citekey: "doe2024",
-      },
-    ];
-    db.changed();
-    await yieldToMain();
+        const before = publications;
+        scanStarted = Promise.withResolvers<void>();
+        observed = Promise.withResolvers<void>();
 
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-  });
+        metadataCache.change(draft, "@doe2024.");
 
-  it("keeps a superseded backfill read out of reverse publications", async () => {
-    const { draft, index, metadataCache, vault, workspace } = await makeHarness(
-      { "draft.md": "@doe2024." },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-    const release = vault.hold(draft.path);
-
-    await index.reset();
-    await yieldToMain();
-    expect(vault.reads.at(-1)).toBe(draft.path);
-    metadataCache.change(draft, "@roe2025.");
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-
-    release();
-    await index.whenIndexed();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-  });
-
-  it("recomputes reverse facts without body reads or reverse writes", async () => {
-    const { index, metadataCache, store, vault, workspace } = await makeHarness(
-      { "draft.md": "@doe2024." },
-    );
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-    vault.reads.length = 0;
-    store.writes.length = 0;
-
-    metadataCache.resolve(metadataCache.files.get("Doe 2024.md")!);
-    await yieldToMain();
-
-    expect(vault.reads).toEqual([]);
-    expect(store.writes).toEqual([]);
-    await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
-  });
-
-  it("adds, moves, and removes citing notes as vault facts change", async () => {
-    const { index, metadataCache, vault, workspace } = await makeHarness({});
-    const snapshots: CitedBySnapshot[] = [];
-    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
-    workspace.layoutReady();
-    await index.whenIndexed();
-
-    const created = new TFile();
-    created.path = "created.md";
-    created.name = "created.md";
-    created.basename = "created";
-    created.extension = "md";
-    created.stat = { ctime: 0, mtime: 0, size: 0 };
-    metadataCache.change(created, "@doe2024.");
-    await yieldToMain();
-    await expect
-      .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
-      .toEqual(["created.md"]);
-
-    vault.rename(created, "Folder/moved.md");
-    await yieldToMain();
-    await expect
-      .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
-      .toEqual(["Folder/moved.md"]);
-
-    vault.deleteFile(created);
-    await yieldToMain();
-    await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-  });
-
-  it("suppresses identical snapshots and isolates observer failures", async () => {
-    const { draft, lookup, index, metadataCache, workspace } =
-      await makeHarness({
-        "draft.md": "@doe2024.",
-      });
-    let publications = 0;
-    index.observeCitedBy(KEY_A, () => {
-      throw new Error("observer failed");
-    });
-    index.observeCitedBy(KEY_A, () => publications++);
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect.poll(() => publications).toBeGreaterThan(0);
-    await lookup.read({ citekeys: ["doe2024"] });
-    await yieldToMain();
-    const before = publications;
-
-    metadataCache.change(draft, "@doe2024.");
-    await yieldToMain();
-
-    expect(publications).toBe(before);
-  });
+        await scanStarted.promise;
+        await index.getFileScan(draft);
+        await observed.promise;
+        expect(publications).toBe(before);
+      }),
+  );
 
   it.effect(
     "#1705 follows lookup status until the observation is disposed",
@@ -1472,215 +1700,277 @@ describe("CitationIndex resolution", () => {
       }),
   );
 
-  it("does not publish an observation after its disposer runs", async () => {
-    const { index, workspace, metadataCache, draft } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
-    let publications = 0;
-    const stop = index.observeCitedBy(KEY_A, () => publications++);
-    workspace.layoutReady();
-    await index.whenIndexed();
-    await expect.poll(() => publications).toBeGreaterThan(0);
-    const before = publications;
+  it.effect("does not publish an observation after its disposer runs", () =>
+    Effect.promise(async () => {
+      const { index, workspace, metadataCache, draft } = await makeHarness({
+        "draft.md": "@doe2024.",
+      });
+      let publications = 0;
+      const stop = index.observeCitedBy(KEY_A, () => publications++);
+      workspace.layoutReady();
+      await index.whenIndexed();
+      await expect.poll(() => publications).toBeGreaterThan(0);
+      const before = publications;
 
-    metadataCache.change(draft, "@roe2025.");
-    stop();
-    await yieldToMain();
-    expect(publications).toBe(before);
-  });
+      metadataCache.change(draft, "@roe2025.");
+      stop();
+      await index.getFileScan(draft);
+      expect(publications).toBe(before);
+    }),
+  );
 
-  it("resolves with a Literature Note's path as linkpath", async () => {
-    const { draft, index } = await makeHarness({
-      "draft.md": "As @doe2024 wrote.",
-    });
+  it.effect("resolves with a Literature Note's path as linkpath", () =>
+    Effect.promise(async () => {
+      const { draft, index } = await makeHarness({
+        "draft.md": "As @doe2024 wrote.",
+      });
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
-    ]);
-  });
+      expect(await citationsOf(index, draft)).toMatchObject([
+        { indexedKey: KEY_A, linkpath: "Doe 2024.md" },
+      ]);
+    }),
+  );
 });
 
 describe("CitationIndex documentOmittedSyntaxes", () => {
-  it("reports no omitted syntax for a document with no citations at all", async () => {
-    const { draft, index } = await makeHarness({ "draft.md": "Plain text." });
+  it.effect(
+    "reports no omitted syntax for a document with no citations at all",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index } = await makeHarness({
+          "draft.md": "Plain text.",
+        });
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
+      }),
+  );
 
-  it("reports citekey when Pandoc citations is off and the document scans one", async () => {
-    const { draft, index } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { settings: { "citation.pandoc-citations": false } },
-    );
+  it.effect(
+    "reports citekey when Pandoc citations is off and the document scans one",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index } = await makeHarness(
+          { "draft.md": "As @doe2024 wrote." },
+          { settings: { "citation.pandoc-citations": false } },
+        );
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["citekey"]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual(["citekey"]);
+      }),
+  );
 
-  it("reports wikilink when Wikilink citations is off and an eligible link resolves", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "See [[Doe 2024]].",
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", 4)],
-    } as CachedMetadata);
+  it.effect(
+    "reports wikilink when Wikilink citations is off and an eligible link resolves",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache } = await makeHarness({
+          "draft.md": "See [[Doe 2024]].",
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024", 4)],
+        } as CachedMetadata);
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
+          "wikilink",
+        ]);
+      }),
+  );
 
-  it("reports wikilink when a document holds included citekey citations and an excluded wikilink that resolves", async () => {
-    const body = "As @doe2024 wrote. See [[Roe 2025]] too.";
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Roe 2025", body.indexOf("[["))],
-    } as CachedMetadata);
+  it.effect(
+    "reports wikilink when a document holds included citekey citations and an excluded wikilink that resolves",
+    () =>
+      Effect.promise(async () => {
+        const body = "As @doe2024 wrote. See [[Roe 2025]] too.";
+        const { draft, index, metadataCache } = await makeHarness({
+          "draft.md": body,
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Roe 2025", body.indexOf("[["))],
+        } as CachedMetadata);
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
+          "wikilink",
+        ]);
+      }),
+  );
 
-  it("reports wikilink when a malformed Citation Fragment still resolves", async () => {
-    const body = "Bad [[Doe 2024#cite:locator=]].";
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
-    } as CachedMetadata);
+  it.effect(
+    "reports wikilink when a malformed Citation Fragment still resolves",
+    () =>
+      Effect.promise(async () => {
+        const body = "Bad [[Doe 2024#cite:locator=]].";
+        const { draft, index, metadataCache } = await makeHarness({
+          "draft.md": body,
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
+        } as CachedMetadata);
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["wikilink"]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
+          "wikilink",
+        ]);
+      }),
+  );
 
-  it("reports no omitted syntax when the only wikilink resolves to no Item", async () => {
-    const { draft, index, metadataCache } = await makeHarness({
-      "draft.md": "See [[ordinary]].",
-      "ordinary.md": "",
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("ordinary", 4)],
-    } as CachedMetadata);
+  it.effect(
+    "reports no omitted syntax when the only wikilink resolves to no Item",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache } = await makeHarness({
+          "draft.md": "See [[ordinary]].",
+          "ordinary.md": "",
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("ordinary", 4)],
+        } as CachedMetadata);
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
+      }),
+  );
 
-  it("reports both syntaxes when both are excluded and both hold occurrences", async () => {
-    const body = "See @doe2024 and [[Roe 2025]].";
-    const { draft, index, metadataCache } = await makeHarness(
-      { "draft.md": body },
-      {
-        settings: {
-          "citation.pandoc-citations": false,
-          "citation.wikilink-citations": false,
-        },
-      },
-    );
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Roe 2025", body.indexOf("[["))],
-    } as CachedMetadata);
+  it.effect(
+    "reports both syntaxes when both are excluded and both hold occurrences",
+    () =>
+      Effect.promise(async () => {
+        const body = "See @doe2024 and [[Roe 2025]].";
+        const { draft, index, metadataCache } = await makeHarness(
+          { "draft.md": body },
+          {
+            settings: {
+              "citation.pandoc-citations": false,
+              "citation.wikilink-citations": false,
+            },
+          },
+        );
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Roe 2025", body.indexOf("[["))],
+        } as CachedMetadata);
 
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual([
-      "citekey",
-      "wikilink",
-    ]);
-  });
+        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
+          "citekey",
+          "wikilink",
+        ]);
+      }),
+  );
 });
 
 describe("CitationIndex citedByOmittedSyntaxes", () => {
-  it("reports [] when groups is non-empty and holds no excluded occurrence", async () => {
-    const { index, workspace } = await makeHarness({
-      "draft.md": "@doe2024.",
-    });
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect(
+    "reports [] when groups is non-empty and holds no excluded occurrence",
+    () =>
+      Effect.promise(async () => {
+        const { index, workspace } = await makeHarness({
+          "draft.md": "@doe2024.",
+        });
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({
-      groups: [{ path: "draft.md" }],
-    });
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-  });
+        expect(await index.getCitedBy(KEY_A)).toMatchObject({
+          groups: [{ path: "draft.md" }],
+        });
+        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+      }),
+  );
 
-  it("reports the excluded syntax when a non-empty answer's item also has occurrences of it", async () => {
-    const body = "As @doe2024 wrote. See [[Doe 2024]] too.";
-    const { index, metadataCache, workspace } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024", body.indexOf("[["))],
-    } as CachedMetadata);
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect(
+    "reports the excluded syntax when a non-empty answer's item also has occurrences of it",
+    () =>
+      Effect.promise(async () => {
+        const body = "As @doe2024 wrote. See [[Doe 2024]] too.";
+        const { index, metadataCache, workspace } = await makeHarness({
+          "draft.md": body,
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024", body.indexOf("[["))],
+        } as CachedMetadata);
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    // The citekey occurrence still joins the group; the wikilink occurrence
-    // of the same item does not, since wikilink citations are excluded by
-    // default — the case a short answer must still name.
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({
-      groups: [{ path: "draft.md" }],
-    });
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["wikilink"]);
-  });
+        // The citekey occurrence still joins the group; the wikilink occurrence
+        // of the same item does not, since wikilink citations are excluded by
+        // default — the case a short answer must still name.
+        expect(await index.getCitedBy(KEY_A)).toMatchObject({
+          groups: [{ path: "draft.md" }],
+        });
+        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["wikilink"]);
+      }),
+  );
 
-  it("reports [] when nothing cites the item at all", async () => {
-    const { index, workspace } = await makeHarness({
-      "draft.md": "@roe2025.",
-    });
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect("reports [] when nothing cites the item at all", () =>
+    Effect.promise(async () => {
+      const { index, workspace } = await makeHarness({
+        "draft.md": "@roe2025.",
+      });
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-  });
+      expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+      expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+    }),
+  );
 
-  it("reports citekey when it is excluded and its occurrence resolves to the queried item", async () => {
-    const { index, workspace } = await makeHarness(
-      { "draft.md": "@doe2024." },
-      { settings: { "citation.pandoc-citations": false } },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect(
+    "reports citekey when it is excluded and its occurrence resolves to the queried item",
+    () =>
+      Effect.promise(async () => {
+        const { index, workspace } = await makeHarness(
+          { "draft.md": "@doe2024." },
+          { settings: { "citation.pandoc-citations": false } },
+        );
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["citekey"]);
-  });
+        expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["citekey"]);
+      }),
+  );
 
-  it("reports wikilink for an eligible occurrence, not for a malformed one", async () => {
-    const body = "See [[Doe 2024#cite:locator=]].";
-    const { index, metadataCache, workspace } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
-    } as CachedMetadata);
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect(
+    "reports wikilink for an eligible occurrence, not for a malformed one",
+    () =>
+      Effect.promise(async () => {
+        const body = "See [[Doe 2024#cite:locator=]].";
+        const { index, metadataCache, workspace } = await makeHarness({
+          "draft.md": body,
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
+        } as CachedMetadata);
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    // The occurrence is malformed, so it never would have joined a group:
-    // unlike a references answer, cited-by counts only eligible occurrences.
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-  });
+        // The occurrence is malformed, so it never would have joined a group:
+        // unlike a references answer, cited-by counts only eligible occurrences.
+        expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+      }),
+  );
 
-  it("scopes the omission to the queried item, not any item an excluded syntax cites", async () => {
-    const body = "See [[Roe 2025]].";
-    const { index, metadataCache, workspace } = await makeHarness({
-      "draft.md": body,
-    });
-    metadataCache.fileCache.set("draft.md", {
-      links: [link("Roe 2025", body.indexOf("[["))],
-    } as CachedMetadata);
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect(
+    "scopes the omission to the queried item, not any item an excluded syntax cites",
+    () =>
+      Effect.promise(async () => {
+        const body = "See [[Roe 2025]].";
+        const { index, metadataCache, workspace } = await makeHarness({
+          "draft.md": body,
+        });
+        metadataCache.fileCache.set("draft.md", {
+          links: [link("Roe 2025", body.indexOf("[["))],
+        } as CachedMetadata);
+        workspace.layoutReady();
+        await index.whenIndexed();
 
-    // Wikilink citations is off, and an excluded wikilink cites KEY_B — but
-    // the queried item is KEY_A, which nobody cites at all.
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-    expect(await index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
-    expect(await index.citedByOmittedSyntaxes(KEY_B)).toEqual(["wikilink"]);
-  });
+        // Wikilink citations is off, and an excluded wikilink cites KEY_B — but
+        // the queried item is KEY_A, which nobody cites at all.
+        expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
+        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+        expect(await index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
+        expect(await index.citedByOmittedSyntaxes(KEY_B)).toEqual(["wikilink"]);
+      }),
+  );
 });
 
 describe("CitationIndex one-shot reads", () => {
-  it.each([
+  it.effect.each([
     {
       enabled: true,
       expected: {
@@ -1690,45 +1980,48 @@ describe("CitationIndex one-shot reads", () => {
     { enabled: false, expected: ["citekey"] },
   ])(
     "keeps the requested occurrences while a lookup waits (Pandoc enabled: $enabled)",
-    async ({ enabled, expected }) => {
-      const db = new DatabaseStub({ readyImmediately: false });
-      const { index, workspace, metadataCache, draft } = await makeHarness(
-        { "draft.md": "@doe2024." },
-        { db, settings: { "citation.pandoc-citations": enabled } },
-      );
-      workspace.layoutReady();
-      await index.whenIndexed();
-      const pending = enabled
-        ? index.getCitedBy(KEY_A)
-        : index.citedByOmittedSyntaxes(KEY_A);
-      await yieldToMain();
-      metadataCache.change(draft, "@roe2025.");
-      db.settle();
+    ({ enabled, expected }) =>
+      Effect.promise(async () => {
+        const db = new DatabaseStub({ readyImmediately: false });
+        const { index, workspace, metadataCache, draft } = await makeHarness(
+          { "draft.md": "@doe2024." },
+          { db, settings: { "citation.pandoc-citations": enabled } },
+        );
+        workspace.layoutReady();
+        await index.whenIndexed();
+        const pending = enabled
+          ? index.getCitedBy(KEY_A)
+          : index.citedByOmittedSyntaxes(KEY_A);
 
-      expect(await pending).toMatchObject(expected);
-    },
+        metadataCache.change(draft, "@roe2025.");
+        db.settle();
+
+        expect(await pending).toMatchObject(expected);
+      }),
   );
 
-  it("answers the reverse observation as a single read", async () => {
-    const { index, workspace } = await makeHarness({
-      "review.md": "@doe2024 and @roe2025.",
-    });
+  it.effect("answers the reverse observation as a single read", () =>
+    Effect.promise(async () => {
+      const { index, workspace } = await makeHarness({
+        "review.md": "@doe2024 and @roe2025.",
+      });
 
-    workspace.layoutReady();
-    await index.whenIndexed();
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    expect(await index.getCitedBy(KEY_A)).toMatchObject({
-      coverage: "complete",
-      resolution: "fresh",
-      groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
-    });
-  });
+      expect(await index.getCitedBy(KEY_A)).toMatchObject({
+        coverage: "complete",
+        resolution: "fresh",
+        groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
+      });
+    }),
+  );
 
   it.effect("times out while coverage stays transitional, then settles", () =>
     Effect.gen(function* () {
-      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const context = yield* Effect.context<never>();
       const { index, workspace } = yield* Effect.promise(() =>
-        makeHarness({ "review.md": "@doe2024." }, { runPromise }),
+        makeHarness({ "review.md": "@doe2024." }, { context }),
       );
       let outcome: string | undefined;
       const pending = index.waitUntilSettled(60_000).then((value) => {
@@ -1747,88 +2040,101 @@ describe("CitationIndex one-shot reads", () => {
     }),
   );
 
-  it("counts a degraded resolution as settled", async () => {
-    const db = new DatabaseStub();
-    db.state = "degraded";
-    const { index, workspace } = await makeHarness(
-      { "review.md": "@doe2024." },
-      { db, notes: false },
-    );
+  it.effect("counts a degraded resolution as settled", () =>
+    Effect.promise(async () => {
+      const db = new DatabaseStub();
+      db.state = "degraded";
+      const { index, workspace } = await makeHarness(
+        { "review.md": "@doe2024." },
+        { db, notes: false },
+      );
 
-    workspace.layoutReady();
-    await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-    await expect(index.getCitedBy(KEY_A)).rejects.toThrow();
-  });
+      workspace.layoutReady();
+      await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
+      await expect(index.getCitedBy(KEY_A)).rejects.toThrow();
+    }),
+  );
 });
 
 describe("CitationIndex ambiguous citation keys", () => {
-  it("keeps an ambiguous literal citation under its own Citation Key", async () => {
-    const { draft, index } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
-    );
+  it.effect(
+    "keeps an ambiguous literal citation under its own Citation Key",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index } = await makeHarness(
+          { "draft.md": "As @doe2024 wrote." },
+          { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
+        );
 
-    expect(await citationsOf(index, draft)).toMatchObject([
-      { indexedKey: null, linkpath: null, refNumber: 1 },
-    ]);
-  });
+        expect(await citationsOf(index, draft)).toMatchObject([
+          { indexedKey: null, linkpath: null, refNumber: 1 },
+        ]);
+      }),
+  );
 
   // The occurrence may cite either Item, so the reverse observation reports the
   // possible relationship for each rather than omitting it from both.
-  it("attributes one ambiguous occurrence to every candidate", async () => {
-    const { draft, index, workspace } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      {
-        notes: false,
-        citekeys: [myLibraryRow, groupTwin],
-        libraryScope: bothLibraries(),
-      },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
+  it.effect("attributes one ambiguous occurrence to every candidate", () =>
+    Effect.promise(async () => {
+      const { draft, index, workspace } = await makeHarness(
+        { "draft.md": "As @doe2024 wrote." },
+        {
+          notes: false,
+          citekeys: [myLibraryRow, groupTwin],
+          libraryScope: bothLibraries(),
+        },
+      );
+      workspace.layoutReady();
+      await index.whenIndexed();
 
-    for (const indexedKey of [KEY_A, GROUP_KEY]) {
-      expect((await index.getCitedBy(indexedKey)).groups).toMatchObject([
-        { path: draft.path, occurrences: [{ raw: "doe2024" }] },
-      ]);
-    }
-  });
+      for (const indexedKey of [KEY_A, GROUP_KEY]) {
+        expect((await index.getCitedBy(indexedKey)).groups).toMatchObject([
+          { path: draft.path, occurrences: [{ raw: "doe2024" }] },
+        ]);
+      }
+    }),
+  );
 
   // One source occurrence stays one Citation of the key itself, however many
   // Items the reverse observation attributes it to.
-  it("creates no Citation record per candidate", async () => {
-    const { draft, index } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote, and @doe2024 again." },
-      {
-        notes: false,
-        citekeys: [myLibraryRow, groupTwin],
-        libraryScope: bothLibraries(),
-      },
-    );
+  it.effect("creates no Citation record per candidate", () =>
+    Effect.promise(async () => {
+      const { draft, index } = await makeHarness(
+        { "draft.md": "As @doe2024 wrote, and @doe2024 again." },
+        {
+          notes: false,
+          citekeys: [myLibraryRow, groupTwin],
+          libraryScope: bothLibraries(),
+        },
+      );
 
-    const citations = await citationsOf(index, draft);
+      const citations = await citationsOf(index, draft);
 
-    expect(citations).toMatchObject([{ indexedKey: null, refNumber: 1 }]);
-    expect(citations[0]!.occurrences).toHaveLength(2);
-  });
+      expect(citations).toMatchObject([{ indexedKey: null, refNumber: 1 }]);
+      expect(citations[0]!.occurrences).toHaveLength(2);
+    }),
+  );
 
-  it("stops attributing the occurrence once the scope narrows to one candidate", async () => {
-    const libraryScope = bothLibraries();
-    const { lookup, index, workspace } = await makeHarness(
-      { "draft.md": "As @doe2024 wrote." },
-      { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
-    );
-    workspace.layoutReady();
-    await index.whenIndexed();
-    expect((await index.getCitedBy(GROUP_KEY)).groups).toHaveLength(1);
+  it.effect(
+    "stops attributing the occurrence once the scope narrows to one candidate",
+    () =>
+      Effect.promise(async () => {
+        const libraryScope = bothLibraries();
+        const { lookup, index, workspace } = await makeHarness(
+          { "draft.md": "As @doe2024 wrote." },
+          { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
+        );
+        workspace.layoutReady();
+        await index.whenIndexed();
+        expect((await index.getCitedBy(GROUP_KEY)).groups).toHaveLength(1);
 
-    libraryScope.select([personalLibrary()]);
-    await lookup.whenResolved();
-    await yieldToMain();
+        libraryScope.select([personalLibrary()]);
+        await lookup.whenResolved();
 
-    expect((await index.getCitedBy(GROUP_KEY)).groups).toStrictEqual([]);
-    expect((await index.getCitedBy(KEY_A)).groups).toHaveLength(1);
-  });
+        expect((await index.getCitedBy(GROUP_KEY)).groups).toStrictEqual([]);
+        expect((await index.getCitedBy(KEY_A)).groups).toHaveLength(1);
+      }),
+  );
 });
 
 /** Runs one index to completion over `documents`, leaving its scans in `store`. */
@@ -1836,10 +2142,12 @@ async function warmVault(
   documents: Record<string, string>,
   store: MemoryStore,
 ): Promise<void> {
-  const { index, workspace } = await makeHarness(documents, { store });
+  const { index, workspace, closeIndex } = await makeHarness(documents, {
+    store,
+  });
   workspace.layoutReady();
   await index.whenIndexed();
-  await index[Symbol.asyncDispose]();
+  await closeIndex();
 }
 
 async function makeHarness(

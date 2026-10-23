@@ -16,15 +16,13 @@ import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { heldResolution } from "@/services/citation-index/lookup";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {
   CitationOccurrence,
   CitationSyntax,
 } from "@/services/citation-index/scan";
-import type {
-  CitationIndex,
-  CitationLookupObservation,
-} from "@/services/citation-index/service";
+import type { CitationLookupObservation } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
@@ -86,7 +84,7 @@ export interface GraphCitationsDeps {
   app: App;
   reads: Pick<PlainZoteroReads, "reads" | "on">;
   libraryScope: Pick<PlainLibraryScope, "current">;
-  citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
+  citationIndex: Pick<PlainCitationIndex, "citationsByPath" | "on">;
   citationLookup: Pick<PlainCitationLookup, "observe">;
   noteIndex: Pick<
     PlainNoteIndex,
@@ -235,10 +233,7 @@ export class GraphCitations extends Service<void> {
     // Read before layout-ready where startup allows it: Obsidian saves the
     // layout no earlier, and a save made while ZotLit's rows are absent
     // writes their keys out of the file.
-    const [, savedLeaves] = await Promise.all([
-      this.#citationIndex.ready,
-      savedLeafOptions(this.#app),
-    ]);
+    const savedLeaves = await savedLeafOptions(this.#app);
     this.#savedLeaves = savedLeaves;
 
     await using stack = new AsyncDisposableStack();

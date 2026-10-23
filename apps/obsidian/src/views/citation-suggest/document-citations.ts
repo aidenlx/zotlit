@@ -3,12 +3,13 @@ import { abortable } from "@std/async/abortable";
 import type { TFile } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 
 const logger = getLogger(["views", "citation-suggest"]);
 
 export async function readDocumentCitedKeys(
-  index: Pick<CitationIndex, "getDocumentCitationSet">,
+  index: Pick<PlainCitationIndex, "getDocumentCitationSet">,
   file: TFile | null,
   signal: AbortSignal,
 ): Promise<readonly string[]> {

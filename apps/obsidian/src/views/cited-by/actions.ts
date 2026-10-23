@@ -8,8 +8,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type { ParsedNote } from "@/services/citation-index/parsed-note";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {
-  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
@@ -84,7 +84,7 @@ export interface CitedByActions {
 
 export function createCitedByActions(options: {
   app: App;
-  citationIndex: Pick<CitationIndex, "getParsedNote">;
+  citationIndex: Pick<PlainCitationIndex, "getParsedNote">;
   store: CitedByStore;
 }): CitedByActions {
   const { app, citationIndex, store } = options;

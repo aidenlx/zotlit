@@ -6,7 +6,8 @@
 import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
@@ -25,7 +26,7 @@ import type {
 interface CitationsCliRegistrationDeps {
   app: App;
   citationIndex: Pick<
-    CitationIndex,
+    PlainCitationIndex,
     "readCitedBy" | "readReferences" | "readAnnotationUses"
   >;
   zoteroPref: Pick<PlainZoteroPref, "sourceId" | "databasePath">;

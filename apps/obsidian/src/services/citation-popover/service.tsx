@@ -10,9 +10,10 @@ import {
   describeCandidates,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import { readReferenceSources } from "@/services/citation-index/service";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type {} from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
@@ -45,7 +46,7 @@ export interface CitationPopoverDeps {
   app: App;
   db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
   citationLookup: Pick<PlainCitationLookup, "read" | "status" | "on">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
+  citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;
   /** The formatted citations of the hovered document, read for this popover. */

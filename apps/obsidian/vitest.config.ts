@@ -27,6 +27,10 @@ export default defineConfig({
       // The published `obsidian` package is types-only; redirect runtime
       // imports to our local mock so tests can `import { ... } from "obsidian"`.
       obsidian: resolve(packageRoot, "__mocks__/obsidian.ts"),
+      "virtual:citation-parse-worker": resolve(
+        packageRoot,
+        "__mocks__/worker-source.ts",
+      ),
     },
     tsconfigPaths: true,
   },
