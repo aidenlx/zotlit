@@ -25,6 +25,40 @@ import { plainNoteIndex } from "./plain";
 import { NoteIndex } from "./service";
 import type { NoteIndexChange } from "./service";
 
+// #1705: host callbacks publish; one consumer applies the ordered input.
+it.effect(
+  "applies a burst of published metadata and vault events in arrival order",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost(
+        { "paper.md": cache({}) },
+        { enabledAtRuntime: true },
+      );
+      const index = yield* noteIndexOf(host.app);
+      yield* index.whenIndexed();
+      const changes = yield* Queue.unbounded<NoteIndexChange>();
+      yield* Stream.runForEach(index.changes, (change) =>
+        Queue.offer(changes, change),
+      ).pipe(Effect.forkScoped);
+      yield* Queue.take(changes);
+      const file = host.vault.files.get("paper.md")!;
+      host.metadataCache.change(file, cache({ itemKey: "ABCD2345" }));
+      host.vault.deleteFile("paper.md");
+      host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
+      yield* index.whenSettled();
+      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+      const received: NoteIndexChange[] = [];
+      for (let i = 0; i < 5; i++) received.push(yield* Queue.take(changes));
+      expect(received.map((change) => change.type)).toEqual([
+        "changed",
+        "frontmatter-changed",
+        "changed",
+        "changed",
+        "frontmatter-changed",
+      ]);
+    }),
+);
+
 // #1705: use the same graph barrier as buildServices before constructing an adapter.
 it.effect(
   "the built runtime exposes the first scan when layout and cache are ready",
@@ -89,6 +123,34 @@ it.effect("whenSettled waits for queued renames to restore their keys", () =>
     yield* index.whenSettled();
     expect(yield* index.getIndexedItemKeys()).toEqual(["ABCD2345", "ZZZ99999"]);
   }),
+);
+
+it.effect(
+  "scope close settles a pending rename and its whenSettled caller",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost(
+        { "paper.txt": cache({ itemKey: "ABCD2345" }) },
+        { enabledAtRuntime: true },
+      );
+      const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+        Scope.close(scope, Exit.void),
+      );
+      const context = yield* Layer.buildWithScope(
+        noteIndexOver(host.app),
+        scope,
+      );
+      const index = Context.get(context, NoteIndex);
+      host.vault.renameFile("paper.txt", "paper.md");
+      const pending = yield* index
+        .whenSettled()
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      expect(pending.pollUnsafe()).toBeUndefined();
+      yield* Scope.close(scope, Exit.void);
+      yield* Fiber.join(pending);
+      yield* index.whenSettled();
+      expect(yield* index.getIndexedItemKeys()).toEqual([]);
+    }),
 );
 
 // Failure modes: close leaves listeners active, or a pending Full Scan runs

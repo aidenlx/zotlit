@@ -2,17 +2,16 @@ import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef, TAbstractFile } from "obsidian";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
-import { registerEvent } from "@/lib/disposables";
 import {
   Context,
   Deferred,
   Effect,
   Layer,
   SubscriptionRef,
+  Stream,
 } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { acquireDisposable } from "@/lib/effect-scope";
+import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { DEFAULT_PROFILE, readProfileStamp } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -144,6 +143,18 @@ const makeNoteIndex = Effect.gen(function* () {
   });
   const indexed = yield* Deferred.make<void>();
   const pendingRenames = new Set<Deferred.Deferred<void>>();
+  const pendingBarriers = new Set<Deferred.Deferred<void>>();
+  const events = yield* obsidianEvents<{
+    changed: [TFile, string, CachedMetadata];
+    deleted: [TFile];
+    delete: [TAbstractFile];
+    rename: [TAbstractFile, string];
+    "rename-settled": [TFile, Deferred.Deferred<void>];
+    layout: [];
+    clean: [];
+    resolved: [];
+    barrier: [Deferred.Deferred<void>];
+  }>();
   const notesByItemKey = new Map<string, Set<TFile>>();
   const notesByNoteKey = new Map<string, Set<TFile>>();
   const contribByFile = new Map<TFile, FileContributions>();
@@ -153,7 +164,7 @@ const makeNoteIndex = Effect.gen(function* () {
   let disposed = false;
   /** The fallback `resolved` listener, held so disposal can drop it. */
   let fallbackRef: EventRef | null = null;
-  const run = Effect.runSyncWith(yield* Effect.context<never>());
+
   const publish = (change: NoteIndexChange) =>
     SubscriptionRef.set(changes, change);
 
@@ -232,6 +243,12 @@ const makeNoteIndex = Effect.gen(function* () {
   });
 
   const whenSettled = Effect.fn("NoteIndex.whenSettled")(function* () {
+    if (disposed) return;
+    // The consumer must reach this marker before we snapshot pending renames.
+    const barrier = yield* Deferred.make<void>();
+    pendingBarriers.add(barrier);
+    events.callback("barrier")(barrier);
+    yield* Deferred.await(barrier);
     yield* Effect.forEach([...pendingRenames], Deferred.await, {
       discard: true,
     });
@@ -241,58 +258,15 @@ const makeNoteIndex = Effect.gen(function* () {
   const listen = Effect.fn("NoteIndex.listen")(function* () {
     const { metadataCache, vault } = app;
 
-    yield* acquireDisposable(() =>
-      registerEvent(
-        metadataCache.on("changed", (file, _data, cache) => {
-          if (isMarkdownFile(file)) run(apply(file, readCache(cache)));
-        }),
-      ),
-    );
-    yield* acquireDisposable(() =>
-      registerEvent(
-        metadataCache.on("deleted", (file) => {
-          run(apply(file, NONE));
-        }),
-      ),
-    );
-    yield* acquireDisposable(() =>
-      registerEvent(
-        vault.on("delete", (file) => {
-          if (isMarkdownFile(file)) run(apply(file, NONE));
-        }),
-      ),
-    );
-    // A rename changes the file's identity, not its content. Obsidian moves the
-    // same `TFile` to the new path in place, so the maps here already hold the
-    // renamed file; consumers still hear the moved mapping, since the link
-    // target path changed under them. The metadata cache follows a rename as
-    // one more vault `rename` listener, in registration order, and only
-    // rekeys its entry: it fires no `changed`. It subscribes when its initial
-    // load is done, so a plugin loaded during startup hears the rename before
-    // the cache rekeys, and `getFileCache` has nothing for the new path yet
-    // (Obsidian 1.14.4). The vault calls its listeners synchronously, so the
-    // file is read once that dispatch is over.
-    yield* acquireDisposable(() =>
-      registerEvent(
-        vault.on("rename", (file) => {
-          if (!(file instanceof TFile)) return;
-          if (!isMarkdownFile(file)) {
-            run(apply(file, NONE));
-            return;
-          }
-          if (contribByFile.has(file)) run(publish({ type: "changed", file }));
-          const settled = run(Deferred.make<void>());
-          pendingRenames.add(settled);
-          queueMicrotask(() => {
-            try {
-              if (!disposed) run(apply(file, read(file)));
-            } finally {
-              pendingRenames.delete(settled);
-              run(Deferred.succeed(settled, undefined));
-            }
-          });
-        }),
-      ),
+    yield* events.on("changed", metadataCache, "changed");
+    yield* events.on("deleted", metadataCache, "deleted");
+    yield* events.on("delete", vault, "delete");
+    yield* events.on("rename", vault, "rename");
+    app.workspace.onLayoutReady(events.callback("layout"));
+    // Start immediately so a ready layout and clean cache finish the Full Scan
+    // before acquisition returns, as they did through the synchronous callbacks.
+    yield* Stream.runForEach(events.stream, consume).pipe(
+      Effect.forkScoped({ startImmediately: true }),
     );
 
     // `onLayoutReady` and `onCleanCache` are one-shots with no unregister, so
@@ -302,14 +276,15 @@ const makeNoteIndex = Effect.gen(function* () {
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         disposed = true;
-        if (fallbackRef) metadataCache.offref(fallbackRef);
         yield* Deferred.succeed(indexed, undefined);
         for (const settled of pendingRenames)
           yield* Deferred.succeed(settled, undefined);
         pendingRenames.clear();
+        for (const barrier of pendingBarriers)
+          yield* Deferred.succeed(barrier, undefined);
+        pendingBarriers.clear();
       }),
     );
-    app.workspace.onLayoutReady(() => run(scanWhenCacheClean()));
   });
 
   /**
@@ -334,15 +309,10 @@ const makeNoteIndex = Effect.gen(function* () {
       if (disposed) return;
       const { metadataCache } = app;
       if (typeof metadataCache.onCleanCache === "function") {
-        let scanned = false;
-        metadataCache.onCleanCache(() => {
-          scanned = true;
-          run(fullScan());
-        });
-        if (!scanned)
-          yield* Effect.logDebug(
-            "Note index waits for a clean metadata cache",
-          ).pipe(withLogCategory("note-index"));
+        metadataCache.onCleanCache(events.callback("clean"));
+        yield* Effect.logDebug(
+          "Note index requested a clean metadata cache",
+        ).pipe(withLogCategory("note-index"));
         return;
       }
       // A build without the hook: the documented signal, once. This misses an
@@ -350,13 +320,71 @@ const makeNoteIndex = Effect.gen(function* () {
       yield* Effect.logWarning(
         "Metadata cache has no onCleanCache hook; scanning on resolved",
       ).pipe(withLogCategory("note-index"));
-      fallbackRef = metadataCache.on("resolved", () => {
-        if (fallbackRef) metadataCache.offref(fallbackRef);
-        fallbackRef = null;
-        run(fullScan());
-      });
+      fallbackRef = yield* events.on("resolved", metadataCache, "resolved");
     },
   );
+
+  const consume = Effect.fn("NoteIndex.consume")(function* (
+    event: Stream.Success<typeof events.stream>,
+  ) {
+    if (disposed) return;
+    switch (event.type) {
+      case "changed": {
+        const [file, , cache] = event.args;
+        if (isMarkdownFile(file)) yield* apply(file, readCache(cache));
+        break;
+      }
+      case "deleted":
+        yield* apply(event.args[0], NONE);
+        break;
+      case "delete": {
+        const [file] = event.args;
+        if (isMarkdownFile(file)) yield* apply(file, NONE);
+        break;
+      }
+      case "rename": {
+        const [file] = event.args;
+        if (!(file instanceof TFile)) break;
+        if (!isMarkdownFile(file)) {
+          yield* apply(file, NONE);
+          break;
+        }
+        // Obsidian rekeys the same TFile in a later vault listener during
+        // startup. Read after that dispatch, keeping the moved-key notice first.
+        if (contribByFile.has(file)) yield* publish({ type: "changed", file });
+        const settled = yield* Deferred.make<void>();
+        pendingRenames.add(settled);
+        const published = events.callback("rename-settled");
+        queueMicrotask(() => published(file, settled));
+        break;
+      }
+      case "rename-settled": {
+        const [file, settled] = event.args;
+        yield* apply(file, read(file));
+        pendingRenames.delete(settled);
+        yield* Deferred.succeed(settled, undefined);
+        break;
+      }
+      case "layout":
+        yield* scanWhenCacheClean();
+        break;
+      case "resolved":
+        if (!fallbackRef) break;
+        app.metadataCache.offref(fallbackRef);
+        fallbackRef = null;
+        yield* fullScan();
+        break;
+      case "clean":
+        yield* fullScan();
+        break;
+      case "barrier": {
+        const [barrier] = event.args;
+        pendingBarriers.delete(barrier);
+        yield* Deferred.succeed(barrier, undefined);
+        break;
+      }
+    }
+  });
 
   /**
    * What the metadata cache holds for the file now: its contributions, or
