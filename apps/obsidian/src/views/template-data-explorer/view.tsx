@@ -25,7 +25,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -70,7 +70,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
     "state" | "ready" | "on" | "acquireRead"
   >;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   templates: Pick<
     TemplateService,
     "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"

@@ -28,8 +28,8 @@ import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import {
@@ -72,7 +72,7 @@ export interface TemplateDataDeps {
     PlainNoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<PlainPluginSettings, "current">;
   templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
@@ -142,7 +142,7 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
   }
   const [settings] = yield* Effect.all(
     [
-      attempt(() => deps.settings.loaded),
+      Effect.sync(() => deps.settings.current),
       attempt(() => deps.noteIndex.whenIndexed()),
       attempt(() => deps.templates.ready),
     ],
@@ -224,7 +224,6 @@ export const readCitationData = Effect.fn("TemplateData.readCitation")(
         ),
       };
     }
-    yield* attempt(() => deps.settings.loaded);
     const selected = yield* Effect.scoped(
       Effect.flatMap(readLease(deps), (reads) =>
         readNoteItem(reads, selector.key),

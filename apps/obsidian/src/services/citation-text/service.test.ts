@@ -526,7 +526,10 @@ describe("CitationText", () => {
           profile: { ready: Promise.resolve(), on: () => () => {} },
           db: { on: () => () => {} },
           zoteroPref: { dataDir: "/unused", on: () => () => {} },
-          settings: { ready: Promise.resolve(), subscribe: () => () => {} },
+          settings: {
+            current: defaults,
+            subscribe: () => () => {},
+          },
           pandocEngine: {
             getStatus: () => ({
               kind: "installed",

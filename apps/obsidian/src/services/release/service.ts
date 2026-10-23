@@ -8,11 +8,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type {
-  SettingsPatch,
-  SettingsService,
-} from "@/services/settings/service";
+import type { SettingsPatch } from "@/services/settings/service";
 
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 import { decideRelease } from "./decide";
@@ -30,7 +28,7 @@ export interface ReleaseServiceOptions {
   app: App;
   /** The plugin's current version, from the manifest. */
   version: string;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "hydrationOrigin" | "update">;
   /**
    * Open the first screen, the Library View, where the Welcome View shows as
    * a banner; the Migration Prompt in it follows `release.migration-pending`,
@@ -42,7 +40,10 @@ export interface ReleaseServiceOptions {
 export class ReleaseService extends Service<void> {
   readonly #app: App;
   readonly #version: string;
-  readonly #settings: SettingsService;
+  readonly #settings: Pick<
+    PlainPluginSettings,
+    "current" | "hydrationOrigin" | "update"
+  >;
   readonly #openFirstScreen?: () => void | Promise<void>;
   #stopped = false;
   readonly #checked = Promise.withResolvers<void>();
@@ -139,7 +140,7 @@ export class ReleaseService extends Service<void> {
   }
 
   async #runCheck(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     if (this.#stopped) return;
 
     const origin = this.#settings.hydrationOrigin ?? "current";

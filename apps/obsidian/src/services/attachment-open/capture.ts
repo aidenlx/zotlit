@@ -11,7 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import type { TargetOpener } from "./open-target";
 
@@ -50,7 +50,7 @@ export interface FileLinkCaptureDeps {
   /** Decides which links ZotLit takes, and opens them. */
   opener: Pick<TargetOpener, "follow">;
   attachments: Pick<AttachmentResolver, "warm">;
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
   window?: Window;
 }

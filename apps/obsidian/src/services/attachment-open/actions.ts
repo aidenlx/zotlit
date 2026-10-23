@@ -15,7 +15,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { activateAnnotView } from "@/views/annot-view/register";
@@ -36,7 +36,7 @@ export interface AttachmentOpenLookupDeps {
 /** What opening a PDF in Obsidian needs, wherever the gesture came from. */
 export interface PdfReaderDeps {
   app: App;
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
 }
 
 /**

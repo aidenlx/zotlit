@@ -1,3 +1,4 @@
+import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
@@ -9,7 +10,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { RenderedCitation } from "@/services/pandoc/engine";
-import { SettingsService } from "@/services/settings/service";
+
 import { TemplateService } from "@/services/template/service";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
@@ -94,8 +95,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
   } as unknown as App;
   const plugin = new PluginStub(app, { __VERSION__: 1, "note.template-conversion-pending": true, "citation.wikilink-citations": options.wikilinks ?? false });
   const identity = (raw: unknown) => raw;
-  const settings = new SettingsService({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
-  await settings.ready;
+  const settings = await buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
+  await settings.loaded;
   if (options.defaultStyle) settings.updateDefaultLiteratureNoteProfileBindings({ "citation.references-style": options.defaultStyle });
   const templates = new TemplateService({ app, settings });
   await templates.ready;

@@ -5,8 +5,8 @@ import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { buildSettings } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
-import { SettingsService } from "@/services/settings/service";
 
 import { LiteratureNoteTemplateMigrationService } from "./migration";
 import type { LiteratureNoteTemplateMigrationOptions } from "./migration";
@@ -63,7 +63,6 @@ function makeHarness(options?: {
     files.delete(file.path);
   });
   const settings = {
-    loaded: Promise.resolve(state),
     current: state,
     update: vi.fn((patch: Partial<typeof state>) =>
       Object.assign(state, patch),
@@ -519,7 +518,7 @@ async function makeVaultHarness(
   // fails halfway still disposes what it already built.
   await using stack = new AsyncDisposableStack();
   const settings = stack.use(
-    new SettingsService({
+    await buildSettings({
       plugin,
       migrateLegacy: noMigration,
       migrateV1: noMigration,
@@ -533,7 +532,7 @@ async function makeVaultHarness(
       migrateV9: noMigration,
     }),
   );
-  await settings.ready;
+  await settings.loaded;
   const template = stack.use(new TemplateService({ app, settings }));
   await template.ready;
   const openPrompt = vi.fn();

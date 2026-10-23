@@ -3,7 +3,6 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
@@ -69,7 +68,7 @@ import { ProfileService } from "./profile/service";
 import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { PluginSettings } from "./settings/service";
+import { plainPluginSettings } from "./settings/plain";
 import {
   LiteratureNoteTemplateMigrationService,
   loadLiteratureNoteTemplateMigrationData,
@@ -122,7 +121,7 @@ export async function buildServices(
 
   return container
     .useValue({
-      settings: () => runtime.runSync(PluginSettings.use(Effect.succeed)),
+      settings: () => plainPluginSettings(runtime),
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),

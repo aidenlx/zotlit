@@ -32,8 +32,8 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -95,7 +95,7 @@ export interface GraphCitationsDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: Pick<CitationPopover, "showWork" | "hide">;
-  settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
 }
 
 /** What one installed leaf holds. */
@@ -235,8 +235,7 @@ export class GraphCitations extends Service<void> {
     // Read before layout-ready where startup allows it: Obsidian saves the
     // layout no earlier, and a save made while ZotLit's rows are absent
     // writes their keys out of the file.
-    const [, , savedLeaves] = await Promise.all([
-      this.#settings.ready,
+    const [, savedLeaves] = await Promise.all([
       this.#citationIndex.ready,
       savedLeafOptions(this.#app),
     ]);

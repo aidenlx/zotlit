@@ -15,8 +15,11 @@ import { openManagedBinary } from "@/services/managed-binary/__fixtures__";
 import { managedBinaryPorts } from "@/services/managed-binary/platform";
 import { ManagedBinaryPlatform } from "@/services/managed-binary/service";
 import { memoryDevice } from "@/services/managed-binary/test-utils";
+import {
+  buildSettings,
+  plainSettingsOf,
+} from "@/services/settings/__fixtures__";
 import { settingsMigrations } from "@/services/settings/migrate";
-import { SettingsService } from "@/services/settings/service";
 import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
 import { plainZoteroPref } from "@/services/zotero-pref/plain";
 
@@ -98,13 +101,10 @@ const workerFixture = Effect.fn("workerFixture")(function* () {
   }
   vi.stubGlobal("Worker", StandInWorker);
   yield* Effect.addFinalizer(() => Effect.sync(() => vi.unstubAllGlobals()));
-  const settings = yield* acquireAsyncDisposable(
-    async () =>
-      new SettingsService({
-        plugin: { loadData: async () => null, saveData: async () => undefined },
-        ...settingsMigrations,
-      }),
-  );
+  const settings = yield* plainSettingsOf({
+    plugin: { loadData: async () => null, saveData: async () => undefined },
+    ...settingsMigrations,
+  });
   const device = memoryDevice();
   const chineseSegmenter = yield* acquireAsyncDisposable(async () =>
     openManagedBinary(CHINESE_SEGMENTER, {
@@ -219,7 +219,7 @@ it.effect(
         Effect.promise(async () => {
           await using stack = new AsyncDisposableStack();
           const settings = stack.use(
-            new SettingsService({
+            await buildSettings({
               ...settingsMigrations,
               plugin: {
                 loadData: () => Promise.resolve(null),
@@ -227,7 +227,6 @@ it.effect(
               },
             }),
           );
-          await settings.ready;
           const runtime = buildRuntime(
             layerChineseSegmenter.pipe(
               Layer.provide(

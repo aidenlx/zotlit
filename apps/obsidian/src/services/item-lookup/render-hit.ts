@@ -7,7 +7,7 @@ import type { Item } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { libraryLabel } from "@/services/library-scope/label";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import type { SearchHit } from "./service";
 
@@ -64,7 +64,7 @@ export function appendTrailingFlair(el: HTMLElement, label: string): void {
 }
 
 export function renderSuggestion(
-  settings: SettingsService,
+  settings: Pick<PlainPluginSettings, "current">,
   hit: SearchHit,
   el: HTMLElement,
 ): void {

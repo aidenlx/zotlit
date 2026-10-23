@@ -234,7 +234,6 @@ function makeDeps(
     ),
     settings: {
       current: defaults,
-      loaded: Promise.resolve({ ...defaults }),
       update: vi.fn(),
     },
     libraryScope: { resolveLibraries: () => currentScope },

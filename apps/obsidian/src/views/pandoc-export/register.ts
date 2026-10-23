@@ -34,7 +34,7 @@ import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -51,7 +51,7 @@ export interface PandocExportDeps {
   citationLookup: Pick<CitationLookup, "read">;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "getEngine">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;

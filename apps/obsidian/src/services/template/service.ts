@@ -59,8 +59,8 @@ import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import {
   CITATION_TEMPLATE_NAME,
@@ -109,7 +109,7 @@ export interface TemplateServiceEvents {
 
 export interface TemplateServiceOptions {
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
 }
 
 /**
@@ -1817,7 +1817,7 @@ export class TemplateService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const snapshot = await this.#settings.loaded;
+    const snapshot = this.#settings.current;
     this.#lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
     this.#lastAutoTrim = [
       snapshot["template.auto-trim-leading"],

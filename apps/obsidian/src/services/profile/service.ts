@@ -52,8 +52,8 @@ import type {
 } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_TEMPLATES,
@@ -231,7 +231,7 @@ export interface ProfileDeletionResult {
 
 interface ProfileServiceDeps {
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   template: TemplateService;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByProfile">;
 }

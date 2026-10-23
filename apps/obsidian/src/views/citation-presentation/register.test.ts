@@ -43,12 +43,11 @@ interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
   settings?: Partial<Settings> & Partial<ResolvedLiteratureNoteProfileBindings>;
-  /** Holds the vault selections back until `loadSettings()` hands them over. */
-  loading?: boolean;
+  /** Holds the vault selections back until `loadPreferences()` hands them over. */
 }
 
 /** One vault the action runs in, opened on one Markdown note. */
-function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
+function openVault({ note, settings = {} }: VaultOptions = {}) {
   // The note as text: its Properties block over an empty body.
   const host = createObsidianHost({
     "draft.md":
@@ -57,7 +56,6 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
         : "",
   });
   const file = host.file("draft.md");
-  const vaultSettings = Promise.withResolvers<Settings>();
   const {
     ["citation.references-style"]: referencesStyle,
     ...persistedSettings
@@ -77,7 +75,6 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
       },
     },
   };
-  if (!loading) vaultSettings.resolve(resolvedSettings);
   const writes: string[] = [];
   host.vault.on("modify", (written) => writes.push((written as TFile).path));
   let command: Command | undefined;
@@ -98,7 +95,7 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
   const deps = {
     app,
     zoteroPref: { dataDir: DATA_DIR },
-    settings: { loaded: vaultSettings.promise },
+    settings: { current: resolvedSettings },
   };
   registerCitationPresentation(
     {
@@ -143,10 +140,6 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
     /** Perform it from the palette, leaving it to whatever it waits on. */
     begin() {
       palette.checkCallback?.(false);
-    },
-    /** Hand over the vault selections a loading vault held back. */
-    loadSettings() {
-      vaultSettings.resolve(resolvedSettings);
     },
     /** One menu this action was offered a place in, as Obsidian builds it. */
     menu(source: string, target: TAbstractFile = file as never) {
@@ -225,21 +218,16 @@ describe("the Set citation presentation action", () => {
     });
   });
 
-  it("opens on the vault selections a still-loading vault is about to hold", async () => {
+  it("opens on the settled vault selections", async () => {
     const vault = openVault({
       note: {},
       settings: {
         "citation.references-style": VAULT_STYLE_ID,
         "citation.locale": "en-GB",
       },
-      loading: true,
     });
 
     vault.begin();
-    await Promise.resolve();
-    expect(dialog.opened).toHaveLength(0);
-
-    vault.loadSettings();
     await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
 
     expect(openedOn()).toMatchObject({

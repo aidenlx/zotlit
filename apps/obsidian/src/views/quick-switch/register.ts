@@ -5,7 +5,7 @@ import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
@@ -20,7 +20,7 @@ export interface QuickSwitchDeps {
   lookup: ItemLookup;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   /** Opens the PDF a result asks for. */
   opener: Pick<TargetOpener, "open">;

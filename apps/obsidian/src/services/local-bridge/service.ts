@@ -22,7 +22,8 @@ import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -70,7 +71,7 @@ export interface LocalBridgeEvents {
 export interface LocalBridgeServiceDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
@@ -182,7 +183,7 @@ export class LocalBridgeService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     await using stack = new AsyncDisposableStack();
 
     this.#enabled = this.#webWorkbenchEnabled && settings["server.workbench"];
@@ -230,7 +231,7 @@ export class LocalBridgeService extends Service<void> {
   async #describeGrant(
     connection: BridgeConnection,
   ): Promise<ConnectionGrantDescription> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     return {
       installation: {
         id: this.#installationId,

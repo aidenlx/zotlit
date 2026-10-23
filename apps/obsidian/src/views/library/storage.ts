@@ -4,7 +4,7 @@
 // again while a write waits.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
@@ -17,7 +17,7 @@ import type { LibraryViewDocument } from "./document";
 const KEY = "library.document";
 
 export class LibraryViewStorage {
-  readonly #settings: Pick<SettingsService, "update" | "flush" | "current">;
+  readonly #settings: Pick<PlainPluginSettings, "update" | "flush" | "current">;
   readonly #toolbar: () => string | null;
   #held: LibraryViewDocument = DEFAULT_LIBRARY_VIEW_DOCUMENT;
   /** The toolbar's text that {@link #held} has taken in. */
@@ -32,7 +32,7 @@ export class LibraryViewStorage {
    * shows there at once, before the Query View asks to save it.
    */
   constructor(
-    settings: Pick<SettingsService, "update" | "flush" | "current">,
+    settings: Pick<PlainPluginSettings, "update" | "flush" | "current">,
     toolbar: () => string | null,
   ) {
     this.#settings = settings;

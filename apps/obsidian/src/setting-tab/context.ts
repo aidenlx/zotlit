@@ -14,8 +14,8 @@ import type { LocalServerService } from "@/services/local-server/service";
 import type { PlainManagedBinary } from "@/services/managed-binary/plain";
 import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -98,7 +98,13 @@ export interface SettingTabContext {
    * `getSettingDefinitions()` runs inside `onload()`.
    */
   manifest: PluginManifest;
-  settings: SettingsService;
+  settings: Pick<
+    PlainPluginSettings,
+    | "current"
+    | "update"
+    | "updateDefaultLiteratureNoteProfileBindings"
+    | "subscribe"
+  >;
   profile: ProfileService;
   db: ZoteroReadsService;
   /** The live Library Scope the Library scope rows read and repair. */

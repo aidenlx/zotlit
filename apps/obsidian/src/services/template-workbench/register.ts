@@ -1,16 +1,16 @@
 import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 import { apiVersion } from "obsidian";
+
+import type { VersionedCliHost } from "@/lib/cli-command";
 // Registers the Workbench commands with Obsidian's CLI.
 //
 // Command, flag, guide, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-
-import type { VersionedCliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -75,7 +75,7 @@ interface TemplateWorkbenchRegistrationDeps {
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   profile: ProfileService;
   templates: TemplateService;
   zoteroPref: Pick<

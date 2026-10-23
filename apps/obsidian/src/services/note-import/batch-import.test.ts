@@ -284,7 +284,7 @@ function makeDeps(
       options.dbState ?? "ready",
     ),
     settings: {
-      loaded: Promise.resolve({ ...defaults, ...settings }),
+      current: { ...defaults, ...settings },
       update: vi.fn(),
     },
     libraryScope: { resolveLibraries: () => currentScope },

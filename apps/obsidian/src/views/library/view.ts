@@ -20,7 +20,7 @@ import type { QueryViewValue } from "@/services/item-query/query-view";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
@@ -82,7 +82,7 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   useLedger: Pick<PlainUseLedger, "get">;
-  settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
+  settings: Pick<PlainPluginSettings, "update" | "flush" | "current">;
   libraryScope: QueryViewDeps["libraryScope"] &
     LibraryTreeDeps["libraryScope"] &
     Pick<LibraryScopeService, "effective">;
@@ -583,7 +583,7 @@ export class LibraryView extends ItemView {
     );
     // A tab that the workspace restores on startup can open before plugin
     // data has loaded.
-    await this.#deps.settings.loaded;
+
     this.#storage.load();
     const doc = this.#storage.document();
     this.#cardWidth?.load();
@@ -881,7 +881,6 @@ export class LibraryView extends ItemView {
    * its row limit: nothing is selected, and the caller says so.
    */
   async reveal(indexedKey: string): Promise<"listed" | "not-listed"> {
-    await this.#deps.settings.loaded;
     const node = await this.#itemNode(indexedKey);
     if (this.tree.store.getState().facets.length > 0) this.#filter([]);
     if (this.tree.store.getState().tags.length > 0) this.#tag([]);

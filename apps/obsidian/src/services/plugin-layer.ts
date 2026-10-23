@@ -1,7 +1,7 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
 import type { Plugin } from "obsidian";
 
-import { Effect, Layer } from "@/lib/effect";
+import { Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
@@ -16,9 +16,8 @@ import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
 import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
-import { serviceLayer } from "./service-layer";
-import { settingsMigrations } from "./settings/migrate";
-import { PluginSettings, SettingsService } from "./settings/service";
+import { layerPluginSettings } from "./settings/service";
+import type { PluginSettings } from "./settings/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
 import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
@@ -57,20 +56,6 @@ export function pluginLayer(
     Layer.provideMerge(
       layerLogging.pipe(Layer.provide(layerLogOutput(plugin))),
     ),
-    Layer.provideMerge(layerSettings(plugin)),
+    Layer.provideMerge(layerPluginSettings(plugin)),
   );
-}
-
-function layerSettings(plugin: Plugin): Layer.Layer<PluginSettings> {
-  return serviceLayer(PluginSettings, {
-    key: "settings",
-    make: Effect.sync(
-      () =>
-        new SettingsService({
-          plugin,
-          ...settingsMigrations,
-          handoff: plugin.app,
-        }),
-    ),
-  });
 }

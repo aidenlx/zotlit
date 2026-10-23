@@ -58,9 +58,9 @@ import type {
 } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import { replaceCitations, sectionCitations } from "./render";
 import type { SectionCitation } from "./render";
@@ -114,7 +114,7 @@ export interface CitekeyReadingDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: Pick<SettingsService, "ready" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
 }
 
 /**
@@ -176,7 +176,6 @@ export class CitekeyReading extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
 
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),

@@ -14,7 +14,7 @@ import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
@@ -512,7 +512,7 @@ export function isProfileControlKey(key: string): key is ProfileControlKey {
   );
 }
 export function getProfileControlValue(
-  settings: SettingsService,
+  settings: Pick<PlainPluginSettings, "current">,
   key: ProfileControlKey,
 ): unknown {
   const field = key.slice(
@@ -524,7 +524,10 @@ export function getProfileControlValue(
   );
 }
 export function setProfileControlValue(
-  settings: SettingsService,
+  settings: Pick<
+    PlainPluginSettings,
+    "updateDefaultLiteratureNoteProfileBindings"
+  >,
   key: ProfileControlKey,
   value: unknown,
 ): void {
