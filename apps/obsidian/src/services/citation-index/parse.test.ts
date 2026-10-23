@@ -8,7 +8,12 @@ import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { makeRecoveringParseClient } from "@/services/citation-parse/recovering-client";
 import type { ParseConnection } from "@/services/citation-parse/recovering-client";
 
-import { createCitationIndexHarness, link, MemoryStore } from "./test-harness";
+import {
+  createCitationIndexHarness,
+  KEY_A,
+  link,
+  MemoryStore,
+} from "./test-harness";
 
 it("aborts a document wait while another consumer keeps the shared parse (#1691)", async () => {
   const entered = Promise.withResolvers<void>();
@@ -48,6 +53,99 @@ it("aborts a document wait while another consumer keeps the shared parse (#1691)
     "doe2024",
   ]);
 });
+
+it.each(["changed event", "document read"])(
+  "serves the retained record to readers awaiting a failed replacement from a %s (#1691)",
+  async (source) => {
+    const store = new MemoryStore();
+    await using seed = await createCitationIndexHarness(
+      { "draft.md": "@doe2024" },
+      { store, notes: false },
+    );
+    await seed.index.getDocumentCitationSet(seed.draft);
+    const saved = structuredClone(store.records.get("draft.md"));
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let parseSignal: AbortSignal | undefined;
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "@doe2024" },
+      {
+        store,
+        notes: false,
+        parseClient: {
+          async parse(_request, signal) {
+            parseSignal = signal;
+            entered.resolve();
+            await release.promise;
+            throw new Error("Replacement parse failed");
+          },
+        },
+      },
+    );
+    if (source === "changed event")
+      harness.metadataCache.change(harness.draft, "@replacement");
+    else harness.vault.write(harness.draft, "@replacement");
+    const stop = new AbortController();
+    const cancelled = expect(
+      harness.index.getDocumentCitationSet(harness.draft, {
+        signal: stop.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    const retained = expect(
+      harness.index.getDocumentCitationSet(harness.draft),
+    ).resolves.toMatchObject({ occurrences: [{ raw: "doe2024" }] });
+    await entered.promise;
+    stop.abort();
+    await cancelled;
+    expect(parseSignal?.aborted).toBe(false);
+    release.resolve();
+    await retained;
+    expect(store.records.get("draft.md")).toEqual(saved);
+  },
+);
+
+it.each(["before", "during"])(
+  "reports degraded coverage when an edit fails %s backfill, while saved citations remain available (#1691)",
+  async (timing) => {
+    const store = new MemoryStore();
+    await using seed = await createCitationIndexHarness(
+      { "draft.md": "@doe2024" },
+      { store, notes: false },
+    );
+    await seed.index.getDocumentCitationSet(seed.draft);
+    const saved = structuredClone(store.records.get("draft.md"));
+    const release = Promise.withResolvers<void>();
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "@doe2024", "neighbour.md": "@roe2025" },
+      {
+        store,
+        notes: false,
+        parseClient: {
+          async parse(request, signal) {
+            if (request.path === "draft.md") {
+              await release.promise;
+              throw new Error("Edited note failed to parse");
+            }
+            return inProcessParseClient.parse(request, signal);
+          },
+        },
+      },
+    );
+    harness.metadataCache.change(harness.draft, "@replacement");
+    const reader = harness.index.getDocumentCitationSet(harness.draft);
+    if (timing === "during") harness.workspace.layoutReady();
+    release.resolve();
+    await reader;
+    if (timing === "before") harness.workspace.layoutReady();
+    await harness.index.whenIndexed();
+    expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+      coverage: "degraded",
+      groups: [{ path: "draft.md" }],
+    });
+    expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+    expect(store.records.get("draft.md")).toEqual(saved);
+  },
+);
 
 it("excludes wikilinks inside comments even when Obsidian lists them (#1691)", async () => {
   await using harness = await createCitationIndexHarness(
@@ -397,58 +495,100 @@ async function recoveringClient(connect: () => ParseConnection) {
   };
 }
 
-it("times out a stalling note while its neighbours finish and its saved record serves (#1691)", async () => {
-  const store = new MemoryStore();
-  await using seed = await createCitationIndexHarness(
-    { "draft.md": "@doe2024" },
-    { store, notes: false },
-  );
-  await seed.index.getDocumentCitationSet(seed.draft);
-  const saved = structuredClone(store.records.get("draft.md"));
+it.each([0, 10_000])(
+  "replaces a stalled connection and replays neighbours queued %i ms later while retaining the failed note (#1691)",
+  async (arrival) => {
+    const store = new MemoryStore();
+    await using seed = await createCitationIndexHarness(
+      { "draft.md": "@doe2024" },
+      { store, notes: false },
+    );
+    await seed.index.getDocumentCitationSet(seed.draft);
+    const saved = structuredClone(store.records.get("draft.md"));
+    const entered = Promise.withResolvers<void>();
+    const queued = Promise.withResolvers<void>();
+    let connections = 0;
+    let attempts = 0;
+    let terminations = 0;
+    await using recovery = await recoveringClient(() => {
+      connections++;
+      const died = Promise.withResolvers<void>();
+      let blocked = false;
+      let stopped = false;
+      return {
+        died: died.promise,
+        async parse(request, signal) {
+          if (request.text === "@poison") {
+            attempts++;
+            blocked = true;
+            entered.resolve();
+          }
+          if (blocked) {
+            if (request.path === "neighbour.md") queued.resolve();
+            await died.promise;
+            throw new ParseWorkerDied("Blocked worker terminated");
+          }
+          return inProcessParseClient.parse(request, signal);
+        },
+        [Symbol.dispose]() {
+          if (stopped) return;
+          stopped = true;
+          terminations++;
+          died.resolve();
+        },
+      };
+    });
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "@poison", "neighbour.md": "@roe2025" },
+      { store, notes: false, parseClient: recovery.client },
+    );
+    const readNeighbour = harness.vault.hold("neighbour.md");
+    harness.workspace.layoutReady();
+    await entered.promise;
+    await recovery.advance(arrival);
+    readNeighbour();
+    await queued.promise;
+    expect(harness.index.citationKeys()).toEqual(["doe2024"]);
+    await recovery.advance(15_000 - arrival);
+    expect(terminations).toBe(1);
+    await recovery.advance(100);
+    await harness.index.whenIndexed();
+    expect(connections).toBe(2);
+    expect(attempts).toBe(1);
+    expect(store.records.get("draft.md")).toEqual(saved);
+    expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+    harness.metadataCache.change(harness.draft, "@recovered");
+    expect(
+      (
+        await harness.index.getDocumentCitationSet(harness.draft)
+      ).occurrences.map(({ raw }) => raw),
+    ).toEqual(["recovered"]);
+  },
+);
+
+it("settles backfill when the parse worker cannot start (#1691)", async () => {
   const entered = Promise.withResolvers<void>();
-  const neighbour = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  let connections = 0;
-  let stalledSignal: AbortSignal | undefined;
   await using recovery = await recoveringClient(() => {
-    connections++;
-    return {
-      died: new Promise<void>(() => {}),
-      async parse(request, signal) {
-        if (request.path === "draft.md") {
-          stalledSignal = signal;
-          entered.resolve();
-          await new Promise<void>(() => {});
-        }
-        if (request.path === "held.md") {
-          neighbour.resolve();
-          await release.promise;
-        }
-        return inProcessParseClient.parse(request, signal);
-      },
-      [Symbol.dispose]() {},
-    };
+    entered.resolve();
+    throw new Error("Worker could not start");
   });
   await using harness = await createCitationIndexHarness(
-    { "draft.md": "@poison", "neighbour.md": "@roe2025", "held.md": "@held" },
-    { store, notes: false, parseClient: recovery.client },
+    { "draft.md": "@doe2024" },
+    { notes: false, parseClient: recovery.client },
   );
-  const readHeld = harness.vault.hold("held.md");
   harness.workspace.layoutReady();
   await entered.promise;
-  await recovery.advance(10_000);
-  readHeld();
-  await neighbour.promise;
-  await recovery.advance(5_000);
-  expect(stalledSignal?.aborted).toBe(true);
-  expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
-  expect(store.records.get("draft.md")).toEqual(saved);
-  expect(connections).toBe(1);
-  release.resolve();
-  await harness.index.whenIndexed();
-  expect(store.records.get("held.md")?.citekeys.map(({ raw }) => raw)).toEqual([
-    "held",
-  ]);
+  let indexed = false;
+  const settled = harness.index.whenIndexed().then(() => {
+    indexed = true;
+  });
+  await recovery.advance(15_000);
+  await expect.poll(() => indexed).toBe(true);
+  await settled;
+  expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+    coverage: "degraded",
+    groups: [],
+  });
 });
 
 it("abandons a note after three worker deaths so backfill can settle (#1691)", async () => {

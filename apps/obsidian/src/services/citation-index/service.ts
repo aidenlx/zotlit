@@ -670,7 +670,7 @@ export class CitationIndex extends Service<void> {
     if (this.#stopped || build !== this.#build) return;
     logger.debug("Citation index backfilled", { count: this.#scans.size });
     this.#backfilled = true;
-    this.#coverage = failed ? "degraded" : "complete";
+    this.#coverage = failed || this.#failed.size > 0 ? "degraded" : "complete";
     this.#emitter.emit("backfilled");
   }
 
@@ -772,6 +772,14 @@ export class CitationIndex extends Service<void> {
         .catch((error: unknown) => {
           if (signal.aborted) return null;
           this.#failed.add(pending.path);
+          const retained = this.#scans.get(pending.path);
+          if (retained) {
+            logger.warn("Citation parse failed; retaining saved scan", {
+              path: pending.path,
+              error,
+            });
+            return retained;
+          }
           throw error;
         })
         .finally(() => {

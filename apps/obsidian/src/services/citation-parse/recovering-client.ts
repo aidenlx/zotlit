@@ -61,7 +61,13 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
 
   const parse = Effect.fnUntraced(
     function* (request: ParseRequest) {
-      const { connection, retired } = yield* Deferred.await(available);
+      const { connection, retired } = yield* Deferred.await(available).pipe(
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () =>
+            Effect.fail(new ParseFailed("Parse worker unavailable")),
+        }),
+      );
       return yield* Effect.tryPromise({
         try: (signal) => connection.parse(request, signal),
         catch: (error) =>
@@ -69,6 +75,15 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
             ? error
             : new ParseFailed(String(error)),
       }).pipe(
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () =>
+            Effect.sync(() => connection[Symbol.dispose]()).pipe(
+              Effect.andThen(
+                Effect.fail(new ParseFailed("Citation parse timed out")),
+              ),
+            ),
+        }),
         Effect.catch((error) =>
           error instanceof ParseWorkerDied
             ? Effect.andThen(Deferred.await(retired), Effect.fail(error))
@@ -79,10 +94,6 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
     Effect.retry({
       times: 2,
       while: (error) => error instanceof ParseWorkerDied,
-    }),
-    Effect.timeoutOrElse({
-      duration: "15 seconds",
-      orElse: () => Effect.fail(new ParseFailed("Citation parse timed out")),
     }),
   );
 
