@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import {
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type {
@@ -16,6 +20,11 @@ import type {
   ReferenceSource,
   SnapshotItem,
 } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
+import {
+  createCitationIndexHarness,
+  KEY_A,
+} from "@/services/citation-index/test-harness";
 
 import {
   CITATIONS_GUIDE_COMMAND,
@@ -80,7 +89,92 @@ const MISSING_ITEM_KEY = "EFGH6789";
 const SYNTAXES: CitationSyntaxes = {
   citekey: "included",
   wikilink: "excluded",
+  annotation: "included",
 };
+
+it("#1693 reports Annotation Citations and their omission through both CLI commands", async () => {
+  await using harness = await createCitationIndexHarness(
+    { "draft.md": `[](${annotationUri})` },
+    { zoteroRows: annotationRows },
+  );
+  const { index, lookup, draft, db, workspace, settings } = harness;
+  workspace.layoutReady();
+  await index.whenIndexed();
+  const handlers = createCitationsCliHandlers({
+    getIdentity: () => IDENTITY,
+    index: {
+      waitUntilSettled: (timeout) => index.waitUntilSettled(timeout),
+      readLookup: (request) => lookup.read(request),
+      citationKeys: () => index.citationKeys(),
+      annotationCitationKeys: () => index.annotationCitationKeys(),
+      getCitedBy: (key, answer) => index.getCitedBy(key, answer),
+      resolution: () => "fresh",
+      syntaxes: () => index.syntaxes(),
+      documentOmittedSyntaxes: () => index.documentOmittedSyntaxes(draft),
+      citedByOmittedSyntaxes: (key, answer) =>
+        index.citedByOmittedSyntaxes(key, answer),
+    },
+    lookupItem: async () => PRESENT,
+    readDocument: async () => {
+      const set = await index.getDocumentCitationSet(draft);
+      return { ...set, ...(await readReferenceSources(db, set.citations)) };
+    },
+  });
+  const references = async () =>
+    JSON.parse(
+      (await handlers[REFERENCES_COMMAND]({ file: "draft.md" })) as string,
+    );
+  const citedBy = async () =>
+    JSON.parse((await handlers[CITED_BY_COMMAND]({ key: KEY_A })) as string);
+  const reported = {
+    kind: "annotation",
+    raw: "ANN23456",
+    pageLabel: "42",
+    position: {
+      start: { line: 1, col: 1, offset: 0 },
+      end: { line: 1, col: 69, offset: 68 },
+    },
+  };
+  expect(await references()).toMatchObject({
+    ok: true,
+    entries: [
+      { kind: "resolved", key: KEY_A, refNumber: 1, occurrences: [reported] },
+    ],
+    omittedSyntaxes: [],
+    syntaxes: { annotation: "included" },
+  });
+  expect(await citedBy()).toMatchObject({
+    ok: true,
+    groups: [{ path: "draft.md", occurrences: [reported] }],
+    omittedSyntaxes: [],
+  });
+  settings.update({ "citation.annotation-citations": false });
+  expect(await references()).toMatchObject({
+    ok: true,
+    entries: [],
+    omittedSyntaxes: ["annotation"],
+    syntaxes: { annotation: "excluded" },
+  });
+  expect(await citedBy()).toMatchObject({
+    ok: true,
+    groups: [],
+    omittedSyntaxes: ["annotation"],
+    syntaxes: { annotation: "excluded" },
+  });
+  settings.update({ "citation.annotation-citations": true });
+  harness.metadataCache.change(
+    draft,
+    "[](zotero://open/library/items/PDF23456?annotation=ZZZZZZZZ)\n[](zotero://open/library/items/PDF23456)\n[](zotero://open/library/items/PDFNCKEY?annotation=ANNNCKEY)",
+  );
+  expect(await references()).toMatchObject({
+    ok: true,
+    entries: [
+      { kind: "unresolved", annotationKey: "ZZZZZZZZ", refNumber: 1 },
+      { kind: "malformed" },
+      { kind: "resolved", key: "NCKEY234", citekey: null, refNumber: 2 },
+    ],
+  });
+});
 
 function occurrence(
   raw: string,
@@ -256,6 +350,7 @@ function setup(options: SetupOptions = {}) {
     settleTimeoutMs: options.settleTimeoutMs,
     index: {
       citationKeys: () => [],
+      annotationCitationKeys: () => [],
       waitUntilSettled,
       readLookup,
       getCitedBy,
@@ -300,7 +395,7 @@ describe("zotlit:cited-by", () => {
       expect.any(CitationLookupAnswer),
     );
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 3,
+      contractVersion: 4,
       command: CITED_BY_COMMAND,
       ok: true,
       request: { key: ITEM_KEY },
@@ -346,14 +441,22 @@ describe("zotlit:cited-by", () => {
 
   it("reports citekey as excluded when the index says so", async () => {
     const { citedBy } = setup({
-      syntaxes: { citekey: "excluded", wikilink: "included" },
+      syntaxes: {
+        citekey: "excluded",
+        wikilink: "included",
+        annotation: "included",
+      },
     });
 
     const output = await citedBy({ key: ITEM_KEY });
 
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
-      syntaxes: { citekey: "excluded", wikilink: "included" },
+      syntaxes: {
+        citekey: "excluded",
+        wikilink: "included",
+        annotation: "included",
+      },
     });
   });
 
@@ -425,6 +528,7 @@ describe("zotlit:cited-by", () => {
     expect(readLookup).toHaveBeenCalledWith({
       citekeys: [ITEM_CITEKEY],
       indexedKeys: [],
+      annotationKeys: [],
     });
     expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
     expect(getCitedBy).toHaveBeenCalledWith(
@@ -656,7 +760,7 @@ describe("zotlit:cited-by", () => {
     expect(lookupItem).not.toHaveBeenCalled();
     expect(getCitedBy).not.toHaveBeenCalled();
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 3,
+      contractVersion: 4,
       command: CITED_BY_COMMAND,
       ok: false,
       request: { key: ITEM_KEY },
@@ -716,6 +820,7 @@ describe("zotlit:cited-by", () => {
       },
       index: {
         citationKeys: () => [],
+        annotationCitationKeys: () => [],
         waitUntilSettled: () => {
           order.push("settle");
           return Promise.resolve("settled");
@@ -751,7 +856,7 @@ describe("zotlit:references", () => {
 
     expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 3,
+      contractVersion: 4,
       command: REFERENCES_COMMAND,
       ok: true,
       request: { file: DOCUMENT_PATH },
@@ -841,14 +946,22 @@ describe("zotlit:references", () => {
 
   it("reports citekey as excluded when the index says so", async () => {
     const { references } = setup({
-      syntaxes: { citekey: "excluded", wikilink: "included" },
+      syntaxes: {
+        citekey: "excluded",
+        wikilink: "included",
+        annotation: "included",
+      },
     });
 
     const output = await references({ file: DOCUMENT_PATH });
 
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
-      syntaxes: { citekey: "excluded", wikilink: "included" },
+      syntaxes: {
+        citekey: "excluded",
+        wikilink: "included",
+        annotation: "included",
+      },
     });
   });
 
@@ -982,7 +1095,11 @@ describe("zotlit:references", () => {
         sources: new Map(),
         database: "ready",
       },
-      syntaxes: { citekey: "included", wikilink: "excluded" },
+      syntaxes: {
+        citekey: "included",
+        wikilink: "excluded",
+        annotation: "included",
+      },
       documentOmittedSyntaxes: ["wikilink"],
     });
 
@@ -1003,7 +1120,11 @@ describe("zotlit:references", () => {
         sources: new Map(),
         database: "ready",
       },
-      syntaxes: { citekey: "excluded", wikilink: "included" },
+      syntaxes: {
+        citekey: "excluded",
+        wikilink: "included",
+        annotation: "included",
+      },
       documentOmittedSyntaxes: ["citekey"],
     });
 
@@ -1027,7 +1148,11 @@ describe("zotlit:references", () => {
 
   it("reports the excluded syntax when a non-empty answer's document also holds occurrences of it", async () => {
     const { references } = setup({
-      syntaxes: { citekey: "included", wikilink: "excluded" },
+      syntaxes: {
+        citekey: "included",
+        wikilink: "excluded",
+        annotation: "included",
+      },
       documentOmittedSyntaxes: ["wikilink"],
     });
 
@@ -1150,7 +1275,7 @@ describe("zotlit:citations-guide", () => {
     const output = await guide({ topic: "positions" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 3,
+      contractVersion: 4,
       command: CITATIONS_GUIDE_COMMAND,
       ok: false,
       diagnostic: {

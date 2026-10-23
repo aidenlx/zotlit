@@ -849,7 +849,7 @@ describe("SettingsService v1→v10 migration", () => {
     });
   });
 
-  it("v5 data preserves the Pandoc and wikilink source choices", async () => {
+  it("v5 data preserves the Pandoc and wikilink choices and enables Annotation Citations", async () => {
     const plugin = new PluginStub({
       __VERSION__: 5,
       "citation.citekey-indexing": false,
@@ -859,6 +859,7 @@ describe("SettingsService v1→v10 migration", () => {
     const { service } = makeService({ plugin, migrateV5: migrateV5ToV6 });
     await service.ready;
 
+    expect(service.current?.["citation.annotation-citations"]).toBe(true);
     expect(service.current).toEqual({
       ...defaults,
       "citation.pandoc-citations": false,
@@ -870,6 +871,18 @@ describe("SettingsService v1→v10 migration", () => {
       "citation.wikilink-citations": true,
       "note.default-profile": defaultProfileWith(),
     });
+  });
+
+  it("preserves the Annotation Citations choice across a settings reload", async () => {
+    const { plugin, service } = makeService();
+    await service.ready;
+    service.update({ "citation.annotation-citations": false });
+    await service.flush();
+    await using reloaded = makeService({ plugin }).service;
+    await reloaded.ready;
+    expect(reloaded.current?.["citation.annotation-citations"]).toBe(false);
+    reloaded.update({ "citation.annotation-citations": RESET_SETTING });
+    expect(reloaded.current?.["citation.annotation-citations"]).toBe(true);
   });
 
   it("v6 data maps Citekey Editor Treatment to Pandoc navigation", async () => {

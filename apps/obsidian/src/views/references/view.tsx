@@ -443,7 +443,9 @@ export class ReferencesView extends ItemView {
         this.#deps,
         (citekey) => heldResolution(lookup, citekey),
         citations.flatMap(({ indexedKey, occurrences }) =>
-          indexedKey === null ? [occurrences[0]!.raw] : [],
+          indexedKey === null && occurrences[0]!.kind === "citekey"
+            ? [occurrences[0]!.raw]
+            : [],
         ),
       ),
     ]).then(([{ sources }, ambiguous]) => {

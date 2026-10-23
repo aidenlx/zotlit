@@ -100,6 +100,7 @@ export function registerCitationsCli(
         deps.citationIndex.waitUntilSettled(timeoutMs),
       readLookup: (request) => deps.citationLookup.read(request),
       citationKeys: () => deps.citationIndex.citationKeys(),
+      annotationCitationKeys: () => deps.citationIndex.annotationCitationKeys(),
       getCitedBy: (indexedKey, lookup) =>
         deps.citationIndex.getCitedBy(indexedKey, lookup),
       resolution: () =>
