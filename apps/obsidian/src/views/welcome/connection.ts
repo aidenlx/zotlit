@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { Effect } from "@/lib/effect";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 export type ConnectionReadout =
   | { status: "checking" }
@@ -21,13 +21,13 @@ export type ConnectionReadout =
 const ITEM_COUNT_KEY = ["welcome", "connection-readout"] as const;
 
 interface ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error" | "moved">;
+  reads: Pick<PlainZoteroReads, "state" | "error" | "moved">;
   queries: Pick<PlainQueryClients, "peek">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
 export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error" | "moved" | "ready">;
+  reads: Pick<PlainZoteroReads, "state" | "error" | "moved" | "reads">;
   queries: Pick<PlainQueryClients, "peek" | "read">;
 }
 
@@ -41,7 +41,7 @@ export type ReadConnectionSyncDeps = ConnectionQueryDeps;
  * @returns the unsubscribe.
  */
 export function holdConnectionReadout(deps: {
-  reads: Pick<ZoteroReadsService, "on">;
+  reads: Pick<PlainZoteroReads, "on">;
   queries: Pick<PlainQueryClients, "invalidate">;
 }): () => void {
   return deps.reads.on("changed", () =>
@@ -101,7 +101,7 @@ function missing(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
 export async function readConnectionStatus(
   deps: ReadConnectionStatusDeps,
 ): Promise<ConnectionReadout> {
-  const { reads } = await deps.reads.ready;
+  const { reads } = deps.reads;
   if (missing(deps)) return { status: "missing" };
 
   const held = await deps.queries.read(ITEM_COUNT_KEY, ({ signal }) =>

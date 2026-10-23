@@ -373,16 +373,14 @@ describe("literatureNotes vault property writes", () => {
       profile: source(sources.profile),
       template: source(sources.template),
       zoteroReads: {
-        ready: Promise.resolve({
-          reads: {
-            ItemsByIndexedKeys: ({ indexedKeys }: { indexedKeys: string[] }) =>
-              Effect.succeed(
-                new Map(
-                  indexedKeys.map((key) => [key, { indexedKey: key, key }]),
-                ),
+        reads: {
+          ItemsByIndexedKeys: ({ indexedKeys }: { indexedKeys: string[] }) =>
+            Effect.succeed(
+              new Map(
+                indexedKeys.map((key) => [key, { indexedKey: key, key }]),
               ),
-          },
-        }),
+            ),
+        },
       },
       zoteroPref: { dataDir: null },
       noteFeature: {

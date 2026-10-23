@@ -28,13 +28,13 @@ import type { PlainQueryClients } from "@/services/query-client/plain";
 import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type {
   ZoteroReadLease,
   ZoteroReadsEvents,
-  ZoteroReadsReady,
-  ZoteroReadsService,
 } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
@@ -275,7 +275,7 @@ export class DatabaseStub implements AsyncDisposable {
   readonly citekeys = new CitekeysStub(defaultCitekeys());
   itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
-  readonly #service: ZoteroReadsService;
+  readonly #service: TestReads;
   readonly #events = createNanoEvents<ZoteroReadsEvents>();
   readonly #ready = Promise.withResolvers<void>();
 
@@ -396,11 +396,23 @@ export class DatabaseStub implements AsyncDisposable {
         }) as ZoteroReadsClient,
     );
 
-  get ready(): Promise<ZoteroReadsReady> {
+  get ready(): TestReads["ready"] {
     return this.#ready.promise.then(async () => ({
       ...(await this.#service.ready),
       client: await Effect.runPromise(this.#client()),
     }));
+  }
+
+  get reads() {
+    return {
+      ...this.#service.reads,
+      CitationLookup: (
+        ...args: Parameters<ZoteroReadsClient["CitationLookup"]>
+      ) =>
+        Effect.flatMap(this.#client(), (client) =>
+          client.CitationLookup(...args),
+        ),
+    } as PlainZoteroReads["reads"];
   }
 
   async acquireRead(): Promise<ZoteroReadLease> {
@@ -408,7 +420,7 @@ export class DatabaseStub implements AsyncDisposable {
     return this.#service.acquireRead();
   }
 
-  get snapshot(): ZoteroReadsService["snapshot"] {
+  get snapshot(): PlainZoteroReads["snapshot"] {
     return Effect.andThen(
       Effect.promise(() => this.#ready.promise),
       this.#service.snapshot,
@@ -446,7 +458,7 @@ export class DatabaseStub implements AsyncDisposable {
   }
 
   [Symbol.asyncDispose](): Promise<void> {
-    return this.#service[Symbol.asyncDispose]();
+    return Promise.resolve(this.#service[Symbol.asyncDispose]());
   }
 }
 

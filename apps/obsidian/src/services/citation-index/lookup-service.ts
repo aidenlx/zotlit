@@ -10,8 +10,8 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { CitationLookupAnswer } from "./lookup";
 import type { CitationLookupRequest } from "./lookup";
@@ -21,7 +21,7 @@ const logger = getLogger("citation-index");
 export interface CitationLookupDeps {
   queryClient: Pick<PlainQueryClients, "client" | "invalidate">;
   libraryScope: Pick<LibraryScopeService, "ready" | "effective" | "on">;
-  reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
+  reads: Pick<PlainZoteroReads, "reads" | "state" | "on">;
 }
 
 export interface CitationLookupObservation extends Disposable {
@@ -84,9 +84,7 @@ export class CitationLookup extends Service {
       Effect.gen({ self: this }, function* () {
         yield* Effect.tryPromise(() => this.ready);
         yield* Effect.tryPromise(() => this.#deps.libraryScope.ready);
-        const { client } = yield* Effect.tryPromise(
-          () => this.#deps.reads.ready,
-        );
+        const client = this.#deps.reads.reads;
         while (true) {
           if (this.#deps.reads.state !== "ready") {
             this.#setStatus("failed");

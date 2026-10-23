@@ -136,7 +136,7 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
     app,
     settings: { subscribe: () => () => {} },
     pluginVersion: "2.1.3",
-    zoteroReads: { ready: Promise.resolve(), state: "ready" },
+    zoteroReads: { state: "ready" },
     zoteroPref: { dataDir: null },
     templates: {
       loaded: true,
@@ -1113,9 +1113,7 @@ An annotation.
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({
       zoteroReads: {
-        get ready() {
-          return Promise.reject(new Error("Unavailable"));
-        },
+        state: "degraded",
       } as unknown as TemplateWorkbenchDeps["zoteroReads"],
     });
     await expect(

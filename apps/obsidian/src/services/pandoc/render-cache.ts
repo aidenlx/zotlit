@@ -13,7 +13,7 @@ import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import {
   effectivePresentation,
@@ -54,7 +54,7 @@ interface BibliographyRenderEvents {
 
 export interface BibliographyRenderCacheOptions {
   profile: Pick<ProfileService, "ready" | "on">;
-  db: Pick<ZoteroReadsService, "on">;
+  db: Pick<PlainZoteroReads, "on">;
   pandocEngine: Pick<
     PlainPandocEngine,
     "getStatus" | "subscribe" | "getEngine"

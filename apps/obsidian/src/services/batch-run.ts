@@ -4,10 +4,8 @@ import { AbortError } from "@/lib/abort-error";
 // Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
 import { Effect, Stream } from "@/lib/effect";
 import { formatErrorMessage } from "@/lib/toast";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 /** A failed-item payload the run reports; rendered by the modal's failure row. */
 export interface BatchFailure {
@@ -221,7 +219,7 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
  * @throws when no Snapshot can be opened (no lease acquired).
  */
 export async function runBatchWrite<T extends BatchRunTask>(opts: {
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   tasks: readonly T[];
   controls: BatchRunControls;
   concurrency: number;

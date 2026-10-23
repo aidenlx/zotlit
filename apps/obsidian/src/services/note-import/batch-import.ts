@@ -41,10 +41,8 @@ import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
 import type {
   FlatTask,
@@ -76,7 +74,7 @@ export interface NoteImportDeps {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
   /** A note write's reads: one lease spans the write and what it imports. */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "state">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "state">;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;

@@ -13,11 +13,9 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -81,7 +79,7 @@ const groupRecord: AnnotationRecord = {
 async function fixture(serverID: string | null = SERVER_ID): Promise<
   AsyncDisposableStack & {
     reads: ZoteroReadsApi;
-    zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+    zoteroReads: Pick<TestReads, "acquireRead">;
   }
 > {
   const stack = new AsyncDisposableStack();

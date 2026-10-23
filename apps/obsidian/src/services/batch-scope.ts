@@ -19,10 +19,8 @@ import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import type { FlatGroupDef } from "@/views/batch-modal";
 
 const logger = getLogger("batch-scope");
@@ -125,7 +123,7 @@ export async function resolveBatchScope(
 
 /** The services a library-wide run reaches its Library Scope through. */
 export interface BatchScopePlanDeps {
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   settings: Pick<PlainPluginSettings, "current">;
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }

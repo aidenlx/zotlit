@@ -66,6 +66,7 @@ function harness() {
   const open = vi.fn();
   /** The signal of every document-text read a visit started, in order. */
   const textReads: AbortSignal[] = [];
+  const db = reads();
   const service = new CitationPopover({
     app: {
       vault: { getFileByPath: (path: string) => ({ path }) },
@@ -79,7 +80,7 @@ function harness() {
         },
       },
     },
-    db: reads(),
+    db,
     citationLookup: {
       read: async ({ citekeys = [] }: { citekeys?: readonly string[] }) =>
         lookupAnswer(
@@ -139,6 +140,7 @@ function harness() {
       targetEl = first,
       owner = parent,
     ) {
+      await db.ready;
       await act(async () => {
         void service.showWork({
           event: new MouseEvent("mouseover"),

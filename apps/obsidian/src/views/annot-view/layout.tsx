@@ -35,7 +35,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActionDeps, AnnotActions } from "./actions";
@@ -112,7 +112,7 @@ export interface AnnotationsLayoutDeps {
    */
   opener: Pick<TargetOpener, "open">;
   /** The database the Excerpt Image requests resolve through. */
-  reads: Pick<ZoteroReadsService, "acquireRead">;
+  reads: Pick<PlainZoteroReads, "acquireRead">;
   /**
    * The one read and write path for each Attachment's Annotations, so the
    * cards and the reader overlay show one Annotation Source's records rather

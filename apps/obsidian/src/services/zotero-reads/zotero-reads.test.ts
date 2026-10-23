@@ -1,17 +1,7 @@
-import {
-  Effect,
-  Exit,
-  Fiber,
-  Latch,
-  Layer,
-  PubSub,
-  Scope,
-  Stream,
-} from "effect";
 import { TestClock } from "effect/testing";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 
 import {
   buildNoteContextFromSource,
@@ -23,6 +13,19 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
+
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 
 import { layerRcRef } from "./connection";
 import { Connection } from "./connection";
@@ -199,13 +202,11 @@ function withReads<A, E>(
     reads: ZoteroReadsClient,
   ) => Effect.Effect<A, E, Connection | Scope.Scope>,
   options?: HandlersOptions,
-): Promise<A> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const reads = yield* makeInProcessClient(options);
-      return yield* body(reads);
-    }).pipe(Effect.scoped, Effect.provide(layerRcRef(opener))),
-  );
+): Effect.Effect<A, E> {
+  return Effect.gen(function* () {
+    const reads = yield* makeInProcessClient(options);
+    return yield* body(reads);
+  }).pipe(Effect.scoped, Effect.provide(layerRcRef(opener)));
 }
 
 /** The library-1 version a read saw: which connection answered. */
@@ -248,569 +249,674 @@ const noteResolvers: NoteResolvers = {
 };
 
 describe("ZoteroReads operations", () => {
-  it("Libraries lists every library with its group", async () => {
-    const { open } = fixtureOpener();
-    const libraries = await withReads(open, (reads) => reads.Libraries({}));
-    expect(libraries).toEqual([
-      {
-        libraryID: 1,
-        type: "user",
-        version: 1,
-        clientVersion: 3,
-        groupID: null,
-        name: null,
-      },
-      {
-        libraryID: 2,
-        type: "group",
-        version: 4,
-        clientVersion: 2,
-        groupID: 900,
-        name: "Lab",
-      },
-    ]);
-  });
-
-  it("ConnectionReadout counts top-level items across every library", async () => {
-    const { open } = fixtureOpener();
-    const readout = await withReads(open, (reads) =>
-      reads.ConnectionReadout({}),
-    );
-    expect(readout).toEqual({ itemCount: 4 });
-  });
-
-  it("ItemsByIndexedKeys answers user and group keys and leaves unknown keys out", async () => {
-    const { open } = fixtureOpener();
-    const items = await withReads(open, (reads) =>
-      reads.ItemsByIndexedKeys({
-        indexedKeys: ["MAIN2345", "GRPITEMSg900", "MISS2345", "GRPITEMSg1"],
-      }),
-    );
-    expect([...items.keys()]).toEqual(["MAIN2345", "GRPITEMSg900"]);
-    const main = items.get("MAIN2345")!;
-    expect(main.dateAdded.toString()).toBe("2024-01-01T00:00:00Z");
-    expect(main.customFields).toBeInstanceOf(Map);
-    expect(main.fields).toMatchObject({
-      itemType: "journalArticle",
-      title: "Main Study",
-    });
-    expect(main.creators).toEqual([
-      {
-        firstName: "Ada",
-        lastName: "Lovelace",
-        creatorType: "author",
-        fieldMode: 0,
-      },
-    ]);
-    expect(items.get("GRPITEMSg900")).toMatchObject({
-      libraryID: 2,
-      groupID: 900,
-    });
-  });
-
-  it("ItemFamily returns related items and child notes", async () => {
-    const { open } = fixtureOpener();
-    const [family, unknown] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.ItemFamily({ itemID: 1 }),
-        reads.ItemFamily({ itemID: 999 }),
-      ]),
-    );
-    expect(family.relatedItems.map((item) => item.key).sort()).toEqual([
-      "RELA2345",
-      "RELB2345",
-    ]);
-    expect(family.childNotes).toMatchObject([
-      { key: "NTE22345", title: "Methods", parentItemID: 1 },
-    ]);
-    expect(family.childNotes[0]!.dateModified).toBeInstanceOf(Temporal.Instant);
-    expect(unknown).toEqual({ relatedItems: [], childNotes: [] });
-  });
-
-  it("NoteSource returns a bundle the renderer builds into the note context", async () => {
-    const { open } = fixtureOpener();
-    const [source, missing] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.NoteSource({ itemID: 1 }),
-        reads.NoteSource({ itemID: 999 }),
-      ]),
-    );
-    expect(missing).toBeNull();
-    expect(source!.username).toBe("reader");
-    expect(
-      source!.annotationsByAttachment.get(10)![0]!.dateAdded,
-    ).toBeInstanceOf(Temporal.Instant);
-
-    const ctx = buildNoteContextFromSource(source!, noteResolvers);
-    expect(ctx.title).toBe("Main Study");
-    expect(ctx.weblink).toBe("https://www.zotero.org/reader/items/MAIN2345");
-    expect(ctx.tags.map(String)).toEqual(["zt"]);
-    expect(ctx.collections.map(String)).toEqual(["Reading"]);
-    expect(ctx.attachments.map((a) => a.key)).toEqual(["ATCH2345"]);
-    expect(ctx.annotations.map((a) => a.key)).toEqual(["ANNT2345", "ANNT2346"]);
-    expect(ctx.annotations[0]!.tags.map(String)).toEqual(["claim"]);
-    expect(ctx.relatedItems.map((r) => r.title)).toEqual([
-      "Alpha Paper",
-      "Beta Book",
-    ]);
-    expect(ctx.notes.map((n) => n.key)).toEqual(["NTE22345"]);
-  });
-
-  it("ItemFacets streams each item's own tags and collections in request order", async () => {
-    const { open } = fixtureOpener();
-    const slices = await withReads(
-      open,
-      (reads) =>
-        Stream.runCollect(
-          reads.ItemFacets({
-            items: [
-              { itemID: 2, libraryID: 1 },
-              { itemID: 1, libraryID: 1 },
-              { itemID: 300, libraryID: 2 },
-              { itemID: 999, libraryID: 1 },
-            ],
-          }),
-        ),
-      { sliceSize: 2 },
-    );
-    expect(
-      slices.map((slice) =>
-        slice.map(({ itemID, facets }) => ({
-          itemID,
-          tags: facets.tags.map(({ tag }) => tag.name),
-          collections: facets.collections.map(({ name }) => name),
-        })),
-      ),
-    ).toEqual([
-      [
-        { itemID: 2, tags: ["method"], collections: ["Reading"] },
-        { itemID: 1, tags: ["zt"], collections: ["Reading"] },
-      ],
-      [
-        { itemID: 300, tags: [], collections: [] },
-        { itemID: 999, tags: [], collections: [] },
-      ],
-    ]);
-  });
-
-  it("NoteSource takes the caller's username over the signed-in account", async () => {
-    const { open } = fixtureOpener();
-    const source = await withReads(open, (reads) =>
-      reads.NoteSource({ itemID: 1, username: null }),
-    );
-    expect(source!.username).toBeNull();
-  });
-
-  it("AnnotationSources returns annotations by key with their attachment, parent item, and tags", async () => {
-    const { open } = fixtureOpener();
-    const sources = await withReads(open, (reads) =>
-      reads.AnnotationSources({ libraryID: 1, keys: ["ANNT2345", "MISS2345"] }),
-    );
-    expect(sources.annotations.map((a) => a.key)).toEqual(["ANNT2345"]);
-    expect(sources.annotations[0]!.position).toEqual({
-      pageIndex: 0,
-      rects: [[0, 0, 1, 1]],
-    });
-    expect(sources.attachments.map((a) => a.key)).toEqual(["ATCH2345"]);
-    expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
-    expect(sources.tagsByItemID.get(100)!.map((tag) => tag.tag.name)).toEqual([
-      "claim",
-    ]);
-    expect(sources.username).toBe("reader");
-  });
-
-  it("AnnotationsOfAttachment returns the attachment's annotations and the account user", async () => {
-    const { open } = fixtureOpener();
-    const [found, unknown] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.AnnotationsOfAttachment({ attachmentKey: "ATCH2345" }),
-        reads.AnnotationsOfAttachment({ attachmentKey: "MISS2345" }),
-      ]),
-    );
-    expect(found.attachment).toMatchObject({
-      key: "ATCH2345",
-      contentType: "application/pdf",
-    });
-    expect(found.annotations.map((a) => [a.key, a.type])).toEqual([
-      ["ANNT2345", 1],
-      ["ANNT2346", 3],
-    ]);
-    expect(found.accountUserID).toBe(42);
-    expect(unknown).toEqual({
-      attachment: null,
-      annotations: [],
-      accountUserID: 42,
-    });
-  });
-
-  it("AttachmentsOf lists the attachments of the given items", async () => {
-    const { open } = fixtureOpener();
-    const attachments = await withReads(open, (reads) =>
-      reads.AttachmentsOf({ itemIDs: [1, 2] }),
-    );
-    expect(attachments).toMatchObject([
-      {
-        key: "ATCH2345",
-        parentItemID: 1,
-        path: "storage:paper.pdf",
-        linkMode: 0,
-      },
-    ]);
-    expect(attachments[0]!.dateModified).toBeInstanceOf(Temporal.Instant);
-  });
-
-  it("DisplayRefs streams one entry per id, null for an id with no live item", async () => {
-    const { open } = fixtureOpener();
-    const slices = await withReads(
-      open,
-      (reads) =>
-        Stream.runCollect(reads.DisplayRefs({ itemIDs: [1, 300, 999] })),
-      { sliceSize: 2 },
-    );
-    expect(slices).toEqual([
-      [
-        {
-          itemID: 1,
-          ref: {
-            itemID: 1,
-            libraryID: 1,
-            key: "MAIN2345",
-            groupID: null,
-            indexedKey: "MAIN2345",
-            title: "Main Study",
-          },
-        },
-        {
-          itemID: 300,
-          ref: {
-            itemID: 300,
-            libraryID: 2,
-            key: "GRPITEMS",
-            groupID: 900,
-            indexedKey: "GRPITEMSg900",
-            title: "Group Work",
-          },
-        },
-      ],
-      [{ itemID: 999, ref: null }],
-    ]);
-  });
-
-  it("NoteBodies returns notes with their bodies and leaves unknown keys out", async () => {
-    const { open } = fixtureOpener();
-    const notes = await withReads(open, (reads) =>
-      reads.NoteBodies({ libraryID: 1, keys: ["NTE22345", "MISS2345"] }),
-    );
-    expect(notes).toMatchObject([
-      { key: "NTE22345", note: "<p>body</p>", title: "Methods" },
-    ]);
-    expect(notes[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
-  });
-
-  it("WorkLabels returns label inputs for top-level items only", async () => {
-    const { open } = fixtureOpener();
-    const labels = await withReads(open, (reads) =>
-      reads.WorkLabels({ indexedKeys: ["MAIN2345", "ATCH2345", "MISS2345"] }),
-    );
-    expect([...labels]).toEqual([
-      [
-        "MAIN2345",
+  it.effect("Libraries lists every library with its group", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const libraries = yield* withReads(open, (reads) => reads.Libraries({}));
+      expect(libraries).toEqual([
         {
           libraryID: 1,
-          creators: [
+          type: "user",
+          version: 1,
+          clientVersion: 3,
+          groupID: null,
+          name: null,
+        },
+        {
+          libraryID: 2,
+          type: "group",
+          version: 4,
+          clientVersion: 2,
+          groupID: 900,
+          name: "Lab",
+        },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "ConnectionReadout counts top-level items across every library",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const readout = yield* withReads(open, (reads) =>
+          reads.ConnectionReadout({}),
+        );
+        expect(readout).toEqual({ itemCount: 4 });
+      }),
+  );
+
+  it.effect(
+    "ItemsByIndexedKeys answers user and group keys and leaves unknown keys out",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const items = yield* withReads(open, (reads) =>
+          reads.ItemsByIndexedKeys({
+            indexedKeys: ["MAIN2345", "GRPITEMSg900", "MISS2345", "GRPITEMSg1"],
+          }),
+        );
+        expect([...items.keys()]).toEqual(["MAIN2345", "GRPITEMSg900"]);
+        const main = items.get("MAIN2345")!;
+        expect(main.dateAdded.toString()).toBe("2024-01-01T00:00:00Z");
+        expect(main.customFields).toBeInstanceOf(Map);
+        expect(main.fields).toMatchObject({
+          itemType: "journalArticle",
+          title: "Main Study",
+        });
+        expect(main.creators).toEqual([
+          {
+            firstName: "Ada",
+            lastName: "Lovelace",
+            creatorType: "author",
+            fieldMode: 0,
+          },
+        ]);
+        expect(items.get("GRPITEMSg900")).toMatchObject({
+          libraryID: 2,
+          groupID: 900,
+        });
+      }),
+  );
+
+  it.effect("ItemFamily returns related items and child notes", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const [family, unknown] = yield* withReads(open, (reads) =>
+        Effect.all([
+          reads.ItemFamily({ itemID: 1 }),
+          reads.ItemFamily({ itemID: 999 }),
+        ]),
+      );
+      expect(family.relatedItems.map((item) => item.key).sort()).toEqual([
+        "RELA2345",
+        "RELB2345",
+      ]);
+      expect(family.childNotes).toMatchObject([
+        { key: "NTE22345", title: "Methods", parentItemID: 1 },
+      ]);
+      expect(family.childNotes[0]!.dateModified).toBeInstanceOf(
+        Temporal.Instant,
+      );
+      expect(unknown).toEqual({ relatedItems: [], childNotes: [] });
+    }),
+  );
+
+  it.effect(
+    "NoteSource returns a bundle the renderer builds into the note context",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const [source, missing] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.NoteSource({ itemID: 1 }),
+            reads.NoteSource({ itemID: 999 }),
+          ]),
+        );
+        expect(missing).toBeNull();
+        expect(source!.username).toBe("reader");
+        expect(
+          source!.annotationsByAttachment.get(10)![0]!.dateAdded,
+        ).toBeInstanceOf(Temporal.Instant);
+
+        const ctx = buildNoteContextFromSource(source!, noteResolvers);
+        expect(ctx.title).toBe("Main Study");
+        expect(ctx.weblink).toBe(
+          "https://www.zotero.org/reader/items/MAIN2345",
+        );
+        expect(ctx.tags.map(String)).toEqual(["zt"]);
+        expect(ctx.collections.map(String)).toEqual(["Reading"]);
+        expect(ctx.attachments.map((a) => a.key)).toEqual(["ATCH2345"]);
+        expect(ctx.annotations.map((a) => a.key)).toEqual([
+          "ANNT2345",
+          "ANNT2346",
+        ]);
+        expect(ctx.annotations[0]!.tags.map(String)).toEqual(["claim"]);
+        expect(ctx.relatedItems.map((r) => r.title)).toEqual([
+          "Alpha Paper",
+          "Beta Book",
+        ]);
+        expect(ctx.notes.map((n) => n.key)).toEqual(["NTE22345"]);
+      }),
+  );
+
+  it.effect(
+    "ItemFacets streams each item's own tags and collections in request order",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const slices = yield* withReads(
+          open,
+          (reads) =>
+            Stream.runCollect(
+              reads.ItemFacets({
+                items: [
+                  { itemID: 2, libraryID: 1 },
+                  { itemID: 1, libraryID: 1 },
+                  { itemID: 300, libraryID: 2 },
+                  { itemID: 999, libraryID: 1 },
+                ],
+              }),
+            ),
+          { sliceSize: 2 },
+        );
+        expect(
+          slices.map((slice) =>
+            slice.map(({ itemID, facets }) => ({
+              itemID,
+              tags: facets.tags.map(({ tag }) => tag.name),
+              collections: facets.collections.map(({ name }) => name),
+            })),
+          ),
+        ).toEqual([
+          [
+            { itemID: 2, tags: ["method"], collections: ["Reading"] },
+            { itemID: 1, tags: ["zt"], collections: ["Reading"] },
+          ],
+          [
+            { itemID: 300, tags: [], collections: [] },
+            { itemID: 999, tags: [], collections: [] },
+          ],
+        ]);
+      }),
+  );
+
+  it.effect(
+    "NoteSource takes the caller's username over the signed-in account",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const source = yield* withReads(open, (reads) =>
+          reads.NoteSource({ itemID: 1, username: null }),
+        );
+        expect(source!.username).toBeNull();
+      }),
+  );
+
+  it.effect(
+    "AnnotationSources returns annotations by key with their attachment, parent item, and tags",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const sources = yield* withReads(open, (reads) =>
+          reads.AnnotationSources({
+            libraryID: 1,
+            keys: ["ANNT2345", "MISS2345"],
+          }),
+        );
+        expect(sources.annotations.map((a) => a.key)).toEqual(["ANNT2345"]);
+        expect(sources.annotations[0]!.position).toEqual({
+          pageIndex: 0,
+          rects: [[0, 0, 1, 1]],
+        });
+        expect(sources.attachments.map((a) => a.key)).toEqual(["ATCH2345"]);
+        expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
+        expect(
+          sources.tagsByItemID.get(100)!.map((tag) => tag.tag.name),
+        ).toEqual(["claim"]);
+        expect(sources.username).toBe("reader");
+      }),
+  );
+
+  it.effect(
+    "AnnotationsOfAttachment returns the attachment's annotations and the account user",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const [found, unknown] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.AnnotationsOfAttachment({ attachmentKey: "ATCH2345" }),
+            reads.AnnotationsOfAttachment({ attachmentKey: "MISS2345" }),
+          ]),
+        );
+        expect(found.attachment).toMatchObject({
+          key: "ATCH2345",
+          contentType: "application/pdf",
+        });
+        expect(found.annotations.map((a) => [a.key, a.type])).toEqual([
+          ["ANNT2345", 1],
+          ["ANNT2346", 3],
+        ]);
+        expect(found.accountUserID).toBe(42);
+        expect(unknown).toEqual({
+          attachment: null,
+          annotations: [],
+          accountUserID: 42,
+        });
+      }),
+  );
+
+  it.effect("AttachmentsOf lists the attachments of the given items", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const attachments = yield* withReads(open, (reads) =>
+        reads.AttachmentsOf({ itemIDs: [1, 2] }),
+      );
+      expect(attachments).toMatchObject([
+        {
+          key: "ATCH2345",
+          parentItemID: 1,
+          path: "storage:paper.pdf",
+          linkMode: 0,
+        },
+      ]);
+      expect(attachments[0]!.dateModified).toBeInstanceOf(Temporal.Instant);
+    }),
+  );
+
+  it.effect(
+    "DisplayRefs streams one entry per id, null for an id with no live item",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const slices = yield* withReads(
+          open,
+          (reads) =>
+            Stream.runCollect(reads.DisplayRefs({ itemIDs: [1, 300, 999] })),
+          { sliceSize: 2 },
+        );
+        expect(slices).toEqual([
+          [
             {
-              firstName: "Ada",
-              lastName: "Lovelace",
-              creatorType: "author",
-              fieldMode: 0,
+              itemID: 1,
+              ref: {
+                itemID: 1,
+                libraryID: 1,
+                key: "MAIN2345",
+                groupID: null,
+                indexedKey: "MAIN2345",
+                title: "Main Study",
+              },
+            },
+            {
+              itemID: 300,
+              ref: {
+                itemID: 300,
+                libraryID: 2,
+                key: "GRPITEMS",
+                groupID: 900,
+                indexedKey: "GRPITEMSg900",
+                title: "Group Work",
+              },
             },
           ],
-          primaryCreatorType: "author",
-          title: "Main Study",
-          shortTitle: "Main",
-          date: "2024-05-06",
-        },
-      ],
-    ]);
-  });
+          [{ itemID: 999, ref: null }],
+        ]);
+      }),
+  );
 
-  it("AttachmentPathIndex streams every attachment beside its parent key, a slice per query", async () => {
-    const { open } = fixtureOpener(
-      () => `
+  it.effect(
+    "NoteBodies returns notes with their bodies and leaves unknown keys out",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const notes = yield* withReads(open, (reads) =>
+          reads.NoteBodies({ libraryID: 1, keys: ["NTE22345", "MISS2345"] }),
+        );
+        expect(notes).toMatchObject([
+          { key: "NTE22345", note: "<p>body</p>", title: "Methods" },
+        ]);
+        expect(notes[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+      }),
+  );
+
+  it.effect("WorkLabels returns label inputs for top-level items only", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const labels = yield* withReads(open, (reads) =>
+        reads.WorkLabels({ indexedKeys: ["MAIN2345", "ATCH2345", "MISS2345"] }),
+      );
+      expect([...labels]).toEqual([
+        [
+          "MAIN2345",
+          {
+            libraryID: 1,
+            creators: [
+              {
+                firstName: "Ada",
+                lastName: "Lovelace",
+                creatorType: "author",
+                fieldMode: 0,
+              },
+            ],
+            primaryCreatorType: "author",
+            title: "Main Study",
+            shortTitle: "Main",
+            date: "2024-05-06",
+          },
+        ],
+      ]);
+    }),
+  );
+
+  it.effect(
+    "AttachmentPathIndex streams every attachment beside its parent key, a slice per query",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
           values (11, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATCHSOLO');
         insert into itemAttachments (itemID, parentItemID, linkMode, path)
           values (11, null, 0, 'storage:loose.pdf');
       `,
-    );
-    const slices = await withReads(
-      open,
-      (reads) => Stream.runCollect(reads.AttachmentPathIndex({})),
-      { sliceSize: 1 },
-    );
-    expect(
-      slices.map((slice) =>
-        slice.map((attachment) => [
-          attachment.key,
-          attachment.parentIndexedKey,
-          attachment.path,
-        ]),
-      ),
-    ).toEqual([
-      [["ATCH2345", "MAIN2345", "storage:paper.pdf"]],
-      [["ATCHSOLO", null, "storage:loose.pdf"]],
-    ]);
-  });
+        );
+        const slices = yield* withReads(
+          open,
+          (reads) => Stream.runCollect(reads.AttachmentPathIndex({})),
+          { sliceSize: 1 },
+        );
+        expect(
+          slices.map((slice) =>
+            slice.map((attachment) => [
+              attachment.key,
+              attachment.parentIndexedKey,
+              attachment.path,
+            ]),
+          ),
+        ).toEqual([
+          [["ATCH2345", "MAIN2345", "storage:paper.pdf"]],
+          [["ATCHSOLO", null, "storage:loose.pdf"]],
+        ]);
+      }),
+  );
 
-  it("AttachmentsByKeys returns one library's attachments by key and leaves unknown keys out", async () => {
-    const { open } = fixtureOpener(
-      () => `
+  it.effect(
+    "AttachmentsByKeys returns one library's attachments by key and leaves unknown keys out",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
           values (201, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'IMGE2345');
         insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
           values (201, 200, 0, 'image/png', 'storage:figure.png');
       `,
-    );
-    const [found, otherLibrary] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.AttachmentsByKeys({
-          libraryID: 1,
-          keys: ["IMGE2345", "ATCH2345", "MISS2345"],
-        }),
-        reads.AttachmentsByKeys({ libraryID: 2, keys: ["IMGE2345"] }),
-      ]),
-    );
-    expect(found.map((a) => [a.key, a.parentItemID, a.contentType])).toEqual([
-      ["IMGE2345", 200, "image/png"],
-      ["ATCH2345", 1, "application/pdf"],
-    ]);
-    expect(found[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
-    expect(otherLibrary).toEqual([]);
-  });
+        );
+        const [found, otherLibrary] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.AttachmentsByKeys({
+              libraryID: 1,
+              keys: ["IMGE2345", "ATCH2345", "MISS2345"],
+            }),
+            reads.AttachmentsByKeys({ libraryID: 2, keys: ["IMGE2345"] }),
+          ]),
+        );
+        expect(
+          found.map((a) => [a.key, a.parentItemID, a.contentType]),
+        ).toEqual([
+          ["IMGE2345", 200, "image/png"],
+          ["ATCH2345", 1, "application/pdf"],
+        ]);
+        expect(found[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
+        expect(otherLibrary).toEqual([]);
+      }),
+  );
 
-  it("DatabaseIdentity names the account and the Local API database", async () => {
-    const { open } = fixtureOpener(
-      () => `
+  it.effect(
+    "DatabaseIdentity names the account and the Local API database",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `
         insert into settings (setting, key, value)
           values ('account', 'localUserKey', 'v3aG8nQf'),
                  ('localAPI', 'serverID', 'A8sf5Zsz8ySw');
       `,
-    );
-    const identity = await withReads(open, (reads) =>
-      reads.DatabaseIdentity({}),
-    );
-    expect(identity).toEqual({
-      userID: 42,
-      localUserKey: "v3aG8nQf",
-      serverID: "A8sf5Zsz8ySw",
-    });
-  });
+        );
+        const identity = yield* withReads(open, (reads) =>
+          reads.DatabaseIdentity({}),
+        );
+        expect(identity).toEqual({
+          userID: 42,
+          localUserKey: "v3aG8nQf",
+          serverID: "A8sf5Zsz8ySw",
+        });
+      }),
+  );
 
-  it("ItemSnapshot exports the same Item Snapshot as a direct export", async () => {
-    const { open } = fixtureOpener();
-    const options = {
-      provenance: {
-        kind: "connected",
-        installationId: "install",
-        vault: "Vault",
-      },
-      vaultTargets: { notes: { MAIN2345: "Literature/Main.md" } },
-    } as const;
-    const selection = {
-      library: { type: "personal" },
-      key: "MAIN2345",
-    } as const;
-    const snapshot = await withReads(open, (reads) =>
-      reads.ItemSnapshot({ selection, ...options }),
-    );
-
-    const direct = createClient(":memory:");
-    using _direct = { [Symbol.dispose]: () => direct.$client.close() };
-    createFixtureSchema(direct.$client);
-    direct.$client.exec(SEED);
-    expect(snapshot).toEqual(exportItemSnapshot(direct, selection, options));
-    expect(snapshot.item.title).toBe("Main Study");
-  });
-
-  it("ItemSnapshot fails with DbUnavailable for an Item outside the selected Library", async () => {
-    const { open } = fixtureOpener();
-    const error = await withReads(open, (reads) =>
-      Effect.flip(
-        reads.ItemSnapshot({
-          selection: {
-            library: { type: "group", groupID: 900 },
-            key: "MAIN2345",
+  it.effect(
+    "ItemSnapshot exports the same Item Snapshot as a direct export",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const options = {
+          provenance: {
+            kind: "connected",
+            installationId: "install",
+            vault: "Vault",
           },
-          provenance: { kind: "sample", id: "x" },
-        }),
-      ),
-    );
-    expect(error).toBeInstanceOf(DbUnavailable);
-  });
+          vaultTargets: { notes: { MAIN2345: "Literature/Main.md" } },
+        } as const;
+        const selection = {
+          library: { type: "personal" },
+          key: "MAIN2345",
+        } as const;
+        const snapshot = yield* withReads(open, (reads) =>
+          reads.ItemSnapshot({ selection, ...options }),
+        );
 
-  it("ItemType names the type of any live Item, child Items included", async () => {
-    const { open } = fixtureOpener();
-    const types = await withReads(open, (reads) =>
-      Effect.all([
-        reads.ItemType({ indexedKey: "MAIN2345" }),
-        reads.ItemType({ indexedKey: "ATCH2345" }),
-        reads.ItemType({ indexedKey: "NTE22345" }),
-        reads.ItemType({ indexedKey: "ANNT2345" }),
-        reads.ItemType({ indexedKey: "GRPITEMSg900" }),
-        reads.ItemType({ indexedKey: "MISS2345" }),
-      ]),
-    );
-    expect(types).toEqual([
-      { libraryID: 1, key: "MAIN2345", itemType: "journalArticle" },
-      { libraryID: 1, key: "ATCH2345", itemType: "attachment" },
-      { libraryID: 1, key: "NTE22345", itemType: "note" },
-      { libraryID: 1, key: "ANNT2345", itemType: "annotation" },
-      { libraryID: 2, key: "GRPITEMS", itemType: "journalArticle" },
-      null,
-    ]);
-  });
+        const direct = createClient(":memory:");
+        using _direct = { [Symbol.dispose]: () => direct.$client.close() };
+        createFixtureSchema(direct.$client);
+        direct.$client.exec(SEED);
+        expect(snapshot).toEqual(
+          exportItemSnapshot(direct, selection, options),
+        );
+        expect(snapshot.item.title).toBe("Main Study");
+      }),
+  );
 
-  it("AnnotViewAttachments lists an item's attachments, or a standalone attachment alone, with annotation counts", async () => {
-    const { open } = fixtureOpener(
-      () => `
+  it.effect(
+    "ItemSnapshot fails with DbUnavailable for an Item outside the selected Library",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const error = yield* withReads(open, (reads) =>
+          Effect.flip(
+            reads.ItemSnapshot({
+              selection: {
+                library: { type: "group", groupID: 900 },
+                key: "MAIN2345",
+              },
+              provenance: { kind: "sample", id: "x" },
+            }),
+          ),
+        );
+        expect(error).toBeInstanceOf(DbUnavailable);
+      }),
+  );
+
+  it.effect(
+    "ItemType names the type of any live Item, child Items included",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const types = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.ItemType({ indexedKey: "MAIN2345" }),
+            reads.ItemType({ indexedKey: "ATCH2345" }),
+            reads.ItemType({ indexedKey: "NTE22345" }),
+            reads.ItemType({ indexedKey: "ANNT2345" }),
+            reads.ItemType({ indexedKey: "GRPITEMSg900" }),
+            reads.ItemType({ indexedKey: "MISS2345" }),
+          ]),
+        );
+        expect(types).toEqual([
+          { libraryID: 1, key: "MAIN2345", itemType: "journalArticle" },
+          { libraryID: 1, key: "ATCH2345", itemType: "attachment" },
+          { libraryID: 1, key: "NTE22345", itemType: "note" },
+          { libraryID: 1, key: "ANNT2345", itemType: "annotation" },
+          { libraryID: 2, key: "GRPITEMS", itemType: "journalArticle" },
+          null,
+        ]);
+      }),
+  );
+
+  it.effect(
+    "AnnotViewAttachments lists an item's attachments, or a standalone attachment alone, with annotation counts",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
           values (11, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'LOOS2345');
         insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
           values (11, null, 0, 'application/pdf', 'storage:loose.pdf');
       `,
-    );
-    const [ofItem, standalone, unknown] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.AnnotViewAttachments({
-          libraryID: 1,
-          key: "MAIN2345",
-          standalone: false,
-        }),
-        reads.AnnotViewAttachments({
-          libraryID: 1,
-          key: "LOOS2345",
-          standalone: true,
-        }),
-        reads.AnnotViewAttachments({
-          libraryID: 1,
-          key: "MISS2345",
-          standalone: true,
-        }),
-      ]),
-    );
-    expect(ofItem).toEqual([
-      {
-        itemID: 10,
-        indexedKey: "ATCH2345",
-        path: "storage:paper.pdf",
-        annotCount: 2,
-      },
-    ]);
-    expect(standalone).toEqual([
-      {
-        itemID: 11,
-        indexedKey: "LOOS2345",
-        path: "storage:loose.pdf",
-        annotCount: 0,
-      },
-    ]);
-    expect(unknown).toEqual([]);
-  });
+        );
+        const [ofItem, standalone, unknown] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.AnnotViewAttachments({
+              libraryID: 1,
+              key: "MAIN2345",
+              standalone: false,
+            }),
+            reads.AnnotViewAttachments({
+              libraryID: 1,
+              key: "LOOS2345",
+              standalone: true,
+            }),
+            reads.AnnotViewAttachments({
+              libraryID: 1,
+              key: "MISS2345",
+              standalone: true,
+            }),
+          ]),
+        );
+        expect(ofItem).toEqual([
+          {
+            itemID: 10,
+            indexedKey: "ATCH2345",
+            path: "storage:paper.pdf",
+            annotCount: 2,
+          },
+        ]);
+        expect(standalone).toEqual([
+          {
+            itemID: 11,
+            indexedKey: "LOOS2345",
+            path: "storage:loose.pdf",
+            annotCount: 0,
+          },
+        ]);
+        expect(unknown).toEqual([]);
+      }),
+  );
 
-  it("ReaderTargetKeys names a push's attachment, parent item, and live selected annotations", async () => {
-    const { open } = fixtureOpener();
-    const [named, unknown] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.ReaderTargetKeys({ attachmentID: 10, selected: [101, 999] }),
-        reads.ReaderTargetKeys({ attachmentID: 999, selected: [] }),
-      ]),
-    );
-    expect(named).toEqual({
-      attachmentKey: "ATCH2345",
-      itemKey: "MAIN2345",
-      selected: ["ANNT2346"],
-    });
-    expect(unknown).toBeNull();
-  });
+  it.effect(
+    "ReaderTargetKeys names a push's attachment, parent item, and live selected annotations",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const [named, unknown] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.ReaderTargetKeys({ attachmentID: 10, selected: [101, 999] }),
+            reads.ReaderTargetKeys({ attachmentID: 999, selected: [] }),
+          ]),
+        );
+        expect(named).toEqual({
+          attachmentKey: "ATCH2345",
+          itemKey: "MAIN2345",
+          selected: ["ANNT2346"],
+        });
+        expect(unknown).toBeNull();
+      }),
+  );
 
-  it("ScopeItemIDs lists a library's or a collection's items or notes, null for an unknown collection", async () => {
-    const { open } = fixtureOpener();
-    const [items, filed, notes, unknown] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.ScopeItemIDs({ kind: "literature-items", libraryID: 1 }),
-        reads.ScopeItemIDs({
-          kind: "literature-items",
-          libraryID: 1,
-          collectionKey: "CLL22345",
-        }),
-        reads.ScopeItemIDs({ kind: "notes", libraryID: 1 }),
-        reads.ScopeItemIDs({
-          kind: "notes",
-          libraryID: 1,
-          collectionKey: "MISS2345",
-        }),
-      ]),
-    );
-    expect(items).toEqual([1, 3, 2]);
-    expect(filed).toEqual([1, 2]);
-    expect(notes).toEqual([200]);
-    expect(unknown).toBeNull();
-  });
+  it.effect(
+    "ScopeItemIDs lists a library's or a collection's items or notes, null for an unknown collection",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const [items, filed, notes, unknown] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.ScopeItemIDs({ kind: "literature-items", libraryID: 1 }),
+            reads.ScopeItemIDs({
+              kind: "literature-items",
+              libraryID: 1,
+              collectionKey: "CLL22345",
+            }),
+            reads.ScopeItemIDs({ kind: "notes", libraryID: 1 }),
+            reads.ScopeItemIDs({
+              kind: "notes",
+              libraryID: 1,
+              collectionKey: "MISS2345",
+            }),
+          ]),
+        );
+        expect(items).toEqual([1, 3, 2]);
+        expect(filed).toEqual([1, 2]);
+        expect(notes).toEqual([200]);
+        expect(unknown).toBeNull();
+      }),
+  );
 
-  it("NoteRefs streams one entry per id, telling a trashed note from a non-note id", async () => {
-    const { open } = fixtureOpener(
-      () => `
+  it.effect(
+    "NoteRefs streams one entry per id, telling a trashed note from a non-note id",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `
         insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
           values (201, 3, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'TRSH2345');
         insert into itemNotes (itemID, parentItemID, note, title)
           values (201, null, '<p>gone</p>', 'Gone');
         insert into deletedItems (itemID) values (201);
       `,
-    );
-    const slices = await withReads(
-      open,
-      (reads) => Stream.runCollect(reads.NoteRefs({ itemIDs: [200, 201, 1] })),
-      { sliceSize: 2 },
-    );
-    expect(slices).toMatchObject([
-      [
-        {
-          itemID: 200,
-          note: {
-            itemID: 200,
-            key: "NTE22345",
-            parentItemID: 1,
-            title: "Methods",
-          },
-          trashed: false,
-        },
-        { itemID: 201, note: null, trashed: true },
-      ],
-      [{ itemID: 1, note: null, trashed: false }],
-    ]);
-    expect(slices[0]![0]!.note!.dateModified).toBeInstanceOf(Temporal.Instant);
-  });
+        );
+        const slices = yield* withReads(
+          open,
+          (reads) =>
+            Stream.runCollect(reads.NoteRefs({ itemIDs: [200, 201, 1] })),
+          { sliceSize: 2 },
+        );
+        expect(slices).toMatchObject([
+          [
+            {
+              itemID: 200,
+              note: {
+                itemID: 200,
+                key: "NTE22345",
+                parentItemID: 1,
+                title: "Methods",
+              },
+              trashed: false,
+            },
+            { itemID: 201, note: null, trashed: true },
+          ],
+          [{ itemID: 1, note: null, trashed: false }],
+        ]);
+        expect(slices[0]![0]!.note!.dateModified).toBeInstanceOf(
+          Temporal.Instant,
+        );
+      }),
+  );
 
-  it("ChildNoteRefs streams each parent's display ref beside its child notes", async () => {
-    const { open } = fixtureOpener();
-    const slices = await withReads(
-      open,
-      (reads) =>
-        Stream.runCollect(reads.ChildNoteRefs({ itemIDs: [1, 2, 999] })),
-      { sliceSize: 2 },
-    );
-    expect(slices).toMatchObject([
-      [
-        {
-          itemID: 1,
-          ref: { indexedKey: "MAIN2345", title: "Main Study" },
-          notes: [{ itemID: 200, key: "NTE22345" }],
-        },
-        { itemID: 2, ref: { indexedKey: "RELB2345" }, notes: [] },
-      ],
-      [{ itemID: 999, ref: null, notes: [] }],
-    ]);
-  });
+  it.effect(
+    "ChildNoteRefs streams each parent's display ref beside its child notes",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const slices = yield* withReads(
+          open,
+          (reads) =>
+            Stream.runCollect(reads.ChildNoteRefs({ itemIDs: [1, 2, 999] })),
+          { sliceSize: 2 },
+        );
+        expect(slices).toMatchObject([
+          [
+            {
+              itemID: 1,
+              ref: { indexedKey: "MAIN2345", title: "Main Study" },
+              notes: [{ itemID: 200, key: "NTE22345" }],
+            },
+            { itemID: 2, ref: { indexedKey: "RELB2345" }, notes: [] },
+          ],
+          [{ itemID: 999, ref: null, notes: [] }],
+        ]);
+      }),
+  );
 
   /** Ids for one row, and for many: notes live and trashed, items with and without notes, a miss. */
   const sliceIDs = { one: [200], many: [1, 2, 3, 10, 200, 201, 999] };
@@ -925,46 +1031,50 @@ describe("ZoteroReads operations", () => {
   ];
   /** Reads whose batched query builds its SQL per call, so it is not cached. */
   const uncachedReads = new Set(["DisplayRefs", "NoteRefs", "ChildNoteRefs"]);
-  it.each(sliceReads)(
+  it.effect.each(sliceReads)(
     "%s runs the same statements for one row as for many",
-    async (_operation, read) => {
-      const { open, statements } = sliceOpener();
-      const counts = await withReads(open, (reads) =>
-        Effect.gen(function* () {
-          const cost = (size: "one" | "many") =>
-            Effect.gen(function* () {
-              const before = statements();
-              yield* read(reads, size);
-              return statements() - before;
-            });
-          yield* cost("one");
-          yield* cost("many");
-          // Each read finds rows in one library, so each resolves one group.
-          return { one: yield* cost("one"), many: yield* cost("many") };
-        }),
-      );
-      expect(counts.many).toBe(counts.one);
-    },
+    ([_operation, read]) =>
+      Effect.gen(function* () {
+        const { open, statements } = sliceOpener();
+        const counts = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const cost = (size: "one" | "many") =>
+              Effect.gen(function* () {
+                const before = statements();
+                yield* read(reads, size);
+                return statements() - before;
+              });
+            yield* cost("one");
+            yield* cost("many");
+            // Each read finds rows in one library, so each resolves one group.
+            return { one: yield* cost("one"), many: yield* cost("many") };
+          }),
+        );
+        expect(counts.many).toBe(counts.one);
+      }),
   );
-  it.each(sliceReads.filter(([operation]) => !uncachedReads.has(operation)))(
+  it.effect.each(
+    sliceReads.filter(([operation]) => !uncachedReads.has(operation)),
+  )(
     "%s compiles no statement for a warm read of one row or many",
-    async (_operation, read) => {
-      const { open, compiles } = sliceOpener();
-      const counts = await withReads(open, (reads) =>
-        Effect.gen(function* () {
-          const cost = (size: "one" | "many") =>
-            Effect.gen(function* () {
-              const before = compiles();
-              yield* read(reads, size);
-              return compiles() - before;
-            });
-          yield* cost("one");
-          yield* cost("many");
-          return [yield* cost("one"), yield* cost("many")];
-        }),
-      );
-      expect(counts).toEqual([0, 0]);
-    },
+    ([_operation, read]) =>
+      Effect.gen(function* () {
+        const { open, compiles } = sliceOpener();
+        const counts = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const cost = (size: "one" | "many") =>
+              Effect.gen(function* () {
+                const before = compiles();
+                yield* read(reads, size);
+                return compiles() - before;
+              });
+            yield* cost("one");
+            yield* cost("many");
+            return [yield* cost("one"), yield* cost("many")];
+          }),
+        );
+        expect(counts).toEqual([0, 0]);
+      }),
   );
 
   /** Fifty Indexed Keys of one Library: its live items, misses, and a repeat. */
@@ -1003,429 +1113,483 @@ describe("ZoteroReads operations", () => {
     );
   };
 
-  it.each([
+  it.effect.each([
     ["the user Library", ["MAIN2345"], userFifty],
     ["a group Library", ["GRPITEMSg900"], groupFifty],
-  ])(
+  ] as const)(
     "ItemsByIndexedKeys runs the same cached statements for one key of %s as for fifty",
-    async (_library, one, fifty) => {
-      expect(fifty).toHaveLength(50);
-      const [oneCost, fiftyCost] = await keyReadCosts([one, fifty]);
-      expect(fiftyCost).toBe(oneCost);
-      expect(await keyReadCosts([one, fifty], "compiles")).toEqual([0, 0]);
-    },
+    ([_library, one, fifty]) =>
+      Effect.gen(function* () {
+        expect(fifty).toHaveLength(50);
+        const [oneCost, fiftyCost] = yield* keyReadCosts([one, fifty]);
+        expect(fiftyCost).toBe(oneCost);
+        expect(yield* keyReadCosts([one, fifty], "compiles")).toEqual([0, 0]);
+      }),
   );
 
-  it("ItemsByIndexedKeys keys spanning two Libraries run each Library's statements once", async () => {
-    const [user, group, both] = await keyReadCosts([
-      ["MAIN2345"],
-      ["GRPITEMSg900"],
-      [...userFifty, ...groupFifty],
-    ]);
-    expect(both).toBe(user! + group!);
-    // The user Library needs no resolution: its hydration is the one statement.
-    expect(user).toBe(1);
-  });
+  it.effect(
+    "ItemsByIndexedKeys keys spanning two Libraries run each Library's statements once",
+    () =>
+      Effect.gen(function* () {
+        const [user, group, both] = yield* keyReadCosts([
+          ["MAIN2345"],
+          ["GRPITEMSg900"],
+          [...userFifty, ...groupFifty],
+        ]);
+        expect(both).toBe(user! + group!);
+        // The user Library needs no resolution: its hydration is the one statement.
+        expect(user).toBe(1);
+      }),
+  );
 
-  it("a source that cannot open fails with a tagged DbUnavailable", async () => {
-    const { open } = fixtureOpener(() => null);
-    const error = await withReads(open, (reads) =>
-      Effect.flip(reads.Libraries({})),
-    );
-    expect(error).toBeInstanceOf(DbUnavailable);
-    expect(error).toMatchObject({
-      _tag: "DbUnavailable",
-      message: "source #1 is not readable",
-    });
-  });
+  it.effect("a source that cannot open fails with a tagged DbUnavailable", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener(() => null);
+      const error = yield* withReads(open, (reads) =>
+        Effect.flip(reads.Libraries({})),
+      );
+      expect(error).toBeInstanceOf(DbUnavailable);
+      expect(error).toMatchObject({
+        _tag: "DbUnavailable",
+        message: "source #1 is not readable",
+      });
+    }),
+  );
 });
 
 describe("ZoteroReads connection lifetime", () => {
-  it("Changes starts with the current state and reports a refresh", async () => {
-    const { open, log } = fixtureOpener();
-    const events = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* reads.Libraries({});
-        const changes = yield* Stream.toPull(reads.Changes());
-        const seed = yield* take(changes, 1);
-        yield* reads.Refresh();
-        return [...seed, ...(yield* take(changes, 3))];
-      }).pipe(Effect.scoped),
-    );
-    expect(events).toEqual<ChangeEvent[]>([
-      { _tag: "state", state: "ready", error: null },
-      { _tag: "refreshing", active: true },
-      { _tag: "changed" },
-      { _tag: "refreshing", active: false },
-    ]);
-    expect(log).toEqual(["open #1", "open #2", "close #1", "close #2"]);
-  });
-
-  it("a subscriber that joins before the first read sees the connection open", async () => {
-    const { open } = fixtureOpener();
-    const events = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const changes = yield* Stream.toPull(reads.Changes());
-        const seed = yield* take(changes, 1);
-        yield* reads.Libraries({});
-        return [...seed, ...(yield* take(changes, 1))];
-      }).pipe(Effect.scoped),
-    );
-    expect(events).toEqual<ChangeEvent[]>([
-      { _tag: "state", state: "loading", error: null },
-      { _tag: "changed" },
-    ]);
-  });
-
-  it("a subscriber that joins before the first read sees a source that cannot open degrade", async () => {
-    const { open } = fixtureOpener(() => null);
-    const events = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const changes = yield* Stream.toPull(reads.Changes());
-        const seed = yield* take(changes, 1);
-        yield* Effect.flip(reads.Libraries({}));
-        // A second failed open reports nothing new.
-        yield* Effect.flip(reads.Libraries({}));
-        return [...seed, ...(yield* take(changes, 1))];
-      }).pipe(Effect.scoped),
-    );
-    expect(events.map((event) => event._tag)).toEqual(["state", "degraded"]);
-    expect(events[1]).toHaveProperty(
-      "error.message",
-      "source #1 is not readable",
-    );
-  });
-
-  it("a refresh whose new source fails validation keeps the current connection serving", async () => {
-    const { open, log } = fixtureOpener((id) =>
-      id === 2 ? "drop table libraries;" : "",
-    );
-    const result = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const before = yield* connectionSeen(reads);
-        const changes = yield* Stream.toPull(reads.Changes());
-        const seed = yield* take(changes, 1);
-        const refresh = yield* Effect.flip(reads.Refresh());
-        const after = yield* connectionSeen(reads);
-        const rest = yield* take(changes, 3);
-        return { before, refresh, after, events: [...seed, ...rest] };
-      }).pipe(Effect.scoped),
-    );
-    expect(result.before).toBe(1);
-    expect(result.after).toBe(1);
-    expect(result.refresh).toMatchObject({ _tag: "DbUnavailable" });
-    expect(result.events.map((event) => event._tag)).toEqual([
-      "state",
-      "refreshing",
-      "refresh-failed",
-      "refreshing",
-    ]);
-    expect(result.events[2]).toMatchObject({
-      error: { _tag: "DbUnavailable" },
-    });
-    expect(result.events[2]!).toHaveProperty(
-      "error.message",
-      expect.stringContaining("This file is not a Zotero database."),
-    );
-    expect(log).toEqual(["open #1", "open #2", "close #2", "close #1"]);
-  });
-
-  it("a Snapshot keeps its connection across a refresh; the old one closes when the Snapshot ends", async () => {
-    const { open, log, closed } = fixtureOpener();
-    const seen = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const held = yield* Effect.scoped(
-          Effect.gen(function* () {
-            const pull = yield* Stream.toPull(reads.Snapshot());
-            const [id] = yield* take(pull, 1);
-            yield* reads.Refresh();
-            const pinned = yield* connectionSeen(reads, id);
-            const current = yield* connectionSeen(reads);
-            return { pinned, current, log: [...log] };
-          }),
-        );
-        yield* closed(1);
-        return held;
-      }),
-    );
-    expect(seen).toEqual({
-      pinned: 1,
-      current: 2,
-      log: ["open #1", "open #2"],
-    });
-  });
-
-  it("NoteSource reuses one Snapshot's tag, collection, and account lookups across reads", async () => {
-    const { open, statements } = fixtureOpener();
-    const counts = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        const cost = (read: Effect.Effect<unknown, unknown>) =>
-          Effect.gen(function* () {
-            const before = statements();
-            yield* read;
-            return statements() - before;
-          });
-        const unbound = [
-          yield* cost(reads.NoteSource({ itemID: 1 })),
-          yield* cost(reads.NoteSource({ itemID: 1 })),
-        ];
-        const pinned = yield* Effect.scoped(
-          Effect.gen(function* () {
-            const pull = yield* Stream.toPull(reads.Snapshot());
-            const [snapshot] = yield* take(pull, 1);
-            return [
-              yield* cost(reads.NoteSource({ itemID: 1, snapshot })),
-              yield* cost(reads.NoteSource({ itemID: 1, snapshot })),
-            ];
-          }),
-        );
-        return { unbound, pinned };
-      }),
-    );
-    // The second read of each pair runs warm; only the Snapshot's reuses lookups.
-    expect(counts.pinned[1]).toBeLessThan(counts.unbound[1]!);
-  });
-
-  it("a Snapshot-bound stream keeps reading its connection after a swap and holds it until the stream ends", async () => {
-    // Open #2 drops RELA2345 (item 3); the pinned connection still holds it.
-    const { open, log, closed } = fixtureOpener((id) =>
-      id === 2 ? "delete from items where itemID = 3;" : "",
-    );
-    const result = await withReads(
-      open,
-      (reads) =>
+  it.effect("Changes starts with the current state and reports a refresh", () =>
+    Effect.gen(function* () {
+      const { open, log } = fixtureOpener();
+      const events = yield* withReads(open, (reads) =>
         Effect.gen(function* () {
+          yield* reads.Libraries({});
+          const changes = yield* Stream.toPull(reads.Changes());
+          const seed = yield* take(changes, 1);
+          yield* reads.Refresh();
+          return [...seed, ...(yield* take(changes, 3))];
+        }).pipe(Effect.scoped),
+      );
+      expect(events).toEqual<ChangeEvent[]>([
+        { _tag: "state", state: "ready", error: null },
+        { _tag: "refreshing", active: true },
+        { _tag: "changed" },
+        { _tag: "refreshing", active: false },
+      ]);
+      expect(log).toEqual(["open #1", "open #2", "close #1", "close #2"]);
+    }),
+  );
+
+  it.effect(
+    "a subscriber that joins before the first read sees the connection open",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const events = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const changes = yield* Stream.toPull(reads.Changes());
+            const seed = yield* take(changes, 1);
+            yield* reads.Libraries({});
+            return [...seed, ...(yield* take(changes, 1))];
+          }).pipe(Effect.scoped),
+        );
+        expect(events).toEqual<ChangeEvent[]>([
+          { _tag: "state", state: "loading", error: null },
+          { _tag: "changed" },
+        ]);
+      }),
+  );
+
+  it.effect(
+    "a subscriber that joins before the first read sees a source that cannot open degrade",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(() => null);
+        const events = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const changes = yield* Stream.toPull(reads.Changes());
+            const seed = yield* take(changes, 1);
+            yield* Effect.flip(reads.Libraries({}));
+            // A second failed open reports nothing new.
+            yield* Effect.flip(reads.Libraries({}));
+            return [...seed, ...(yield* take(changes, 1))];
+          }).pipe(Effect.scoped),
+        );
+        expect(events.map((event) => event._tag)).toEqual([
+          "state",
+          "degraded",
+        ]);
+        expect(events[1]).toHaveProperty(
+          "error.message",
+          "source #1 is not readable",
+        );
+      }),
+  );
+
+  it.effect(
+    "a refresh whose new source fails validation keeps the current connection serving",
+    () =>
+      Effect.gen(function* () {
+        const { open, log } = fixtureOpener((id) =>
+          id === 2 ? "drop table libraries;" : "",
+        );
+        const result = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const before = yield* connectionSeen(reads);
+            const changes = yield* Stream.toPull(reads.Changes());
+            const seed = yield* take(changes, 1);
+            const refresh = yield* Effect.flip(reads.Refresh());
+            const after = yield* connectionSeen(reads);
+            const rest = yield* take(changes, 3);
+            return { before, refresh, after, events: [...seed, ...rest] };
+          }).pipe(Effect.scoped),
+        );
+        expect(result.before).toBe(1);
+        expect(result.after).toBe(1);
+        expect(result.refresh).toMatchObject({ _tag: "DbUnavailable" });
+        expect(result.events.map((event) => event._tag)).toEqual([
+          "state",
+          "refreshing",
+          "refresh-failed",
+          "refreshing",
+        ]);
+        expect(result.events[2]).toMatchObject({
+          error: { _tag: "DbUnavailable" },
+        });
+        expect(result.events[2]!).toHaveProperty(
+          "error.message",
+          expect.stringContaining("This file is not a Zotero database."),
+        );
+        expect(log).toEqual(["open #1", "open #2", "close #2", "close #1"]);
+      }),
+  );
+
+  it.effect(
+    "a Snapshot keeps its connection across a refresh; the old one closes when the Snapshot ends",
+    () =>
+      Effect.gen(function* () {
+        const { open, log, closed } = fixtureOpener();
+        const seen = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const held = yield* Effect.scoped(
+              Effect.gen(function* () {
+                const pull = yield* Stream.toPull(reads.Snapshot());
+                const [id] = yield* take(pull, 1);
+                yield* reads.Refresh();
+                const pinned = yield* connectionSeen(reads, id);
+                const current = yield* connectionSeen(reads);
+                return { pinned, current, log: [...log] };
+              }),
+            );
+            yield* closed(1);
+            return held;
+          }),
+        );
+        expect(seen).toEqual({
+          pinned: 1,
+          current: 2,
+          log: ["open #1", "open #2"],
+        });
+      }),
+  );
+
+  it.effect(
+    "NoteSource reuses one Snapshot's tag, collection, and account lookups across reads",
+    () =>
+      Effect.gen(function* () {
+        const { open, statements } = fixtureOpener();
+        const counts = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const cost = (read: Effect.Effect<unknown, unknown>) =>
+              Effect.gen(function* () {
+                const before = statements();
+                yield* read;
+                return statements() - before;
+              });
+            const unbound = [
+              yield* cost(reads.NoteSource({ itemID: 1 })),
+              yield* cost(reads.NoteSource({ itemID: 1 })),
+            ];
+            const pinned = yield* Effect.scoped(
+              Effect.gen(function* () {
+                const pull = yield* Stream.toPull(reads.Snapshot());
+                const [snapshot] = yield* take(pull, 1);
+                return [
+                  yield* cost(reads.NoteSource({ itemID: 1, snapshot })),
+                  yield* cost(reads.NoteSource({ itemID: 1, snapshot })),
+                ];
+              }),
+            );
+            return { unbound, pinned };
+          }),
+        );
+        // The second read of each pair runs warm; only the Snapshot's reuses lookups.
+        expect(counts.pinned[1]).toBeLessThan(counts.unbound[1]!);
+      }),
+  );
+
+  it.effect(
+    "a Snapshot-bound stream keeps reading its connection after a swap and holds it until the stream ends",
+    () =>
+      Effect.gen(function* () {
+        // Open #2 drops RELA2345 (item 3); the pinned connection still holds it.
+        const { open, log, closed } = fixtureOpener((id) =>
+          id === 2 ? "delete from items where itemID = 3;" : "",
+        );
+        const result = yield* withReads(
+          open,
+          (reads) =>
+            Effect.gen(function* () {
+              const snapshotScope = yield* Scope.make();
+              const snapshot = yield* Stream.toPull(reads.Snapshot()).pipe(
+                Scope.provide(snapshotScope),
+              );
+              const [id] = yield* take(snapshot, 1);
+
+              const streamed = yield* Effect.scoped(
+                Effect.gen(function* () {
+                  // Started before the swap. A one-slot buffer keeps the server
+                  // from reading ahead, so the last slice is read after the swap.
+                  const slices = yield* Stream.toPull(
+                    reads.DisplayRefs(
+                      { itemIDs: [1, 1, 1, 1, 3], snapshot: id },
+                      { streamBufferSize: 1 },
+                    ),
+                  );
+                  const first = yield* take(slices, 1);
+                  yield* reads.Refresh();
+                  // Started after the swap, naming the Snapshot.
+                  const indexed = yield* reads.ItemsByIndexedKeys({
+                    indexedKeys: ["MAIN2345", "RELA2345", "RELB2345"],
+                    snapshot: id,
+                  });
+
+                  // End the Snapshot; its id stops answering once the server has
+                  // ended it, while the stream still holds the connection.
+                  yield* Scope.close(snapshotScope, Exit.void);
+                  yield* reads
+                    .Libraries({ snapshot: id })
+                    .pipe(Effect.flip, Effect.retry({ times: 100 }));
+                  const logAfterSnapshotEnd = [...log];
+
+                  const rest = yield* take(slices, 4);
+                  return {
+                    refs: [...first, ...rest].flat(),
+                    indexed: [...indexed.keys()],
+                    logAfterSnapshotEnd,
+                  };
+                }),
+              );
+              yield* closed(1);
+              return streamed;
+            }),
+          { sliceSize: 1 },
+        );
+        expect(result.refs.at(-1)).toMatchObject({
+          itemID: 3,
+          ref: { key: "RELA2345" },
+        });
+        expect(result.indexed).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
+        expect(result.logAfterSnapshotEnd).toEqual(["open #1", "open #2"]);
+      }),
+  );
+
+  it.effect(
+    "a read naming an unknown Snapshot fails with SnapshotExpired",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const error = yield* withReads(open, (reads) =>
+          Effect.flip(
+            reads.Libraries({ snapshot: SnapshotId.make("snapshot-404") }),
+          ),
+        );
+        expect(error).toBeInstanceOf(SnapshotExpired);
+        expect(error).toMatchObject({
+          _tag: "SnapshotExpired",
+          snapshot: "snapshot-404",
+        });
+      }),
+  );
+
+  it.effect(
+    "a held Snapshot stays readable however long it is quiet, and ending its stream releases its connection",
+    () =>
+      Effect.gen(function* () {
+        const { open, closed } = fixtureOpener();
+        const result = yield* Effect.gen(function* () {
+          const reads = yield* makeInProcessClient();
           const snapshotScope = yield* Scope.make();
-          const snapshot = yield* Stream.toPull(reads.Snapshot()).pipe(
+          const pull = yield* Stream.toPull(reads.Snapshot()).pipe(
             Scope.provide(snapshotScope),
           );
-          const [id] = yield* take(snapshot, 1);
+          const [id] = yield* take(pull, 1);
+          yield* reads.Refresh();
 
-          const streamed = yield* Effect.scoped(
-            Effect.gen(function* () {
-              // Started before the swap. A one-slot buffer keeps the server
-              // from reading ahead, so the last slice is read after the swap.
-              const slices = yield* Stream.toPull(
-                reads.DisplayRefs(
-                  { itemIDs: [1, 1, 1, 1, 3], snapshot: id },
-                  { streamBufferSize: 1 },
-                ),
-              );
-              const first = yield* take(slices, 1);
-              yield* reads.Refresh();
-              // Started after the swap, naming the Snapshot.
-              const indexed = yield* reads.ItemsByIndexedKeys({
-                indexedKeys: ["MAIN2345", "RELA2345", "RELB2345"],
-                snapshot: id,
-              });
+          yield* TestClock.adjust("1 day");
+          const afterADay = yield* connectionSeen(reads, id);
 
-              // End the Snapshot; its id stops answering once the server has
-              // ended it, while the stream still holds the connection.
-              yield* Scope.close(snapshotScope, Exit.void);
-              yield* reads
-                .Libraries({ snapshot: id })
-                .pipe(Effect.flip, Effect.retry({ times: 100 }));
-              const logAfterSnapshotEnd = [...log];
-
-              const rest = yield* take(slices, 4);
-              return {
-                refs: [...first, ...rest].flat(),
-                indexed: [...indexed.keys()],
-                logAfterSnapshotEnd,
-              };
-            }),
-          );
+          yield* Scope.close(snapshotScope, Exit.void);
           yield* closed(1);
-          return streamed;
-        }),
-      { sliceSize: 1 },
-    );
-    expect(result.refs.at(-1)).toMatchObject({
-      itemID: 3,
-      ref: { key: "RELA2345" },
-    });
-    expect(result.indexed).toEqual(["MAIN2345", "RELA2345", "RELB2345"]);
-    expect(result.logAfterSnapshotEnd).toEqual(["open #1", "open #2"]);
-  });
+          const expired = yield* reads
+            .Libraries({ snapshot: id })
+            .pipe(Effect.flip, Effect.retry({ times: 100 }));
+          return { afterADay, expired };
+        }).pipe(Effect.scoped, Effect.provide(layerRcRef(open)));
+        expect(result.afterADay).toBe(1);
+        expect(result.expired).toBeInstanceOf(SnapshotExpired);
+      }),
+  );
 
-  it("a read naming an unknown Snapshot fails with SnapshotExpired", async () => {
-    const { open } = fixtureOpener();
-    const error = await withReads(open, (reads) =>
-      Effect.flip(
-        reads.Libraries({ snapshot: SnapshotId.make("snapshot-404") }),
-      ),
-    );
-    expect(error).toBeInstanceOf(SnapshotExpired);
-    expect(error).toMatchObject({
-      _tag: "SnapshotExpired",
-      snapshot: "snapshot-404",
-    });
-  });
-
-  it("a held Snapshot stays readable however long it is quiet, and ending its stream releases its connection", async () => {
-    const { open, closed } = fixtureOpener();
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const reads = yield* makeInProcessClient();
-        const snapshotScope = yield* Scope.make();
-        const pull = yield* Stream.toPull(reads.Snapshot()).pipe(
-          Scope.provide(snapshotScope),
-        );
-        const [id] = yield* take(pull, 1);
-        yield* reads.Refresh();
-
-        yield* TestClock.adjust("1 day");
-        const afterADay = yield* connectionSeen(reads, id);
-
-        yield* Scope.close(snapshotScope, Exit.void);
-        yield* closed(1);
-        const expired = yield* reads
-          .Libraries({ snapshot: id })
-          .pipe(Effect.flip, Effect.retry({ times: 100 }));
-        return { afterADay, expired };
-      }).pipe(
-        Effect.scoped,
-        Effect.provide(layerRcRef(open)),
-        Effect.provide(TestClock.layer()),
-      ),
-    );
-    expect(result.afterADay).toBe(1);
-    expect(result.expired).toBeInstanceOf(SnapshotExpired);
-  });
-
-  it("a request completes while a stream is open", async () => {
-    const { open } = fixtureOpener();
-    const order = await withReads(
-      open,
-      (reads) =>
-        Effect.gen(function* () {
-          const order: string[] = [];
-          // A one-slot buffer holds the server mid-stream until the client pulls.
-          const slices = yield* Stream.toPull(
-            reads.DisplayRefs(
-              { itemIDs: Array.from({ length: 10 }, () => 1) },
-              { streamBufferSize: 1 },
-            ),
-          );
-          yield* take(slices, 1);
-          order.push("first slice");
-          yield* reads.Libraries({});
-          order.push("libraries");
-          yield* take(slices, 9);
-          order.push("stream drained");
-          return order;
-        }).pipe(Effect.scoped),
-      { sliceSize: 1 },
-    );
-    expect(order).toEqual(["first slice", "libraries", "stream drained"]);
-  });
-
-  it("interrupting a stream stops its reads and releases its borrow", async () => {
-    const { open, closed, statements } = fixtureOpener();
-    const result = await withReads(
-      open,
-      (reads) =>
-        Effect.gen(function* () {
-          yield* reads.Libraries({});
-          const before = statements();
-          // Fifty one-item slices behind a one-slot buffer: the server is
-          // still mid-stream, waiting on the client, when the take ends it.
-          const first = yield* Stream.runCollect(
-            Stream.take(
+  it.effect("a request completes while a stream is open", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const order = yield* withReads(
+        open,
+        (reads) =>
+          Effect.gen(function* () {
+            const order: string[] = [];
+            // A one-slot buffer holds the server mid-stream until the client pulls.
+            const slices = yield* Stream.toPull(
               reads.DisplayRefs(
-                { itemIDs: Array.from({ length: 50 }, () => 1) },
+                { itemIDs: Array.from({ length: 10 }, () => 1) },
                 { streamBufferSize: 1 },
               ),
-              1,
-            ),
-          );
-          // The swap closes #1 only once the interrupted stream let go of it.
-          yield* reads.Refresh();
-          yield* closed(1);
-          return { first, ran: statements() - before };
-        }),
-      { sliceSize: 1 },
-    );
-    expect(result.first).toHaveLength(1);
-    // One statement per slice read, plus the refresh's validation: far from
-    // the fifty slices an uninterrupted stream would read.
-    expect(result.ran).toBeLessThan(10);
-  });
-
-  it("a stream read through the service reads no slice ahead of its consumer", async () => {
-    const { open, statements } = fixtureOpener();
-    await using service = inProcessReadsService(open, {
-      handlers: { sliceSize: 1 },
-    });
-    const { reads } = await service.ready;
-    const { oneSlice, held } = await Effect.runPromise(
-      Effect.gen(function* () {
-        const cost = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
-          Effect.gen(function* () {
-            const before = statements();
-            yield* effect;
-            return statements() - before;
-          });
-        const items = Array.from({ length: 50 }, () => 1);
-        yield* Stream.runDrain(reads.DisplayRefs({ itemIDs: [1] }));
-        const oneSlice = yield* cost(
-          Stream.runDrain(reads.DisplayRefs({ itemIDs: [1] })),
-        );
-        // The consumer holds the first slice while other requests complete;
-        // each round trip gives a server that reads ahead the chance to.
-        const roundTrips = Effect.gen(function* () {
-          for (let i = 0; i < 20; i++) yield* reads.Libraries({});
-        });
-        const alone = yield* cost(roundTrips);
-        const held = yield* cost(
-          Effect.gen(function* () {
-            const slices = yield* Stream.toPull(
-              reads.DisplayRefs({ itemIDs: items }),
             );
             yield* take(slices, 1);
-            yield* roundTrips;
+            order.push("first slice");
+            yield* reads.Libraries({});
+            order.push("libraries");
+            yield* take(slices, 9);
+            order.push("stream drained");
+            return order;
+          }).pipe(Effect.scoped),
+        { sliceSize: 1 },
+      );
+      expect(order).toEqual(["first slice", "libraries", "stream drained"]);
+    }),
+  );
+
+  it.effect(
+    "interrupting a stream stops its reads and releases its borrow",
+    () =>
+      Effect.gen(function* () {
+        const { open, closed, statements } = fixtureOpener();
+        const result = yield* withReads(
+          open,
+          (reads) =>
+            Effect.gen(function* () {
+              yield* reads.Libraries({});
+              const before = statements();
+              // Fifty one-item slices behind a one-slot buffer: the server is
+              // still mid-stream, waiting on the client, when the take ends it.
+              const first = yield* Stream.runCollect(
+                Stream.take(
+                  reads.DisplayRefs(
+                    { itemIDs: Array.from({ length: 50 }, () => 1) },
+                    { streamBufferSize: 1 },
+                  ),
+                  1,
+                ),
+              );
+              // The swap closes #1 only once the interrupted stream let go of it.
+              yield* reads.Refresh();
+              yield* closed(1);
+              return { first, ran: statements() - before };
+            }),
+          { sliceSize: 1 },
+        );
+        expect(result.first).toHaveLength(1);
+        // One statement per slice read, plus the refresh's validation: far from
+        // the fifty slices an uninterrupted stream would read.
+        expect(result.ran).toBeLessThan(10);
+      }),
+  );
+
+  it.effect(
+    "a stream read through the service reads no slice ahead of its consumer",
+    () =>
+      Effect.gen(function* () {
+        const { open, statements } = fixtureOpener();
+        const service = yield* acquireAsyncDisposable(async () =>
+          inProcessReadsService(open, {
+            handlers: { sliceSize: 1 },
           }),
         );
-        return { oneSlice, held: held - alone };
-      }).pipe(Effect.scoped),
-    );
-    // The pulled slice, and at most the one the server read before it
-    // waits for the next pull.
-    expect(held).toBeLessThanOrEqual(2 * oneSlice);
-  });
-
-  it("Configure hands the new settings to the opener and swaps the connection", async () => {
-    const { open, configs } = fixtureOpener();
-    const config: ReadsConfig = {
-      databasePath: "/Zotero/zotero.sqlite",
-      readMode: "immutable",
-      autoRefresh: true,
-      locale: null,
-      chineseSegmenter: null,
-      logLevel: null,
-    };
-    const seen = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* reads.Libraries({});
-        yield* reads.Configure(config);
-        return yield* connectionSeen(reads);
+        const { reads } = yield* Effect.promise(() => service.ready);
+        const { oneSlice, held } = yield* Effect.gen(function* () {
+          const cost = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
+            Effect.gen(function* () {
+              const before = statements();
+              yield* effect;
+              return statements() - before;
+            });
+          const items = Array.from({ length: 50 }, () => 1);
+          yield* Stream.runDrain(reads.DisplayRefs({ itemIDs: [1] }));
+          const oneSlice = yield* cost(
+            Stream.runDrain(reads.DisplayRefs({ itemIDs: [1] })),
+          );
+          // The consumer holds the first slice while other requests complete;
+          // each round trip gives a server that reads ahead the chance to.
+          const roundTrips = Effect.gen(function* () {
+            for (let i = 0; i < 20; i++) yield* reads.Libraries({});
+          });
+          const alone = yield* cost(roundTrips);
+          const held = yield* cost(
+            Effect.gen(function* () {
+              const slices = yield* Stream.toPull(
+                reads.DisplayRefs({ itemIDs: items }),
+              );
+              yield* take(slices, 1);
+              yield* roundTrips;
+            }),
+          );
+          return { oneSlice, held: held - alone };
+        }).pipe(Effect.scoped);
+        // The pulled slice, and at most the one the server read before it
+        // waits for the next pull.
+        expect(held).toBeLessThanOrEqual(2 * oneSlice);
       }),
-    );
-    expect(configs).toEqual([null, config]);
-    expect(seen).toBe(2);
-  });
+  );
 
-  it("NotifyExternalChange refreshes the connection", async () => {
-    const { open } = fixtureOpener();
-    const seen = await withReads(open, (reads) =>
+  it.effect(
+    "Configure hands the new settings to the opener and swaps the connection",
+    () =>
       Effect.gen(function* () {
-        yield* reads.Libraries({});
-        yield* reads.NotifyExternalChange();
-        return yield* connectionSeen(reads);
+        const { open, configs } = fixtureOpener();
+        const config: ReadsConfig = {
+          databasePath: "/Zotero/zotero.sqlite",
+          readMode: "immutable",
+          autoRefresh: true,
+          locale: null,
+          chineseSegmenter: null,
+          logLevel: null,
+        };
+        const seen = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            yield* reads.Libraries({});
+            yield* reads.Configure(config);
+            return yield* connectionSeen(reads);
+          }),
+        );
+        expect(configs).toEqual([null, config]);
+        expect(seen).toBe(2);
       }),
-    );
-    expect(seen).toBe(2);
-  });
+  );
+
+  it.effect("NotifyExternalChange refreshes the connection", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const seen = yield* withReads(open, (reads) =>
+        Effect.gen(function* () {
+          yield* reads.Libraries({});
+          yield* reads.NotifyExternalChange();
+          return yield* connectionSeen(reads);
+        }),
+      );
+      expect(seen).toBe(2);
+    }),
+  );
 });
 
 describe("Connection databaseGeneration", () => {
@@ -1437,171 +1601,215 @@ describe("Connection databaseGeneration", () => {
     }),
   );
 
-  it("a refresh of the same database keeps the generation for the new client", async () => {
-    const { open } = fixtureOpener();
-    const result = await withReads(open, (reads) =>
+  it.effect(
+    "a refresh of the same database keeps the generation for the new client",
+    () =>
       Effect.gen(function* () {
-        const before = yield* generationNow;
-        yield* reads.Refresh();
-        return {
-          before,
-          after: yield* generationNow,
-          seen: yield* connectionSeen(reads),
-        };
+        const { open } = fixtureOpener();
+        const result = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const before = yield* generationNow;
+            yield* reads.Refresh();
+            return {
+              before,
+              after: yield* generationNow,
+              seen: yield* connectionSeen(reads),
+            };
+          }),
+        );
+        expect(result.seen).toBe(2);
+        expect(result.before).toBe(1);
+        expect(result.after).toBe(1);
       }),
-    );
-    expect(result.seen).toBe(2);
-    expect(result.before).toBe(1);
-    expect(result.after).toBe(1);
-  });
+  );
 
-  it("a Configure to another database file gives the next client a higher generation", async () => {
-    const { open } = fixtureOpener();
-    const other: ReadsConfig = {
-      databasePath: "/Backup/zotero.sqlite",
-      readMode: "auto",
-      autoRefresh: true,
-      locale: null,
-      chineseSegmenter: null,
-      logLevel: null,
-    };
-    const result = await withReads(open, (reads) =>
+  it.effect(
+    "a Configure to another database file gives the next client a higher generation",
+    () =>
       Effect.gen(function* () {
-        const before = yield* generationNow;
-        yield* reads.Configure(other);
-        return {
-          before,
-          after: yield* generationNow,
-          seen: yield* connectionSeen(reads),
+        const { open } = fixtureOpener();
+        const other: ReadsConfig = {
+          databasePath: "/Backup/zotero.sqlite",
+          readMode: "auto",
+          autoRefresh: true,
+          locale: null,
+          chineseSegmenter: null,
+          logLevel: null,
         };
+        const result = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const before = yield* generationNow;
+            yield* reads.Configure(other);
+            return {
+              before,
+              after: yield* generationNow,
+              seen: yield* connectionSeen(reads),
+            };
+          }),
+        );
+        expect(result.seen).toBe(2);
+        expect(result.after).toBeGreaterThan(result.before);
       }),
-    );
-    expect(result.seen).toBe(2);
-    expect(result.after).toBeGreaterThan(result.before);
-  });
+  );
 
-  it("another database at the same path gives the next client a higher generation", async () => {
-    // Open #2 holds another local user key, open #3 another account.
-    const { open } = fixtureOpener((id) =>
-      id === 2
-        ? "insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB2');"
-        : id === 3
-          ? "update settings set value = 43 where setting = 'account' and key = 'userID';"
-          : "",
-    );
-    const result = await withReads(open, (reads) =>
+  it.effect(
+    "another database at the same path gives the next client a higher generation",
+    () =>
       Effect.gen(function* () {
-        const first = yield* generationNow;
-        yield* reads.Refresh();
-        const second = yield* generationNow;
-        yield* reads.Refresh();
-        return {
-          first,
-          second,
-          third: yield* generationNow,
-          seen: yield* connectionSeen(reads),
-        };
+        // Open #2 holds another local user key, open #3 another account.
+        const { open } = fixtureOpener((id) =>
+          id === 2
+            ? "insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB2');"
+            : id === 3
+              ? "update settings set value = 43 where setting = 'account' and key = 'userID';"
+              : "",
+        );
+        const result = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const first = yield* generationNow;
+            yield* reads.Refresh();
+            const second = yield* generationNow;
+            yield* reads.Refresh();
+            return {
+              first,
+              second,
+              third: yield* generationNow,
+              seen: yield* connectionSeen(reads),
+            };
+          }),
+        );
+        expect(result.seen).toBe(3);
+        expect(result.second).toBeGreaterThan(result.first);
+        expect(result.third).toBeGreaterThan(result.second);
       }),
-    );
-    expect(result.seen).toBe(3);
-    expect(result.second).toBeGreaterThan(result.first);
-    expect(result.third).toBeGreaterThan(result.second);
-  });
+  );
 });
 
 describe("ZoteroReads citation operations", () => {
-  it("AttachmentsAt returns an attachment itself, a regular item's attachments, or nothing", async () => {
-    const { open } = fixtureOpener();
-    const [own, children, none] = await withReads(open, (reads) =>
-      Effect.all([
-        reads.AttachmentsAt({ itemID: 10 }),
-        reads.AttachmentsAt({ itemID: 1 }),
-        reads.AttachmentsAt({ itemID: 999 }),
-      ]),
-    );
-    expect(own).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
-    expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
-    expect(none).toEqual([]);
-  });
-
-  it("ItemsByIndexedKeys answers in the order of the requested keys", async () => {
-    const { open } = fixtureOpener();
-    const items = await withReads(open, (reads) =>
-      reads.ItemsByIndexedKeys({
-        indexedKeys: ["RELB2345", "GRPITEMSg900", "MISS2345", "MAIN2345"],
+  it.effect(
+    "AttachmentsAt returns an attachment itself, a regular item's attachments, or nothing",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const [own, children, none] = yield* withReads(open, (reads) =>
+          Effect.all([
+            reads.AttachmentsAt({ itemID: 10 }),
+            reads.AttachmentsAt({ itemID: 1 }),
+            reads.AttachmentsAt({ itemID: 999 }),
+          ]),
+        );
+        expect(own).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
+        expect(children).toMatchObject([{ itemID: 10, key: "ATCH2345" }]);
+        expect(none).toEqual([]);
       }),
-    );
-    expect([...items.keys()]).toEqual(["RELB2345", "GRPITEMSg900", "MAIN2345"]);
-  });
+  );
 
-  it("ItemsByIndexedKeys answers each key under the spelling it was asked by", async () => {
-    const { open } = fixtureOpener();
-    const items = await withReads(open, (reads) =>
-      reads.ItemsByIndexedKeys({
-        indexedKeys: ["GRPITEMSg0900", "GRPITEMSg900"],
+  it.effect(
+    "ItemsByIndexedKeys answers in the order of the requested keys",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const items = yield* withReads(open, (reads) =>
+          reads.ItemsByIndexedKeys({
+            indexedKeys: ["RELB2345", "GRPITEMSg900", "MISS2345", "MAIN2345"],
+          }),
+        );
+        expect([...items.keys()]).toEqual([
+          "RELB2345",
+          "GRPITEMSg900",
+          "MAIN2345",
+        ]);
       }),
-    );
-    expect([...items.keys()]).toEqual(["GRPITEMSg0900", "GRPITEMSg900"]);
-    expect(items.get("GRPITEMSg0900")).toMatchObject({
-      key: "GRPITEMS",
-      indexedKey: "GRPITEMSg900",
-    });
-  });
+  );
+
+  it.effect(
+    "ItemsByIndexedKeys answers each key under the spelling it was asked by",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const items = yield* withReads(open, (reads) =>
+          reads.ItemsByIndexedKeys({
+            indexedKeys: ["GRPITEMSg0900", "GRPITEMSg900"],
+          }),
+        );
+        expect([...items.keys()]).toEqual(["GRPITEMSg0900", "GRPITEMSg900"]);
+        expect(items.get("GRPITEMSg0900")).toMatchObject({
+          key: "GRPITEMS",
+          indexedKey: "GRPITEMSg900",
+        });
+      }),
+  );
 });
 
 describe("ZoteroReads annotation-family operations", () => {
-  it("AttachmentSources returns attachments by Indexed Key with their parent items, tags, and username", async () => {
-    const { open } = fixtureOpener();
-    const sources = await withReads(open, (reads) =>
-      reads.AttachmentSources({ attachmentKeys: ["ATCH2345", "MISS2345"] }),
-    );
-    expect(sources.annotations).toEqual([]);
-    expect(sources.attachments.map((a) => a.indexedKey)).toEqual(["ATCH2345"]);
-    expect(sources.attachments[0]!.dateAdded).toBeInstanceOf(Temporal.Instant);
-    expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
-    expect(sources.tagsByItemID.get(1)!.map((tag) => tag.tag.name)).toEqual([
-      "zt",
-    ]);
-    expect(sources.username).toBe("reader");
-  });
+  it.effect(
+    "AttachmentSources returns attachments by Indexed Key with their parent items, tags, and username",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener();
+        const sources = yield* withReads(open, (reads) =>
+          reads.AttachmentSources({ attachmentKeys: ["ATCH2345", "MISS2345"] }),
+        );
+        expect(sources.annotations).toEqual([]);
+        expect(sources.attachments.map((a) => a.indexedKey)).toEqual([
+          "ATCH2345",
+        ]);
+        expect(sources.attachments[0]!.dateAdded).toBeInstanceOf(
+          Temporal.Instant,
+        );
+        expect(sources.parentItems.map((i) => i.key)).toEqual(["MAIN2345"]);
+        expect(sources.tagsByItemID.get(1)!.map((tag) => tag.tag.name)).toEqual(
+          ["zt"],
+        );
+        expect(sources.username).toBe("reader");
+      }),
+  );
 });
 
 describe("ZoteroReads Profile Match operations", () => {
-  it("TagNames lists the tag names of one library, or of every library", async () => {
-    const { open } = fixtureOpener(
-      () => `insert into tags (tagID, name) values (4, 'Alpha');
+  it.effect(
+    "TagNames lists the tag names of one library, or of every library",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `insert into tags (tagID, name) values (4, 'Alpha');
         insert into itemTags (itemID, tagID, type) values (300, 4, 0);`,
-    );
-    const names = await withReads(open, (reads) =>
-      Effect.all({
-        user: reads.TagNames({ libraryID: 1 }),
-        group: reads.TagNames({ libraryID: 2 }),
-        all: reads.TagNames({}),
+        );
+        const names = yield* withReads(open, (reads) =>
+          Effect.all({
+            user: reads.TagNames({ libraryID: 1 }),
+            group: reads.TagNames({ libraryID: 2 }),
+            all: reads.TagNames({}),
+          }),
+        );
+        expect(names).toEqual({
+          user: ["claim", "method", "zt"],
+          group: ["Alpha"],
+          all: ["Alpha", "claim", "method", "zt"],
+        });
       }),
-    );
-    expect(names).toEqual({
-      user: ["claim", "method", "zt"],
-      group: ["Alpha"],
-      all: ["Alpha", "claim", "method", "zt"],
-    });
-  });
+  );
 
-  it("CollectionPaths lists every live collection path of the given libraries, root first", async () => {
-    const { open } = fixtureOpener(
-      () => `insert into collections (collectionID, collectionName, libraryID, key, parentCollectionID)
+  it.effect(
+    "CollectionPaths lists every live collection path of the given libraries, root first",
+    () =>
+      Effect.gen(function* () {
+        const { open } = fixtureOpener(
+          () => `insert into collections (collectionID, collectionName, libraryID, key, parentCollectionID)
         values (501, 'Theory', 1, 'CLL32345', 500), (502, 'Lab Notes', 2, 'CLL42345', null);`,
-    );
-    const paths = await withReads(open, (reads) =>
-      Effect.all({
-        user: reads.CollectionPaths({ libraryIDs: [1] }),
-        both: reads.CollectionPaths({ libraryIDs: [1, 2] }),
+        );
+        const paths = yield* withReads(open, (reads) =>
+          Effect.all({
+            user: reads.CollectionPaths({ libraryIDs: [1] }),
+            both: reads.CollectionPaths({ libraryIDs: [1, 2] }),
+          }),
+        );
+        expect(paths).toEqual({
+          user: [["Reading"], ["Reading", "Theory"]],
+          both: [["Lab Notes"], ["Reading"], ["Reading", "Theory"]],
+        });
       }),
-    );
-    expect(paths).toEqual({
-      user: [["Reading"], ["Reading", "Theory"]],
-      both: [["Lab Notes"], ["Reading"], ["Reading", "Theory"]],
-    });
-  });
+  );
 });
 
 describe("ZoteroReads SearchItems", () => {
@@ -1665,7 +1873,7 @@ describe("ZoteroReads SearchItems", () => {
       for (let tries = 0; tries < 500; tries++) {
         const value = yield* effect;
         if (accept(value)) return value;
-        yield* Effect.sleep("1 millis");
+        yield* TestClock.adjust("1 millis");
       }
       return yield* Effect.die(new Error("condition never held"));
     });
@@ -1716,257 +1924,294 @@ describe("ZoteroReads SearchItems", () => {
   const withConnection = <A, E>(
     connection: Layer.Layer<Connection>,
     body: (reads: ZoteroReadsClient) => Effect.Effect<A, E, Scope.Scope>,
-  ): Promise<A> =>
-    Effect.runPromise(
-      Effect.gen(function* () {
-        const reads = yield* makeInProcessClient();
-        return yield* body(reads);
-      }).pipe(Effect.scoped, Effect.provide(connection)),
-    );
+  ): Effect.Effect<A, E> =>
+    Effect.gen(function* () {
+      const reads = yield* makeInProcessClient();
+      return yield* body(reads);
+    }).pipe(Effect.scoped, Effect.provide(connection));
 
-  it("the first search builds the index and answers hydrated Items; later searches reuse it", async () => {
-    const { open, statements } = fixtureOpener();
-    const cost = costOf(statements);
-    const result = await withReads(open, (reads) =>
+  it.effect(
+    "the first search builds the index and answers hydrated Items; later searches reuse it",
+    () =>
       Effect.gen(function* () {
-        const first = yield* cost(reads.SearchItems(everything));
-        const second = yield* cost(reads.SearchItems(everything));
-        const third = yield* cost(reads.SearchItems(everything));
-        const used = yield* cost(
-          reads.SearchItems({
-            ...everything,
-            limit: 1,
-            uses: { RELB2345: 2208988800000 },
+        const { open, statements } = fixtureOpener();
+        const cost = costOf(statements);
+        const result = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            const first = yield* cost(reads.SearchItems(everything));
+            const second = yield* cost(reads.SearchItems(everything));
+            const third = yield* cost(reads.SearchItems(everything));
+            const used = yield* cost(
+              reads.SearchItems({
+                ...everything,
+                limit: 1,
+                uses: { RELB2345: 2208988800000 },
+              }),
+            );
+            return { first, second, third, used };
           }),
         );
-        return { first, second, third, used };
+        expect(result.first.value.map((hit) => hit.item.indexedKey)).toEqual([
+          "GRPITEMSg900",
+          "MAIN2345",
+          "RELA2345",
+          "RELB2345",
+        ]);
+        expect(result.first.value[0]!.item.dateAdded).toBeInstanceOf(
+          Temporal.Instant,
+        );
+        expect(result.second.value).toEqual(result.first.value);
+        // The build reads ids and rows; a later search only hydrates.
+        expect(result.first.cost).toBeGreaterThan(result.second.cost);
+        expect(result.third.cost).toBe(result.second.cost);
+        expect(result.used.value.map((hit) => hit.item.indexedKey)).toEqual([
+          "RELB2345",
+        ]);
+        expect(result.used.cost).toBeLessThanOrEqual(result.second.cost);
       }),
-    );
-    expect(result.first.value.map((hit) => hit.item.indexedKey)).toEqual([
-      "GRPITEMSg900",
-      "MAIN2345",
-      "RELA2345",
-      "RELB2345",
-    ]);
-    expect(result.first.value[0]!.item.dateAdded).toBeInstanceOf(
-      Temporal.Instant,
-    );
-    expect(result.second.value).toEqual(result.first.value);
-    // The build reads ids and rows; a later search only hydrates.
-    expect(result.first.cost).toBeGreaterThan(result.second.cost);
-    expect(result.third.cost).toBe(result.second.cost);
-    expect(result.used.value.map((hit) => hit.item.indexedKey)).toEqual([
-      "RELB2345",
-    ]);
-    expect(result.used.cost).toBeLessThanOrEqual(result.second.cost);
-  });
+  );
 
-  it("two parallel first searches share one build", async () => {
-    const { open, ran } = fixtureOpener();
-    const [a, b] = await withReads(open, (reads) =>
-      Effect.all(
-        [reads.SearchItems(everything), reads.SearchItems(everything)],
-        { concurrency: "unbounded" },
-      ),
-    );
-    expect(keysOf(b)).toEqual(keysOf(a));
-    expect(a).toHaveLength(4);
-    // One ids read per Library of one build.
-    expect(ran(ID_READ)).toBe(2);
-  });
+  it.effect("two parallel first searches share one build", () =>
+    Effect.gen(function* () {
+      const { open, ran } = fixtureOpener();
+      const [a, b] = yield* withReads(open, (reads) =>
+        Effect.all(
+          [reads.SearchItems(everything), reads.SearchItems(everything)],
+          { concurrency: "unbounded" },
+        ),
+      );
+      expect(keysOf(b)).toEqual(keysOf(a));
+      expect(a).toHaveLength(4);
+      // One ids read per Library of one build.
+      expect(ran(ID_READ)).toBe(2);
+    }),
+  );
 
-  it("a refresh of the same database with equal signatures keeps the index", async () => {
-    // The rename leaves `dateModified`, so the signatures stay equal.
-    const { open, ran, closed } = fixtureOpener((id) =>
-      id === 1
-        ? ""
-        : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
-    );
-    const result = await withReads(open, (reads) =>
+  it.effect(
+    "a refresh of the same database with equal signatures keeps the index",
+    () =>
       Effect.gen(function* () {
-        yield* connect(reads);
-        yield* reads.SearchItems(everything);
-        // The `changed` of #2 re-checks the index on #2, and the index then
-        // holds #2; the re-check on #3 takes over, and #2 closes. The search
-        // between keeps the list from eviction at the second change.
-        yield* reads.Refresh();
-        yield* reads.SearchItems(everything);
-        yield* reads.Refresh();
-        yield* closed(2);
-        return {
-          signatures: ran(SIGNATURE_READ, 2),
-          builds: ran(ID_READ, 2),
-          renamed: yield* reads.SearchItems({ ...everything, query: "quagga" }),
-        };
+        // The rename leaves `dateModified`, so the signatures stay equal.
+        const { open, ran, closed } = fixtureOpener((id) =>
+          id === 1
+            ? ""
+            : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
+        );
+        const result = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            yield* connect(reads);
+            yield* reads.SearchItems(everything);
+            // The `changed` of #2 re-checks the index on #2, and the index then
+            // holds #2; the re-check on #3 takes over, and #2 closes. The search
+            // between keeps the list from eviction at the second change.
+            yield* reads.Refresh();
+            yield* reads.SearchItems(everything);
+            yield* reads.Refresh();
+            yield* closed(2);
+            return {
+              signatures: ran(SIGNATURE_READ, 2),
+              builds: ran(ID_READ, 2),
+              renamed: yield* reads.SearchItems({
+                ...everything,
+                query: "quagga",
+              }),
+            };
+          }),
+        );
+        expect(result.signatures).toBeGreaterThan(0);
+        expect(result.builds).toBe(0);
+        expect(result.renamed).toEqual([]);
       }),
-    );
-    expect(result.signatures).toBeGreaterThan(0);
-    expect(result.builds).toBe(0);
-    expect(result.renamed).toEqual([]);
-  });
+  );
 
-  it("a refresh to another database file whose Libraries have equal local ids rebuilds", async () => {
-    // Same ids and signatures; another local user key marks another database.
-    const { open } = fixtureOpener((id) =>
-      id === 1
-        ? ""
-        : `insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB${id}');
+  it.effect(
+    "a refresh to another database file whose Libraries have equal local ids rebuilds",
+    () =>
+      Effect.gen(function* () {
+        // Same ids and signatures; another local user key marks another database.
+        const { open } = fixtureOpener((id) =>
+          id === 1
+            ? ""
+            : `insert into settings (setting, key, value) values ('account', 'localUserKey', 'OTHERDB${id}');
            update itemDataValues set value = 'Quagga Study' where valueID = 1;`,
-    );
-    const renamed = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* connect(reads);
-        yield* reads.SearchItems(everything);
-        yield* reads.Refresh();
-        return yield* eventually(
-          reads.SearchItems({ ...everything, query: "quagga" }),
-          (hits) => hits.length > 0,
         );
-      }),
-    );
-    expect(keysOf(renamed)).toEqual(["MAIN2345"]);
-    expect(renamed[0]!.item.fields).toMatchObject({ title: "Quagga Study" });
-  });
-
-  it("a Configure that points to another database file rebuilds, also with equal ids and signatures", async () => {
-    // Every open holds the same database; only the configured path differs.
-    const { open } = fixtureOpener((id) =>
-      id === 1
-        ? ""
-        : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
-    );
-    const renamed = await withReads(open, (reads) =>
-      Effect.gen(function* () {
-        yield* connect(reads);
-        yield* reads.SearchItems(everything);
-        yield* reads.Configure({
-          databasePath: "/Backup/zotero.sqlite",
-          readMode: "auto",
-          autoRefresh: true,
-          locale: null,
-          chineseSegmenter: null,
-          logLevel: null,
+        const renamed = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            yield* connect(reads);
+            yield* reads.SearchItems(everything);
+            yield* reads.Refresh();
+            return yield* eventually(
+              reads.SearchItems({ ...everything, query: "quagga" }),
+              (hits) => hits.length > 0,
+            );
+          }),
+        );
+        expect(keysOf(renamed)).toEqual(["MAIN2345"]);
+        expect(renamed[0]!.item.fields).toMatchObject({
+          title: "Quagga Study",
         });
-        return yield* eventually(
-          reads.SearchItems({ ...everything, query: "quagga" }),
-          (hits) => hits.length > 0,
-        );
       }),
-    );
-    expect(keysOf(renamed)).toEqual(["MAIN2345"]);
-  });
+  );
 
-  it("a hit whose Item vanished since the build is left out", async () => {
-    const client = createClient(":memory:");
-    createFixtureSchema(client.$client);
-    client.$client.exec(SEED);
-    const answers = await withConnection(
-      layerRcRef(sharedClientOpener(client)),
-      (reads) =>
+  it.effect(
+    "a Configure that points to another database file rebuilds, also with equal ids and signatures",
+    () =>
+      Effect.gen(function* () {
+        // Every open holds the same database; only the configured path differs.
+        const { open } = fixtureOpener((id) =>
+          id === 1
+            ? ""
+            : "update itemDataValues set value = 'Quagga Study' where valueID = 1;",
+        );
+        const renamed = yield* withReads(open, (reads) =>
+          Effect.gen(function* () {
+            yield* connect(reads);
+            yield* reads.SearchItems(everything);
+            yield* reads.Configure({
+              databasePath: "/Backup/zotero.sqlite",
+              readMode: "auto",
+              autoRefresh: true,
+              locale: null,
+              chineseSegmenter: null,
+              logLevel: null,
+            });
+            return yield* eventually(
+              reads.SearchItems({ ...everything, query: "quagga" }),
+              (hits) => hits.length > 0,
+            );
+          }),
+        );
+        expect(keysOf(renamed)).toEqual(["MAIN2345"]);
+      }),
+  );
+
+  it.effect("a hit whose Item vanished since the build is left out", () =>
+    Effect.gen(function* () {
+      const client = createClient(":memory:");
+      createFixtureSchema(client.$client);
+      client.$client.exec(SEED);
+      const answers = yield* withConnection(
+        layerRcRef(sharedClientOpener(client)),
+        (reads) =>
+          Effect.gen(function* () {
+            const before = yield* reads.SearchItems(inLibrary(1));
+            // No change event: the index still holds the Item.
+            client.$client.exec(
+              "delete from itemData where itemID = 3; delete from items where itemID = 3;",
+            );
+            const after = yield* reads.SearchItems(inLibrary(1));
+            return { before, after };
+          }),
+      ).pipe(Effect.ensuring(Effect.sync(() => client.$client.close())));
+      expect(keysOf(answers.before)).toEqual([
+        "MAIN2345",
+        "RELA2345",
+        "RELB2345",
+      ]);
+      expect(keysOf(answers.after)).toEqual(["MAIN2345", "RELB2345"]);
+    }),
+  );
+
+  it.effect("a degraded connection fails the search with DbUnavailable", () =>
+    Effect.gen(function* () {
+      const { open } = fixtureOpener();
+      const { layer, degrade } = controlledConnection(open);
+      const result = yield* withConnection(layer, (reads) =>
         Effect.gen(function* () {
-          const before = yield* reads.SearchItems(inLibrary(1));
-          // No change event: the index still holds the Item.
-          client.$client.exec(
-            "delete from itemData where itemID = 3; delete from items where itemID = 3;",
+          const before = yield* reads.SearchItems(everything);
+          yield* degrade;
+          // The re-check the event starts finds no client and drops the index.
+          const exit = yield* eventually(
+            Effect.exit(reads.SearchItems(everything)),
+            Exit.isFailure,
           );
-          const after = yield* reads.SearchItems(inLibrary(1));
-          return { before, after };
+          const error = yield* Effect.flip(exit);
+          return { before, error };
         }),
-    ).finally(() => client.$client.close());
-    expect(keysOf(answers.before)).toEqual([
-      "MAIN2345",
-      "RELA2345",
-      "RELB2345",
-    ]);
-    expect(keysOf(answers.after)).toEqual(["MAIN2345", "RELB2345"]);
-  });
+      );
+      expect(result.before).toHaveLength(4);
+      expect(result.error).toBeInstanceOf(DbUnavailable);
+      expect(result.error.message).toBe("database gone");
+    }),
+  );
 
-  it("a degraded connection fails the search with DbUnavailable", async () => {
-    const { open } = fixtureOpener();
-    const { layer, degrade } = controlledConnection(open);
-    const result = await withConnection(layer, (reads) =>
+  it.effect(
+    "a source that cannot open fails the search with DbUnavailable",
+    () =>
       Effect.gen(function* () {
-        const before = yield* reads.SearchItems(everything);
-        yield* degrade;
-        // The re-check the event starts finds no client and drops the index.
-        const exit = yield* eventually(
-          Effect.exit(reads.SearchItems(everything)),
-          Exit.isFailure,
+        const { open } = fixtureOpener(() => null);
+        const error = yield* withReads(open, (reads) =>
+          Effect.flip(reads.SearchItems(everything)),
         );
-        const error = yield* Effect.flip(exit);
-        return { before, error };
+        expect(error).toBeInstanceOf(DbUnavailable);
       }),
-    );
-    expect(result.before).toHaveLength(4);
-    expect(result.error).toBeInstanceOf(DbUnavailable);
-    expect(result.error.message).toBe("database gone");
-  });
+  );
 
-  it("a source that cannot open fails the search with DbUnavailable", async () => {
-    const { open } = fixtureOpener(() => null);
-    const error = await withReads(open, (reads) =>
-      Effect.flip(reads.SearchItems(everything)),
-    );
-    expect(error).toBeInstanceOf(DbUnavailable);
-  });
+  it.effect("a locale change through Configure rebuilds the held index", () =>
+    Effect.gen(function* () {
+      const { open, ran } = fixtureOpener();
+      // A source that rebinds without a new client, as for a locale-only change.
+      const quiet = Layer.effect(Connection)(
+        Effect.map(Effect.service(Connection), (base) =>
+          Connection.of({ ...base, configure: () => Effect.void }),
+        ),
+      ).pipe(Layer.provide(layerRcRef(open)));
+      const config = (locale: string | null): ReadsConfig => ({
+        databasePath: "/Zotero/zotero.sqlite",
+        readMode: "auto",
+        autoRefresh: true,
+        locale,
+        chineseSegmenter: null,
+        logLevel: null,
+      });
+      const builds = yield* withConnection(quiet, (reads) =>
+        Effect.gen(function* () {
+          yield* reads.SearchItems(everything);
+          yield* reads.Configure(config("de"));
+          return yield* eventually(
+            Effect.sync(() => ran(ID_READ)),
+            (count) => count >= 4,
+          );
+        }),
+      );
+      // Two ids reads per build: the first build and the rebuild.
+      expect(builds).toBe(4);
+    }),
+  );
 
-  it("a locale change through Configure rebuilds the held index", async () => {
-    const { open, ran } = fixtureOpener();
-    // A source that rebinds without a new client, as for a locale-only change.
-    const quiet = Layer.effect(Connection)(
-      Effect.map(Effect.service(Connection), (base) =>
-        Connection.of({ ...base, configure: () => Effect.void }),
-      ),
-    ).pipe(Layer.provide(layerRcRef(open)));
-    const config = (locale: string | null): ReadsConfig => ({
-      databasePath: "/Zotero/zotero.sqlite",
-      readMode: "auto",
-      autoRefresh: true,
-      locale,
-      chineseSegmenter: null,
-      logLevel: null,
-    });
-    const builds = await withConnection(quiet, (reads) =>
+  it.effect(
+    "a request sent during a build is answered before the build ends",
+    () =>
       Effect.gen(function* () {
-        yield* reads.SearchItems(everything);
-        yield* reads.Configure(config("de"));
-        return yield* eventually(
-          Effect.sync(() => ran(ID_READ)),
-          (count) => count >= 4,
+        const { open } = fixtureOpener();
+        const { layer, holdBorrows, releaseBorrows, borrowHeld } =
+          controlledConnection(open);
+        const result = yield* withConnection(layer, (reads) =>
+          Effect.gen(function* () {
+            yield* connect(reads);
+            const order: string[] = [];
+            // The build waits at its borrow until the release below.
+            yield* holdBorrows;
+            const search = yield* Effect.forkChild(
+              reads
+                .SearchItems(inLibrary(1, "main"))
+                .pipe(
+                  Effect.tap(() => Effect.sync(() => order.push("search"))),
+                ),
+            );
+            yield* borrowHeld;
+            yield* reads.Ping();
+            order.push("ping");
+            const searching = search.pollUnsafe() === undefined;
+            yield* releaseBorrows;
+            yield* Fiber.join(search);
+            return { order, searching };
+          }),
         );
+        expect(result.searching).toBe(true);
+        expect(result.order).toEqual(["ping", "search"]);
       }),
-    );
-    // Two ids reads per build: the first build and the rebuild.
-    expect(builds).toBe(4);
-  });
-
-  it("a request sent during a build is answered before the build ends", async () => {
-    const { open } = fixtureOpener();
-    const { layer, holdBorrows, releaseBorrows, borrowHeld } =
-      controlledConnection(open);
-    const result = await withConnection(layer, (reads) =>
-      Effect.gen(function* () {
-        yield* connect(reads);
-        const order: string[] = [];
-        // The build waits at its borrow until the release below.
-        yield* holdBorrows;
-        const search = yield* Effect.forkChild(
-          reads
-            .SearchItems(inLibrary(1, "main"))
-            .pipe(Effect.tap(() => Effect.sync(() => order.push("search")))),
-        );
-        yield* borrowHeld;
-        yield* reads.Ping();
-        order.push("ping");
-        const searching = search.pollUnsafe() === undefined;
-        yield* releaseBorrows;
-        yield* Fiber.join(search);
-        return { order, searching };
-      }),
-    );
-    expect(result.searching).toBe(true);
-    expect(result.order).toEqual(["ping", "search"]);
-  });
+  );
 
   describe("with the Chinese Segmenter", () => {
     // `Intl.Segmenter` keeps `长江流域` whole; jieba's `cut_for_search` adds
@@ -2007,59 +2252,68 @@ describe("ZoteroReads SearchItems", () => {
         reads: ZoteroReadsClient,
         ran: (sql: string) => number,
       ) => Effect.Effect<A, E, Scope.Scope>,
-    ): Promise<A> => {
+    ): Effect.Effect<A, E> => {
       const { open, ran } = fixtureOpener(() => CHINESE_TITLE);
       const quiet = Layer.effect(Connection)(
         Effect.map(Effect.service(Connection), (base) =>
           Connection.of({ ...base, configure: () => Effect.void }),
         ),
       ).pipe(Layer.provide(layerRcRef(open)));
-      return Effect.runPromise(
-        Effect.gen(function* () {
-          const reads = yield* makeInProcessClient(options);
-          return yield* body(reads, ran);
-        }).pipe(Effect.scoped, Effect.provide(quiet)),
-      );
+      return Effect.gen(function* () {
+        const reads = yield* makeInProcessClient(options);
+        return yield* body(reads, ran);
+      }).pipe(Effect.scoped, Effect.provide(quiet));
     };
 
-    it("an installed binary at start cuts Chinese titles and queries with jieba", async () => {
-      const bytes = await jiebaBytes();
-      const asked: SegmenterBinary[] = [];
-      const hits = await withSegmenter(
-        {
-          chineseSegmenter: INSTALLED,
-          readSegmenter: async (binary) => {
-            asked.push(binary);
-            return bytes;
-          },
-        },
-        (reads) => reads.SearchItems(JIEBA_ONLY),
-      );
-      expect(asked).toEqual([INSTALLED]);
-      expect(keysOf(hits)).toEqual(["RELA2345"]);
-    });
+    it.effect(
+      "an installed binary at start cuts Chinese titles and queries with jieba",
+      () =>
+        Effect.gen(function* () {
+          const bytes = yield* Effect.promise(() => jiebaBytes());
+          const asked: SegmenterBinary[] = [];
+          const hits = yield* withSegmenter(
+            {
+              chineseSegmenter: INSTALLED,
+              readSegmenter: async (binary) => {
+                asked.push(binary);
+                return bytes;
+              },
+            },
+            (reads) => reads.SearchItems(JIEBA_ONLY),
+          );
+          expect(asked).toEqual([INSTALLED]);
+          expect(keysOf(hits)).toEqual(["RELA2345"]);
+        }),
+    );
 
-    it("a Configure that changes the locale and installs the binary rebuilds every held index once", async () => {
-      const bytes = await jiebaBytes();
-      const result = await withSegmenter(
-        { readSegmenter: async () => bytes },
-        (reads, ran) =>
-          Effect.gen(function* () {
-            yield* reads.SearchItems(JIEBA_ONLY);
-            yield* reads.SearchItems(everything);
-            yield* reads.Configure({ ...config(INSTALLED), locale: "zh" });
-            // A jieba hit shows only after a build with both settings.
-            for (const list of [JIEBA_ONLY, { ...everything, query: "流域" }]) {
-              yield* eventually(
-                reads.SearchItems(list),
-                (hits) => hits.length > 0,
-              );
-            }
-            return ran(ID_READ);
-          }),
-      );
-      // One ids read per Library per build: [1] and [1, 2], each built twice.
-      expect(result).toBe(6);
-    });
+    it.effect(
+      "a Configure that changes the locale and installs the binary rebuilds every held index once",
+      () =>
+        Effect.gen(function* () {
+          const bytes = yield* Effect.promise(() => jiebaBytes());
+          const result = yield* withSegmenter(
+            { readSegmenter: async () => bytes },
+            (reads, ran) =>
+              Effect.gen(function* () {
+                yield* reads.SearchItems(JIEBA_ONLY);
+                yield* reads.SearchItems(everything);
+                yield* reads.Configure({ ...config(INSTALLED), locale: "zh" });
+                // A jieba hit shows only after a build with both settings.
+                for (const list of [
+                  JIEBA_ONLY,
+                  { ...everything, query: "流域" },
+                ]) {
+                  yield* eventually(
+                    reads.SearchItems(list),
+                    (hits) => hits.length > 0,
+                  );
+                }
+                return ran(ID_READ);
+              }),
+          );
+          // One ids read per Library per build: [1] and [1, 2], each built twice.
+          expect(result).toBe(6);
+        }),
+    );
   });
 });

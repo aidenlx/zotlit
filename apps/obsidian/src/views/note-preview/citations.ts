@@ -21,12 +21,12 @@ import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 export interface NativeCitationDeps {
   app: App;
   citationParse: Pick<PlainCitationParse, "parse">;
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   bibliographyRender: Pick<
     BibliographyRenderCache,
     | "renderCitations"

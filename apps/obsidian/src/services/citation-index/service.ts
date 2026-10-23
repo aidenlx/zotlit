@@ -23,7 +23,7 @@ export type { CitationLookupObservation } from "./lookup-service";
 
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { describeJoinedCandidates } from "./ambiguity";
 import { citationOutcome } from "./outcome";
@@ -182,7 +182,7 @@ interface CitationIndexEvents {
 
 export interface CitationIndexOptions {
   runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
-  db: Pick<ZoteroReadsService, "state" | "acquireRead">;
+  db: Pick<PlainZoteroReads, "state" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "current">;
   parseClient: Pick<PlainCitationParse, "parse">;
   app: App;

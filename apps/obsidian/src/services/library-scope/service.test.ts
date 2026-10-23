@@ -281,6 +281,9 @@ async function makeService(
       }),
     }),
   );
+  // Scope refresh scenarios start after the initial database load settles.
+  await reads.ready;
+  await expect.poll(() => reads.state).not.toBe("loading");
   const queries = stack.use(queryClientsFixture(() => now));
   const settings = new FakeSettings(
     options.scope === undefined ? { mode: "all" } : options.scope,

@@ -69,7 +69,7 @@ function creationHarness(selection: CreationProfileSelection) {
     },
     app: { workspace: { openLinkText } },
     zoteroReads: {
-      ready: Promise.resolve({ reads: { ItemsByIndexedKeys: readItems } }),
+      reads: { ItemsByIndexedKeys: readItems },
     },
     zoteroPref: { dataDir: null },
     noteFeature: {

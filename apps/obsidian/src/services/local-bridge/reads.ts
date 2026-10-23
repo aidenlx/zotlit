@@ -40,10 +40,8 @@ import type { ProfileReader, ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import type { SelectedItemIdentity } from "./sessions";
 import { collectVaultTargets } from "./vault-targets";
@@ -71,7 +69,7 @@ export class SelectedItemUnavailableError extends Error {
 export interface LocalBridgeReadDeps {
   app: App;
   settings: Pick<PlainPluginSettings, "current">;
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"

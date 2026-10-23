@@ -40,7 +40,7 @@ import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { annotationLinkHoverExtension } from "./annotation-link";
@@ -56,7 +56,7 @@ export interface CitekeyEditorDeps {
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: NoteFeature;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  db: Pick<ZoteroReadsService, "state" | "ready">;
+  db: Pick<PlainZoteroReads, "state" | "reads">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;
   /** What a hovered citation shows. */
@@ -434,7 +434,7 @@ export class CitekeyEditor extends Service<void> {
 
   /** The live Item an Indexed Key names, or `undefined` when none does. */
   async #readItem(indexedKey: string) {
-    const { reads } = await this.#db.ready;
+    const { reads } = this.#db;
     const items = await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
     );
