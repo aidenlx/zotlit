@@ -32,7 +32,7 @@ import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
-import { createChineseSegmenterService } from "./chinese-segmenter/service";
+import { plainChineseSegmenter } from "./chinese-segmenter/plain";
 import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
 import { plainCitationParse } from "./citation-parse/plain";
@@ -61,8 +61,8 @@ import { createNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
+import { plainPandocEngine } from "./pandoc/plain";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
-import { createPandocEngineService } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { ProfileService } from "./profile/service";
@@ -163,8 +163,8 @@ export async function buildServices(
       localServer: ({ settings, zoteroPref, noteIndex }) =>
         new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
-    .use({
-      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
+    .useValue({
+      chineseSegmenter: () => plainChineseSegmenter(runtime),
     })
     .use({
       // Interactive reads use their own worker; Citation Index bulk reads
@@ -578,8 +578,8 @@ export async function buildServices(
           parseClient: citationParse,
         }),
     })
-    .use({
-      pandocEngine: () => createPandocEngineService(plugin.app),
+    .useValue({
+      pandocEngine: () => plainPandocEngine(runtime),
     })
     .use({
       bibliographyRender: ({

@@ -21,7 +21,7 @@ import {
 } from "./document-presentation";
 import type { EffectivePresentation } from "./document-presentation";
 import type { BibliographyEntry, RenderedCitation } from "./engine";
-import type { PandocEngineService } from "./service";
+import type { PlainPandocEngine } from "./plain";
 import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
@@ -56,7 +56,7 @@ export interface BibliographyRenderCacheOptions {
   profile: Pick<ProfileService, "ready" | "on">;
   db: Pick<ZoteroReadsService, "on">;
   pandocEngine: Pick<
-    PandocEngineService,
+    PlainPandocEngine,
     "getStatus" | "subscribe" | "getEngine"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "on">;
@@ -401,6 +401,7 @@ export class BibliographyRenderCache extends Service<void> {
     try {
       const presentation = enginePresentation(style);
       const engine = await this.#engine.getEngine();
+      if (!engine) return { entries: [], hasEntryMarkers: false };
       const entries = await engine.renderBibliography({
         items,
         ...presentation,
@@ -427,6 +428,7 @@ export class BibliographyRenderCache extends Service<void> {
     if (citations.length === 0) return [];
     try {
       const engine = await this.#engine.getEngine();
+      if (!engine) return [];
       const rendered = await engine.renderCitations({
         citations,
         items,

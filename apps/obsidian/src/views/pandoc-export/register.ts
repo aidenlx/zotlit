@@ -30,7 +30,7 @@ import {
 } from "@/services/pandoc/document-presentation";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
@@ -49,7 +49,7 @@ export interface PandocExportDeps {
   db: Pick<ZoteroReadsService, "ready">;
   /** Resolves the literal citation keys of the exported document. */
   citationLookup: Pick<CitationLookup, "read">;
-  pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "getEngine">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
   profile: ProfileReader;
@@ -158,6 +158,8 @@ export async function runPandocExport(
 
   let output: Uint8Array;
   try {
+    const engine = await pandocEngine.getEngine();
+    if (!engine) return;
     const result = await exportCitedDocument(
       {
         document: {
@@ -168,7 +170,7 @@ export async function runPandocExport(
         format: choices.format,
         ...engineStyle,
       },
-      exportPorts(deps, await pandocEngine.getEngine()),
+      exportPorts(deps, engine),
     );
     if ("error" in result) {
       showExportFailure(result.error);
@@ -234,7 +236,7 @@ async function exportPresentation(
 
 function exportPorts(
   deps: PandocExportDeps,
-  engine: Awaited<ReturnType<PandocEngineService["getEngine"]>>,
+  engine: NonNullable<Awaited<ReturnType<PlainPandocEngine["getEngine"]>>>,
 ): ExportPorts {
   const { app, citationLookup, db, zoteroPref } = deps;
   return {

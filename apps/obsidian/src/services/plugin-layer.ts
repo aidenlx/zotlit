@@ -4,9 +4,14 @@ import type { Plugin } from "obsidian";
 import { Effect, Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
+import { layerChineseSegmenter } from "./chinese-segmenter/service";
+import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLogging, layerLogOutput } from "./log/service";
+import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import { layerPandocEngine } from "./pandoc/service";
+import type { PandocEngine } from "./pandoc/service";
 import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
 import { serviceLayer } from "./service-layer";
@@ -27,11 +32,20 @@ import type { ZoteroPref } from "./zotero-pref/service";
 export function pluginLayer(
   plugin: Plugin,
 ): Layer.Layer<
-  PluginSettings | UseLedger | QueryClients | CitationParse | ZoteroPref
+  | PluginSettings
+  | UseLedger
+  | QueryClients
+  | CitationParse
+  | ZoteroPref
+  | ChineseSegmenter
+  | PandocEngine
 > {
   return Layer.mergeAll(
     layerUseLedger,
     layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
+    Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
+      Layer.provide(layerManagedBinaryPlatform),
+    ),
     layerCitationParse,
     layerQueryClients,
   ).pipe(
