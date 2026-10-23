@@ -40,7 +40,7 @@ const ENTRY_KINDS = {
   resolved:
     "A cited work the connected Zotero source holds. Adds key, citekey, summary, and linkpath; linkpath is null while the work has no Literature Note.",
   unresolved:
-    "A citation key that names no item in the connected Zotero source. Adds citekey.",
+    "A citation key or Annotation Citation that names no item in the connected Zotero source. Adds citekey for a literal citation key, or annotationKey for an Annotation Citation.",
   ambiguous:
     "A citation key several items carry in the current library scope, so it names none of them and the document cites no one work here. Adds citekey and candidates, each candidate { key, libraryID }; pass one candidate key to cited-by or zotlit:template-data to work with that item.",
   missing:
@@ -51,6 +51,8 @@ const ENTRY_KINDS = {
 
 /** Which syntax wrote an occurrence. */
 const OCCURRENCE_KINDS = {
+  annotation:
+    "An empty-text Zotero annotation link that cites the annotation's parent item. Its raw identifier is the Annotation Indexed Key; pageLabel holds the page locator or null.",
   citekey:
     "A citation key written literally in the note body. Its position covers the written form: '@key', '-@key' where the author is suppressed, and '@{key}' where braces carry the key.",
   wikilink:
@@ -74,6 +76,8 @@ const COVERAGE_STATES = {
 
 /** Which setting controls a Citation Syntax's admission into an answer. */
 const SYNTAX_STATES = {
+  annotation:
+    "Included while the 'Annotation citations' setting (citation.annotation-citations) is on; on by default.",
   citekey:
     "Included while the 'Pandoc citations' setting (citation.pandoc-citations) is on.",
   wikilink:
@@ -200,7 +204,9 @@ OCCURRENCES
 
 ${rows(OCCURRENCE_KINDS)}
   raw         The identifier alone: the citation key without its '@' and
-              braces, or the wikilink's linkpath with its subpath removed.
+              braces, the wikilink's linkpath with its subpath removed, or the
+              Annotation Indexed Key. Annotation Citations also carry pageLabel
+              (a string or null).
   position    { start, end }, each { line, col, offset }. line and col count
               from 1, matching editor and grep line numbers; offset counts
               UTF-16 code units from 0. start is inclusive and end is

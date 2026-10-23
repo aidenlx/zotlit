@@ -1,8 +1,6 @@
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { inProcessParseClient } from "@/services/citation-parse/in-process";
-
 import { openCitedByView, registerCitedByView } from "./register";
 import { CITED_BY_VIEW_TYPE } from "./view";
 
@@ -28,7 +26,6 @@ describe("Cited By Sidebar registration", () => {
 
     registerCitedByView(plugin, {
       app,
-      citationParse: inProcessParseClient,
       citationIndex: {} as never,
     });
     expect(getRightLeaf).not.toHaveBeenCalled();

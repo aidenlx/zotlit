@@ -19,10 +19,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
+import {
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
+import { scanNote } from "@/services/citation-index/scan-note";
 import type {
+  CitationIndex,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
+import type { FileScan } from "@/services/citation-index/store";
+import {
+  createCitationIndexHarness,
+  KEY_A,
+} from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import { CitedByActionsContext, createCitedByActions } from "./actions";
@@ -181,9 +192,17 @@ const sortedStats: Record<string, { ctime: number; mtime: number }> = {
 
 let root: Root | undefined;
 
-/** Settles awaited work without letting a macrotask yield run. */
-async function flushMicrotasks(): Promise<void> {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+/** Bounds state polling while preserving the preview stream's host-yield boundary. */
+async function waitForState(assertion: () => void): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (attempt === 999) throw error;
+      await Promise.resolve();
+    }
+  }
 }
 
 afterEach(async () => {
@@ -218,6 +237,8 @@ function makeFile(
 }
 
 async function render(options: {
+  previewsPending?: boolean;
+  citationIndex?: Pick<CitationIndex, "getFileScan">;
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
   read?: (file: TFile) => Promise<string>;
@@ -241,8 +262,19 @@ async function render(options: {
         ({ path }) => [path, makeFile(path, options.stats?.[path])] as const,
       ),
   );
-  const file = files.get(group.path) ?? makeFile();
-  const read = vi.fn(options.read ?? (() => Promise.resolve(body)));
+  const file =
+    files.get(group.path) ?? files.values().next().value ?? makeFile();
+  const scans = new Map<string, Promise<FileScan>>();
+  const read = vi.fn((file: TFile) => {
+    const result = options.read?.(file) ?? Promise.resolve(body);
+    const parsed = result.then((source) => {
+      file.stat.size = source.length;
+      return { ...scanNote(source), ...file.stat, scannerRevision: 1 };
+    });
+    void parsed.catch(() => undefined);
+    scans.set(file.path, parsed);
+    return result;
+  });
   const openLinkText = vi.fn(() => Promise.resolve());
   const setEphemeralState = vi.fn();
   const markdownView = new MarkdownView({} as WorkspaceLeaf);
@@ -294,7 +326,9 @@ async function render(options: {
   const actions = createCitedByActions({
     app,
     store,
-    citationParse: inProcessParseClient,
+    citationIndex: options.citationIndex ?? {
+      getFileScan: (file) => scans.get(file.path) ?? Promise.resolve(null),
+    },
   });
   const container = document.createElement("div");
   document.body.append(container);
@@ -313,6 +347,20 @@ async function render(options: {
     );
     await Promise.resolve();
   });
+  const previewPaths =
+    options.previewsPending || options.indexedKey === null
+      ? []
+      : shown.groups.map(({ path }) => path);
+  await act(() =>
+    waitForState(() => {
+      for (const path of previewPaths) {
+        expect(store.getState().previews[path]?.status).toBeOneOf([
+          "ready",
+          "unavailable",
+        ]);
+      }
+    }),
+  );
   return {
     actions,
     app,
@@ -325,16 +373,6 @@ async function render(options: {
     setEphemeralState,
     store,
   };
-}
-
-async function waitForOccurrences(
-  container: Element,
-  count = 1,
-): Promise<void> {
-  await vi.waitFor(async () => {
-    await act(async () => Promise.resolve());
-    expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(count);
-  });
 }
 
 /** The source-group labels, in the order the sidebar shows them. */
@@ -505,7 +543,8 @@ describe("CitedBy", () => {
     }));
     const paths = groups.map(({ path }) => path);
     const pendingReads: ((source: string) => void)[] = [];
-    const { container, read } = await render({
+    const { container, read, store } = await render({
+      previewsPending: true,
       snapshot: snapshot({ groups }),
       read: () =>
         new Promise<string>((resolve) => {
@@ -516,14 +555,19 @@ describe("CitedBy", () => {
     const finishReads = async (count: number) => {
       await act(async () => {
         for (let done = 0; done < count; done += 1) {
-          pendingReads.shift()?.(body);
-          await flushMicrotasks();
+          await waitForState(() => expect(pendingReads).toHaveLength(1));
+          const path = readPaths().at(-1)!;
+          pendingReads.shift()!(body);
+          await waitForState(() =>
+            expect(store.getState().previews[path]?.status).toBe("ready"),
+          );
         }
       });
     };
 
-    await act(flushMicrotasks);
-    expect(readPaths()).toEqual(paths.slice(0, 1));
+    await act(() =>
+      waitForState(() => expect(readPaths()).toEqual(paths.slice(0, 1))),
+    );
 
     await finishReads(5);
     expect(readPaths()).toEqual(paths.slice(0, 5));
@@ -539,7 +583,8 @@ describe("CitedBy", () => {
 
   it("stops streaming once the view is gone", async () => {
     const pendingReads: ((source: string) => void)[] = [];
-    const { read } = await render({
+    const { read, store } = await render({
+      previewsPending: true,
       snapshot: snapshot({
         groups: [group, { ...group, path: "Notes/other.md" }],
       }),
@@ -548,14 +593,15 @@ describe("CitedBy", () => {
           pendingReads.push(resolve);
         }),
     });
-    await act(flushMicrotasks);
-    expect(read).toHaveBeenCalledOnce();
+    await act(() => waitForState(() => expect(read).toHaveBeenCalledOnce()));
 
     await act(() => root?.unmount());
     root = undefined;
     await act(async () => {
-      pendingReads.shift()?.(body);
-      await flushMicrotasks();
+      pendingReads.shift()!(body);
+      await waitForState(() =>
+        expect(store.getState().previews[group.path]?.status).toBe("ready"),
+      );
     });
 
     expect(read).toHaveBeenCalledOnce();
@@ -589,7 +635,6 @@ describe("CitedBy", () => {
 
   it("highlights the citation inside its surrounding context", async () => {
     const { container } = await render({});
-    await waitForOccurrences(container);
     const card = container.querySelector("[data-occurrence]");
     const highlight = card?.querySelector("mark");
 
@@ -601,7 +646,6 @@ describe("CitedBy", () => {
 
   it("activates card navigation from the keyboard and from a mod-click", async () => {
     const { container, openLinkText, setEphemeralState } = await render({});
-    await waitForOccurrences(container);
     const card = container.querySelector("[data-occurrence]") as HTMLElement;
 
     await act(() => {
@@ -610,18 +654,14 @@ describe("CitedBy", () => {
       );
     });
     await act(async () => Promise.resolve());
-    await vi.waitFor(() =>
-      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false),
-    );
-    await vi.waitFor(() => expect(setEphemeralState).toHaveBeenCalledOnce());
+    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+    expect(setEphemeralState).toHaveBeenCalledOnce();
 
     vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
     await act(() => card.click());
     await act(async () => Promise.resolve());
-    await vi.waitFor(() =>
-      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", "tab"),
-    );
-    await vi.waitFor(() => expect(setEphemeralState).toHaveBeenCalledTimes(2));
+    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", "tab");
+    expect(setEphemeralState).toHaveBeenCalledTimes(2);
   });
 
   it("toggles a source row and opens its note from the dedicated button", async () => {
@@ -660,33 +700,29 @@ describe("CitedBy", () => {
       setActiveLeaf,
       setEphemeralState,
     } = await render({ duplicateSourceLeaf: true });
-    await waitForOccurrences(container);
 
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
     await act(async () => Promise.resolve());
 
-    await vi.waitFor(() => expect(setEphemeralState).toHaveBeenCalledOnce());
+    expect(setEphemeralState).toHaveBeenCalledOnce();
     expect(oldSetEphemeralState).not.toHaveBeenCalled();
     expect(setActiveLeaf).toHaveBeenCalledOnce();
   });
 
   it("opens and reveals a current occurrence, but omits a stale range", async () => {
     const current = await render({});
-    await waitForOccurrences(current.container);
     await act(() =>
       (
         current.container.querySelector("[data-occurrence]") as HTMLElement
       ).click(),
     );
     await act(async () => Promise.resolve());
-    await vi.waitFor(() =>
-      expect(current.openLinkText).toHaveBeenLastCalledWith(
-        group.path,
-        "",
-        false,
-      ),
+    expect(current.openLinkText).toHaveBeenLastCalledWith(
+      group.path,
+      "",
+      false,
     );
     expect(current.setEphemeralState).toHaveBeenLastCalledWith({
       startLoc: group.occurrences[0]!.position.start,
@@ -698,17 +734,18 @@ describe("CitedBy", () => {
     root = undefined;
     document.body.replaceChildren();
     const stale = await render({ read: () => Promise.resolve("changed") });
-    await waitForOccurrences(stale.container);
     await act(() =>
       (
         stale.container.querySelector("[data-occurrence]") as HTMLElement
       ).click(),
     );
-    await vi.waitFor(() =>
-      expect(stale.openLinkText).toHaveBeenLastCalledWith(
-        group.path,
-        "",
-        false,
+    await act(() =>
+      waitForState(() =>
+        expect(stale.openLinkText).toHaveBeenLastCalledWith(
+          group.path,
+          "",
+          false,
+        ),
       ),
     );
     expect(stale.setEphemeralState).not.toHaveBeenCalled();
@@ -730,17 +767,20 @@ describe("CitedBy", () => {
       read: () => Promise.resolve("See [[Roe 2025]]."),
       links: [{ link: "Doe 2024", original: "[[Doe 2024]]", position }],
     });
-    await waitForOccurrences(container);
 
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
 
+    await act(() =>
+      waitForState(() => {
+        expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+        expect(container.textContent).toContain("Preview unavailable");
+      }),
+    );
     expect(container.querySelector("mark")).toBeNull();
     expect(container.textContent).toContain("Preview unavailable");
-    await vi.waitFor(() =>
-      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false),
-    );
+    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
     expect(setEphemeralState).not.toHaveBeenCalled();
   });
 
@@ -758,22 +798,95 @@ describe("CitedBy", () => {
     const { container, openLinkText, setEphemeralState } = await render({
       snapshot: snapshot({ groups: [wikilinkGroup] }),
       read: () => Promise.resolve(source),
-      links: [{ link: "Doe 2024", original: "[[Doe 2024]]", position }],
     });
-    await waitForOccurrences(container);
 
     expect(container.querySelector("mark")?.textContent).toBe("[[Doe 2024]]");
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
     await act(async () => Promise.resolve());
-    await vi.waitFor(() =>
-      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false),
-    );
+    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
     expect(setEphemeralState).toHaveBeenLastCalledWith({
       startLoc: position.start,
       endLoc: position.end,
       line: 0,
+    });
+  });
+
+  it("#1693 previews, searches, and reveals an Annotation Citation", async () => {
+    const source = `Evidence from estuaries [](${annotationUri}).`;
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": source },
+      { zoteroRows: annotationRows },
+    );
+    await harness.index.getDocumentCitationSet(harness.draft);
+    const cited = await harness.index.getCitedBy(KEY_A);
+    const occurrence = cited.groups[0]!.occurrences[0]!;
+    const { container, openLinkText, setEphemeralState } = await render({
+      snapshot: cited,
+      citationIndex: harness.index,
+      stats: { "draft.md": harness.draft.stat },
+      read: () => Promise.resolve(source),
+      search: "estuaries",
+    });
+    expect(container.textContent).toContain("Evidence from estuaries");
+    expect(container.querySelector("mark")?.textContent).toBe(
+      `[](${annotationUri})`,
+    );
+    await act(() =>
+      (container.querySelector("[data-occurrence]") as HTMLElement).click(),
+    );
+    await act(() =>
+      waitForState(() => {
+        expect(openLinkText).toHaveBeenLastCalledWith("draft.md", "", false);
+        expect(setEphemeralState).toHaveBeenLastCalledWith({
+          startLoc: occurrence.position.start,
+          endLoc: occurrence.position.end,
+          line: 0,
+        });
+      }),
+    );
+  });
+
+  it("#1693 waits for the stored parse when a preview follows a note edit", async () => {
+    const source = `Evidence [](${annotationUri}).`;
+    const gate = Promise.withResolvers<void>();
+    let editing = false;
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": source },
+      {
+        zoteroRows: annotationRows,
+        parseClient: {
+          async parse(request, signal) {
+            if (editing) await gate.promise;
+            return inProcessParseClient.parse(request, signal);
+          },
+        },
+      },
+    );
+    await harness.index.getDocumentCitationSet(harness.draft);
+    const cited = await harness.index.getCitedBy(KEY_A);
+    editing = true;
+    const edited = `${source} More context.`;
+    harness.metadataCache.change(harness.draft, edited);
+    const { container } = await render({
+      snapshot: cited,
+      citationIndex: harness.index,
+      stats: { "draft.md": harness.draft.stat },
+      previewsPending: true,
+      read: () => Promise.resolve(edited),
+    });
+    await act(async () => {
+      gate.resolve();
+      await harness.index.getDocumentCitationSet(harness.draft);
+    });
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(container.textContent).toContain("More context.");
+        expect(container.querySelector("mark")?.textContent).toBe(
+          `[](${annotationUri})`,
+        );
+      });
     });
   });
 
@@ -1349,7 +1462,6 @@ describe("CitedBy", () => {
       "Alpha cites @doe2024 here.",
       "Beta cites @doe2024 there.",
     ];
-    await waitForOccurrences(container, 4);
     expect(excerpts()).toEqual(inSourceOrder);
 
     for (const mode of [

@@ -8,10 +8,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type {
+  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { FileScan } from "@/services/citation-index/store";
 
 import { currentOccurrence, openCitedByOccurrence } from "./navigation";
 import {
@@ -83,10 +84,10 @@ export interface CitedByActions {
 
 export function createCitedByActions(options: {
   app: App;
+  citationIndex: Pick<CitationIndex, "getFileScan">;
   store: CitedByStore;
-  citationParse: ParseClient;
 }): CitedByActions {
-  const { app, store, citationParse } = options;
+  const { app, citationIndex, store } = options;
   const generations = new Map<string, number>();
   let queued: CitedByGroup[] = [];
   let draining = false;
@@ -112,23 +113,23 @@ export function createCitedByActions(options: {
         (occurrence) => !(occurrenceID(occurrence) in current.contexts),
       );
       if (missing.length === 0) return;
-      const contexts = await contextsFrom({
-        app,
-        file,
-        citationParse,
-        source: current.source,
-        occurrences: missing,
-      }).catch(() => null);
+      const scan = await citationIndex.getFileScan(file);
       if (
-        contexts === null ||
-        store.getState().previews[group.path] !== current
+        store.getState().previews[group.path] !== current ||
+        file.stat.mtime !== mtime
       )
         return;
       setPreview(group.path, {
         ...current,
         contexts: {
           ...current.contexts,
-          ...contexts,
+          ...contextsFrom({
+            scan,
+            app,
+            file,
+            source: current.source,
+            occurrences: missing,
+          }),
         },
       });
       return;
@@ -138,16 +139,12 @@ export function createCitedByActions(options: {
     generations.set(group.path, generation);
     setPreview(group.path, { status: "loading", mtime });
     let source: string;
-    let contexts: Record<string, OccurrenceContext>;
+    let scan: Readonly<FileScan> | null;
     try {
-      source = await app.vault.cachedRead(file);
-      contexts = await contextsFrom({
-        app,
-        file,
-        citationParse,
-        source,
-        occurrences: group.occurrences,
-      });
+      [source, scan] = await Promise.all([
+        app.vault.cachedRead(file),
+        citationIndex.getFileScan(file),
+      ]);
     } catch {
       if (generations.get(group.path) === generation) {
         setPreview(group.path, { status: "unavailable", mtime });
@@ -161,7 +158,13 @@ export function createCitedByActions(options: {
       mtime,
       source,
       outline: sourceOutline(app.metadataCache.getFileCache(file)),
-      contexts,
+      contexts: contextsFrom({
+        scan,
+        app,
+        file,
+        source,
+        occurrences: group.occurrences,
+      }),
     });
   };
 
@@ -289,7 +292,7 @@ export function createCitedByActions(options: {
     },
     openOccurrence(group, occurrence, event) {
       void openCitedByOccurrence(app, {
-        citationParse,
+        citationIndex,
         group,
         occurrence,
         event,
@@ -325,23 +328,23 @@ function openSortMenu(
   showMenuAtButton(menu, event.currentTarget);
 }
 
-async function contextsFrom(options: {
-  citationParse: ParseClient;
+function contextsFrom(options: {
   app: App;
+  scan: Readonly<FileScan> | null;
   file: TFile;
   source: string;
   occurrences: readonly CitationOccurrence[];
-}): Promise<Record<string, OccurrenceContext>> {
-  const { app, file, source, occurrences, citationParse } = options;
-  const { record } = await citationParse.parse(
-    { path: file.path, generation: 0, text: source },
-    new AbortController().signal,
-  );
+}): Record<string, OccurrenceContext> {
+  const { app, scan, file, source, occurrences } = options;
   const cache = app.metadataCache.getFileCache(file);
   return Object.fromEntries(
     occurrences.map((occurrence) => [
       occurrenceID(occurrence),
-      citationContext(source, currentOccurrence(record, occurrence), cache),
+      citationContext(
+        source,
+        currentOccurrence({ scan, source, occurrence }),
+        cache,
+      ),
     ]),
   );
 }

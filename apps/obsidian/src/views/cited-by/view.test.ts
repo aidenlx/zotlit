@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
 import { TFile } from "obsidian";
 import type {
@@ -11,12 +12,11 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
-// @vitest-environment happy-dom
-import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
@@ -108,8 +108,7 @@ describe("CitedByView", () => {
     );
     view = new TestCitedByView({} as WorkspaceLeaf, {
       app,
-      citationParse: inProcessParseClient,
-      citationIndex: { observeCitedBy },
+      citationIndex: { observeCitedBy, getFileScan: async () => null },
     });
     expect(view.getIcon()).toBe("file-input");
     expect(view.contentEl.classList).toContain("zt-cited-by-view");
@@ -235,8 +234,14 @@ describe("CitedByView", () => {
     );
     view = new TestCitedByView({} as WorkspaceLeaf, {
       app,
-      citationParse: inProcessParseClient,
-      citationIndex: { observeCitedBy },
+      citationIndex: {
+        observeCitedBy,
+        getFileScan: async (file) => ({
+          ...scanNote(source),
+          ...file.stat,
+          scannerRevision: 1,
+        }),
+      },
     });
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -602,8 +607,14 @@ function makeHarness() {
   return {
     deps: {
       app,
-      citationParse: inProcessParseClient,
-      citationIndex: { observeCitedBy },
+      citationIndex: {
+        observeCitedBy,
+        getFileScan: async (file: TFile) => ({
+          ...scanNote(CITING_BODY),
+          ...file.stat,
+          scannerRevision: 1,
+        }),
+      },
     },
     note,
     plain,

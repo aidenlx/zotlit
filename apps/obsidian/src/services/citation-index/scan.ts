@@ -2,7 +2,7 @@
 import type { Pos } from "obsidian";
 
 /** Which syntax wrote a Citation Occurrence. */
-export type CitationSyntax = "citekey" | "wikilink";
+export type CitationSyntax = "citekey" | "wikilink" | "annotation";
 
 /**
  * One appearance of a Citation in one document. Raw and unresolved by design:
@@ -10,9 +10,13 @@ export type CitationSyntax = "citekey" | "wikilink";
  */
 export interface CitationOccurrence {
   kind: CitationSyntax;
-  /** The literal citekey, or the wikilink's linkpath with its subpath stripped. */
+  /** The literal citekey, stripped wikilink linkpath, or Annotation Indexed Key. */
   raw: string;
+  /** The validated text after a Wikilink Citation’s #cite: marker. */
+  fragment?: string;
   position: Pos;
+  /** The Annotation Citation's page locator, when supplied by its link. */
+  pageLabel?: string | null;
 }
 
 /** A Citation Fragment that declares citation intent but cannot be parsed. */
@@ -34,6 +38,8 @@ export function occurrencesEqual(
     return (
       occurrence.kind === other.kind &&
       occurrence.raw === other.raw &&
+      occurrence.fragment === other.fragment &&
+      occurrence.pageLabel === other.pageLabel &&
       occurrence.position.start.offset === other.position.start.offset &&
       occurrence.position.end.offset === other.position.end.offset
     );

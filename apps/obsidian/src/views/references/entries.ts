@@ -80,6 +80,7 @@ type CitationReferenceEntry = NumberedReferenceEntryBase &
     | { kind: "unrendered"; source: ReferenceSource; linkpath: string | null }
     | { kind: "missing"; linkpath: string | null }
     | { kind: "unresolved"; citekey: string }
+    | { kind: "unresolved"; annotationKey: string }
     | {
         kind: "ambiguous";
         citekey: string;
@@ -140,7 +141,18 @@ export function buildReferenceEntries(
   const trailing: ReferenceEntry[] = [];
   for (const { indexedKey, refNumber, linkpath, occurrences } of citations) {
     if (indexedKey === null) {
-      // Every Citation carries an occurrence, and one naming no single Item is
+      const first = occurrences[0]!;
+      if (first.kind === "annotation") {
+        trailing.push({
+          id: `annotation:${first.raw}`,
+          refNumber,
+          occurrences,
+          kind: "unresolved",
+          annotationKey: first.raw,
+        });
+        continue;
+      }
+      // Every remaining Citation naming no single Item is
       // written as a citekey, so its raw text is what the row shows. The
       // identity keeps the `@` it is written with, which an Indexed Key never
       // starts with.

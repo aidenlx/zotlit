@@ -790,6 +790,8 @@
   "settings_citation_pandoc_citations_desc": "在参考文献侧栏和 ZotLit 的文内功能中包含诸如 `@doe2024` 的 Pandoc 引用。此设置不会更改引用的插入或导出方式。",
   "settings_citation_wikilink_citations_name": "Wiki 链接引用",
   "settings_citation_wikilink_citations_desc": "将指向文献笔记的链接视为引用，让参考文献侧边栏在文献引用标识之外也列出它们。",
+  "settings_citation_annotation_citations_name": "批注引用",
+  "settings_citation_annotation_citations_desc": "将没有链接文字的 Zotero 批注链接（如 `[](zotero://…)`）视为对批注所属条目的引用，纳入参考文献侧栏和 ZotLit 的文内引用功能。此设置不会更改导出方式。",
   "settings_citation_annotation_links_name": "Zotero 标注链接",
   "settings_citation_annotation_links_desc": "悬停在笔记中的 Zotero 标注链接上时显示该标注，并在选择链接时由 ZotLit 打开。关闭时，这些链接在 Zotero 中打开，与未安装 ZotLit 时相同。",
   "settings_citation_graph_heading": "关系图谱",
@@ -940,6 +942,9 @@
   "references_citekey_pending": "正在 Zotero 文库中查找 @{citekey}…",
   "references_citekey_ambiguous": "@{citekey} 在 Zotero 文库中对应多个条目。",
   "references_citation_fragment_invalid": "此链接包含无效的引用片段。",
+  "references_annotation_link_invalid": "此链接未指向有效的 Zotero 批注。",
+  "references_annotation_unresolved": "批注 {annotationKey} 未匹配到 Zotero 文库中的任何条目。",
+  "references_annotation_pending": "正在查找批注 {annotationKey}…",
   "references_open_note_invalid_fragment": "修复引用片段以打开其笔记",
   "references_go_to_occurrence": [
     {

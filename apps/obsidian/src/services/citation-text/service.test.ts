@@ -8,6 +8,7 @@ import {
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   Citation,
   CitationOccurrence,
@@ -143,11 +144,7 @@ async function makeHarness({
   };
   const wikilinkOccurrences: CitationOccurrence[] =
     settings["citation.wikilink-citations"] === true
-      ? links.map((entry) => ({
-          kind: "wikilink",
-          raw: entry.link.split("#", 1)[0]!,
-          position: entry.position,
-        }))
+      ? scanNote(body).wikilinks
       : [];
   const set = documentCitationSet ?? {
     occurrences: [...literalOccurrences(body), ...wikilinkOccurrences].sort(

@@ -269,6 +269,7 @@ describe("CitationIndex", () => {
     expect(index.syntaxes()).toEqual({
       citekey: "included",
       wikilink: "excluded",
+      annotation: "included",
     });
 
     settings.update({
@@ -279,6 +280,7 @@ describe("CitationIndex", () => {
     expect(index.syntaxes()).toEqual({
       citekey: "excluded",
       wikilink: "included",
+      annotation: "included",
     });
   });
 

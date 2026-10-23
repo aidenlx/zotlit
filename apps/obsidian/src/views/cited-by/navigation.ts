@@ -4,24 +4,24 @@ import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 
 import { occurrencesEqual } from "@/services/citation-index/scan";
-import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
+  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { FileScan } from "@/services/citation-index/store";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 export async function openCitedByOccurrence(
   app: App,
   options: {
-    citationParse: ParseClient;
+    citationIndex: Pick<CitationIndex, "getFileScan">;
     group: CitedByGroup;
     occurrence: CitationOccurrence;
     event: MouseEvent;
   },
 ): Promise<void> {
-  const { group, occurrence, event } = options;
+  const { citationIndex, group, occurrence, event } = options;
   const pane = Keymap.isModEvent(event.nativeEvent);
   const file = app.vault.getAbstractFileByPath(group.path);
   if (!(file instanceof TFile)) {
@@ -29,16 +29,16 @@ export async function openCitedByOccurrence(
     return;
   }
 
-  const mtime = file.stat.mtime;
   let current: CitationOccurrence | null = null;
   try {
-    const source = await app.vault.cachedRead(file);
-    const { record } = await options.citationParse.parse(
-      { path: file.path, generation: 0, text: source },
-      new AbortController().signal,
-    );
-    if (file.stat.mtime === mtime)
-      current = currentOccurrence(record, occurrence);
+    const mtime = file.stat.mtime;
+    const [source, scan] = await Promise.all([
+      app.vault.cachedRead(file),
+      citationIndex.getFileScan(file),
+    ]);
+    if (file.stat.mtime === mtime) {
+      current = currentOccurrence({ scan, source, occurrence });
+    }
   } catch {
     // Opening the note remains useful when its current source cannot be read.
   }
@@ -56,15 +56,47 @@ export async function openCitedByOccurrence(
   });
 }
 
-export function currentOccurrence(
-  record: NoteScanRecord,
-  occurrence: CitationOccurrence,
-): CitationOccurrence | null {
-  const candidates =
-    occurrence.kind === "citekey" ? record.citekeys : record.wikilinks;
+export function currentOccurrence(options: {
+  scan: Readonly<FileScan> | null;
+  source: string;
+  occurrence: CitationOccurrence;
+}): CitationOccurrence | null {
+  const { scan, source, occurrence } = options;
+  if (scan === null) return null;
+  const candidates: CitationOccurrence[] = [
+    ...scan.citekeys,
+    ...scan.wikilinks,
+    ...scan.annotations
+      .filter(({ form }) => form === "citation")
+      .map(
+        ({ indexedKey, position, pageLabel }): CitationOccurrence => ({
+          kind: "annotation",
+          raw: indexedKey,
+          position,
+          pageLabel,
+        }),
+      ),
+  ];
   return (
-    candidates.find((candidate) =>
-      occurrencesEqual([candidate], [occurrence]),
+    candidates.find(
+      (candidate) =>
+        occurrencesEqual([candidate], [occurrence]) &&
+        positionMatchesSource(source, candidate),
     ) ?? null
+  );
+}
+
+function positionMatchesSource(
+  source: string,
+  occurrence: CitationOccurrence,
+): boolean {
+  const { start, end } = occurrence.position;
+  const beforeStart = source.slice(0, start.offset);
+  const beforeEnd = source.slice(0, end.offset);
+  return (
+    start.line === beforeStart.split("\n").length - 1 &&
+    start.col === start.offset - (beforeStart.lastIndexOf("\n") + 1) &&
+    end.line === beforeEnd.split("\n").length - 1 &&
+    end.col === end.offset - (beforeEnd.lastIndexOf("\n") + 1)
   );
 }

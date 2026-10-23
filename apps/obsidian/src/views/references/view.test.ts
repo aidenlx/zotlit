@@ -297,7 +297,7 @@ beforeEach(async () => {
           return () => undefined;
         },
       },
-      citekeyEditor: { openCitekey: () => Promise.resolve() },
+      citekeyEditor: { openIndexedKey: () => Promise.resolve() },
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
         subscribe: () => () => undefined,
