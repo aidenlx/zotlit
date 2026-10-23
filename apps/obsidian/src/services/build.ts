@@ -31,6 +31,7 @@ import { AttachmentResolver } from "./attachment-resolver/service";
 import { createChineseSegmenterService } from "./chinese-segmenter/service";
 import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
+import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
@@ -567,12 +568,17 @@ export function buildServices(
         new CitationLookup({ reads: zoteroReads, libraryScope, queryClient }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, citationLookup }) =>
+      citationParse: () =>
+        new CitationParse({ workspace: plugin.app.workspace }),
+    })
+    .use({
+      citationIndex: ({ noteIndex, settings, citationLookup, citationParse }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
           lookup: citationLookup,
+          parseClient: citationParse,
         }),
     })
     .use({

@@ -9,7 +9,7 @@ import { embeddedWorker } from "./embedded-worker.ts";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 
-it("bundles the scanner and classifier without Obsidian and scans in a worker (#1689)", async () => {
+it("runs the production parse worker without Obsidian (#1691)", async () => {
   const result = await build({
     configFile: false,
     logLevel: "silent",
@@ -24,7 +24,7 @@ it("bundles the scanner and classifier without Obsidian and scans in a worker (#
       },
       embeddedWorker({
         id: "virtual:scan-worker",
-        entry: resolve(packageRoot, "src/services/citation-index/scan-note.ts"),
+        entry: resolve(packageRoot, "src/services/citation-parse/worker.ts"),
         config: {
           resolve: { alias: { "@": resolve(packageRoot, "src") } },
           external: [],
@@ -51,35 +51,50 @@ it("bundles the scanner and classifier without Obsidian and scans in a worker (#
   await using worker = new Worker(
     `
     const { parentPort } = require("node:worker_threads");
+    globalThis.self = {
+      addEventListener: (_, listener) => parentPort.on("message", data => listener({ data })),
+      postMessage: data => parentPort.postMessage(data),
+    };
     ${bundled.default}
-    parentPort.on("message", text => parentPort.postMessage(exports.scanNote(text)));
   `,
     { eval: true },
   );
   const response = once(worker, "message");
-  worker.postMessage(
-    "[](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
-  );
+  worker.postMessage({
+    id: 7,
+    request: {
+      path: "draft.md",
+      generation: 12,
+      text: "[](zotero://open/groups/42/items/ABCD2345?annotation=EFGH6789)",
+    },
+  });
   expect(await response).toEqual([
     {
-      links: [],
-      citations: [],
-      citekeys: [],
-      wikilinks: [],
-      malformedWikilinks: [],
-      malformedAnnotationCitations: [],
-      annotations: [
-        {
-          form: "citation",
-          indexedKey: "EFGH6789g42",
-          attachmentKey: "ABCD2345",
-          pageLabel: null,
-          position: {
-            start: { line: 0, col: 0, offset: 0 },
-            end: { line: 0, col: 62, offset: 62 },
-          },
+      id: 7,
+      reply: {
+        path: "draft.md",
+        generation: 12,
+        record: {
+          links: [],
+          citations: [],
+          citekeys: [],
+          wikilinks: [],
+          malformedWikilinks: [],
+          malformedAnnotationCitations: [],
+          annotations: [
+            {
+              form: "citation",
+              indexedKey: "EFGH6789g42",
+              attachmentKey: "ABCD2345",
+              pageLabel: null,
+              position: {
+                start: { line: 0, col: 0, offset: 0 },
+                end: { line: 0, col: 62, offset: 62 },
+              },
+            },
+          ],
         },
-      ],
+      },
     },
   ]);
 });

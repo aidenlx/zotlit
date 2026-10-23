@@ -177,6 +177,22 @@ export default defineConfig(({ mode }) => {
           target: "es2025",
         },
       }),
+      embeddedWorker({
+        id: "virtual:citation-parse-worker",
+        entry: resolve(
+          import.meta.dirname,
+          "src/services/citation-parse/worker.ts",
+        ),
+        config: {
+          mode,
+          define,
+          resolve: resolveConfig,
+          external: builtins,
+          minify: isProd,
+          sourcemap: isProd ? false : "inline",
+          target: "es2025",
+        },
+      }),
       obsidianBuildPlugin(isDev),
       Boolean(process.env.ANALYZE) &&
         unstableRolldownAdapter(
