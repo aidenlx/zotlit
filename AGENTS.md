@@ -95,6 +95,15 @@ Choose the destination by purpose:
 - **Planned work** — the issue tracker: agreed specs and tickets, with progress, findings, and handoffs as comments on the owning ticket. See `docs/agents/issue-tracker.md`.
 - **Maintained reference** — `docs/`: architecture, runbooks, ADRs, research reports, process config. Create a new file there only with explicit user permission, skill output included; keep the draft in `.scratch/` until then.
 
+## Worktrees
+
+Worktrunk (`wt`) creates and removes every worktree. Its hooks place the worktree at the user's path template, bootstrap it through the `pre-start` hook in `.config/wt.toml`, and deinit submodules on removal.
+
+- **Create:** `wt switch --create <branch> --base <base>`; add `--no-cd` when the worktree is for another agent, and name the printed path in that agent's prompt. Name the branch by its change type, such as `feat/<topic>` or `fix/<topic>`.
+- **Remove:** `wt remove <branch>`.
+
+A plain `git worktree add` runs none of these hooks: the worktree has no dependencies or submodules and sits outside the path template.
+
 ## Agent skills
 
 ### Issue tracker
