@@ -130,7 +130,7 @@ an `https://` link. Abridged output:
 }
 ```
 
-None of the eleven `zotero://` occurrences is in `links`, `embeds`,
+None of the `zotero://` occurrences is in `links`, `embeds`,
 `frontmatterLinks`, `resolvedLinks` or `unresolvedLinks`. That covers body,
 empty text, embed, embed with alt text, angle-bracket URL, callout, plain
 quote, table, list item, frontmatter, and `%%` comment. The `https://`

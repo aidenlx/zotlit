@@ -898,32 +898,33 @@
         A synthetic benchmark (Node 26, not Electron) measured a prototype
         annotation scan against today's citekey scan:
         <code>maskExclusions</code>, a <code>zotero://open/</code> regex, then
-        <code>parseAnnotationOpenUri</code>. Medians, on a log-scaled bar:
+        <code>parseAnnotationOpenUri</code>. Medians; bar length is log-scaled
+        from 0.1 ms to 1,000 ms:
       </p>
       <div class="card bars">
         <div class="bar-row">
           <span>10 k · annotation scan</span>
-          <div class="bar" style="width: 9%"></div>
+          <div class="bar" style="width: 3%"></div>
           <span>0.11 ms</span>
         </div>
         <div class="bar-row">
           <span>10 k · citekey scan</span>
-          <div class="bar today" style="width: 21%"></div>
+          <div class="bar today" style="width: 13%"></div>
           <span>0.32 ms</span>
         </div>
         <div class="bar-row">
           <span>100 k · annotation scan</span>
-          <div class="bar" style="width: 34%"></div>
+          <div class="bar" style="width: 26%"></div>
           <span>1.08 ms</span>
         </div>
         <div class="bar-row">
           <span>100 k · citekey scan</span>
-          <div class="bar today" style="width: 61%"></div>
+          <div class="bar today" style="width: 53%"></div>
           <span>13.1 ms</span>
         </div>
         <div class="bar-row">
           <span>1 M · annotation scan</span>
-          <div class="bar" style="width: 64%"></div>
+          <div class="bar" style="width: 52%"></div>
           <span>12.0 ms</span>
         </div>
         <div class="bar-row">
