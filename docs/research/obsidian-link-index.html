@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Annotation link index</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fbfaf7;
+        --panel: #ffffff;
+        --panel2: #f3f1ec;
+        --bd: #e3dfd6;
+        --tx: #1f1d1a;
+        --tx2: #5a554c;
+        --tx3: #8b857a;
+        --ob: #6b4fd8;
+        --ob-bg: #eeeafb;
+        --zt: #b4532a;
+        --zt-bg: #f8ebe3;
+        --wk: #2563a8;
+        --wk-bg: #e6eef8;
+        --yes: #2f7a4f;
+        --yes-bg: #e3f2e9;
+        --no: #a8322a;
+        --no-bg: #f8e4e2;
+        --part: #a0700f;
+        --part-bg: #f8efd9;
+        --sans:
+          "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+        --serif: "Source Serif 4", Georgia, serif;
+        --mono:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #171615;
+          --panel: #201f1d;
+          --panel2: #2a2825;
+          --bd: #3a3733;
+          --tx: #e8e4dc;
+          --tx2: #b3ada2;
+          --tx3: #857f75;
+          --ob: #a993ff;
+          --ob-bg: #29243f;
+          --zt: #ec9a72;
+          --zt-bg: #3a261c;
+          --wk: #7fb0ea;
+          --wk-bg: #1d2a3a;
+          --yes: #6cc497;
+          --yes-bg: #1c3127;
+          --no: #f08a80;
+          --no-bg: #3a1f1c;
+          --part: #e0b45a;
+          --part-bg: #362b14;
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #171615;
+        --panel: #201f1d;
+        --panel2: #2a2825;
+        --bd: #3a3733;
+        --tx: #e8e4dc;
+        --tx2: #b3ada2;
+        --tx3: #857f75;
+        --ob: #a993ff;
+        --ob-bg: #29243f;
+        --zt: #ec9a72;
+        --zt-bg: #3a261c;
+        --wk: #7fb0ea;
+        --wk-bg: #1d2a3a;
+        --yes: #6cc497;
+        --yes-bg: #1c3127;
+        --no: #f08a80;
+        --no-bg: #3a1f1c;
+        --part: #e0b45a;
+        --part-bg: #362b14;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--tx);
+        font: 16px/1.6 var(--sans);
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 16px 96px;
+      }
+      h1 {
+        font: 700 32px/1.2 var(--sans);
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font: 700 22px/1.3 var(--sans);
+        margin: 56px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--bd);
+      }
+      h3 {
+        font: 600 17px/1.35 var(--sans);
+        margin: 28px 0 6px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      .lead {
+        font: 400 18px/1.6 var(--serif);
+        color: var(--tx2);
+      }
+      .meta {
+        font-size: 13px;
+        color: var(--tx3);
+      }
+      code,
+      .mono {
+        font-family: var(--mono);
+        font-size: 0.86em;
+      }
+      code {
+        background: var(--panel2);
+        padding: 1px 5px;
+        border-radius: 4px;
+        overflow-wrap: anywhere;
+      }
+      pre {
+        background: var(--panel2);
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow-x: auto;
+        font: 13px/1.5 var(--mono);
+      }
+      pre code {
+        background: none;
+        padding: 0;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 16px 0;
+      }
+      .verdict {
+        border-left: 4px solid var(--no);
+        background: var(--no-bg);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin: 16px 0;
+      }
+      .figure {
+        overflow-x: auto;
+      }
+      .figure svg {
+        display: block;
+        width: 100%;
+        min-width: 640px;
+        height: auto;
+      }
+      .cap {
+        font-size: 13px;
+        color: var(--tx3);
+        margin-top: 6px;
+      }
+      .scroll {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--bd);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        color: var(--tx2);
+        background: var(--panel2);
+      }
+      .y,
+      .n,
+      .p {
+        display: inline-block;
+        min-width: 36px;
+        text-align: center;
+        border-radius: 999px;
+        padding: 1px 8px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .y {
+        color: var(--yes);
+        background: var(--yes-bg);
+      }
+      .n {
+        color: var(--no);
+        background: var(--no-bg);
+      }
+      .p {
+        color: var(--part);
+        background: var(--part-bg);
+      }
+      .grid4 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 12px;
+        margin: 16px 0;
+      }
+      .opt {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        padding: 14px;
+        font-size: 14px;
+      }
+      .opt h4 {
+        margin: 0 0 4px;
+        font: 700 15px/1.3 var(--sans);
+      }
+      .opt .tag {
+        font-size: 12px;
+        color: var(--tx3);
+        margin-bottom: 8px;
+      }
+      .opt ul {
+        margin: 6px 0 0;
+        padding-left: 18px;
+      }
+      .opt li {
+        margin: 3px 0;
+      }
+      .opt.dead {
+        border-color: var(--no);
+      }
+      .plus {
+        color: var(--yes);
+        font-weight: 600;
+      }
+      .minus {
+        color: var(--no);
+        font-weight: 600;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-size: 13px;
+        color: var(--tx2);
+        margin: 8px 0;
+      }
+      .sw {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        vertical-align: -1px;
+        margin-right: 5px;
+      }
+      .bars {
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      .bar-row {
+        display: grid;
+        grid-template-columns: 190px 1fr 70px;
+        gap: 8px;
+        align-items: center;
+        margin: 4px 0;
+      }
+      .bar {
+        height: 12px;
+        border-radius: 3px;
+        background: var(--zt);
+      }
+      .bar.today {
+        background: var(--tx3);
+      }
+      @media (max-width: 560px) {
+        h1 {
+          font-size: 26px;
+        }
+        .bar-row {
+          grid-template-columns: 120px 1fr 60px;
+        }
+      }
+      /* SVG theming */
+      .s-box {
+        fill: var(--panel);
+        stroke: var(--bd);
+      }
+      .s-ob {
+        fill: var(--ob-bg);
+        stroke: var(--ob);
+      }
+      .s-zt {
+        fill: var(--zt-bg);
+        stroke: var(--zt);
+      }
+      .s-wk {
+        fill: var(--wk-bg);
+        stroke: var(--wk);
+      }
+      .s-no {
+        fill: var(--no-bg);
+        stroke: var(--no);
+      }
+      .s-t {
+        fill: var(--tx);
+        font: 600 13px var(--sans);
+      }
+      .s-t2 {
+        fill: var(--tx2);
+        font: 400 11.5px var(--sans);
+      }
+      .s-m {
+        fill: var(--tx2);
+        font: 400 11px var(--mono);
+      }
+      .s-line {
+        stroke: var(--tx3);
+        stroke-width: 1.5;
+        fill: none;
+      }
+      .s-ztline {
+        stroke: var(--zt);
+        stroke-width: 1.8;
+        fill: none;
+      }
+      .s-noline {
+        stroke: var(--no);
+        stroke-width: 1.8;
+        fill: none;
+        stroke-dasharray: 5 4;
+      }
+      .s-head {
+        fill: var(--tx3);
+      }
+      .s-zthead {
+        fill: var(--zt);
+      }
+      .s-region {
+        fill: none;
+        stroke: var(--tx3);
+        stroke-dasharray: 3 4;
+      }
+      .s-rl {
+        fill: var(--tx3);
+        font: 600 11px var(--sans);
+        letter-spacing: 0.06em;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Can Obsidian's index carry Durable Annotation Links?</h1>
+      <p class="meta">
+        2026-10-23 · Source observations from Obsidian 1.14.4 (extracted
+        <code>app.js</code> and <code>worker.js</code>) and a runtime test in
+        the fixture vault <code>tests/fixture-vault-zotlit-v2</code>. The
+        companion text, with every file:line citation, is
+        <code>docs/research/obsidian-link-index.md</code>.
+      </p>
+      <p class="lead">
+        ZotLit wants the Citation Index to know every
+        <code>zotero://open/…?annotation=…</code> link in the vault, so it can
+        answer "which notes use this annotation". This page shows where
+        Obsidian's metadata pipeline loses those links, where ZotLit already
+        sits in that pipeline, and what each indexing option costs. It makes no
+        recommendation.
+      </p>
+
+      <div class="verdict">
+        <strong>Short answer:</strong> no. The metadata worker turns a Markdown
+        link or image into a cache entry only if its URL starts with
+        <code>./</code> or <code>../</code>, or has no <code>:</code> at all
+        (<code>worker.js:7770</code>). Every <code>zotero:</code> URL fails that
+        test, in every form and every place. It has done so since at least
+        0.12.19.
+      </div>
+
+      <h2>1 · Obsidian's parse pipeline</h2>
+      <p>
+        A vault change becomes a <code>changed</code> event in six steps.
+        Parsing happens in a Web Worker. Hashing, caching, link resolution and
+        events stay on the main thread.
+      </p>
+      <div class="figure card">
+        <svg
+          viewBox="0 0 900 400"
+          role="img"
+          aria-label="Obsidian metadata pipeline from vault change through worker to metadataCache and events"
+        >
+          <defs>
+            <marker
+              id="ah"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" class="s-head" />
+            </marker>
+            <marker
+              id="ahz"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" class="s-zthead" />
+            </marker>
+          </defs>
+          <rect x="8" y="8" width="884" height="232" rx="10" class="s-region" />
+          <text x="20" y="28" class="s-rl">MAIN THREAD (app.js)</text>
+          <rect
+            x="8"
+            y="262"
+            width="560"
+            height="130"
+            rx="10"
+            class="s-region"
+          />
+          <text x="20" y="282" class="s-rl">
+            METADATA CACHE WORKER (worker.js)
+          </text>
+
+          <rect x="24" y="48" width="140" height="64" rx="8" class="s-box" />
+          <text x="94" y="74" text-anchor="middle" class="s-t">
+            Vault event
+          </text>
+          <text x="94" y="92" text-anchor="middle" class="s-m">
+            create · modify
+          </text>
+          <text x="94" y="105" text-anchor="middle" class="s-m">
+            external-watch
+          </text>
+
+          <rect x="196" y="48" width="190" height="64" rx="8" class="s-ob" />
+          <text x="291" y="72" text-anchor="middle" class="s-t">
+            computeFileMetadataAsync
+          </text>
+          <text x="291" y="90" text-anchor="middle" class="s-t2">
+            readBinary → decode → hash
+          </text>
+          <text x="291" y="104" text-anchor="middle" class="s-m">
+            app.js:91704
+          </text>
+
+          <rect x="420" y="48" width="160" height="64" rx="8" class="s-box" />
+          <text x="500" y="72" text-anchor="middle" class="s-t">
+            Hash already cached?
+          </text>
+          <text x="500" y="90" text-anchor="middle" class="s-t2">
+            yes → reuse, no parse
+          </text>
+          <text x="500" y="104" text-anchor="middle" class="s-m">
+            app.js:91780
+          </text>
+
+          <rect x="614" y="48" width="130" height="64" rx="8" class="s-ob" />
+          <text x="679" y="72" text-anchor="middle" class="s-t">
+            saveMetaCache
+          </text>
+          <text x="679" y="90" text-anchor="middle" class="s-t2">
+            hash → metadata
+          </text>
+          <text x="679" y="104" text-anchor="middle" class="s-m">
+            IndexedDB ‹id›-cache
+          </text>
+
+          <rect x="764" y="48" width="116" height="64" rx="8" class="s-ob" />
+          <text x="822" y="72" text-anchor="middle" class="s-t">"changed"</text>
+          <text x="822" y="90" text-anchor="middle" class="s-m">
+            (file, text,
+          </text>
+          <text x="822" y="104" text-anchor="middle" class="s-m">cache)</text>
+
+          <rect x="614" y="148" width="266" height="72" rx="8" class="s-ob" />
+          <text x="747" y="172" text-anchor="middle" class="s-t">
+            linkResolver queue
+          </text>
+          <text x="747" y="190" text-anchor="middle" class="s-t2">
+            resolvedLinks / unresolvedLinks
+          </text>
+          <text x="747" y="208" text-anchor="middle" class="s-m">
+            "resolve" per file · "resolved" when empty
+          </text>
+
+          <path d="M164 80 H194" class="s-line" marker-end="url(#ah)" />
+          <path d="M386 80 H418" class="s-line" marker-end="url(#ah)" />
+          <path d="M580 80 H612" class="s-line" marker-end="url(#ah)" />
+          <path d="M744 80 H762" class="s-line" marker-end="url(#ah)" />
+          <path d="M679 112 V146" class="s-line" marker-end="url(#ah)" />
+
+          <rect x="24" y="300" width="200" height="76" rx="8" class="s-wk" />
+          <text x="124" y="324" text-anchor="middle" class="s-t">
+            Parse (remark + Obsidian)
+          </text>
+          <text x="124" y="342" text-anchor="middle" class="s-t2">
+            wikilinks, callouts, tags …
+          </text>
+          <text x="124" y="360" text-anchor="middle" class="s-m">
+            worker.js:12853
+          </text>
+
+          <rect x="248" y="300" width="300" height="76" rx="8" class="s-no" />
+          <text x="398" y="322" text-anchor="middle" class="s-t">
+            link / image → ilink / iembed
+          </text>
+          <text x="398" y="340" text-anchor="middle" class="s-m">
+            only if y(url): "./" "../" or no ":"
+          </text>
+          <text x="398" y="360" text-anchor="middle" class="s-t2">
+            zotero://… stays a plain "link" → dropped
+          </text>
+
+          <path
+            d="M500 112 C500 200, 140 220, 124 298"
+            class="s-line"
+            marker-end="url(#ah)"
+          />
+          <text x="300" y="214" class="s-m">
+            postMessage({metadataCache: ArrayBuffer}) — transferred
+          </text>
+          <path d="M224 338 H246" class="s-line" marker-end="url(#ah)" />
+          <path
+            d="M548 338 C640 338, 679 260, 679 114"
+            class="s-line"
+            marker-end="url(#ah)"
+          />
+          <text x="590" y="300" class="s-m">CachedMetadata</text>
+
+          <text x="590" y="360" class="s-t2">
+            One job at a time: work() throws
+          </text>
+          <text x="590" y="376" class="s-t2">
+            "Work queue must be sequential!"
+          </text>
+        </svg>
+        <p class="cap">
+          Parsing runs in the worker, and so does the external-link filter. A
+          plugin can read the output but cannot add a transformer. The
+          transformer list is a module-local inside <code>worker.js</code>. A
+          second instance of the same script renders reading-view sections
+          (<code>parseSections</code>). Canvas parses text under 5,000
+          characters on the main thread with a copy of the parser and sends
+          anything longer to the worker (<code>app.js:177820</code>).
+        </p>
+      </div>
+
+      <h2>2 · Where ZotLit's Citation Index sits</h2>
+      <p>
+        The Citation Index plugs into the end of that pipeline. It takes the
+        <code>changed</code> event's text and scans it on the main thread.
+        Wikilink citations it reads straight from the cache at query time.
+        Resolving citekeys to Items happens in the ZoteroReads worker (ADR
+        0073). No ZotLit worker parses Markdown.
+      </p>
+      <div class="figure card">
+        <svg
+          viewBox="0 0 900 330"
+          role="img"
+          aria-label="ZotLit Citation Index position relative to Obsidian metadata cache and ZoteroReads worker"
+        >
+          <defs>
+            <marker
+              id="ah2"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" class="s-head" />
+            </marker>
+            <marker
+              id="ahz2"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" class="s-zthead" />
+            </marker>
+          </defs>
+          <rect x="8" y="8" width="884" height="210" rx="10" class="s-region" />
+          <text x="20" y="28" class="s-rl">MAIN THREAD</text>
+          <rect
+            x="8"
+            y="236"
+            width="884"
+            height="86"
+            rx="10"
+            class="s-region"
+          />
+          <text x="20" y="256" class="s-rl">WORKERS</text>
+
+          <rect x="24" y="44" width="180" height="70" rx="8" class="s-ob" />
+          <text x="114" y="68" text-anchor="middle" class="s-t">
+            metadataCache
+          </text>
+          <text x="114" y="86" text-anchor="middle" class="s-m">
+            "changed" (file, data)
+          </text>
+          <text x="114" y="102" text-anchor="middle" class="s-m">
+            getFileCache().links
+          </text>
+
+          <rect x="250" y="40" width="250" height="80" rx="8" class="s-zt" />
+          <text x="375" y="62" text-anchor="middle" class="s-t">
+            scanCitekeyOccurrences
+          </text>
+          <text x="375" y="80" text-anchor="middle" class="s-t2">
+            maskExclusions → Pandoc grammar
+          </text>
+          <text x="375" y="98" text-anchor="middle" class="s-m">
+            citation-index/scan.ts:38
+          </text>
+          <text x="375" y="113" text-anchor="middle" class="s-t2">
+            + chunked backfill (20 files / yield)
+          </text>
+
+          <rect x="540" y="40" width="160" height="80" rx="8" class="s-zt" />
+          <text x="620" y="66" text-anchor="middle" class="s-t">
+            #scans + store
+          </text>
+          <text x="620" y="84" text-anchor="middle" class="s-t2">
+            path → {mtime, size,
+          </text>
+          <text x="620" y="100" text-anchor="middle" class="s-t2">
+            occurrences}
+          </text>
+
+          <rect x="736" y="40" width="144" height="80" rx="8" class="s-zt" />
+          <text x="808" y="66" text-anchor="middle" class="s-t">Queries</text>
+          <text x="808" y="84" text-anchor="middle" class="s-t2">
+            document set,
+          </text>
+          <text x="808" y="100" text-anchor="middle" class="s-t2">
+            cited-by, graph
+          </text>
+
+          <rect x="250" y="144" width="250" height="56" rx="8" class="s-zt" />
+          <text x="375" y="168" text-anchor="middle" class="s-t">
+            documentWikilinks
+          </text>
+          <text x="375" y="186" text-anchor="middle" class="s-t2">
+            read from the cache at query time, never stored
+          </text>
+
+          <rect x="540" y="144" width="160" height="56" rx="8" class="s-no" />
+          <text x="620" y="168" text-anchor="middle" class="s-t">
+            annotation links?
+          </text>
+          <text x="620" y="186" text-anchor="middle" class="s-t2">
+            not in cache · not scanned
+          </text>
+
+          <rect x="560" y="262" width="320" height="50" rx="8" class="s-wk" />
+          <text x="720" y="284" text-anchor="middle" class="s-t">
+            ZoteroReads worker
+          </text>
+          <text x="720" y="302" text-anchor="middle" class="s-t2">
+            SQLite · Item Index · citation lookup maps · Query
+          </text>
+
+          <rect x="24" y="262" width="300" height="50" rx="8" class="s-wk" />
+          <text x="174" y="284" text-anchor="middle" class="s-t">
+            Obsidian Metadata Cache Worker
+          </text>
+          <text x="174" y="302" text-anchor="middle" class="s-t2">
+            parses; filters out external URLs
+          </text>
+
+          <path d="M204 72 H248" class="s-ztline" marker-end="url(#ahz2)" />
+          <text x="208" y="64" class="s-m">data</text>
+          <path d="M500 80 H538" class="s-ztline" marker-end="url(#ahz2)" />
+          <path d="M700 80 H734" class="s-ztline" marker-end="url(#ahz2)" />
+          <path
+            d="M204 104 C230 104, 230 172, 248 172"
+            class="s-line"
+            marker-end="url(#ah2)"
+          />
+          <path
+            d="M500 172 C720 172, 790 150, 800 122"
+            class="s-line"
+            marker-end="url(#ah2)"
+          />
+          <path
+            d="M808 120 C808 200, 760 230, 740 260"
+            class="s-line"
+            marker-end="url(#ah2)"
+          />
+          <text x="770" y="222" class="s-m">keys → Items</text>
+          <path d="M174 260 V116" class="s-line" marker-end="url(#ah2)" />
+        </svg>
+        <p class="cap">
+          Orange is ZotLit. The Citation Index keeps its own IndexedDB store,
+          <code>‹appId›-zotlit-citation-index</code>, which mirrors Obsidian's
+          <code>‹appId›-cache</code>.
+        </p>
+      </div>
+
+      <h2>3 · Link-form coverage</h2>
+      <p>
+        Recorded means present in <code>getFileCache()</code> as
+        <code>links</code>, <code>embeds</code> or
+        <code>frontmatterLinks</code>. Results are from the runtime probe in
+        Obsidian 1.14.4. The relative link <code>./Local.md</code> is the
+        control: it shows which places Obsidian reads at all.
+      </p>
+      <div class="legend">
+        <span
+          ><span class="sw" style="background: var(--yes)"></span>recorded</span
+        >
+        <span
+          ><span class="sw" style="background: var(--no)"></span>not
+          recorded</span
+        >
+        <span
+          ><span class="sw" style="background: var(--part)"></span>partial</span
+        >
+      </div>
+      <div class="scroll card">
+        <table>
+          <thead>
+            <tr>
+              <th>Link form</th>
+              <th>Body</th>
+              <th>Callout</th>
+              <th>Table</th>
+              <th><code>%%</code> comment</th>
+              <th>Code</th>
+              <th>Frontmatter</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>[p. 42](zotero://…)</code></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+            </tr>
+            <tr>
+              <td><code>[](zotero://…)</code></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+            </tr>
+            <tr>
+              <td><code>![](zotero://…)</code></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="n">no</span></td>
+            </tr>
+            <tr>
+              <td><code>[ref]: zotero://…</code></td>
+              <td><span class="p">def only</span></td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td><span class="n">no</span></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>control <code>[x](./Local.md)</code></td>
+              <td><span class="y">yes</span></td>
+              <td><span class="y">yes</span></td>
+              <td><span class="y">yes</span></td>
+              <td><span class="y">yes</span></td>
+              <td><span class="n">no</span></td>
+              <td><span class="y">yes</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="cap">
+          The <code>[]</code> and <code>![]</code> rows were not probed in every
+          place one by one. They follow from the predicate: the link form does
+          not change the result. A reference definition's URL survives verbatim,
+          query string included, in <code>referenceLinks</code>. ZotLit does not
+          write that form. Obsidian records links inside an inline
+          <code>%%</code> comment; ZotLit's <code>maskExclusions</code> blanks
+          them.
+        </p>
+      </div>
+
+      <h3>What a recorded link carries</h3>
+      <pre><code>{ position: { start: {line, col, offset}, end: {…} },   // zero-based
+  link:     decodeURI(url), NFC, trimmed — "?" and "#" kept
+  original: "[local](./Local%20Note.md)",               // exact source slice
+  displayText: "local" }                                // "" for [](…)</code></pre>
+
+      <h2>4 · The four options</h2>
+      <div class="grid4">
+        <div class="opt dead">
+          <h4>A · Reuse metadataCache</h4>
+          <div class="tag">read links / embeds / frontmatterLinks</div>
+          <ul>
+            <li class="minus">
+              Not possible: no <code>zotero:</code> URL is ever stored
+            </li>
+            <li>
+              <code>referenceLinks</code> covers definitions only, a form ZotLit
+              does not write
+            </li>
+            <li>No API, public or internal, lists external links per file</li>
+          </ul>
+        </div>
+        <div class="opt">
+          <h4>B · Hybrid</h4>
+          <div class="tag">cache events and structure + own link scan</div>
+          <ul>
+            <li class="plus">
+              Reuses <code>changed</code> text, parsed <code>frontmatter</code>,
+              <code>sections</code>
+            </li>
+            <li class="minus">Link extraction is still all ZotLit's</li>
+            <li class="minus">
+              Two exclusion rules (<code>%%</code>) to reconcile
+            </li>
+            <li class="minus"><code>sections</code> are root-level only</li>
+          </ul>
+        </div>
+        <div class="opt">
+          <h4>C · Own parsing, main thread</h4>
+          <div class="tag">extend scan.ts beside citekeys</div>
+          <ul>
+            <li class="plus">
+              Same lifecycle as citekeys: events, backfill, store
+            </li>
+            <li class="plus">
+              <code>parseAnnotationOpenUri</code> ready;
+              <code>includes</code> prefilter
+            </li>
+            <li class="minus">Store schema bump → one full rescan</li>
+            <li class="minus">
+              Cost scales with note size (about 12 ms at 1 M characters)
+            </li>
+          </ul>
+        </div>
+        <div class="opt">
+          <h4>D · Own parsing, in a worker</h4>
+          <div class="tag">ZoteroReads worker or a new one</div>
+          <ul>
+            <li class="plus">
+              Large notes and backfill leave the renderer alone
+            </li>
+            <li class="minus">
+              Bodies cross by message; no <code>obsidian</code> import in a
+              worker
+            </li>
+            <li class="minus">
+              Generations, store ownership, async reads for views
+            </li>
+            <li class="minus">
+              Shared: competes with the ADR 0073 budgets. New: about 18 MiB heap
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>How expensive is the main thread?</h3>
+      <p>
+        A synthetic benchmark (Node 26, not Electron) measured a prototype
+        annotation scan against today's citekey scan:
+        <code>maskExclusions</code>, a <code>zotero://open/</code> regex, then
+        <code>parseAnnotationOpenUri</code>. Medians, on a log-scaled bar:
+      </p>
+      <div class="card bars">
+        <div class="bar-row">
+          <span>10 k · annotation scan</span>
+          <div class="bar" style="width: 9%"></div>
+          <span>0.11 ms</span>
+        </div>
+        <div class="bar-row">
+          <span>10 k · citekey scan</span>
+          <div class="bar today" style="width: 21%"></div>
+          <span>0.32 ms</span>
+        </div>
+        <div class="bar-row">
+          <span>100 k · annotation scan</span>
+          <div class="bar" style="width: 34%"></div>
+          <span>1.08 ms</span>
+        </div>
+        <div class="bar-row">
+          <span>100 k · citekey scan</span>
+          <div class="bar today" style="width: 61%"></div>
+          <span>13.1 ms</span>
+        </div>
+        <div class="bar-row">
+          <span>1 M · annotation scan</span>
+          <div class="bar" style="width: 64%"></div>
+          <span>12.0 ms</span>
+        </div>
+        <div class="bar-row">
+          <span>1 M · citekey scan</span>
+          <div class="bar today" style="width: 100%"></div>
+          <span>991 ms</span>
+        </div>
+        <p class="cap">
+          A note with no <code>zotero://open/</code> link costs 0.016 ms even at
+          1 M characters, because the prefilter skips it. The citekey scan grows
+          much faster than linearly on this dense input. That cost already
+          exists today; this study did not diagnose it.
+        </p>
+      </div>
+
+      <h2>5 · Sources</h2>
+      <ul>
+        <li>
+          Obsidian 1.14.4 <code>worker.js</code>: <code>7770</code> (y),
+          <code>13407–13469</code> (link and image converters),
+          <code>13912–13937</code> (frontmatterLinks),
+          <code>13987–14142</code> (onmessage).
+        </li>
+        <li>
+          Obsidian 1.14.4 <code>app.js</code>: <code>91066</code> (spawn),
+          <code>91203</code> (getLinks), <code>91569–91651</code> (resolver),
+          <code>91704–91922</code> (compute, work, receive),
+          <code>42491</code> (main-thread parser),
+          <code>177815–177825</code> (canvas threshold).
+        </li>
+        <li>
+          Same <code>y</code> predicate in 0.12.19, 1.0.0, 1.13.7 and 1.14.2.
+        </li>
+        <li>
+          ZotLit:
+          <code
+            >apps/obsidian/src/services/citation-index/{scan,service,store}.ts</code
+          >, <code>packages/db/src/lib/zt-uri.ts</code>, ADRs 0050, 0068, 0069,
+          0072 and 0073.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>
