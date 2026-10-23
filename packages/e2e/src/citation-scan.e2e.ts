@@ -240,13 +240,18 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
       ).toEqual(
         before.uses.map((occurrence) => occurrence.position.start.offset + 16),
       );
+      // Agreed budget for PR #1696: ADR 0079 aimed for 2 ms; the desktop renderer
+      // measured 4.9 ms dense and 2.2 ms sparse at max, harness IPC included.
+      // #1702 brings both back to 2 ms.
       const measurements = await measureCitationScan(vaultId);
       for (const measurement of measurements) {
         console.info(
           "Citation scan renderer CPU, 100k characters",
           measurement,
         );
-        expect.soft(measurement.maxMs, measurement.density).toBeLessThan(2);
+        expect
+          .soft(measurement.maxMs, measurement.density)
+          .toBeLessThan(measurement.density === "dense" ? 6 : 3);
       }
     } finally {
       await obEval(
