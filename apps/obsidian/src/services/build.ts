@@ -66,7 +66,7 @@ import { createPandocEngineService } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { ProfileService } from "./profile/service";
-import { QueryClients } from "./query-client/service";
+import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
@@ -134,7 +134,7 @@ export async function buildServices(
         cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
     })
     .useValue({
-      queryClient: () => runtime.runSync(QueryClients.use(Effect.succeed)),
+      queryClient: () => plainQueryClients(runtime),
     })
     .use({
       release: ({ settings }) =>

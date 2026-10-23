@@ -24,7 +24,8 @@ import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
-import type { Held, QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type {
   LocalApiAnnotation,
@@ -502,7 +503,7 @@ export interface AnnotationRepositoryEvents {
 export interface AnnotationRepositoryDeps {
   db: Pick<ZoteroReadsService, "acquireRead" | "on" | "refresh">;
   queryClient: Pick<
-    QueryClientService,
+    PlainQueryClients,
     "client" | "invalidate" | "keysUnder" | "peek" | "read"
   >;
   localApi: Pick<

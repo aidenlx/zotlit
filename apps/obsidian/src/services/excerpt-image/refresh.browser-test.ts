@@ -9,7 +9,8 @@
 // Chromium canvas encoded as lossless WebP. Note-asset and Zotero-cache
 // survival need a vault and a Zotero data directory, so they are covered where
 // those exist — see `service.test.ts`.
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { check } from "./__fixtures__/check";
 import { settledDisplay } from "./__fixtures__/display-state";
@@ -133,7 +134,7 @@ interface Live {
   readonly store: ExcerptStore;
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayService;
-  readonly queries: QueryClientService;
+  readonly queries: PlainQueryClients;
   readonly renders: GatedRender[];
   /** One render, once the service reached it. */
   started(index: number): Promise<GatedRender>;
@@ -162,7 +163,7 @@ async function live(options: {
     stamp: async () => PDF,
     render: gate.render,
   });
-  const queries = new QueryClientService();
+  const queries = queryClientsFixture();
   const display = new ExcerptDisplayService({
     queries,
     resolve: (request, signal) => service.resolve(request, signal),
@@ -178,7 +179,7 @@ async function live(options: {
       return read;
     },
   });
-  await Promise.all([service.ready, display.ready, queries.ready]);
+  await Promise.all([service.ready, display.ready]);
   const app: Live = {
     store,
     service,
