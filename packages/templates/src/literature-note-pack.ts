@@ -16,6 +16,7 @@ export type LiteratureNotePackErrorCode =
   | "revert-refused";
 
 export class LiteratureNotePackError extends Error {
+  readonly _tag = "LiteratureNotePackError";
   readonly code: LiteratureNotePackErrorCode;
   readonly recovery: string;
 

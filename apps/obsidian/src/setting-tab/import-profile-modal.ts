@@ -80,7 +80,7 @@ export function createProfileImporter(
       return undefined;
     }
     try {
-      await Promise.all([deps.profile.ready, deps.template.ready]);
+      await deps.profile.ready;
       let plan: PreparedProfileImport;
       try {
         plan = await deps.profile.prepareImport(source, {});

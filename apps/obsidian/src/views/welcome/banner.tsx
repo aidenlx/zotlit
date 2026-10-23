@@ -14,7 +14,7 @@ import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { ReleaseService } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { SettingsPatch } from "@/services/settings/service";
-import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
+import type { PlainTemplateMigration } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -48,10 +48,7 @@ export interface WelcomeBannerDeps {
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   settings: Pick<PlainPluginSettings, "subscribe" | "update" | "flush">;
   setupActions: SetupActions;
-  templateMigration: Pick<
-    LiteratureNoteTemplateMigrationService,
-    "convert" | "retryCleanup"
-  >;
+  templateMigration: Pick<PlainTemplateMigration, "convert" | "retryCleanup">;
   release: Pick<
     ReleaseService,
     | "hasV1Templates"

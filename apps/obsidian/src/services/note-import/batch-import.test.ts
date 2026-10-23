@@ -192,16 +192,6 @@ function makeIndexedNote(key = "ABCD2345"): Note {
   };
 }
 
-function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
 function makeFile(path: string): TFile {
   return { path } as TFile;
 }
@@ -253,7 +243,6 @@ function makeDeps(
   options: {
     dbState?: "loading" | "ready" | "degraded";
     importNoteResult?: "created" | "overwritten" | "skipped";
-    templateReady?: Promise<void>;
     existing?: TFile[];
     /** Per-file frontmatter cache for metadataCache.getFileCache. */
     frontmatter?: Map<TFile, Record<string, unknown>>;
@@ -309,7 +298,6 @@ function makeDeps(
       confirm: confirmMock,
       chooseProfile: vi.fn(),
     },
-    template: { ready: options.templateReady ?? Promise.resolve() },
   };
   return { deps, importNote };
 }
@@ -899,24 +887,6 @@ describe("single note import (mode=note, 1 id)", () => {
     expect(result).toEqual({ outcome: "cancelled" });
     expect(importNote).not.toHaveBeenCalled();
     expect(batchImportNotice(result)).toBeUndefined();
-  });
-
-  it("waits for template readiness before writing", async () => {
-    seedNotes([50]);
-    const templateReady = deferred();
-    const { deps, importNote } = makeDeps(
-      {},
-      { templateReady: templateReady.promise },
-    );
-
-    const pending = createBatchImport(deps).runBatchImport("note", [50]);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(importNote).not.toHaveBeenCalled();
-    templateReady.resolve();
-    await pending;
-    expect(importNote).toHaveBeenCalledTimes(1);
   });
 });
 

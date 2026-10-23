@@ -46,7 +46,7 @@ export async function prepareAnnotationInsert(
   >,
   options: AnnotationInsertOptions,
 ) {
-  await Promise.all([ctx.template.ready, ctx.profile.ready]);
+  await ctx.profile.ready;
   await using lease = await ctx.zoteroReads.acquireRead();
   const { annotation: a, source, signal } = options;
   const valid = () =>

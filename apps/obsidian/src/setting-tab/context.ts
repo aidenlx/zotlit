@@ -16,7 +16,7 @@ import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -158,7 +158,23 @@ export interface SettingTabContext {
    * `getSettingDefinitions()` runs from `addSettingTab()`, while `onload()` is
    * still wiring and that escape hatch still throws.
    */
-  template: TemplateService;
+  template: Pick<
+    PlainTemplate,
+    | "loaded"
+    | "javascriptTemplatesEnabled"
+    | "setJavascriptTemplatesEnabled"
+    | "getUnrecognizedFiles"
+    | "getPartialDocuments"
+    | "getReservedPartialFiles"
+    | "getPartialDocument"
+    | "deletePartial"
+    | "getCitationTemplateStatus"
+    | "restoreCitationTemplate"
+    | "getPartialNames"
+    | "createPartial"
+    | "materializeCitationTemplate"
+    | "on"
+  >;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
   pandocEngine: ManagedBinaryActions;
   /** The device-wide Chinese Segmenter binary, installed and uninstalled from here. */

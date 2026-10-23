@@ -854,7 +854,6 @@ function createFixture(options?: {
           current: settingsDefaults,
         },
         templates: {
-          ready: Promise.resolve(),
           compileErrors: options?.compileError
             ? new Map([["citation", { message: options.compileError }]])
             : new Map(),

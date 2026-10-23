@@ -41,7 +41,7 @@ import type { ProfileBindingSettings } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -72,7 +72,7 @@ interface NoteVaultApp {
  * Every member is a structural `Pick` of the full service sized to what the
  * operations touch, so {@link createNoteFeature} accepts the full services as-is
  * and tests hand-write stubs with no casts. Holds no mutable state — compiled
- * template artifacts live in {@link TemplateService}.
+ * template artifacts live in {@link PlainTemplate}.
  */
 export interface NoteFeatureDeps {
   profile: Pick<
@@ -81,8 +81,7 @@ export interface NoteFeatureDeps {
   >;
   app: NoteVaultApp;
   template: Pick<
-    TemplateService,
-    | "ready"
+    PlainTemplate,
     | "loaded"
     | "render"
     | "renderManagedContent"

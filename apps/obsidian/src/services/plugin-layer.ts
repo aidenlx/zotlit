@@ -20,6 +20,13 @@ import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
+import { layerTemplateMigration } from "./template/migration";
+import type {
+  TemplateMigration,
+  TemplateMigrationOptions,
+} from "./template/migration";
+import { layerTemplate } from "./template/service";
+import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
 import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
@@ -37,6 +44,7 @@ import { workerClient } from "./zotero-reads/worker-client";
  */
 export function pluginLayer(
   plugin: Plugin,
+  migration: TemplateMigrationOptions,
 ): Layer.Layer<
   | LibraryScope
   | ZoteroReads
@@ -48,12 +56,17 @@ export function pluginLayer(
   | ChineseSegmenter
   | PandocEngine
   | NoteIndex
+  | Template
+  | TemplateMigration
 > {
   return layerLibraryScope.pipe(
     Layer.provideMerge(layerZoteroReads(workerClient())),
     Layer.provideMerge(
       Layer.mergeAll(
         layerUseLedger,
+        layerTemplateMigration(migration).pipe(
+          Layer.provideMerge(layerTemplate),
+        ),
         layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
         Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
           Layer.provide(layerManagedBinaryPlatform),

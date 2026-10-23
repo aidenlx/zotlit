@@ -11,7 +11,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 
-import { TemplateService } from "@/services/template/service";
+import { buildTemplate } from "@/services/template/__fixtures__";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
@@ -98,9 +98,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
   const settings = await buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
   await settings.loaded;
   if (options.defaultStyle) settings.updateDefaultLiteratureNoteProfileBindings({ "citation.references-style": options.defaultStyle });
-  const templates = new TemplateService({ app, settings });
-  await templates.ready;
-  const renderCitations = vi.fn<NativeRenderDeps["bibliographyRender"]["renderCitations"]>(async (sources, _items, presentation) => {
+  const templates = await buildTemplate({ app, settings });
+    const renderCitations = vi.fn<NativeRenderDeps["bibliographyRender"]["renderCitations"]>(async (sources, _items, presentation) => {
     const content = presentation?.styleId === "numeric" ? "[1]" : "(Rougier 2014)";
     const value: RenderedCitation[] = sources.map(() => ({ content: [{ t: "Str", c: content }], citations: [{ id: "MAIN2345", mode: "normal" }] }));
     return { kind: "held", key: "fixture", record: { value, status: "fresh", settled: Promise.resolve(value) } };

@@ -66,7 +66,7 @@ import type {
   ResolvedProfile,
 } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -125,7 +125,7 @@ interface NoteImporterDeps {
     "getImportedNoteByNoteKey" | "getNotesByItemKey"
   >;
   template: Pick<
-    TemplateService,
+    PlainTemplate,
     "render" | "renderCitation" | "renderProfileAnnotation"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;

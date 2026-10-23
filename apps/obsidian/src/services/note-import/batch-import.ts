@@ -39,7 +39,6 @@ import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { TemplateService } from "@/services/template/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -81,8 +80,6 @@ export interface NoteImportDeps {
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
-  /** Only template readiness is gated here; rendering lives in `noteImport`. */
-  template: Pick<TemplateService, "ready">;
 }
 
 /**
@@ -726,7 +723,6 @@ async function importOne(
   ref: ChildNote,
   targetFile: TFile | undefined,
 ): Promise<WriteOutcome> {
-  await deps.template.ready;
   const settings = deps.settings.current;
   // One Snapshot for the read and the write it feeds.
   await using lease = await deps.zoteroReads.acquireRead();
@@ -765,7 +761,6 @@ async function executeImportRun(
     profileCounts?: Map<ProfileSelector, BatchProfileCount>;
   },
 ): Promise<BatchRunResult> {
-  await deps.template.ready;
   const settings = deps.settings.current;
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
@@ -894,7 +889,7 @@ async function reimportNoteByKey(
     return { outcome: "db-unavailable" };
   }
 
-  await Promise.all([deps.noteIndex.whenIndexed(), deps.template.ready]);
+  await deps.noteIndex.whenIndexed();
 
   // One Snapshot for the read and the write it feeds.
   await using lease = await deps.zoteroReads.acquireRead();
