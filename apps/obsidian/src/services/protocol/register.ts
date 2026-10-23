@@ -58,7 +58,7 @@ import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
@@ -72,7 +72,10 @@ export interface ProtocolDeps extends SingleUpdateDeps {
   createProfile: CompanionNoteDeps["createProfile"];
   importProfile: CompanionNoteDeps["importProfile"];
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "sourceId" | "dataDir" | "baseAttachmentPath"
+  >;
   liveUpdate: LocalServerService;
   zoteroReads: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
   /** Opens the Attachment `open-attachment` names. */

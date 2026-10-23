@@ -22,7 +22,7 @@ import { loadTemplateData } from "@/services/template-workbench/data";
 import { loadLiteratureNoteTemplateMigrationData } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationDataDeps } from "@/services/template/migration";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
   dialogFooter,
@@ -63,7 +63,7 @@ export interface ProfileCreationDeps {
     "ready" | "prepareLiteratureNoteTemplateSource"
   >;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   loadData: (options?: {
     indexedKey?: string;
   }) => Promise<ProfileCreationData | null>;

@@ -8,7 +8,7 @@ import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   activeTemplateWorkbench,
@@ -26,7 +26,7 @@ export interface ExplorerRegistrationDeps {
   app: App;
   zoteroReads: ZoteroReadsService;
   noteIndex: NoteIndex;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   itemLookup: ItemLookup;
   settings: SettingsService;
   templates: TemplateService;

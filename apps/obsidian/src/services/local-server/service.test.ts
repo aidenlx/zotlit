@@ -11,7 +11,6 @@ import {
 
 import { defaults } from "@/services/settings/schema";
 import type { Settings, SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { LocalServerService } from "./service";
 import type { LocalServerServiceDeps } from "./service";
@@ -50,7 +49,7 @@ function makeSettings(overrides: Partial<Settings>): SettingsStub {
 function makeDeps(settings: SettingsService): LocalServerServiceDeps {
   return {
     settings,
-    zoteroPref: { sourceId: SOURCE_ID } as unknown as ZoteroPrefService,
+    zoteroPref: { sourceId: SOURCE_ID },
     noteIndex: {
       whenIndexed: () => Promise.resolve(),
       getIndexedItemKeys: () => ["ABCD2345"],

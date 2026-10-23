@@ -81,7 +81,7 @@ import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
-import { ZoteroPrefService } from "./zotero-pref/service";
+import { plainZoteroPref } from "./zotero-pref/plain";
 import { ZoteroReadsService } from "./zotero-reads/service";
 import { workerClient } from "./zotero-reads/worker-client";
 
@@ -156,8 +156,8 @@ export async function buildServices(
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
-    .use({
-      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
+    .useValue({
+      zoteroPref: () => plainZoteroPref(runtime),
     })
     .use({
       localServer: ({ settings, zoteroPref, noteIndex }) =>

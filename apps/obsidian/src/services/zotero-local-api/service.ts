@@ -11,7 +11,7 @@ import { parseJson, zoteroOrigin } from "@/lib/zotero-http";
 import type { ZoteroTransport } from "@/lib/zotero-http";
 import type { LocalServerService } from "@/services/local-server/service";
 import { Service } from "@/services/service-base";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
   API_VERSION,
@@ -156,7 +156,7 @@ export interface ZoteroLocalApiEvents {
 export interface ZoteroLocalApiDeps {
   fetch: ZoteroTransport;
   /** Zotero's HTTP port, and the signal that the resolved paths moved. */
-  zoteroPref: Pick<ZoteroPrefService, "httpPort" | "on">;
+  zoteroPref: Pick<PlainZoteroPref, "httpPort" | "on">;
   /** The Companion's Freshness Signal. */
   localServer: Pick<LocalServerService, "on">;
   credentials: WriteAuthorizationStore;

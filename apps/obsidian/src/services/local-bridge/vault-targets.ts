@@ -21,14 +21,14 @@ import {
 import { referencedExcerptPaths } from "@/services/excerpt-image/references";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 export interface VaultTargetDeps {
   app: App;
   settings: Pick<SettingsService, "loaded">;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
 /**

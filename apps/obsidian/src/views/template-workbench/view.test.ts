@@ -137,7 +137,7 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
     settings: { subscribe: () => () => {} },
     pluginVersion: "2.1.3",
     zoteroReads: { ready: Promise.resolve(), state: "ready" },
-    zoteroPref: { ready: Promise.resolve(), dataDir: null },
+    zoteroPref: { dataDir: null },
     templates: {
       loaded: true,
       on: () => () => {},
@@ -1135,10 +1135,9 @@ An annotation.
     let failed = true;
     const { view } = setup({
       zoteroPref: {
-        get ready() {
-          return failed
-            ? Promise.reject(new Error("Unavailable"))
-            : Promise.resolve();
+        get dataDir() {
+          if (failed) throw new Error("Unavailable");
+          return "";
         },
       } as unknown as TemplateWorkbenchDeps["zoteroPref"],
     });

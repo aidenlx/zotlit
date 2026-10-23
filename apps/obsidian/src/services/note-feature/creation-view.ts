@@ -6,7 +6,7 @@ import type { Item } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type {
   ImportProfile,
   CreateProfile,
@@ -31,7 +31,7 @@ export interface InteractiveCreationDeps {
   importProfile: ImportProfile;
   app: App;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
 export interface InteractiveCreationOptions extends CreationProfileSources {

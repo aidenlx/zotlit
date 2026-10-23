@@ -33,7 +33,6 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
     app: h.app,
     citationIndex: h.index,
     zoteroPref: {
-      ready: Promise.resolve(),
       sourceId: "test-source",
       databasePath: "/test/zotero.sqlite",
     },

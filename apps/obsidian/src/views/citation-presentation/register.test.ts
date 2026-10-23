@@ -97,7 +97,7 @@ function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
 
   const deps = {
     app,
-    zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
+    zoteroPref: { dataDir: DATA_DIR },
     settings: { loaded: vaultSettings.promise },
   };
   registerCitationPresentation(

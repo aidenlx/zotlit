@@ -119,7 +119,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
     profile: { resolveProfile: () => undefined },
     zoteroReads,
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
-    zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
+    zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
     citationLookup: {
       read: async ({citekeys = [], indexedKeys = []}) => lookupAnswer(
         Object.fromEntries(citekeys.map((key) => [key, key === "figures2014" ? { kind: "unique", item: { itemID: 1, libraryID: 1, key: "MAIN2345", indexedKey: "MAIN2345" } } : {kind: "missing"}])),
