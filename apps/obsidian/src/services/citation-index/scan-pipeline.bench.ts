@@ -29,7 +29,7 @@ import { expect, it } from "vitest";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { yieldToMain } from "@/lib/yield-to-main";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { ParseClient, ParseReply } from "@/services/citation-parse/client";
 
 // oxlint-disable-next-line no-restricted-imports -- this Node benchmark uses the guarded build tooling outside src.
 import { scanBenchmarkWorker } from "../../../scripts/scan-benchmark-worker";
@@ -67,7 +67,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
   const root = await getWorkspaceRoot(import.meta.dirname);
   const output = join(root, ".scratch/scan-pipeline-bench");
   await mkdir(output, { recursive: true });
-  await using worker = await scanBenchmarkWorker();
+  await using worker = await scanBenchmarkWorker<ParseReply>();
   const cells: {
     size: number;
     dense: boolean;

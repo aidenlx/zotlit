@@ -2,14 +2,19 @@
 import { once } from "node:events";
 import { Worker } from "node:worker_threads";
 
-import type {
-  ParseReply,
-  ParseRequest,
-} from "../src/services/citation-parse/client.js";
-import type { WorkerReply } from "../src/services/citation-parse/worker.js";
 import { scanWorkerBundle } from "./scan-worker-bundle.js";
 
-export async function scanBenchmarkWorker() {
+// The worker's wire shapes, restated: the Node program cannot load renderer
+// source. `citation-parse/worker.ts` owns them, and the bench names the reply.
+interface ParseRequest {
+  path: string;
+  generation: number;
+  text: string;
+}
+
+type WorkerReply = { id: number; json: string } | { id: number; error: string };
+
+export async function scanBenchmarkWorker<ParseReply>() {
   const source = await scanWorkerBundle();
   const worker = new Worker(
     `
