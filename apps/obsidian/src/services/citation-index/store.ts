@@ -48,7 +48,7 @@ const SCANS = "scans";
  * Bump to discard every stored scan: the upgrade recreates the store empty and
  * the backfill rebuilds it, which is how a change to {@link FileScan} ships.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 interface CitationIndexSchema extends DBSchema {
   scans: { key: string; value: CitekeyRecord };

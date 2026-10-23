@@ -20,6 +20,7 @@ const empty: Omit<NoteScanRecord, "links"> = {
 };
 const uri = "zotero://open/library/items/ABCD2345?annotation=EFGH6789";
 const annotation = {
+  text: "",
   indexedKey: "EFGH6789",
   attachmentKey: "ABCD2345",
   pageLabel: null,
@@ -105,7 +106,14 @@ const conformance: {
     name: "a comment inside an Annotation embed label leaves the embed visible",
     text: `![%%hidden%%](${uri})`,
     record: {
-      annotations: [{ ...annotation, form: "embed", position: pos(0, 71) }],
+      annotations: [
+        {
+          ...annotation,
+          form: "embed",
+          text: "%%hidden%%",
+          position: pos(0, 71),
+        },
+      ],
     },
   },
   // remark-obsidian/test/parity/corpus.ts: probe/math-unclosed/quote-same-line.
@@ -187,7 +195,14 @@ const conformance: {
     name: "a comment inside a labelled Annotation link leaves the link visible",
     text: `[visible %%hidden%%](${uri})`,
     record: {
-      annotations: [{ ...annotation, form: "labelled", position: pos(0, 78) }],
+      annotations: [
+        {
+          ...annotation,
+          form: "labelled",
+          text: "visible %%hidden%%",
+          position: pos(0, 78),
+        },
+      ],
     },
   },
   // remark-obsidian/test/parity/corpus.ts: probe/label-precedence/wikilink-inside.
@@ -259,7 +274,9 @@ const conformance: {
     name: "annotation embed inside a Markdown link",
     text: `[![quote](${uri})](https://example.org)`,
     record: {
-      annotations: [{ ...annotation, form: "embed", position: pos(1, 67) }],
+      annotations: [
+        { ...annotation, form: "embed", text: "quote", position: pos(1, 67) },
+      ],
     },
   },
   {
@@ -271,7 +288,9 @@ const conformance: {
     name: "visible autolink after a Markdown link and label",
     text: `[x](https://example.org) [a]: <${uri}>`,
     record: {
-      annotations: [{ ...annotation, form: "labelled", position: pos(30, 88) }],
+      annotations: [
+        { ...annotation, form: "labelled", text: uri, position: pos(30, 88) },
+      ],
     },
   },
   {
@@ -315,7 +334,14 @@ const conformance: {
     name: "autolink keeps character references literal",
     text: `<${uri}&page=&copy;>`,
     record: {
-      annotations: [{ ...annotation, form: "labelled", position: pos(0, 70) }],
+      annotations: [
+        {
+          ...annotation,
+          form: "labelled",
+          text: `${uri}&page=&copy;`,
+          position: pos(0, 70),
+        },
+      ],
     },
   },
   {
@@ -410,21 +436,27 @@ const conformance: {
     name: "labelled Annotation Occurrence",
     text: `[p. 4](${uri})`,
     record: {
-      annotations: [{ ...annotation, form: "labelled", position: pos(0, 64) }],
+      annotations: [
+        { ...annotation, form: "labelled", text: "p. 4", position: pos(0, 64) },
+      ],
     },
   },
   {
     name: "whitespace-only label",
     text: `[ \t](${uri})`,
     record: {
-      annotations: [{ ...annotation, form: "labelled", position: pos(0, 62) }],
+      annotations: [
+        { ...annotation, form: "labelled", text: " \t", position: pos(0, 62) },
+      ],
     },
   },
   {
     name: "autolink",
     text: `<${uri}>`,
     record: {
-      annotations: [{ ...annotation, form: "labelled", position: pos(0, 58) }],
+      annotations: [
+        { ...annotation, form: "labelled", text: uri, position: pos(0, 58) },
+      ],
     },
   },
   {
@@ -438,7 +470,9 @@ const conformance: {
     name: "labelled image",
     text: `![quote](${uri})`,
     record: {
-      annotations: [{ ...annotation, form: "embed", position: pos(0, 66) }],
+      annotations: [
+        { ...annotation, form: "embed", text: "quote", position: pos(0, 66) },
+      ],
     },
   },
   {
