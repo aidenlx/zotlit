@@ -22,6 +22,7 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { startupBarrier } from "@/lib/effect-startup";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -225,7 +226,20 @@ export const layerZoteroPref = Layer.effect(
       withLogCategory("zotero-pref"),
     );
 
-    yield* reload(overrides.profileDir);
+    yield* startupBarrier(
+      reload(overrides.profileDir),
+      SubscriptionRef.update(state, (before) =>
+        before.state === "loading"
+          ? { ...before, state: "degraded" as const }
+          : before,
+      ).pipe(
+        Effect.andThen(
+          Effect.logWarning(
+            "Zotero preferences are still loading; using fallback paths",
+          ),
+        ),
+      ),
+    );
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         closed = true;

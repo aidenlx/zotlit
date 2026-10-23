@@ -3,10 +3,55 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
 
-import { Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
+import { Deferred, Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
 import { zoteroPrefFixture } from "./__fixtures__";
+
+// #1705: stalled external I/O releases startup and still publishes a late read.
+it.effect(
+  "bounds the first preference read and publishes its late result",
+  () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const result = yield* Deferred.make<string>();
+      yield* Effect.gen(function* () {
+        let built = false;
+        const first = yield* zoteroPrefFixture(() =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(result)),
+          ),
+        ).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              built = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("5 seconds");
+        expect(built).toBe(true);
+        const f = yield* Fiber.join(first);
+        const changes = yield* Stream.toPull(f.pref.changes);
+        expect((yield* changes)[0]).toMatchObject({
+          state: "degraded",
+          dataDir: join(homedir(), "Zotero"),
+          prefs: new Map(),
+          resolvedProfileDir: null,
+        });
+        yield* Deferred.succeed(
+          result,
+          'user_pref("extensions.zotero.baseAttachmentPath", "/late-attachments");',
+        );
+        expect((yield* changes)[0]).toMatchObject({
+          state: "ready",
+          baseAttachmentPath: "/late-attachments",
+          resolvedProfileDir: "/profile",
+        });
+      }).pipe(Effect.ensuring(Deferred.succeed(result, "")));
+    }),
+);
 
 // #1705: cancellation at the storage boundary must leave the published override
 // equal to the saved one, and a profile change must still start its reload.
