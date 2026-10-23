@@ -34,7 +34,24 @@ export function plainNoteIndex(
   runtime: ManagedRuntime.ManagedRuntime<NoteIndex, never>,
 ): PlainNoteIndex {
   const index = runtime.runSync(NoteIndex.use(Effect.succeed));
+  // The legacy service retained its maps after release. Keep the runtime's
+  // context for those reads: ManagedRuntime rejects new work after disposal.
+  const readReleased = Effect.runSyncWith(
+    runtime.runSync(Effect.context<never>()),
+  );
+  const closed = () => runtime.scope.state._tag === "Closed";
+  const read = <A>(effect: Effect.Effect<A>): A =>
+    closed() ? readReleased(effect) : runtime.runSync(effect);
+  const wait = async (effect: Effect.Effect<void>) => {
+    if (closed()) return;
+    // Runtime disposal interrupts callers before closing the layer. Both
+    // scan and rename waiters settle when the legacy service is released.
+    const exit = await runtime.runPromiseExit(effect);
+    if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+      throw Cause.squash(exit.cause);
+  };
   const subscribeChanges = (callback: (change: NoteIndexChange) => void) => {
+    if (closed()) return () => {};
     const seen = runtime.runSync(index.current);
     return subscribe(
       runtime,
@@ -43,21 +60,14 @@ export function plainNoteIndex(
     );
   };
   return {
-    getNotesByItemKey: (key) => runtime.runSync(index.getNotesByItemKey(key)),
+    getNotesByItemKey: (key) => read(index.getNotesByItemKey(key)),
     getImportedNoteByNoteKey: (key) =>
-      runtime.runSync(index.getImportedNoteByNoteKey(key)),
-    getNotesByProfile: (selector) =>
-      runtime.runSync(index.getNotesByProfile(selector)),
-    getPropertyNames: () => runtime.runSync(index.getPropertyNames()),
-    getIndexedItemKeys: () => runtime.runSync(index.getIndexedItemKeys()),
-    whenSettled: () => runtime.runPromise(index.whenSettled()),
-    whenIndexed: async () => {
-      // The runtime interrupts its callers before it closes the layer. A
-      // caller waiting for the Full Scan still settles during teardown.
-      const exit = await runtime.runPromiseExit(index.whenIndexed());
-      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-        throw Cause.squash(exit.cause);
-    },
+      read(index.getImportedNoteByNoteKey(key)),
+    getNotesByProfile: (selector) => read(index.getNotesByProfile(selector)),
+    getPropertyNames: () => read(index.getPropertyNames()),
+    getIndexedItemKeys: () => read(index.getIndexedItemKeys()),
+    whenSettled: () => wait(index.whenSettled()),
+    whenIndexed: () => wait(index.whenIndexed()),
     subscribe: subscribeChanges,
     on: (event, callback) =>
       subscribeChanges((change) => {

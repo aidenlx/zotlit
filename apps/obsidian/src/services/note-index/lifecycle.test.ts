@@ -10,6 +10,8 @@ import {
   Scope,
   Stream,
 } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 
 import {
@@ -19,8 +21,53 @@ import {
   noteIndexOver,
   startup,
 } from "./__fixtures__";
+import { plainNoteIndex } from "./plain";
 import { NoteIndex } from "./service";
 import type { NoteIndexChange } from "./service";
+
+// #1705: use the same graph barrier as buildServices before constructing an adapter.
+it.effect(
+  "the built runtime exposes the first scan when layout and cache are ready",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost(
+        { "paper.md": cache({ itemKey: "ABCD2345" }) },
+        { enabledAtRuntime: true },
+      );
+      const stack = yield* acquireAsyncDisposable(
+        async () => new AsyncDisposableStack(),
+      );
+      const runtime = buildRuntime(noteIndexOver(host.app), stack);
+      yield* Effect.promise(() => runtime.context());
+      const index = plainNoteIndex(runtime);
+      expect(index.getNotesByItemKey("ABCD2345")).toEqual([
+        host.vault.files.get("paper.md")!,
+      ]);
+    }),
+);
+
+// Legacy ready completed listener registration; whenIndexed was the Full Scan barrier.
+it.effect(
+  "cold acquisition registers listeners before layout and whenIndexed waits for the clean cache",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost({
+        "paper.md": cache({ itemKey: "ABCD2345" }),
+      });
+      const index = yield* noteIndexOf(host.app);
+      const pending = yield* index
+        .whenIndexed()
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      expect(pending.pollUnsafe()).toBeUndefined();
+      host.workspace.ready();
+      expect(pending.pollUnsafe()).toBeUndefined();
+      host.metadataCache.resolve();
+      yield* Fiber.join(pending);
+      expect(yield* index.getNotesByItemKey("ABCD2345")).toEqual([
+        host.vault.files.get("paper.md")!,
+      ]);
+    }),
+);
 
 // #1705: completion covers every queued rename read, including key restoration.
 it.effect("whenSettled waits for queued renames to restore their keys", () =>
