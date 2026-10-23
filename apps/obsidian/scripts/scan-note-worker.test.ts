@@ -59,6 +59,12 @@ it("runs the production parse worker without Obsidian (#1691)", async () => {
   `,
     { eval: true },
   );
+  const failure = once(worker, "message");
+  worker.postMessage({
+    id: 6,
+    request: { path: "throwing.md", generation: 11, text: null },
+  });
+  expect(await failure).toEqual([{ id: 6, error: expect.any(String) }]);
   const response = once(worker, "message");
   worker.postMessage({
     id: 7,

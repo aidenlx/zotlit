@@ -2,10 +2,13 @@
 import type { Workspace } from "obsidian";
 import workerSource from "virtual:citation-parse-worker";
 
+import { Effect, Scope } from "@/lib/effect";
+import { openScope } from "@/lib/effect-scope";
 import { Service } from "@/services/service-base";
 
 import type { ParseClient, ParseRequest, ParseReply } from "./client";
-import { RecoveringParseClient } from "./recovering-client";
+import { makeRecoveringParseClient } from "./recovering-client";
+import type { RecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
 
 interface CitationParseDeps {
@@ -27,8 +30,12 @@ export class CitationParse
 
   async #load(): Promise<RecoveringParseClient> {
     await using stack = new AsyncDisposableStack();
-    const client = stack.use(
-      new RecoveringParseClient(() => connectParseWorker(workerSource)),
+    const { scope, close } = openScope();
+    stack.defer(close);
+    const client = await Effect.runPromise(
+      makeRecoveringParseClient(() => connectParseWorker(workerSource)).pipe(
+        Scope.provide(scope),
+      ),
     );
     this.#workspace.onLayoutReady(() => client.start());
     this.commit(stack.move());

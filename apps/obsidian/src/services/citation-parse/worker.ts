@@ -8,18 +8,20 @@ export interface WorkerRequest {
   request: ParseRequest;
 }
 
-export interface WorkerReply {
-  id: number;
-  reply: ParseReply;
-}
+export type WorkerReply =
+  | { id: number; reply: ParseReply }
+  | { id: number; error: string };
 
 self.addEventListener("message", ({ data }: MessageEvent<WorkerRequest>) => {
   const {
     id,
     request: { path, generation, text },
   } = data;
-  self.postMessage({
-    id,
-    reply: { path, generation, record: scanNote(text) },
-  } satisfies WorkerReply);
+  let result: WorkerReply;
+  try {
+    result = { id, reply: { path, generation, record: scanNote(text) } };
+  } catch (error) {
+    result = { id, error: String(error) };
+  }
+  self.postMessage(result);
 });

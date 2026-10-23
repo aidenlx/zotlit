@@ -1,89 +1,114 @@
-// Keeps one parse client across worker lifetimes and replays requests after backoff.
-import { abortable } from "@std/async/abortable";
-
+// Owns scoped worker recovery and bounded requests across connection lifetimes.
+import { Deferred, Effect, Fiber, Schedule } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 
-import type { ParseClient, ParseRequest, ParseReply } from "./client";
+import { ParseFailed, ParseWorkerDied } from "./client";
+import type { ParseClient, ParseRequest } from "./client";
 
 export interface ParseConnection extends ParseClient, Disposable {
   /** Resolves when this connection can no longer serve requests. */
   died: Promise<void>;
 }
 
+export interface RecoveringParseClient extends ParseClient {
+  start(): void;
+}
+
 const logger = getLogger("citation-parse");
 
-export class RecoveringParseClient implements ParseClient, Disposable {
-  readonly #connect;
-  readonly #stop = new AbortController();
-  #available = Promise.withResolvers<ParseConnection>();
-  #current: ParseConnection | null = null;
-  #started = false;
-  #backoff = 100;
-  #timer?: ReturnType<typeof setTimeout>;
+export const makeRecoveringParseClient = Effect.fnUntraced(function* (
+  connect: () => ParseConnection,
+): Effect.fn.Return<RecoveringParseClient, never, Scope.Scope> {
+  const scope = yield* Effect.scope;
+  const context = yield* Effect.context<never>();
+  const started = yield* Deferred.make<void>();
+  type Live = { connection: ParseConnection; retired: Deferred.Deferred<void> };
+  let available = Deferred.makeUnsafe<Live>();
 
-  constructor(connect: () => ParseConnection) {
-    this.#connect = connect;
-  }
+  const serve = Effect.gen(function* () {
+    const connection = yield* Effect.acquireRelease(
+      Effect.try({
+        try: connect,
+        catch: (error) => new ParseWorkerDied(String(error)),
+      }),
+      (client) => Effect.sync(() => client[Symbol.dispose]()),
+    );
+    const retired = yield* Deferred.make<void>();
+    yield* Deferred.succeed(available, { connection, retired });
+    yield* Effect.promise(() => connection.died);
+    // Publish the new wait before releasing requests from the dead connection.
+    available = Deferred.makeUnsafe<Live>();
+    yield* Deferred.succeed(retired, undefined);
+    return yield* Effect.fail(new ParseWorkerDied("Parse worker stopped"));
+  }).pipe(
+    Effect.scoped,
+    Effect.tapError((error) =>
+      Effect.sync(() => {
+        logger.warn("Parse worker stopped; restarting", { error });
+      }),
+    ),
+    Effect.retry(
+      Schedule.min([
+        Schedule.exponential("100 millis"),
+        Schedule.spaced("5 seconds"),
+      ]),
+    ),
+  );
+  yield* Effect.andThen(Deferred.await(started), serve).pipe(
+    Effect.forkIn(scope),
+  );
 
-  start(): void {
-    if (this.#started || this.#stop.signal.aborted) return;
-    this.#started = true;
-    this.#spawn();
-  }
+  const parse = Effect.fnUntraced(
+    function* (request: ParseRequest) {
+      const { connection, retired } = yield* Deferred.await(available);
+      return yield* Effect.tryPromise({
+        try: (signal) => connection.parse(request, signal),
+        catch: (error) =>
+          error instanceof ParseWorkerDied
+            ? error
+            : new ParseFailed(String(error)),
+      }).pipe(
+        Effect.catch((error) =>
+          error instanceof ParseWorkerDied
+            ? Effect.andThen(Deferred.await(retired), Effect.fail(error))
+            : Effect.fail(error),
+        ),
+      );
+    },
+    Effect.retry({
+      times: 2,
+      while: (error) => error instanceof ParseWorkerDied,
+    }),
+    Effect.timeoutOrElse({
+      duration: "15 seconds",
+      orElse: () => Effect.fail(new ParseFailed("Citation parse timed out")),
+    }),
+  );
 
-  #spawn(): void {
-    if (this.#stop.signal.aborted) return;
-    try {
-      const connection = this.#connect();
-      this.#current = connection;
-      this.#available.resolve(connection);
-      void connection.died.then(() => this.#restart(connection));
-    } catch (error) {
-      logger.warn("Parse worker did not start", { error });
-      this.#schedule();
-    }
-  }
-
-  #schedule(): void {
-    this.#timer = setTimeout(() => this.#spawn(), this.#backoff);
-    this.#backoff = Math.min(this.#backoff * 2, 5_000);
-  }
-
-  #restart(connection: ParseConnection): void {
-    if (this.#current !== connection || this.#stop.signal.aborted) return;
-    this.#current = null;
-    this.#available = Promise.withResolvers<ParseConnection>();
-    connection[Symbol.dispose]();
-    logger.warn("Parse worker stopped; restarting", {
-      backoffMs: this.#backoff,
-    });
-    this.#schedule();
-  }
-
-  async parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply> {
-    const lifetime = AbortSignal.any([signal, this.#stop.signal]);
-    for (;;) {
-      lifetime.throwIfAborted();
-      const connection = await abortable(this.#available.promise, lifetime);
-      try {
-        const reply = await abortable(
-          connection.parse(request, lifetime),
-          lifetime,
-        );
-        this.#backoff = 100;
-        return reply;
-      } catch (error) {
-        lifetime.throwIfAborted();
-        logger.debug("Parse request will retry", { path: request.path, error });
-        this.#restart(connection);
-      }
-    }
-  }
-
-  [Symbol.dispose](): void {
-    this.#stop.abort();
-    clearTimeout(this.#timer);
-    this.#current?.[Symbol.dispose]();
-    this.#current = null;
-  }
-}
+  return {
+    start: () => {
+      Deferred.doneUnsafe(started, Effect.void);
+    },
+    parse: (request, signal) =>
+      Effect.runPromiseWith(context)(
+        parse(request).pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              logger.warn("Citation parse abandoned", {
+                path: request.path,
+                error,
+              });
+            }),
+          ),
+          Effect.forkIn(scope),
+          Effect.flatMap((fiber) =>
+            Fiber.join(fiber).pipe(
+              Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+            ),
+          ),
+        ),
+        { signal },
+      ),
+  };
+});

@@ -1,11 +1,10 @@
-// One worker connection; any crash or timeout rejects all work for the recovering client to replay.
-import { abortable } from "@std/async/abortable";
+// Adapts worker events to individually cancellable Effect requests.
+import { Effect } from "@/lib/effect";
 
+import { ParseFailed, ParseWorkerDied } from "./client";
 import type { ParseReply } from "./client";
 import type { ParseConnection } from "./recovering-client";
 import type { WorkerReply, WorkerRequest } from "./worker";
-
-const PARSE_TIMEOUT_MS = 15_000;
 
 export function connectParseWorker(source: string): ParseConnection {
   const url = URL.createObjectURL(
@@ -19,45 +18,59 @@ export function connectParseWorker(source: string): ParseConnection {
     throw error;
   }
   const died = Promise.withResolvers<void>();
-  const pending = new Map<number, PromiseWithResolvers<ParseReply>>();
+  const pending = new Map<
+    number,
+    (result: Effect.Effect<ParseReply, ParseFailed | ParseWorkerDied>) => void
+  >();
   let sequence = 0;
   let stopped = false;
-  const stop = (error: unknown): void => {
+  const stop = (error: ParseWorkerDied): void => {
     if (stopped) return;
     stopped = true;
     worker.terminate();
     URL.revokeObjectURL(url);
-    for (const waiter of pending.values()) waiter.reject(error);
+    for (const resume of pending.values()) resume(Effect.fail(error));
     pending.clear();
     died.resolve();
   };
-  worker.addEventListener("error", (event) => stop(new Error(event.message)));
+  worker.addEventListener("error", (event) =>
+    stop(new ParseWorkerDied(event.message)),
+  );
   worker.addEventListener("messageerror", () =>
-    stop(new Error("Parse worker message failed")),
+    stop(new ParseWorkerDied("Parse worker message failed")),
   );
   worker.addEventListener("message", ({ data }: MessageEvent<WorkerReply>) => {
-    pending.get(data.id)?.resolve(data.reply);
+    const resume = pending.get(data.id);
+    pending.delete(data.id);
+    resume?.(
+      "error" in data
+        ? Effect.fail(new ParseFailed(data.error))
+        : Effect.succeed(data.reply),
+    );
   });
   return {
     died: died.promise,
-    async parse(request, signal) {
-      signal.throwIfAborted();
-      if (stopped) throw new Error("Parse worker stopped");
-      const id = ++sequence;
-      const result = Promise.withResolvers<ParseReply>();
-      pending.set(id, result);
-      const timer = setTimeout(
-        () => stop(new Error("Parse worker timed out")),
-        PARSE_TIMEOUT_MS,
-      );
-      try {
-        worker.postMessage({ id, request } satisfies WorkerRequest);
-        return await abortable(result.promise, signal);
-      } finally {
-        clearTimeout(timer);
-        pending.delete(id);
-      }
-    },
-    [Symbol.dispose]: () => stop(new Error("Parse worker disposed")),
+    parse: (request, signal) =>
+      Effect.runPromise(
+        Effect.callback<ParseReply, ParseFailed | ParseWorkerDied>((resume) => {
+          if (stopped) {
+            resume(Effect.fail(new ParseWorkerDied("Parse worker stopped")));
+            return;
+          }
+          const id = ++sequence;
+          pending.set(id, resume);
+          try {
+            worker.postMessage({ id, request } satisfies WorkerRequest);
+          } catch (error) {
+            pending.delete(id);
+            resume(Effect.fail(new ParseFailed(String(error))));
+          }
+          return Effect.sync(() => {
+            pending.delete(id);
+          });
+        }),
+        { signal },
+      ),
+    [Symbol.dispose]: () => stop(new ParseWorkerDied("Parse worker disposed")),
   };
 }

@@ -7,6 +7,7 @@ import type { App, TAbstractFile } from "obsidian";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -186,7 +187,9 @@ export class CitationIndex extends Service<void> {
     string,
     Map<string, AnnotationOccurrence[]>
   >();
+  readonly #failed = new Set<string>();
   readonly #generations = new Map<string, number>();
+  #restoreInvalidated: Set<string> | null = new Set();
   readonly #pending = new Map<
     string,
     {
@@ -245,7 +248,9 @@ export class CitationIndex extends Service<void> {
       : this.#stop.signal;
     lifetime.throwIfAborted();
     await abortable(this.ready, lifetime);
-    const { citekeys, wikilinks } = this.#admitted(await this.#coverFile(file));
+    const { citekeys, wikilinks } = this.#admitted(
+      await abortable(this.#coverFile(file), lifetime),
+    );
     const local = new Map(
       [
         ...wikilinks.occurrences,
@@ -539,6 +544,7 @@ export class CitationIndex extends Service<void> {
     for (const pending of this.#pending.values()) pending.stop.abort();
     this.#pending.clear();
     this.#generations.clear();
+    this.#failed.clear();
     this.#backfilled = false;
     this.#coverage = "indexing";
     this.#emitter.emit("cited-by-invalidated");
@@ -616,8 +622,8 @@ export class CitationIndex extends Service<void> {
       const loaded = await this.#store.load();
       let restored = 0;
       for (const { path, ...scan } of loaded) {
-        // An event that already scanned the file during startup is fresher.
-        if (!this.#scans.has(path) && !this.#generations.has(path)) {
+        // Pending replacements keep the saved scan available until they land.
+        if (!this.#scans.has(path) && !this.#restoreInvalidated?.has(path)) {
           this.#setScan(path, scan);
           restored += 1;
         }
@@ -628,6 +634,8 @@ export class CitationIndex extends Service<void> {
       });
     } catch (error) {
       logger.error("Citation index store unavailable", { error });
+    } finally {
+      this.#restoreInvalidated = null;
     }
 
     // The vault holds no files before layout-ready, and `onLayoutReady` is a
@@ -669,23 +677,31 @@ export class CitationIndex extends Service<void> {
   /** @returns Whether at least one note could not be read. */
   async #backfill(build: number): Promise<boolean> {
     let failed = false;
-    const files = this.#app.vault.getMarkdownFiles().values();
-    const lane = async (): Promise<void> => {
-      for (const file of files) {
-        if (this.#stale(build)) return;
-        try {
-          await this.#coverFile(file, true, build);
-        } catch (error) {
-          if (this.#stale(build)) return;
-          failed = true;
-          logger.warn("Citation backfill could not read note", {
-            path: file.path,
-            error,
-          });
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: BACKFILL_CONCURRENCY }, lane));
+    await Effect.runPromise(
+      Effect.forEach(
+        this.#app.vault.getMarkdownFiles(),
+        (file) =>
+          Effect.suspend(() => {
+            if (this.#stale(build)) return Effect.void;
+            return Effect.tryPromise(() =>
+              this.#coverFile(file, true, build),
+            ).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  if (this.#stale(build)) return;
+                  failed = true;
+                  logger.warn("Citation backfill could not parse note", {
+                    path: file.path,
+                    error,
+                  });
+                }),
+              ),
+            );
+          }),
+        { concurrency: BACKFILL_CONCURRENCY, discard: true },
+      ).pipe(Effect.scoped),
+      { signal: this.#stop.signal },
+    );
     if (this.#stale(build)) return failed;
     const present = new Set(
       this.#app.vault.getMarkdownFiles().map((file) => file.path),
@@ -708,6 +724,7 @@ export class CitationIndex extends Service<void> {
     const build = this.#build;
     this.#pending.get(path)?.stop.abort();
     this.#generations.set(path, generation);
+    this.#failed.delete(path);
     const stop = new AbortController();
     const signal = AbortSignal.any([stop.signal, this.#stop.signal]);
     const pending = {
@@ -727,6 +744,7 @@ export class CitationIndex extends Service<void> {
             replyGeneration !== generation
           )
             return null;
+          this.#failed.delete(currentPath);
           const scan: FileScan = {
             mtime,
             size,
@@ -753,6 +771,7 @@ export class CitationIndex extends Service<void> {
         })
         .catch((error: unknown) => {
           if (signal.aborted) return null;
+          this.#failed.add(pending.path);
           throw error;
         })
         .finally(() => {
@@ -769,7 +788,8 @@ export class CitationIndex extends Service<void> {
     if (!scan) return null;
     const { mtime, size } = file.stat;
     return (scan.mtime === mtime && scan.size === size) ||
-      this.#pending.has(file.path)
+      this.#pending.has(file.path) ||
+      this.#failed.has(file.path)
       ? scan
       : null;
   }
@@ -783,7 +803,12 @@ export class CitationIndex extends Service<void> {
       if (!this.#app.vault.getFileByPath(file.path)) return null;
       const known = this.#covered(file);
       // A grammar update keeps the last scan available while its replacement runs.
-      if (!fresh && known && known.scannerRevision !== SCANNER_REVISION)
+      if (
+        !fresh &&
+        known &&
+        (known.scannerRevision !== SCANNER_REVISION ||
+          this.#failed.has(file.path))
+      )
         return known;
       const pending = this.#pending.get(file.path);
       if (pending) {
@@ -812,6 +837,8 @@ export class CitationIndex extends Service<void> {
   }
 
   #drop(path: string): void {
+    this.#restoreInvalidated?.add(path);
+    this.#failed.delete(path);
     this.#generations.set(path, ++this.#generation);
     this.#pending.get(path)?.stop.abort();
     this.#pending.delete(path);
@@ -823,6 +850,9 @@ export class CitationIndex extends Service<void> {
   }
 
   #move(oldPath: string, path: string): void {
+    if (this.#failed.delete(oldPath)) this.#failed.add(path);
+    this.#restoreInvalidated?.add(oldPath);
+    this.#restoreInvalidated?.add(path);
     this.#generations.set(oldPath, ++this.#generation);
     const pending = this.#pending.get(oldPath);
     if (pending) {
