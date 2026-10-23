@@ -7,7 +7,7 @@ import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
 import { Effect, FiberSet } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
-import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
+import type { PlainChineseSegmenter } from "@/services/chinese-segmenter/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -19,7 +19,7 @@ import { connectWorker, makeWorkerReads } from "./worker-host";
 export interface WorkerClientDeps {
   settings: SettingsService;
   zoteroPref: ZoteroPrefService;
-  chineseSegmenter: ChineseSegmenterService;
+  chineseSegmenter: Pick<PlainChineseSegmenter, "getStatus" | "subscribe">;
 }
 
 /**
@@ -28,7 +28,7 @@ export interface WorkerClientDeps {
  * reinstall pushes no segmenter change until it lands.
  */
 function installedSegmenter(
-  chineseSegmenter: ChineseSegmenterService,
+  chineseSegmenter: Pick<PlainChineseSegmenter, "getStatus">,
 ): SegmenterBinary | null {
   const status = chineseSegmenter.getStatus();
   switch (status.kind) {
@@ -75,7 +75,7 @@ export const workerClient = Effect.fnUntraced(function* ({
 }: WorkerClientDeps): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
   let config = readsConfig(
     yield* Effect.promise(async () => {
-      await Promise.all([zoteroPref.ready, chineseSegmenter.ready]);
+      await zoteroPref.ready;
       return settings.loaded;
     }),
     { zoteroPref, chineseSegmenter },
@@ -102,6 +102,9 @@ export const workerClient = Effect.fnUntraced(function* ({
     zoteroPref.on("resolved-changed", push),
     chineseSegmenter.subscribe(push),
   ];
+  // Cache discovery can finish while the worker connects. Read it again once
+  // the subscription is in place, so that initial change reaches the worker.
+  push();
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       for (const unsubscribe of unsubscribes) unsubscribe();

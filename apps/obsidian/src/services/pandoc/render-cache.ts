@@ -20,7 +20,7 @@ import {
 } from "./document-presentation";
 import type { EffectivePresentation } from "./document-presentation";
 import type { BibliographyEntry, RenderedCitation } from "./engine";
-import type { PandocEngineService } from "./service";
+import type { PlainPandocEngine } from "./plain";
 import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
@@ -55,7 +55,7 @@ export interface BibliographyRenderCacheOptions {
   profile: Pick<ProfileService, "ready" | "on">;
   db: Pick<ZoteroReadsService, "on">;
   pandocEngine: Pick<
-    PandocEngineService,
+    PlainPandocEngine,
     "getStatus" | "subscribe" | "getEngine"
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;

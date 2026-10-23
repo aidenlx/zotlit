@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
-import { ManagedBinaryService } from "./service";
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
+
+import { openManagedBinary } from "./__fixtures__";
 import type { ManagedBinary } from "./service";
 import { memoryDevice } from "./test-utils";
 
@@ -67,7 +70,7 @@ function open(
   device: Device,
   download = serve(SEGMENTER, OTHER),
 ) {
-  return new ManagedBinaryService(binary, {
+  return openManagedBinary(binary, {
     openStore: device.openStore,
     consent: device.consent,
     download,
@@ -76,227 +79,250 @@ function open(
 
 const CACHED = `${SEGMENTER.pin.sha256}.wasm`;
 
-describe("ManagedBinaryService with a bare .wasm pin", () => {
-  it("caches the downloaded binary under its own hash in its own directory", async () => {
-    const device = memoryDevice();
-    const download = serve(SEGMENTER);
-    await using service = open(SEGMENTER, device, download);
-    await service.ready;
-    expect(service.getStatus()).toEqual({ kind: "absent" });
-    expect(download).not.toHaveBeenCalled();
+describe("Managed Binary with a bare .wasm pin", () => {
+  it.effect(
+    "caches the downloaded binary under its own hash in its own directory",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        const download = serve(SEGMENTER);
+        await using service = await open(SEGMENTER, device, download);
+        expect(service.getStatus()).toEqual({ kind: "absent" });
+        expect(download).not.toHaveBeenCalled();
 
-    await service.install();
+        await service.install();
 
-    expect(download).toHaveBeenCalledWith(SEGMENTER.pin.url);
-    expect(device.names(SEGMENTER.id)).toEqual([CACHED]);
-    expect(device.files(SEGMENTER.id).get(CACHED)).toEqual(SEGMENTER_BINARY);
-    expect(service.getStatus()).toEqual({
-      kind: "installed",
-      version: SEGMENTER.pin.version,
-      binary: { directory: "chinese-segmenter", name: CACHED },
-    });
-  });
+        expect(download).toHaveBeenCalledWith(SEGMENTER.pin.url);
+        expect(device.names(SEGMENTER.id)).toEqual([CACHED]);
+        expect(device.files(SEGMENTER.id).get(CACHED)).toEqual(
+          SEGMENTER_BINARY,
+        );
+        expect(service.getStatus()).toEqual({
+          kind: "installed",
+          version: SEGMENTER.pin.version,
+          binary: { directory: "chinese-segmenter", name: CACHED },
+        });
+      }),
+  );
 
-  it("reports no readable binary while a first install runs", async () => {
-    const device = memoryDevice();
-    await using service = open(SEGMENTER, device);
-    await service.ready;
+  it.effect("reports no readable binary while a first install runs", () =>
+    Effect.promise(async () => {
+      const device = memoryDevice();
+      await using service = await open(SEGMENTER, device);
 
-    const done = service.install();
+      const done = service.install();
 
-    expect(service.getStatus()).toEqual({
-      kind: "installing",
-      done,
-      binary: null,
-    });
-    await done;
-  });
+      expect(service.getStatus()).toEqual({
+        kind: "installing",
+        done,
+        binary: null,
+      });
+      await done;
+    }),
+  );
 
-  it("keeps the installed binary readable while a reinstall runs", async () => {
-    const device = memoryDevice();
-    await using service = open(SEGMENTER, device);
-    await service.ready;
-    await service.install();
-    const installed = { directory: "chinese-segmenter", name: CACHED };
+  it.effect("keeps the installed binary readable while a reinstall runs", () =>
+    Effect.promise(async () => {
+      const device = memoryDevice();
+      await using service = await open(SEGMENTER, device);
+      await service.install();
+      const installed = { directory: "chinese-segmenter", name: CACHED };
 
-    const done = service.install();
+      const done = service.install();
 
-    expect(service.getStatus()).toEqual({
-      kind: "installing",
-      done,
-      binary: installed,
-    });
-    await done;
-    expect(service.getStatus()).toEqual({
-      kind: "installed",
-      version: SEGMENTER.pin.version,
-      binary: installed,
-    });
-  });
+      expect(service.getStatus()).toEqual({
+        kind: "installing",
+        done,
+        binary: installed,
+      });
+      await done;
+      expect(service.getStatus()).toEqual({
+        kind: "installed",
+        version: SEGMENTER.pin.version,
+        binary: installed,
+      });
+    }),
+  );
 
-  it("hands the cached bytes to its engine factory", async () => {
-    const device = memoryDevice();
-    const createEngine = vi.fn((_binary: Blob) =>
-      Promise.resolve(disposable()),
-    );
-    await using service = open({ ...SEGMENTER, createEngine }, device);
-    await service.ready;
-    await service.install();
+  it.effect("hands the cached bytes to its engine factory", () =>
+    Effect.promise(async () => {
+      const device = memoryDevice();
+      const createEngine = vi.fn((_binary: Blob) =>
+        Promise.resolve(disposable()),
+      );
+      await using service = await open({ ...SEGMENTER, createEngine }, device);
+      await service.install();
 
-    await service.getEngine();
+      await service.getEngine();
 
-    const [passed] = createEngine.mock.calls[0]!;
-    expect(new Uint8Array(await passed.arrayBuffer())).toEqual(
-      SEGMENTER_BINARY,
-    );
-  });
+      const [passed] = createEngine.mock.calls[0]!;
+      expect(new Uint8Array(await passed.arrayBuffer())).toEqual(
+        SEGMENTER_BINARY,
+      );
+    }),
+  );
 
-  it("shares one install, its engine start included, with an install during the start", async () => {
-    const device = memoryDevice();
-    const download = serve(SEGMENTER);
-    const starting = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    let disposed = 0;
-    const createEngine = vi.fn(async (_binary: Blob) => {
-      starting.resolve();
-      await release.promise;
-      return {
-        [Symbol.asyncDispose]: () => {
-          disposed++;
-          return Promise.resolve();
-        },
-      };
-    });
-    await using service = open(
-      { ...SEGMENTER, createEngine, startOnInstall: true },
-      device,
-      download,
-    );
-    await service.ready;
+  it.effect(
+    "shares one install, its engine start included, with an install during the start",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        const download = serve(SEGMENTER);
+        const starting = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let disposed = 0;
+        const createEngine = vi.fn(async (_binary: Blob) => {
+          starting.resolve();
+          await release.promise;
+          return {
+            [Symbol.asyncDispose]: () => {
+              disposed++;
+              return Promise.resolve();
+            },
+          };
+        });
+        await using service = await open(
+          { ...SEGMENTER, createEngine, startOnInstall: true },
+          device,
+          download,
+        );
 
-    const first = service.install();
-    await starting.promise;
-    const second = service.install();
-    const during = service.getStatus().kind;
-    release.resolve();
-    await Promise.all([first, second]);
+        const first = service.install();
+        await starting.promise;
+        const second = service.install();
+        const during = service.getStatus().kind;
+        release.resolve();
+        await Promise.all([first, second]);
 
-    expect(second).toBe(first);
-    expect(during).toBe("installing");
-    expect(download).toHaveBeenCalledOnce();
-    expect(createEngine).toHaveBeenCalledOnce();
-    expect(disposed).toBe(1);
-    expect(service.getStatus()).toEqual({
-      kind: "installed",
-      version: SEGMENTER.pin.version,
-      binary: { directory: "chinese-segmenter", name: CACHED },
-    });
-  });
+        expect(second).toBe(first);
+        expect(during).toBe("installing");
+        expect(download).toHaveBeenCalledOnce();
+        expect(createEngine).toHaveBeenCalledOnce();
+        expect(disposed).toBe(1);
+        expect(service.getStatus()).toEqual({
+          kind: "installed",
+          version: SEGMENTER.pin.version,
+          binary: { directory: "chinese-segmenter", name: CACHED },
+        });
+      }),
+  );
 
-  it("reports a binary that does not match the pin, and caches nothing", async () => {
-    const device = memoryDevice();
-    const expected = "f".repeat(64);
-    await using service = open(
-      { ...SEGMENTER, pin: { ...SEGMENTER.pin, sha256: expected } },
-      device,
-    );
-    await service.ready;
+  it.effect(
+    "reports a binary that does not match the pin, and caches nothing",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        const expected = "f".repeat(64);
+        await using service = await open(
+          { ...SEGMENTER, pin: { ...SEGMENTER.pin, sha256: expected } },
+          device,
+        );
 
-    await expect(service.install()).rejects.toThrow();
+        await expect(service.install()).rejects.toThrow();
 
-    expect(service.getStatus()).toEqual({
-      kind: "failed",
-      failure: {
-        code: "hash-mismatch",
-        expected,
-        actual: SEGMENTER.pin.sha256,
-      },
-    });
-    expect(device.names(SEGMENTER.id)).toEqual([]);
-  });
+        expect(service.getStatus()).toEqual({
+          kind: "failed",
+          failure: {
+            code: "hash-mismatch",
+            expected,
+            actual: SEGMENTER.pin.sha256,
+          },
+        });
+        expect(device.names(SEGMENTER.id)).toEqual([]);
+      }),
+  );
 
-  it("remembers a declined offer across restarts, and forgets it on install", async () => {
-    const device = memoryDevice();
-    {
-      await using first = open(SEGMENTER, device);
-      await first.ready;
-      first.decline();
-      expect(first.getStatus()).toEqual({ kind: "declined" });
-    }
+  it.effect(
+    "remembers a declined offer across restarts, and forgets it on install",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        {
+          await using first = await open(SEGMENTER, device);
+          first.decline();
+          expect(first.getStatus()).toEqual({ kind: "declined" });
+        }
 
-    await using restarted = open(SEGMENTER, device);
-    await restarted.ready;
-    expect(restarted.getStatus()).toEqual({ kind: "declined" });
+        await using restarted = await open(SEGMENTER, device);
+        expect(restarted.getStatus()).toEqual({ kind: "declined" });
 
-    await restarted.install();
-    await restarted.uninstall();
-    expect(restarted.getStatus()).toEqual({ kind: "absent" });
-  });
+        await restarted.install();
+        await restarted.uninstall();
+        expect(restarted.getStatus()).toEqual({ kind: "absent" });
+      }),
+  );
 
-  it("clears its directory on uninstall and offers the install again", async () => {
-    const device = memoryDevice();
-    await using service = open(SEGMENTER, device);
-    await service.ready;
-    await service.install();
+  it.effect(
+    "clears its directory on uninstall and offers the install again",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        await using service = await open(SEGMENTER, device);
+        await service.install();
 
-    await service.uninstall();
+        await service.uninstall();
 
-    expect(device.names(SEGMENTER.id)).toEqual([]);
-    expect(service.getStatus()).toEqual({ kind: "absent" });
-  });
+        expect(device.names(SEGMENTER.id)).toEqual([]);
+        expect(service.getStatus()).toEqual({ kind: "absent" });
+      }),
+  );
 
-  it("drops binaries earlier releases pinned, leaving downloads in flight alone", async () => {
-    const device = memoryDevice();
-    const stale = bytes("jieba 2.3");
-    const inFlight = `${"9".repeat(64)}.f1e2.part`;
-    device.files(SEGMENTER.id).set("0123.wasm", stale);
-    device.files(SEGMENTER.id).set(inFlight, stale);
-    await using service = open(SEGMENTER, device);
-    await service.ready;
+  it.effect(
+    "drops binaries earlier releases pinned, leaving downloads in flight alone",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        const stale = bytes("jieba 2.3");
+        const inFlight = `${"9".repeat(64)}.f1e2.part`;
+        device.files(SEGMENTER.id).set("0123.wasm", stale);
+        device.files(SEGMENTER.id).set(inFlight, stale);
+        await using service = await open(SEGMENTER, device);
 
-    await service.install();
+        await service.install();
 
-    expect(device.names(SEGMENTER.id)).toEqual([CACHED, inFlight].sort());
-  });
+        expect(device.names(SEGMENTER.id)).toEqual([CACHED, inFlight].sort());
+      }),
+  );
 });
 
 describe("two Managed Binaries on one device", () => {
-  it("keep separate stores and statuses", async () => {
-    const device = memoryDevice();
-    await using segmenter = open(SEGMENTER, device);
-    await using other = open(OTHER, device);
-    await Promise.all([segmenter.ready, other.ready]);
+  it.effect("keep separate stores and statuses", () =>
+    Effect.promise(async () => {
+      const device = memoryDevice();
+      await using segmenter = await open(SEGMENTER, device);
+      await using other = await open(OTHER, device);
 
-    await segmenter.install();
+      await segmenter.install();
 
-    expect(segmenter.getStatus()).toMatchObject({ kind: "installed" });
-    expect(other.getStatus()).toEqual({ kind: "absent" });
-    expect(device.names(OTHER.id)).toEqual([]);
+      expect(segmenter.getStatus()).toMatchObject({ kind: "installed" });
+      expect(other.getStatus()).toEqual({ kind: "absent" });
+      expect(device.names(OTHER.id)).toEqual([]);
 
-    await other.install();
-    expect(device.names(SEGMENTER.id)).toEqual([CACHED]);
-    expect(device.names(OTHER.id)).toEqual([`${OTHER.pin.sha256}.wasm`]);
+      await other.install();
+      expect(device.names(SEGMENTER.id)).toEqual([CACHED]);
+      expect(device.names(OTHER.id)).toEqual([`${OTHER.pin.sha256}.wasm`]);
 
-    await segmenter.uninstall();
+      await segmenter.uninstall();
 
-    expect(segmenter.getStatus()).toEqual({ kind: "absent" });
-    expect(other.getStatus()).toMatchObject({ kind: "installed" });
-    expect(device.names(OTHER.id)).toEqual([`${OTHER.pin.sha256}.wasm`]);
-  });
+      expect(segmenter.getStatus()).toEqual({ kind: "absent" });
+      expect(other.getStatus()).toMatchObject({ kind: "installed" });
+      expect(device.names(OTHER.id)).toEqual([`${OTHER.pin.sha256}.wasm`]);
+    }),
+  );
 
-  it("remember a declined offer for each binary on its own", async () => {
-    const device = memoryDevice();
-    {
-      await using segmenter = open(SEGMENTER, device);
-      await segmenter.ready;
-      segmenter.decline();
-    }
+  it.effect("remember a declined offer for each binary on its own", () =>
+    Effect.promise(async () => {
+      const device = memoryDevice();
+      {
+        await using segmenter = await open(SEGMENTER, device);
+        segmenter.decline();
+      }
 
-    await using segmenter = open(SEGMENTER, device);
-    await using other = open(OTHER, device);
-    await Promise.all([segmenter.ready, other.ready]);
+      await using segmenter = await open(SEGMENTER, device);
+      await using other = await open(OTHER, device);
 
-    expect(segmenter.getStatus()).toEqual({ kind: "declined" });
-    expect(other.getStatus()).toEqual({ kind: "absent" });
-  });
+      expect(segmenter.getStatus()).toEqual({ kind: "declined" });
+      expect(other.getStatus()).toEqual({ kind: "absent" });
+    }),
+  );
 });

@@ -5,9 +5,14 @@ import { Clock, Effect, Layer } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
+import { layerChineseSegmenter } from "./chinese-segmenter/service";
+import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLogging, layerLogOutput } from "./log/service";
+import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import { layerPandocEngine } from "./pandoc/service";
+import type { PandocEngine } from "./pandoc/service";
 import { QueryClients, QueryClientService } from "./query-client/service";
 import { serviceLayer } from "./service-layer";
 import { settingsMigrations } from "./settings/migrate";
@@ -24,9 +29,19 @@ import type { UseLedger } from "./use-ledger/service";
  */
 export function pluginLayer(
   plugin: Plugin,
-): Layer.Layer<PluginSettings | UseLedger | QueryClients | CitationParse> {
+): Layer.Layer<
+  | PluginSettings
+  | UseLedger
+  | QueryClients
+  | CitationParse
+  | ChineseSegmenter
+  | PandocEngine
+> {
   return Layer.mergeAll(
     layerUseLedger,
+    Layer.mergeAll(layerChineseSegmenter, layerPandocEngine).pipe(
+      Layer.provide(layerManagedBinaryPlatform),
+    ),
     layerCitationParse,
     serviceLayer(QueryClients, {
       key: "queryClient",

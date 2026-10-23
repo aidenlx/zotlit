@@ -3,8 +3,19 @@
 import { requestUrl } from "obsidian";
 import type { App } from "obsidian";
 
-import { getLogger } from "@/lib/log";
-import { Service } from "@/services/service-base";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Scope,
+  SubscriptionRef,
+} from "@/lib/effect";
+import type { Stream } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { ObsidianApp } from "@/lib/obsidian-app";
 
 import type { BinaryPin } from "./pin";
 import { createOpfsBinaryStore } from "./store";
@@ -100,314 +111,307 @@ function cachedBinaryName(pin: BinaryPin): string {
   return `${pin.sha256}${BINARY_SUFFIX}`;
 }
 
-/**
- * Owns one Managed Binary: the consent-gated download of the pinned asset, its
- * verification against the pinned SHA-256, the device-wide cache it lands in,
- * and the engine instantiated from it.
- *
- * Nothing downloads on its own — {@link install} is the one door onto the
- * network, and startup only reads which binary is already cached.
- */
-export class ManagedBinaryService<
-  Engine extends AsyncDisposable | Disposable = AsyncDisposable | Disposable,
-> extends Service<void> {
-  readonly #binary: ManagedBinary<Engine>;
-  readonly #store: BinaryStore;
-  readonly #download: (url: string) => Promise<Uint8Array<ArrayBuffer>>;
-  readonly #consent: Pick<App, "loadLocalStorage" | "saveLocalStorage">;
-  readonly #declinedKey: string;
-  readonly #logger: ReturnType<typeof getLogger>;
+/** The OS and network boundary shared by the two Managed Binary layers. */
+export class ManagedBinaryPlatform extends Context.Service<
+  ManagedBinaryPlatform,
+  ManagedBinaryPorts
+>()("zotlit/managed-binary/ManagedBinaryPlatform") {}
 
-  readonly #listeners = new Set<() => void>();
-  #status: ManagedBinaryStatus;
-  /** Memoized instantiation; cleared whenever the binary behind it goes away. */
-  #engine: Promise<Engine> | undefined;
+export const layerManagedBinaryPlatform = Layer.effect(
+  ManagedBinaryPlatform,
+  Effect.map(ObsidianApp, obsidianBinaryPorts),
+);
 
-  ready: Promise<void>;
+/** Effect-native operations; the layer owns startup, installs, and engines. */
+export interface ManagedBinaryApi<Engine extends Disposable | AsyncDisposable> {
+  getStatus(): Effect.Effect<ManagedBinaryStatus>;
+  readonly changes: Stream.Stream<ManagedBinaryStatus>;
+  getEngine(): Effect.Effect<Engine, Error>;
+  install(): Effect.Effect<void, Error>;
+  uninstall(): Effect.Effect<void, Error>;
+  decline(): Effect.Effect<void>;
+}
 
-  constructor(
-    binary: ManagedBinary<Engine>,
-    { openStore, download, consent }: ManagedBinaryPorts,
-  ) {
-    super();
-    this.#binary = binary;
-    this.#store = openStore(binary.id);
-    this.#download = download;
-    this.#consent = consent;
-    this.#declinedKey = `zotlit-${binary.id}-declined`;
-    this.#logger = getLogger(binary.logCategory);
-    this.#status = Object.freeze<ManagedBinaryStatus>(
-      consent.loadLocalStorage(this.#declinedKey)
+/** One descriptor becomes one independently scoped service under its own tag. */
+export function layerManagedBinary<
+  Id,
+  Engine extends Disposable | AsyncDisposable,
+>(
+  tag: Context.Service<Id, ManagedBinaryApi<Engine>>,
+  binary: ManagedBinary<Engine>,
+): Layer.Layer<Id, never, ManagedBinaryPlatform> {
+  return Layer.effect(tag, makeManagedBinary(binary));
+}
+
+const attempt = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({
+    try: run,
+    catch: (error) =>
+      error instanceof Error ? error : new Error(String(error)),
+  });
+
+const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
+  Engine extends Disposable | AsyncDisposable,
+>(binary: ManagedBinary<Engine>) {
+  const { openStore, download, consent } = yield* ManagedBinaryPlatform;
+  const scope = yield* Effect.scope;
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+  const store = openStore(binary.id);
+  const name = cachedBinaryName(binary.pin);
+  const location = { directory: binary.id, name };
+  const declinedKey = `zotlit-${binary.id}-declined`;
+  const status = yield* SubscriptionRef.make<ManagedBinaryStatus>(
+    Object.freeze(
+      consent.loadLocalStorage(declinedKey)
         ? { kind: "declined" }
         : { kind: "absent" },
+    ),
+  );
+  const setStatus = (next: ManagedBinaryStatus) =>
+    SubscriptionRef.set(status, Object.freeze(next));
+  const log = (
+    message: string,
+    fields: Record<string, unknown>,
+    level: "info" | "warn" | "error" = "info",
+  ) =>
+    (level === "error"
+      ? Effect.logError(message)
+      : level === "warn"
+        ? Effect.logWarning(message)
+        : Effect.logInfo(message)
+    ).pipe(
+      Effect.annotateLogs({ binary: binary.id, ...fields }),
+      withLogCategory(...binary.logCategory),
     );
-    this.ready = this.#load();
-  }
-
-  getStatus(): ManagedBinaryStatus {
-    return this.#status;
-  }
-
-  subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener);
-    return () => {
-      this.#listeners.delete(listener);
-    };
-  }
-
-  /**
-   * The engine, instantiated from the cached binary on first use and shared
-   * afterwards. An instantiation failure moves the status to
-   * `failed`/`init-failed`; {@link install} re-verifies the cache and puts the
-   * engine back within reach.
-   *
-   * @throws when no verified binary is cached, or when the binary fails to
-   *   instantiate.
-   */
-  getEngine(): Promise<Engine> {
-    const engine = (this.#engine ??= this.#loadEngine());
-    // A failed instantiation stays out of the memo, so the next call retries.
-    engine.catch(() => {
-      if (this.#engine === engine) this.#engine = undefined;
-    });
-    return engine;
-  }
-
-  /**
-   * The one door onto a download: records consent, downloads the pinned asset,
-   * verifies it, and caches it. Concurrent calls share the install in flight.
-   *
-   * @throws when the download, its verification, or the cache write fails; the
-   *   status then carries the same failure.
-   */
-  install(): Promise<void> {
-    const current = this.#status;
-    if (current.kind === "installing") return current.done;
-
-    this.#consent.saveLocalStorage(this.#declinedKey, null);
-    const done = this.#runInstall();
-    // No-op side chain: keeps the status's copy of the promise from tripping
-    // unhandledrejection when the caller attaches no handler of its own.
-    done.catch(() => undefined);
-    // A reinstall leaves the old binary on disk until the new one verifies
-    // and prune runs, so the old location stays readable throughout.
-    this.#setStatus({
-      kind: "installing",
-      done,
-      binary: current.kind === "installed" ? current.binary : null,
-    });
-    return done;
-  }
-
-  /**
-   * Records the dismissal, moving `absent` to `declined`. The offer itself is
-   * the dismissible install hint the fallback surface carries, so the decision
-   * is remembered here and survives a restart.
-   */
-  decline(): void {
-    this.#consent.saveLocalStorage(this.#declinedKey, true);
-    if (this.#status.kind === "absent") this.#setStatus({ kind: "declined" });
-  }
-
-  /**
-   * Drops the whole cache — every vault on the device loses the binary — and
-   * the running engine with it. The dismissed offer is forgotten too, so this
-   * vault is offered the install again.
-   *
-   * An install in flight lands its binary and its `installed` status whenever
-   * the download arrives, so the removal waits that install out and has the
-   * last word instead of racing it.
-   */
-  async uninstall(): Promise<void> {
-    const current = this.#status;
-    if (current.kind === "installing") {
-      await current.done.catch(() => undefined);
-    }
-    await this.#dropEngine();
-    await this.#store.clear();
-    this.#consent.saveLocalStorage(this.#declinedKey, null);
-    this.#logger.info("Removed the binary cache", {
-      binary: this.#binary.id,
-      pin: this.#binary.pin,
-    });
-    this.#setStatus({ kind: "absent" });
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    stack.defer(() => this.#dropEngine());
-
-    if (await this.#isCached()) {
-      this.#setStatus({
-        kind: "installed",
-        version: this.#binary.pin.version,
-        binary: this.#location,
-      });
-    }
-    this.commit(stack.move());
-  }
-
-  /** A cache the device denies ZotLit reads as no binary rather than as a failure. */
-  async #isCached(): Promise<boolean> {
-    try {
-      return (await this.#store.list()).includes(this.#binaryName);
-    } catch (error) {
-      this.#logger.warn("Cannot read the binary cache", {
-        binary: this.#binary.id,
-        error,
-      });
-      return false;
-    }
-  }
-
-  get #binaryName(): string {
-    return cachedBinaryName(this.#binary.pin);
-  }
-
-  get #location(): BinaryLocation {
-    return { directory: this.#binary.id, name: this.#binaryName };
-  }
-
-  async #loadEngine(): Promise<Engine> {
-    if (this.#status.kind !== "installed") {
-      throw new Error(`The ${this.#binary.label} is not installed`);
-    }
-    return this.#startEngine();
-  }
-
-  /** Starts an engine over the cached binary, whatever the status says. */
-  async #startEngine(): Promise<Engine> {
-    const { label, pin, createEngine } = this.#binary;
-    let binary: Blob;
-    try {
-      const read = await this.#store.read(this.#binaryName);
-      if (!read) throw new Error(`The cached ${label} binary is gone`);
-      binary = read;
-    } catch (error) {
-      this.#failInit(error);
-      throw error;
-    }
-    try {
-      return await createEngine(binary);
-    } catch (error) {
-      // The binary that failed to start may simply be corrupt on disk; a
-      // pinned-hash mismatch means the cache is bad, not the binary itself, so
-      // clearing it lets the normal install offer reappear instead of
-      // stranding the user on a dead cache. This path is rare, so
-      // materializing the whole binary to hash it is fine here.
-      const actual = await sha256Hex(await binary.arrayBuffer());
-      if (actual !== pin.sha256) {
-        this.#logger.warn("The cached binary is corrupt", {
-          binary: this.#binary.id,
-          name: this.#binaryName,
-          actual,
-          error,
-        });
-        await this.#store.remove(this.#binaryName).catch(() => undefined);
-        this.#setStatus({ kind: "absent" });
-        throw error;
+  const isCached = Effect.fn("ManagedBinary.isCached")(function* () {
+    return yield* attempt(() => store.list()).pipe(
+      Effect.map((names) => names.includes(name)),
+      Effect.catch((error) =>
+        log("Cannot read the binary cache", { error }, "warn").pipe(
+          Effect.as(false),
+        ),
+      ),
+    );
+  });
+  const startup = yield* Effect.forkScoped(
+    Effect.gen(function* () {
+      if (yield* isCached()) {
+        const current = yield* SubscriptionRef.get(status);
+        if (current.kind === "absent" || current.kind === "declined")
+          yield* setStatus({
+            kind: "installed",
+            version: binary.pin.version,
+            binary: location,
+          });
       }
-      this.#failInit(error);
-      throw error;
-    }
-  }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        log(
+          "Cannot read the binary cache",
+          { error: Cause.squash(cause) },
+          "warn",
+        ),
+      ),
+    ),
+  );
 
-  #failInit(error: unknown): void {
+  const failInit = Effect.fn("ManagedBinary.failInit")(function* (
+    error: Error,
+  ) {
     const failure: ManagedBinaryFailure = {
       code: "init-failed",
       detail: describe(error),
     };
-    this.#logger.error("The binary did not start", {
-      binary: this.#binary.id,
-      failure,
-      error,
+    yield* log("The binary did not start", { failure, error }, "error");
+    yield* setStatus({ kind: "failed", failure });
+  });
+  const startEngine = Effect.fn("ManagedBinary.startEngine")(function* () {
+    const blob = yield* attempt(async () => {
+      const read = await store.read(name);
+      if (!read) throw new Error(`The cached ${binary.label} binary is gone`);
+      return read;
+    }).pipe(Effect.tapError(failInit));
+    return yield* attempt(() => binary.createEngine(blob)).pipe(
+      Effect.catch(
+        Effect.fn("ManagedBinary.failedStart")(function* (error) {
+          const actual = yield* attempt(async () =>
+            sha256Hex(await blob.arrayBuffer()),
+          );
+          if (actual !== binary.pin.sha256) {
+            yield* log(
+              "The cached binary is corrupt",
+              { name, actual, error },
+              "warn",
+            );
+            yield* attempt(() => store.remove(name)).pipe(Effect.ignore);
+            yield* setStatus({ kind: "absent" });
+          } else yield* failInit(error);
+          return yield* Effect.fail(error);
+        }),
+      ),
+    );
+  });
+  const acquireEngine = Effect.acquireRelease(startEngine(), (engine) =>
+    attempt(async () => {
+      if (Symbol.asyncDispose in engine) await engine[Symbol.asyncDispose]();
+      else engine[Symbol.dispose]();
+    }).pipe(
+      Effect.catchCause((cause) =>
+        log(
+          "Could not release the binary engine",
+          { error: Cause.squash(cause) },
+          "error",
+        ),
+      ),
+    ),
+  );
+  let engine:
+    | { fiber: Fiber.Fiber<Engine, Error>; scope: Scope.Closeable }
+    | undefined;
+  const dropEngine = Effect.fn("ManagedBinary.dropEngine")(function* () {
+    const pending = engine;
+    engine = undefined;
+    if (pending) {
+      yield* Fiber.await(pending.fiber);
+      yield* Scope.close(pending.scope, Exit.void);
+    }
+  });
+  yield* Effect.addFinalizer(dropEngine);
+  const getEngine = Effect.fn("ManagedBinary.getEngine")(function* () {
+    yield* Fiber.join(startup);
+    if (!engine) {
+      if ((yield* SubscriptionRef.get(status)).kind !== "installed")
+        return yield* Effect.fail(
+          new Error(`The ${binary.label} is not installed`),
+        );
+      const engineScope = yield* Scope.make();
+      const fiber = yield* Effect.forkIn(
+        acquireEngine.pipe(Effect.provideService(Scope.Scope, engineScope)),
+        scope,
+        { uninterruptible: true },
+      );
+      engine = { fiber, scope: engineScope };
+    }
+    const pending = engine;
+    return yield* Fiber.join(pending.fiber).pipe(
+      Effect.tapError(() =>
+        Effect.gen(function* () {
+          if (engine === pending) engine = undefined;
+          yield* Scope.close(pending.scope, Exit.void);
+        }),
+      ),
+    );
+  });
+  const fetchBinary = Effect.fn("ManagedBinary.fetchBinary")(function* () {
+    const { url, sha256 } = binary.pin;
+    yield* log("Downloading the binary", { url });
+    const asset = yield* attempt(() => download(url));
+    const bytes = yield* Effect.try({
+      try: () => (binary.extract ? binary.extract(asset) : asset),
+      catch: (error) => new Error(describe(error)),
     });
-    this.#setStatus({ kind: "failed", failure });
-  }
-
-  async #runInstall(): Promise<void> {
-    const { id: binary, pin } = this.#binary;
-    const { version, url, sha256 } = pin;
-    try {
-      // Another vault may have finished the very same download already.
-      if (!(await this.#isCached())) await this.#fetchBinary();
-      await this.#prune();
-    } catch (error) {
-      const failure = toFailure(error, url);
-      this.#logger.error("The binary install failed", {
-        binary,
-        failure,
-        error,
-      });
-      this.#setStatus({ kind: "failed", failure });
-      throw error;
-    }
-    if (this.#binary.startOnInstall) {
-      // The status stays `installing` through the start and its release, so
-      // a concurrent install() shares this whole operation.
-      // oxlint-disable-next-line typescript/await-thenable -- Engine may be sync or async disposable
-      await using _engine = await this.#startEngine();
-    }
-    this.#logger.info("Installed the binary", { binary, version, sha256 });
-    this.#setStatus({ kind: "installed", version, binary: this.#location });
-  }
-
-  /**
-   * Temp write → verify → rename, so a vault reading the cache never observes a
-   * half-written binary and two vaults downloading at once land on identical
-   * verified bytes.
-   */
-  async #fetchBinary(): Promise<void> {
-    const { id, pin, extract = (asset) => asset } = this.#binary;
-    const { url, sha256 } = pin;
-    this.#logger.info("Downloading the binary", { binary: id, url });
-    const binary = extract(await this.#download(url));
-
     const temp = `${sha256}.${crypto.randomUUID()}.part`;
-    await this.#store.write(temp, binary);
-    try {
-      const actual = await sha256Hex(binary);
-      if (actual !== sha256) throw new HashMismatchError(sha256, actual);
-      await this.#store.rename(temp, this.#binaryName);
-    } catch (error) {
-      await this.#store.remove(temp).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  /**
-   * Drops the binaries earlier releases pinned, once the current one verified.
-   * A `.part` entry belongs to a download another vault still has in flight.
-   * The install already succeeded here, so a leftover ZotLit cannot delete
-   * costs disk space rather than the install.
-   */
-  async #prune(): Promise<void> {
-    const current = this.#binaryName;
-    try {
-      for (const name of await this.#store.list()) {
-        if (name === current || !name.endsWith(BINARY_SUFFIX)) continue;
-        await this.#store.remove(name);
+    // The release also covers a failed write, so a partial file cannot outlive this install.
+    yield* Effect.acquireUseRelease(
+      Effect.succeed(temp),
+      () =>
+        Effect.gen(function* () {
+          yield* attempt(() => store.write(temp, bytes));
+          const actual = yield* attempt(() => sha256Hex(bytes));
+          if (actual !== sha256)
+            return yield* Effect.fail(new HashMismatchError(sha256, actual));
+          yield* attempt(() => store.rename(temp, name));
+        }),
+      () => attempt(() => store.remove(temp)).pipe(Effect.ignore),
+    );
+  });
+  const prune = Effect.fn("ManagedBinary.prune")(
+    function* () {
+      for (const entry of yield* attempt(() => store.list())) {
+        if (entry !== name && entry.endsWith(BINARY_SUFFIX))
+          yield* attempt(() => store.remove(entry));
       }
-    } catch (error) {
-      this.#logger.warn("Cannot drop the superseded binaries", {
-        binary: this.#binary.id,
-        error,
-      });
-    }
-  }
-
-  async #dropEngine(): Promise<void> {
-    const pending = this.#engine;
-    this.#engine = undefined;
-    // oxlint-disable-next-line typescript/await-thenable -- Engine may be sync or async disposable
-    await using _engine = await pending?.catch(() => undefined);
-  }
-
-  #setStatus(status: ManagedBinaryStatus): void {
-    this.#status = Object.freeze(status);
-    for (const listener of this.#listeners) listener();
-  }
-}
+    },
+    Effect.catch((error) =>
+      log("Cannot drop the superseded binaries", { error }, "warn"),
+    ),
+  );
+  const runInstall = Effect.fn("ManagedBinary.runInstall")(function* () {
+    yield* Fiber.join(startup);
+    yield* Effect.gen(function* () {
+      if (!(yield* isCached())) yield* fetchBinary();
+      yield* prune();
+    }).pipe(
+      Effect.tapError(
+        Effect.fn("ManagedBinary.failedInstall")(function* (error) {
+          const failure = toFailure(error, binary.pin.url);
+          yield* log("The binary install failed", { failure, error }, "error");
+          yield* setStatus({ kind: "failed", failure });
+        }),
+      ),
+    );
+    if (binary.startOnInstall) yield* Effect.scoped(acquireEngine);
+    yield* log("Installed the binary", {
+      version: binary.pin.version,
+      sha256: binary.pin.sha256,
+    });
+    yield* setStatus({
+      kind: "installed",
+      version: binary.pin.version,
+      binary: location,
+    });
+  });
+  const install = Effect.fn("ManagedBinary.install")(function* () {
+    const current = yield* SubscriptionRef.get(status);
+    if (current.kind === "installing")
+      return yield* attempt(() => current.done);
+    consent.saveLocalStorage(declinedKey, null);
+    // The inherited Promise belongs to the public status contract. Its work is
+    // a scoped fiber, and this runner retains the layer's services and Clock.
+    const fiber = yield* Effect.forkIn(runInstall(), scope, {
+      uninterruptible: true,
+    });
+    const done = runPromise(Fiber.join(fiber));
+    void done.catch(() => undefined);
+    yield* setStatus({
+      kind: "installing",
+      done,
+      binary: current.kind === "installed" ? current.binary : null,
+    });
+    yield* Fiber.join(fiber);
+  });
+  const uninstall = Effect.fn("ManagedBinary.uninstall")(function* () {
+    const fiber = yield* Effect.forkIn(
+      Effect.gen(function* () {
+        yield* Fiber.join(startup);
+        const current = yield* SubscriptionRef.get(status);
+        if (current.kind === "installing")
+          yield* attempt(() => current.done).pipe(Effect.ignore);
+        yield* dropEngine();
+        yield* attempt(() => store.clear());
+        consent.saveLocalStorage(declinedKey, null);
+        yield* log("Removed the binary cache", { pin: binary.pin });
+        yield* setStatus({ kind: "absent" });
+      }),
+      scope,
+      { uninterruptible: true },
+    );
+    yield* Fiber.join(fiber);
+  });
+  const decline = Effect.fn("ManagedBinary.decline")(function* () {
+    consent.saveLocalStorage(declinedKey, true);
+    if ((yield* SubscriptionRef.get(status)).kind === "absent")
+      yield* setStatus({ kind: "declined" });
+  });
+  return {
+    getStatus: () => SubscriptionRef.get(status),
+    changes: SubscriptionRef.changes(status),
+    getEngine,
+    install,
+    uninstall,
+    decline,
+  } satisfies ManagedBinaryApi<Engine>;
+});
 
 /** Obsidian's own ports: the origin's OPFS, `requestUrl`, and the vault's local storage. */
 export function obsidianBinaryPorts(app: App): ManagedBinaryPorts {

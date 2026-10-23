@@ -11,7 +11,7 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { ManagedBinaryService } from "@/services/managed-binary/service";
+import type { PlainManagedBinary } from "@/services/managed-binary/plain";
 import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
@@ -37,7 +37,7 @@ export type ReleaseTabActions = Pick<
 
 /** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
 export type ManagedBinaryActions = Pick<
-  ManagedBinaryService,
+  PlainManagedBinary,
   "getStatus" | "subscribe" | "install" | "uninstall"
 >;
 
