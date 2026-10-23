@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import type { CliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { ANNOTATION_IMAGE_COMMAND, answerAnnotationImage } from "./cli-image";
@@ -14,7 +14,7 @@ import { publishExcerptPng } from "./temp-store";
 
 interface AnnotationImageDeps {
   zoteroReads: ZoteroReadsService;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   excerptImage: ExcerptImageService;
 }
 
@@ -53,10 +53,6 @@ function readExcerptRequest(deps: AnnotationImageDeps, key: string) {
       message: error instanceof Error ? error.message : String(error),
     });
   return Effect.gen(function* () {
-    yield* Effect.tryPromise({
-      try: () => deps.zoteroPref.ready,
-      catch: unavailable,
-    });
     const paths = {
       dataDir: deps.zoteroPref.dataDir,
       baseAttachmentPath: deps.zoteroPref.baseAttachmentPath,

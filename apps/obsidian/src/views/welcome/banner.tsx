@@ -17,7 +17,7 @@ import type {
   SettingsService,
 } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { WelcomeActionsContext } from "./actions";
@@ -47,7 +47,7 @@ export interface WelcomeBannerDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
   queries: Pick<QueryClientService, "peek" | "read">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   settings: Pick<SettingsService, "subscribe" | "update" | "flush">;
   setupActions: SetupActions;
   templateMigration: Pick<

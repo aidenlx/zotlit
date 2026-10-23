@@ -1,0 +1,130 @@
+import { TestClock } from "effect/testing";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { expect } from "vitest";
+
+import { Effect, Fiber, Queue, Stream } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
+
+import { zoteroPrefFixture } from "./__fixtures__";
+
+// Failure modes: a Device Override is not persisted, or observers retain the
+// old database path after the setting changes.
+it.effect("publishes and persists the data directory Device Override", () =>
+  Effect.gen(function* () {
+    const f = yield* zoteroPrefFixture();
+    const changes = yield* Stream.toPull(f.pref.changes);
+    yield* changes;
+    yield* f.pref.setDataDir("/chosen-library");
+    const next = yield* changes;
+    expect(next[0]).toMatchObject({
+      dataDirOverride: "/chosen-library",
+      dataDir: "/chosen-library",
+      databasePath: "/chosen-library/zotero.sqlite",
+    });
+    expect(f.saved()).toEqual({
+      profileDir: "/profile",
+      dataDir: "/chosen-library",
+    });
+  }),
+);
+
+// Failure modes: a late read replaces a newer profile, or closing the service
+// leaves its startup/profile reads running and able to change state.
+it.effect("keeps the latest profile and interrupts reads on scope close", () =>
+  Effect.gen(function* () {
+    const started = yield* Queue.unbounded<string>();
+    const stopped = yield* Queue.unbounded<string>();
+    const read = (path: string) =>
+      Effect.gen(function* () {
+        yield* Queue.offer(started, path);
+        yield* Effect.sleep(
+          path === "/profile/prefs.js" ? "2 seconds" : "1 second",
+        );
+        return (
+          `user_pref("extensions.zotero.baseAttachmentPath", "${  path  }");`
+        );
+      }).pipe(Effect.ensuring(Queue.offer(stopped, path)));
+    const f = yield* zoteroPrefFixture(read);
+    expect(yield* Queue.take(started)).toBe("/profile/prefs.js");
+    yield* f.pref.setProfileDir("/new-profile");
+    expect(yield* Queue.take(started)).toBe("/new-profile/prefs.js");
+    yield* TestClock.adjust("1 second");
+    yield* Queue.take(stopped);
+    expect(yield* f.pref.get("baseAttachmentPath")).toBe(
+      "/new-profile/prefs.js",
+    );
+    yield* TestClock.adjust("1 second");
+    yield* Queue.take(stopped);
+    expect((yield* f.pref.current).resolvedProfileDir).toBe("/new-profile");
+    yield* f.pref.setProfileDir("/pending-profile");
+    yield* Queue.take(started);
+    yield* f.runtime.disposeEffect;
+    expect(yield* Queue.take(stopped)).toBe("/pending-profile/prefs.js");
+    const before = yield* f.pref.current;
+    yield* f.pref.setDataDir("/after-close");
+    yield* f.pref.setProfileDir("/after-close");
+    expect(yield* f.pref.current).toBe(before);
+    expect(f.saved()).toEqual({ profileDir: "/pending-profile" });
+  }),
+);
+
+// Failure modes: automatic detection ignores profiles.ini, clearing a Device
+// Override retains it, or an unreadable profile leaves old preferences active.
+it.effect(
+  "detects the default profile and degrades on an unreadable replacement",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* zoteroPrefFixture((path) => {
+        if (path.endsWith("profiles.ini"))
+          return Effect.succeed(
+            "[Profile0]\nName=Research\nIsRelative=0\nPath=/research-profile\nDefault=1",
+          );
+        if (path === "/research-profile/prefs.js")
+          return Effect.succeed(
+            'user_pref("extensions.zotero.useDataDir", true);\nuser_pref("extensions.zotero.dataDir", "/research-data");\nuser_pref("extensions.zotero.httpServer.port", 45678);',
+          );
+        return Effect.fail(new Error("unreadable"));
+      }, null);
+      yield* Stream.runHead(
+        Stream.filter(f.pref.changes, (s) => s.state === "ready"),
+      );
+      expect(yield* f.pref.current).toMatchObject({
+        resolvedProfileDir: "/research-profile",
+        dataDir: "/research-data",
+        httpPort: 45678,
+      });
+      expect(yield* f.pref.listProfiles()).toEqual([
+        { name: "Research", dir: "/research-profile", isDefault: true },
+      ]);
+      yield* f.pref.setDataDir("/override");
+      yield* f.pref.setDataDir(null);
+      expect((yield* f.pref.current).dataDir).toBe("/research-data");
+      expect(f.saved()).toBeNull();
+      yield* f.pref.setProfileDir("/unreadable");
+      yield* Stream.runHead(
+        Stream.filter(f.pref.changes, (s) => s.state === "degraded"),
+      );
+      expect(yield* f.pref.current).toMatchObject({
+        state: "degraded",
+        resolvedProfileDir: "/unreadable",
+        dataDir: join(homedir(), "Zotero"),
+      });
+      expect(yield* f.pref.get("useDataDir")).toBeUndefined();
+      expect(yield* f.pref.companionInstalled()).toBe(false);
+    }),
+);
+
+// Failure mode: an observer remains blocked on the state Stream after unload.
+it.effect("ends its changes Stream when the layer scope closes", () =>
+  Effect.gen(function* () {
+    const f = yield* zoteroPrefFixture();
+    const observed = yield* Queue.unbounded<void>();
+    const listener = yield* Stream.runForEach(f.pref.changes, () =>
+      Queue.offer(observed, undefined),
+    ).pipe(Effect.forkChild);
+    yield* Queue.take(observed);
+    yield* f.runtime.disposeEffect;
+    yield* Fiber.join(listener);
+  }),
+);

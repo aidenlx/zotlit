@@ -39,7 +39,7 @@ import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
@@ -55,7 +55,7 @@ export interface CitekeyEditorDeps {
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   db: Pick<ZoteroReadsService, "state" | "ready">;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;

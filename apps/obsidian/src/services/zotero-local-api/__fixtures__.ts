@@ -29,7 +29,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
 import type { LocalServerEvents } from "@/services/local-server/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 
 import { ZoteroLocalApiClient } from "./service";
 import type { WireTag } from "./wire";

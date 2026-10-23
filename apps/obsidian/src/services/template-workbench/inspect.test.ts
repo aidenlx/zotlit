@@ -56,7 +56,6 @@ async function fixture(
     settings: f.settings,
     profile: f.profile,
     zoteroPref: {
-      ready: Promise.resolve(),
       sourceId: "fixture-source",
       databasePath: "/fixture/db",
     },

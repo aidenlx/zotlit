@@ -353,7 +353,6 @@ export default defineConfig({
         "src/services/wikilink-editor/service.ts",
         "src/services/wikilink-reading/service.ts",
         "src/services/zotero-local-api/service.ts",
-        "src/services/zotero-pref/service.ts",
         "src/services/zotero-reads/service.ts",
       ],
       rules: { "zotlit-services/no-legacy-service": "off" },

@@ -12,7 +12,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
@@ -75,7 +75,10 @@ interface TemplateWorkbenchRegistrationDeps {
   settings: SettingsService;
   profile: ProfileService;
   templates: TemplateService;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
+  >;
 }
 
 /** The Indexed Key selector a command with no other way to name an object takes. */
@@ -291,9 +294,11 @@ function frontmatterReorderFlags(): CliFlags {
  */
 export async function readWorkbenchIdentity(deps: {
   app: App;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
+  >;
 }): Promise<WorkbenchIdentity> {
-  await deps.zoteroPref.ready;
   return {
     vault: {
       name: deps.app.vault.getName(),

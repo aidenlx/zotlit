@@ -11,7 +11,7 @@ import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
@@ -58,7 +58,7 @@ export interface BibliographyRenderCacheOptions {
     PandocEngineService,
     "getStatus" | "subscribe" | "getEngine"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "on">;
   settings: Pick<SettingsService, "ready" | "subscribe">;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: QueryClientService;

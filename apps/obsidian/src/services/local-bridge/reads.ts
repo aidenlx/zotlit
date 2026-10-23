@@ -39,7 +39,7 @@ import {
 import type { ProfileReader, ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -78,7 +78,7 @@ export interface LocalBridgeReadDeps {
   >;
   profile: BridgeProfileReader;
   template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** The device id the page keys its drafts on, minted by the service. */
   installationId(): string;
   /** The vault name the Snapshot's provenance carries. */
@@ -114,7 +114,7 @@ export function createLocalBridgeReads(
     },
 
     async selectedItem(item) {
-      await Promise.all([deps.noteIndex.whenIndexed(), deps.zoteroPref.ready]);
+      await deps.noteIndex.whenIndexed();
       // One Snapshot: the vault targets and the export read one state.
       await using lease = await deps.zoteroReads.acquireRead();
       const selected = await resolveSelection(lease.reads, item.key);
@@ -172,12 +172,10 @@ export function createLocalBridgeReads(
     },
 
     async citationStyles() {
-      await deps.zoteroPref.ready;
       return listInstalledStyles(deps.zoteroPref.dataDir);
     },
 
     async selectedCitationStyle(request) {
-      await deps.zoteroPref.ready;
       return resolveInstalledStyle(deps.zoteroPref.dataDir, request);
     },
   };

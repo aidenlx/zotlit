@@ -18,7 +18,7 @@ import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
@@ -47,7 +47,7 @@ interface QueryServiceDeps {
   useLedger: Pick<PlainUseLedger, "uses" | "subscribe">;
   reads: ZoteroReadsService;
   zoteroPref: Pick<
-    ZoteroPrefService,
+    PlainZoteroPref,
     "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
   >;
   libraryScope: LibraryScopeService;

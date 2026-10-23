@@ -14,7 +14,7 @@ import { LocalServerService } from "@/services/local-server/service";
 import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings, SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import type { BridgeProfileWriter } from "./save";
 import { LocalBridgeService } from "./service";
@@ -100,7 +100,7 @@ const READ_DEPS = {
     ready: Promise.resolve(),
     exportLiteratureNotePackSource: (source: string) => Promise.resolve(source),
   },
-  zoteroPref: { ready: Promise.resolve(), dataDir: "" },
+  zoteroPref: { dataDir: "" },
 } as unknown as Pick<
   LocalBridgeServiceDeps,
   "zoteroReads" | "noteIndex" | "template" | "zoteroPref"
@@ -154,7 +154,7 @@ async function harness(
   const localServer = stack.use(
     new LocalServerService({
       settings: settings.service,
-      zoteroPref: { sourceId: "a1b2c3d4" } as unknown as ZoteroPrefService,
+      zoteroPref: { sourceId: "a1b2c3d4" } as unknown as PlainZoteroPref,
       noteIndex: {
         whenIndexed: () => Promise.resolve(),
         getIndexedItemKeys: () => [],

@@ -1,35 +1,33 @@
 /**
- * `ZoteroPrefService` — reads Zotero's `prefs.js` on init so individual prefs
- * (notably `baseAttachmentPath`, needed to resolve linked-attachment paths)
- * can be read synchronously afterwards.
- *
- * The profile and data directories are **Device Overrides**: machine-specific
- * paths this service owns and persists per vault × device in Obsidian's
- * localStorage (never synced). Unset means auto-detect — the profile from
- * `profiles.ini`, the data directory from `prefs.js`. The service re-reads prefs
- * whenever the profile override changes ({@link setProfileDir}); there is no
- * file watcher (init-only by design). Read failures leave the service
- * `degraded` with an empty pref map rather than rejecting `ready`, mirroring
- * `ZoteroReadsService`.
+ * Zotero preferences and the per-vault, per-device directory overrides.
+ * Reads prefs.js at startup and when the profile override changes. There is
+ * no file watcher. Reads run on the layer Scope; failures publish degraded
+ * state with empty preferences. Unset overrides restore automatic detection.
  */
-
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { sourceIdFromUris } from "@zotlit/protocol";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
-import { getLogger } from "@/lib/log";
-import { Service } from "@/services/service-base";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Layer,
+  Stream,
+  SubscriptionRef,
+} from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
   loadZoteroPathOverrides,
   saveZoteroPathOverrides,
 } from "./device-paths";
-import type { DeviceStorage } from "./device-paths";
 import {
   EXTENSIONS_FILENAME,
   getZoteroProfilesRoot,
@@ -44,303 +42,269 @@ import {
   selectDefaultProfile,
   ZOTERO_HTTP_PORT_PREF,
 } from "./prefs-file";
-import type { PrefValue, ZoteroProfile } from "./prefs-file";
+import type { PrefValue } from "./prefs-file";
 
-const logger = getLogger("zotero-pref");
+/** The file-system boundary, replaced by controlled reads in lifecycle tests. */
+export class ZoteroPrefFiles extends Context.Service<
+  ZoteroPrefFiles,
+  {
+    read(path: string): Effect.Effect<string, Error>;
+  }
+>()("zotlit/zotero-pref/ZoteroPrefFiles") {}
 
-export interface ZoteroPrefEvents {
-  /** Prefs were re-read after the profile dir changed. Re-read if you cache. */
-  changed: () => void;
-  /**
-   * The data-dir Device Override changed. Prefs are untouched, but
-   * {@link ZoteroPrefService.dataDir}, {@link ZoteroPrefService.databasePath},
-   * and {@link ZoteroPrefService.sourceId} now differ.
-   */
-  "data-dir-changed": () => void;
-  /**
-   * The resolved Zotero location moved — profile re-read or data-dir override.
-   * Fires alongside `changed` / `data-dir-changed` for consumers that care only
-   * that {@link ZoteroPrefService.databasePath} / `dataDir` / `sourceId` changed,
-   * not which input moved it.
-   */
-  "resolved-changed": () => void;
-}
+export const layerZoteroPrefFiles = Layer.succeed(ZoteroPrefFiles, {
+  read: Effect.fn("ZoteroPrefFiles.read")(function* (path: string) {
+    return yield* Effect.tryPromise({
+      try: (signal) => readFile(path, { encoding: "utf8", signal }),
+      catch: (error) =>
+        error instanceof Error ? error : new Error(String(error)),
+    });
+  }),
+});
 
-/** A Zotero profile resolved to its absolute directory, for the settings picker. */
+/** A profile resolved to its absolute directory, for the settings picker. */
 export interface ZoteroProfileInfo {
-  /** `Name` from `profiles.ini`, or `null` when the section omits it. */
   name: string | null;
-  /** Absolute profile directory (the folder holding `prefs.js`). */
   dir: string;
-  /** Whether this is the profile auto-detect resolves to. */
   isDefault: boolean;
 }
 
-export interface ZoteroPrefServiceOptions {
-  /** Vault-scoped localStorage for the Device Overrides (per vault × device). */
-  app: DeviceStorage;
+export interface ZoteroPrefSnapshot {
+  readonly state: "loading" | "ready" | "degraded";
+  readonly prefs: ReadonlyMap<string, PrefValue>;
+  readonly resolvedProfileDir: string | null;
+  /** The chosen profile directory; null selects the default in profiles.ini. */
+  readonly profileDirOverride: string | null;
+  /** The chosen data directory; null uses the profile preferences. */
+  readonly dataDirOverride: string | null;
+  readonly dataDir: string;
+  readonly databasePath: string;
+  /** Companion-compatible profile/data-directory hash; null until resolved. */
+  readonly sourceId: string | null;
+  readonly baseAttachmentPath: string | null;
+  readonly httpPort: number | null;
 }
 
-export class ZoteroPrefService extends Service<void> {
-  readonly #app;
-  readonly #emitter = createNanoEvents<ZoteroPrefEvents>();
-
-  #firstSettled = false;
-  #prefs: ReadonlyMap<string, PrefValue> = new Map();
-  /** The profile dir the active prefs were read from, or last attempted. */
-  #resolvedProfileDir: string | null = null;
-  #error: Error | null = null;
-  /** Device Override for the profile dir; `null` = auto-detect from `profiles.ini`. */
-  #profileDirOverride: string | null;
-  /** Device Override for the data dir; wins over prefs in {@link dataDir}. */
-  #dataDirOverride: string | null;
-  /**
-   * Monotonic reload token, compared after each `await` in {@link #reload} to
-   * discard a stale read once a newer reload has started — the profile override
-   * can change faster than a prefs read completes.
-   *
-   * Resource-level by design: only this service reloads its own prefs, so a
-   * private counter suffices. A cross-service coordinator (e.g. a `Symbol.for`
-   * registry shared across resources) would add global state to arbitrate a race
-   * that never leaves this instance.
-   */
-  #loadGen = 0;
-
-  readonly ready: Promise<void>;
-
-  constructor(options: ZoteroPrefServiceOptions) {
-    super();
-    this.#app = options.app;
-    const overrides = loadZoteroPathOverrides(this.#app);
-    this.#profileDirOverride = overrides.profileDir;
-    this.#dataDirOverride = overrides.dataDir;
-    this.ready = this.#load();
+export class ZoteroPref extends Context.Service<
+  ZoteroPref,
+  {
+    readonly current: Effect.Effect<ZoteroPrefSnapshot>;
+    readonly changes: Stream.Stream<ZoteroPrefSnapshot>;
+    /** Read a bare preference name under the extensions.zotero. branch. */
+    get(name: string): Effect.Effect<PrefValue | undefined>;
+    setProfileDir(dir: string | null): Effect.Effect<void>;
+    setDataDir(dir: string | null): Effect.Effect<void>;
+    /** Read the add-on list fresh, so a new Companion install is visible. */
+    companionInstalled(): Effect.Effect<boolean>;
+    listProfiles(): Effect.Effect<ZoteroProfileInfo[]>;
   }
+>()("zotlit/zotero-pref/ZoteroPref") {}
 
-  get state(): "loading" | "ready" | "degraded" {
-    if (!this.#firstSettled) return "loading";
-    return this.#error ? "degraded" : "ready";
-  }
-
-  /** The profile directory the active prefs were read from, or attempted. */
-  get resolvedProfileDir(): string | null {
-    return this.#resolvedProfileDir;
-  }
-
-  /** The profile-dir Device Override (a chosen path), or `null` for auto-detect. */
-  get profileDirOverride(): string | null {
-    return this.#profileDirOverride;
-  }
-
-  /** The data-dir Device Override (a chosen path), or `null` for auto-detect. */
-  get dataDirOverride(): string | null {
-    return this.#dataDirOverride;
-  }
-
-  /**
-   * Read a pref under the `extensions.zotero.` branch by its bare name (e.g.
-   * `"baseAttachmentPath"`), matching `Zotero.Prefs.get(name)`.
-   * @returns the parsed value, or `undefined` when unset / prefs unavailable.
-   */
-  get(name: string): PrefValue | undefined {
-    return this.#prefs.get(PREF_BRANCH + name);
-  }
-
-  get httpPort(): number | null {
-    return resolveZoteroHttpPort(this.get(ZOTERO_HTTP_PORT_PREF));
-  }
-
-  /**
-   * The user's linked-attachment base directory, or `null` when unset — the
-   * runtime value needed to resolve a `LinkedBasePath` from `@zotlit/db`.
-   */
-  get baseAttachmentPath(): string | null {
-    const value = this.get("baseAttachmentPath");
-    return typeof value === "string" ? value : null;
-  }
-
-  /**
-   * The Zotero data directory holding `zotero.sqlite`. The data-dir Device
-   * Override wins when set (an advanced escape hatch for a non-default running
-   * profile); otherwise resolved from prefs, mirroring Zotero's
-   * `DataDirectory.init`: the `dataDir` pref wins when `useDataDir` is set,
-   * else the default `$HOME/Zotero`. Falls back to the default while prefs are
-   * loading / degraded (empty map), matching a fresh Zotero install.
-   *
-   * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/dataDirectory.js#L40-L46
-   * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/dataDirectory.js#L83-L84
-   */
-  get dataDir(): string {
-    if (this.#dataDirOverride) return this.#dataDirOverride;
-    const dataDir = this.get("dataDir");
-    if (
-      this.get("useDataDir") === true &&
-      typeof dataDir === "string" &&
-      dataDir
-    ) {
-      return dataDir;
-    }
-    return join(homedir(), "Zotero");
-  }
-
-  /**
-   * Full path to the Zotero SQLite database file for the current active profile.
-   */
-  get databasePath(): string {
-    return join(this.dataDir, ZOTERO_DB_FILENAME);
-  }
-
-  /**
-   * Stable id for the active Zotero install, hashed from its profile and data
-   * directory — the same hash the Zotero companion stamps on every notify
-   * event. `LocalServerService` discards events whose `sourceId` doesn't match this.
-   *
-   * `null` while the profile dir is unknown (loading / detection failed), where
-   * no incoming event can be meaningfully matched.
-   */
-  get sourceId(): string | null {
-    if (!this.#resolvedProfileDir) return null;
-    return sourceIdFromUris(
-      pathToFileURL(this.#resolvedProfileDir).href,
-      pathToFileURL(this.dataDir).href,
+export const layerZoteroPref = Layer.effect(
+  ZoteroPref,
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    const files = yield* ZoteroPrefFiles;
+    const scope = yield* Effect.scope;
+    const overrides = loadZoteroPathOverrides(app);
+    const state = yield* SubscriptionRef.make(
+      snapshot({
+        profileDirOverride: overrides.profileDir,
+        dataDirOverride: overrides.dataDir,
+        state: "loading",
+        prefs: new Map(),
+        resolvedProfileDir: null,
+      }),
     );
-  }
+    const current = SubscriptionRef.get(state);
+    let generation = 0;
+    let closed = false;
+    const stopped = yield* Deferred.make<void>();
 
-  on<K extends keyof ZoteroPrefEvents>(
-    event: K,
-    cb: ZoteroPrefEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, cb);
-  }
-
-  /**
-   * Whether the profile lists ZotLit Companion as installed and enabled. Read
-   * fresh on every call, since the list changes when the reader installs the
-   * Companion in Zotero; `false` while the profile is unknown or unreadable.
-   */
-  async companionInstalled(): Promise<boolean> {
-    const profileDir = this.#resolvedProfileDir;
-    if (!profileDir) return false;
-    try {
-      const content = await readFile(
-        join(profileDir, EXTENSIONS_FILENAME),
-        "utf8",
+    const readProfiles = Effect.fn("ZoteroPref.readProfiles")(function* () {
+      const root = getZoteroProfilesRoot();
+      const profiles = parseZoteroProfiles(
+        yield* files.read(join(root, PROFILES_INI_FILENAME)),
       );
-      return isAddonActive(content, COMPANION_ADDON_ID);
-    } catch (error) {
-      logger.debug("Cannot read the Zotero add-on list", { error, profileDir });
-      return false;
-    }
-  }
-
-  /**
-   * Set (or clear, with `null`) the profile-dir Device Override. Persists to
-   * device storage and re-reads prefs from the new profile, emitting `changed`.
-   * No-op when unchanged.
-   */
-  setProfileDir(dir: string | null): void {
-    if (dir === this.#profileDirOverride) return;
-    this.#profileDirOverride = dir;
-    this.#persistOverrides();
-    logger.debug("Profile dir override changed; re-reading prefs", { dir });
-    void this.#reload(dir).then(() => {
-      this.#emitter.emit("changed");
-      this.#emitter.emit("resolved-changed");
+      return { root, profiles };
     });
-  }
 
-  /**
-   * Set (or clear, with `null`) the data-dir Device Override. Persists to device
-   * storage and emits `data-dir-changed`; prefs are untouched. No-op when
-   * unchanged.
-   */
-  setDataDir(dir: string | null): void {
-    if (dir === this.#dataDirOverride) return;
-    this.#dataDirOverride = dir;
-    this.#persistOverrides();
-    logger.debug("Data dir override changed", { dir });
-    this.#emitter.emit("data-dir-changed");
-    this.#emitter.emit("resolved-changed");
-  }
+    const reload = Effect.fn("ZoteroPref.reload")(function* (
+      overrideDir: string | null,
+    ) {
+      const gen = ++generation;
+      let profileDir = overrideDir;
+      const loaded = yield* Effect.gen(function* () {
+        if (profileDir === null) {
+          const { root, profiles } = yield* readProfiles();
+          const profile = selectDefaultProfile(profiles);
+          if (!profile)
+            return yield* Effect.fail(
+              new Error(
+                `No default Zotero profile found in ${join(root, PROFILES_INI_FILENAME)}`,
+              ),
+            );
+          profileDir = resolveProfileDir(root, profile);
+        }
+        return parsePrefsJs(
+          yield* files.read(join(profileDir, PREFS_FILENAME)),
+        );
+      }).pipe(Effect.exit);
+      if (closed || gen !== generation) return;
+      if (loaded._tag === "Success") {
+        yield* SubscriptionRef.update(state, (before) =>
+          snapshot({
+            ...before,
+            prefs: loaded.value,
+            resolvedProfileDir: profileDir,
+            state: "ready",
+          }),
+        );
+        yield* Effect.logDebug("Loaded Zotero prefs").pipe(
+          Effect.annotateLogs({ profileDir, count: loaded.value.size }),
+        );
+      } else {
+        if (Cause.hasInterrupts(loaded.cause)) return;
+        yield* SubscriptionRef.update(state, (before) =>
+          snapshot({
+            ...before,
+            prefs: new Map(),
+            resolvedProfileDir: profileDir,
+            state: "degraded",
+          }),
+        );
+        yield* Effect.logWarning("Failed to read Zotero prefs").pipe(
+          Effect.annotateLogs({
+            error: Cause.squash(loaded.cause),
+            profileDir,
+          }),
+        );
+      }
+    }, withLogCategory("zotero-pref"));
 
-  #persistOverrides(): void {
-    saveZoteroPathOverrides(this.#app, {
-      profileDir: this.#profileDirOverride,
-      dataDir: this.#dataDirOverride,
-    });
-  }
-
-  /**
-   * Enumerate the profiles declared in `profiles.ini`, each resolved to its
-   * absolute directory, for the settings profile picker.
-   *
-   * @returns the profiles in file order, or an empty array when `profiles.ini`
-   * is missing or unreadable.
-   */
-  async listProfiles(): Promise<ZoteroProfileInfo[]> {
-    try {
-      const { root, profiles } = await readZoteroProfiles();
-      return profiles.map((p) => ({
-        name: p.name,
-        dir: resolveProfileDir(root, p),
-        isDefault: p.isDefault,
-      }));
-    } catch (error) {
-      logger.warn("Failed to list Zotero profiles", { error });
-      return [];
-    }
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    await this.#reload(this.#profileDirOverride);
-    this.#firstSettled = true;
-    this.commit(stack.move());
-  }
-
-  async #reload(overrideDir: string | null): Promise<void> {
-    const gen = ++this.#loadGen;
-    // Tracked outside the try so a prefs.js read failure still surfaces the
-    // auto-detected dir it failed on, not just the (null) override value.
-    let profileDir = overrideDir;
-    try {
-      profileDir = overrideDir ?? (await detectDefaultProfileDir());
-      const prefs = parsePrefsJs(
-        await readFile(join(profileDir, PREFS_FILENAME), "utf8"),
+    const setDataDir = Effect.fn("ZoteroPref.setDataDir")(function* (
+      dir: string | null,
+    ) {
+      const before = yield* current;
+      if (closed || dir === before.dataDirOverride) return;
+      saveZoteroPathOverrides(app, {
+        profileDir: before.profileDirOverride,
+        dataDir: dir,
+      });
+      yield* SubscriptionRef.set(
+        state,
+        snapshot({ ...before, dataDirOverride: dir }),
       );
-      if (gen !== this.#loadGen) return;
-      this.#prefs = prefs;
-      this.#resolvedProfileDir = profileDir;
-      this.#error = null;
-      logger.debug("Loaded Zotero prefs", { profileDir, count: prefs.size });
-    } catch (error) {
-      if (gen !== this.#loadGen) return;
-      this.#prefs = new Map();
-      this.#resolvedProfileDir = profileDir;
-      this.#error = error instanceof Error ? error : new Error(String(error));
-      logger.warn("Failed to read Zotero prefs", { error, profileDir });
-    }
-  }
-}
+      yield* Effect.logDebug("Data dir override changed").pipe(
+        Effect.annotateLogs({ dir }),
+      );
+    }, withLogCategory("zotero-pref"));
 
-/** Read and parse `profiles.ini`, returning the profiles root alongside them. */
-async function readZoteroProfiles(): Promise<{
-  root: string;
-  profiles: ZoteroProfile[];
-}> {
-  const root = getZoteroProfilesRoot();
-  const profiles = parseZoteroProfiles(
-    await readFile(join(root, PROFILES_INI_FILENAME), "utf8"),
-  );
-  return { root, profiles };
-}
+    const setProfileDir = Effect.fn("ZoteroPref.setProfileDir")(function* (
+      dir: string | null,
+    ) {
+      const before = yield* current;
+      if (closed || dir === before.profileDirOverride) return;
+      saveZoteroPathOverrides(app, {
+        profileDir: dir,
+        dataDir: before.dataDirOverride,
+      });
+      yield* SubscriptionRef.set(
+        state,
+        snapshot({ ...before, profileDirOverride: dir }),
+      );
+      yield* Effect.logDebug(
+        "Profile dir override changed; re-reading prefs",
+      ).pipe(Effect.annotateLogs({ dir }));
+      yield* Effect.forkIn(reload(dir), scope, { startImmediately: true });
+    }, withLogCategory("zotero-pref"));
 
-async function detectDefaultProfileDir(): Promise<string> {
-  const { root, profiles } = await readZoteroProfiles();
-  const profile = selectDefaultProfile(profiles);
-  if (!profile) {
-    const iniPath = join(root, PROFILES_INI_FILENAME);
-    throw new Error(`No default Zotero profile found in ${iniPath}`);
-  }
-  return resolveProfileDir(root, profile);
+    yield* Effect.forkScoped(reload(overrides.profileDir), {
+      startImmediately: true,
+    });
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        closed = true;
+      }).pipe(Effect.andThen(Deferred.succeed(stopped, undefined))),
+    );
+
+    return ZoteroPref.of({
+      current,
+      changes: SubscriptionRef.changes(state).pipe(
+        Stream.interruptWhen(Deferred.await(stopped)),
+      ),
+      get: Effect.fn("ZoteroPref.get")(function* (name: string) {
+        return (yield* current).prefs.get(PREF_BRANCH + name);
+      }),
+      setDataDir,
+      setProfileDir,
+      companionInstalled: Effect.fn("ZoteroPref.companionInstalled")(
+        function* () {
+          const { resolvedProfileDir: profileDir } = yield* current;
+          if (!profileDir) return false;
+          return yield* files.read(join(profileDir, EXTENSIONS_FILENAME)).pipe(
+            Effect.map((content) => isAddonActive(content, COMPANION_ADDON_ID)),
+            Effect.catchCause((error) =>
+              Effect.logDebug("Cannot read the Zotero add-on list").pipe(
+                Effect.annotateLogs({ error, profileDir }),
+                Effect.as(false),
+              ),
+            ),
+          );
+        },
+        withLogCategory("zotero-pref"),
+      ),
+      listProfiles: Effect.fn("ZoteroPref.listProfiles")(function* () {
+        return yield* readProfiles().pipe(
+          Effect.map(({ root, profiles }) =>
+            profiles.map((p) => ({
+              name: p.name,
+              dir: resolveProfileDir(root, p),
+              isDefault: p.isDefault,
+            })),
+          ),
+          Effect.catchCause((error) =>
+            Effect.logWarning("Failed to list Zotero profiles").pipe(
+              Effect.annotateLogs({ error }),
+              Effect.as<ZoteroProfileInfo[]>([]),
+            ),
+          ),
+        );
+      }, withLogCategory("zotero-pref")),
+    });
+  }).pipe(withLogCategory("zotero-pref")),
+);
+
+/** The same path fallback Zotero uses, with Device Overrides taking priority. */
+function snapshot(
+  input: Pick<
+    ZoteroPrefSnapshot,
+    | "state"
+    | "prefs"
+    | "resolvedProfileDir"
+    | "profileDirOverride"
+    | "dataDirOverride"
+  >,
+): ZoteroPrefSnapshot {
+  const get = (name: string) => input.prefs.get(PREF_BRANCH + name);
+  const prefDir = get("dataDir");
+  const dataDir =
+    input.dataDirOverride ||
+    (get("useDataDir") === true && typeof prefDir === "string" && prefDir
+      ? prefDir
+      : join(homedir(), "Zotero"));
+  const base = get("baseAttachmentPath");
+  return {
+    ...input,
+    dataDir,
+    databasePath: join(dataDir, ZOTERO_DB_FILENAME),
+    sourceId: input.resolvedProfileDir
+      ? sourceIdFromUris(
+          pathToFileURL(input.resolvedProfileDir).href,
+          pathToFileURL(dataDir).href,
+        )
+      : null,
+    baseAttachmentPath: typeof base === "string" ? base : null,
+    httpPort: resolveZoteroHttpPort(get(ZOTERO_HTTP_PORT_PREF)),
+  };
 }

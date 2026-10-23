@@ -7,7 +7,7 @@ import { getLogger } from "@/lib/log";
 import { openSettingsTab } from "@/lib/open-settings";
 import { requireDialog } from "@/lib/require";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 const logger = getLogger(["views", "welcome"]);
 
@@ -20,7 +20,7 @@ export interface SetupActions {
 export interface SetupActionsDeps {
   app: App;
   settings: Pick<SettingsService, "updateDefaultLiteratureNoteProfileBindings">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "setDataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "setDataDir">;
   /** Plugin id — identifies the settings tab. */
   pluginId: string;
 }

@@ -1854,7 +1854,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   async refreshStyles(): Promise<void> {
     try {
-      await this.#deps.zoteroPref.ready;
       if (this.#closed) return;
       const dataDir = this.#deps.zoteroPref.dataDir;
       const styles = dataDir ? await listInstalledStyles(dataDir) : [];

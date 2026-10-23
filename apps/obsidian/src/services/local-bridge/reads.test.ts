@@ -228,7 +228,7 @@ async function harness(
           exportLiteratureNotePack(source, partials, exportOptions),
         ),
     } as never,
-    zoteroPref: { ready: Promise.resolve(), dataDir },
+    zoteroPref: { dataDir },
     installationId: () => INSTALLATION_ID,
     vaultName: () => VAULT_NAME,
   });

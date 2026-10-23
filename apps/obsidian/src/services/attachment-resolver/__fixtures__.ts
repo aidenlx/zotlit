@@ -9,7 +9,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect, Stream } from "@/lib/effect";
 import { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,

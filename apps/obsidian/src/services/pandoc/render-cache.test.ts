@@ -12,7 +12,7 @@ import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/b
 import type { Held } from "@/services/query-client/service";
 import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { Inlines } from "./ast";
