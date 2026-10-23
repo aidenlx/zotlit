@@ -6,6 +6,7 @@ import type {
 } from "obsidian";
 
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
+import { ANNOTATION_SUGGESTER_ENABLED } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
 import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
@@ -53,17 +54,21 @@ export function citationsPageItems(
             key: "citation.show-citekey-in-suggester",
           },
         },
-        {
-          id: "settings_citation_annotation_trigger",
-          name: m.settings_citation_annotation_trigger_name(),
-          desc: m.settings_citation_annotation_trigger_desc(),
-          control: {
-            type: "text",
-            key: "citation.annotation-trigger",
-            placeholder: defaults["citation.annotation-trigger"],
-            validate: annotationTriggerError,
-          },
-        },
+        ...(ANNOTATION_SUGGESTER_ENABLED
+          ? [
+              {
+                id: "settings_citation_annotation_trigger",
+                name: m.settings_citation_annotation_trigger_name(),
+                desc: m.settings_citation_annotation_trigger_desc(),
+                control: {
+                  type: "text",
+                  key: "citation.annotation-trigger",
+                  placeholder: defaults["citation.annotation-trigger"],
+                  validate: annotationTriggerError,
+                },
+              } satisfies SettingDefinitionItem<SettingsKey>,
+            ]
+          : []),
       ],
     },
     {

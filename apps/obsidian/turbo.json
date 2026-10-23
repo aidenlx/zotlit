@@ -18,6 +18,7 @@
       "env": [
         "$TURBO_EXTENDS$",
         "ANALYZE",
+        "ANNOTATION_SUGGESTER_ENABLED",
         "MIN_APP_VERSION",
         "WEB_WORKBENCH_ENABLED"
       ],
@@ -33,6 +34,7 @@
       "cache": false,
       "env": [
         "ANALYZE",
+        "ANNOTATION_SUGGESTER_ENABLED",
         "DOCS_SITE_URL",
         "I18N_DEV_SERVER",
         "MIN_APP_VERSION",
@@ -50,6 +52,7 @@
     "dev": {
       "env": [
         "ANALYZE",
+        "ANNOTATION_SUGGESTER_ENABLED",
         "DOCS_SITE_URL",
         "I18N_DEV_SERVER",
         "MIN_APP_VERSION",

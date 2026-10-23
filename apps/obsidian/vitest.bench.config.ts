@@ -22,6 +22,7 @@ export default defineConfig({
   define: {
     __DEV__: JSON.stringify(true),
     __WEB_WORKBENCH_ENABLED__: JSON.stringify(true),
+    __ANNOTATION_SUGGESTER_ENABLED__: JSON.stringify(true),
     __DOCS_SITE_URL__: JSON.stringify("https://zotlit.aidenlx.site"),
     __PANDOC_ENGINE__: JSON.stringify({
       version: "0.0.0",

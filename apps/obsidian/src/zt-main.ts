@@ -2,7 +2,11 @@ import { getLanguage, Plugin, requestUrl, View } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import { handlerCheckedFlags, printableCliHandler } from "@/lib/cli-rejection";
-import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
+import {
+  ANNOTATION_SUGGESTER_ENABLED,
+  DOCS_SITE_URL,
+  WEB_WORKBENCH_ENABLED,
+} from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -412,22 +416,24 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
       useLedger: services.useLedger,
     });
-    registerAnnotationSuggest(this, {
-      app: this.app,
-      query: services.query,
-      annotations: services.annotationRepository,
-      noteFeature: services.noteFeature,
-      zoteroPref: services.zoteroPref,
-      settings: services.settings,
-      useLedger: services.useLedger,
-      notify: (message) => void new BaseNotice(message),
-      commentRenderer: (owner, sourcePath) =>
-        createCommentRenderer({
-          app: this.app,
-          component: owner,
-          getSourcePath: () => sourcePath,
-        }),
-    });
+    if (ANNOTATION_SUGGESTER_ENABLED) {
+      registerAnnotationSuggest(this, {
+        app: this.app,
+        query: services.query,
+        annotations: services.annotationRepository,
+        noteFeature: services.noteFeature,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        useLedger: services.useLedger,
+        notify: (message) => void new BaseNotice(message),
+        commentRenderer: (owner, sourcePath) =>
+          createCommentRenderer({
+            app: this.app,
+            component: owner,
+            getSourcePath: () => sourcePath,
+          }),
+      });
+    }
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
