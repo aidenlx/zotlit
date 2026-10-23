@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { scanNote } from "./scan-note";
 import type { NoteScanRecord } from "./scan-note";
 
-const empty: Omit<NoteScanRecord, "links"> = {
+const empty: Omit<NoteScanRecord, "links" | "ranges"> = {
   citations: [],
   citekeys: [],
   wikilinks: [],
@@ -814,7 +814,7 @@ const conformance: {
 ];
 
 it.each(conformance)("$name", ({ text, record }) => {
-  const { links: _links, ...citations } = scanNote(text);
+  const { links: _links, ranges: _ranges, ...citations } = scanNote(text);
   expect(citations).toEqual({ ...empty, ...record });
 });
 
@@ -871,7 +871,11 @@ it.each(
 
 it.each([
   { text: "[[Doe 2024]]", eligible: true },
-  { text: "[[Doe 2024#cite:locator=4]]", eligible: true },
+  {
+    text: "[[Doe 2024#cite:locator=4]]",
+    eligible: true,
+    fragment: "locator=4",
+  },
   { text: "[[Doe 2024#cite:]]", malformed: true },
   { text: "[[Doe 2024#Heading]]" },
   { text: "[[Doe 2024#^block]]" },
@@ -880,14 +884,18 @@ it.each([
   { text: "[Doe](Doe%202024)" },
 ])(
   "preserves existing wikilink eligibility: $text",
-  ({ text, eligible, malformed }) => {
+  ({ text, eligible, malformed, fragment }) => {
     const occurrence = {
       kind: "wikilink",
       raw: "Doe 2024",
       position: pos(0, text.length),
     };
     const record = scanNote(text);
-    expect(record.wikilinks).toEqual(eligible ? [occurrence] : []);
+    expect(record.wikilinks).toEqual(
+      eligible
+        ? [{ ...occurrence, ...(fragment === undefined ? {} : { fragment }) }]
+        : [],
+    );
     expect(record.malformedWikilinks).toEqual(
       malformed ? [{ occurrence }] : [],
     );

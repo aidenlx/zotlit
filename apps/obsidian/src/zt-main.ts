@@ -638,7 +638,6 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerCitedByView(this, {
-      citationParse: services.citationParse,
       app: this.app,
       citationIndex: services.citationIndex,
     });

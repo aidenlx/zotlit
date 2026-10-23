@@ -230,7 +230,6 @@ end
 --- variant is given citation keys; the sandbox host names each Item by an id of
 --- its own, which it resolves after Pandoc has read the document.
 --- @return table<string, string>
-local parsed_only = false
 local function load_citations()
   local payload = decode_payload(
     read_resolve_payload(),
@@ -247,7 +246,6 @@ local function load_citations()
     end
     report_errors()
   end
-  parsed_only = payload.parsed == true
   return payload.citations or {}
 end
 
@@ -493,7 +491,6 @@ end
 --- @return table|nil item `nil` when the Link is not a Citation.
 local classified = {}
 local function classify(link)
-  if parsed_only and link.attributes["data-zotlit-parsed"] ~= "true" then return nil end
   local cached = classified[link.target]
   if cached == nil then
     cached = classify_target(link.target) or false
@@ -603,12 +600,6 @@ function Pandoc(doc)
   local converted = doc:walk({ Inlines = process_inlines, BlockQuote = convert_callout })
   if #errors > 0 then
     report_errors()
-  end
-  if parsed_only then
-    converted = converted:walk({ Link = function(link)
-      link.attributes["data-zotlit-parsed"] = nil
-      return link
-    end })
   end
   return converted
 end

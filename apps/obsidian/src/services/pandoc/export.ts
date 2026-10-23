@@ -19,7 +19,6 @@ import type {
   PreparedDocument,
 } from "./engine";
 import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
-import parsedCitationsFilter from "./filter/parsed-citations.lua?raw";
 import { collectCitationLinks } from "./resolve";
 import type { ResolveDocument } from "./resolve";
 
@@ -106,8 +105,8 @@ export type ExportResult = { output: Uint8Array } | { error: ExportFailure };
 /**
  * Render one Obsidian document as a cited `docx` or `html` file.
  *
- * The parse worker selects citation spans. Pandoc reads those sources through
- * the export filters, naming each linked Item by an Injected Id that no literal
+ * Pandoc reads the whole document with the worker's syntax exclusions applied,
+ * naming each linked Item by an Injected Id that no literal
  * citation key can spell. Every cited Item is resolved before citeproc runs.
  *
  * Each cited Item then takes one canonical CSL id: the citation key the author
@@ -159,20 +158,14 @@ export async function exportCitedDocument(
     links.map(({ linkpath, indexedKey }) => [linkpath, injectedId(indexedKey)]),
   );
 
-  const parsed = parsedSources(request.markdown, record);
   let prepared: PreparedDocument;
   try {
     prepared = await ports.engine.prepareDocument({
-      markdown: parsed.markdown,
-      luaFilters: [parsedCitationsFilter, pandocSandboxFilter],
+      markdown: exportSource(request.markdown, record),
+      luaFilters: [pandocSandboxFilter],
       files: {
-        "zotlit-parsed.json": JSON.stringify({
-          prefix: parsed.prefix,
-          fragments: parsed.fragments,
-        }),
         [PANDOC_RESOLVE_MAP_FILENAME]: JSON.stringify({
           citations: Object.fromEntries(wikilinked),
-          parsed: true,
         }),
       },
     });
@@ -222,46 +215,36 @@ export async function exportCitedDocument(
   }
 }
 
-/** Only worker-selected sources are read as citations by the export filters. */
-function parsedSources(
-  markdown: string,
-  record: NoteScanRecord,
-): {
-  markdown: string;
-  prefix: string;
-  fragments: Record<string, { source: string; kind: "citation" | "link" }>;
-} {
-  const spans = [
-    ...record.citations.map((citation) => ({
-      ...citation,
-      kind: "citation" as const,
-    })),
-    ...record.links
-      .filter((link) => !link.embedded)
-      .map(({ position }) => ({
-        start: position.start.offset,
-        end: position.end.offset,
-        kind: "link" as const,
-      })),
-  ].sort((left, right) => left.start - right.start || right.end - left.end);
-  const prefix = `zotlit-${crypto.randomUUID()}`;
-  const fragments: Record<
-    string,
-    { source: string; kind: "citation" | "link" }
-  > = {};
-  let result = "";
-  let from = 0;
-  for (const [index, span] of spans.entries()) {
-    if (span.start < from) continue;
-    const id = `${prefix}-${index}`;
-    fragments[id] = {
-      source: markdown.slice(span.start, span.end),
-      kind: span.kind,
-    };
-    result += `${markdown.slice(from, span.start)}[]{#${id}}`;
-    from = span.end;
+/** Preserve document context while reconciling Pandoc with worker-classified syntax. */
+function exportSource(markdown: string, record: NoteScanRecord): string {
+  const source = markdown.split("");
+  for (const { kind, from, to } of record.ranges) {
+    if (kind === "text-dollar") source[from] = "\\$";
+    if (kind !== "comment") continue;
+    for (let at = from; at < to; at++) {
+      if (markdown[at] === "\\") at++;
+      else if (markdown[at] === "@") source[at] = "\\@";
+      else if (markdown[at] === "[" && markdown[at + 1] === "[") {
+        source[at] = "\\[";
+        source[++at] = "\\[";
+      }
+    }
   }
-  return { markdown: result + markdown.slice(from), prefix, fragments };
+  // Comments can cross code and destinations. Those bytes, and Pandoc's YAML
+  // metadata (including explicit nocite), retain their original contract.
+  for (const { kind, from, to } of record.ranges) {
+    if (kind === "comment" || kind === "text-dollar") continue;
+    for (let at = from; at < to; at++) source[at] = markdown[at]!;
+  }
+  for (const range of record.ranges) {
+    if (range.kind !== "fenced-code" || range.lineStart === 0) continue;
+    const { lineStart, from } = range;
+    const previousStart = markdown.lastIndexOf("\n", lineStart - 2) + 1;
+    if (markdown.slice(previousStart, lineStart).trim() === "") continue;
+    const prefix = markdown.slice(lineStart, from).trimEnd();
+    source[lineStart] = `${prefix}\n${source[lineStart]}`;
+  }
+  return source.join("");
 }
 
 /** One document's Citations, each placed on the Zotero Item it names. */

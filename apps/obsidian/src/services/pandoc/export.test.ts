@@ -352,7 +352,7 @@ describe("exportCitedDocument", () => {
       ];
       expect(
         JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-      ).toEqual({ citations: {}, parsed: true });
+      ).toEqual({ citations: {} });
     },
   );
 
@@ -555,6 +555,113 @@ describe(
   "exportCitedDocument over the real engine",
   { timeout: 60_000 },
   () => {
+    it.each([
+      {
+        name: "only the selected key in a comment-bearing citation",
+        markdown: "[@a and %% @hidden %%]",
+        contains: ['data-cites="a"', 'id="ref-a"'],
+        absent: ['id="ref-hidden"'],
+      },
+      {
+        name: "document-wide note numbers and ibid",
+        markdown: "[@a].\n\n[@a].\n\n[@b].\n\n[@b].\n\n[@a].\n\n[@b].",
+        styleXml: `<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+          <info><title>Note positions</title><id>https://example.com/notes</id>
+            <updated>2020-01-01T00:00:00+00:00</updated></info>
+          <citation><layout><choose>
+            <if position="ibid"><text value="Ibid."/></if>
+            <else-if position="subsequent"><text variable="title"/>
+              <text variable="first-reference-note-number" prefix=" first note "/></else-if>
+            <else><text variable="title"/></else>
+          </choose></layout></citation>
+        </style>`,
+        contains: [
+          "A study of nothing first note 1",
+          "Beta and beyond first note 3",
+        ],
+        absent: ["Beta and beyond first note 1"],
+        ibids: 2,
+      },
+      {
+        name: "an opening comment as body text",
+        markdown: "%% [@hidden] %%\n\n[@a]",
+        contains: ['id="ref-a"'],
+        absent: ['id="ref-hidden"', '<header id="title-block-header">'],
+      },
+      {
+        name: "a selected vault link inside a citation suffix",
+        markdown: "[@a with [[Note]]]",
+        // #1699 owns nested-Cite rendering. Keep d72571525's visible output
+        // and both bibliography entries for this #1694 regression.
+        contains: [
+          '<p><span class="citation" data-cites="a">(Adams 2018)</span></p>',
+          'id="ref-a"',
+          `id="ref-${ADAMS.id}"`,
+        ],
+        absent: [],
+      },
+      {
+        name: "footnote and link definitions in citation suffixes",
+        markdown:
+          "[@a with [^1]] and [@a with [reference][target]].\n\n[^1]: Footnote definition survives.\n\n[target]: https://example.com/reference",
+        contains: [
+          "Footnote definition survives.",
+          'href="https://example.com/reference"',
+        ],
+        absent: ["[^1]"],
+      },
+      {
+        name: "generated heading identifiers",
+        markdown: "# Results by @a",
+        contains: ['id="results-by-a"'],
+        absent: [],
+      },
+      {
+        name: "attributes on ordinary links",
+        markdown: "[label](ordinary){#custom .tag}",
+        contains: ['id="custom"', 'class="tag"', 'href="ordinary"'],
+        absent: ["{#custom .tag}"],
+      },
+      {
+        name: "a multiline parenthetical citation and locator",
+        markdown: "[@a, p. 3\nand more]",
+        contains: ["(Zeta 2020, 3 and more)"],
+        absent: ["Zeta (2020)"],
+      },
+    ])(
+      "preserves $name (#1694 review)",
+      async ({ markdown, styleXml, contains, absent, ibids = 0 }) => {
+        await using engine = await createCitationEngine(
+          new Blob([await readFile(WASM_PATH)]),
+        );
+        const result = await exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: [] },
+            markdown,
+            format: "html",
+            styleXml,
+          },
+          {
+            ...ports({
+              citekeys: { a: "ZETA1234", b: "ADAM5678g5" },
+              notes: { Note: "ADAM5678g5" },
+              placed: CITED.placed,
+              items: CITED.items,
+            }),
+            engine,
+          },
+        );
+        expect(result).toHaveProperty("output");
+        if (!("output" in result)) return;
+        const html = new TextDecoder()
+          .decode(result.output)
+          .replaceAll(/\s+/g, " ");
+        for (const text of contains) expect(html).toContain(text);
+        for (const text of absent) expect(html).not.toContain(text);
+        expect(html.split("Ibid.").length - 1).toBe(ibids);
+      },
+    );
+
     it("leaves a commented wikilink uncited beside the same visible link (#1694)", async () => {
       await using engine = await createCitationEngine(
         new Blob([await readFile(WASM_PATH)]),
@@ -609,12 +716,20 @@ describe(
           "> [!note] Example\n> ~~~\n> [@hidden] [[Missing#cite:locator=2]]\n> ~~~\n\n[@zeta2020]",
       },
       {
+        name: "fenced code in a list, with loose spacing after separation",
+        markdown:
+          "- Example\n  ~~~\n  [@hidden] [[Missing#cite:locator=2]]\n  ~~~\n- Next\n\n[@zeta2020]",
+        contains: [
+          "<ul>\n<li><p>Example</p>\n<pre><code>[@hidden] [[Missing#cite:locator=2]]</code></pre></li>\n<li><p>Next</p></li>\n</ul>",
+        ],
+      },
+      {
         name: "math with an escaped closing dollar",
         markdown: "$x\\$ [@hidden]$\n\n[@zeta2020]",
       },
     ])(
       "excludes $name from exported citations (#1694)",
-      async ({ markdown }) => {
+      async ({ markdown, contains }) => {
         await using engine = await createCitationEngine(
           new Blob([await readFile(WASM_PATH)]),
         );
@@ -639,6 +754,7 @@ describe(
         );
         expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
         expect(html).not.toContain('id="ref-hidden"');
+        for (const text of contains ?? []) expect(html).toContain(text);
       },
     );
 
