@@ -59,10 +59,8 @@ import {
   DEFAULT_TEMPLATES,
   RESERVED_PARTIAL_NAMES,
 } from "@/services/template/defaults";
-import type {
-  LiteratureNoteTemplateStatus,
-  TemplateService,
-} from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { LiteratureNoteTemplateStatus } from "@/services/template/service";
 
 const mintId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
@@ -232,7 +230,16 @@ export interface ProfileDeletionResult {
 interface ProfileServiceDeps {
   app: App;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
-  template: TemplateService;
+  template: Pick<
+    PlainTemplate,
+    | "exportLiteratureNotePackSource"
+    | "getPartialEntries"
+    | "planPartialUnpack"
+    | "unpackPartials"
+    | "getLiteratureNoteTemplateStatuses"
+    | "waitUntilSettled"
+    | "on"
+  >;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
@@ -1055,7 +1062,6 @@ export class ProfileService extends Service {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#deps.template.ready;
     stack.defer(
       this.#deps.template.on("compile-status-changed", () => this.#scan()),
     );

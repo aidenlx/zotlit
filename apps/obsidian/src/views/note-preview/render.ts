@@ -55,7 +55,7 @@ import {
 } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { previewBaseline } from "./baseline";
@@ -67,8 +67,7 @@ import type { NativeCitationDeps, PreviewCitation } from "./citations";
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "on">;
   templates: Pick<
-    TemplateService,
-    | "ready"
+    PlainTemplate,
     | "render"
     | "renderCitation"
     | "renderCitationSource"
@@ -204,7 +203,6 @@ async function partialRootData(
 ): Promise<
   { kind: "data"; data: object } | { kind: "unavailable"; message: string }
 > {
-  await deps.templates.ready;
   const settings = deps.settings.current;
   const chosen =
     selection.profile === null
@@ -321,7 +319,6 @@ async function renderNativeCitation(
 ): Promise<NativeRenderResult> {
   const identity = renderIdentity(request);
   try {
-    await deps.templates.ready;
     const data = await citationRootData(deps, request);
     if (data.kind !== "data") throw new Error(data.message);
     return {
@@ -385,7 +382,6 @@ export async function renderNativeProfile(
   let noteName: string | null = null;
   let noteNameFailure: RenderDiagnostic | null = null;
   try {
-    await deps.templates.ready;
     const document = deps.templates.prepareLiteratureNoteTemplateSource(
       request.source,
     );

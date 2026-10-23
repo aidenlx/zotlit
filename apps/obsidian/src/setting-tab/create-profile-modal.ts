@@ -21,7 +21,7 @@ import type {
 import { loadTemplateData } from "@/services/template-workbench/data";
 import { loadLiteratureNoteTemplateMigrationData } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationDataDeps } from "@/services/template/migration";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
@@ -58,10 +58,7 @@ export interface ProfileCreationDeps {
     ProfileService,
     "ready" | "profiles" | "resolveProfile" | "prepareCreate"
   >;
-  template: Pick<
-    TemplateService,
-    "ready" | "prepareLiteratureNoteTemplateSource"
-  >;
+  template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   loadData: (options?: {
@@ -73,7 +70,10 @@ export type ProfileDialogServices = Omit<
   LiteratureNoteTemplateMigrationDataDeps,
   "templates"
 > & {
-  template: TemplateService;
+  template: Pick<
+    PlainTemplate,
+    "render" | "renderCitation" | "prepareLiteratureNoteTemplateSource"
+  >;
   profile: ProfileService;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
 };
@@ -114,7 +114,7 @@ export async function createProfileDialog(
   deps: ProfileCreationDeps,
   options: CreateProfileOptions = {},
 ): Promise<CreatedProfile | undefined> {
-  await Promise.all([deps.profile.ready, deps.template.ready]);
+  await deps.profile.ready;
   const [data, styles] = await Promise.all([
     deps.loadData({ indexedKey: options.indexedKey }).catch((error) => {
       logger.warn("Profile creation preview data is unavailable", {

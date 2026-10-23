@@ -27,7 +27,7 @@ import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   activeTemplateWorkbench,
@@ -72,8 +72,8 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   templates: Pick<
-    TemplateService,
-    "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"
+    PlainTemplate,
+    "javascriptTemplatesEnabled" | "render" | "renderCitation"
   >;
   pluginVersion: string;
 }

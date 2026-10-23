@@ -3,7 +3,6 @@
 // placeholder's Create action. It asks a name under the shared rule, writes
 // `zotlit-partial.<name>.md`, and opens the document in the Template Workbench
 // View.
-
 import { Modal, TextComponent } from "obsidian";
 import type { App } from "obsidian";
 
@@ -18,7 +17,7 @@ import {
   partialNameRefusal,
 } from "@/services/template/defaults";
 import type { PartialNameRefusal } from "@/services/template/defaults";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import {
   dialogFooter,
   field,
@@ -33,8 +32,8 @@ const logger = getLogger(["views", "template-workbench"]);
 
 /** The template surface every Shared Partial entry point reads. */
 export type SharedPartialActions = Pick<
-  TemplateService,
-  "ready" | "getPartialNames" | "createPartial"
+  PlainTemplate,
+  "getPartialNames" | "createPartial"
 >;
 
 export interface CreateSharedPartialOptions {
@@ -64,7 +63,6 @@ export async function createSharedPartial(
   template: SharedPartialActions,
   options: CreateSharedPartialOptions = {},
 ): Promise<string | null> {
-  await template.ready;
   const taken = template.getPartialNames();
   const modal = new NewPartialModal(app, taken, options.name ?? "");
   modal.open();

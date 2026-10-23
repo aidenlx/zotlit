@@ -1,7 +1,6 @@
 // The Local Bridge service: what the plugin holds of a Workbench Connection —
 // the launch a Customize action opens, the grant the bridge describes, and the
 // revoke every exit path runs through. The gates themselves live in `app.ts`.
-
 import { getConnInfo } from "@hono/node-server/conninfo";
 import type { Context } from "hono";
 import type { App } from "obsidian";
@@ -24,7 +23,7 @@ import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -80,7 +79,7 @@ export interface LocalBridgeServiceDeps {
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
-  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
+  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** This build's version, which the grant carries so the page can name it. */
   pluginVersion: string;

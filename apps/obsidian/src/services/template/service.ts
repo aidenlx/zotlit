@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
-import type { App, EventRef, TAbstractFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
 import type {
@@ -8,7 +8,6 @@ import type {
   CitationVariant,
   CiteRef,
 } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { inlineCitation } from "@zotlit/templates";
 import type {
   AutoTrim,
@@ -51,16 +50,27 @@ import {
 } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { processLiveText, readLiveText } from "@/lib/live-text";
-import { getLogger } from "@/lib/log";
+import { ObsidianApp } from "@/lib/obsidian-app";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import {
   CITATION_TEMPLATE_NAME,
@@ -87,7 +97,6 @@ import {
 import type { EngineFaultSpan } from "./errors";
 import { normalizeVaultPath } from "./path";
 
-const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
 /** Bounded wait for the reconciler after this service writes a document. */
 const SETTLE_TIMEOUT_MS = 5_000;
@@ -107,16 +116,24 @@ export interface TemplateServiceEvents {
   "compile-status-changed": () => void;
 }
 
-export interface TemplateServiceOptions {
+interface TemplateEngineOptions {
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current">;
+  changed: () => void;
+  flushRequested: () => void;
+  schedule: (millis: number, task: () => void) => () => void;
+  log: (
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    fields?: Record<string, unknown>,
+  ) => void;
 }
 
 /**
  * The template a name currently resolves to, as the reconciler computed it.
  * `source.kind: "none"` means no compiled template backs the name at all: its
  * `.eta.md` file would win, but the JavaScript Templates gate keeps it inert,
- * so {@link TemplateService.render} raises {@link InertTemplateError} for it.
+ * so {@link Template.render} raises {@link InertTemplateError} for it.
  */
 export interface TemplateWinner {
   language: TemplateLanguage;
@@ -271,7 +288,7 @@ export interface SharedPartialDocument {
   readonly language: TemplateLanguage;
 }
 
-/** What {@link TemplateService.unpackPartials} did with each planned partial. */
+/** What {@link Template.unpackPartials} did with each planned partial. */
 export interface PartialUnpackOutcome {
   /** The names a Shared Partial document now holds the bundle's source under. */
   readonly written: readonly string[];
@@ -421,7 +438,7 @@ export interface CompileError {
 }
 
 /** Managed-frontmatter field configuration and inert-key state, as
- *  {@link TemplateService.getFrontmatterFieldStatus} reports it. */
+ *  {@link Template.getFrontmatterFieldStatus} reports it. */
 export interface FrontmatterFieldStatus {
   /** Configured fields in `note.frontmatter-fields` order. */
   fields: readonly FrontmatterField[];
@@ -443,12 +460,13 @@ interface SettledWaiter {
   resolve: () => void;
 }
 
-/** Outcome of {@link TemplateService.waitUntilSettled}. */
+/** Outcome of {@link Template.waitUntilSettled}. */
 export type SettleOutcome = "settled" | "timeout" | "init-failed";
 
 const wrapManagedContent = managedRegionTransform(MANAGED_CONTENT_TEMPLATE);
 
-export class TemplateService extends Service<void> {
+/** Rendering and vault-document operations; the Template layer owns its lifetime. */
+class TemplateEngine {
   readonly #app;
   readonly #settings;
   readonly #facade = new TemplateFacade({
@@ -457,7 +475,12 @@ export class TemplateService extends Service<void> {
     transformRender: (name, output) =>
       this.#contentIsVaultBacked() ? wrapManagedContent(name, output) : output,
   });
-  readonly #emitter = createNanoEvents<TemplateServiceEvents>();
+  readonly #changed;
+  readonly #schedule;
+  readonly #log;
+  readonly #flushRequested;
+  #closed = false;
+  #initFailed = false;
   readonly #compileErrors = new Map<string, CompileError>();
   /** Exact bytes observed by reconciliation, including sources that fail parsing. */
   readonly #loadedDocumentSources = new Map<string, string>();
@@ -500,7 +523,7 @@ export class TemplateService extends Service<void> {
   #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
   #inertFrontmatterKeys: readonly string[] = [];
 
-  #flushTimer: number | null = null;
+  #flushTimer: (() => void) | null = null;
   #settlingTasks = 0;
   #folderGeneration = 0;
   #loaded = false;
@@ -508,15 +531,15 @@ export class TemplateService extends Service<void> {
   #lastTemplateFolder = "";
   #lastAutoTrim: [AutoTrim, AutoTrim] = [false, false];
 
-  ready: Promise<void>;
-
-  constructor(options: TemplateServiceOptions) {
-    super();
+  constructor(options: TemplateEngineOptions) {
+    this.#changed = options.changed;
+    this.#flushRequested = options.flushRequested;
+    this.#schedule = options.schedule;
+    this.#log = options.log;
     this.#app = options.app;
     this.#settings = options.settings;
     this.#javascriptTemplatesEnabled =
       this.#app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1";
-    this.ready = this.#load();
   }
 
   get compileErrors(): ReadonlyMap<string, CompileError> {
@@ -542,8 +565,7 @@ export class TemplateService extends Service<void> {
     return this.#javascriptTemplatesEnabled;
   }
 
-  /** Synchronous readiness check for callers that can't await {@link ready} —
-   *  e.g. `selectSuggestion` handlers. */
+  /** Whether the layer completed the initial template scan successfully. */
   get loaded(): boolean {
     return this.#loaded;
   }
@@ -593,12 +615,9 @@ export class TemplateService extends Service<void> {
    * The Citation Template document, created from the built-in source when the
    * vault holds none, so a first edit starts from the text ZotLit renders.
    *
-   * Awaits {@link ready} first: the "Customize citation text" command is
-   * registered before the folder scan finishes, so an invocation during
-   * startup waits for the scan instead of failing the loaded-state check.
+   * The layer completes the initial folder scan before this operation is available.
    */
   async materializeCitationTemplate(): Promise<TFile> {
-    await this.ready;
     this.#requireLoaded("materializeCitationTemplate");
     const path = citationPath(this.#currentTemplateFolder());
     const existing = this.#app.vault.getFileByPath(path);
@@ -934,7 +953,6 @@ export class TemplateService extends Service<void> {
    * layout-ready uses this to pick them up.
    */
   async refresh(): Promise<void> {
-    await this.ready;
     await this.#rebuildFolder(this.#currentTemplateFolder());
     await this.#settle();
   }
@@ -951,32 +969,18 @@ export class TemplateService extends Service<void> {
    */
   async waitUntilSettled(timeoutMs: number): Promise<SettleOutcome> {
     if (timeoutMs <= 0) return "timeout";
-
+    if (this.#initFailed) return "init-failed";
+    if (this.#closed || this.#isSettled()) return "settled";
     return await new Promise<SettleOutcome>((resolve) => {
-      let waiter: SettledWaiter | null = null;
-      let finished = false;
+      const waiter = { resolve: () => finish("settled") };
       const finish = (outcome: SettleOutcome): void => {
-        if (finished) return;
-        finished = true;
-        window.clearTimeout(timeout);
-        if (waiter) this.#settledWaiters.delete(waiter);
+        cancel();
+        this.#settledWaiters.delete(waiter);
         resolve(outcome);
       };
-      const timeout = window.setTimeout(() => finish("timeout"), timeoutMs);
-
-      void this.ready.then(
-        () => {
-          if (finished) return;
-          if (this.#isSettled()) {
-            finish("settled");
-            return;
-          }
-          waiter = { resolve: () => finish("settled") };
-          this.#settledWaiters.add(waiter);
-          this.#resolveSettledWaiters();
-        },
-        () => finish("init-failed"),
-      );
+      const cancel = this.#schedule(timeoutMs, () => finish("timeout"));
+      this.#settledWaiters.add(waiter);
+      this.#resolveSettledWaiters();
     });
   }
 
@@ -1040,13 +1044,6 @@ export class TemplateService extends Service<void> {
       errors[key] = error instanceof Error ? error.message : String(error);
     });
     return { values, errors, inertKeys };
-  }
-
-  on<K extends keyof TemplateServiceEvents>(
-    event: K,
-    cb: TemplateServiceEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, cb);
   }
 
   /**
@@ -1262,7 +1259,6 @@ export class TemplateService extends Service<void> {
     plan: readonly LiteratureNotePartialUnpack[],
     options: { replace?: readonly string[] } = {},
   ): Promise<PartialUnpackOutcome> {
-    await this.ready;
     this.#requireLoaded("unpackPartials");
     const replace = new Set(options.replace);
     const folder = this.#currentTemplateFolder();
@@ -1296,7 +1292,7 @@ export class TemplateService extends Service<void> {
       dropped.push(step.name);
     }
     if (written.length > 0) await this.#settle();
-    logger.debug("Unpacked bundled partials", {
+    this.#log("debug", "Unpacked bundled partials", {
       written,
       kept,
       refused,
@@ -1347,7 +1343,7 @@ export class TemplateService extends Service<void> {
       );
     } catch (error) {
       if (!isFileExistsError(error)) throw error;
-      logger.debug("A partial document appeared after the unpack plan", {
+      this.#log("debug", "A partial document appeared after the unpack plan", {
         name: step.name,
       });
       return false;
@@ -1370,8 +1366,7 @@ export class TemplateService extends Service<void> {
    * Create `zotlit-partial.<name>.md` and wait for the reconciler to register
    * it, so the caller can open the document and render through it at once.
    *
-   * Awaits {@link ready} first, the way {@link materializeCitationTemplate}
-   * does: a create flow reached during startup waits for the folder scan.
+   * The layer completes the initial folder scan before this operation is available.
    *
    * @param name a name the caller has already folded with
    *   `normalizePartialName`.
@@ -1382,7 +1377,6 @@ export class TemplateService extends Service<void> {
     name: string,
     options: { source?: string; language?: TemplateLanguage } = {},
   ): Promise<TFile> {
-    await this.ready;
     this.#requireLoaded("createPartial");
     const refusal = partialNameRefusal(name, this.#partialNames);
     if (refusal) throw new PartialNameError(name, refusal);
@@ -1396,7 +1390,7 @@ export class TemplateService extends Service<void> {
         : formatPlainTemplateDocument(source, options.language),
     );
     await this.#settle();
-    logger.debug("Created a Shared Partial", { name, path: file.path });
+    this.#log("debug", "Created a Shared Partial", { name, path: file.path });
     return file;
   }
 
@@ -1669,7 +1663,7 @@ export class TemplateService extends Service<void> {
       });
       trashed.push(file.path, ...file.shadowed);
     }
-    logger.debug("Planned the legacy Template Document conversion", {
+    this.#log("debug", "Planned the legacy Template Document conversion", {
       documents: documents.map(({ path }) => path),
       trashed,
       kept,
@@ -1807,7 +1801,7 @@ export class TemplateService extends Service<void> {
 
     this.#app.saveLocalStorage(JS_TEMPLATES_STORAGE_KEY, enabled ? "1" : null);
     this.#javascriptTemplatesEnabled = enabled;
-    logger.info("JavaScript templates flag changed", { enabled });
+    this.#log("info", "JavaScript templates flag changed", { enabled });
 
     if (this.#lastFrontmatterFields) {
       this.#compileFrontmatter(this.#lastFrontmatterFields);
@@ -1816,7 +1810,7 @@ export class TemplateService extends Service<void> {
     await this.#rebuildFolder(this.#currentTemplateFolder());
   }
 
-  async #load(): Promise<void> {
+  async load(): Promise<void> {
     const snapshot = this.#settings.current;
     this.#lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
     this.#lastAutoTrim = [
@@ -1825,42 +1819,25 @@ export class TemplateService extends Service<void> {
     ];
     this.#facade.setAutoTrim(this.#lastAutoTrim);
     this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
-
-    await using stack = new AsyncDisposableStack();
-    // Registered before the initial scan, so an edit landing while the scan
-    // runs queues instead of being dropped: #rebuildFolder clears #pending
-    // before it walks the folder, so anything queued during the walk survives
-    // into the debounced flush that follows.
-    stack.defer(this.#registerVaultEvents());
     await this.#rebuildFolder(this.#lastTemplateFolder);
-
-    stack.defer(
-      this.#settings.subscribe((settings) => {
-        if (settings === null) return;
-        this.#onSettingsChanged(settings);
-      }),
-    );
-    stack.defer(() => this.#cancelFlush());
-
     this.#loaded = true;
-    this.commit(stack.move());
   }
 
-  #registerVaultEvents(): () => void {
-    const vault = this.#app.vault;
-    const refs: EventRef[] = [
-      vault.on("create", (file) => this.#onCreateOrModify(file)),
-      vault.on("modify", (file) => this.#onCreateOrModify(file)),
-      vault.on("rename", (file, oldPath) => this.#onRename(file, oldPath)),
-      vault.on("delete", (file) => this.#onDelete(file)),
-    ];
-
-    return () => {
-      for (const ref of refs) vault.offref(ref);
-    };
+  failStartup(): void {
+    this.#initFailed = true;
   }
 
-  #onSettingsChanged(settings: Readonly<Settings>): void {
+  close(): void {
+    this.#closed = true;
+    this.#folderGeneration += 1;
+    this.#cancelFlush();
+    for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
+    for (const waiter of this.#settledWaiters) waiter.resolve();
+    this.#settledWaiters.clear();
+  }
+
+  async onSettingsChanged(settings: Readonly<Settings>): Promise<void> {
+    if (this.#closed) return;
     const folder = normalizeVaultPath(settings["template.folder"]);
     const autoTrim: [AutoTrim, AutoTrim] = [
       settings["template.auto-trim-leading"],
@@ -1883,13 +1860,11 @@ export class TemplateService extends Service<void> {
 
     if (autoTrimChanged) {
       this.#facade.setAutoTrim(autoTrim);
-      logger.debug("Template autoTrim changed", { autoTrim });
+      this.#log("debug", "Template autoTrim changed", { autoTrim });
     }
 
     if (folderChanged) {
-      void this.#rebuildFolder(folder).catch((error) => {
-        logger.warn("Template folder rebuild failed", { error, folder });
-      });
+      await this.#rebuildFolder(folder);
     }
   }
 
@@ -1925,9 +1900,13 @@ export class TemplateService extends Service<void> {
           if (child instanceof TFile) collectTemplatePath(work, child.path);
         }
       } else {
-        logger.debug("Template folder not found; embedded defaults remain", {
-          folder,
-        });
+        this.#log(
+          "debug",
+          "Template folder not found; embedded defaults remain",
+          {
+            folder,
+          },
+        );
       }
 
       for (const name of TEMPLATE_NAMES) {
@@ -1940,8 +1919,8 @@ export class TemplateService extends Service<void> {
       await this.#reconcileWork(work, generation);
       if (generation !== this.#folderGeneration) return;
 
-      this.#emitter.emit("compile-status-changed");
-      logger.debug("Template folder rebuilt", {
+      this.#changed();
+      this.#log("debug", "Template folder rebuilt", {
         folder,
         count: work.names.size,
       });
@@ -1951,17 +1930,17 @@ export class TemplateService extends Service<void> {
     }
   }
 
-  #onCreateOrModify(file: TAbstractFile): void {
+  onCreateOrModify(file: TAbstractFile): void {
     if (!(file instanceof TFile)) return;
     this.#queueTemplatePath(file.path);
   }
 
-  #onRename(file: TAbstractFile, oldPathRaw: string): void {
+  onRename(file: TAbstractFile, oldPathRaw: string): void {
     this.#queueTemplatePath(oldPathRaw);
     if (file instanceof TFile) this.#queueTemplatePath(file.path);
   }
 
-  #onDelete(file: TAbstractFile): void {
+  onDelete(file: TAbstractFile): void {
     this.#queueTemplatePath(file.path);
   }
 
@@ -1979,14 +1958,14 @@ export class TemplateService extends Service<void> {
   }
 
   #scheduleFlush(): void {
-    if (this.#flushTimer !== null) return;
-    this.#flushTimer = window.setTimeout(() => {
+    if (this.#closed || this.#flushTimer !== null) return;
+    this.#flushTimer = this.#schedule(FLUSH_DEBOUNCE_MS, () => {
       this.#flushTimer = null;
-      void this.#flushPending();
-    }, FLUSH_DEBOUNCE_MS);
+      this.#flushRequested();
+    });
   }
 
-  async #flushPending(): Promise<void> {
+  async flushPending(): Promise<void> {
     this.#settlingTasks += 1;
     try {
       const generation = this.#folderGeneration;
@@ -1995,8 +1974,10 @@ export class TemplateService extends Service<void> {
 
       if (generation !== this.#folderGeneration) return;
 
-      this.#emitter.emit("compile-status-changed");
-      logger.debug("Template flush completed", { count: work.names.size });
+      this.#changed();
+      this.#log("debug", "Template flush completed", {
+        count: work.names.size,
+      });
     } finally {
       this.#settlingTasks -= 1;
       this.#resolveSettledWaiters();
@@ -2063,7 +2044,7 @@ export class TemplateService extends Service<void> {
     // the liquid edition wins either way, so the flag never changes its fate.
     if (liquidFile && etaFile) {
       if (this.#shadowed.get(name) !== etaFile.path) {
-        logger.warn("Eta template shadowed by its Liquid edition", {
+        this.#log("warn", "Eta template shadowed by its Liquid edition", {
           name,
           path: etaFile.path,
         });
@@ -2079,7 +2060,8 @@ export class TemplateService extends Service<void> {
     // embedded default.
     if (!this.#javascriptTemplatesEnabled && !liquidFile && etaFile) {
       if (this.#inertEta.get(name) !== etaFile.path) {
-        logger.info(
+        this.#log(
+          "info",
           "Eta template inert while JavaScript templates are disabled",
           { name, path: etaFile.path },
         );
@@ -2114,7 +2096,7 @@ export class TemplateService extends Service<void> {
       content = await this.#app.vault.cachedRead(winner.file);
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
-      logger.warn("Failed to read template file", {
+      this.#log("warn", "Failed to read template file", {
         error,
         path: winner.file.path,
       });
@@ -2160,10 +2142,14 @@ export class TemplateService extends Service<void> {
       if (source === undefined) this.#loadedDocumentSources.delete(path);
       this.#literatureNoteDocuments.delete(reference);
       this.#literatureNoteDocumentErrors.set(reference, failure);
-      logger.warn("Failed to reconcile Literature Note Template document", {
-        error: failure,
-        path,
-      });
+      this.#log(
+        "warn",
+        "Failed to reconcile Literature Note Template document",
+        {
+          error: failure,
+          path,
+        },
+      );
     }
   }
 
@@ -2186,7 +2172,7 @@ export class TemplateService extends Service<void> {
     // nothing: it is reported by name in settings rather than registered.
     if (RESERVED_PARTIAL_NAMES.has(name)) {
       if (file) {
-        logger.debug("Partial file claims a reserved template name", {
+        this.#log("debug", "Partial file claims a reserved template name", {
           name,
           path,
         });
@@ -2198,7 +2184,10 @@ export class TemplateService extends Service<void> {
         } catch (error) {
           if (generation !== this.#folderGeneration) return;
           this.#loadedDocumentSources.delete(path);
-          logger.warn("Failed to read reserved partial file", { error, path });
+          this.#log("warn", "Failed to read reserved partial file", {
+            error,
+            path,
+          });
         }
       } else {
         this.#reservedPartialFiles.delete(name);
@@ -2220,7 +2209,7 @@ export class TemplateService extends Service<void> {
       source = await this.#app.vault.cachedRead(file);
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
-      logger.warn("Failed to read partial file", { error, path });
+      this.#log("warn", "Failed to read partial file", { error, path });
       this.#loadedDocumentSources.delete(path);
       this.#removePartial(name);
       this.#compileErrors.set(name, { message: errorMessage(error) });
@@ -2235,14 +2224,15 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       this.#removePartial(name);
       this.#compileErrors.set(name, { message: errorMessage(error) });
-      logger.warn("Failed to parse partial document", { error, path });
+      this.#log("warn", "Failed to parse partial document", { error, path });
       return;
     }
 
     const { language } = parsed.manifest;
     if (language === "eta" && !this.#javascriptTemplatesEnabled) {
       if (this.#inertEta.get(name) !== path) {
-        logger.debug(
+        this.#log(
+          "debug",
           "Eta partial inert while JavaScript templates are disabled",
           {
             name,
@@ -2289,7 +2279,10 @@ export class TemplateService extends Service<void> {
       source = await this.#app.vault.cachedRead(file);
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
-      logger.warn("Failed to read the Citation Template", { error, path });
+      this.#log("warn", "Failed to read the Citation Template", {
+        error,
+        path,
+      });
       this.#loadedDocumentSources.delete(path);
       this.#useBuiltInCitation();
       this.#compileErrors.set(name, { message: errorMessage(error) });
@@ -2304,14 +2297,18 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       this.#unregisterCitation();
       this.#compileErrors.set(name, { message: errorMessage(error) });
-      logger.warn("Failed to parse the Citation Template", { error, path });
+      this.#log("warn", "Failed to parse the Citation Template", {
+        error,
+        path,
+      });
       return;
     }
 
     const { language } = parsed.manifest;
     if (language === "eta" && !this.#javascriptTemplatesEnabled) {
       if (this.#inertEta.get(name) !== path) {
-        logger.debug(
+        this.#log(
+          "debug",
           "Citation Template inert while JavaScript templates are disabled",
           { path },
         );
@@ -2351,7 +2348,7 @@ export class TemplateService extends Service<void> {
       previous?.path !== citation.path ||
       previous.language !== citation.language
     ) {
-      logger.debug("Citation Template resolved", {
+      this.#log("debug", "Citation Template resolved", {
         selected: citation.path === null ? "built-in" : "vault",
         path: citation.path,
         language: citation.language,
@@ -2400,7 +2397,7 @@ export class TemplateService extends Service<void> {
         context: errorContext(error),
         ...(at === undefined ? {} : { at }),
       });
-      logger.warn("Failed to compile vault template", { error, name });
+      this.#log("warn", "Failed to compile vault template", { error, name });
       this.#facade.remove(name, language);
     }
   }
@@ -2424,7 +2421,7 @@ export class TemplateService extends Service<void> {
         context: errorContext(error),
         ...(at === undefined ? {} : { at }),
       });
-      logger.error("Built-in default template failed to compile", {
+      this.#log("error", "Built-in default template failed to compile", {
         error,
         name,
       });
@@ -2464,7 +2461,9 @@ export class TemplateService extends Service<void> {
     this.#inertFrontmatterKeys = inertKeys;
 
     if (inertKeys.length > 0) {
-      logger.info("Skipping inert frontmatter fields", { keys: inertKeys });
+      this.#log("info", "Skipping inert frontmatter fields", {
+        keys: inertKeys,
+      });
     }
   }
 
@@ -2472,7 +2471,7 @@ export class TemplateService extends Service<void> {
    *  unload a waiter is answered at once rather than after its full budget. */
   #cancelFlush(): void {
     if (this.#flushTimer !== null) {
-      window.clearTimeout(this.#flushTimer);
+      this.#flushTimer();
       this.#flushTimer = null;
     }
     this.#resolveSettledWaiters();
@@ -2601,4 +2600,635 @@ function errorMessage(error: unknown): string {
 /** Collapse rendered filename output to one trimmed line. */
 function toSingleLine(rendered: string): string {
   return rendered.trim().replaceAll(/\s*\n\s*/g, "");
+}
+
+export class Template extends Context.Service<
+  Template,
+  {
+    readonly changes: Stream.Stream<void>;
+    readonly compileErrors: Effect.Effect<
+      ReadonlyMap<string, CompileError>,
+      unknown
+    >;
+    getLoadedDocumentSource(
+      path: string,
+    ): Effect.Effect<string | undefined, unknown>;
+    readonly shadowedFiles: Effect.Effect<ReadonlyMap<string, string>, unknown>;
+    readonly inertEtaFiles: Effect.Effect<ReadonlyMap<string, string>, unknown>;
+    readonly javascriptTemplatesEnabled: Effect.Effect<boolean, unknown>;
+    readonly loaded: Effect.Effect<boolean, unknown>;
+    getUnrecognizedFiles(): Effect.Effect<readonly string[], unknown>;
+    getTemplateFileStatuses(): Effect.Effect<
+      readonly TemplateFileStatus[],
+      unknown
+    >;
+    getCitationTemplateStatus(): Effect.Effect<CitationTemplateStatus, unknown>;
+    materializeCitationTemplate(): Effect.Effect<TFile, unknown>;
+    restoreCitationTemplate(): Effect.Effect<void, unknown>;
+    getLiteratureNoteTemplate(
+      reference: string,
+    ): Effect.Effect<ResolvedLiteratureNoteTemplate | undefined, unknown>;
+    prepareLiteratureNoteTemplateSource(
+      source: string,
+    ): Effect.Effect<ResolvedLiteratureNoteTemplate, unknown>;
+    renderProfileAnnotation<T extends object>(
+      data: T,
+      options: { profile: ResolvedProfile },
+    ): Effect.Effect<string, unknown>;
+    getLiteratureNoteTemplateStatuses(): Effect.Effect<
+      readonly LiteratureNoteTemplateStatus[],
+      unknown
+    >;
+    renderLiteratureNoteTemplateSource<T extends object>(
+      source: string,
+      data: T,
+    ): Effect.Effect<{ create: string; update: string | null }, unknown>;
+    exportLiteratureNotePack(
+      reference: string,
+      options?: { includeFolders?: boolean },
+    ): Effect.Effect<string, unknown>;
+    exportLiteratureNotePackSource(
+      source: string,
+      options?: {
+        includeFolders?: boolean;
+        /** Extra partial names to bundle, reachable from the draft or not. */
+        include?: readonly string[];
+        /** Reports a name no partial answers instead of failing the export. */
+        onMissingPartial?: (name: string) => void;
+      },
+    ): Effect.Effect<string, unknown>;
+    refresh(): Effect.Effect<void, unknown>;
+    waitUntilSettled(timeoutMs: number): Effect.Effect<SettleOutcome, unknown>;
+    readonly frontmatterFields: Effect.Effect<
+      readonly CompiledFrontmatterField[],
+      unknown
+    >;
+    getFrontmatterFieldStatus(): Effect.Effect<FrontmatterFieldStatus, unknown>;
+    evaluateFrontmatterFields(
+      fields: readonly FrontmatterField[],
+      zt: object,
+    ): Effect.Effect<
+      {
+        values: Readonly<Record<string, unknown>>;
+        errors: Readonly<Record<string, string>>;
+        inertKeys: readonly string[];
+      },
+      unknown
+    >;
+    render<T extends object>(
+      name: string,
+      data: T,
+    ): Effect.Effect<string, unknown>;
+    renderManagedContent<T extends object>(
+      data: T,
+    ): Effect.Effect<string, unknown>;
+    renderCitation(
+      refs: readonly CiteRef[],
+      variant: CitationVariant,
+    ): Effect.Effect<string, unknown>;
+    renderCitationData(
+      data: CitationTemplateData,
+    ): Effect.Effect<string, unknown>;
+    getPartialDocument(
+      name: string,
+    ): Effect.Effect<SharedPartialDocument | null, unknown>;
+    getPartialNames(): Effect.Effect<readonly string[], unknown>;
+    getPartialDocuments(): Effect.Effect<
+      readonly SharedPartialDocument[],
+      unknown
+    >;
+    getPartialEntries(): Effect.Effect<
+      readonly LiteratureNoteTemplatePartial[],
+      unknown
+    >;
+    planPartialUnpack(
+      bundled: readonly LiteratureNoteTemplatePartial[],
+    ): Effect.Effect<readonly LiteratureNotePartialUnpack[], unknown>;
+    unpackPartials(
+      plan: readonly LiteratureNotePartialUnpack[],
+      options?: { replace?: readonly string[] },
+    ): Effect.Effect<PartialUnpackOutcome, unknown>;
+    getReservedPartialFiles(): Effect.Effect<
+      readonly { name: string; path: string }[],
+      unknown
+    >;
+    createPartial(
+      name: string,
+      options?: { source?: string; language?: TemplateLanguage },
+    ): Effect.Effect<TFile, unknown>;
+    deletePartial(name: string): Effect.Effect<void, unknown>;
+    renderPartialSource<T extends object>(
+      source: string,
+      data: T,
+      options: { name: string },
+    ): Effect.Effect<string, unknown>;
+    renderCitationSource(
+      source: string,
+      data: CitationTemplateData,
+    ): Effect.Effect<string, unknown>;
+    renderFilename<T extends object>(data: T): Effect.Effect<string, unknown>;
+    analyzeRootVariables(
+      name: string,
+    ): Effect.Effect<RootVariableUse[] | null, unknown>;
+    getTemplateSource(name: TemplateName): Effect.Effect<string, unknown>;
+    getLegacyLiteratureNoteTemplateFiles(): Effect.Effect<
+      readonly string[],
+      unknown
+    >;
+    getLegacyTemplateDocuments(): Effect.Effect<
+      LegacyTemplateDocuments,
+      unknown
+    >;
+    convertLegacyTemplateDocuments(
+      refs: readonly CiteRef[],
+    ): Effect.Effect<ConvertedLegacyTemplateDocuments, unknown>;
+    convertLegacyLiteratureNoteTemplates(data: {
+      readonly note: object;
+      readonly filename: object;
+      readonly annotation?: object;
+    }): Effect.Effect<ConvertedLegacyProfileDocument, unknown>;
+    validateFrontmatterExpr(
+      expr: string,
+      language: FrontmatterLanguage,
+    ): Effect.Effect<string | null, unknown>;
+    setJavascriptTemplatesEnabled(
+      enabled: boolean,
+    ): Effect.Effect<void, unknown>;
+  }
+>()("zotlit/template/Template") {}
+
+export type TemplateOperations = Pick<
+  TemplateEngine,
+  | "compileErrors"
+  | "getLoadedDocumentSource"
+  | "shadowedFiles"
+  | "inertEtaFiles"
+  | "javascriptTemplatesEnabled"
+  | "loaded"
+  | "getUnrecognizedFiles"
+  | "getTemplateFileStatuses"
+  | "getCitationTemplateStatus"
+  | "materializeCitationTemplate"
+  | "restoreCitationTemplate"
+  | "getLiteratureNoteTemplate"
+  | "prepareLiteratureNoteTemplateSource"
+  | "renderProfileAnnotation"
+  | "getLiteratureNoteTemplateStatuses"
+  | "renderLiteratureNoteTemplateSource"
+  | "exportLiteratureNotePack"
+  | "exportLiteratureNotePackSource"
+  | "refresh"
+  | "waitUntilSettled"
+  | "frontmatterFields"
+  | "getFrontmatterFieldStatus"
+  | "evaluateFrontmatterFields"
+  | "render"
+  | "renderManagedContent"
+  | "renderCitation"
+  | "renderCitationData"
+  | "getPartialDocument"
+  | "getPartialNames"
+  | "getPartialDocuments"
+  | "getPartialEntries"
+  | "planPartialUnpack"
+  | "unpackPartials"
+  | "getReservedPartialFiles"
+  | "createPartial"
+  | "deletePartial"
+  | "renderPartialSource"
+  | "renderCitationSource"
+  | "renderFilename"
+  | "analyzeRootVariables"
+  | "getTemplateSource"
+  | "getLegacyLiteratureNoteTemplateFiles"
+  | "getLegacyTemplateDocuments"
+  | "convertLegacyTemplateDocuments"
+  | "convertLegacyLiteratureNoteTemplates"
+  | "validateFrontmatterExpr"
+  | "setJavascriptTemplatesEnabled"
+>;
+
+export const layerTemplate = Layer.effect(
+  Template,
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    const settings = yield* PluginSettings;
+    const scope = yield* Scope.fork(yield* Scope.Scope);
+    const context = yield* Effect.context<never>();
+    const runSync = Effect.runSyncWith(context);
+    const changes = yield* PubSub.unbounded<void>();
+    yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
+    const intake = yield* obsidianEvents<{
+      create: [TAbstractFile];
+      modify: [TAbstractFile];
+      rename: [TAbstractFile, string];
+      delete: [TAbstractFile];
+      flush: [];
+    }>();
+    const engine = new TemplateEngine({
+      app,
+      settings: {
+        get current() {
+          return runSync(settings.current);
+        },
+      },
+      changed: () => {
+        PubSub.publishUnsafe(changes, undefined);
+      },
+      flushRequested: intake.callback("flush"),
+      schedule: (millis, task) => {
+        const fiber = runSync(
+          Effect.forkIn(
+            Effect.sleep(millis).pipe(Effect.andThen(Effect.sync(task))),
+            scope,
+            { startImmediately: true },
+          ),
+        );
+        return () => fiber.interruptUnsafe();
+      },
+      log: (level, message, fields) => {
+        const log = {
+          debug: Effect.logDebug,
+          info: Effect.logInfo,
+          warn: Effect.logWarning,
+          error: Effect.logError,
+        }[level];
+        runSync(
+          log(message).pipe(
+            Effect.annotateLogs(fields ?? {}),
+            withLogCategory("template"),
+          ),
+        );
+      },
+    });
+    const report = (message: string) => (cause: unknown) =>
+      Effect.logWarning(message).pipe(
+        Effect.annotateLogs({ cause }),
+        withLogCategory("template"),
+      );
+    yield* intake
+      .consume((event) =>
+        Effect.gen(function* () {
+          switch (event.type) {
+            case "create":
+            case "modify":
+              engine.onCreateOrModify(event.args[0]);
+              break;
+            case "rename":
+              engine.onRename(...event.args);
+              break;
+            case "delete":
+              engine.onDelete(event.args[0]);
+              break;
+            case "flush":
+              yield* attemptPromise(() => engine.flushPending());
+              break;
+          }
+        }),
+      )
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Effect.gen(function* () {
+      for (const event of ["create", "modify", "rename", "delete"] as const)
+        yield* intake.on(event, app.vault, event);
+      yield* attemptPromise(() => engine.load());
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.sync(() => engine.failStartup()).pipe(
+          Effect.andThen(report("Template startup failed")(cause)),
+        ),
+      ),
+    );
+    yield* Stream.runForEach(settings.changes, (snapshot) =>
+      attemptPromise(() => engine.onSettingsChanged(snapshot)).pipe(
+        Effect.catchCause(report("Template settings update failed")),
+        // Apply each snapshot immediately. Folder reads can overlap: the
+        // generation check lets a newer folder supersede a pending read.
+        Effect.forkIn(scope, { startImmediately: true }),
+      ),
+    ).pipe(Effect.forkScoped({ startImmediately: true }));
+    let closed = false;
+    const owned = <A>(effect: Effect.Effect<A, unknown>) =>
+      closed
+        ? effect
+        : Effect.forkIn(effect, scope, {
+            startImmediately: true,
+            uninterruptible: true,
+          }).pipe(Effect.flatMap(Fiber.join));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        closed = true;
+        engine.close();
+      }),
+    );
+    return Template.of({
+      changes: Stream.fromPubSub(changes),
+      compileErrors: attempt(() => engine.compileErrors),
+      getLoadedDocumentSource: Effect.fn("Template.getLoadedDocumentSource")(
+        function* (path: string) {
+          return yield* attempt(() => engine.getLoadedDocumentSource(path));
+        },
+      ),
+      shadowedFiles: attempt(() => engine.shadowedFiles),
+      inertEtaFiles: attempt(() => engine.inertEtaFiles),
+      javascriptTemplatesEnabled: attempt(
+        () => engine.javascriptTemplatesEnabled,
+      ),
+      loaded: attempt(() => engine.loaded),
+      getUnrecognizedFiles: Effect.fn("Template.getUnrecognizedFiles")(
+        function* () {
+          return yield* attempt(() => engine.getUnrecognizedFiles());
+        },
+      ),
+      getTemplateFileStatuses: Effect.fn("Template.getTemplateFileStatuses")(
+        function* () {
+          return yield* attempt(() => engine.getTemplateFileStatuses());
+        },
+      ),
+      getCitationTemplateStatus: Effect.fn(
+        "Template.getCitationTemplateStatus",
+      )(function* () {
+        return yield* attempt(() => engine.getCitationTemplateStatus());
+      }),
+      materializeCitationTemplate: Effect.fn(
+        "Template.materializeCitationTemplate",
+      )(function* () {
+        return yield* owned(
+          attemptPromise(() => engine.materializeCitationTemplate()).pipe(
+            Effect.uninterruptible,
+          ),
+        );
+      }),
+      restoreCitationTemplate: Effect.fn("Template.restoreCitationTemplate")(
+        function* () {
+          return yield* owned(
+            attemptPromise(() => engine.restoreCitationTemplate()).pipe(
+              Effect.uninterruptible,
+            ),
+          );
+        },
+      ),
+      getLiteratureNoteTemplate: Effect.fn(
+        "Template.getLiteratureNoteTemplate",
+      )(function* (reference: string) {
+        return yield* attempt(() =>
+          engine.getLiteratureNoteTemplate(reference),
+        );
+      }),
+      prepareLiteratureNoteTemplateSource: Effect.fn(
+        "Template.prepareLiteratureNoteTemplateSource",
+      )(function* (source: string) {
+        return yield* attempt(() =>
+          engine.prepareLiteratureNoteTemplateSource(source),
+        );
+      }),
+      renderProfileAnnotation: Effect.fn("Template.renderProfileAnnotation")(
+        function* <T extends object>(
+          data: T,
+          options: { profile: ResolvedProfile },
+        ) {
+          return yield* attempt(() =>
+            engine.renderProfileAnnotation(data, options),
+          );
+        },
+      ),
+      getLiteratureNoteTemplateStatuses: Effect.fn(
+        "Template.getLiteratureNoteTemplateStatuses",
+      )(function* () {
+        return yield* attempt(() => engine.getLiteratureNoteTemplateStatuses());
+      }),
+      renderLiteratureNoteTemplateSource: Effect.fn(
+        "Template.renderLiteratureNoteTemplateSource",
+      )(function* <T extends object>(source: string, data: T) {
+        return yield* attempt(() =>
+          engine.renderLiteratureNoteTemplateSource(source, data),
+        );
+      }),
+      exportLiteratureNotePack: Effect.fn("Template.exportLiteratureNotePack")(
+        function* (
+          reference: string,
+          options: { includeFolders?: boolean } = {},
+        ) {
+          return yield* owned(
+            attemptPromise(() =>
+              engine.exportLiteratureNotePack(reference, options),
+            ).pipe(Effect.uninterruptible),
+          );
+        },
+      ),
+      exportLiteratureNotePackSource: Effect.fn(
+        "Template.exportLiteratureNotePackSource",
+      )(function* (
+        source: string,
+        options: {
+          includeFolders?: boolean;
+          /** Extra partial names to bundle, reachable from the draft or not. */
+          include?: readonly string[];
+          /** Reports a name no partial answers instead of failing the export. */
+          onMissingPartial?: (name: string) => void;
+        } = {},
+      ) {
+        return yield* owned(
+          attemptPromise(() =>
+            engine.exportLiteratureNotePackSource(source, options),
+          ).pipe(Effect.uninterruptible),
+        );
+      }),
+      refresh: Effect.fn("Template.refresh")(function* () {
+        return yield* owned(
+          attemptPromise(() => engine.refresh()).pipe(Effect.uninterruptible),
+        );
+      }),
+      waitUntilSettled: Effect.fn("Template.waitUntilSettled")(function* (
+        timeoutMs: number,
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.waitUntilSettled(timeoutMs)).pipe(
+            Effect.uninterruptible,
+          ),
+        );
+      }),
+      frontmatterFields: attempt(() => engine.frontmatterFields),
+      getFrontmatterFieldStatus: Effect.fn(
+        "Template.getFrontmatterFieldStatus",
+      )(function* () {
+        return yield* attempt(() => engine.getFrontmatterFieldStatus());
+      }),
+      evaluateFrontmatterFields: Effect.fn(
+        "Template.evaluateFrontmatterFields",
+      )(function* (fields: readonly FrontmatterField[], zt: object) {
+        return yield* attempt(() =>
+          engine.evaluateFrontmatterFields(fields, zt),
+        );
+      }),
+      render: Effect.fn("Template.render")(function* <T extends object>(
+        name: string,
+        data: T,
+      ) {
+        return yield* attempt(() => engine.render(name, data));
+      }),
+      renderManagedContent: Effect.fn("Template.renderManagedContent")(
+        function* <T extends object>(data: T) {
+          return yield* attempt(() => engine.renderManagedContent(data));
+        },
+      ),
+      renderCitation: Effect.fn("Template.renderCitation")(function* (
+        refs: readonly CiteRef[],
+        variant: CitationVariant,
+      ) {
+        return yield* attempt(() => engine.renderCitation(refs, variant));
+      }),
+      renderCitationData: Effect.fn("Template.renderCitationData")(function* (
+        data: CitationTemplateData,
+      ) {
+        return yield* attempt(() => engine.renderCitationData(data));
+      }),
+      getPartialDocument: Effect.fn("Template.getPartialDocument")(function* (
+        name: string,
+      ) {
+        return yield* attempt(() => engine.getPartialDocument(name));
+      }),
+      getPartialNames: Effect.fn("Template.getPartialNames")(function* () {
+        return yield* attempt(() => engine.getPartialNames());
+      }),
+      getPartialDocuments: Effect.fn("Template.getPartialDocuments")(
+        function* () {
+          return yield* attempt(() => engine.getPartialDocuments());
+        },
+      ),
+      getPartialEntries: Effect.fn("Template.getPartialEntries")(function* () {
+        return yield* attempt(() => engine.getPartialEntries());
+      }),
+      planPartialUnpack: Effect.fn("Template.planPartialUnpack")(function* (
+        bundled: readonly LiteratureNoteTemplatePartial[],
+      ) {
+        return yield* attempt(() => engine.planPartialUnpack(bundled));
+      }),
+      unpackPartials: Effect.fn("Template.unpackPartials")(function* (
+        plan: readonly LiteratureNotePartialUnpack[],
+        options: { replace?: readonly string[] } = {},
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.unpackPartials(plan, options)).pipe(
+            Effect.uninterruptible,
+          ),
+        );
+      }),
+      getReservedPartialFiles: Effect.fn("Template.getReservedPartialFiles")(
+        function* () {
+          return yield* attempt(() => engine.getReservedPartialFiles());
+        },
+      ),
+      createPartial: Effect.fn("Template.createPartial")(function* (
+        name: string,
+        options: { source?: string; language?: TemplateLanguage } = {},
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.createPartial(name, options)).pipe(
+            Effect.uninterruptible,
+          ),
+        );
+      }),
+      deletePartial: Effect.fn("Template.deletePartial")(function* (
+        name: string,
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.deletePartial(name)).pipe(
+            Effect.uninterruptible,
+          ),
+        );
+      }),
+      renderPartialSource: Effect.fn("Template.renderPartialSource")(function* <
+        T extends object,
+      >(source: string, data: T, options: { name: string }) {
+        return yield* attempt(() =>
+          engine.renderPartialSource(source, data, options),
+        );
+      }),
+      renderCitationSource: Effect.fn("Template.renderCitationSource")(
+        function* (source: string, data: CitationTemplateData) {
+          return yield* attempt(() =>
+            engine.renderCitationSource(source, data),
+          );
+        },
+      ),
+      renderFilename: Effect.fn("Template.renderFilename")(function* <
+        T extends object,
+      >(data: T) {
+        return yield* attempt(() => engine.renderFilename(data));
+      }),
+      analyzeRootVariables: Effect.fn("Template.analyzeRootVariables")(
+        function* (name: string) {
+          return yield* attempt(() => engine.analyzeRootVariables(name));
+        },
+      ),
+      getTemplateSource: Effect.fn("Template.getTemplateSource")(function* (
+        name: TemplateName,
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.getTemplateSource(name)).pipe(
+            Effect.uninterruptible,
+          ),
+        );
+      }),
+      getLegacyLiteratureNoteTemplateFiles: Effect.fn(
+        "Template.getLegacyLiteratureNoteTemplateFiles",
+      )(function* () {
+        return yield* attempt(() =>
+          engine.getLegacyLiteratureNoteTemplateFiles(),
+        );
+      }),
+      getLegacyTemplateDocuments: Effect.fn(
+        "Template.getLegacyTemplateDocuments",
+      )(function* () {
+        return yield* attempt(() => engine.getLegacyTemplateDocuments());
+      }),
+      convertLegacyTemplateDocuments: Effect.fn(
+        "Template.convertLegacyTemplateDocuments",
+      )(function* (refs: readonly CiteRef[]) {
+        return yield* owned(
+          attemptPromise(() =>
+            engine.convertLegacyTemplateDocuments(refs),
+          ).pipe(Effect.uninterruptible),
+        );
+      }),
+      convertLegacyLiteratureNoteTemplates: Effect.fn(
+        "Template.convertLegacyLiteratureNoteTemplates",
+      )(function* (data: {
+        readonly note: object;
+        readonly filename: object;
+        readonly annotation?: object;
+      }) {
+        return yield* owned(
+          attemptPromise(() =>
+            engine.convertLegacyLiteratureNoteTemplates(data),
+          ).pipe(Effect.uninterruptible),
+        );
+      }),
+      validateFrontmatterExpr: Effect.fn("Template.validateFrontmatterExpr")(
+        function* (expr: string, language: FrontmatterLanguage) {
+          return yield* attempt(() =>
+            engine.validateFrontmatterExpr(expr, language),
+          );
+        },
+      ),
+      setJavascriptTemplatesEnabled: Effect.fn(
+        "Template.setJavascriptTemplatesEnabled",
+      )(function* (enabled: boolean) {
+        return yield* owned(
+          attemptPromise(() =>
+            engine.setJavascriptTemplatesEnabled(enabled),
+          ).pipe(Effect.uninterruptible),
+        );
+      }),
+    });
+  }),
+);
+
+function attempt<A>(evaluate: () => A): Effect.Effect<A, unknown> {
+  return Effect.try({ try: evaluate, catch: (error) => error });
+}
+function attemptPromise<A>(
+  evaluate: () => Promise<A>,
+): Effect.Effect<A, unknown> {
+  return Effect.tryPromise({ try: evaluate, catch: (error) => error });
 }

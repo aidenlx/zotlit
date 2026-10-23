@@ -27,7 +27,7 @@ import type { InteractiveCreationDeps } from "@/services/note-feature/creation-v
 import type { NoteFeature } from "@/services/note-feature/operations";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileService } from "@/services/profile/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { LITERATURE_NOTE } from "./query-file";
@@ -188,7 +188,7 @@ export interface LiteratureNotesDeps extends InteractiveCreationDeps {
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "replacedKeys">;
   profile: Pick<ProfileService, "on">;
-  template: Pick<TemplateService, "on">;
+  template: Pick<PlainTemplate, "on">;
   zoteroReads: Pick<ZoteroReadsService, "ready">;
 }
 

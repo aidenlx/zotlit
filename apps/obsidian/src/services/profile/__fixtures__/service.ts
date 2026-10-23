@@ -2,7 +2,7 @@ import type { App } from "obsidian";
 
 import { buildNoteIndex } from "@/services/note-index/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
-import { TemplateService } from "@/services/template/service";
+import { buildTemplate } from "@/services/template/__fixtures__";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 
 import { Effect } from "@/lib/effect";
@@ -44,7 +44,7 @@ export async function profileServiceFixture(
     }),
   );
   const template = stack.use(
-    new TemplateService({ app, settings }),
+    await buildTemplate({ app, settings }),
   );
   const noteIndex = buildNoteIndex(app, stack);
   const libraryScope = stack.use(new LibraryScopeService({ settings,

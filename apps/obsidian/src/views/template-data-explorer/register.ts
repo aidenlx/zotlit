@@ -1,13 +1,14 @@
 import type { App, PaneType, Plugin } from "obsidian";
 
-import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
+
+import "./style.css";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
@@ -32,7 +33,10 @@ export interface ExplorerRegistrationDeps {
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   itemLookup: ItemLookup;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
-  templates: TemplateService;
+  templates: Pick<
+    PlainTemplate,
+    "javascriptTemplatesEnabled" | "render" | "renderCitation"
+  >;
 }
 
 export function registerTemplateDataExplorer(
