@@ -1,17 +1,34 @@
 // #1689: extracted facts from every recorded Obsidian 1.14.4 parity case.
 // Source: quartz-community/remark-obsidian at a80395a3d80f351e67a0afdb63b51a604e010c8e,
 // test/parity/corpus.ts and test/parity/goldens/obsidian.json (compute.links).
+//
+// Each fixture row derives from `cases[id]` in goldens/obsidian.json. The
+// extraction script was not kept, so this is the rule it applied:
+// - `text` is the case's `markdown`, verbatim.
+// - `links` is `obsidian.compute.links` followed by `obsidian.compute.embeds`.
+//   A fact reads `RAW=>TARGET|DISPLAY@L:C-L:C`. `kind` is "wikilink" when RAW is
+//   `[[…]]` or `![[…]]`, else "link". `embedded` is true for a compute.embeds
+//   fact. `target` is the text after `=>` up to the first `|` (wikilink) or the
+//   last `|` (Markdown destination, whose display text is the final field).
+//   Offsets are UTF-16, from line start plus column. Facts sort by start offset.
+// - `record` projects Citation eligibility only. `record.wikilinks` holds each
+//   unembedded, unaliased `[[path]]` fact with a nonempty path and no `#`
+//   subpath, as `{ kind, raw: <trimmed path>, position }`. Every other field is
+//   empty. The `deliberateDifferences` rows carry scanner-specific records: the
+//   comment and bare-URL rows, and probe/autolink/email-escaped, whose record
+//   holds its Pandoc Citation.
+// The fixture keeps only rows whose text holds a character a reference needs:
+// `[`, `@`, `<`, `]]`, `zotero`, `$`, `%%`, a backtick, `---` or `^`. The 836
+// rows without one expect an empty record from any scanner that does not throw.
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
 import { scanNote } from "./scan-note";
 import type { NoteScanRecord } from "./scan-note";
 
-// The fixture retains every source plus the complete compute.links/embeds facts,
-// converted to UTF-16 coordinates. Its record projects citation eligibility only;
-// comparing that projection alone made code/math cases with no references vacuous.
-// External URLs are absent from Obsidian's cache. The annotation conformance table
-// and the payload probes below cover those links through the full scan record.
+// External URLs are absent from Obsidian's cache. The annotation conformance
+// table and the hidden-payload cases below cover those links through the full
+// scan record.
 
 const labelPrecedence =
   "Retain Lezer's nested-label and inline-token precedence; matching Obsidian requires replacing the link/reference parser.";
@@ -34,9 +51,11 @@ type LinkFact = readonly [
 
 // Explicit alternatives pin the retained behavior as worked expectations. Every
 // row still compares its complete record; an exception never skips an assertion.
+// `recordOnly` marks a row whose links still equal the oracle's: the scanner
+// differs from the renderer in its citation fields alone.
 const deliberateDifferences: Record<
   string,
-  { reason: string; links: LinkFact[] }
+  { reason: string; links: LinkFact[]; recordOnly?: true }
 > = {
   "probe/autolink-trail/wikilink": {
     reason: bareUrls,
@@ -176,6 +195,7 @@ const deliberateDifferences: Record<
     reason:
       "The shared Pandoc grammar reads the unescaped @bar.example.com in prose; the renderer has no citation concept.",
     links: [],
+    recordOnly: true,
   },
 };
 
@@ -234,14 +254,14 @@ it.each(cases)("$id", ({ id, text, record, links }) => {
 
 it("compares every corpus case and accounts for deliberate differences (#1689)", () => {
   const ids = new Set(cases.map(({ id }) => id));
-  expect(ids.size).toBe(3448);
+  expect(ids.size).toBe(2612);
   for (const id of Object.keys(deliberateDifferences))
     expect(ids.has(id), id).toBe(true);
   const differences = Object.keys(deliberateDifferences).length;
-  expect(cases.length - differences).toBe(3402);
+  expect(cases.length - differences).toBe(2566);
   const byId = new Map(cases.map((row) => [row.id, row]));
   for (const [id, difference] of Object.entries(deliberateDifferences).filter(
-    ([id]) => id !== "probe/autolink/email-escaped",
+    ([, difference]) => !difference.recordOnly,
   )) {
     const row = byId.get(id)!;
     expect(
@@ -255,93 +275,118 @@ it("compares every corpus case and accounts for deliberate differences (#1689)",
 // make their recorded rendering boundaries observable at the scanner seam.
 const uri = "zotero://open/library/items/ABCD2345?annotation=EFGH6789";
 const payload = `[[Note]] ![[Embed]] [@key] [](${uri}) ![](${uri})`;
-const probes = [
-  ["probe/code-run/open-two-close-one", `\`\`${payload}\``, ""],
-  ["math/midline-quote", `> tail $$\n> ${payload}\n> $$`, ""],
-  ["probe/math-unclosed/four-dollars-then-heading", `$$$$\n${payload}`, ""],
-  [
-    "token/display-math/newline-escaped-close",
-    `$$\nx\\$$\n${payload}`,
-    payload,
-  ],
-  ["math/unclosed-inner", `$$\n$Math$$\n${payload}\n$$`, ""],
-  ["math/unclosed-quote-lazy", `> $$\n${payload}`, ""],
-  ["inline footnote in link label", `[^[note]](${uri})`, "annotation"],
-  [
-    "footnote definition first closing bracket",
-    "[^a] [[Note]]: body",
-    "wikilink",
-  ],
+
+// Obsidian renders each region below as code or math, so every reference in the
+// payload stays hidden.
+const hiddenPayloads = [
+  ["probe/code-run/open-two-close-one", `\`\`${payload}\``],
+  ["math/midline-quote", `> tail $$\n> ${payload}\n> $$`],
+  ["probe/math-unclosed/four-dollars-then-heading", `$$$$\n${payload}`],
+  ["math/unclosed-inner", `$$\n$Math$$\n${payload}\n$$`],
+  ["math/unclosed-quote-lazy", `> $$\n${payload}`],
 ] as const;
 
-it.each(probes)(
-  "%s: reference-bearing boundary (#1689)",
-  (_id, text, visible) => {
-    let expected: NoteScanRecord = { ...empty };
-    if (visible === payload) {
-      const from = text.indexOf(payload);
-      const citekey = from + 21;
-      const annotation = {
+it.each(hiddenPayloads)(
+  "%s: hides every reference in the payload (#1689)",
+  (_id, text) => {
+    expect(scanNote(text)).toEqual(empty);
+  },
+);
+
+const at = (line: number, col: number, offset: number) => ({
+  line,
+  col,
+  offset,
+});
+
+it("token/display-math/newline-escaped-close: an escaped $$ leaves the payload visible (#1689)", () => {
+  // The payload starts on line 2 at offset 8, after "$$\n" and "x\$$\n".
+  const text = `$$\nx\\$$\n${payload}`;
+  const annotation = {
+    indexedKey: "EFGH6789",
+    attachmentKey: "ABCD2345",
+    pageLabel: null,
+  };
+  expect(scanNote(text)).toEqual({
+    ...empty,
+    links: [
+      {
+        kind: "wikilink",
+        embedded: false,
+        target: "Note",
+        position: { start: at(2, 0, 8), end: at(2, 8, 16) },
+      },
+      {
+        kind: "wikilink",
+        embedded: true,
+        target: "Embed",
+        position: { start: at(2, 9, 17), end: at(2, 19, 27) },
+      },
+    ],
+    wikilinks: [
+      {
+        kind: "wikilink",
+        raw: "Note",
+        position: { start: at(2, 0, 8), end: at(2, 8, 16) },
+      },
+    ],
+    citations: [
+      { start: 28, end: 34, keys: [{ citekey: "key", start: 29, end: 33 }] },
+    ],
+    citekeys: [
+      {
+        kind: "citekey",
+        raw: "key",
+        position: { start: at(2, 21, 29), end: at(2, 25, 33) },
+      },
+    ],
+    annotations: [
+      {
+        ...annotation,
+        form: "citation",
+        position: { start: at(2, 27, 35), end: at(2, 87, 95) },
+      },
+      {
+        ...annotation,
+        form: "embed",
+        position: { start: at(2, 88, 96), end: at(2, 149, 157) },
+      },
+    ],
+  });
+});
+
+it("an inline footnote in a link label keeps the Annotation link labelled (#1689)", () => {
+  expect(scanNote(`[^[note]](${uri})`)).toEqual({
+    ...empty,
+    annotations: [
+      {
         indexedKey: "EFGH6789",
         attachmentKey: "ABCD2345",
         pageLabel: null,
-      };
-      expected = {
-        ...empty,
-        links: linkFacts(text, [
-          ["wikilink", false, "Note", from, from + 8],
-          ["wikilink", true, "Embed", from + 9, from + 19],
-        ]),
-        wikilinks: [
-          {
-            kind: "wikilink",
-            raw: "Note",
-            position: position(text, from, from + 8),
-          },
-        ],
-        citations: [
-          {
-            start: from + 20,
-            end: from + 26,
-            keys: [{ citekey: "key", start: citekey, end: citekey + 4 }],
-          },
-        ],
-        citekeys: [
-          {
-            kind: "citekey",
-            raw: "key",
-            position: position(text, citekey, citekey + 4),
-          },
-        ],
-        annotations: [
-          {
-            ...annotation,
-            form: "citation",
-            position: position(text, from + 27, from + 31 + uri.length),
-          },
-          {
-            ...annotation,
-            form: "embed",
-            position: position(text, from + 32 + uri.length, text.length),
-          },
-        ],
-      };
-    } else if (visible === "annotation") {
-      expected.annotations = [
-        {
-          indexedKey: "EFGH6789",
-          attachmentKey: "ABCD2345",
-          pageLabel: null,
-          form: "labelled",
-          position: position(text, 0, text.length),
-        },
-      ];
-    } else if (visible === "wikilink") {
-      expected.links = linkFacts(text, [["wikilink", false, "Note", 5, 13]]);
-      expected.wikilinks = [
-        { kind: "wikilink", raw: "Note", position: position(text, 5, 13) },
-      ];
-    }
-    expect(scanNote(text)).toEqual(expected);
-  },
-);
+        form: "labelled",
+        position: { start: at(0, 0, 0), end: at(0, 67, 67) },
+      },
+    ],
+  });
+});
+
+it("a footnote definition ends at its first closing bracket, so a following Wikilink stays visible (#1689)", () => {
+  expect(scanNote("[^a] [[Note]]: body")).toEqual({
+    ...empty,
+    links: [
+      {
+        kind: "wikilink",
+        embedded: false,
+        target: "Note",
+        position: { start: at(0, 5, 5), end: at(0, 13, 13) },
+      },
+    ],
+    wikilinks: [
+      {
+        kind: "wikilink",
+        raw: "Note",
+        position: { start: at(0, 5, 5), end: at(0, 13, 13) },
+      },
+    ],
+  });
+});

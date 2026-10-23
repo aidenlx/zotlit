@@ -12,7 +12,8 @@ import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { Citation } from "@/services/citation-index/service";
 import {
   ALPHA_KEY,
@@ -141,19 +142,16 @@ async function makeHarness({
   let resolutionReady = !resolutionPending;
   const resolutionListeners = new Set<() => void>();
   const answer = (requested: readonly string[]): CitationLookupAnswer =>
-    new CitationLookupAnswer({
-      annotationKeys: new Map(),
-      revision: JSON.stringify(ambiguous),
-      citekeys: new Map(
-        requested.map((citekey) => [
+    lookupAnswerFor(
+      requested,
+      Object.fromEntries(
+        ambiguous.map((citekey) => [
           citekey,
-          ambiguous.includes(citekey)
-            ? { kind: "ambiguous" as const, candidates: [] }
-            : { kind: "missing" as const },
+          { kind: "ambiguous" as const, candidates: [] },
         ]),
       ),
-      indexedKeys: new Map(),
-    });
+      JSON.stringify(ambiguous),
+    );
 
   const citationLookup = new CitationLookupStub(({ citekeys = [] }) =>
     resolutionReady ? answer(citekeys) : null,
