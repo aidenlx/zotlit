@@ -455,7 +455,7 @@ export class TemplateService extends Service<void> {
     // The built-in `content` renders inline; only a vault `content` template
     // keeps its Managed Region on create.
     transformRender: (name, output) =>
-      this.#contentIsManaged() ? wrapManagedContent(name, output) : output,
+      this.#contentIsVaultBacked() ? wrapManagedContent(name, output) : output,
   });
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, CompileError>();
@@ -1082,11 +1082,11 @@ export class TemplateService extends Service<void> {
    */
   renderManagedContent<T extends object>(data: T): string {
     const output = this.render(MANAGED_CONTENT_TEMPLATE, data);
-    return this.#contentIsManaged() ? output : formatManagedRegion(output);
+    return this.#contentIsVaultBacked() ? output : formatManagedRegion(output);
   }
 
-  /** Whether a vault file backs the `content` slot, whose render the facade wraps. */
-  #contentIsManaged(): boolean {
+  /** Whether a vault file backs the `content` slot; the facade wraps only that render. */
+  #contentIsVaultBacked(): boolean {
     return this.#winners.get(MANAGED_CONTENT_TEMPLATE)?.source.kind === "vault";
   }
 
@@ -1771,7 +1771,7 @@ export class TemplateService extends Service<void> {
           frontmatter:
             this.#settings.current?.["note.frontmatter-fields"] ?? [],
           javascript: this.#javascriptTemplatesEnabled,
-          managed: this.#contentIsManaged(),
+          managed: this.#contentIsVaultBacked(),
         },
       ),
       legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),

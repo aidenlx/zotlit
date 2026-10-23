@@ -9,7 +9,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-A literature note is an Obsidian Markdown file linked one-to-one with a Zotero item. ZotLit uses a marked region inside the note to keep Zotero-derived content up to date without overwriting anything you write yourself.
+A literature note is an Obsidian Markdown file linked one-to-one with a Zotero item. A profile can mark a region inside the note that ZotLit keeps up to date, without overwriting anything you write yourself.
 
 ## What makes a file a literature note
 
@@ -25,7 +25,7 @@ The update and overwrite commands only appear in the command palette and context
 
 ## The managed region
 
-Every literature note is governed by one [profile](/docs/concepts/profiles). The profile supplies the note source, the text ZotLit renders into the note, and the note source marks the Zotero-derived part of it with a managed block, `{% managed %}` and `{% endmanaged %}`. See [Profile document](/docs/reference/templates/profile-document) for the document that carries the source, and [How templates work](/docs/concepts/how-templates-work) for how ZotLit finds it.
+Every literature note is governed by one [profile](/docs/concepts/profiles). The profile supplies the note source, the text ZotLit renders into the note, and the note source can mark part of it with a managed block, `{% managed %}` and `{% endmanaged %}`. The Default profile has no managed block: its body renders once, when ZotLit creates the note, and is yours afterwards. See [Profile document](/docs/reference/templates/profile-document) for the document that carries the source, and [How templates work](/docs/concepts/how-templates-work) for how ZotLit finds it.
 
 When ZotLit creates or overwrites a literature note, it renders the note source. Where the note source has a managed block, its output goes into the note body inside comment markers:
 
@@ -39,11 +39,11 @@ ZotLit owns everything between these two markers. Your own writing goes above or
 
 ### What the region contains
 
-The managed region holds the output of the managed block in the profile that governs the note. In the Default profile, the block produces a **Notes** section linking the item's Zotero child notes, and an **Annotations** section with a live [query block](/docs/concepts/query-files-and-query-blocks) showing your annotations as interactive cards.
+The managed region holds the output of the managed block in the profile that governs the note. The Default profile has no managed block, so a new default note has no managed region. Its **Annotations** section holds a live [query block](/docs/concepts/query-files-and-query-blocks) that shows your annotations as interactive cards, and stays current without an update. A note made with an earlier default can still carry the markers; there the region holds that section.
 
 If you customize your profile to render annotations as text rather than a query block, each annotation renders through the profile's Annotation Section. See [Default templates](/docs/reference/templates/defaults#content-template).
 
-The rest of the note source sits outside the managed block. In the Default profile, that places the title heading, the Zotero backlink, and the attachment file links above the managed region at creation time. The attachment links point to the original files and do not copy them into the vault. For a Zotero linked file, the original can be in an external folder. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files). A link to a PDF in your Zotero library [opens in Obsidian](/docs/how-to/open-pdf-in-obsidian) when you click it, unless <UiLabel name={m.settings_reader_open_file_links_name()} /> is off. These lines sit outside the markers and are not touched by updates.
+Text outside a managed block renders once, at creation time. In the Default profile, that covers the title heading, the Zotero backlink, and the attachment file links. The attachment links point to the original files and do not copy them into the vault. For a Zotero linked file, the original can be in an external folder. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files). A link to a PDF in your Zotero library [opens in Obsidian](/docs/how-to/open-pdf-in-obsidian) when you click it, unless <UiLabel name={m.settings_reader_open_file_links_name()} /> is off. Updates do not touch these lines.
 
 ### How updates use the region
 
@@ -55,7 +55,12 @@ can pull in new annotations or updated metadata without disturbing your own
 notes, links, or tags.
 
 A profile whose note source has no managed block updates the frontmatter only.
-The note body has no region to replace.
+The note body has no region to replace. The built-in Default profile is the one
+exception: on a note made with an earlier default that still has the markers, an
+update re-renders the region with the Annotations section.
+
+To stop ZotLit managing a region, delete the `%%zt-managed%%` and
+`%%/zt-managed%%` lines. The next update leaves the body untouched.
 
 <Command inline name={m.command_update_note_metadata_name()} /> is a lighter
 operation. It refreshes frontmatter only and never touches the note body.

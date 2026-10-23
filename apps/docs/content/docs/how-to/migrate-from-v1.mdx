@@ -17,7 +17,7 @@ ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, bu
 
 - **Required to restore note generation:** Rename template files to the v2 pattern, replace `it.*` with `zt.*`, and [enable the <UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates). Without these steps, v2 falls back to built-in defaults that do not reflect your customizations.
 - **Automatic (no action):** Settings, including folder paths and custom frontmatter fields. Migrated on first load.
-- **Optional:** Run <Command inline name={m.command_overwrite_note_name()} /> on v1 notes to add the managed region for incremental body updates.
+- **Optional:** Run <Command inline name={m.command_overwrite_note_name()} /> on v1 notes to add the managed region for incremental body updates. This needs a template with a managed block, such as a renamed `zotlit-content` file; the built-in default has none.
 
 </Callout>
 
@@ -126,7 +126,7 @@ Adding the managed region is optional. You do not need to do it immediately or f
   <Step>
     ### Verify the managed region
 
-    After overwriting, the note contains `%%zt-managed%%` markers. It now responds to <Command inline name={m.command_update_note_name()} /> for incremental updates.
+    When your template has a managed block, the overwritten note contains `%%zt-managed%%` markers. It now responds to <Command inline name={m.command_update_note_name()} /> for incremental updates. The built-in default has no managed block, so its body renders once and later updates refresh frontmatter only.
 
   </Step>
 </Steps>

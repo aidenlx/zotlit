@@ -30,6 +30,7 @@ import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/scripts/fixture";
 
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { prepareRunWindow } from "./background-throttling.ts";
+import { noteBody } from "./e2e-run-note-helpers.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
@@ -7532,10 +7533,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             `(async()=>{const services=app.plugins.plugins.zotlit.services;const result=await services.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(itemKey)},scope:'full'});return JSON.stringify({diagnostic:result.diagnostic??null});})()`,
           );
-        const bodyOf = (text: string) => text.slice(text.indexOf("\n---\n"));
         const beforeUpdate = await read();
         expect(await update()).toEqual({ diagnostic: null });
-        expect(bodyOf(await read())).toBe(bodyOf(beforeUpdate));
+        expect(noteBody(await read())).toBe(noteBody(beforeUpdate));
 
         // A note ZotLit wrote before Mark Landing, with a static listing of
         // one callout per Annotation under a plain page label in a Managed

@@ -1030,7 +1030,6 @@ async function writeNewNote(
   ctx: OpsContext,
   item: Item,
   options: {
-    /** Bound to the create's Snapshot. */
     reads: ZoteroReadsApi;
     /** The item's bundle, read under the same Snapshot. */
     source: NoteSource;
