@@ -252,6 +252,7 @@ interface ProfileEngineDeps {
   settings: Pick<PlainPluginSettings, "current">;
   template: Pick<
     PlainTemplate,
+    | "status"
     | "exportLiteratureNotePackSource"
     | "getPartialEntries"
     | "planPartialUnpack"
@@ -275,6 +276,7 @@ class ProfileEngine {
   #defaultDocument: string | undefined;
   #defaultExcluded = false;
   #loaded = false;
+  #scannedTemplateStatus: PlainTemplate["status"] | undefined;
 
   constructor(deps: ProfileEngineDeps) {
     this.#deps = deps;
@@ -1064,6 +1066,10 @@ class ProfileEngine {
   }
 
   scan(): void {
+    const templateStatus = this.#deps.template.status;
+    // Template publishes a new snapshot when its inputs change, including
+    // template bodies and partials that the Profile manifest does not carry.
+    if (templateStatus === this.#scannedTemplateStatus) return;
     this.#profiles = [];
     this.#diagnostics = [];
     this.#defaultDocument = undefined;
@@ -1149,6 +1155,7 @@ class ProfileEngine {
       },
     );
     this.#loaded = true;
+    this.#scannedTemplateStatus = templateStatus;
     this.#deps.changed();
   }
 }
@@ -1481,6 +1488,9 @@ export const layerProfile = Layer.effect(
         },
       },
       template: {
+        get status() {
+          return runSync(template.status);
+        },
         exportLiteratureNotePackSource: (...args) =>
           runPromise(template.exportLiteratureNotePackSource(...args)),
         getPartialEntries: () => read(template.getPartialEntries()),
@@ -1537,6 +1547,8 @@ export const layerProfile = Layer.effect(
     // Legacy ready covered this registry scan only. Template's own layer owns
     // its first read; NoteIndex's layout-ready indexing is not part of this barrier.
     yield* scan();
+    // Legacy ready kept its initial failure for the service's whole lifetime.
+    const startupFailure = (yield* SubscriptionRef.get(state)).failure;
     yield* Stream.runForEach(template.changes, () => scan()).pipe(
       Effect.forkScoped({ startImmediately: true }),
     );
@@ -1559,12 +1571,14 @@ export const layerProfile = Layer.effect(
       effect: Effect.Effect<A, ProfileOperationError>,
       write = false,
     ) =>
-      closed
-        ? effect
-        : Effect.forkIn(effect, operations, {
-            startImmediately: true,
-            uninterruptible: write,
-          }).pipe(Effect.flatMap(Fiber.join));
+      startupFailure
+        ? Effect.failCause(startupFailure)
+        : closed
+          ? effect
+          : Effect.forkIn(effect, operations, {
+              startImmediately: true,
+              uninterruptible: write,
+            }).pipe(Effect.flatMap(Fiber.join));
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         closed = true;

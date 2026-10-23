@@ -96,6 +96,48 @@ it.effect(
 );
 
 it.effect(
+  "#1705: failed Template startup rejects Default restoration before touching the document",
+  () =>
+    Effect.gen(function* () {
+      const path = "templates/zotlit-profile.default.md";
+      const source = "The researcher's existing Default document";
+      const host = createTemplateHost({ [path]: source });
+      yield* acquireDisposable(() =>
+        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+          throw new Error("Vault unavailable");
+        }),
+      );
+      const { profile } = yield* profileRuntimeOf(host);
+      expect(profile.loaded).toBe(false);
+      yield* Effect.promise(() =>
+        expect(profile.restoreDefault()).rejects.toThrow(),
+      );
+      expect(host.vault.contents.get(path)).toBe(source);
+    }),
+);
+
+it.effect(
+  "#1705: failed Template startup blocks Default creation through either write entry point",
+  () =>
+    Effect.gen(function* () {
+      const host = createTemplateHost();
+      yield* acquireDisposable(() =>
+        vi.spyOn(host.vault, "getFolderByPath").mockImplementationOnce(() => {
+          throw new Error("Vault unavailable");
+        }),
+      );
+      const { profile } = yield* profileRuntimeOf(host);
+      yield* Effect.promise(() =>
+        expect(profile.materializeDefault()).rejects.toThrow(),
+      );
+      yield* Effect.promise(() =>
+        expect(profile.ejectDefault()).rejects.toThrow(),
+      );
+      expect([...host.vault.contents.keys()]).toEqual([]);
+    }),
+);
+
+it.effect(
   "#1705: runtime disposal stops Profile listeners and retains the plain read surface",
   () =>
     Effect.gen(function* () {
