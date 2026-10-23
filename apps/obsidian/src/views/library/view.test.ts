@@ -37,7 +37,7 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { SettingsService } from "@/services/settings/service";
 import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
@@ -581,7 +581,7 @@ function pluginData(stored?: unknown) {
     welcome: {
       app: host.app,
       reads: readsDeps,
-      queries: new QueryClientService(),
+      queries: queryClientsFixture(),
       zoteroPref: { dataDir: "/Zotero" },
       settings,
       setupActions,

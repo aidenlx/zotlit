@@ -5,7 +5,7 @@ import { hashKey } from "@tanstack/query-core";
 import type { QueryFunctionContext, QueryKey } from "@tanstack/query-core";
 
 import { getLogger } from "@/lib/log";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import { Service } from "@/services/service-base";
 
 import {
@@ -105,7 +105,7 @@ interface Card {
 export interface ExcerptDisplayDeps {
   /** The plugin's one query client, where every display read is held. */
   queries: Pick<
-    QueryClientService,
+    PlainQueryClients,
     "client" | "invalidate" | "peek" | "read" | "watch"
   >;
   /** One resolution of one request, through the shared PDF queue. */

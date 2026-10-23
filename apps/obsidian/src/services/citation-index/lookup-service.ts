@@ -7,7 +7,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { Deferred, Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { Held, QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -18,7 +19,7 @@ import type { CitationLookupRequest } from "./lookup";
 const logger = getLogger("citation-index");
 
 export interface CitationLookupDeps {
-  queryClient: QueryClientService;
+  queryClient: Pick<PlainQueryClients, "client" | "invalidate">;
   libraryScope: Pick<LibraryScopeService, "ready" | "effective" | "on">;
   reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
 }
