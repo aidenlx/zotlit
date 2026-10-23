@@ -7,7 +7,7 @@ import type { AttachmentImportService } from "@/services/attachment-import/servi
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
@@ -111,7 +111,10 @@ export interface SettingTabContext {
     "refresh" | "state" | "error" | "on" | "activeReadMode"
   >;
   /** The live Library Scope the Library scope rows read and repair. */
-  libraryScope: LibraryScopeService;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "current" | "effective" | "invalid" | "libraries" | "on"
+  >;
   zoteroPref: Pick<
     PlainZoteroPref,
     | "state"

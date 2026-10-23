@@ -3,7 +3,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import type { LibraryScopeService } from "./service";
+import type { PlainLibraryScope } from "./plain";
 
 interface LibraryScopeNoticeCopy {
   title: string;
@@ -24,7 +24,7 @@ interface LibraryScopeNoticeHandle {
  * @param openSettings reveals the Library scope row so the user can repair it.
  */
 export function registerLibraryScopeNotices(
-  service: LibraryScopeService,
+  service: Pick<PlainLibraryScope, "invalid" | "on">,
   openSettings: () => void,
 ): () => void {
   return subscribeLibraryScopeInvalid(service, () =>
@@ -38,7 +38,7 @@ export function registerLibraryScopeNotices(
  * a user who breaks the value again is told again.
  */
 export function subscribeLibraryScopeInvalid(
-  service: Pick<LibraryScopeService, "invalid" | "on">,
+  service: Pick<PlainLibraryScope, "invalid" | "on">,
   showNotice: () => LibraryScopeNoticeHandle,
 ): () => void {
   let notice: LibraryScopeNoticeHandle | null = null;

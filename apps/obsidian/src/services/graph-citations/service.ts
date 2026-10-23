@@ -28,7 +28,7 @@ import type {
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -85,7 +85,7 @@ const CITATION_INDEX_EVENTS = [
 export interface GraphCitationsDeps {
   app: App;
   reads: Pick<PlainZoteroReads, "reads" | "on">;
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
   citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
   citationLookup: Pick<CitationLookup, "observe">;
   noteIndex: Pick<

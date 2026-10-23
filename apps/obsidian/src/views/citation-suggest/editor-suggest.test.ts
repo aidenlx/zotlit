@@ -545,7 +545,6 @@ describe("Citation Suggester document citations", () => {
       reads,
       useLedger: { uses: {} },
       libraryScope: {
-        ready: Promise.resolve(),
         on: () => () => {},
         current: {
           mode: "all",

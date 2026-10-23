@@ -333,7 +333,6 @@ export default defineConfig({
         "src/services/graph-citations/service.ts",
         "src/services/item-lookup/service.ts",
         "src/services/item-query/service.ts",
-        "src/services/library-scope/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/local-server/service.ts",
         "src/services/pandoc/render-cache.ts",

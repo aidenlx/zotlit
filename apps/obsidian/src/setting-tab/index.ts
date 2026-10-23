@@ -3,7 +3,7 @@ import type { SettingDefinitionItem } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -62,7 +62,10 @@ export interface ZotLitSettingTabOptions {
     PlainZoteroReads,
     "refresh" | "state" | "error" | "on" | "activeReadMode"
   >;
-  libraryScope: LibraryScopeService;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "current" | "effective" | "invalid" | "libraries" | "on"
+  >;
   zoteroPref: SettingTabContext["zoteroPref"];
   localServer: LocalServerActions;
   localBridge: LocalBridgeActions;
@@ -95,7 +98,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     PlainZoteroReads,
     "refresh" | "state" | "error" | "on" | "activeReadMode"
   >;
-  readonly #libraryScope: LibraryScopeService;
+  readonly #libraryScope: Pick<
+    PlainLibraryScope,
+    "current" | "effective" | "invalid" | "libraries" | "on"
+  >;
   readonly #zoteroPref: SettingTabContext["zoteroPref"];
   readonly #localServer: LocalServerActions;
   readonly #localBridge: LocalBridgeActions;

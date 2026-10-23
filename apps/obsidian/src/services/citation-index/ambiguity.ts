@@ -7,8 +7,8 @@ import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { SnapshotItem } from "./snapshot";
@@ -62,7 +62,7 @@ export type AmbiguousCandidatesOf = (
 export interface CandidateDeps {
   db: Pick<PlainZoteroReads, "reads">;
   /** Names the Library each candidate lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
 }
 
 /**

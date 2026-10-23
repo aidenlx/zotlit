@@ -6,7 +6,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Deferred, Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
@@ -20,7 +20,7 @@ const logger = getLogger("citation-index");
 
 export interface CitationLookupDeps {
   queryClient: Pick<PlainQueryClients, "client" | "invalidate">;
-  libraryScope: Pick<LibraryScopeService, "ready" | "effective" | "on">;
+  libraryScope: Pick<PlainLibraryScope, "effective" | "on">;
   reads: Pick<PlainZoteroReads, "reads" | "state" | "on">;
 }
 
@@ -83,7 +83,6 @@ export class CitationLookup extends Service {
     return Effect.runPromise(
       Effect.gen({ self: this }, function* () {
         yield* Effect.tryPromise(() => this.ready);
-        yield* Effect.tryPromise(() => this.#deps.libraryScope.ready);
         const client = this.#deps.reads.reads;
         while (true) {
           if (this.#deps.reads.state !== "ready") {

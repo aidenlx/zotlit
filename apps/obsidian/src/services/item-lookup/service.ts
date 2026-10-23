@@ -19,12 +19,12 @@
 import { Effect, Exit, FiberHandle, FiberSet, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { selectorKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -54,7 +54,7 @@ export interface SearchHit extends ReadsSearchHit {
 export interface ItemLookupDeps {
   useLedger: Pick<PlainUseLedger, "uses">;
   reads: Pick<PlainZoteroReads, "reads">;
-  libraryScope: Pick<LibraryScopeService, "ready" | "on" | "current">;
+  libraryScope: Pick<PlainLibraryScope, "on" | "current">;
 }
 
 /**
@@ -216,7 +216,6 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
     this.commit(stack.move());
 
-    await this.#libraryScope.ready;
     logger.info("Item lookup ready");
     scopeKey = scopeKeyOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);

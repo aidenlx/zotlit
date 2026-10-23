@@ -16,7 +16,6 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { delimited } from "@zotlit/shared/delimited";
 
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import {
   buildUseLedger,
   fakeApp,
@@ -67,9 +66,8 @@ function setup(
       baseAttachmentPath: join(dirname(scenario.path), "linked"),
     },
     libraryScope: {
-      ready: Promise.resolve(),
       effective: MY_LIBRARY_SCOPE,
-    } as LibraryScopeService,
+    },
     vault: {
       getName: () => "Query tests",
       adapter: { getBasePath: () => dirname(scenario.path) },
@@ -844,45 +842,6 @@ describe("Item Query worker jobs", () => {
       name: "AbortError",
     });
   });
-
-  it("rejects each query and schema request with the startup failure", async () => {
-    using scenario = openScenarioDatabase();
-    await using reads = inProcessReadsService(sharedClientOpener(scenario.db));
-    const startup = new Error("the Library Scope did not load");
-    const failed: Promise<void> = Promise.reject(startup);
-    failed.catch(() => {});
-    const service = new QueryService({
-      pluginVersion: "2.2.0-beta.2",
-      useLedger: inertUseLedger,
-      reads,
-      zoteroPref: {
-        sourceId: "captured-source",
-        databasePath: scenario.path,
-        dataDir: dirname(scenario.path),
-        baseAttachmentPath: null,
-      },
-      libraryScope: {
-        ready: failed,
-        effective: MY_LIBRARY_SCOPE,
-      } as LibraryScopeService,
-      vault: {
-        getName: () => "Query tests",
-        adapter: { getBasePath: () => dirname(scenario.path) },
-      } as unknown as Vault,
-    });
-    await using _owned = service;
-    // One request starts before startup fails, the others after it.
-    const early = service.query({ from: "items", id: "early" }, signal());
-
-    await expect(early).rejects.toBe(startup);
-    await expect(service.ready).rejects.toBe(startup);
-    await expect(service.query({ from: "items" }, signal())).rejects.toBe(
-      startup,
-    );
-    await expect(service.schema({ from: "items" }, signal())).rejects.toBe(
-      startup,
-    );
-  });
 });
 
 it("resolves the file of each Attachment that an Annotation Query projects", async () => {
@@ -1392,7 +1351,7 @@ it("tells a Query View of a Use recorded after it subscribes", async () => {
       pluginVersion: "2.2.0-beta.2",
       useLedger,
       reads: { ready: Promise.resolve() },
-      libraryScope: { ready: Promise.resolve() },
+      libraryScope: { effective: { mode: "all" } },
     } as unknown as ConstructorParameters<typeof QueryService>[0]),
   );
   const changed = vi.fn();

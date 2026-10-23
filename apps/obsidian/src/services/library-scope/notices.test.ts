@@ -4,7 +4,7 @@ import {
   libraryScopeInvalidNotice,
   subscribeLibraryScopeInvalid,
 } from "./notices";
-import type { LibraryScopeService } from "./service";
+import type { PlainLibraryScope } from "./plain";
 
 describe("libraryScopeInvalidNotice", () => {
   it("carries the approved copy and opens settings through its action", () => {
@@ -72,7 +72,7 @@ function subscribe(scope: ReturnType<typeof fakeScope>) {
   const hide = vi.fn();
   const showNotice = vi.fn(() => ({ hide }));
   const dispose = subscribeLibraryScopeInvalid(
-    scope as unknown as Pick<LibraryScopeService, "invalid" | "on">,
+    scope as unknown as Pick<PlainLibraryScope, "invalid" | "on">,
     showNotice,
   );
   return { dispose, showNotice, hide };

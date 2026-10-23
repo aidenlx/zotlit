@@ -27,7 +27,7 @@ import type {
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   LocalServerService,
   ReaderTarget,
@@ -124,7 +124,7 @@ const VIEW_MENU_SECTIONS = [
  */
 export interface AnnotViewDeps extends QueryViewDeps {
   reads: Pick<PlainZoteroReads, "reads" | "state" | "on" | "acquireRead">;
-  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on" | "current">;
+  libraryScope: Pick<PlainLibraryScope, "libraryRows" | "on" | "current">;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"

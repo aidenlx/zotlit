@@ -28,11 +28,11 @@ import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { QueryService } from "@/services/item-query/service";
 import { libraryLabel } from "@/services/library-scope/label";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   AvailableLibrary,
   LibraryScope,
 } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
@@ -61,7 +61,7 @@ const logger = getLogger(["library-view", "tree"]);
 export interface LibraryTreeDeps {
   reads: Pick<PlainZoteroReads, "on" | "acquireRead">;
   query: Pick<QueryService, "run">;
-  libraryScope: Pick<LibraryScopeService, "on" | "current" | "libraries">;
+  libraryScope: Pick<PlainLibraryScope, "on" | "current" | "libraries">;
   /** The Literature Notes the unread count leaves out. */
   literatureNotes: Pick<LiteratureNotes, "find" | "on">;
 }
