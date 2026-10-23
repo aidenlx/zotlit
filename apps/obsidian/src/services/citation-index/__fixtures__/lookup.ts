@@ -8,6 +8,7 @@ export function lookupAnswer(
   revision = "fixture:1",
 ): CitationLookupAnswer {
   return new CitationLookupAnswer({
+    annotationKeys: new Map(),
     revision,
     citekeys: new Map(Object.entries(citekeys)),
     indexedKeys: new Map(Object.entries(indexedKeys)),

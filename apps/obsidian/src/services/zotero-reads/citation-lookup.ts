@@ -3,6 +3,9 @@ import {
   getLastItemID,
   getCitekeyWindow,
   getLibraries,
+  getAnnotationParentKey,
+  parseIndexedKey,
+  resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -12,6 +15,7 @@ import { getLogger } from "@/lib/log";
 import type {
   CitationLookupRequest,
   CitationLookupWireAnswer,
+  AnnotationParent,
 } from "@/services/citation-index/lookup";
 import { CitekeySnapshot } from "@/services/citation-index/snapshot";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -121,25 +125,67 @@ export const makeCitationLookup = Effect.fnUntraced(function* (
   ): Effect.fn.Return<CitationLookupWireAnswer, DbUnavailable> {
     const scope = JSON.stringify(request.scope);
     while (true) {
-      const client = yield* Effect.scoped(connection.borrow);
-      const current = published;
-      if (current?.client === client && current.scope === scope) {
-        return {
-          revision: current.revision,
-          citekeys: new Map(
-            (request.citekeys ?? []).map((key) => [
-              key,
-              current.snapshot.resolve(key),
-            ]),
-          ),
-          indexedKeys: new Map(
-            (request.indexedKeys ?? []).map((key) => [
-              key,
-              current.snapshot.citekeyOf(key),
-            ]),
-          ),
-        };
-      }
+      const answer = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const client = yield* connection.borrow;
+          const current = published;
+          if (current?.client === client && current.scope === scope) {
+            const annotationKeys = new Map<string, AnnotationParent | null>();
+            let deadline = performance.now() + 4;
+            for (const key of new Set(request.annotationKeys ?? [])) {
+              if (performance.now() >= deadline) {
+                yield* Effect.yieldNow;
+                deadline = performance.now() + 4;
+              }
+              const parent = yield* Effect.try({
+                try: () => {
+                  const identity = resolveIndexedKeyLibrary(client, key);
+                  if (!identity) return null;
+                  const parentKey = getAnnotationParentKey(
+                    client,
+                    identity.key,
+                    identity.libraryID,
+                  );
+                  if (parentKey === null) return null;
+                  const indexedKey = formatIndexedKey(
+                    parentKey,
+                    parseIndexedKey(key)!.groupID,
+                  );
+                  return {
+                    indexedKey,
+                    citekey: current.snapshot.citekeyOf(indexedKey),
+                  };
+                },
+                catch: toDbUnavailable,
+              });
+              annotationKeys.set(key, parent);
+            }
+            if (
+              annotationKeys.size > 0 &&
+              (yield* Effect.scoped(connection.borrow)) !== client
+            )
+              return null;
+            return {
+              revision: current.revision,
+              annotationKeys,
+              citekeys: new Map(
+                (request.citekeys ?? []).map((key) => [
+                  key,
+                  current.snapshot.resolve(key),
+                ]),
+              ),
+              indexedKeys: new Map(
+                (request.indexedKeys ?? []).map((key) => [
+                  key,
+                  current.snapshot.citekeyOf(key),
+                ]),
+              ),
+            };
+          }
+          return null;
+        }),
+      );
+      if (answer !== null) return answer;
       // A caller owns only its wait. The worker lifetime owns the shared build
       // and its connection borrow, even if the initiating caller cancels.
       const running = yield* Effect.uninterruptible(

@@ -22,6 +22,172 @@ insert into groups (groupID, libraryID, name) values (7, 2, 'Group');
 ${worksSql([{ itemID: 2, libraryID: 2, key: "GROUPKEY", citationKey: "shared" }])}
 `;
 
+const annotationSeed = () => `${seed()}
+${worksSql([{ itemID: 3, key: "NOCITEKY" }])}
+insert into itemTypes (itemTypeID, typeName) values (100, 'annotation');
+insert into items (itemID, itemTypeID, libraryID, key) values
+  (10, 99, 1, 'PDF23456'), (11, 100, 1, 'ANN23456'),
+  (20, 99, 2, 'PDF23456'), (21, 100, 2, 'ANN23456'),
+  (30, 99, 1, 'PDFSTAND'), (31, 100, 1, 'ANNSTAND'),
+  (40, 99, 1, 'PDFNCKEY'), (41, 100, 1, 'ANNNCKEY');
+insert into itemAttachments (itemID, parentItemID, linkMode) values
+  (10, 1, 0), (20, 2, 0), (30, null, 0), (40, 3, 0);
+insert into itemAnnotations (itemID, parentItemID, type) values
+  (11, 10, 1), (21, 20, 1), (31, 30, 1), (41, 40, 1);
+`;
+
+it("resolves an Annotation to its parent Item and Citation Key (#1690)", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const client = yield* inProcessClient(
+          layerRcRef(memoryOpener(annotationSeed).open),
+        );
+        const answer = new CitationLookupAnswer(
+          yield* client.CitationLookup({
+            scope: MY_LIBRARY_SCOPE,
+            annotationKeys: ["ANN23456"],
+          }),
+        );
+        expect(answer.parentOfAnnotation("ANN23456")).toEqual({
+          indexedKey: "PERSONAL",
+          citekey: "shared",
+        });
+      }),
+    ),
+  );
+});
+
+it("answers Annotation Indexed Keys across Libraries and distinguishes missing from unkeyed parents (#1690)", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const client = yield* inProcessClient(
+          layerRcRef(memoryOpener(annotationSeed).open),
+        );
+        const wire = yield* client.CitationLookup({
+          scope: MY_LIBRARY_SCOPE,
+          annotationKeys: [
+            "ANN23456g7",
+            "ANNSTAND",
+            "ANNNCKEY",
+            "ZZZZZZZZ",
+            "ANN23456g8",
+            "PDF23456",
+          ],
+        });
+        const answer = new CitationLookupAnswer(wire);
+        expect(answer.parentOfAnnotation("ANN23456g7")).toEqual({
+          indexedKey: "GROUPKEYg7",
+          citekey: "shared",
+        });
+        expect(answer.parentOfAnnotation("ANNSTAND")).toEqual({
+          indexedKey: "PDFSTAND",
+          citekey: null,
+        });
+        expect(answer.parentOfAnnotation("ANNNCKEY")).toEqual({
+          indexedKey: "NOCITEKY",
+          citekey: null,
+        });
+        expect(answer.parentOfAnnotation("ZZZZZZZZ")).toBeNull();
+        expect(answer.parentOfAnnotation("ANN23456g8")).toBeNull();
+        expect(answer.parentOfAnnotation("PDF23456")).toBeNull();
+        expect(wire.annotationKeys.size).toBe(6);
+      }),
+    ),
+  );
+});
+
+it("rejects an unrequested Annotation key even when it exists (#1690)", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const client = yield* inProcessClient(
+          layerRcRef(memoryOpener(annotationSeed).open),
+        );
+        const answer = new CitationLookupAnswer(
+          yield* client.CitationLookup({
+            scope: MY_LIBRARY_SCOPE,
+            annotationKeys: ["ZZZZZZZZ"],
+          }),
+        );
+        expect(answer.coversAnnotationKey("ZZZZZZZZ")).toBe(true);
+        expect(answer.coversAnnotationKey("ANN23456")).toBe(false);
+        expect(() => answer.parentOfAnnotation("ANN23456")).toThrow(
+          'Annotation Indexed Key "ANN23456" was not requested',
+        );
+      }),
+    ),
+  );
+});
+
+it("keeps DbUnavailable distinct from a missing Annotation (#1690)", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        let available = false;
+        const client = yield* inProcessClient(
+          layerRcRef(
+            memoryOpener(() => (available ? annotationSeed() : null)).open,
+          ),
+        );
+        const request = {
+          scope: MY_LIBRARY_SCOPE,
+          annotationKeys: ["ZZZZZZZZ"],
+        };
+        expect(
+          yield* Effect.flip(client.CitationLookup(request)),
+        ).toMatchObject({ _tag: "DbUnavailable" });
+        available = true;
+        yield* client.Refresh();
+        const answer = new CitationLookupAnswer(
+          yield* client.CitationLookup(request),
+        );
+        expect(answer.parentOfAnnotation("ZZZZZZZZ")).toBeNull();
+      }),
+    ),
+  );
+});
+
+it("reads moved Annotations and reparented Attachments from the refreshed copy (#1690)", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        let changes = "";
+        const client = yield* inProcessClient(
+          layerRcRef(memoryOpener(() => annotationSeed() + changes).open),
+        );
+        const request = {
+          scope: MY_LIBRARY_SCOPE,
+          annotationKeys: ["ANN23456", "ANNNCKEY"],
+        };
+        const first = new CitationLookupAnswer(
+          yield* client.CitationLookup(request),
+        );
+        changes =
+          "update itemAnnotations set parentItemID = 30 where itemID = 11; update itemAttachments set parentItemID = 1 where itemID = 40;";
+        yield* client.Refresh();
+        const next = new CitationLookupAnswer(
+          yield* client.CitationLookup(request),
+        );
+        expect(next.parentOfAnnotation("ANN23456")).toEqual({
+          indexedKey: "PDFSTAND",
+          citekey: null,
+        });
+        expect(next.parentOfAnnotation("ANNNCKEY")).toEqual({
+          indexedKey: "PERSONAL",
+          citekey: "shared",
+        });
+        expect(first.parentOfAnnotation("ANN23456")).toEqual({
+          indexedKey: "PERSONAL",
+          citekey: "shared",
+        });
+        expect(next.revision).toBe(first.revision);
+      }),
+    ),
+  );
+});
+
 it("answers one requested batch with scope-limited forward and all-library reverse lookups", async () => {
   await Effect.runPromise(
     Effect.scoped(

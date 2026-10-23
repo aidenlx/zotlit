@@ -513,6 +513,7 @@ class CitationIndexStub {
     if (this.cold) return null;
     const requested = new Set(citekeys);
     const value = new CitationLookupAnswer({
+      annotationKeys: new Map(),
       revision: `test-${this.#revision}`,
       citekeys: new Map(
         [...requested].map((citekey) => [
