@@ -102,8 +102,8 @@ export const workerClient = Effect.fnUntraced(function* ({
     zoteroPref.on("resolved-changed", push),
     chineseSegmenter.subscribe(push),
   ];
-  // Cache discovery can finish while the worker connects. Read it again once
-  // the subscription is in place, so that initial change reaches the worker.
+  // Settings or binary status can change while the worker connects. Read
+  // them again after subscribing so those changes reach the worker.
   push();
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {

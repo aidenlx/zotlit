@@ -8,7 +8,7 @@ import { openManagedBinary } from "@/services/managed-binary/__fixtures__";
 import type {
   BinaryPin,
   BinaryStore,
-  ManagedBinaryPorts,
+  ManagedBinaryHostPorts,
 } from "@/services/managed-binary/service";
 
 import type { CitationEngine, PreparedDocument } from "./engine";
@@ -70,7 +70,7 @@ function memoryStore(initial: BinaryFiles = {}): MemoryStore {
   };
 }
 
-type MemoryConsent = ManagedBinaryPorts["consent"];
+type MemoryConsent = ManagedBinaryHostPorts["consent"];
 
 function memoryConsent(): MemoryConsent {
   const values = new Map<string, unknown>();

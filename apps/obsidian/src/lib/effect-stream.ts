@@ -8,7 +8,7 @@ import { Effect, Stream } from "@/lib/effect";
  * after that function returns.
  */
 export function subscribe<A, R>(
-  runtime: ManagedRuntime.ManagedRuntime<R, never>,
+  runtime: Pick<ManagedRuntime.ManagedRuntime<R, never>, "runFork">,
   stream: Stream.Stream<A, never, R>,
   callback: (value: A) => void,
 ): () => void {

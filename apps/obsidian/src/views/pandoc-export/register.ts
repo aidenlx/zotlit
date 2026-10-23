@@ -159,6 +159,8 @@ export async function runPandocExport(
 
   let output: Uint8Array;
   try {
+    const engine = await pandocEngine.getEngine();
+    if (!engine) return;
     const result = await exportCitedDocument(
       {
         document: {
@@ -169,7 +171,7 @@ export async function runPandocExport(
         format: choices.format,
         ...engineStyle,
       },
-      exportPorts(deps, await pandocEngine.getEngine()),
+      exportPorts(deps, engine),
     );
     if ("error" in result) {
       showExportFailure(result.error);
@@ -235,7 +237,7 @@ async function exportPresentation(
 
 function exportPorts(
   deps: PandocExportDeps,
-  engine: Awaited<ReturnType<PlainPandocEngine["getEngine"]>>,
+  engine: NonNullable<Awaited<ReturnType<PlainPandocEngine["getEngine"]>>>,
 ): ExportPorts {
   const { app, citationLookup, db, zoteroPref } = deps;
   return {

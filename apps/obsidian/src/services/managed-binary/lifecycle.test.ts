@@ -14,6 +14,7 @@ import {
 } from "@/lib/effect";
 import { expect, it } from "@/lib/effect-vitest";
 
+import { managedBinaryPorts } from "./platform";
 import { layerManagedBinary, ManagedBinaryPlatform } from "./service";
 import type {
   ManagedBinary,
@@ -49,10 +50,13 @@ it.effect("releases the shared engine when its layer scope closes", () =>
         }),
     }).pipe(
       Layer.provide(
-        Layer.succeed(ManagedBinaryPlatform, {
-          ...device,
-          download: () => Promise.resolve(bytes),
-        }),
+        Layer.succeed(
+          ManagedBinaryPlatform,
+          managedBinaryPorts({
+            ...device,
+            download: () => Promise.resolve(bytes),
+          }),
+        ),
       ),
     );
     yield* Effect.scoped(
@@ -143,6 +147,79 @@ const PIN = {
   sha256: createHash("sha256").update(BYTES).digest("hex"),
 };
 
+// #1705: platform operations run in the caller's Effect context and Clock.
+it.effect("drives download, store, and consent Effects with TestClock", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const files = new Map<string, Uint8Array<ArrayBuffer>>();
+      let consent: unknown = true;
+      const writing = yield* Deferred.make<void>();
+      const layer = layerManagedBinary(TestBinary, {
+        id: "test-binary",
+        label: "Test binary",
+        logCategory: ["managed-binary"],
+        pin: PIN,
+        createEngine: () => Promise.resolve({ [Symbol.dispose]: () => {} }),
+      }).pipe(
+        Layer.provide(
+          Layer.succeed(ManagedBinaryPlatform, {
+            openStore: () =>
+              Effect.succeed({
+                list: () => Effect.sync(() => [...files.keys()]),
+                read: (name: string) =>
+                  Effect.sync(() =>
+                    files.has(name) ? new Blob([files.get(name)!]) : undefined,
+                  ),
+                write: (name: string, bytes: Uint8Array<ArrayBuffer>) =>
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(writing, undefined);
+                    yield* Effect.sleep("1 second");
+                    files.set(name, bytes);
+                  }),
+                rename: (from: string, to: string) =>
+                  Effect.sync(() => {
+                    files.set(to, files.get(from)!);
+                    files.delete(from);
+                  }),
+                remove: (name: string) =>
+                  Effect.sync(() => {
+                    files.delete(name);
+                  }),
+                clear: () => Effect.sync(() => files.clear()),
+              }),
+            download: () => Effect.sleep("1 second").pipe(Effect.as(BYTES)),
+            consent: {
+              loadLocalStorage: () => Effect.sync(() => consent),
+              saveLocalStorage: (_key: string, value: unknown) =>
+                Effect.sync(() => {
+                  consent = value;
+                }),
+            },
+          }),
+        ),
+      );
+      const binary = Context.get(yield* Layer.build(layer), TestBinary);
+      const installing = yield* Effect.forkChild(binary.install(), {
+        startImmediately: true,
+      });
+      expect(consent).toBeNull();
+      yield* TestClock.adjust("1 second");
+      yield* Deferred.await(writing);
+      expect(files.size).toBe(0);
+      expect((yield* binary.getStatus()).kind).toBe("installing");
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.join(installing);
+      expect((yield* binary.getStatus()).kind).toBe("installed");
+      expect([...files.keys()]).toEqual([`${PIN.sha256}.wasm`]);
+      yield* binary.uninstall();
+      yield* binary.decline();
+      expect(consent).toBe(true);
+      expect(files.size).toBe(0);
+      expect((yield* binary.getStatus()).kind).toBe("declined");
+    }),
+  ),
+);
+
 function testLayer(
   device: ReturnType<typeof memoryDevice>,
   overrides: Partial<ManagedBinary<Disposable>> = {},
@@ -156,10 +233,13 @@ function testLayer(
     ...overrides,
   }).pipe(
     Layer.provide(
-      Layer.succeed(ManagedBinaryPlatform, {
-        ...device,
-        download: () => Promise.resolve(BYTES),
-      }),
+      Layer.succeed(
+        ManagedBinaryPlatform,
+        managedBinaryPorts({
+          ...device,
+          download: () => Promise.resolve(BYTES),
+        }),
+      ),
     ),
   );
 }

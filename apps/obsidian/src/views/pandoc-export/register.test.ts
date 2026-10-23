@@ -112,7 +112,8 @@ function openVault({
 }: VaultOptions = {}) {
   const file = markdownFile("draft.md");
   const frontmatter = note ?? {};
-  const getEngine = vi.fn();
+  // The export stub above still needs an available engine handle.
+  const getEngine = vi.fn(() => Promise.resolve({}));
   let command: Command | undefined;
   const {
     ["citation.references-style"]: referencesStyle,

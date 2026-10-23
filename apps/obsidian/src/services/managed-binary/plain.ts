@@ -1,5 +1,5 @@
 // The shared plain interface of a Managed Binary, run by the plugin runtime.
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 
@@ -9,7 +9,8 @@ export interface PlainManagedBinary<
   Engine extends Disposable | AsyncDisposable = Disposable | AsyncDisposable,
 > {
   getStatus(): ManagedBinaryStatus;
-  getEngine(): Promise<Engine>;
+  /** The engine while open; `null` after release. */
+  getEngine(): Promise<Engine | null>;
   install(): Promise<void>;
   uninstall(): Promise<void>;
   decline(): void;
@@ -23,6 +24,12 @@ export function plainManagedBinary<
   runtime: ManagedRuntime.ManagedRuntime<R, never>,
   binary: ManagedBinaryApi<Engine>,
 ): PlainManagedBinary<Engine> {
+  // Keep the runtime's context for calls that race unload. The service owns
+  // its released values; ManagedRuntime clears its context on disposal.
+  const context = runtime.runSync(Effect.context<R>());
+  const runSync = Effect.runSyncWith(context);
+  const runPromise = Effect.runPromiseWith(context);
+  const runner = { runFork: Effect.runForkWith(context) };
   let installing: Promise<void> | undefined;
   let installingSource: ManagedBinaryStatus | undefined;
   let installingSnapshot:
@@ -30,7 +37,7 @@ export function plainManagedBinary<
     | undefined;
   return {
     getStatus: () => {
-      const status = runtime.runSync(binary.getStatus());
+      const status = runSync(binary.getStatus());
       if (status.kind !== "installing" || !installing) return status;
       if (
         installingSource !== status ||
@@ -41,10 +48,10 @@ export function plainManagedBinary<
       }
       return installingSnapshot;
     },
-    getEngine: () => runtime.runPromise(binary.getEngine()),
+    getEngine: () => runPromise(binary.getEngine()),
     install: () => {
       if (installing) return installing;
-      const done = runtime.runPromise(binary.install());
+      const done = runPromise(binary.install());
       installing = done;
       const clear = () => {
         if (installing === done) installing = undefined;
@@ -52,12 +59,12 @@ export function plainManagedBinary<
       void done.then(clear, clear);
       return done;
     },
-    uninstall: () => runtime.runPromise(binary.uninstall()),
-    decline: () => runtime.runSync(binary.decline()),
+    uninstall: () => runPromise(binary.uninstall()),
+    decline: () => runSync(binary.decline()),
     subscribe: (listener) => {
-      const seen = runtime.runSync(binary.getStatus());
+      const seen = runSync(binary.getStatus());
       return subscribe(
-        runtime,
+        runner,
         Stream.dropWhile(binary.changes, (next) => next === seen),
         listener,
       );

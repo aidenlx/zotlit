@@ -57,7 +57,7 @@ describe("Chinese Segmenter", () => {
       await using segmenter = await open(device);
       await segmenter.install();
 
-      const { module } = await segmenter.getEngine();
+      const { module } = (await segmenter.getEngine())!;
       initSync({ module });
 
       expect(cut_for_search("长江流域的城市化研究", true)).toEqual([

@@ -1,5 +1,5 @@
 // Test support: a fake device for Managed Binary services, with an in-memory store and consent record.
-import type { BinaryStore, ManagedBinaryPorts } from "./service";
+import type { BinaryStore, ManagedBinaryHostPorts } from "./service";
 
 /**
  * The device: one origin-wide store root with a directory per Managed Binary,
@@ -46,7 +46,7 @@ export function memoryDevice() {
 }
 
 /** One vault's local storage, where a dismissed install offer is remembered. */
-export function vaultConsent(): ManagedBinaryPorts["consent"] {
+export function vaultConsent(): ManagedBinaryHostPorts["consent"] {
   const values = new Map<string, unknown>();
   return {
     loadLocalStorage: (key) => values.get(key) ?? null,

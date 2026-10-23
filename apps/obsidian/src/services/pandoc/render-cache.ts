@@ -401,6 +401,7 @@ export class BibliographyRenderCache extends Service<void> {
     try {
       const presentation = enginePresentation(style);
       const engine = await this.#engine.getEngine();
+      if (!engine) return { entries: [], hasEntryMarkers: false };
       const entries = await engine.renderBibliography({
         items,
         ...presentation,
@@ -427,6 +428,7 @@ export class BibliographyRenderCache extends Service<void> {
     if (citations.length === 0) return [];
     try {
       const engine = await this.#engine.getEngine();
+      if (!engine) return [];
       const rendered = await engine.renderCitations({
         citations,
         items,

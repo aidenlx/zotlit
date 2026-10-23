@@ -1,25 +1,22 @@
 // Consent-gated download, hash verification, and device-wide cache of one pinned Managed Binary.
 
-import { requestUrl } from "obsidian";
-import type { App } from "obsidian";
-
 import {
   Cause,
-  Context,
   Effect,
   Exit,
   Fiber,
   Layer,
+  PubSub,
   Scope,
   SubscriptionRef,
 } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
+import type { Context, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { ObsidianApp } from "@/lib/obsidian-app";
 
 import type { BinaryPin } from "./pin";
-import { createOpfsBinaryStore } from "./store";
-import type { BinaryStore } from "./store";
+import { ManagedBinaryPlatform } from "./platform";
+export { ManagedBinaryPlatform, layerManagedBinaryPlatform } from "./platform";
+export type { ManagedBinaryHostPorts, ManagedBinaryPorts } from "./platform";
 
 export type { BinaryPin } from "./pin";
 export type { BinaryStore } from "./store";
@@ -97,36 +94,16 @@ export type ManagedBinaryStatus =
   | { kind: "installed"; version: string; binary: BinaryLocation }
   | { kind: "failed"; failure: ManagedBinaryFailure };
 
-export interface ManagedBinaryPorts {
-  /** Opens the device-wide cache directory a binary owns. */
-  openStore: (directory: string) => BinaryStore;
-  /** One download of the pinned asset; rejects when the download fails. */
-  download: (url: string) => Promise<Uint8Array<ArrayBuffer>>;
-  /** Vault-scoped storage the dismissed install offer is remembered in. */
-  consent: Pick<App, "loadLocalStorage" | "saveLocalStorage">;
-}
-
 /** The name a verified binary is cached under: its pinned hash. */
 function cachedBinaryName(pin: BinaryPin): string {
   return `${pin.sha256}${BINARY_SUFFIX}`;
 }
 
-/** The OS and network boundary shared by the two Managed Binary layers. */
-export class ManagedBinaryPlatform extends Context.Service<
-  ManagedBinaryPlatform,
-  ManagedBinaryPorts
->()("zotlit/managed-binary/ManagedBinaryPlatform") {}
-
-export const layerManagedBinaryPlatform = Layer.effect(
-  ManagedBinaryPlatform,
-  Effect.map(ObsidianApp, obsidianBinaryPorts),
-);
-
 /** Effect-native operations; the layer owns startup, installs, and engines. */
 export interface ManagedBinaryApi<Engine extends Disposable | AsyncDisposable> {
   getStatus(): Effect.Effect<ManagedBinaryStatus>;
   readonly changes: Stream.Stream<ManagedBinaryStatus>;
-  getEngine(): Effect.Effect<Engine, Error>;
+  getEngine(): Effect.Effect<Engine | null, Error>;
   install(): Effect.Effect<void, Error>;
   uninstall(): Effect.Effect<void, Error>;
   decline(): Effect.Effect<void>;
@@ -153,20 +130,22 @@ const attempt = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
 const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   Engine extends Disposable | AsyncDisposable,
 >(binary: ManagedBinary<Engine>) {
-  const { openStore, download, consent } = yield* ManagedBinaryPlatform;
+  const platform = yield* ManagedBinaryPlatform;
+  const { consent } = platform;
   const scope = yield* Effect.scope;
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-  const store = openStore(binary.id);
+  const store = yield* platform.openStore(binary.id);
   const name = cachedBinaryName(binary.pin);
   const location = { directory: binary.id, name };
   const declinedKey = `zotlit-${binary.id}-declined`;
   const status = yield* SubscriptionRef.make<ManagedBinaryStatus>(
     Object.freeze(
-      consent.loadLocalStorage(declinedKey)
+      (yield* consent.loadLocalStorage(declinedKey))
         ? { kind: "declined" }
         : { kind: "absent" },
     ),
   );
+  let closed = false;
   const setStatus = (next: ManagedBinaryStatus) =>
     SubscriptionRef.set(status, Object.freeze(next));
   const log = (
@@ -184,7 +163,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       withLogCategory(...binary.logCategory),
     );
   const isCached = Effect.fn("ManagedBinary.isCached")(function* () {
-    return yield* attempt(() => store.list()).pipe(
+    return yield* store.list().pipe(
       Effect.map((names) => names.includes(name)),
       Effect.catch((error) =>
         log("Cannot read the binary cache", { error }, "warn").pipe(
@@ -193,24 +172,22 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       ),
     );
   });
-  const startup = yield* Effect.forkScoped(
-    Effect.gen(function* () {
-      if (yield* isCached()) {
-        const current = yield* SubscriptionRef.get(status);
-        if (current.kind === "absent" || current.kind === "declined")
-          yield* setStatus({
-            kind: "installed",
-            version: binary.pin.version,
-            binary: location,
-          });
-      }
-    }).pipe(
-      Effect.catchCause((cause) =>
-        log(
-          "Cannot read the binary cache",
-          { error: Cause.squash(cause) },
-          "warn",
-        ),
+  yield* Effect.gen(function* () {
+    if (yield* isCached()) {
+      const current = yield* SubscriptionRef.get(status);
+      if (current.kind === "absent" || current.kind === "declined")
+        yield* setStatus({
+          kind: "installed",
+          version: binary.pin.version,
+          binary: location,
+        });
+    }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      log(
+        "Cannot read the binary cache",
+        { error: Cause.squash(cause) },
+        "warn",
       ),
     ),
   );
@@ -226,11 +203,14 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     yield* setStatus({ kind: "failed", failure });
   });
   const startEngine = Effect.fn("ManagedBinary.startEngine")(function* () {
-    const blob = yield* attempt(async () => {
-      const read = await store.read(name);
-      if (!read) throw new Error(`The cached ${binary.label} binary is gone`);
-      return read;
-    }).pipe(Effect.tapError(failInit));
+    const blob = yield* store.read(name).pipe(
+      Effect.flatMap((read) =>
+        read
+          ? Effect.succeed(read)
+          : Effect.fail(new Error(`The cached ${binary.label} binary is gone`)),
+      ),
+      Effect.tapError(failInit),
+    );
     return yield* attempt(() => binary.createEngine(blob)).pipe(
       Effect.catch(
         Effect.fn("ManagedBinary.failedStart")(function* (error) {
@@ -243,7 +223,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
               { name, actual, error },
               "warn",
             );
-            yield* attempt(() => store.remove(name)).pipe(Effect.ignore);
+            yield* store.remove(name).pipe(Effect.ignore);
             yield* setStatus({ kind: "absent" });
           } else yield* failInit(error);
           return yield* Effect.fail(error);
@@ -278,7 +258,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   });
   yield* Effect.addFinalizer(dropEngine);
   const getEngine = Effect.fn("ManagedBinary.getEngine")(function* () {
-    yield* Fiber.join(startup);
+    if (closed) return null;
     if (!engine) {
       if ((yield* SubscriptionRef.get(status)).kind !== "installed")
         return yield* Effect.fail(
@@ -305,7 +285,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const fetchBinary = Effect.fn("ManagedBinary.fetchBinary")(function* () {
     const { url, sha256 } = binary.pin;
     yield* log("Downloading the binary", { url });
-    const asset = yield* attempt(() => download(url));
+    const asset = yield* platform.download(url);
     const bytes = yield* Effect.try({
       try: () => (binary.extract ? binary.extract(asset) : asset),
       catch: (error) => new Error(describe(error)),
@@ -316,20 +296,20 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       Effect.succeed(temp),
       () =>
         Effect.gen(function* () {
-          yield* attempt(() => store.write(temp, bytes));
+          yield* store.write(temp, bytes);
           const actual = yield* attempt(() => sha256Hex(bytes));
           if (actual !== sha256)
             return yield* Effect.fail(new HashMismatchError(sha256, actual));
-          yield* attempt(() => store.rename(temp, name));
+          yield* store.rename(temp, name);
         }),
-      () => attempt(() => store.remove(temp)).pipe(Effect.ignore),
+      () => store.remove(temp).pipe(Effect.ignore),
     );
   });
   const prune = Effect.fn("ManagedBinary.prune")(
     function* () {
-      for (const entry of yield* attempt(() => store.list())) {
+      for (const entry of yield* store.list()) {
         if (entry !== name && entry.endsWith(BINARY_SUFFIX))
-          yield* attempt(() => store.remove(entry));
+          yield* store.remove(entry);
       }
     },
     Effect.catch((error) =>
@@ -337,7 +317,6 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     ),
   );
   const runInstall = Effect.fn("ManagedBinary.runInstall")(function* () {
-    yield* Fiber.join(startup);
     yield* Effect.gen(function* () {
       if (!(yield* isCached())) yield* fetchBinary();
       yield* prune();
@@ -362,10 +341,11 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     });
   });
   const install = Effect.fn("ManagedBinary.install")(function* () {
+    if (closed) return;
     const current = yield* SubscriptionRef.get(status);
     if (current.kind === "installing")
       return yield* attempt(() => current.done);
-    consent.saveLocalStorage(declinedKey, null);
+    yield* consent.saveLocalStorage(declinedKey, null);
     // The inherited Promise belongs to the public status contract. Its work is
     // a scoped fiber, and this runner retains the layer's services and Clock.
     const fiber = yield* Effect.forkIn(runInstall(), scope, {
@@ -381,15 +361,15 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     yield* Fiber.join(fiber);
   });
   const uninstall = Effect.fn("ManagedBinary.uninstall")(function* () {
+    if (closed) return;
     const fiber = yield* Effect.forkIn(
       Effect.gen(function* () {
-        yield* Fiber.join(startup);
         const current = yield* SubscriptionRef.get(status);
         if (current.kind === "installing")
           yield* attempt(() => current.done).pipe(Effect.ignore);
         yield* dropEngine();
-        yield* attempt(() => store.clear());
-        consent.saveLocalStorage(declinedKey, null);
+        yield* store.clear();
+        yield* consent.saveLocalStorage(declinedKey, null);
         yield* log("Removed the binary cache", { pin: binary.pin });
         yield* setStatus({ kind: "absent" });
       }),
@@ -399,10 +379,17 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     yield* Fiber.join(fiber);
   });
   const decline = Effect.fn("ManagedBinary.decline")(function* () {
-    consent.saveLocalStorage(declinedKey, true);
+    if (closed) return;
+    yield* consent.saveLocalStorage(declinedKey, true);
     if ((yield* SubscriptionRef.get(status)).kind === "absent")
       yield* setStatus({ kind: "declined" });
   });
+  yield* Effect.addFinalizer(() =>
+    Effect.gen(function* () {
+      closed = true;
+      yield* PubSub.shutdown(status.pubsub);
+    }),
+  );
   return {
     getStatus: () => SubscriptionRef.get(status),
     changes: SubscriptionRef.changes(status),
@@ -412,16 +399,6 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     decline,
   } satisfies ManagedBinaryApi<Engine>;
 });
-
-/** Obsidian's own ports: the origin's OPFS, `requestUrl`, and the vault's local storage. */
-export function obsidianBinaryPorts(app: App): ManagedBinaryPorts {
-  return {
-    openStore: createOpfsBinaryStore,
-    download: async (url) =>
-      new Uint8Array(await requestUrl({ url }).arrayBuffer),
-    consent: app,
-  };
-}
 
 class HashMismatchError extends Error {
   override name = "HashMismatchError";
