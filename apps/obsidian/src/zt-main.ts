@@ -286,7 +286,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Block load on too-old Obsidian installers before allocating any resources.
     assertElectronVersion();
 
-    // Local stack gives automatic rollback if any synchronous startup wiring
+    // Local stack gives automatic rollback if any startup acquisition or wiring
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 

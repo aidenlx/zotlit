@@ -10,7 +10,7 @@ import type { Root } from "react-dom/client";
 
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { ReleaseService } from "@/services/release/service";
 import type {
   SettingsPatch,
@@ -46,7 +46,7 @@ const CONNECTION_CHECKING_DELAY_MS = 200;
 export interface WelcomeBannerDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
-  queries: Pick<QueryClientService, "peek" | "read">;
+  queries: Pick<PlainQueryClients, "peek" | "read">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   settings: Pick<SettingsService, "subscribe" | "update" | "flush">;
   setupActions: SetupActions;

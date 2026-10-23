@@ -1,7 +1,6 @@
 /** Zotero preferences for settings, views, and legacy services. */
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 
 import type { PrefValue } from "./prefs-file";
 import { ZoteroPref } from "./service";
@@ -32,16 +31,40 @@ export function plainZoteroPref(
   runtime: ManagedRuntime.ManagedRuntime<ZoteroPref, never>,
 ): PlainZoteroPref {
   const pref = runtime.runSync(ZoteroPref.use(Effect.succeed));
-  const current = () => runtime.runSync(pref.current);
+  const context = runtime.runSync(Effect.context<ZoteroPref>());
+  const closed = () => runtime.scope.state._tag === "Closed";
+  // ManagedRuntime rejects runs after disposal. The held service still permits
+  // snapshot and file reads, and its closed guard makes setters no-ops. Keep the
+  // runtime's context for those released calls (Effect's run*With boundary).
+  const runReleasedSync = Effect.runSyncWith(context);
+  const runReleasedPromise = Effect.runPromiseWith(context);
+  const runSync = <A>(effect: Effect.Effect<A>): A =>
+    closed() ? runReleasedSync(effect) : runtime.runSync(effect);
+  const runPromise = <A>(effect: Effect.Effect<A>): Promise<A> =>
+    closed() ? runReleasedPromise(effect) : runtime.runPromise(effect);
+  const current = () => runSync(pref.current);
   const subscribeChanges = (
     callback: (snapshot: ZoteroPrefSnapshot) => void,
   ) => {
+    if (closed()) return () => {};
     const seen = current();
-    return subscribe(
-      runtime,
-      Stream.dropWhile(pref.changes, (next) => next === seen),
-      callback,
+    let active = true;
+    const fiber = runtime.runFork(
+      Stream.dropWhile(pref.changes, (next) => next === seen).pipe(
+        Stream.runForEach((next) =>
+          Effect.sync(() => {
+            if (active) callback(next);
+          }),
+        ),
+      ),
     );
+    // interruptWhen forks the upstream subscription. Attach it before callers
+    // can publish two changes; latest-value replay cannot recover the first.
+    fiber.currentDispatcher.flush();
+    return () => {
+      active = false;
+      fiber.interruptUnsafe();
+    };
   };
   return {
     get state() {
@@ -71,11 +94,11 @@ export function plainZoteroPref(
     get httpPort() {
       return current().httpPort;
     },
-    get: (name) => runtime.runSync(pref.get(name)),
-    setProfileDir: (dir) => runtime.runSync(pref.setProfileDir(dir)),
-    setDataDir: (dir) => runtime.runSync(pref.setDataDir(dir)),
-    companionInstalled: () => runtime.runPromise(pref.companionInstalled()),
-    listProfiles: () => runtime.runPromise(pref.listProfiles()),
+    get: (name) => runSync(pref.get(name)),
+    setProfileDir: (dir) => runSync(pref.setProfileDir(dir)),
+    setDataDir: (dir) => runSync(pref.setDataDir(dir)),
+    companionInstalled: () => runPromise(pref.companionInstalled()),
+    listProfiles: () => runPromise(pref.listProfiles()),
     subscribe: subscribeChanges,
     on: (event, callback) => {
       let previous = current();

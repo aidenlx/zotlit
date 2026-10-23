@@ -33,7 +33,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
  */
 import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -72,7 +72,7 @@ export interface LibraryScopeEvents {
 export interface LibraryScopeDeps {
   reads: Pick<ZoteroReadsService, "ready" | "on">;
   queries: Pick<
-    QueryClientService,
+    PlainQueryClients,
     "client" | "ask" | "invalidate" | "peek" | "watch"
   >;
   settings: SettingsService;

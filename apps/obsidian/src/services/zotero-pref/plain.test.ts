@@ -7,6 +7,82 @@ import { it } from "@/lib/effect-vitest";
 import { zoteroPrefFixture } from "./__fixtures__";
 import { plainZoteroPref } from "./plain";
 
+// #1705: unload can leave consumers holding the adapter after runtime disposal.
+it.effect(
+  "keeps released reads and no-op writes after the whole runtime closes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* zoteroPrefFixture((path) =>
+        Effect.succeed(
+          path.endsWith("extensions.json")
+            ? '{"addons":[{"id":"zotlit@aidenlx.site","active":true}]}'
+            : path.endsWith("profiles.ini")
+              ? "[Profile0]\nName=Research\nPath=/profile\nIsRelative=0\nDefault=1"
+              : 'user_pref("extensions.zotero.baseAttachmentPath", "/attachments");',
+        ),
+      );
+      const plain = plainZoteroPref(f.runtime);
+      const received: string[] = [];
+      const unsubscribe = plain.subscribe(() => received.push("change"));
+      const stopEvent = plain.on("resolved-changed", () =>
+        received.push("event"),
+      );
+      // No intervening adapter read: the retained snapshot must include this write.
+      plain.setDataDir("/last-data");
+      yield* f.runtime.disposeEffect;
+      const count = received.length;
+      const last = yield* f.pref.current;
+      const { prefs: _prefs, ...snapshot } = last;
+      expect(plain).toMatchObject(snapshot);
+      expect(plain.dataDir).toBe("/last-data");
+      expect(plain.get("baseAttachmentPath")).toBe("/attachments");
+      expect(plain.get("missing")).toBeUndefined();
+      expect(plain.setDataDir("/after-close")).toBeUndefined();
+      expect(plain.setProfileDir("/after-close")).toBeUndefined();
+      expect(plain.dataDir).toBe("/last-data");
+      expect(f.saved()).toEqual({
+        profileDir: "/profile",
+        dataDir: "/last-data",
+      });
+      expect(yield* Effect.promise(() => plain.companionInstalled())).toBe(
+        true,
+      );
+      expect(yield* Effect.promise(() => plain.listProfiles())).toEqual([
+        { name: "Research", dir: "/profile", isDefault: true },
+      ]);
+      const stopLate = plain.subscribe(() => received.push("late"));
+      const lateEvents = (
+        ["changed", "data-dir-changed", "resolved-changed"] as const
+      ).map((event) => plain.on(event, () => received.push(event)));
+      stopLate();
+      for (const stop of lateEvents) stop();
+      unsubscribe();
+      stopEvent();
+      expect(received).toHaveLength(count);
+    }),
+);
+
+// #1705: SubscriptionRef only replays the latest value to a late subscriber.
+it.effect("delivers both changes made immediately after subscribing", () =>
+  Effect.gen(function* () {
+    const f = yield* zoteroPrefFixture();
+    const plain = plainZoteroPref(f.runtime);
+    const received: string[] = [];
+    const delivered = yield* Queue.unbounded<void>();
+    const run = Effect.runSyncWith(yield* Effect.context<never>());
+    const unsubscribe = plain.subscribe((next) => {
+      received.push(next.dataDir);
+      if (next.dataDir === "/library-two")
+        run(Queue.offer(delivered, undefined));
+    });
+    plain.setDataDir("/library-one");
+    plain.setDataDir("/library-two");
+    yield* Queue.take(delivered);
+    unsubscribe();
+    expect(received).toEqual(["/library-one", "/library-two"]);
+  }),
+);
+
 // Failure modes: the adapter returns an Effect instead of a Promise, misses a
 // change immediately after subscribing, or calls an unsubscribed listener.
 it.effect("provides plain reads, Promises, and cancellable subscriptions", () =>

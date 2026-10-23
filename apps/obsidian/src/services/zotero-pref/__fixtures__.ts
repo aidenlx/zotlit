@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 
 import { Context, Effect, Layer } from "@/lib/effect";
-import { buildRuntimeAsync } from "@/lib/effect-layer";
+import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerZoteroPref, ZoteroPref, ZoteroPrefFiles } from "./service";
@@ -41,6 +41,7 @@ export const zoteroPrefFixture = Effect.fn("zoteroPrefFixture")(function* (
 /** The ordinary runtime boundary, owned by the fixture's Effect Scope. */
 async function scopedRuntime(layer: Layer.Layer<ZoteroPref>) {
   const stack = new AsyncDisposableStack();
-  const runtime = await buildRuntimeAsync(layer, stack);
+  const runtime = buildRuntime(layer, stack);
+  await runtime.context();
   return { runtime, close: () => stack.disposeAsync() };
 }

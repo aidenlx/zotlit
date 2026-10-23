@@ -1,14 +1,14 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
 import type { Plugin } from "obsidian";
 
-import { Clock, Effect, Layer } from "@/lib/effect";
-import { instantClock } from "@/lib/effect-clock";
+import { Effect, Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerLogging, layerLogOutput } from "./log/service";
-import { QueryClients, QueryClientService } from "./query-client/service";
+import { layerQueryClients } from "./query-client/service";
+import type { QueryClients } from "./query-client/service";
 import { serviceLayer } from "./service-layer";
 import { settingsMigrations } from "./settings/migrate";
 import { PluginSettings, SettingsService } from "./settings/service";
@@ -33,13 +33,7 @@ export function pluginLayer(
     layerUseLedger,
     layerZoteroPref.pipe(Layer.provide(layerZoteroPrefFiles)),
     layerCitationParse,
-    serviceLayer(QueryClients, {
-      key: "queryClient",
-      make: Effect.map(
-        Clock.Clock,
-        (clock) => new QueryClientService({ now: instantClock(clock) }),
-      ),
-    }),
+    layerQueryClients,
   ).pipe(
     Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
     Layer.provideMerge(
