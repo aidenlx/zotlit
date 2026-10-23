@@ -9,7 +9,7 @@ import type {
   QUERY_SCHEMA_COMMAND,
   QueryCliCommand,
 } from "./contract";
-import type { DecodedQuery, DecodedValues } from "./decode";
+import type { DecodedQuery, DecodedValues } from "./query-codec";
 import type { QueryViewOutcome, QueryViewRequest } from "./query-view";
 import type { WorkerMeasurement } from "./trace";
 

@@ -1,7 +1,11 @@
 // The citation commands and their response boundaries.
-import type { CliData, CliHandler } from "obsidian";
+import type { CliData } from "obsidian";
 
+import type { CliCommandHandler } from "@/lib/cli-command";
+import { catchRejection } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
+import { Data, Effect } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
@@ -122,7 +126,8 @@ interface CitationsCliDeps {
       lookup: CitationLookupAnswer,
     ) => Promise<readonly CitationSyntax[]>;
   };
-  lookupItem: (indexedKey: string) => Promise<ItemLookup>;
+  /** Never fails: a source that cannot answer reports `"unreadable"`. */
+  lookupItem: (indexedKey: string) => Effect.Effect<ItemLookup>;
   /**
    * @returns the document's references, or `null` when the vault holds no
    *   Markdown note at the path.
@@ -134,7 +139,7 @@ export type CitationsCliHandlers = Record<
   | typeof CITED_BY_COMMAND
   | typeof REFERENCES_COMMAND
   | typeof CITATIONS_GUIDE_COMMAND,
-  CliHandler
+  CliCommandHandler
 >;
 
 /** The command may read data, or it has already answered why it may not. */
@@ -147,6 +152,19 @@ interface EchoedFacts {
   identity: CitationsIdentity;
 }
 
+/** A read of the index or the source that failed with `cause`, which the
+ *  command answers with an INDEX_NOT_READY diagnostic. */
+class IndexUnavailable extends Data.TaggedError("IndexUnavailable")<{
+  readonly cause: unknown;
+}> {}
+
+/** One read the command answers INDEX_NOT_READY for when it fails. */
+const read = <A>(f: () => PromiseLike<A>) =>
+  Effect.tryPromise({
+    try: f,
+    catch: (cause) => new IndexUnavailable({ cause }),
+  });
+
 export function createCitationsCliHandlers(
   deps: CitationsCliDeps,
 ): CitationsCliHandlers {
@@ -157,12 +175,12 @@ export function createCitationsCliHandlers(
    * asserted Zotero source, so a call aimed at another library costs no data
    * load at all, then the bounded wait out of the transitional index states.
    */
-  const admit = async (
+  const admit = Effect.fn("CitationsCli.admit")(function* (
     command: CitationsCommand,
     params: CliData,
     request: object,
-  ): Promise<Admission> => {
-    const identity = await deps.getIdentity();
+  ) {
+    const identity = yield* Effect.promise(async () => deps.getIdentity());
     const echoed = { request, identity };
     const reject = (fault: Diagnostic): Admission => ({
       kind: "rejected",
@@ -171,33 +189,36 @@ export function createCitationsCliHandlers(
 
     const mismatch = targetMismatch(params, identity);
     if (mismatch) return reject(mismatch);
-    const outcome = await deps.index.waitUntilSettled(settleTimeoutMs);
+    const outcome = yield* Effect.promise(() =>
+      deps.index.waitUntilSettled(settleTimeoutMs),
+    );
     if (outcome !== "settled")
       return reject(notSettledDiagnostic(settleTimeoutMs));
-    return { kind: "admitted", echoed };
-  };
+    return { kind: "admitted" as const, echoed };
+  });
 
   return {
-    [CITED_BY_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseCitedByRequest(params);
-      if (request.kind === "invalid") {
-        return invalidRequest(CITED_BY_COMMAND, request);
-      }
+    [CITED_BY_COMMAND]: Effect.fn("CitationsCli.citedBy")(function* (
+      params: CliData,
+    ) {
+      const request = yield* parseCitedByRequest(params);
 
-      const admission = await admit(CITED_BY_COMMAND, params, request.value);
+      const admission = yield* admit(CITED_BY_COMMAND, params, request);
       if (admission.kind === "rejected") return admission.response;
       const { echoed } = admission;
 
-      try {
+      return yield* Effect.gen(function* () {
         const syntaxes = deps.index.syntaxes();
-        const lookup = await deps.index.readLookup({
-          citekeys: [
-            ...deps.index.citationKeys(),
-            ...("citekey" in request.value ? [request.value.citekey] : []),
-          ],
-          indexedKeys: "key" in request.value ? [request.value.key] : [],
-        });
-        const selected = await resolveItem(deps, request.value, lookup);
+        const lookup = yield* read(() =>
+          deps.index.readLookup({
+            citekeys: [
+              ...deps.index.citationKeys(),
+              ...("citekey" in request ? [request.citekey] : []),
+            ],
+            indexedKeys: "key" in request ? [request.key] : [],
+          }),
+        );
+        const selected = yield* resolveItem(deps, request, lookup);
         if (selected.kind === "fault") {
           return envelope(CITED_BY_COMMAND, {
             ok: false,
@@ -207,11 +228,12 @@ export function createCitationsCliHandlers(
         }
 
         const { item } = selected;
-        const snapshot = await deps.index.getCitedBy(item.key, lookup);
+        const snapshot = yield* read(() =>
+          deps.index.getCitedBy(item.key, lookup),
+        );
         const groups = reportGroups(snapshot.groups);
-        const omittedSyntaxes = await deps.index.citedByOmittedSyntaxes(
-          item.key,
-          lookup,
+        const omittedSyntaxes = yield* read(() =>
+          deps.index.citedByOmittedSyntaxes(item.key, lookup),
         );
         return envelope(CITED_BY_COMMAND, {
           ok: true,
@@ -223,24 +245,21 @@ export function createCitationsCliHandlers(
           resolution: snapshot.resolution,
           syntaxes,
         });
-      } catch {
-        return unavailable(CITED_BY_COMMAND, echoed);
-      }
-    },
+      }).pipe(answerUnavailable(CITED_BY_COMMAND, echoed));
+    }, answerRejection(CITED_BY_COMMAND)),
 
-    [REFERENCES_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseReferencesRequest(params);
-      if (request.kind === "invalid") {
-        return invalidRequest(REFERENCES_COMMAND, request);
-      }
+    [REFERENCES_COMMAND]: Effect.fn("CitationsCli.references")(function* (
+      params: CliData,
+    ) {
+      const request = yield* parseReferencesRequest(params);
 
-      const admission = await admit(REFERENCES_COMMAND, params, request.value);
+      const admission = yield* admit(REFERENCES_COMMAND, params, request);
       if (admission.kind === "rejected") return admission.response;
       const { echoed } = admission;
 
-      try {
-        const { file } = request.value;
-        const references = await deps.readDocument(file);
+      return yield* Effect.gen(function* () {
+        const { file } = request;
+        const references = yield* read(() => deps.readDocument(file));
         if (references === null) {
           return envelope(REFERENCES_COMMAND, {
             ok: false,
@@ -256,25 +275,44 @@ export function createCitationsCliHandlers(
           ok: true,
           ...echoed,
           entries,
-          omittedSyntaxes: await deps.index.documentOmittedSyntaxes(file),
+          omittedSyntaxes: yield* read(() =>
+            deps.index.documentOmittedSyntaxes(file),
+          ),
           database: references.database,
           resolution: deps.index.resolution(),
           syntaxes: deps.index.syntaxes(),
         });
-      } catch {
-        return unavailable(REFERENCES_COMMAND, echoed);
-      }
-    },
+      }).pipe(answerUnavailable(REFERENCES_COMMAND, echoed));
+    }, answerRejection(REFERENCES_COMMAND)),
 
     /** Literal prose, no envelope: the page is the whole answer. */
-    [CITATIONS_GUIDE_COMMAND]: (params: CliData): string => {
-      const request = parseGuideRequest(params);
-      return request.kind === "invalid"
-        ? invalidRequest(CITATIONS_GUIDE_COMMAND, request)
-        : renderCitationsGuide();
-    },
+    [CITATIONS_GUIDE_COMMAND]: (params: CliData) =>
+      parseGuideRequest(params).pipe(
+        Effect.map(() => renderCitationsGuide()),
+        answerRejection(CITATIONS_GUIDE_COMMAND),
+      ),
   };
 }
+
+/**
+ * A failed read answers the command's INDEX_NOT_READY diagnostic, as does a
+ * read that throws: a defect of the admitted reads, never an interruption.
+ * Either is logged with what failed.
+ */
+const answerUnavailable =
+  (command: CitationsCommand, echoed: EchoedFacts) =>
+  <R>(effect: Effect.Effect<string, IndexUnavailable, R>) => {
+    const answer = (error: unknown) =>
+      Effect.logWarning("Cannot read the Citation Index").pipe(
+        Effect.annotateLogs({ command, error }),
+        withLogCategory("citation-index", "cli"),
+        Effect.as(unavailable(command, echoed)),
+      );
+    return effect.pipe(
+      Effect.catchTag("IndexUnavailable", ({ cause }) => answer(cause)),
+      Effect.catchDefect(answer),
+    );
+  };
 
 function unavailable(command: CitationsCommand, echoed: EchoedFacts): string {
   return envelope(command, {
@@ -286,6 +324,10 @@ function unavailable(command: CitationsCommand, echoed: EchoedFacts): string {
     ),
   });
 }
+
+/** A rejected request answers its diagnostic envelope. */
+const answerRejection = (command: CitationsCommand) =>
+  catchRejection((rejected) => invalidRequest(command, rejected));
 
 function invalidRequest(
   command: CitationsCommand,
@@ -303,60 +345,52 @@ type SelectedItem =
   | { kind: "fault"; diagnostic: Diagnostic };
 
 /**
- * The Item a selector names, in the identities the payload reports. One source
- * read answers both the presence a key selector is gated on and the summary
- * every answer carries.
- *
- * @returns the fault the selector earned when it names no one Item: no Item at
- *   all, or the several an Ambiguous Citation Key names, each reported as the
- *   Zotero key that selects it alone. An unavailable fresh lookup rejects the
- *   command with an INDEX_NOT_READY diagnostic. Successful absence remains
- *   distinct from a source that cannot answer.
+ * The Item a selector names, read once for both its presence and its summary,
+ * or the fault that says why it names no one Item.
  */
-async function resolveItem(
+const resolveItem = Effect.fn("CitationsCli.resolveItem")(function* (
   deps: CitationsCliDeps,
   selector: CitedBySelector,
   lookup: CitationLookupAnswer,
-): Promise<SelectedItem> {
+) {
   if ("citekey" in selector) {
     const { citekey } = selector;
     const resolved = lookup.resolve(citekey);
     if (resolved.kind === "missing") {
-      return { kind: "fault", diagnostic: citekeyNotFoundDiagnostic(citekey) };
+      return fault(citekeyNotFoundDiagnostic(citekey));
     }
     if (resolved.kind === "ambiguous") {
-      return {
-        kind: "fault",
-        diagnostic: ambiguousCitekeyDiagnostic(
+      return fault(
+        ambiguousCitekeyDiagnostic(
           citekey,
           reportCandidates(resolved.candidates),
         ),
-      };
+      );
     }
     const { indexedKey } = resolved.item;
-    return {
-      kind: "selected",
-      item: {
-        key: indexedKey,
-        citekey,
-        summary: (await deps.lookupItem(indexedKey)).summary,
-      },
-    };
+    return selected({
+      key: indexedKey,
+      citekey,
+      summary: (yield* deps.lookupItem(indexedKey)).summary,
+    });
   }
   const { key } = selector;
-  const { presence, summary } = await deps.lookupItem(key);
+  const { presence, summary } = yield* deps.lookupItem(key);
   if (presence === "absent") {
-    return { kind: "fault", diagnostic: keyNotFoundDiagnostic(key) };
+    return fault(keyNotFoundDiagnostic(key));
   }
-  return {
-    kind: "selected",
-    item: {
-      key,
-      citekey: lookup.citekeyOf(key),
-      summary,
-    },
-  };
-}
+  return selected({ key, citekey: lookup.citekeyOf(key), summary });
+});
+
+const fault = (diagnostic: Diagnostic): SelectedItem => ({
+  kind: "fault",
+  diagnostic,
+});
+
+const selected = (item: CitedItem): SelectedItem => ({
+  kind: "selected",
+  item,
+});
 
 /**
  * The document's reference list, in the five kinds a CLI answer distinguishes.

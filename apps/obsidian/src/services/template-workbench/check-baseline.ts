@@ -1,13 +1,19 @@
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 // Select one read-only update input before resolving the Profile to check.
+import { Effect, Result } from "@/lib/effect";
 import { readLiveText } from "@/lib/live-text";
 import { parseProfileStamp } from "@/lib/profile-stamp";
 import { previewBaseline } from "@/views/note-preview/baseline";
 
+import { TemplateDataError } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { sourceRevision } from "./inspect";
 
-export async function selectCheckBaseline(
+/**
+ * The update baseline of one item, or the refusal that names why there is
+ * none. Fails when the Literature Note index cannot be read.
+ */
+export const selectCheckBaseline = Effect.fnUntraced(function* (
   deps: TemplateDataDeps,
   input: { key: string; note?: string; existing?: string },
 ) {
@@ -33,8 +39,13 @@ export async function selectCheckBaseline(
     },
   });
   if (input.existing === undefined) {
-    await deps.noteIndex.whenIndexed();
-    const candidates = deps.noteIndex.getNotesByItemKey(input.key);
+    const candidates = yield* Effect.tryPromise({
+      try: async () => {
+        await deps.noteIndex.whenIndexed();
+        return deps.noteIndex.getNotesByItemKey(input.key);
+      },
+      catch: (cause) => new TemplateDataError({ cause }),
+    });
     if (input.note === undefined && candidates.length > 1)
       return {
         ok: false as const,
@@ -62,11 +73,14 @@ export async function selectCheckBaseline(
     if (selected) {
       path = selected.path;
       kind = "real";
-      try {
-        source = await readLiveText(deps.app, selected);
-      } catch (error) {
-        return failed(error);
-      }
+      const read = yield* Effect.result(
+        Effect.tryPromise({
+          try: () => readLiveText(deps.app, selected),
+          catch: (error) => error,
+        }),
+      );
+      if (Result.isFailure(read)) return failed(read.failure);
+      source = read.success;
     }
   }
   try {
@@ -79,4 +93,4 @@ export async function selectCheckBaseline(
   } catch (error) {
     return failed(error);
   }
-}
+});

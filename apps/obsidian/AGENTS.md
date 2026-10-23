@@ -48,9 +48,9 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 **Tailwind-first.** Run `/obsidian-css` before you write a class list or a stylesheet rule.
 
-## CLI parameters
+## CLI commands
 
-When adding or changing the parameters of a `zotlit:*` command, decode them with one valibot schema through `src/lib/cli-params.ts`; `src/services/item-query/decode.ts` is the pattern. The adapter's header states how Obsidian turns the caller's tokens into `CliData`.
+When adding or changing a `zotlit:*` command, register its Effect handler with `registerCliCommand` (`src/lib/cli-command.ts`) and decode its parameters with one Effect Schema through `src/lib/cli-params.ts`; `src/services/item-query/decode.ts` is the pattern. The adapter's header states how Obsidian turns the caller's tokens into `CliData`.
 
 ## CLI schemas and resources
 

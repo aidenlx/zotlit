@@ -1,10 +1,4 @@
-import type {
-  App,
-  CliFlag,
-  CliFlags,
-  FileSystemAdapter,
-  Plugin,
-} from "obsidian";
+import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 import { apiVersion } from "obsidian";
 // Registers the Workbench commands with Obsidian's CLI.
 //
@@ -12,6 +6,8 @@ import { apiVersion } from "obsidian";
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
+import type { VersionedCliHost } from "@/lib/cli-command";
+import { Effect } from "@/lib/effect";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -39,7 +35,7 @@ import {
   TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
-import { loadCitationData, loadTemplateData, withSelectedNote } from "./data";
+import { readCitationData, readTemplateData, withSelectedNote } from "./data";
 import { diagnostic, envelope } from "./envelope";
 import type { WorkbenchCommand, WorkbenchIdentity } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
@@ -311,31 +307,31 @@ export async function readWorkbenchIdentity(deps: {
 }
 
 export function registerTemplateWorkbench(
-  plugin: Plugin,
+  host: VersionedCliHost,
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
   const getIdentity = async () => {
     await deps.profile.ready;
     return readWorkbenchIdentity(deps);
   };
-  plugin.registerCliHandler(
-    TEMPLATE_INSPECT_COMMAND,
-    "Inspect a Template Document and verify saved source freshness",
-    inspectFlags,
-    createInspectHandler({
+  host.registerCliCommand(TEMPLATE_INSPECT_COMMAND, {
+    description:
+      "Inspect a Template Document and verify saved source freshness",
+    flags: inspectFlags,
+    handler: createInspectHandler({
       app: deps.app,
       profile: deps.profile,
       templates: deps.templates,
       folder: () => deps.settings.current!["template.folder"],
       identity: getIdentity,
     }),
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_CHECK_COMMAND,
-    "Check every saved Profile create or update component with verified source freshness",
-    checkFlags,
-    createCheckHandler({
-      pluginVersion: plugin.manifest.version,
+  });
+  host.registerCliCommand(TEMPLATE_CHECK_COMMAND, {
+    description:
+      "Check every saved Profile create or update component with verified source freshness",
+    flags: checkFlags,
+    handler: createCheckHandler({
+      pluginVersion: host.manifest.version,
       hostVersion: `Obsidian ${apiVersion}`,
       app: deps.app,
       profile: deps.profile,
@@ -344,16 +340,16 @@ export function registerTemplateWorkbench(
       identity: getIdentity,
       data: deps,
     }),
-  );
+  });
   const handlers = createTemplateWorkbenchHandlers({
-    pluginVersion: plugin.manifest.version,
+    pluginVersion: host.manifest.version,
     getIdentity,
     selectNote: async (name) => {
       await deps.profile.ready;
       return selectInspectionNote(deps, name);
     },
     loadData: (indexedKey, root, options) =>
-      loadTemplateData(
+      readTemplateData(
         options?.note === undefined
           ? deps
           : withSelectedNote(deps, { key: indexedKey, path: options.note }),
@@ -361,7 +357,7 @@ export function registerTemplateWorkbench(
         root,
       ),
     loadCitation: (selector, variant) =>
-      loadCitationData(deps, selector, variant),
+      readCitationData(deps, selector, variant),
     templates: deps.templates,
     literatureNotes: {
       readProfiles: () => {
@@ -406,49 +402,49 @@ export function registerTemplateWorkbench(
     command: WorkbenchCommand,
     flags: CliFlags | null,
   ) => {
-    plugin.registerCliHandler(
-      command,
-      "Retired: use template-inspect, template-data, and template-check",
-      flags === null
-        ? null
-        : Object.fromEntries(
-            Object.entries(flags).map(([name, flag]) => [
-              name,
-              { ...flag, required: false, description: "Retired parameter" },
-            ]),
-          ),
-      async () =>
-        envelope(command, {
-          ok: false,
-          diagnostic: diagnostic(
-            "COMMAND_RETIRED",
-            `${command} is retired from Template Document authoring.`,
-          ),
-        }),
-    );
+    host.registerCliCommand(command, {
+      description:
+        "Retired: use template-inspect, template-data, and template-check",
+      flags:
+        flags === null
+          ? null
+          : Object.fromEntries(
+              Object.entries(flags).map(([name, flag]) => [
+                name,
+                { ...flag, required: false, description: "Retired parameter" },
+              ]),
+            ),
+      handler: () =>
+        Effect.succeed(
+          envelope(command, {
+            ok: false,
+            diagnostic: diagnostic(
+              "COMMAND_RETIRED",
+              `${command} is retired from Template Document authoring.`,
+            ),
+          }),
+        ),
+    });
   };
 
-  plugin.registerCliHandler(
-    TEMPLATE_STATUS_COMMAND,
-    "Report ZotLit Template Workbench state",
-    null,
-    handlers[TEMPLATE_STATUS_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_DATA_COMMAND,
-    "Return serialized ZotLit Template data, payload under 'zt'",
-    dataFlags(),
-    handlers[TEMPLATE_DATA_COMMAND],
-  );
+  host.registerCliCommand(TEMPLATE_STATUS_COMMAND, {
+    description: "Report ZotLit Template Workbench state",
+    flags: null,
+    handler: handlers[TEMPLATE_STATUS_COMMAND],
+  });
+  host.registerCliCommand(TEMPLATE_DATA_COMMAND, {
+    description: "Return serialized ZotLit Template data, payload under 'zt'",
+    flags: dataFlags(),
+    handler: handlers[TEMPLATE_DATA_COMMAND],
+  });
   registerRetired(TEMPLATE_SCHEMA_COMMAND, null);
   registerRetired(TEMPLATE_RENDER_COMMAND, renderFlags());
   registerRetired(TEMPLATE_DOCUMENT_RENDER_COMMAND, documentRenderFlags());
-  plugin.registerCliHandler(
-    TEMPLATE_GUIDE_COMMAND,
-    "Print the ZotLit Template Workbench guide",
-    guideFlags(),
-    handlers[TEMPLATE_GUIDE_COMMAND],
-  );
+  host.registerCliCommand(TEMPLATE_GUIDE_COMMAND, {
+    description: "Print the ZotLit Template Workbench guide",
+    flags: guideFlags(),
+    handler: handlers[TEMPLATE_GUIDE_COMMAND],
+  });
   registerRetired(TEMPLATE_SOURCE_COMMAND, sourceFlags());
   registerRetired(FRONTMATTER_STATUS_COMMAND, null);
   registerRetired(FRONTMATTER_EVAL_COMMAND, frontmatterEvalFlags());

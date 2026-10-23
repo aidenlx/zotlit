@@ -166,9 +166,46 @@ export const serviceTagId: Rule = {
   },
 };
 
+/**
+ * `<plugin>.registerCliHandler(…)`: a zotlit:* command registers an Effect
+ * handler through `registerCliCommand`, which the plugin runs on its runtime.
+ * The plugin's own `this`/`super` calls are the boundary itself.
+ */
+export const cliCommandRegistration: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Register a zotlit:* command through registerCliCommand, not registerCliHandler.",
+    },
+    messages: {
+      handler:
+        "Register the command with host.registerCliCommand and an Effect handler (src/lib/cli-command.ts).",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const callee = node.callee;
+        if (
+          callee.type === "MemberExpression" &&
+          !callee.computed &&
+          callee.property.type === "Identifier" &&
+          callee.property.name === "registerCliHandler" &&
+          callee.object.type !== "Super" &&
+          callee.object.type !== "ThisExpression"
+        )
+          context.report({ node: callee.property, messageId: "handler" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
+    "cli-command-registration": cliCommandRegistration,
     "effect-native-resources": effectNativeResources,
     "no-legacy-service": noLegacyService,
     "service-tag-id": serviceTagId,

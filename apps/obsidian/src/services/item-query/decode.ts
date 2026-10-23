@@ -1,7 +1,7 @@
 // Decodes the flat CLI arguments of the ZotLit Query commands, once, in the
 // renderer: the query command into a `DecodedQuery` that crosses the
-// ZoteroReads worker seam as plain JSON, or into the diagnostic of the first
-// malformed argument.
+// ZoteroReads worker seam through its own codec, or into the diagnostic of
+// the first malformed argument.
 //
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
@@ -9,18 +9,25 @@
 
 import { isAbsolute } from "node:path";
 import type { CliData } from "obsidian";
-import * as v from "valibot";
 
-import { parseIndexedKey } from "@zotlit/db";
 import { nameDictionary, UNLIMITED_LIMIT } from "@zotlit/item-query";
 
 import {
+  cliDefault,
+  cliIndexedKey,
+  cliJson,
+  cliLiterals,
+  cliMap,
+  cliMapEffect,
   cliParams,
+  cliRule,
   cliText,
   cliVariants,
   decodeCliParams,
+  amendRejection,
 } from "@/lib/cli-params";
-import type { CliParamName, CliRequest } from "@/lib/cli-params";
+import type { CliParamName, CliRejection } from "@/lib/cli-params";
+import { Effect, Schema, SchemaIssue } from "@/lib/effect";
 import {
   compareSelectors,
   selectorKey,
@@ -45,41 +52,41 @@ import {
 import type { QueryOutputFormat } from "./contract";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
+import { QUERY_DATASETS } from "./query-codec";
+import type {
+  DecodedQuery,
+  DecodedValues,
+  NamedLibraries,
+} from "./query-codec";
 
 export { rejectionDiagnostic } from "./contract";
-
-/** The Libraries the caller names, as a scope that needs each of them. */
-export interface NamedLibraries {
-  scope: LibraryScope;
-  /** The argument that names them. */
-  parameter: "library";
-}
 
 const QUERY_ID = /^[\w.-]+$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
-const notQueryId = (issue: { input: unknown }) =>
-  `id '${String(issue.input)}' is not a query id: use ${QUERY_ID_FORM}.`;
-
-const queryId = v.pipe(
-  v.string(),
-  v.maxLength(QUERY_ID_MAX_LENGTH, notQueryId),
-  v.regex(QUERY_ID, notQueryId),
+const queryId = Schema.String.check(
+  Schema.makeFilter(
+    (text: string) =>
+      (text.length <= QUERY_ID_MAX_LENGTH && QUERY_ID.test(text)) ||
+      `id '${text}' is not a query id: use ${QUERY_ID_FORM}.`,
+  ),
 );
 
 /**
- * A parameter that carries JSON. Text that is no JSON answers its own
- * message; valid JSON keeps the first issue raised by `schema`.
+ * Text decoded by the schema that `pick` chooses for it, which raises its own
+ * issues: the caller's text names its form, as `all` or a JSON array does.
  */
-function jsonParameter<TSchema extends v.GenericSchema>(
-  parameter: string,
-  expected: string,
-  schema: TSchema,
+function textOf<T>(
+  pick: (text: string) => Schema.Decoder<T>,
+  options?: { readonly onExcessProperty?: "error" },
 ) {
-  return v.pipe(
-    v.string(),
-    v.parseJson(undefined, `${parameter} is not valid JSON: use ${expected}.`),
-    schema,
+  return Schema.String.pipe(
+    cliMapEffect((text: string, parseOptions) =>
+      Schema.decodeUnknownEffect(pick(text))(text, {
+        ...parseOptions,
+        ...options,
+      }).pipe(Effect.mapError(({ issue }) => issue)),
+    ),
   );
 }
 
@@ -108,79 +115,81 @@ function splitList(text: string): { value: string; start: number }[] {
   return parts;
 }
 
-const commaList = v.pipe(
-  v.string(),
-  v.rawCheck<string>(({ dataset, addIssue }) => {
-    if (!dataset.typed) return;
-    const parts = splitList(dataset.value);
+/** A comma list, as its elements; an empty element is the issue, at its index. */
+const commaList = Schema.String.pipe(
+  cliMapEffect((text: string, options) => {
+    const parts = splitList(text);
     const empty = parts.findIndex(({ value }) => value === "");
-    if (empty !== -1)
-      addIssue({
-        message: `List element ${empty + 1} is empty at position ${parts[empty]!.start + 1}. Give a value between commas.`,
-        path: [
-          {
-            type: "array",
-            origin: "value",
-            input: parts.map(({ value }) => value),
-            key: empty,
-            value: "",
-          },
-        ],
-      });
+    return empty === -1
+      ? Effect.succeed(parts.map(({ value }) => value))
+      : Effect.fail(
+          new SchemaIssue.Pointer(
+            [empty],
+            new SchemaIssue.InvalidValue(
+              {
+                message: `List element ${empty + 1} is empty at position ${parts[empty]!.start + 1}. Give a value between commas.`,
+              },
+              "",
+              options,
+            ),
+          ),
+        );
   }),
-  v.transform((text) => splitList(text).map(({ value }) => value)),
 );
 
-function listParameter<TSchema extends v.GenericSchema>(
+/**
+ * A parameter that takes a comma list, or a JSON array when its text starts
+ * with `[`; `schema` decodes the elements either form gives.
+ */
+function listParameter<T>(
   parameter: string,
   expected: string,
-  schema: TSchema,
+  schema: Schema.Decoder<T>,
 ) {
-  return v.pipe(
-    v.lazy((input) =>
-      typeof input === "string" && input.trimStart().startsWith("[")
-        ? jsonParameter(parameter, expected, v.unknown())
-        : commaList,
-    ),
-    schema,
+  return textOf((text) =>
+    text.trimStart().startsWith("[")
+      ? cliJson(`${parameter} is not valid JSON: use ${expected}.`, schema)
+      : commaList.pipe(Schema.decodeTo(schema)),
   );
 }
 
 /** One library argument names one or more Target Libraries. */
-const library = v.lazy((input) =>
-  input === "all"
-    ? v.pipe(
-        v.literal("all"),
-        v.transform((): LibraryScope => ({ mode: "all" })),
-      )
+const library = textOf((text): Schema.Decoder<LibraryScope> =>
+  text === "all"
+    ? Schema.Literal("all").pipe(cliMap((): LibraryScope => ({ mode: "all" })))
     : listParameter(
         "library",
         "a JSON array of Library selectors",
-        v.pipe(
-          v.array(
-            selectorKeySchema(
-              (text) =>
-                `'${text}' is not a Library: use personal or group:<groupID>.`,
+        Schema.Array(
+          selectorKeySchema(
+            (text) =>
+              `'${text}' is not a Library: use personal or group:<groupID>.`,
+          ),
+        )
+          .check(
+            // The Diagnostic Report's wording: policies/cli-text.md.
+            Schema.isMinLength(1, {
+              message: "Invalid length: Expected >=1 but received 0",
+            }),
+            Schema.makeFilter(
+              (selectors: readonly LibrarySelector[]) =>
+                firstRepeat(selectors) === undefined ||
+                `library names '${firstRepeat(selectors)}' twice: name each Library once.`,
             ),
+          )
+          .pipe(
+            cliMap((selectors): LibraryScope => ({
+              mode: "selected",
+              libraries: selectors.toSorted(compareSelectors),
+            })),
           ),
-          v.minLength(1),
-          v.check(
-            (selectors) => !firstRepeat(selectors),
-            (issue) =>
-              `library names '${firstRepeat(issue.input)}' twice: name each Library once.`,
-          ),
-          v.transform((selectors): LibraryScope => ({
-            mode: "selected",
-            libraries: selectors.toSorted(compareSelectors),
-          })),
-        ),
       ),
 );
 
-const from = v.picklist(
-  ["items", "attachments", "annotations"],
-  (issue) =>
-    `from '${String(issue.input)}' is not a Query Dataset: use items, attachments, annotations.`,
+const from = cliLiterals(
+  QUERY_DATASETS,
+  (input) =>
+    `from '${input}' is not a Query Dataset: use items, attachments, annotations.`,
 );
 
 /** The key of the first selector `selectors` names twice. */
@@ -196,145 +205,145 @@ function firstRepeat(
   return undefined;
 }
 
-const notPositiveInteger = (issue: { input: unknown }) =>
-  `limit '${String(issue.input)}' is not a positive integer: use a positive integer, or all for every match.`;
-
-const limit = v.lazy((input) =>
-  input === UNLIMITED_LIMIT
-    ? v.pipe(
-        v.literal(UNLIMITED_LIMIT),
-        v.transform(() => null),
-      )
-    : v.pipe(
-        v.string(),
-        v.regex(POSITIVE_INTEGER, notPositiveInteger),
-        v.check(
-          (text) => Number.isSafeInteger(Number(text)),
-          notPositiveInteger,
+const limit = textOf((text): Schema.Decoder<number | null> =>
+  text === UNLIMITED_LIMIT
+    ? Schema.Literal(UNLIMITED_LIMIT).pipe(cliMap(() => null))
+    : Schema.String.check(
+        Schema.makeFilter(
+          (text: string) =>
+            (POSITIVE_INTEGER.test(text) &&
+              Number.isSafeInteger(Number(text))) ||
+            `limit '${text}' is not a positive integer: use a positive integer, or all for every match.`,
         ),
-        v.transform(Number),
-      ),
+      ).pipe(cliMap(Number)),
 );
 
 /** The Indexed Key of a record that `this` binds. */
 const contextKey = (parameter: string, noun: string) =>
-  v.pipe(
-    v.string(),
-    v.check((text) => {
-      const parsed = parseIndexedKey(text);
-      return parsed !== null && (parsed.groupID === null || parsed.groupID > 0);
-    }, `${parameter} must be the Indexed Key of an ${noun}, such as ABCD2345 or ABCD2345g4815.`),
+  Schema.String.check(
+    cliIndexedKey(
+      `${parameter} must be the Indexed Key of an ${noun}, such as ABCD2345 or ABCD2345g4815.`,
+    ),
   );
+
+const FORMULAS_EXAMPLE = 'such as {"year":"date.year"}';
+
+const formulas = cliJson(
+  `formulas is not valid JSON: use a JSON object of Formula names and Filter Expressions, ${FORMULAS_EXAMPLE}.`,
+  Schema.Unknown,
+)
+  .check(
+    Schema.makeFilter(
+      (input: unknown) =>
+        !Array.isArray(input) ||
+        `formulas is a JSON array: use a JSON object, ${FORMULAS_EXAMPLE}.`,
+    ),
+    Schema.makeFilter(
+      (input: unknown) =>
+        (typeof input === "object" && input !== null) ||
+        `formulas is not a JSON object: use a JSON object, ${FORMULAS_EXAMPLE}.`,
+    ),
+    Schema.makeFilter(
+      (input: unknown) =>
+        Object.values(input as object).every(
+          (text) => typeof text === "string",
+        ) ||
+        `formulas holds an expression that is not text: give each Formula a Filter Expression string, ${FORMULAS_EXAMPLE}.`,
+    ),
+  )
+  .pipe(
+    // The names come from the caller's text: a Formula named __proto__
+    // stays a Formula, in a dictionary without a prototype.
+    cliMap((input) =>
+      nameDictionary(Object.entries(input as Record<string, string>)),
+    ),
+  );
+
+const SORT_EXPECTED =
+  'a JSON array of {"field","direction"} objects with direction "asc" or "desc"';
+
+const sortSpecs = Schema.Array(
+  Schema.Struct({
+    field: cliText("Give a Sortable Field after the sort sign."),
+    direction: cliLiterals(["asc", "desc"]),
+  }),
+);
+
+/** A comma list of signed fields, or a JSON array of sort objects. */
+const sort = textOf(
+  (text): Schema.Decoder<Schema.Schema.Type<typeof sortSpecs>> =>
+    text.trimStart().startsWith("[")
+      ? cliJson(`sort is not valid JSON: use ${SORT_EXPECTED}.`, sortSpecs)
+      : commaList.pipe(
+          cliMap((parts) =>
+            parts.map((part) => ({
+              field:
+                part.startsWith("-") || part.startsWith("+")
+                  ? part.slice(1)
+                  : part,
+              direction: part.startsWith("-")
+                ? ("desc" as const)
+                : ("asc" as const),
+            })),
+          ),
+          Schema.decodeTo(sortSpecs),
+        ),
+  // A sort object holds field and direction alone.
+  { onExcessProperty: "error" },
+);
 
 /** The arguments every query takes, whichever Libraries it reads. */
 const queryOptions = {
-  from: v.optional(from, "items"),
-  group: v.optional(
+  from: cliDefault(from, "items"),
+  group: Schema.optionalKey(
     cliText("group is empty: give one scalar Projection Path."),
   ),
-  filter: v.optional(
+  filter: Schema.optionalKey(
     cliText(
       "filter is empty: give a Filter Expression, or omit filter to match every row in the dataset.",
     ),
   ),
-  fields: v.optional(
+  fields: Schema.optionalKey(
     listParameter(
       "fields",
       "a JSON array of Projection Path strings",
-      v.array(v.string()),
+      Schema.Array(Schema.String),
     ),
   ),
-  formulas: v.optional(
-    jsonParameter(
-      "formulas",
-      'a JSON object of Formula names and Filter Expressions, such as {"year":"date.year"}',
-      v.pipe(
-        v.custom<unknown>(
-          (input) => !Array.isArray(input),
-          'formulas is a JSON array: use a JSON object, such as {"year":"date.year"}.',
-        ),
-        v.custom<Readonly<Record<string, unknown>>>(
-          (input) => typeof input === "object" && input !== null,
-          'formulas is not a JSON object: use a JSON object, such as {"year":"date.year"}.',
-        ),
-        v.check(
-          (input) =>
-            Object.values(input).every((text) => typeof text === "string"),
-          'formulas holds an expression that is not text: give each Formula a Filter Expression string, such as {"year":"date.year"}.',
-        ),
-        // The names come from the caller's text: a Formula named __proto__
-        // stays a Formula, in a dictionary without a prototype.
-        v.transform((input) =>
-          nameDictionary(Object.entries(input as Record<string, string>)),
-        ),
+  formulas: Schema.optionalKey(formulas),
+  sort: Schema.optionalKey(sort),
+  limit: cliDefault(limit, String(DEFAULT_CLI_LIMIT)),
+  output: Schema.optionalKey(
+    Schema.String.check(
+      Schema.makeFilter(
+        (output: string) =>
+          (isAbsolute(output) && !output.includes("\0")) ||
+          "output must be an absolute path to a new file.",
       ),
     ),
   ),
-  sort: v.optional(
-    v.pipe(
-      v.lazy((input) =>
-        typeof input === "string" && input.trimStart().startsWith("[")
-          ? jsonParameter(
-              "sort",
-              'a JSON array of {"field","direction"} objects with direction "asc" or "desc"',
-              v.unknown(),
-            )
-          : v.pipe(
-              commaList,
-              v.transform((parts) =>
-                parts.map((part) => ({
-                  field:
-                    part.startsWith("-") || part.startsWith("+")
-                      ? part.slice(1)
-                      : part,
-                  direction: part.startsWith("-")
-                    ? ("desc" as const)
-                    : ("asc" as const),
-                })),
-              ),
-            ),
-      ),
-      v.array(
-        v.strictObject({
-          field: cliText("Give a Sortable Field after the sort sign."),
-          direction: v.picklist(["asc", "desc"]),
-        }),
-      ),
-    ),
-  ),
-  limit: v.optional(limit, String(DEFAULT_CLI_LIMIT)),
-  output: v.optional(
-    v.pipe(
-      v.string(),
-      v.check(
-        (output) => isAbsolute(output) && !output.includes("\0"),
-        "output must be an absolute path to a new file.",
-      ),
-    ),
-  ),
-  format: v.optional(
-    v.picklist(
+  format: cliDefault(
+    cliLiterals(
       QUERY_OUTPUT_FORMATS,
-      (issue) =>
-        `format '${String(issue.input)}' is not an output format: use ${QUERY_OUTPUT_FORMATS.join(", ")}.`,
+      (input) =>
+        `format '${input}' is not an output format: use ${QUERY_OUTPUT_FORMATS.join(", ")}.`,
     ),
     "json",
   ),
-  id: v.optional(queryId),
-  "this-item": v.optional(contextKey("this-item", "Item")),
-  "this-attachment": v.optional(contextKey("this-attachment", "Attachment")),
+  id: Schema.optionalKey(queryId),
+  "this-item": Schema.optionalKey(contextKey("this-item", "Item")),
+  "this-attachment": Schema.optionalKey(
+    contextKey("this-attachment", "Attachment"),
+  ),
 };
 
-/**
- * The arguments of one query after decoding. Plain JSON, with no undefined
- * value: it crosses the worker seam as it is. An absent key is an argument
- * the caller omitted; `libraries: null` leaves the Libraries to the Library
- * Scope in force.
- */
+type QueryOptions = Schema.Struct.Type<typeof queryOptions>;
+
+/** The {@link DecodedQuery} of the caller's parameters. */
 function decodedQuery(
-  options: v.InferOutput<v.StrictObjectSchema<typeof queryOptions, undefined>>,
+  options: QueryOptions,
   libraries: NamedLibraries | null,
-) {
+): DecodedQuery {
   const {
     from,
     filter,
@@ -359,11 +368,8 @@ function decodedQuery(
     ...(formulas === undefined ? {} : { formulas }),
     ...(sort === undefined ? {} : { sort }),
     ...(output === undefined ? {} : { output }),
-    // Only a file holds CSV or TSV: the answer itself is always JSON.
     ...(format === "json" ? {} : { format }),
-    // The id that `zotlit:query-cancel` names the query by.
     ...(id === undefined ? {} : { id }),
-    // The Query Context: the records a filter reads as this.item and this.attachment.
     ...(item === undefined && attachment === undefined
       ? {}
       : {
@@ -376,83 +382,68 @@ function decodedQuery(
 }
 
 /** CSV and TSV go to a file: the answer in the terminal is always JSON. */
-const formatHasOutput = (input: {
-  format: QueryOutputFormat;
-  output?: string;
-}) => input.format === "json" || input.output !== undefined;
-const formatNeedsOutput = (issue: { input: { format: QueryOutputFormat } }) =>
-  `format=${issue.input.format} writes a file: add output=<absolute-path> with a new filename.`;
+const formatHasOutput = cliRule(
+  "format",
+  (input: { format: QueryOutputFormat; output?: string }) =>
+    input.format === "json" || input.output !== undefined,
+  (input) =>
+    `format=${input.format} writes a file: add output=<absolute-path> with a new filename.`,
+);
 
 const queryVariants = {
-  library: v.pipe(
-    cliParams({ library, ...queryOptions }),
-    v.forward(
-      v.partialCheck(
-        [["format"], ["output"]],
-        formatHasOutput,
-        formatNeedsOutput,
+  library: cliParams({ library, ...queryOptions })
+    .check(formatHasOutput)
+    .pipe(
+      cliMap(({ library: scope, ...options }) =>
+        decodedQuery(options, { scope, parameter: "library" }),
       ),
-      ["format"],
     ),
-    v.transform(({ library: scope, ...options }) =>
-      decodedQuery(options, { scope, parameter: "library" }),
-    ),
-  ),
-  scope: v.pipe(
-    cliParams(queryOptions),
-    v.forward(
-      v.partialCheck(
-        [["format"], ["output"]],
-        formatHasOutput,
-        formatNeedsOutput,
-      ),
-      ["format"],
-    ),
-    v.transform((options) => decodedQuery(options, null)),
-  ),
+  scope: cliParams(queryOptions)
+    .check(formatHasOutput)
+    .pipe(cliMap((options) => decodedQuery(options, null))),
 };
 const queryVariant = (params: CliData) =>
   params.library !== undefined ? "library" : "scope";
 
 /** The schema command optionally narrows its live dataset listing. */
 export function decodeSchemaArguments(params: CliData) {
-  return decodeCliParams(params, cliParams({ from: v.optional(from) }), {
-    command: QUERY_SCHEMA_COMMAND,
-  });
+  return decodeCliParams(
+    params,
+    cliParams({ from: Schema.optionalKey(from) }),
+    {
+      command: QUERY_SCHEMA_COMMAND,
+    },
+  );
 }
 
-const guideParams = v.pipe(
-  cliParams({
-    topic: v.optional(
-      v.picklist(
-        GUIDE_TOPIC_NAMES,
-        (issue) =>
-          `topic '${String(issue.input)}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
-      ),
+const guideParams = cliParams({
+  topic: Schema.optionalKey(
+    cliLiterals(
+      GUIDE_TOPIC_NAMES,
+      (input) =>
+        `topic '${input}' is not a guide topic: use ${GUIDE_TOPIC_NAMES.join(", ")}.`,
     ),
-  }),
-  v.transform(({ topic }) => topic ?? null),
-);
+  ),
+}).pipe(cliMap(({ topic }): GuideTopic | null => topic ?? null));
 
 /** The guide topic, or `null` for the quickstart. */
 export function decodeGuideArguments(
   params: CliData,
-): CliRequest<GuideTopic | null> {
+): Effect.Effect<GuideTopic | null, CliRejection> {
   return decodeCliParams(params, guideParams, {
     command: QUERY_GUIDE_COMMAND,
   });
 }
 
-const cancelParams = v.pipe(
-  cliParams(
-    { id: queryId },
-    { id: "id is missing: give the id of the query to cancel, as in id=<id>." },
-  ),
-  v.transform(({ id }) => id),
-);
+const cancelParams = cliParams(
+  { id: queryId },
+  { id: "id is missing: give the id of the query to cancel, as in id=<id>." },
+).pipe(cliMap(({ id }) => id));
 
 /** The id of the query to cancel. */
-export function decodeCancelArguments(params: CliData): CliRequest<string> {
+export function decodeCancelArguments(
+  params: CliData,
+): Effect.Effect<string, CliRejection> {
   return decodeCliParams(params, cancelParams, {
     command: QUERY_CANCEL_COMMAND,
   });
@@ -460,36 +451,35 @@ export function decodeCancelArguments(params: CliData): CliRequest<string> {
 
 const queryParams = cliVariants(queryVariant, queryVariants);
 
-/** The decoded query crosses the worker seam as plain JSON. */
-export type DecodedQuery = v.InferOutput<typeof queryParams>;
 export type QueryParam = CliParamName<typeof queryParams>;
 
-export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
-  const request = decodeCliParams(params, queryParams, {
+export function decodeQuery(
+  params: CliData,
+): Effect.Effect<DecodedQuery, CliRejection> {
+  return decodeCliParams(params, queryParams, {
     command: QUERY_COMMAND,
-  });
-  if (
-    request.kind === "invalid" &&
-    (request.parameter === "item" || request.parameter === "attachment")
-  ) {
+  }).pipe(Effect.mapError((rejection) => recovery(params, rejection)));
+}
+
+/** A rejected query, with the action that recovers from it. */
+function recovery(params: CliData, rejection: CliRejection): CliRejection {
+  const { parameter, issue } = rejection;
+  if (parameter === "item" || parameter === "attachment") {
     const field =
       params.from === "annotations" ||
-      (params.from === "attachments" && request.parameter === "item")
-        ? `${request.parameter}.indexedKey`
+      (params.from === "attachments" && parameter === "item")
+        ? `${parameter}.indexedKey`
         : "indexedKey";
-    return {
-      ...request,
+    return amendRejection(rejection, {
       hint: `Use filter='${field} == "<key>"' to select by Indexed Key.`,
-    };
+    });
   }
-  if (request.kind === "invalid" && request.parameter === "libraries") {
-    return {
-      ...request,
+  if (parameter === "libraries") {
+    return amendRejection(rejection, {
       hint: "Use library=<list|all> to select the Target Libraries.",
-    };
+    });
   }
-  if (request.kind === "invalid" && request.issue) {
-    const { parameter, issue } = request;
+  if (issue) {
     const input = params[parameter];
     const index = issue.keys?.[0];
     if (
@@ -501,51 +491,49 @@ export function decodeQuery(params: CliData): CliRequest<DecodedQuery> {
       const part = splitList(input)[index];
       if (part?.value === "") {
         // Keep the list element index and the UTF-16 character span distinct.
-        return {
-          ...request,
+        return amendRejection(rejection, {
           issue: { ...issue, span: { from: part.start, to: part.start } },
-        };
+        });
       }
     }
   }
-  return request;
+  return rejection;
 }
 
-const valuesParams = v.pipe(
-  cliParams(
-    {
-      kind: v.picklist(
-        ["collections", "tags"],
-        "kind must be collections or tags.",
-      ),
-      library: v.optional(
-        v.pipe(
-          library,
-          v.check(
-            (scope) =>
-              scope.mode === "all" ||
-              (scope.mode === "selected" && scope.libraries.length === 1),
+const valuesParams = cliParams(
+  {
+    kind: cliLiterals(
+      ["collections", "tags"],
+      "kind must be collections or tags.",
+    ),
+    library: Schema.optionalKey(
+      library.check(
+        Schema.makeFilter(
+          (scope: LibraryScope) =>
+            scope.mode === "all" ||
+            (scope.mode === "selected" && scope.libraries.length === 1) ||
             "Use one Library selector, or all.",
-          ),
         ),
       ),
-      match: v.optional(v.string()),
-      limit: v.optional(limit, String(DEFAULT_CLI_LIMIT)),
-    },
-    { kind: "kind is required: use kind=collections or kind=tags." },
-  ),
-  v.transform(({ library: scope, ...options }) => ({
+    ),
+    match: Schema.optionalKey(Schema.String),
+    limit: cliDefault(limit, String(DEFAULT_CLI_LIMIT)),
+  },
+  { kind: "kind is required: use kind=collections or kind=tags." },
+).pipe(
+  cliMap(({ library: scope, ...options }): DecodedValues => ({
     ...options,
     libraries:
       scope === undefined ? null : { scope, parameter: "library" as const },
   })),
 );
 
-export type DecodedValues = v.InferOutput<typeof valuesParams>;
 export type QueryValuesParam = CliParamName<typeof valuesParams>;
 
 /** Discover exact Collection paths or Tag names before writing a filter. */
-export function decodeValues(params: CliData): CliRequest<DecodedValues> {
+export function decodeValues(
+  params: CliData,
+): Effect.Effect<DecodedValues, CliRejection> {
   return decodeCliParams(params, valuesParams, {
     command: QUERY_VALUES_COMMAND,
   });

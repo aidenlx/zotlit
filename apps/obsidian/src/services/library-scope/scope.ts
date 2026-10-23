@@ -27,6 +27,8 @@ import * as v from "valibot";
 
 import type { Library } from "@zotlit/db";
 
+import { Effect, Schema, SchemaGetter, SchemaIssue } from "@/lib/effect";
+
 const groupID = v.pipe(v.number(), v.safeInteger(), v.minValue(1));
 
 /** A stable reference to one Library, independent of its local `libraryID`. */
@@ -53,6 +55,27 @@ export const libraryScopeSchema = v.variant("mode", [
 ]);
 
 export type LibraryScope = v.InferOutput<typeof libraryScopeSchema>;
+
+const librarySelectorWire = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("personal") }),
+  Schema.Struct({
+    type: Schema.Literal("group"),
+    groupID: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  }),
+]);
+
+/**
+ * A Library Scope where it crosses a seam as Effect Schema: the CLI's decoded
+ * requests and the ZoteroReads worker. It checks the form alone; validity of
+ * a saved value is {@link libraryScopeSchema}'s.
+ */
+export const libraryScopeWire = Schema.Union([
+  Schema.Struct({ mode: Schema.Literal("all") }),
+  Schema.Struct({
+    mode: Schema.Literal("selected"),
+    libraries: Schema.Array(librarySelectorWire),
+  }),
+]);
 
 /** Fresh installations discover every local Library. */
 export const DEFAULT_LIBRARY_SCOPE: LibraryScope = Object.freeze({
@@ -112,13 +135,21 @@ const GROUP_SELECTOR_KEY = regex("^group:([1-9]\\d*)$");
  * @param message the diagnostic for text that names no Library
  */
 export function selectorKeySchema(message: (text: string) => string) {
-  return v.pipe(
-    v.string(),
-    v.rawTransform<string, LibrarySelector>(({ dataset, addIssue, NEVER }) => {
-      const selector = parseSelectorKey(dataset.value);
-      if (selector) return selector;
-      addIssue({ message: message(dataset.value) });
-      return NEVER;
+  return Schema.String.pipe(
+    Schema.decodeTo(librarySelectorWire, {
+      decode: SchemaGetter.transformEffect((text: string, options) => {
+        const selector = parseSelectorKey(text);
+        return selector
+          ? Effect.succeed(selector)
+          : Effect.fail(
+              new SchemaIssue.InvalidValue(
+                { message: message(text) },
+                text,
+                options,
+              ),
+            );
+      }),
+      encode: SchemaGetter.transform(selectorKey),
     }),
   );
 }
@@ -127,11 +158,8 @@ function parseSelectorKey(text: string): LibrarySelector | null {
   if (text === "personal") return { type: "personal" };
   const group = GROUP_SELECTOR_KEY.exec(text);
   if (!group) return null;
-  const parsed = v.safeParse(librarySelectorSchema, {
-    type: "group",
-    groupID: Number(group[1]),
-  });
-  return parsed.success ? parsed.output : null;
+  const groupID = Number(group[1]);
+  return Number.isSafeInteger(groupID) ? { type: "group", groupID } : null;
 }
 
 /** Canonical order: My Library first, then groups by ascending group id. */

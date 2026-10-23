@@ -74,7 +74,7 @@ export function lineColumn(
 /**
  * The diagnostics of one CLI namespace with the Diagnostic Report of the Item
  * Query CLI: every diagnostic carries `severity`, `report`, `found`,
- * `expected`, and `suggestions`, and a rejected parameter carries the valibot
+ * `expected`, and `suggestions`, and a rejected parameter carries the issue
  * path and received value. One renderer serves every namespace that uses it.
  */
 export function createRenderedCliDiagnostics<

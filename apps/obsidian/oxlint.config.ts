@@ -58,6 +58,7 @@ export default defineConfig({
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
+    "zotlit-services/cli-command-registration": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": [
       "error",
@@ -258,10 +259,6 @@ export default defineConfig({
       // Effect tests written before the rule, in plain Vitest. A file moves
       // off this list when its cases move to it.effect.
       files: [
-        "src/services/item-query/answer.test.ts",
-        "src/services/item-query/job.test.ts",
-        "src/services/item-query/trace.test.ts",
-        "src/services/item-query/values.test.ts",
         "src/services/note-feature/update-batch.test.ts",
         "src/services/zotero-reads/citation-lookup.test.ts",
         "src/services/zotero-reads/connection.test.ts",

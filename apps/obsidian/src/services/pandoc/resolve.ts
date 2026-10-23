@@ -3,6 +3,8 @@
 import { parseLinktext } from "obsidian";
 import type { LinkCache } from "obsidian";
 
+import { Effect } from "@/lib/effect";
+
 /** Fragment prefix that declares citation intent on a link. */
 const CITE_FRAGMENT_PREFIX = "#cite:";
 
@@ -73,7 +75,7 @@ export interface ResolvePorts {
      */
     read: (
       indexedKeys: readonly string[],
-    ) => Promise<ReadonlyMap<string, ResolvedItem> | null>;
+    ) => Effect.Effect<ReadonlyMap<string, ResolvedItem> | null>;
   };
 }
 
@@ -89,10 +91,10 @@ export interface CitationLink {
  * `zotlit:resolve` contract. All-or-nothing: one error suppresses every
  * citation, and every discoverable error is reported together.
  */
-export async function resolveCitations(
+export const resolveCitations = Effect.fn("Pandoc.resolveCitations")(function* (
   absolutePath: string,
   ports: ResolvePorts,
-): Promise<ResolveResponse> {
+): Effect.fn.Return<ResolveResponse> {
   const document = ports.readDocument(absolutePath);
   if (!document) {
     return {
@@ -113,7 +115,9 @@ export async function resolveCitations(
     return errors.length > 0 ? { errors } : { citations: {} };
   }
 
-  const items = await ports.database.read(links.map((link) => link.indexedKey));
+  const items = yield* ports.database.read(
+    links.map((link) => link.indexedKey),
+  );
   if (!items) {
     const { dataDir, readMode } = ports.database.describe();
     errors.push({
@@ -161,7 +165,7 @@ export async function resolveCitations(
   }
 
   return errors.length > 0 ? { errors } : { citations };
-}
+});
 
 /**
  * The Literature Note links of one document, one entry per unique decoded bare

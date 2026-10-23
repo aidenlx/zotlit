@@ -60,7 +60,7 @@ import {
 } from "./contract";
 import type { Diagnostic, QueryCliCommand, LibraryWire } from "./contract";
 import { CLI_DATASETS } from "./datasets";
-import type { DecodedQuery, NamedLibraries } from "./decode";
+import type { DecodedQuery, NamedLibraries } from "./query-codec";
 import type {
   QueryViewGroup,
   QueryViewResult,

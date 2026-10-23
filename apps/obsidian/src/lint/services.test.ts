@@ -2,6 +2,7 @@ import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
 
 import {
+  cliCommandRegistration,
   effectNativeResources,
   noLegacyService,
   serviceTagId,
@@ -79,6 +80,21 @@ tester.run("service-tag-id", serviceTagId, {
     {
       code: 'class Probe extends Context.Service<Probe, Shape>()("zotlit/UseLedger") {}',
       errors: [{ messageId: "id" }],
+    },
+  ],
+});
+
+tester.run("cli-command-registration", cliCommandRegistration, {
+  valid: [
+    `host.registerCliCommand("zotlit:a", "A", null, handler)`,
+    // ZotLitPlugin's own boundary.
+    `class P { registerCliHandler() { super.registerCliHandler(a, b, c, d); } }`,
+    `class P { run() { this.registerCliHandler(a, b, c, d); } }`,
+  ],
+  invalid: [
+    {
+      code: `plugin.registerCliHandler("zotlit:a", "A", null, handler)`,
+      errors: [{ messageId: "handler" }],
     },
   ],
 });

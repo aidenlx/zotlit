@@ -14,8 +14,9 @@ import type {
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
-import { Data, Effect } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
+import { Cause, Data, Effect } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -26,8 +27,6 @@ import type {
 } from "@/services/zotero-reads/service";
 
 import type { ExcerptRequest } from "./contract";
-
-const logger = getLogger("excerpt-image");
 
 /** The reads one excerpt request resolves through. */
 export type ExcerptRequestReads = Pick<
@@ -43,7 +42,7 @@ export type ExcerptRequestReads = Pick<
  * The database verifies the source again, so a record the source does not hold
  * resolves to nothing rather than to another database's pixels.
  */
-export async function savedExcerptRequest(options: {
+export function savedExcerptRequest(options: {
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
   sourceScope: string | null;
@@ -57,42 +56,56 @@ export async function savedExcerptRequest(options: {
     dataDir: options.paths.dataDir,
     baseAttachmentPath: options.paths.baseAttachmentPath,
   };
-  if (!source || sourceScope !== paths.dataDir) return null;
-  try {
-    // One Snapshot, so the identity and the attachment come from one database.
-    await using lease = await options.zoteroReads.acquireRead();
-    const request = await excerptRequest({
-      annotation,
-      source,
-      reads: lease.reads,
-      paths,
-    });
-    return options.paths.dataDir === paths.dataDir ? request : null;
-  } catch (error) {
-    logger.debug("No excerpt request: the database did not answer", {
-      annotationKey: annotation.key,
-      error,
-    });
-    return null;
-  }
+  if (!source || sourceScope !== paths.dataDir) return Promise.resolve(null);
+  // Callers outside Effect: the one run of this read.
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      // One Snapshot, so the identity and the attachment come from one database.
+      const lease = yield* acquireAsyncDisposable(() =>
+        options.zoteroReads.acquireRead(),
+      );
+      const request = yield* excerptRequest({
+        annotation,
+        source,
+        reads: lease.reads,
+        paths,
+      });
+      return options.paths.dataDir === paths.dataDir ? request : null;
+    }).pipe(
+      Effect.scoped,
+      // Whatever stops the read, as a throw from a reader, resolves to nothing.
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause);
+        return Effect.logDebug(
+          "No excerpt request: the database did not answer",
+        ).pipe(
+          Effect.annotateLogs({
+            annotationKey: annotation.key,
+            error: error instanceof Cause.UnknownError ? error.cause : error,
+          }),
+          Effect.as(null),
+        );
+      }),
+      withLogCategory("excerpt-image"),
+    ),
+  );
 }
 
 /**
  * Resolves file inputs only when the selected source identifies this database.
- *
- * @throws where the database cannot answer.
+ * Fails where the database cannot answer.
  */
-export async function excerptRequest(options: {
+export function excerptRequest(options: {
   annotation: AnnotationRecord;
   source: AnnotationSource;
   reads: ExcerptRequestReads;
   paths: AttachmentPathContext;
-}): Promise<ExcerptRequest | null> {
-  const { identity, attachment } = await readExcerptInputs(
-    options.reads,
-    options.annotation.parentKey,
+}) {
+  return excerptInputs(options.reads, options.annotation.parentKey).pipe(
+    Effect.map(({ identity, attachment }) =>
+      excerptRequestFrom({ ...options, identity, attachment }),
+    ),
   );
-  return excerptRequestFrom({ ...options, identity, attachment });
 }
 
 /**
@@ -101,7 +114,37 @@ export async function excerptRequest(options: {
  * names, with that attachment, `null` where the database holds none. Pass
  * Snapshot-bound reads, so both facts come from one database.
  */
-export async function readExcerptInputs(
+export function excerptInputs(reads: ExcerptRequestReads, parentKey: string) {
+  return Effect.all(
+    [
+      reads.DatabaseIdentity({}),
+      reads.AttachmentSources({ attachmentKeys: [parentKey] }),
+    ],
+    { concurrency: "unbounded" },
+  ).pipe(
+    Effect.map(
+      ([identity, sources]): {
+        identity: ZoteroDatabaseIdentity;
+        sources: AnnotationSources;
+        attachment: Attachment | null;
+      } => ({
+        identity,
+        sources,
+        attachment:
+          sources.attachments.find(
+            ({ indexedKey }) => indexedKey === parentKey,
+          ) ?? null,
+      }),
+    ),
+  );
+}
+
+/**
+ * {@link excerptInputs} for a caller outside Effect.
+ *
+ * @throws where the database cannot answer.
+ */
+export function readExcerptInputs(
   reads: ExcerptRequestReads,
   parentKey: string,
 ): Promise<{
@@ -109,19 +152,7 @@ export async function readExcerptInputs(
   sources: AnnotationSources;
   attachment: Attachment | null;
 }> {
-  const [identity, sources] = await Effect.runPromise(
-    Effect.all(
-      [
-        reads.DatabaseIdentity({}),
-        reads.AttachmentSources({ attachmentKeys: [parentKey] }),
-      ],
-      { concurrency: "unbounded" },
-    ),
-  );
-  const attachment =
-    sources.attachments.find(({ indexedKey }) => indexedKey === parentKey) ??
-    null;
-  return { identity, sources, attachment };
+  return Effect.runPromise(excerptInputs(reads, parentKey));
 }
 
 /**
@@ -178,63 +209,58 @@ export class ExcerptSourceUnavailable extends Data.TaggedError(
  * database, or `null` where the source holds no Library of the key, no
  * Annotation has the key, or its Attachment is gone. Any Annotation type
  * yields a request; the caller decides whether it has an Excerpt Image. Pass
- * Snapshot-bound reads, so every fact comes from one database.
- *
- * @throws {ExcerptSourceUnavailable} where a read fails.
+ * Snapshot-bound reads, so every fact comes from one database. Fails with
+ * {@link ExcerptSourceUnavailable} where a read fails.
  */
 export function excerptRequestForKey(options: {
   reads: ExcerptKeyReads;
   key: string;
   paths: AttachmentPathContext;
-  signal?: AbortSignal;
-}): Promise<ExcerptRequest | null> {
-  const { reads, key, paths, signal } = options;
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const [libraries, identity] = yield* Effect.all(
-        [reads.Libraries({}), reads.DatabaseIdentity({})],
-        { concurrency: "unbounded" },
-      );
-      const target = resolveIndexedKeyLibraryIn(libraries, key);
-      if (!target) return null;
-      const sources = yield* reads.AnnotationSources({
+}): Effect.Effect<ExcerptRequest | null, ExcerptSourceUnavailable> {
+  const { reads, key, paths } = options;
+  return Effect.gen(function* () {
+    const [libraries, identity] = yield* Effect.all(
+      [reads.Libraries({}), reads.DatabaseIdentity({})],
+      { concurrency: "unbounded" },
+    );
+    const target = resolveIndexedKeyLibraryIn(libraries, key);
+    if (!target) return null;
+    const sources = yield* reads.AnnotationSources({
+      libraryID: target.libraryID,
+      keys: [target.key],
+    });
+    const annotation = sources.annotations.find(
+      (entry) => entry.indexedKey === key,
+    );
+    if (!annotation) return null;
+    const attachment = sources.attachments.find(
+      (entry) => entry.itemID === annotation.parentItemID,
+    );
+    if (!attachment) return null;
+    return excerptRequestFrom({
+      annotation: annotationRecordOf(annotation, attachment),
+      source: {
+        kind: "zotero-db",
+        database: identity,
         libraryID: target.libraryID,
-        keys: [target.key],
-      });
-      const annotation = sources.annotations.find(
-        (entry) => entry.indexedKey === key,
-      );
-      if (!annotation) return null;
-      const attachment = sources.attachments.find(
-        (entry) => entry.itemID === annotation.parentItemID,
-      );
-      if (!attachment) return null;
-      return excerptRequestFrom({
-        annotation: annotationRecordOf(annotation, attachment),
-        source: {
-          kind: "zotero-db",
-          database: identity,
-          libraryID: target.libraryID,
-          libraryRevision:
-            libraries.find((entry) => entry.libraryID === target.libraryID)
-              ?.clientVersion ?? null,
-        },
-        identity,
-        attachment,
-        paths,
-      });
-    }).pipe(
-      Effect.mapError(
-        (error) =>
-          new ExcerptSourceUnavailable({
-            message:
-              error instanceof Error && error.message
-                ? error.message
-                : String(error),
-          }),
-      ),
+        libraryRevision:
+          libraries.find((entry) => entry.libraryID === target.libraryID)
+            ?.clientVersion ?? null,
+      },
+      identity,
+      attachment,
+      paths,
+    });
+  }).pipe(
+    Effect.mapError(
+      (error) =>
+        new ExcerptSourceUnavailable({
+          message:
+            error instanceof Error && error.message
+              ? error.message
+              : String(error),
+        }),
     ),
-    { signal },
   );
 }
 
