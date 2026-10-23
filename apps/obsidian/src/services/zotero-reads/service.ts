@@ -51,6 +51,7 @@ export interface ZoteroReadsState {
   readonly state: "loading" | "ready" | "degraded";
   readonly error: DbUnavailable | null;
   readonly moved: boolean;
+  readonly dbFileMissing: boolean;
   readonly activeReadMode: EffectiveReadMode | null;
 }
 
@@ -107,12 +108,12 @@ export function layerZoteroReads<R>(
         state: "loading",
         error: null,
         moved: false,
+        dbFileMissing: false,
         activeReadMode: null,
       });
       const events = yield* PubSub.unbounded<ZoteroReadsEvent>();
       const stopped = yield* Deferred.make<void>();
       const seeded = yield* Deferred.make<void>();
-      const settled = yield* Deferred.make<void>();
       let closed = false;
       const client = yield* makeClient;
       const current = SubscriptionRef.get(state);
@@ -121,20 +122,29 @@ export function layerZoteroReads<R>(
       ) {
         switch (event._tag) {
           case "state":
-            yield* SubscriptionRef.set(state, {
+            yield* SubscriptionRef.update(state, (before) => ({
               state: event.state,
               error: event.error,
               moved: event.moved ?? false,
               activeReadMode: event.readMode ?? null,
-            });
+              dbFileMissing:
+                event.state === "ready" ? false : before.dbFileMissing,
+            }));
             break;
           case "changed":
             yield* SubscriptionRef.set(state, {
               state: "ready",
               error: null,
               moved: false,
+              dbFileMissing: false,
               activeReadMode: event.readMode ?? null,
             });
+            break;
+          case "db-file-missing":
+            yield* SubscriptionRef.update(state, (before) => ({
+              ...before,
+              dbFileMissing: true,
+            }));
             break;
           case "degraded":
             yield* SubscriptionRef.update(state, (before) => ({
@@ -154,8 +164,6 @@ export function layerZoteroReads<R>(
         }
         if (event._tag !== "state") yield* PubSub.publish(events, event);
         yield* Deferred.succeed(seeded, undefined);
-        if ((yield* current).state !== "loading")
-          yield* Deferred.succeed(settled, undefined);
       });
       yield* Stream.runForEach(client.Changes(), apply).pipe(
         Effect.onExit((exit) =>
@@ -200,7 +208,8 @@ export function layerZoteroReads<R>(
       });
       yield* Deferred.await(seeded);
       if ((yield* current).state === "loading") {
-        // A lazy transport opens on its first read. Startup needs no held Snapshot.
+        // Legacy ready waited for the feed seed, including loading. The first
+        // database read belongs to the Scope; consumers follow its state.
         yield* client.Libraries({}).pipe(
           Effect.catchCause((cause) =>
             Effect.gen(function* () {
@@ -217,9 +226,9 @@ export function layerZoteroReads<R>(
               });
             }),
           ),
+          Effect.forkScoped(),
         );
       }
-      yield* Deferred.await(settled);
       yield* Effect.logInfo("ZoteroReads ready").pipe(
         Effect.annotateLogs({ state: (yield* current).state }),
       );

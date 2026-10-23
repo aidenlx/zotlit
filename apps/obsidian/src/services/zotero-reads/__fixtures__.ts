@@ -103,6 +103,9 @@ export function testReads(
     get moved() {
       return plain?.moved ?? false;
     },
+    get dbFileMissing() {
+      return plain?.dbFileMissing ?? false;
+    },
     get activeReadMode() {
       return plain?.activeReadMode ?? null;
     },

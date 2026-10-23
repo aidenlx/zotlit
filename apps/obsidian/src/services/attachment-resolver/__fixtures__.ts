@@ -3,6 +3,8 @@
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
 
+import { expect } from "vitest";
+
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect, Stream } from "@/lib/effect";
@@ -79,8 +81,9 @@ export async function resolverHarness(
       }),
     }),
   );
-  // The plugin builds the read layer before its consumers.
+  // These index scenarios start after the first database load has settled.
   await reads.ready;
+  await expect.poll(() => reads.state).not.toBe("loading");
   let now = Temporal.Now.instant();
   const queries = stack.use(queryClientsFixture(() => now));
 

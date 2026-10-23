@@ -96,8 +96,11 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const { open } = memoryOpener(seed);
-      const { plain, runtime } = yield* readsFixture(
+      const { plain, runtime, service } = yield* readsFixture(
         inProcessClient(layerRcRef(open)),
+      );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "ready"),
       );
       yield* runtime.disposeEffect;
       expect(plain.state).toBe("ready");

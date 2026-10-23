@@ -67,6 +67,9 @@ export function plainZoteroReads(
     get moved() {
       return read(service.current).moved;
     },
+    get dbFileMissing() {
+      return read(service.current).dbFileMissing;
+    },
     get activeReadMode() {
       return read(service.current).activeReadMode;
     },

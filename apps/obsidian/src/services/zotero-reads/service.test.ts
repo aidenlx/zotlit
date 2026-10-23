@@ -23,6 +23,9 @@ it.effect("answers single reads through the unbound interface", () =>
     expect(yield* service.reads.Libraries({})).toMatchObject([
       { libraryID: 1, type: "user" },
     ]);
+    yield* Stream.runHead(
+      Stream.filter(service.changes, (state) => state.state === "ready"),
+    );
     expect(plain.state).toBe("ready");
     expect(plain.error).toBeNull();
   }),
@@ -59,6 +62,9 @@ it.effect(
       const { service } = yield* readsFixture(
         inProcessClient(layerRcRef(open)),
       );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "ready"),
+      );
       const failure = yield* Stream.runHead(
         Stream.filter(
           service.events,
@@ -75,19 +81,24 @@ it.effect(
     }),
 );
 
-it.effect("an unreadable source builds degraded and fails a snapshot", () =>
-  Effect.gen(function* () {
-    const { open } = memoryOpener(() => null);
-    const { service, plain } = yield* readsFixture(
-      inProcessClient(layerRcRef(open)),
-    );
-    expect(plain.state).toBe("degraded");
-    expect(plain.error).toBeInstanceOf(DbUnavailable);
-    expect(plain.error?.message).toBe("source #1 is not readable");
-    expect(
-      Exit.isFailure(yield* Effect.exit(Effect.scoped(service.snapshot))),
-    ).toBe(true);
-  }),
+it.effect(
+  "an unreadable source publishes degraded state and fails a snapshot",
+  () =>
+    Effect.gen(function* () {
+      const { open } = memoryOpener(() => null);
+      const { service, plain } = yield* readsFixture(
+        inProcessClient(layerRcRef(open)),
+      );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "degraded"),
+      );
+      expect(plain.state).toBe("degraded");
+      expect(plain.error).toBeInstanceOf(DbUnavailable);
+      expect(plain.error?.message).toBe("source #1 is not readable");
+      expect(
+        Exit.isFailure(yield* Effect.exit(Effect.scoped(service.snapshot))),
+      ).toBe(true);
+    }),
 );
 
 it.effect("degrades when the change stream is lost", () =>
@@ -126,6 +137,9 @@ it.effect("reports the Read Mode of each serving connection", () =>
           )) as typeof client.Changes,
       })),
     );
+    yield* Stream.runHead(
+      Stream.filter(service.changes, (state) => state.state === "ready"),
+    );
     expect(plain.activeReadMode).toBe("copy");
     const changes = yield* Queue.unbounded<string | null>();
     plain.subscribe((next) => Queue.offerUnsafe(changes, next.activeReadMode));
@@ -142,6 +156,9 @@ it.effect(
       const { open, log } = memoryOpener(versioned);
       const { service, runtime } = yield* readsFixture(
         inProcessClient(layerRcRef(open)),
+      );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "ready"),
       );
       const listening = yield* Stream.runDrain(service.changes).pipe(
         Effect.forkChild({ startImmediately: true }),
