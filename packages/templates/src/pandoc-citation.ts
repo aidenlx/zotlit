@@ -357,12 +357,15 @@ export function scanPandocCitations(source: string): ScannedPandocCitation[] {
   const claimedKeyStarts = new Set(
     citations.flatMap((citation) => citation.items.map((item) => item.start)),
   );
-  for (const key of keys) {
+  for (const [keyIndex, key] of keys.entries()) {
     if (claimedKeyStarts.has(key.start)) continue;
     const citation = key.suppressAuthor
       ? standaloneCitation(key, "suppress-author")
-      : (readAuthorInTextCitation(source, key, { keys, claimedKeyStarts }) ??
-        standaloneCitation(key, "author-in-text"));
+      : (readAuthorInTextCitation(source, key, {
+          keys,
+          keyIndex: keyIndex + 1,
+          claimedKeyStarts,
+        }) ?? standaloneCitation(key, "author-in-text"));
     citations.push(citation);
     for (const item of citation.items) claimedKeyStarts.add(item.start);
   }
@@ -376,10 +379,10 @@ interface ScannedKey extends PandocTextSpan {
 
 function scanCitationKeys(source: string): ScannedKey[] {
   const exclusions = [
-    ...noteReferenceSpans(source),
-    ...codeSpanSpans(source),
-    ...linkedBracketSpans(source),
-  ];
+    noteReferenceSpans(source),
+    codeSpanSpans(source),
+    linkedBracketSpans(source),
+  ].map((spans) => ({ spans, index: 0 }));
   const found: ScannedKey[] = [];
   CITEKEY.lastIndex = 0;
   for (let match = CITEKEY.exec(source); match; match = CITEKEY.exec(source)) {
@@ -412,9 +415,16 @@ function scanCitationKeys(source: string): ScannedKey[] {
   }
   return found.filter(
     (key) =>
-      !exclusions.some(
-        ({ start, end }) => key.start >= start && key.start < end,
-      ),
+      !exclusions.some((cursor) => {
+        while (
+          cursor.index < cursor.spans.length &&
+          cursor.spans[cursor.index]!.end <= key.start
+        ) {
+          cursor.index += 1;
+        }
+        const span = cursor.spans[cursor.index];
+        return span !== undefined && span.start <= key.start;
+      }),
   );
 }
 
@@ -423,30 +433,36 @@ function scanNormalCitations(
   keys: readonly ScannedKey[],
 ): ScannedPandocCitation[] {
   const citations: ScannedPandocCitation[] = [];
+  const authorInTextOpens = new Set<number>();
+  for (const key of keys) {
+    if (key.suppressAuthor) continue;
+    let open = key.end;
+    while (source[open] === " " || source[open] === "\t") open += 1;
+    if (open > key.end && source[open] === "[") authorInTextOpens.add(open);
+  }
+  let keyIndex = 0;
   for (
     let open = source.indexOf("[");
     open >= 0;
     open = source.indexOf("[", open + 1)
   ) {
-    if (
-      keys.some(
-        (key) =>
-          !key.suppressAuthor &&
-          key.end < open &&
-          /^[ \t]+$/u.test(source.slice(key.end, open)),
-      )
-    ) {
-      continue;
-    }
+    if (authorInTextOpens.has(open)) continue;
     const bounds = opensInlineNote(source, open)
       ? null
       : readBracket(source, open);
     if (bounds === null || opensTrailer(source, bounds.end)) continue;
+    while (
+      keyIndex < keys.length &&
+      keys[keyIndex]!.start < bounds.contentStart
+    ) {
+      keyIndex += 1;
+    }
     const items = parseKeyedSegments(source, {
       contentStart: bounds.contentStart,
       contentEnd: bounds.contentEnd,
       separators: bounds.separators,
       keys,
+      keyIndex,
     });
     if (items === null) continue;
     citations.push({
@@ -484,9 +500,11 @@ function readAuthorInTextCitation(
   firstKey: ScannedKey,
   {
     keys,
+    keyIndex: firstKeyIndex,
     claimedKeyStarts,
   }: {
     keys: readonly ScannedKey[];
+    keyIndex: number;
     claimedKeyStarts: ReadonlySet<number>;
   },
 ): ScannedPandocCitation | null {
@@ -496,16 +514,29 @@ function readAuthorInTextCitation(
   const bounds = readBracket(source, open);
   if (bounds === null || opensTrailer(source, bounds.end)) return null;
 
-  const bracketKeys = keys.filter(
-    (key) =>
+  const bracketKeys: ScannedKey[] = [];
+  for (let keyIndex = firstKeyIndex; keyIndex < keys.length; keyIndex += 1) {
+    const key = keys[keyIndex]!;
+    if (key.start >= bounds.contentEnd) break;
+    if (
       key.start >= bounds.contentStart &&
       key.end <= bounds.contentEnd &&
-      !claimedKeyStarts.has(key.start),
-  );
+      !claimedKeyStarts.has(key.start)
+    ) {
+      bracketKeys.push(key);
+    }
+  }
   const segmentBounds = segmentRanges(bounds);
-  const firstKeyedSegment = segmentBounds.findIndex(({ from, to }) =>
-    bracketKeys.some((key) => key.start >= from && key.end <= to),
-  );
+  let bracketKeyIndex = 0;
+  const firstKeyedSegment = segmentBounds.findIndex(({ from, to }) => {
+    while (bracketKeyIndex < bracketKeys.length) {
+      const key = bracketKeys[bracketKeyIndex]!;
+      if (key.start >= to) break;
+      bracketKeyIndex += 1;
+      if (key.start >= from && key.end <= to) return true;
+    }
+    return false;
+  });
   const firstTrailingEnd =
     firstKeyedSegment < 0
       ? bounds.contentEnd
@@ -633,21 +664,28 @@ function parseKeyedSegments(
     contentEnd,
     separators,
     keys,
+    keyIndex: firstKeyIndex = 0,
   }: {
     contentStart: number;
     contentEnd: number;
     separators: readonly number[];
     keys: readonly ScannedKey[];
+    keyIndex?: number;
   },
 ): ScannedPandocCitationItem[] | null {
   const items: ScannedPandocCitationItem[] = [];
+  let keyIndex = firstKeyIndex;
   let from = contentStart;
   for (const [position, to] of [...separators, contentEnd].entries()) {
-    const segmentKeys = keys.filter(
-      (key) => key.start >= from && key.end <= to,
-    );
-    if (segmentKeys.length !== 1) return null;
-    const key = segmentKeys[0]!;
+    let key: ScannedKey | undefined;
+    while (keyIndex < keys.length && keys[keyIndex]!.start < to) {
+      const candidate = keys[keyIndex]!;
+      keyIndex += 1;
+      if (candidate.start < from || candidate.end > to) continue;
+      if (key !== undefined) return null;
+      key = candidate;
+    }
+    if (key === undefined) return null;
     let prefix = source.slice(from, key.start);
     if (position > 0 && (prefix[0] === " " || prefix[0] === "\t")) {
       prefix = prefix.slice(1);
