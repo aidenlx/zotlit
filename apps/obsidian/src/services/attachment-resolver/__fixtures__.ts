@@ -3,7 +3,7 @@
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
 
-import { vi } from "vitest";
+import { expect } from "vitest";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -81,16 +81,9 @@ export async function resolverHarness(
       }),
     }),
   );
-  // Settle the lazy adapter's first source event before testing index events.
-  // A missing source is left unopened for the failure scenario.
-  if (seeds[0] !== null) {
-    const { reads: initial } = await reads.ready;
-    await Effect.runPromise(initial.Libraries({}));
-    await vi.waitFor(() => {
-      if (reads.state !== "ready")
-        throw new Error(`reads state is ${reads.state}, not ready`);
-    });
-  }
+  // These index scenarios start after the first database load has settled.
+  await reads.ready;
+  await expect.poll(() => reads.state).not.toBe("loading");
   let now = Temporal.Now.instant();
   const queries = stack.use(queryClientsFixture(() => now));
 

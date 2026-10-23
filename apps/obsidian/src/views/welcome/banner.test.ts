@@ -92,9 +92,7 @@ function bannerDeps(
     reads: {
       state: "ready",
       error: null,
-      ready: Promise.resolve({
-        reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 3 }) },
-      }),
+      reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 3 }) },
       on: events.on.bind(events),
     } as unknown as WelcomeBannerDeps["reads"],
     queries: queryClientsFixture(),

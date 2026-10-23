@@ -39,10 +39,8 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 /**
  * The object one Citation's data is built from: a built-in example set, or an
@@ -67,7 +65,7 @@ export type CitationDataLoadResult =
 export interface TemplateDataDeps {
   app: App;
   /** Each root reads its Item's bundle through a lease. */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   noteIndex: Pick<
     PlainNoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"

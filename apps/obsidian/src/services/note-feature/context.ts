@@ -44,7 +44,7 @@ import type { Settings } from "@/services/settings/schema";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { resolveFreeNotePath } from "./filename";
 
@@ -96,7 +96,7 @@ export interface NoteFeatureDeps {
    * The note write pipeline's reads: an operation holds one lease, so every
    * read of one write sees one database state.
    */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads">;
   /** ZotLit Query, which tests the Profile Matches of an Item. */
   query: Pick<QueryService, "run">;
   noteIndex: Pick<

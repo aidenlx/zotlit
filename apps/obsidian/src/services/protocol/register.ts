@@ -60,7 +60,7 @@ import {
 } from "@/services/note-import/batch-import-notices";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
@@ -77,7 +77,7 @@ export interface ProtocolDeps extends SingleUpdateDeps {
     "sourceId" | "dataDir" | "baseAttachmentPath"
   >;
   liveUpdate: LocalServerService;
-  zoteroReads: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
   /** Opens the Attachment `open-attachment` names. */
   opener: Pick<TargetOpener, "open">;
 }
@@ -339,7 +339,7 @@ async function handleOpenAttachmentProtocol(
     return;
   }
 
-  const { reads } = await deps.zoteroReads.ready;
+  const { reads } = deps.zoteroReads;
   const attachments = await Effect.runPromise(
     reads.AttachmentsAt({ itemID: query.item }),
   );
@@ -462,7 +462,7 @@ async function resolveProtocolItem(
     return null;
   }
 
-  const { reads } = await deps.zoteroReads.ready;
+  const { reads } = deps.zoteroReads;
   const ref = await readDisplayRef(reads, query.item);
   if (!ref) {
     logger.warn("Protocol handler: item not found", {

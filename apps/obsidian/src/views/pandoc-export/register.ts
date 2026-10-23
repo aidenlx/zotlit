@@ -36,7 +36,7 @@ import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { openPandocExportModal } from "./modal";
 import { showEngineMissing, showExportFailure } from "./notices";
@@ -46,7 +46,7 @@ const logger = getLogger(["views", "pandoc-export"]);
 export interface PandocExportDeps {
   citationParse: Pick<PlainCitationParse, "parse">;
   app: App;
-  db: Pick<ZoteroReadsService, "ready">;
+  db: Pick<PlainZoteroReads, "reads">;
   /** Resolves the literal citation keys of the exported document. */
   citationLookup: Pick<CitationLookup, "read">;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "getEngine">;
@@ -262,7 +262,7 @@ async function readItemRefs(
   indexedKeys: readonly string[],
 ): Promise<ReadonlyMap<string, BibliographyItemRef> | null> {
   try {
-    const { reads } = await db.ready;
+    const { reads } = db;
     const libraries = await Effect.runPromise(reads.Libraries({}));
     const refs = new Map<string, BibliographyItemRef>();
     for (const indexedKey of new Set(indexedKeys)) {

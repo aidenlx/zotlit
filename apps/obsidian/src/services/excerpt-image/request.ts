@@ -21,10 +21,8 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import type { ExcerptRequest } from "./contract";
 
@@ -46,7 +44,7 @@ export function savedExcerptRequest(options: {
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
   sourceScope: string | null;
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   paths: AttachmentPathContext;
 }): Promise<ExcerptRequest | null> {
   const { annotation, source, sourceScope } = options;

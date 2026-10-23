@@ -56,7 +56,7 @@ import {
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { previewBaseline } from "./baseline";
 export { previewBaseline } from "./baseline";
@@ -65,7 +65,7 @@ import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "on">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "on">;
   templates: Pick<
     TemplateService,
     | "ready"

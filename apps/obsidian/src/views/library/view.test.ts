@@ -468,9 +468,7 @@ async function pluginData(stored?: unknown) {
     get moved() {
       return database_.moved;
     },
-    ready: Promise.resolve({
-      reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
-    }),
+    reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
   };
   const setupActions = {
     openSettings: vi.fn(),
@@ -2083,13 +2081,13 @@ it("leaves the search box unfocused when the command brings the tab forward unde
  * on a first launch, where Zotero's database is still loading.
  */
 function holdReadout(deps: LibraryViewDeps) {
-  const ready = Promise.withResolvers<unknown>();
-  Object.assign(deps.welcome.reads, { ready: ready.promise });
+  const ready = Promise.withResolvers<{ itemCount: number }>();
+  Object.assign(deps.welcome.reads, {
+    reads: { ConnectionReadout: () => Effect.promise(() => ready.promise) },
+  });
   return async (view: LibraryView) => {
     await act(async () => {
-      ready.resolve({
-        reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
-      });
+      ready.resolve({ itemCount: 8 });
       await view.welcome.settled;
     });
     await act(() => view.arrived);

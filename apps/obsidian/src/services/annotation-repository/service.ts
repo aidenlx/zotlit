@@ -37,7 +37,7 @@ import {
   libraryPath,
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
@@ -501,7 +501,7 @@ export interface AnnotationRepositoryEvents {
 }
 
 export interface AnnotationRepositoryDeps {
-  db: Pick<ZoteroReadsService, "acquireRead" | "on" | "refresh">;
+  db: Pick<PlainZoteroReads, "acquireRead" | "on" | "refresh">;
   queryClient: Pick<
     PlainQueryClients,
     "client" | "invalidate" | "keysUnder" | "peek" | "read"

@@ -16,10 +16,8 @@ import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
 import type {
@@ -87,7 +85,7 @@ export interface MigrationVerificationData {
 
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
-  zoteroReads: ZoteroReadsService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
   noteIndex: Pick<
     PlainNoteIndex,

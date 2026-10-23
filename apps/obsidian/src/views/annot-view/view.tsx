@@ -39,7 +39,7 @@ import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
@@ -123,7 +123,7 @@ const VIEW_MENU_SECTIONS = [
  * Layout, which may answer from the Zotero Local API.
  */
 export interface AnnotViewDeps extends QueryViewDeps {
-  reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
+  reads: Pick<PlainZoteroReads, "reads" | "state" | "on" | "acquireRead">;
   libraryScope: Pick<LibraryScopeService, "libraryRows" | "on" | "current">;
   liveUpdate: Pick<
     LocalServerService,
@@ -540,7 +540,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       ),
     );
 
-    await this.#deps.reads.ready;
     this.#reload();
   }
 
@@ -786,7 +785,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     signal: AbortSignal,
   ): Promise<ZoteroReaderResolution | null> {
     try {
-      const { reads } = await this.#deps.reads.ready;
+      const { reads } = this.#deps.reads;
       // The wire carries a selection as numeric ids, and this is the last
       // place they are read: the session speaks Indexed Keys from here on.
       const named = await Effect.runPromise(
@@ -985,7 +984,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     key,
     libraryID,
   }: LoadTarget): Promise<AnnotViewAttachment[]> {
-    const { reads } = await this.#deps.reads.ready;
+    const { reads } = this.#deps.reads;
     return Effect.runPromise(
       reads.AnnotViewAttachments({
         libraryID,
@@ -1132,7 +1131,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     const { itemKey } = target;
     if (this.#followMode === "active-tab" || itemKey === null) return null;
     try {
-      const { reads } = await this.#deps.reads.ready;
+      const { reads } = this.#deps.reads;
       const items = await Effect.runPromise(
         reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
       );

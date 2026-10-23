@@ -605,31 +605,29 @@ function makeFixture(options: FixtureOptions = {}) {
   const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
   const readsEvents = createNanoEvents<ZoteroReadsEvents>();
   const reads = {
-    ready: Promise.resolve({
-      reads: {
-        WorkLabels: ({ indexedKeys }: { indexedKeys: readonly string[] }) =>
-          options.labelDatabase
-            ? Effect.promise(
-                async () =>
-                  new Map(
-                    ((await labelReads([...indexedKeys])) as LabelRow[]).map(
-                      (row) => [
-                        row.key,
-                        {
-                          libraryID: 1,
-                          creators: row.creators,
-                          primaryCreatorType: row.primaryCreatorType,
-                          title: row.fields.title ?? null,
-                          shortTitle: row.fields.shortTitle ?? null,
-                          date: row.fields.date ?? null,
-                        },
-                      ],
-                    ),
+    reads: {
+      WorkLabels: ({ indexedKeys }: { indexedKeys: readonly string[] }) =>
+        options.labelDatabase
+          ? Effect.promise(
+              async () =>
+                new Map(
+                  ((await labelReads([...indexedKeys])) as LabelRow[]).map(
+                    (row) => [
+                      row.key,
+                      {
+                        libraryID: 1,
+                        creators: row.creators,
+                        primaryCreatorType: row.primaryCreatorType,
+                        title: row.fields.title ?? null,
+                        shortTitle: row.fields.shortTitle ?? null,
+                        date: row.fields.date ?? null,
+                      },
+                    ],
                   ),
-              )
-            : Effect.fail(new DbUnavailable({ message: "disconnected" })),
-      },
-    }),
+                ),
+            )
+          : Effect.fail(new DbUnavailable({ message: "disconnected" })),
+    },
     on: readsEvents.on.bind(readsEvents),
     emit: readsEvents.emit.bind(readsEvents),
   };

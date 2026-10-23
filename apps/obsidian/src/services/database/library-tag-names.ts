@@ -5,7 +5,7 @@ import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
 import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 const logger = getLogger(["database", "library-tag-names"]);
 
@@ -15,7 +15,7 @@ const logger = getLogger(["database", "library-tag-names"]);
  * joins once the database has caught up.
  */
 export async function libraryTagNames(
-  db: Pick<ZoteroReadsService, "state" | "acquireRead">,
+  db: Pick<PlainZoteroReads, "state" | "acquireRead">,
   annotationKey: string,
 ): Promise<readonly string[]> {
   if (db.state === "degraded") return [];

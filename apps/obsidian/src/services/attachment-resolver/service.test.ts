@@ -383,7 +383,7 @@ it("reports no collision when every attachment names its own file", () => {
 it("answers pending, and keeps no index, while the database cannot be read", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver, reads } = await setup(stack, {
-    seeds: [null, FIXTURE_ROWS],
+    seeds: [null, null, FIXTURE_ROWS],
     prime: false,
   });
   const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;

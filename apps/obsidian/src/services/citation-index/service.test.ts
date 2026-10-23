@@ -1027,8 +1027,8 @@ describe("CitationIndex resolution", () => {
   });
 
   it("retains wikilinks while the first resolution read settles without a value", async () => {
-    const db = new DatabaseStub({ readyImmediately: false });
-    db.state = "degraded";
+    const db = new DatabaseStub();
+    const pending = db.holdLookup();
     const body = "See [[Doe 2024]].";
     const { draft, lookup, index, metadataCache, workspace } =
       await makeHarness(
@@ -1050,7 +1050,8 @@ describe("CitationIndex resolution", () => {
         groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
       });
 
-    db.settle();
+    db.state = "degraded";
+    pending.release();
     await lookup.whenResolved();
     await yieldToMain();
     await expect

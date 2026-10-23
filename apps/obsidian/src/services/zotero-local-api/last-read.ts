@@ -2,7 +2,7 @@ import { parseIndexedKey } from "@zotlit/db";
 
 import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { ZoteroLocalApiClient } from "./service";
 
@@ -10,7 +10,13 @@ const logger = getLogger("last-read");
 
 /** Send only this live read, against the database that resolved its Attachment. */
 export async function writeReadUse(
-  { reads, api }: { reads: ZoteroReadsService; api: ZoteroLocalApiClient },
+  {
+    reads,
+    api,
+  }: {
+    reads: Pick<PlainZoteroReads, "acquireRead">;
+    api: ZoteroLocalApiClient;
+  },
   {
     attachmentKey,
     instant,

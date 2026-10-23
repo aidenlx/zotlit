@@ -63,7 +63,7 @@ const reads = {
 
 /** The reads dependency in `state`, answering through {@link reads}. */
 function readsIn(state: "loading" | "ready" | "degraded" = "ready") {
-  return { state, ready: Promise.resolve({ reads }) };
+  return { state, reads };
 }
 
 /** Item `itemID` reads as `ref`. */
