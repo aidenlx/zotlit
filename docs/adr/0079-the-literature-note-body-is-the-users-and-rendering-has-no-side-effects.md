@@ -10,6 +10,8 @@ The default Literature Note Template has no Managed Block. Its body renders once
 
 Rendering `noteLink` never imports a Child Note. When an Imported Note exists for the Child Note, the link goes to that file. When none exists, the link is `[<title>](zotero://select/…)`, built with `itemSelectUri`, the same URI the Query View table uses for note rows. A Child Note becomes a file only through an explicit command: import child notes, import all notes, or batch import.
 
+The flow is a one-way ticket from Zotero to Obsidian. A Literature Note body and an Imported Note are copies that ZotLit takes when the user asks: at creation, or when an import command runs. There is no automatic sync and no two-way sync: an edit to the copy never goes back to Zotero, and a later edit in Zotero reaches the copy only through an explicit re-import or Overwrite. A Query Block reads Zotero live; it is a view, not a synced copy.
+
 The shared reason: **the body is the user's, and rendering has no side effects.** The research on branch `research/note-refresh-user-needs` (`docs/research/note-refresh-user-needs.md`, sections "Copy versus live view, after D1 and D2", "Zotero child notes: does anyone need the implicit import?" and "What the needs imply for the managed region") found that:
 
 - users who write in Obsidian do not want ZotLit to rewrite the part of the note that they own;
