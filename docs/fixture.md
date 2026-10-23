@@ -216,7 +216,8 @@ group in vault-wide answers because other Fixture pages cite the same Items.
 | `citation-scan-exclusions.md` | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases. |
 | `citation-scan-annotations.md` | Compare empty, labelled, whitespace-only, autolink, and embed uses of `PUPR5FG5`, then check source choices and immediate CLI reads after an edit. |
 | `citation-scan-errors.md` | Compare the reasons References and the CLI give for the declared unknown key, an ambiguous key, and an attachment-only empty link. |
-| `pandoc-export-scan-pipeline.md` | Run built-in export on the two confirmed membership regressions, a callout fence, and a fence on a list-marker line. |
+| `pandoc-export-scan-pipeline.md` | Run built-in export on a partially commented citation, a callout fence, and a fence on a list-marker line. Expect two Rougier citations. |
+| `pandoc-export-unclosed-math.md` | Check that unclosed display math runs to the end of the note. Expect zero citations and successful built-in export without a failure on either key (final review round). |
 
 Cases marked `(final review round)` state the intended outcomes for S1, S3, S4,
 and #1704. Check them again after that round merges. Annotation Citation links

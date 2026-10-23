@@ -6,8 +6,9 @@ lang: en-GB
 
 Use the settings from `citation-scan-forms.md`. Run **ZotLit: Export note with
 citations** on this whole page. Use built-in export, whose adapter reads the
-worker's parse. The two short symbolic inputs in the spec use `a` and `hidden`;
-here they name the existing Rougier and Hensher Items.
+worker's parse. The short symbolic input in the spec uses `a`; here it names
+the existing Rougier Item. The unclosed display-math case is on
+`pandoc-export-unclosed-math.md`.
 
 ```sh
 packages/scripts/scripts/obsidian-cli.ts vault=<vault> zotlit:references file=pandoc-export-scan-pipeline.md
@@ -17,10 +18,10 @@ packages/scripts/scripts/obsidian-cli.ts vault=<vault> zotlit:annotation-uses ke
 ```
 
 Expected for the whole page: export succeeds and its bibliography contains
-only Rougier. References and its CLI command show one resolved work with three
-occurrences. Cited By and its CLI command show those three occurrences for this
+only Rougier. References and its CLI command show one resolved work with two
+occurrences. Cited By and its CLI command show those two occurrences for this
 page. Hensher and Annotation uses have no group for this page. CitationText and
-citation popovers use only the three visible Rougier citations.
+citation popovers use only the two visible Rougier citations.
 
 ## Comment between key and following text (final review round)
 
@@ -58,18 +59,3 @@ The second item holds literal code; the third cites Rougier. No extra list item
 appears when export separates the fence from surrounding text. References,
 Cited By, their CLI commands, the popover, and CitationText count only the third
 item's Rougier citation. Annotation uses gains no occurrence.
-
-## Unclosed display math ends at a blank line (final review round)
-
-The next input deliberately has no closing math fence. Keep the blank line
-between the two bracketed lines. This is S1's `$$\n[@hidden]\n\n[@a]` case.
-
-Expected: export cites only the visible Rougier key after the blank line. It
-must not fail on Hensher or add Hensher to the bibliography. References,
-Cited By, their CLI commands, the popover, and CitationText count only Rougier.
-Annotation uses gains no occurrence.
-
-$$
-[@Hensher2011]
-
-[@rougierTenSimpleRules2014]

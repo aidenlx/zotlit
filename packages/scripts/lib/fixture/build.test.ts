@@ -2006,6 +2006,7 @@ describe("the generated Obsidian vault", () => {
         "citation-scan-errors.md",
         "Scan target.md",
         "pandoc-export-scan-pipeline.md",
+        "pandoc-export-unclosed-math.md",
       ]),
     );
     for (const name of names) {
