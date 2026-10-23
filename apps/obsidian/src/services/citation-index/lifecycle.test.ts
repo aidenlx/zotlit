@@ -2,10 +2,97 @@ import { expect } from "vitest";
 
 import { Effect, Stream } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import type { CitationIndexState } from "./service";
 import { CitationIndex } from "./service";
 import { createCitationIndexHarness, MemoryStore } from "./test-harness";
+
+it.effect(
+  "disposes a store opened during runtime disposal exactly once (#1705)",
+  () =>
+    Effect.promise(async () => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let disposals = 0;
+      const store = new MemoryStore();
+      store[Symbol.dispose] = () => {
+        disposals += 1;
+      };
+      await using h = await createCitationIndexHarness(
+        {},
+        {
+          awaitReady: false,
+          openStore: async () => {
+            entered.resolve();
+            await release.promise;
+            return store;
+          },
+        },
+      );
+      const ready = h.ready.catch(() => {});
+      await entered.promise;
+      const closing = h.runtime.dispose();
+      release.resolve();
+      await closing;
+      await ready;
+      expect(disposals).toBe(1);
+    }),
+);
+
+it.effect(
+  "aborts a scan before closing its store during restoration (#1705)",
+  () =>
+    Effect.promise(async () => {
+      const loading = Promise.withResolvers<void>();
+      const restore = Promise.withResolvers<[]>();
+      const parsing = Promise.withResolvers<void>();
+      const reply = Promise.withResolvers<void>();
+      const replied = Promise.withResolvers<void>();
+      let parseSignal: AbortSignal | undefined;
+      let abortedAtDisposal: boolean | undefined;
+      let disposals = 0;
+      const store = new MemoryStore();
+      store.load = () => {
+        loading.resolve();
+        return restore.promise;
+      };
+      store[Symbol.dispose] = () => {
+        disposals += 1;
+        abortedAtDisposal = parseSignal?.aborted;
+      };
+      await using h = await createCitationIndexHarness(
+        { "draft.md": "@doe2024" },
+        {
+          store,
+          notes: false,
+          awaitReady: false,
+          parseClient: {
+            async parse(request, signal) {
+              parseSignal = signal;
+              const result = await inProcessParseClient.parse(request, signal);
+              parsing.resolve();
+              await reply.promise;
+              replied.resolve();
+              return result;
+            },
+          },
+        },
+      );
+      const ready = h.ready.catch(() => {});
+      await loading.promise;
+      h.metadataCache.change(h.draft, "@roe2025");
+      await parsing.promise;
+      await h.runtime.dispose();
+      reply.resolve();
+      restore.resolve([]);
+      await replied.promise;
+      await ready;
+      expect(disposals).toBe(1);
+      expect(abortedAtDisposal).toBe(true);
+      expect(store.writes).toEqual([]);
+    }),
+);
 
 it.effect(
   "replays a completed failed backfill to a late subscriber (#1705)",

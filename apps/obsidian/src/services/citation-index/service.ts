@@ -1528,6 +1528,14 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       if (!stopped)
         runner.runFork(recover(Effect.tryPromise(() => runBackfill())));
     }
+    // Stop before the child scope closes its store, listeners, and scan fibers.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        stopped = true;
+        lifetimeStop.abort();
+        publishState();
+      }),
+    );
     const intake = yield* obsidianEvents<{
       changed: [TFile, string];
       deleted: [TFile];
@@ -1535,7 +1543,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       resolved: [];
       rename: [TAbstractFile, string];
       layoutReady: [];
-    }>();
+    }>().pipe(Scope.provide(scope));
     yield* intake
       .consume((event) =>
         Effect.sync(() => {
@@ -1565,15 +1573,20 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           }
         }),
       )
-      .pipe(Effect.forkScoped({ startImmediately: true }));
+      .pipe(Effect.forkIn(scope, { startImmediately: true }));
     for (const event of ["changed", "deleted", "resolve", "resolved"] as const)
-      yield* intake.on(event, app.metadataCache, event);
-    yield* intake.on("rename", app.vault, "rename");
+      yield* intake
+        .on(event, app.metadataCache, event)
+        .pipe(Scope.provide(scope));
+    yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
     subscribe(runner, settings.changes, applySettings);
     // Store acquisition and restoration are exactly the old startup barrier.
     yield* Effect.gen(function* () {
-      const opened = yield* Effect.tryPromise(() => openStore(app));
-      store = yield* acquireDisposable(() => opened);
+      const opened = yield* Effect.acquireRelease(
+        Effect.tryPromise(() => openStore(app)),
+        (opened) => Effect.try(() => opened[Symbol.dispose]()).pipe(recover),
+      ).pipe(Scope.provide(scope));
+      store = opened;
       const loaded = yield* Effect.tryPromise(() => opened.load());
       let restored = 0;
       for (const { path, ...scan } of loaded) {
@@ -1595,13 +1608,6 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       ),
     );
     app.workspace.onLayoutReady(intake.callback("layoutReady"));
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        stopped = true;
-        lifetimeStop.abort();
-        publishState();
-      }),
-    );
     return {
       current,
       changes,

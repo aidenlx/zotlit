@@ -1611,24 +1611,50 @@ describe("CitationIndex resolution", () => {
     "suppresses identical snapshots and isolates observer failures",
     () =>
       Effect.promise(async () => {
+        let scanStarted:
+          | ReturnType<typeof Promise.withResolvers<void>>
+          | undefined;
+        let observed:
+          | ReturnType<typeof Promise.withResolvers<void>>
+          | undefined;
         const { draft, lookup, index, metadataCache, workspace } =
-          await makeHarness({
-            "draft.md": "@doe2024.",
-          });
+          await makeHarness(
+            { "draft.md": "@doe2024." },
+            {
+              parseClient: {
+                parse(request, signal) {
+                  scanStarted?.resolve();
+                  return inProcessParseClient.parse(request, signal);
+                },
+              },
+            },
+          );
         let publications = 0;
         index.observeCitedBy(KEY_A, () => {
           throw new Error("observer failed");
         });
-        index.observeCitedBy(KEY_A, () => publications++);
+        index.observeCitedBy(
+          KEY_A,
+          () => publications++,
+          () => {
+            observed?.resolve();
+            return true;
+          },
+        );
         workspace.layoutReady();
         await index.whenIndexed();
         await expect.poll(() => publications).toBeGreaterThan(0);
         await lookup.read({ citekeys: ["doe2024"] });
 
         const before = publications;
+        scanStarted = Promise.withResolvers<void>();
+        observed = Promise.withResolvers<void>();
 
         metadataCache.change(draft, "@doe2024.");
 
+        await scanStarted.promise;
+        await index.getFileScan(draft);
+        await observed.promise;
         expect(publications).toBe(before);
       }),
   );
