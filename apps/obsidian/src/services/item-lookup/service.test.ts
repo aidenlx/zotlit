@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
@@ -396,7 +396,7 @@ function itemLookup(
   return new ItemLookup({
     useLedger: { uses: {} },
     reads: reads.service,
-    libraryScope: libraryScope as unknown as LibraryScopeService,
+    libraryScope: libraryScope as unknown as PlainLibraryScope,
   });
 }
 

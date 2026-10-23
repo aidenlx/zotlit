@@ -15,7 +15,7 @@ import {
 } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -50,7 +50,7 @@ interface QueryServiceDeps {
     PlainZoteroPref,
     "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
   >;
-  libraryScope: LibraryScopeService;
+  libraryScope: Pick<PlainLibraryScope, "effective">;
   vault: Vault;
 }
 
@@ -78,8 +78,6 @@ export class QueryService extends Service {
   readonly #deps;
   #jobs!: FiberMap.FiberMap<string, unknown>;
   #run!: JobRunner;
-  /** The failure of startup: every job then rejects with it. */
-  #startup: { failed: true; error: unknown } | undefined;
   ready: Promise<void>;
   #viewRuns = 0;
 
@@ -106,13 +104,6 @@ export class QueryService extends Service {
       Scope.provide(FiberMap.make<string, unknown>(), scope),
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
-    try {
-      await this.#deps.libraryScope.ready;
-    } catch (error) {
-      // Recorded before the stack closes the jobs, which then reject with it.
-      this.#startup = { failed: true, error };
-      throw error;
-    }
     this.commit(stack.move());
   }
 
@@ -164,7 +155,7 @@ export class QueryService extends Service {
    * parsed groups of rows. An invalid query, or a source that cannot answer,
    * gives the diagnostic of `zotlit:query` as data; an abort of `signal`
    * stops the query and gives `cancelled`.
-   * @throws The startup failure of the service, or an internal error.
+   * @throws An internal error.
    */
   async run(
     request: QueryViewRequest,
@@ -186,7 +177,6 @@ export class QueryService extends Service {
       signal,
     );
     if (settled.done) return settled.value;
-    if (this.#startup) throw this.#startup.error;
     return { kind: "cancelled" };
   }
 
@@ -244,7 +234,7 @@ export class QueryService extends Service {
   /**
    * The custom fields of the active Zotero source, by name; none when the
    * source cannot answer or `signal` aborts first.
-   * @throws The startup failure of the service, or an internal error.
+   * @throws An internal error.
    */
   async customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
     const settled = await this.#settle(
@@ -256,7 +246,6 @@ export class QueryService extends Service {
       signal,
     );
     if (settled.done) return settled.value;
-    if (this.#startup) throw this.#startup.error;
     return [];
   }
 
@@ -274,7 +263,6 @@ export class QueryService extends Service {
     return this.#settle(job, signal, id).then((settled) => {
       if (settled.done) return settled.value;
       if (signal.aborted) throw signal.reason;
-      if (this.#startup) throw this.#startup.error;
       throw new DOMException(
         id === undefined || this.disposing
           ? "The query was cancelled."

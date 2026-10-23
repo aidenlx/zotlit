@@ -9,7 +9,6 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { QueryService } from "@/services/item-query/service";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import {
   inProcessReadsService,
@@ -59,9 +58,8 @@ function setup(uses: Record<string, number> = {}) {
       baseAttachmentPath: join(dirname(scenario.path), "linked"),
     },
     libraryScope: {
-      ready: Promise.resolve(),
       effective: MY_LIBRARY_SCOPE,
-    } as LibraryScopeService,
+    },
     vault: {
       getName: () => "Annotation search",
       adapter: { getBasePath: () => dirname(scenario.path) },

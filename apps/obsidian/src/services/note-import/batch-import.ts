@@ -29,7 +29,7 @@ import {
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   NoteFeature,
   CreationProfileSelection,
@@ -77,7 +77,7 @@ export interface NoteImportDeps {
   zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "state">;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
+  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;

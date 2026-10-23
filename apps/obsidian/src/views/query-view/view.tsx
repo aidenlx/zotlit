@@ -30,9 +30,9 @@ import type {
   QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { QueryService } from "@/services/item-query/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { selectorKey } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { AnnotList } from "@/views/annot-view/AnnotView";
 import { CardDisplayContext } from "@/views/annot-view/card-display";
@@ -109,7 +109,7 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   query: Pick<QueryService, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<PlainZoteroReads, "on" | "acquireRead">;
-  libraryScope: Pick<LibraryScopeService, "on" | "current">;
+  libraryScope: Pick<PlainLibraryScope, "on" | "current">;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** What the Table's Literature Note Property reads and does. */

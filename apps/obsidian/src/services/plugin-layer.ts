@@ -8,6 +8,8 @@ import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
+import { layerLibraryScope } from "./library-scope/service";
+import type { LibraryScope } from "./library-scope/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import { layerNoteIndex } from "./note-index/service";
@@ -36,6 +38,7 @@ import { workerClient } from "./zotero-reads/worker-client";
 export function pluginLayer(
   plugin: Plugin,
 ): Layer.Layer<
+  | LibraryScope
   | ZoteroReads
   | PluginSettings
   | UseLedger
@@ -46,7 +49,8 @@ export function pluginLayer(
   | PandocEngine
   | NoteIndex
 > {
-  return layerZoteroReads(workerClient()).pipe(
+  return layerLibraryScope.pipe(
+    Layer.provideMerge(layerZoteroReads(workerClient())),
     Layer.provideMerge(
       Layer.mergeAll(
         layerUseLedger,

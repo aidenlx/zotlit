@@ -49,7 +49,7 @@ import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
-import { LibraryScopeService } from "./library-scope/service";
+import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
 import { createNoteFeature } from "./note-feature";
@@ -317,14 +317,7 @@ export async function buildServices(
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
-    .use({
-      libraryScope: ({ zoteroReads, queryClient, settings }) =>
-        new LibraryScopeService({
-          reads: zoteroReads,
-          queries: queryClient,
-          settings,
-        }),
-    })
+    .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .use({
       query: ({ zoteroReads, libraryScope, zoteroPref, useLedger }) =>
         new QueryService({

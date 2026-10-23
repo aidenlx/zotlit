@@ -30,7 +30,7 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
@@ -68,7 +68,7 @@ export interface CitekeyEditorDeps {
     observe(changed: () => void): CitationLookupObservation;
   };
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
 }
 
 export type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";

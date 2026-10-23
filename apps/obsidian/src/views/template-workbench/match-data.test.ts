@@ -6,7 +6,6 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { QueryService } from "@/services/item-query/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import {
   inProcessReadsService,
@@ -56,9 +55,8 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
       baseAttachmentPath: "/zotero/linked",
     },
     libraryScope: {
-      ready: Promise.resolve(),
       effective: { mode: "all" },
-    } as LibraryScopeService,
+    },
     vault: {
       getName: () => "Match tests",
       adapter: { getBasePath: () => "/vault" },

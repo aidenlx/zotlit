@@ -15,9 +15,9 @@ import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -125,7 +125,7 @@ export async function resolveBatchScope(
 export interface BatchScopePlanDeps {
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   settings: Pick<PlainPluginSettings, "current">;
-  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
+  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
 }
 
 export type BatchScopePlan =

@@ -9,7 +9,7 @@ import {
 
 import { Effect, Stream } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -86,7 +86,7 @@ export interface MigrationVerificationData {
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
-  libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
+  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -101,7 +101,6 @@ export async function loadLiteratureNoteTemplateMigrationData(
   deps: LiteratureNoteTemplateMigrationDataDeps,
   options: { annotation: boolean },
 ): Promise<MigrationVerificationData | null> {
-  await deps.libraryScope.ready;
   await using lease = await deps.zoteroReads.acquireRead();
   const scope = deps.libraryScope.resolveLibraries(
     await Effect.runPromise(lease.reads.Libraries({})),
