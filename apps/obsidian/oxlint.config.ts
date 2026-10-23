@@ -329,7 +329,6 @@ export default defineConfig({
         "src/services/item-query/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/local-server/service.ts",
-        "src/services/pandoc/render-cache.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/release/service.ts",
         "src/services/wikilink-editor/service.ts",

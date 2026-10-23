@@ -3,22 +3,24 @@ import { TestClock } from "effect/testing";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, vi } from "vitest";
+import { describe, expect } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { Effect } from "@/lib/effect";
+import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileRuntimeOf } from "@/services/profile/__fixtures__";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { Held } from "@/services/query-client/service";
+import { layerQueryClients } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import { createTemplateHost } from "@/services/template/__fixtures__";
+import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { Inlines } from "./ast";
@@ -32,24 +34,90 @@ import type {
   RenderedCitation,
   RenderRequest,
 } from "./engine";
-import { BibliographyRenderCache } from "./render-cache";
-import type {
-  BibliographyRenderCacheOptions,
-  CitationRenderOutcome,
-} from "./render-cache";
+import { BibliographyRender, layerBibliographyRender } from "./render-cache";
+import type { CitationRenderOutcome } from "./render-cache";
+import { bibliographyRenderFixture } from "./render-cache/__fixtures__";
+import type { BibliographyRenderFixtureOptions } from "./render-cache/__fixtures__";
 import type { PandocEngineStatus } from "./service";
+import { PandocEngine } from "./service";
 
 const APA = "http://www.zotero.org/styles/apa";
 const IEEE = "http://www.zotero.org/styles/ieee";
+
+it.effect.each(["Profile", "preference override"] as const)(
+  "#1705: two immediate %s changes each invalidate through the native stream",
+  (dependency) =>
+    Effect.gen(function* () {
+      const profile = yield* profileRuntimeOf(createTemplateHost());
+      const { pref } = yield* zoteroPrefFixture();
+      const dependencies = yield* profile.runtime.contextEffect;
+      // Settle the dependency graph before acquiring the cache under test.
+      yield* TestClock.adjust(0);
+      const cache = Context.get(
+        yield* Layer.build(
+          layerBibliographyRender.pipe(
+            Layer.provide(Layer.succeedContext(dependencies)),
+            Layer.provide(Layer.succeed(ZoteroPref, pref)),
+            Layer.provide(layerQueryClients),
+            Layer.provide(
+              Layer.succeed(ZoteroReads, {
+                events: Stream.never,
+              } as unknown as ZoteroReads["Service"]),
+            ),
+            Layer.provide(
+              Layer.succeed(PandocEngine, {
+                getStatus: () => Effect.succeed({ kind: "absent" }),
+                changes: Stream.never,
+              } as unknown as PandocEngine["Service"]),
+            ),
+          ),
+        ),
+        BibliographyRender,
+      );
+      const invalidated: unknown[] = [];
+      yield* Stream.runForEach(cache.events, (event) =>
+        Effect.sync(() => invalidated.push(event._tag)),
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
+      if (dependency === "Profile") {
+        profile.settings.updateDefaultLiteratureNoteProfileBindings({
+          "note.literature-folder": "First",
+        });
+        profile.settings.updateDefaultLiteratureNoteProfileBindings({
+          "note.literature-folder": "Second",
+        });
+      } else {
+        yield* pref.setDataDir("/other-data");
+        yield* pref.setDataDir(null);
+      }
+      yield* TestClock.adjust(0);
+      expect(invalidated).toEqual(["invalidated", "invalidated"]);
+    }),
+);
+
+it.effect(
+  "#1705: built cache exposes loaded settings and every immediate state change",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf({ "citation.locale": "en-US" });
+      expect(harness.cache.vaultPresentation.locale).toBe("en-US");
+      const locales: (string | null)[] = [];
+      const stop = harness.cache.subscribe((state) =>
+        locales.push(state.vaultPresentation.locale),
+      );
+      harness.settings.update({ "citation.locale": "fr-FR" });
+      harness.settings.update({ "citation.locale": "de-DE" });
+      yield* TestClock.adjust(0);
+      expect(locales).toEqual(["en-US", "fr-FR", "de-DE"]);
+      stop();
+    }),
+);
 
 it.effect.each(["share", "import"] as const)(
   "#1705: preparing a Profile %s with unchanged templates keeps held renders",
   (operation) =>
     Effect.gen(function* () {
       const { profile } = yield* profileRuntimeOf(createTemplateHost());
-      const harness = yield* acquireAsyncDisposable(() =>
-        makeHarness({}, undefined, profile),
-      );
+      const harness = yield* harnessOf({}, undefined, profile);
       const changes: unknown[] = [];
       profile.on("changed", () => changes.push(profile.state));
       const items = [item("alpha")];
@@ -76,15 +144,112 @@ it.effect.each(["share", "import"] as const)(
 );
 
 it.effect(
+  "#1705: a late native subscriber sees the unavailable selected style",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* harnessOf({ "citation.references-style": APA });
+      yield* Effect.promise(() => h.cache.render([item("alpha")]));
+      const service = yield* Effect.promise(() =>
+        h.cache.runtime.runPromise(BibliographyRender),
+      );
+      const values = yield* Stream.runCollect(Stream.take(service.changes, 1));
+      expect(values).toEqual([
+        {
+          vaultPresentation: { styleId: APA, locale: null },
+          missingStyle: APA,
+        },
+      ]);
+    }),
+);
+
+it.effect.each(["engine-absent", "style-missing"] as const)(
+  "#1705: released reads retain the %s outcome",
+  (reason) =>
+    Effect.gen(function* () {
+      const h = yield* harnessOf(
+        reason === "style-missing" ? { "citation.references-style": APA } : {},
+      );
+      if (reason === "engine-absent")
+        h.pandocEngine.setStatus({ kind: "absent" });
+      yield* Effect.promise(() => h.cache.runtime.dispose());
+      yield* Effect.promise(() =>
+        expect(h.cache.render([item("alpha")])).resolves.toEqual({
+          kind: "unavailable",
+          reason,
+        }),
+      );
+      yield* Effect.promise(() =>
+        expect(h.cache.readBibliography([item("alpha")])).resolves.toBeNull(),
+      );
+    }),
+);
+
+it.effect(
+  "#1705: runtime disposal ends state delivery and releases composing reads",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* harnessOf();
+      const service = yield* Effect.promise(() =>
+        h.cache.runtime.runPromise(BibliographyRender),
+      );
+      const subscribed = yield* Queue.unbounded<void>();
+      const stream = yield* Stream.runForEach(service.changes, () =>
+        Queue.offer(subscribed, undefined),
+      ).pipe(Effect.forkScoped());
+      yield* Queue.take(subscribed);
+      const seen: unknown[] = [];
+      h.cache.subscribe((state) => seen.push(state));
+      const last = h.cache.state;
+      const gate = Promise.withResolvers<void>();
+      const started = Promise.withResolvers<void>();
+      h.engine.gate = gate;
+      h.engine.stamp = () => {
+        started.resolve();
+        return "";
+      };
+      const pending = expect(
+        h.cache.readBibliography([item("alpha")]),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      yield* Effect.promise(() => started.promise);
+      yield* Effect.promise(() => h.cache.runtime.dispose());
+      yield* Fiber.join(stream);
+      yield* Effect.promise(() => pending);
+      h.settings.update({ "citation.locale": "fr-FR" });
+      h.db.changed();
+      h.profileEvents.emit("changed");
+      h.zoteroPref.resolvedChanged();
+      yield* TestClock.adjust(0);
+      expect(seen).toEqual([last]);
+      expect(h.cache.state).toBe(last);
+      expect(h.cache.vaultPresentation).toEqual(last.vaultPresentation);
+      yield* Effect.promise(() =>
+        expect(h.cache.render([])).resolves.toEqual({
+          kind: "unavailable",
+          reason: "failed",
+        }),
+      );
+      yield* Effect.promise(() =>
+        expect(h.cache.readCitations([], [])).rejects.toMatchObject({
+          name: "AbortError",
+        }),
+      );
+      expect(() =>
+        h.cache.onStyleMissing(() => {
+          throw new Error("closed listener");
+        })(),
+      ).not.toThrow();
+      gate.resolve();
+    }),
+);
+
+it.effect(
   "#1705: Profile preparation observes changed partials and invalidates held renders",
   () =>
     Effect.gen(function* () {
       const path = "templates/zotlit-partial.summary.md";
       const host = createTemplateHost({ [path]: "Original summary" });
       const { profile } = yield* profileRuntimeOf(host);
-      const harness = yield* acquireAsyncDisposable(() =>
-        makeHarness({}, undefined, profile),
-      );
+      const harness = yield* harnessOf({}, undefined, profile);
       const items = [item("alpha")];
       yield* Effect.promise(() => harness.cache.readBibliography(items));
       host.vault.modifyFile(path, "Updated summary");
@@ -110,7 +275,7 @@ it.effect(
   "releases a pending bibliography render when the runtime closes (#1705)",
   () =>
     Effect.gen(function* () {
-      const harness = yield* acquireAsyncDisposable(() => makeHarness());
+      const harness = yield* harnessOf();
       yield* Effect.promise(async () => {
         const gate = Promise.withResolvers<void>();
         const started = Promise.withResolvers<void>();
@@ -323,7 +488,7 @@ function applySettingsOverrides(
 
 /** One render cache and the stubs it reads, torn down with the test that holds it. */
 interface Harness extends AsyncDisposable {
-  cache: BibliographyRenderCache;
+  cache: Awaited<ReturnType<typeof bibliographyRenderFixture>>;
   engine: EngineStub;
   pandocEngine: PandocEngineStub;
   db: DatabaseStub;
@@ -331,15 +496,24 @@ interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   /** Every `invalidated` the cache announced. */
   invalidations: number[];
-  profileEvents: ReturnType<typeof createNanoEvents<{ changed: () => void }>>;
+  profileEvents: {
+    on(event: "changed", callback: () => void): () => void;
+    emit(event: "changed"): void;
+  };
   /** Unavailable selected styles announced during this plugin lifecycle. */
   missingStyles: string[];
 }
 
-async function makeHarness(
+async function openHarness(
   overrides: SettingsOverrides = {},
   dataDir?: string,
-  profile?: BibliographyRenderCacheOptions["profile"],
+  {
+    profile,
+    context,
+  }: {
+    profile?: BibliographyRenderFixtureOptions["profile"];
+    context?: Context.Context<never>;
+  } = {},
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
   const db = new DatabaseStub();
@@ -349,21 +523,32 @@ async function makeHarness(
     "citation.references-style": null,
     ...overrides,
   });
-  const profileEvents = createNanoEvents<{ changed: () => void }>();
-  const queryClient = stack.use(queryClientsFixture());
+  const listeners = new Set<() => void>();
+  const profileEvents = {
+    on: (_event: "changed", callback: () => void) => {
+      listeners.add(callback);
+      return () => {
+        listeners.delete(callback);
+      };
+    },
+    emit: (_event: "changed") => {
+      for (const callback of listeners) callback();
+    },
+  };
   const cache = stack.use(
-    new BibliographyRenderCache({
-      profile: profile ?? {
-        on: (event, callback) => profileEvents.on(event, callback),
+    await bibliographyRenderFixture(
+      {
+        profile: profile ?? {
+          on: (event, callback) => profileEvents.on(event, callback),
+        },
+        db,
+        pandocEngine,
+        zoteroPref,
+        settings,
       },
-      db,
-      pandocEngine,
-      zoteroPref,
-      settings,
-      queryClient,
-    }),
+      context,
+    ),
   );
-  await cache.ready;
 
   const invalidations: number[] = [];
   cache.on("invalidated", () => invalidations.push(invalidations.length + 1));
@@ -482,550 +667,701 @@ async function installDependent(parentId: string): Promise<
 }
 
 describe("BibliographyRenderCache", () => {
-  it("hands two consumers of the same ordered cited set one render", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
-    const items = [item("alpha"), item("zebra")];
+  it.effect(
+    "hands two consumers of the same ordered cited set one render",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* harnessOf();
+        const { cache, engine } = harness;
+        const items = [item("alpha"), item("zebra")];
 
-    const [first, second] = await Promise.all([
-      cache.render(items),
-      cache.render([item("alpha"), item("zebra")]),
-    ]);
-    const third = await cache.render([item("alpha"), item("zebra")]);
+        const [first, second] = yield* Effect.promise(() =>
+          Promise.all([
+            cache.render(items),
+            cache.render([item("alpha"), item("zebra")]),
+          ]),
+        );
+        const third = yield* Effect.promise(() =>
+          cache.render([item("alpha"), item("zebra")]),
+        );
 
-    expect(engine.requests).toHaveLength(1);
-    expect(first).toMatchObject({
-      kind: "held",
-      record: {
-        value: {
-          entries: [{ id: "alpha" }, { id: "zebra" }],
-          hasEntryMarkers: true,
-        },
-        status: "fresh",
-      },
-    });
-    if (
-      first.kind !== "held" ||
-      second.kind !== "held" ||
-      third.kind !== "held"
-    ) {
-      throw new Error("bibliography render missing");
-    }
-    expect(first.record.value).toBe(second.record.value);
-    expect(first.record.value).toBe(third.record.value);
-  });
-
-  it("renders again for a different cited set, order included", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
-
-    await cache.render([item("alpha"), item("zebra")]);
-    await cache.render([item("zebra"), item("alpha")]);
-    await cache.render([item("alpha")]);
-
-    expect(engine.requests).toHaveLength(3);
-  });
-
-  it("drops every render when the Zotero database changes", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, db, invalidations } = harness;
-    const items = [item("alpha")];
-
-    await cache.render(items);
-    db.changed();
-    await cache.render(items);
-
-    expect(invalidations).toHaveLength(1);
-    expect(engine.requests).toHaveLength(2);
-  });
-
-  it("drops every render when the Zotero data directory moves", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, zoteroPref, invalidations } = harness;
-    const items = [item("alpha")];
-
-    await cache.render(items);
-    zoteroPref.resolvedChanged();
-    await cache.render(items);
-
-    expect(invalidations).toHaveLength(1);
-    expect(engine.requests).toHaveLength(2);
-  });
-
-  it("drops every render when the Citation and References Style changes", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, settings, invalidations } = harness;
-    const items = [item("alpha")];
-
-    await cache.render(items);
-    settings.update({ "citation.references-style": IEEE });
-    const changed = await cache.render(items);
-    // The same style again is no change at all.
-    settings.update({ "citation.references-style": IEEE });
-
-    expect(invalidations).toHaveLength(1);
-    expect(changed).toEqual({
-      kind: "unavailable",
-      reason: "style-missing",
-    });
-    expect(engine.requests).toHaveLength(1);
-  });
-
-  it("drops every render when a named Profile citation style changes", async () => {
-    await using harness = await makeHarness();
-    const { cache, invalidations } = harness;
-
-    await cache.render([item("alpha")]);
-    harness.profileEvents.emit("changed");
-
-    expect(invalidations).toHaveLength(1);
-  });
-
-  it("drops every render when the engine comes or goes", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, pandocEngine, invalidations } = harness;
-    const items = [item("alpha")];
-
-    await cache.render(items);
-    pandocEngine.setStatus({
-      kind: "installed",
-      version: "3.11",
-      binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
-    });
-    await cache.render(items);
-
-    expect(invalidations).toHaveLength(1);
-    expect(engine.requests).toHaveLength(2);
-  });
-
-  it("formats nothing while no engine is installed", async () => {
-    await using harness = await makeHarness({
-      "citation.references-style": APA,
-    });
-    const { cache, engine, pandocEngine, missingStyles } = harness;
-    pandocEngine.setStatus({ kind: "absent" });
-
-    await expect(cache.render([item("alpha")])).resolves.toEqual({
-      kind: "unavailable",
-      reason: "engine-absent",
-    });
-    expect(engine.requests).toHaveLength(0);
-    expect(missingStyles).toEqual([]);
-  });
-
-  it("formats nothing for a document that cites nothing", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
-
-    await expect(cache.render([])).resolves.toEqual({
-      kind: "held",
-      key: expect.any(String),
-      record: {
-        value: { entries: [], hasEntryMarkers: false },
-        status: "fresh",
-        settled: expect.any(Promise),
-      },
-    });
-    expect(engine.requests).toHaveLength(0);
-  });
-
-  it("stops a document that cites nothing under a style it cannot reach", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, missingStyles } = harness;
-
-    await expect(cache.render([], { styleId: IEEE })).resolves.toEqual({
-      kind: "unavailable",
-      reason: "style-missing",
-    });
-    expect(missingStyles).toEqual([]);
-  });
-
-  it("serves a refused render until an invalidation rearms it", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, db } = harness;
-    const items = [item("alpha")];
-
-    engine.fails = true;
-    await expect(cache.render(items)).resolves.toEqual({
-      kind: "unavailable",
-      reason: "failed",
-    });
-    engine.fails = false;
-    // The refusal stands rather than re-running the engine on every ask.
-    await expect(cache.render(items)).resolves.toEqual({
-      kind: "unavailable",
-      reason: "failed",
-    });
-    expect(engine.requests).toHaveLength(1);
-
-    db.changed();
-    await expect(cache.render(items)).resolves.toMatchObject({
-      kind: "held",
-    });
-
-    expect(engine.requests).toHaveLength(2);
-  });
-
-  it.each(["bibliography", "citations"] as const)(
-    "uses current item data after an in-flight %s render is invalidated",
-    async (kind) => {
-      await using h = await makeHarness();
-      const started = Promise.withResolvers<void>();
-      const gate = Promise.withResolvers<void>();
-      const titles: string[] = [];
-      const content = async (items: readonly CslItemData[]) => {
-        const title = String(items[0]?.title);
-        titles.push(title);
-        if (titles.length === 1) {
-          started.resolve();
-          await gate.promise;
-        }
-        return inlines(title);
-      };
-      h.engine.renderBibliography = async ({ items }) => [
-        { id: "alpha", marker: undefined, content: await content(items) },
-      ];
-      h.engine.renderCitations = async ({ items }) => [
-        { citations: [], content: await content(items) },
-      ];
-      const read = (title: string) => {
-        const items = [{ ...item("alpha"), title }];
-        return kind === "bibliography"
-          ? h.cache.readBibliography(items).then((value) => value?.entries)
-          : h.cache.readCitations(["[@alpha]"], items);
-      };
-      const first = read("Old title");
-      await started.promise;
-      h.db.changed();
-      const updated = read("Current title");
-      gate.resolve();
-      await first;
-
-      expect((await updated)?.[0]?.content).toEqual(inlines("Current title"));
-      expect((await read("Current title"))?.[0]?.content).toEqual(
-        inlines("Current title"),
-      );
-    },
-  );
-
-  it.each(["bibliography", "citations"] as const)(
-    "reports a failed %s read to an owner that composes it",
-    async (kind) => {
-      await using h = await makeHarness();
-      const read = () =>
-        kind === "bibliography"
-          ? h.cache.readBibliography([item("alpha")])
-          : h.cache.readCitations(["[@alpha]"], [item("alpha")]);
-      await read();
-      h.db.changed();
-      h.engine.fails = true;
-
-      await expect(read()).rejects.toThrow("no");
-      await expect(read()).rejects.toThrow("no");
-      expect(
-        kind === "bibliography" ? h.engine.requests : h.engine.citationRequests,
-      ).toHaveLength(2);
-    },
-  );
-
-  it("hands the settled render to the surfaces that hold it", async () => {
-    await using harness = await makeHarness();
-    const { cache } = harness;
-    const settlements: [string, Held<unknown> | null][] = [];
-    cache.on("settled", (key, held) => settlements.push([key, held]));
-
-    await cache.render([item("alpha")]);
-
-    expect(settlements).toEqual([
-      [
-        expect.any(String),
-        expect.objectContaining({
-          value: {
-            entries: [
-              {
-                id: "alpha",
-                marker: inlines("1"),
-                content: inlines("entry for alpha"),
-              },
-            ],
-            hasEntryMarkers: true,
+        expect(engine.requests).toHaveLength(1);
+        expect(first).toMatchObject({
+          kind: "held",
+          record: {
+            value: {
+              entries: [{ id: "alpha" }, { id: "zebra" }],
+              hasEntryMarkers: true,
+            },
+            status: "fresh",
           },
-          status: "fresh",
-        }),
-      ],
-    ]);
-  });
+        });
+        if (
+          first.kind !== "held" ||
+          second.kind !== "held" ||
+          third.kind !== "held"
+        ) {
+          throw new Error("bibliography render missing");
+        }
+        expect(first.record.value).toBe(second.record.value);
+        expect(first.record.value).toBe(third.record.value);
+      }),
+  );
 
-  it("keeps a failed replacement available to display reads", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, db } = harness;
-    const items = [item("alpha")];
-    await expect(cache.render(items)).resolves.toMatchObject({
-      kind: "held",
-    });
+  it.effect("renders again for a different cited set, order included", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine } = harness;
 
-    engine.fails = true;
-    db.changed();
+      yield* Effect.promise(() => cache.render([item("alpha"), item("zebra")]));
+      yield* Effect.promise(() => cache.render([item("zebra"), item("alpha")]));
+      yield* Effect.promise(() => cache.render([item("alpha")]));
 
-    const replacing = await cache.render(items);
-    if (replacing.kind !== "held") throw new Error("Missing held render");
-    await replacing.record.settled;
-    await expect(cache.render(items)).resolves.toMatchObject({
-      kind: "held",
-      record: {
-        status: "failed",
-        value: { entries: [{ content: inlines("entry for alpha") }] },
-      },
-    });
-    expect(engine.requests).toHaveLength(2);
-  });
+      expect(engine.requests).toHaveLength(3);
+    }),
+  );
 
-  it("discards a render an invalidation landed on", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, db } = harness;
-    const items = [item("alpha")];
-    // Each render names the ordinal of the engine run behind it, so the render
-    // that ends up standing is the one the entries name.
-    engine.stamp = () => ` #${engine.requests.length}`;
-    await cache.render(items);
+  it.effect("drops every render when the Zotero database changes", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, db, invalidations } = harness;
+      const items = [item("alpha")];
 
-    const gate = Promise.withResolvers<void>();
-    engine.gate = gate;
-    db.changed();
-    // The render that answers here is the held one; the replacement it starts
-    // is the one the second drop lands on.
-    await cache.render(items);
-    db.changed();
-    gate.resolve();
+      yield* Effect.promise(() => cache.render(items));
+      db.changed();
+      yield* Effect.promise(() => cache.render(items));
 
-    // The superseded second render never publishes: the ask its cancellation
-    // armed is the third run, and that is the render that stands.
-    await vi.waitFor(async () => {
-      await expect(cache.render(items)).resolves.toMatchObject({
-        kind: "held",
-        record: {
-          value: { entries: [{ content: inlines("entry for alpha #3") }] },
-          status: "fresh",
-        },
+      expect(invalidations).toHaveLength(1);
+      expect(engine.requests).toHaveLength(2);
+    }),
+  );
+
+  it.effect("drops every render when the Zotero data directory moves", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, zoteroPref, invalidations } = harness;
+      const items = [item("alpha")];
+
+      yield* Effect.promise(() => cache.render(items));
+      zoteroPref.resolvedChanged();
+      yield* Effect.promise(() => cache.render(items));
+
+      expect(invalidations).toHaveLength(1);
+      expect(engine.requests).toHaveLength(2);
+    }),
+  );
+
+  it.effect(
+    "drops every render when the Citation and References Style changes",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* harnessOf();
+        const { cache, engine, settings, invalidations } = harness;
+        const items = [item("alpha")];
+
+        yield* Effect.promise(() => cache.render(items));
+        settings.update({ "citation.references-style": IEEE });
+        const changed = yield* Effect.promise(() => cache.render(items));
+        // The same style again is no change at all.
+        settings.update({ "citation.references-style": IEEE });
+
+        expect(invalidations).toHaveLength(1);
+        expect(changed).toEqual({
+          kind: "unavailable",
+          reason: "style-missing",
+        });
+        expect(engine.requests).toHaveLength(1);
+      }),
+  );
+
+  it.effect(
+    "drops every render when a named Profile citation style changes",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* harnessOf();
+        const { cache, invalidations } = harness;
+
+        yield* Effect.promise(() => cache.render([item("alpha")]));
+        harness.profileEvents.emit("changed");
+
+        expect(invalidations).toHaveLength(1);
+      }),
+  );
+
+  it.effect("drops every render when the engine comes or goes", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, pandocEngine, invalidations } = harness;
+      const items = [item("alpha")];
+
+      yield* Effect.promise(() => cache.render(items));
+      pandocEngine.setStatus({
+        kind: "installed",
+        version: "3.11",
+        binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
       });
-    });
-    expect(engine.requests).toHaveLength(3);
-  });
+      yield* Effect.promise(() => cache.render(items));
 
-  it("keeps an unavailable selected style out of every formatting surface", async () => {
-    await using harness = await makeHarness({
-      "citation.references-style": APA,
-    });
-    const { cache, engine, missingStyles } = harness;
+      expect(invalidations).toHaveLength(1);
+      expect(engine.requests).toHaveLength(2);
+    }),
+  );
 
-    await expect(cache.render([item("alpha")])).resolves.toEqual({
-      kind: "unavailable",
-      reason: "style-missing",
-    });
-    await expect(
-      cache.renderCitations(["[@alpha]"], [item("alpha")]),
-    ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" });
-    await cache.render([item("alpha")]);
+  it.effect("formats nothing while no engine is installed", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf({
+        "citation.references-style": APA,
+      });
+      const { cache, engine, pandocEngine, missingStyles } = harness;
+      pandocEngine.setStatus({ kind: "absent" });
 
-    expect(engine.requests).toHaveLength(0);
-    expect(engine.citationRequests).toHaveLength(0);
-    expect(missingStyles).toEqual([APA]);
+      yield* Effect.promise(() =>
+        expect(cache.render([item("alpha")])).resolves.toEqual({
+          kind: "unavailable",
+          reason: "engine-absent",
+        }),
+      );
+      expect(engine.requests).toHaveLength(0);
+      expect(missingStyles).toEqual([]);
+    }),
+  );
 
-    const lateMissingStyles: string[] = [];
-    cache.onStyleMissing((styleId) => lateMissingStyles.push(styleId));
-    expect(lateMissingStyles).toEqual([APA]);
-  });
+  it.effect("formats nothing for a document that cites nothing", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine } = harness;
 
-  it("drops every render when the vault Citation Locale changes", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, settings, invalidations } = harness;
-    const items = [item("alpha")];
+      yield* Effect.promise(() =>
+        expect(cache.render([])).resolves.toEqual({
+          kind: "held",
+          key: expect.any(String),
+          record: {
+            value: { entries: [], hasEntryMarkers: false },
+            status: "fresh",
+            settled: expect.any(Promise),
+          },
+        }),
+      );
+      expect(engine.requests).toHaveLength(0);
+    }),
+  );
 
-    await cache.render(items);
-    await cache.renderCitations(["[@alpha]"], items);
-    settings.update({ "citation.locale": "de-DE" });
-    await cache.render(items);
-    await cache.renderCitations(["[@alpha]"], items);
-    // The same locale again is no change at all.
-    settings.update({ "citation.locale": "de-DE" });
+  it.effect(
+    "stops a document that cites nothing under a style it cannot reach",
+    () =>
+      Effect.gen(function* () {
+        const installed = yield* acquireAsyncDisposable(() =>
+          installStyle(APA),
+        );
+        const harness = yield* harnessOf(
+          { "citation.references-style": APA },
+          installed.dataDir,
+        );
+        const { cache, missingStyles } = harness;
 
-    expect(invalidations).toHaveLength(1);
-    expect(engine.requests).toHaveLength(2);
-    expect(engine.citationRequests).toHaveLength(2);
-    expect(engine.requests[1]?.locale).toBe("de-DE");
-    expect(engine.citationRequests[1]?.locale).toBe("de-DE");
-  });
+        yield* Effect.promise(() =>
+          expect(cache.render([], { styleId: IEEE })).resolves.toEqual({
+            kind: "unavailable",
+            reason: "style-missing",
+          }),
+        );
+        expect(missingStyles).toEqual([]);
+      }),
+  );
 
-  it("renders the embedded default style for a request that names Default", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
+  it.effect("serves a refused render until an invalidation rearms it", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, db } = harness;
+      const items = [item("alpha")];
 
-    await cache.render([item("alpha")], { styleId: null });
+      engine.fails = true;
+      yield* Effect.promise(() =>
+        expect(cache.render(items)).resolves.toEqual({
+          kind: "unavailable",
+          reason: "failed",
+        }),
+      );
+      engine.fails = false;
+      // The refusal stands rather than re-running the engine on every ask.
+      yield* Effect.promise(() =>
+        expect(cache.render(items)).resolves.toEqual({
+          kind: "unavailable",
+          reason: "failed",
+        }),
+      );
+      expect(engine.requests).toHaveLength(1);
 
-    expect(engine.requests[0]?.styleXml).toBeUndefined();
-  });
+      db.changed();
+      yield* Effect.promise(() =>
+        expect(cache.render(items)).resolves.toMatchObject({
+          kind: "held",
+        }),
+      );
 
-  it("renders again when a dependent style names another parent", async () => {
-    await using installed = await installDependent(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": DEPENDENT },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
-    const items = [item("alpha")];
+      expect(engine.requests).toHaveLength(2);
+    }),
+  );
 
-    await cache.render(items);
-    await installed.pointAt(IEEE);
-    await cache.render(items);
+  it.effect.each(["bibliography", "citations"] as const)(
+    "uses current item data after an in-flight %s render is invalidated",
+    (kind) =>
+      Effect.gen(function* () {
+        const h = yield* harnessOf();
+        const started = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+        const titles: string[] = [];
+        const content = async (items: readonly CslItemData[]) => {
+          const title = String(items[0]?.title);
+          titles.push(title);
+          if (titles.length === 1) {
+            started.resolve();
+            await gate.promise;
+          }
+          return inlines(title);
+        };
+        h.engine.renderBibliography = async ({ items }) => [
+          { id: "alpha", marker: undefined, content: await content(items) },
+        ];
+        h.engine.renderCitations = async ({ items }) => [
+          { citations: [], content: await content(items) },
+        ];
+        const read = (title: string) => {
+          const items = [{ ...item("alpha"), title }];
+          return kind === "bibliography"
+            ? h.cache.readBibliography(items).then((value) => value?.entries)
+            : h.cache.readCitations(["[@alpha]"], items);
+        };
+        const first = read("Old title");
+        yield* Effect.promise(() => started.promise);
+        h.db.changed();
+        const updated = read("Current title");
+        gate.resolve();
+        yield* Effect.promise(async () => await first);
 
-    expect(engine.requests).toHaveLength(2);
-    expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
-    expect(engine.requests[1]?.styleXml).toContain(`<id>${IEEE}</id>`);
-  });
+        expect(
+          (yield* Effect.promise(async () => await updated))?.[0]?.content,
+        ).toEqual(inlines("Current title"));
+        expect(
+          (yield* Effect.promise(async () => await read("Current title")))?.[0]
+            ?.content,
+        ).toEqual(inlines("Current title"));
+      }),
+  );
 
-  it("renders again when the selected style's own content changes", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
-    const items = [item("alpha")];
+  it.effect.each(["bibliography", "citations"] as const)(
+    "reports a failed %s read to an owner that composes it",
+    (kind) =>
+      Effect.gen(function* () {
+        const h = yield* harnessOf();
+        const read = () =>
+          kind === "bibliography"
+            ? h.cache.readBibliography([item("alpha")])
+            : h.cache.readCitations(["[@alpha]"], [item("alpha")]);
+        yield* Effect.promise(async () => await read());
+        h.db.changed();
+        h.engine.fails = true;
 
-    await cache.render(items);
-    await installed.edit(0, independentXml(APA, "Edited in Zotero"));
-    await cache.render(items);
+        yield* Effect.promise(() => expect(read()).rejects.toThrow("no"));
+        yield* Effect.promise(() => expect(read()).rejects.toThrow("no"));
+        expect(
+          kind === "bibliography"
+            ? h.engine.requests
+            : h.engine.citationRequests,
+        ).toHaveLength(2);
+      }),
+  );
 
-    expect(engine.requests).toHaveLength(2);
-    expect(engine.requests[1]?.styleXml).toContain(
-      "<title>Edited in Zotero</title>",
-    );
-  });
+  it.effect("hands the settled render to the surfaces that hold it", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache } = harness;
+      const settlements: [string, Held<unknown> | null][] = [];
+      const delivered = yield* Queue.unbounded<void>();
+      cache.on("settled", (key, held) => {
+        settlements.push([key, held]);
+        Queue.offerUnsafe(delivered, undefined);
+      });
 
-  it("holds one render per Citation Presentation", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, engine } = harness;
-    const items = [item("alpha")];
+      yield* Effect.promise(() => cache.render([item("alpha")]));
+      yield* Queue.take(delivered);
 
-    await cache.render(items);
-    await cache.render(items, { locale: "de-DE" });
-    await cache.render(items, { locale: "de-DE" });
+      expect(settlements).toEqual([
+        [
+          expect.any(String),
+          expect.objectContaining({
+            value: {
+              entries: [
+                {
+                  id: "alpha",
+                  marker: inlines("1"),
+                  content: inlines("entry for alpha"),
+                },
+              ],
+              hasEntryMarkers: true,
+            },
+            status: "fresh",
+          }),
+        ],
+      ]);
+    }),
+  );
 
-    expect(engine.requests).toHaveLength(2);
-    expect(engine.requests[0]?.styleXml).not.toContain("default-locale");
-    expect(engine.requests[1]?.styleXml).toContain('default-locale="de-DE"');
-  });
+  it.effect("keeps a failed replacement available to display reads", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, db } = harness;
+      const items = [item("alpha")];
+      yield* Effect.promise(() =>
+        expect(cache.render(items)).resolves.toMatchObject({
+          kind: "held",
+        }),
+      );
 
-  it("blames the vault for its own selection alone", async () => {
-    await using installed = await installStyle(APA);
-    await using harness = await makeHarness(
-      { "citation.references-style": APA },
-      installed.dataDir,
-    );
-    const { cache, missingStyles } = harness;
+      engine.fails = true;
+      db.changed();
 
-    await expect(
-      cache.render([item("alpha")], { styleId: IEEE }),
-    ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" });
+      const replacing = yield* Effect.promise(() => cache.render(items));
+      if (replacing.kind !== "held") throw new Error("Missing held render");
+      yield* Effect.promise(() => replacing.record.settled);
+      yield* Effect.promise(() =>
+        expect(cache.render(items)).resolves.toMatchObject({
+          kind: "held",
+          record: {
+            status: "failed",
+            value: { entries: [{ content: inlines("entry for alpha") }] },
+          },
+        }),
+      );
+      expect(engine.requests).toHaveLength(2);
+    }),
+  );
 
-    expect(missingStyles).toEqual([]);
-  });
+  it.effect("discards a render an invalidation landed on", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, db } = harness;
+      const items = [item("alpha")];
+      // Each render names the ordinal of the engine run behind it, so the render
+      // that ends up standing is the one the entries name.
+      engine.stamp = () => ` #${engine.requests.length}`;
+      yield* Effect.promise(() => cache.render(items));
+
+      const gate = Promise.withResolvers<void>();
+      engine.gate = gate;
+      db.changed();
+      // The render that answers here is the held one; the replacement it starts
+      // is the one the second drop lands on.
+      yield* Effect.promise(() => cache.render(items));
+      db.changed();
+      gate.resolve();
+
+      // The superseded second render never publishes: the ask its cancellation
+      // armed is the third run, and that is the render that stands.
+      yield* Effect.promise(() => cache.readBibliography(items));
+      yield* Effect.promise(() =>
+        expect(cache.render(items)).resolves.toMatchObject({
+          kind: "held",
+          record: {
+            value: { entries: [{ content: inlines("entry for alpha #3") }] },
+            status: "fresh",
+          },
+        }),
+      );
+      expect(engine.requests).toHaveLength(3);
+    }),
+  );
+
+  it.effect(
+    "keeps an unavailable selected style out of every formatting surface",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* harnessOf({
+          "citation.references-style": APA,
+        });
+        const { cache, engine, missingStyles } = harness;
+
+        yield* Effect.promise(() =>
+          expect(cache.render([item("alpha")])).resolves.toEqual({
+            kind: "unavailable",
+            reason: "style-missing",
+          }),
+        );
+        yield* Effect.promise(() =>
+          expect(
+            cache.renderCitations(["[@alpha]"], [item("alpha")]),
+          ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" }),
+        );
+        yield* Effect.promise(() => cache.render([item("alpha")]));
+
+        expect(engine.requests).toHaveLength(0);
+        expect(engine.citationRequests).toHaveLength(0);
+        expect(missingStyles).toEqual([APA]);
+
+        const lateMissingStyles: string[] = [];
+        cache.onStyleMissing((styleId) => lateMissingStyles.push(styleId));
+        expect(lateMissingStyles).toEqual([APA]);
+
+        const newMissingStyles: string[] = [];
+        cache.on("style-missing", (styleId) => newMissingStyles.push(styleId));
+        harness.settings.update({ "citation.locale": "fr-FR" });
+        yield* TestClock.adjust(0);
+        expect(newMissingStyles).toEqual([]);
+      }),
+  );
+
+  it.effect("drops every render when the vault Citation Locale changes", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, settings, invalidations } = harness;
+      const items = [item("alpha")];
+
+      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      settings.update({ "citation.locale": "de-DE" });
+      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      // The same locale again is no change at all.
+      settings.update({ "citation.locale": "de-DE" });
+
+      expect(invalidations).toHaveLength(1);
+      expect(engine.requests).toHaveLength(2);
+      expect(engine.citationRequests).toHaveLength(2);
+      expect(engine.requests[1]?.locale).toBe("de-DE");
+      expect(engine.citationRequests[1]?.locale).toBe("de-DE");
+    }),
+  );
+
+  it.effect(
+    "renders the embedded default style for a request that names Default",
+    () =>
+      Effect.gen(function* () {
+        const installed = yield* acquireAsyncDisposable(() =>
+          installStyle(APA),
+        );
+        const harness = yield* harnessOf(
+          { "citation.references-style": APA },
+          installed.dataDir,
+        );
+        const { cache, engine } = harness;
+
+        yield* Effect.promise(() =>
+          cache.render([item("alpha")], { styleId: null }),
+        );
+
+        expect(engine.requests[0]?.styleXml).toBeUndefined();
+      }),
+  );
+
+  it.effect("renders again when a dependent style names another parent", () =>
+    Effect.gen(function* () {
+      const installed = yield* acquireAsyncDisposable(() =>
+        installDependent(APA),
+      );
+      const harness = yield* harnessOf(
+        { "citation.references-style": DEPENDENT },
+        installed.dataDir,
+      );
+      const { cache, engine } = harness;
+      const items = [item("alpha")];
+
+      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => installed.pointAt(IEEE));
+      yield* Effect.promise(() => cache.render(items));
+
+      expect(engine.requests).toHaveLength(2);
+      expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
+      expect(engine.requests[1]?.styleXml).toContain(`<id>${IEEE}</id>`);
+    }),
+  );
+
+  it.effect("renders again when the selected style's own content changes", () =>
+    Effect.gen(function* () {
+      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const harness = yield* harnessOf(
+        { "citation.references-style": APA },
+        installed.dataDir,
+      );
+      const { cache, engine } = harness;
+      const items = [item("alpha")];
+
+      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() =>
+        installed.edit(0, independentXml(APA, "Edited in Zotero")),
+      );
+      yield* Effect.promise(() => cache.render(items));
+
+      expect(engine.requests).toHaveLength(2);
+      expect(engine.requests[1]?.styleXml).toContain(
+        "<title>Edited in Zotero</title>",
+      );
+    }),
+  );
+
+  it.effect("holds one render per Citation Presentation", () =>
+    Effect.gen(function* () {
+      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const harness = yield* harnessOf(
+        { "citation.references-style": APA },
+        installed.dataDir,
+      );
+      const { cache, engine } = harness;
+      const items = [item("alpha")];
+
+      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.render(items, { locale: "de-DE" }));
+      yield* Effect.promise(() => cache.render(items, { locale: "de-DE" }));
+
+      expect(engine.requests).toHaveLength(2);
+      expect(engine.requests[0]?.styleXml).not.toContain("default-locale");
+      expect(engine.requests[1]?.styleXml).toContain('default-locale="de-DE"');
+    }),
+  );
+
+  it.effect("blames the vault for its own selection alone", () =>
+    Effect.gen(function* () {
+      const installed = yield* acquireAsyncDisposable(() => installStyle(APA));
+      const harness = yield* harnessOf(
+        { "citation.references-style": APA },
+        installed.dataDir,
+      );
+      const { cache, missingStyles } = harness;
+
+      yield* Effect.promise(() =>
+        expect(
+          cache.render([item("alpha")], { styleId: IEEE }),
+        ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" }),
+      );
+
+      expect(missingStyles).toEqual([]);
+    }),
+  );
 });
 
 describe("BibliographyRenderCache citations", () => {
   const items = [item("alpha")];
 
-  it("hands two consumers of the same document one render", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
+  it.effect("hands two consumers of the same document one render", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine } = harness;
 
-    const [first, second] = await Promise.all([
-      cache.renderCitations(["[@alpha]", "@alpha"], items),
-      cache.renderCitations(["[@alpha]", "@alpha"], items),
-    ]);
+      const [first, second] = yield* Effect.promise(() =>
+        Promise.all([
+          cache.renderCitations(["[@alpha]", "@alpha"], items),
+          cache.renderCitations(["[@alpha]", "@alpha"], items),
+        ]),
+      );
 
-    expect(engine.citationRequests).toHaveLength(1);
-    expect(first.kind).toBe("held");
-    expect(second.kind).toBe("held");
-    if (first.kind !== "held" || second.kind !== "held") {
-      throw new Error("citation render missing");
-    }
-    expect(first.record.value).toBe(second.record.value);
-    expect(first.record.value.map((citation) => citation.content)).toEqual([
-      inlines("cite for [@alpha]"),
-      inlines("cite for @alpha"),
-    ]);
-  });
+      expect(engine.citationRequests).toHaveLength(1);
+      expect(first.kind).toBe("held");
+      expect(second.kind).toBe("held");
+      if (first.kind !== "held" || second.kind !== "held") {
+        throw new Error("citation render missing");
+      }
+      expect(first.record.value).toBe(second.record.value);
+      expect(first.record.value.map((citation) => citation.content)).toEqual([
+        inlines("cite for [@alpha]"),
+        inlines("cite for @alpha"),
+      ]);
+    }),
+  );
 
-  it("renders again for other citations of the same cited set", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
+  it.effect("renders again for other citations of the same cited set", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine } = harness;
 
-    await cache.renderCitations(["[@alpha]"], items);
-    await cache.renderCitations(["@alpha"], items);
+      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      yield* Effect.promise(() => cache.renderCitations(["@alpha"], items));
 
-    expect(engine.citationRequests).toHaveLength(2);
-  });
+      expect(engine.citationRequests).toHaveLength(2);
+    }),
+  );
 
-  it("drops citation renders with the bibliography renders", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, settings } = harness;
+  it.effect("drops citation renders with the bibliography renders", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, settings } = harness;
 
-    await cache.renderCitations(["[@alpha]"], items);
-    settings.update({ "citation.references-style": IEEE });
-    const changed = await cache.renderCitations(["[@alpha]"], items);
+      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      settings.update({ "citation.references-style": IEEE });
+      const changed = yield* Effect.promise(() =>
+        cache.renderCitations(["[@alpha]"], items),
+      );
 
-    expect(changed).toEqual({ kind: "unavailable", reason: "style-missing" });
-    expect(engine.citationRequests).toHaveLength(1);
-  });
+      expect(changed).toEqual({
+        kind: "unavailable",
+        reason: "style-missing",
+      });
+      expect(engine.citationRequests).toHaveLength(1);
+    }),
+  );
 
-  it("formats nothing while no engine is installed", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, pandocEngine } = harness;
-    pandocEngine.setStatus({ kind: "absent" });
+  it.effect("formats nothing while no engine is installed", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, pandocEngine } = harness;
+      pandocEngine.setStatus({ kind: "absent" });
 
-    await expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
-      kind: "unavailable",
-      reason: "engine-absent",
-    });
-    expect(engine.citationRequests).toHaveLength(0);
-  });
+      yield* Effect.promise(() =>
+        expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
+          kind: "unavailable",
+          reason: "engine-absent",
+        }),
+      );
+      expect(engine.citationRequests).toHaveLength(0);
+    }),
+  );
 
-  it("formats nothing for a document that cites nothing", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine } = harness;
+  it.effect("formats nothing for a document that cites nothing", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine } = harness;
 
-    expect(citationValue(await cache.renderCitations([], []))).toEqual([]);
-    expect(engine.citationRequests).toHaveLength(0);
-  });
+      expect(
+        citationValue(
+          yield* Effect.promise(() => cache.renderCitations([], [])),
+        ),
+      ).toEqual([]);
+      expect(engine.citationRequests).toHaveLength(0);
+    }),
+  );
 
-  it("serves a refused render until an invalidation rearms it", async () => {
-    await using harness = await makeHarness();
-    const { cache, engine, db } = harness;
+  it.effect("serves a refused render until an invalidation rearms it", () =>
+    Effect.gen(function* () {
+      const harness = yield* harnessOf();
+      const { cache, engine, db } = harness;
 
-    engine.fails = true;
-    await expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
-      kind: "unavailable",
-      reason: "failed",
-    });
-    engine.fails = false;
-    db.changed();
-    expect(
-      citationValue(await cache.renderCitations(["[@alpha]"], items)),
-    ).not.toBeNull();
+      engine.fails = true;
+      yield* Effect.promise(() =>
+        expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
+          kind: "unavailable",
+          reason: "failed",
+        }),
+      );
+      engine.fails = false;
+      db.changed();
+      expect(
+        citationValue(
+          yield* Effect.promise(() =>
+            cache.renderCitations(["[@alpha]"], items),
+          ),
+        ),
+      ).not.toBeNull();
 
-    expect(engine.citationRequests).toHaveLength(2);
-  });
+      expect(engine.citationRequests).toHaveLength(2);
+    }),
+  );
+});
+
+const harnessOf = Effect.fnUntraced(function* (
+  overrides: SettingsOverrides = {},
+  dataDir?: string,
+  profile?: BibliographyRenderFixtureOptions["profile"],
+) {
+  const context = yield* Effect.context<never>();
+  return yield* acquireAsyncDisposable(() =>
+    openHarness(overrides, dataDir, { profile, context }),
+  );
 });

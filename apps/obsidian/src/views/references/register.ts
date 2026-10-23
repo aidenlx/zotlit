@@ -10,7 +10,7 @@ import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainPandocEngine } from "@/services/pandoc/plain";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -32,7 +32,10 @@ export interface ReferencesRegistrationDeps {
   citationText: CitationText;
   citekeyEditor: CitekeyEditor;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
-  bibliographyRender: BibliographyRenderCache;
+  bibliographyRender: Pick<
+    PlainBibliographyRender,
+    "render" | "on" | "vaultPresentation"
+  >;
 }
 
 export function registerReferencesView(
