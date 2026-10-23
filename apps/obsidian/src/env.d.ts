@@ -33,6 +33,11 @@ declare module "virtual:zotero-reads-worker" {
   export default source;
 }
 
+declare module "virtual:citation-parse-worker" {
+  const source: string;
+  export default source;
+}
+
 var __DEV__: boolean;
 var __WEB_WORKBENCH_ENABLED__: boolean;
 var __ANNOTATION_SUGGESTER_ENABLED__: boolean;

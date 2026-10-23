@@ -3,6 +3,7 @@ import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import {
   GROUP_KEY,
@@ -126,7 +127,7 @@ describe("CitationIndex", () => {
     });
   });
 
-  it("merges wikilink occurrences from the metadata cache in document order", async () => {
+  it("merges stored wikilink occurrences in document order", async () => {
     const { draft, index, metadataCache } = await makeHarness(
       { "draft.md": "As @roe2025 wrote, see [[Doe 2024]]." },
       { settings: { "citation.wikilink-citations": true } },
@@ -168,7 +169,10 @@ describe("CitationIndex", () => {
 
   it("admits only eligible Literature Note wikilinks to the shared set", async () => {
     const { draft, index, metadataCache } = await makeHarness(
-      { "draft.md": "links" },
+      {
+        "draft.md":
+          "[[Doe 2024]] [[Doe 2024#cite:locator=4]] [[Doe 2024#cite:]] [[Doe 2024#Heading]] [[Doe 2024#^block]] [[Doe 2024|Doe]] ![[Doe 2024]] [Doe](Doe%202024)",
+      },
       { settings: { "citation.wikilink-citations": true } },
     );
     metadataCache.fileCache.set("draft.md", {
@@ -459,6 +463,7 @@ describe("CitationIndex", () => {
     index.on("changed", () => notified++);
 
     metadataCache.change(draft, "As @doe2024 wrote.");
+    await citationsOf(index, draft);
 
     expect(notified).toBe(0);
   });
@@ -473,7 +478,7 @@ describe("CitationIndex", () => {
 
     metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
 
-    expect(changed).toEqual(["draft.md"]);
+    await expect.poll(() => changed).toEqual(["draft.md"]);
   });
 
   it("keeps a renamed document indexed under its new path", async () => {
@@ -568,7 +573,7 @@ describe("CitationIndex", () => {
       item: { indexedKey: KEY_A },
     });
 
-    metadataCache.change(draft, "As @roe2025 wrote, see [[Roe 2025]].");
+    metadataCache.change(draft, "As @roe2025 wrote.");
     settings.update({ "citation.pandoc-citations": true });
     expect(await citationsOf(index, draft)).toMatchObject([
       {
@@ -652,7 +657,7 @@ describe("CitationIndex persistence", () => {
 
     metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
 
-    expect(store.writes).toEqual(["draft.md"]);
+    await expect.poll(() => store.writes).toEqual(["draft.md"]);
   });
 
   it("forgets the stored scan of a deleted document", async () => {
@@ -790,13 +795,27 @@ describe("CitationIndex resolution", () => {
   });
 
   it("orders occurrences with the same start position deterministically", async () => {
-    const { draft, index, metadataCache, workspace } = await makeHarness(
+    const { index, workspace } = await makeHarness(
       { "draft.md": "@doe2024" },
-      { settings: { "citation.wikilink-citations": true } },
+      {
+        settings: { "citation.wikilink-citations": true },
+        parseClient: {
+          async parse(request, signal) {
+            const reply = await inProcessParseClient.parse(request, signal);
+            if (request.path === "draft.md") {
+              reply.record.wikilinks = [
+                {
+                  kind: "wikilink",
+                  raw: "Doe 2024",
+                  position: link("Doe 2024", 0).position,
+                },
+              ];
+            }
+            return reply;
+          },
+        },
+      },
     );
-    metadataCache.fileCache.set(draft.path, {
-      links: [link("Doe 2024", 0)],
-    } as CachedMetadata);
     const snapshots: CitedBySnapshot[] = [];
     index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
 

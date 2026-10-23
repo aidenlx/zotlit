@@ -88,6 +88,7 @@
     "@zotlit/scripts": "workspace:*",
     "ajv": "catalog:",
     "electron": "43.3.0",
+    "fake-indexeddb": "6.2.5",
     "happy-dom": "catalog:",
     "jieba-wasm": "catalog:",
     "obsidian": "workspace:*",

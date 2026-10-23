@@ -13,6 +13,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Effect } from "@/lib/effect";
+import type { ParseClient } from "@/services/citation-parse/client";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type {
   LibraryScope,
@@ -663,6 +665,8 @@ export interface CitationIndexHarness extends AsyncDisposable {
 }
 
 export interface CitationIndexHarnessOptions {
+  parseClient?: ParseClient;
+  openStore?: () => Promise<CitekeyStore>;
   settings?: Partial<Settings>;
   store?: MemoryStore;
   citekeys?: LibraryCitekey[];
@@ -745,7 +749,8 @@ export async function createCitationIndexHarness(
       noteIndex,
       settings,
       lookup,
-      openStore: () => Promise.resolve(store),
+      parseClient: options.parseClient ?? inProcessParseClient,
+      openStore: options.openStore ?? (() => Promise.resolve(store)),
     }),
   );
   const awaitReady = options.awaitReady ?? true;

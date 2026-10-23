@@ -1,19 +1,27 @@
-// Where the Citation Index keeps its literal-citekey scans between sessions.
+// Where the Citation Index keeps its note scans between sessions.
 
 import { openDB } from "idb";
 import type { DBSchema } from "idb";
 import type { App } from "obsidian";
 
-import type { CitationOccurrence } from "./scan";
+import type { NoteScanRecord } from "./scan-note";
+
+export const SCANNER_REVISION = 1;
 
 /** One file's scan, plus what decides whether it still describes that file. */
-export interface FileScan {
+export interface FileScan extends Pick<
+  NoteScanRecord,
+  | "citekeys"
+  | "wikilinks"
+  | "malformedWikilinks"
+  | "annotations"
+  | "malformedAnnotationCitations"
+> {
   /** `TFile.stat.mtime` when the scan ran. */
   mtime: number;
   /** `TFile.stat.size` when the scan ran. */
   size: number;
-  /** The literal-citekey occurrences only — a wikilink is never stored. */
-  occurrences: CitationOccurrence[];
+  scannerRevision: number;
 }
 
 /** A {@link FileScan} under the path it belongs to. */
@@ -40,7 +48,7 @@ const SCANS = "scans";
  * Bump to discard every stored scan: the upgrade recreates the store empty and
  * the backfill rebuilds it, which is how a change to {@link FileScan} ships.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 interface CitationIndexSchema extends DBSchema {
   scans: { key: string; value: CitekeyRecord };
