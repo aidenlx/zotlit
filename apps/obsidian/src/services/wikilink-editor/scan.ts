@@ -2,22 +2,7 @@
 // links they spell out — plus the conceal group each one belongs to, which is
 // what a reveal test has to match.
 
-import type { DocRange } from "@/lib/editor-decoration";
-
-/**
- * One syntax-tree node of Obsidian's Markdown stream parser, reduced to what
- * the scan reads. Offsets are document offsets, and `classes` is
- * `tokenClassNodeProp` split on spaces.
- *
- * @see docs/research/wikilink-editor-styling-hmd-syntax-tree.md — section 1
- */
-export interface TokenNode {
-  from: number;
-  to: number;
-  classes: readonly string[];
-  /** The document text the node covers. */
-  text: string;
-}
+import type { DocRange, TokenNode } from "@/lib/editor-decoration";
 
 /** One `[[…]]` construct the scan found, in document offsets. */
 export interface WikilinkSpan {
