@@ -8,8 +8,8 @@ import {
   Effect,
   Layer,
   SubscriptionRef,
-  Stream,
 } from "@/lib/effect";
+import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -265,9 +265,9 @@ const makeNoteIndex = Effect.gen(function* () {
     app.workspace.onLayoutReady(events.callback("layout"));
     // Start immediately so a ready layout and clean cache finish the Full Scan
     // before acquisition returns, as they did through the synchronous callbacks.
-    yield* Stream.runForEach(events.stream, consume).pipe(
-      Effect.forkScoped({ startImmediately: true }),
-    );
+    yield* events
+      .consume(consume)
+      .pipe(Effect.forkScoped({ startImmediately: true }));
 
     // `onLayoutReady` and `onCleanCache` are one-shots with no unregister, so
     // the scan gates on disposal instead. Callers parked on `whenIndexed()`
@@ -324,7 +324,7 @@ const makeNoteIndex = Effect.gen(function* () {
     },
   );
 
-  const consume = Effect.fn("NoteIndex.consume")(function* (
+  const consume = Effect.fnUntraced(function* (
     event: Stream.Success<typeof events.stream>,
   ) {
     if (disposed) return;
@@ -360,9 +360,14 @@ const makeNoteIndex = Effect.gen(function* () {
       }
       case "rename-settled": {
         const [file, settled] = event.args;
-        yield* apply(file, read(file));
-        pendingRenames.delete(settled);
-        yield* Deferred.succeed(settled, undefined);
+        yield* Effect.suspend(() => apply(file, read(file))).pipe(
+          Effect.ensuring(
+            Effect.gen(function* () {
+              pendingRenames.delete(settled);
+              yield* Deferred.succeed(settled, undefined);
+            }),
+          ),
+        );
         break;
       }
       case "layout":
@@ -462,21 +467,23 @@ const makeNoteIndex = Effect.gen(function* () {
    * every later change arrives as `changed` or `frontmatter-changed` for its
    * file.
    */
-  const fullScan = Effect.fn("NoteIndex.fullScan")(function* () {
-    if (disposed) return;
-    clear();
+  const fullScan = Effect.fn("NoteIndex.fullScan")(
+    function* () {
+      if (disposed) return;
+      clear();
 
-    for (const file of app.vault.getMarkdownFiles()) {
-      settle(file, read(file));
-    }
+      for (const file of app.vault.getMarkdownFiles()) {
+        settle(file, read(file));
+      }
 
-    yield* Effect.logDebug("Note index scanned").pipe(
-      Effect.annotateLogs({ count: contribByFile.size }),
-      withLogCategory("note-index"),
-    );
-    yield* Deferred.succeed(indexed, undefined);
-    yield* publish({ type: "indexed" });
-  });
+      yield* Effect.logDebug("Note index scanned").pipe(
+        Effect.annotateLogs({ count: contribByFile.size }),
+        withLogCategory("note-index"),
+      );
+      yield* publish({ type: "indexed" });
+    },
+    Effect.ensuring(Deferred.succeed(indexed, undefined)),
+  );
 
   function applyDiff(file: TFile, diff: ContribDiff): void {
     if (diff.itemKey.remove) {

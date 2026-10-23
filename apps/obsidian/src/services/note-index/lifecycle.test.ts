@@ -25,6 +25,74 @@ import { plainNoteIndex } from "./plain";
 import { NoteIndex } from "./service";
 import type { NoteIndexChange } from "./service";
 
+// #1705: recursive YAML aliases fail serialization at the real host boundary.
+it.effect(
+  "a failed metadata update leaves the next valid update consumable",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost(
+        { "paper.md": cache({}) },
+        { enabledAtRuntime: true },
+      );
+      const index = yield* noteIndexOf(host.app);
+      const file = host.vault.files.get("paper.md")!;
+      const recursive: Record<string, unknown> = {};
+      recursive["self"] = recursive;
+      host.metadataCache.change(
+        file,
+        cache({ itemKey: "ABCD2345", properties: { recursive } }),
+      );
+      host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
+      yield* index.whenSettled();
+      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+    }),
+);
+
+it.effect(
+  "a failed rename settles whenSettled before scope close (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost(
+        { "paper.txt": cache({}) },
+        { enabledAtRuntime: true },
+      );
+      const index = yield* noteIndexOf(host.app);
+      const recursive: Record<string, unknown> = {};
+      recursive["self"] = recursive;
+      host.metadataCache.setCache(
+        "paper.txt",
+        cache({ itemKey: "ABCD2345", properties: { recursive } }),
+      );
+      const file = host.vault.renameFile("paper.txt", "paper.md");
+      yield* index.whenSettled();
+      expect(yield* index.getIndexedItemKeys()).toEqual([]);
+      host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
+      yield* index.whenSettled();
+      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+    }),
+);
+
+it.effect(
+  "a failed Full Scan settles whenIndexed and permits later updates (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const recursive: Record<string, unknown> = {};
+      recursive["self"] = recursive;
+      const host = createNoteHost({
+        "paper.md": cache({ itemKey: "ABCD2345", properties: { recursive } }),
+      });
+      const index = yield* noteIndexOf(host.app);
+      startup(host);
+      yield* index.whenIndexed();
+      host.metadataCache.change(
+        host.vault.files.get("paper.md")!,
+        cache({ itemKey: "ZZZ99999" }),
+      );
+      yield* index.whenSettled();
+      expect(yield* index.getIndexedItemKeys()).toEqual(["ZZZ99999"]);
+    }),
+);
+
 // #1705: host callbacks publish; one consumer applies the ordered input.
 it.effect(
   "applies a burst of published metadata and vault events in arrival order",

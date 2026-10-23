@@ -1,6 +1,7 @@
 import type { Events } from "obsidian";
 
-import { Effect, PubSub, Stream } from "@/lib/effect";
+import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 
 type Payload<E> = {
   [K in keyof E]: { readonly type: K; readonly args: E[K] };
@@ -9,7 +10,8 @@ type Payload<E> = {
 /**
  * One ordered intake for a layer's Obsidian events. The subscription exists
  * before registration, including one-shots that call back immediately.
- * Fork one consumer of `stream` on the layer's Scope. `on` owns an Events
+ * Fork `consume(handler)` on the layer's Scope. Each failed event is logged
+ * with its cause; consumption continues until interruption. `on` owns an Events
  * registration; `callback` also adapts onLayoutReady and onCleanCache. Late
  * one-shot callbacks are harmless after the Scope shuts down the PubSub.
  */
@@ -40,5 +42,28 @@ export const obsidianEvents = Effect.fnUntraced(function* <
     );
   });
 
-  return { stream: Stream.fromSubscription(subscription), on, callback };
+  const stream = Stream.fromSubscription(subscription);
+  const consume = Effect.fnUntraced(function* <A, Error, R>(
+    handler: (event: Payload<E>) => Effect.Effect<A, Error, R>,
+  ) {
+    const dispatch = Effect.fnUntraced(
+      function* (event: Payload<E>) {
+        yield* handler(event);
+      },
+      (effect, event) =>
+        effect.pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterrupts(cause)
+              ? Effect.interrupt
+              : Effect.logError("Obsidian event handler failed", cause).pipe(
+                  Effect.annotateLogs({ event: event.type }),
+                  withLogCategory("obsidian-events"),
+                ),
+          ),
+        ),
+    );
+    yield* Stream.runForEach(stream, dispatch);
+  });
+
+  return { stream, consume, on, callback };
 });
