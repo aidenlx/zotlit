@@ -53,6 +53,12 @@ export {
   type ReferenceSourceJoin,
 } from "./sources";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
+export type { AnnotationOccurrence } from "./scan-note";
+
+export interface AnnotationUse {
+  readonly path: string;
+  readonly occurrence: AnnotationOccurrence;
+}
 
 /** The Citation Occurrences in one citing Markdown note. */
 export interface CitedByGroup {
@@ -923,6 +929,21 @@ export class CitationIndex extends Service<void> {
 
   citationKeys(): string[] {
     return [...this.#filesByCitekey.keys()];
+  }
+
+  get coverage(): CitationCoverage {
+    return this.#coverage;
+  }
+
+  /** Synchronous stored facts, in path order and then document order. */
+  getAnnotationUses(indexedKey: string): readonly AnnotationUse[] {
+    const paths = this.#annotationsByKey.get(indexedKey);
+    if (!paths) return [];
+    return [...paths]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([path, occurrences]) =>
+        occurrences.map((occurrence) => ({ path, occurrence })),
+      );
   }
 
   #setScan(path: string, scan: FileScan): void {

@@ -10,6 +10,8 @@ import type { Loc } from "obsidian";
 
 import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import type {
+  AnnotationOccurrence,
+  AnnotationUse,
   CitationCoverage,
   CitationKeyResolution,
   CitationOccurrence,
@@ -106,6 +108,7 @@ export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
 >(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 export type CitationsCommand =
+  | "zotlit:annotation-uses"
   | "zotlit:cited-by"
   | "zotlit:references"
   | "zotlit:citations-guide";
@@ -182,6 +185,39 @@ export function reportGroups(groups: readonly CitedByGroup[]): ReportedGroup[] {
  *  base that makes `end.offset - start.offset` the fragment's length. */
 function reportLoc({ line, col, offset }: Loc): ReportedLoc {
   return { line: line + 1, col: col + 1, offset };
+}
+
+interface ReportedAnnotationOccurrence {
+  form: AnnotationOccurrence["form"];
+  text: string;
+  position: { start: ReportedLoc; end: ReportedLoc };
+}
+
+interface AnnotationUsesPayload {
+  groups: { path: string; occurrences: ReportedAnnotationOccurrence[] }[];
+  coverage: CitationCoverage;
+}
+
+export function reportAnnotationUses(
+  uses: readonly AnnotationUse[],
+): AnnotationUsesPayload["groups"] {
+  const groups = new Map<string, ReportedAnnotationOccurrence[]>();
+  for (const {
+    path,
+    occurrence: { form, text, position },
+  } of uses) {
+    const occurrences = groups.get(path) ?? [];
+    occurrences.push({
+      form,
+      text,
+      position: {
+        start: reportLoc(position.start),
+        end: reportLoc(position.end),
+      },
+    });
+    groups.set(path, occurrences);
+  }
+  return [...groups].map(([path, occurrences]) => ({ path, occurrences }));
 }
 
 /** `zotlit:cited-by`'s result: index facts, never view presentation (ADR 0024). */
@@ -276,7 +312,11 @@ interface EnvelopeFacts {
  */
 export type EnvelopeTail =
   | (EnvelopeFacts & { ok: false; diagnostic: Diagnostic })
-  | (EnvelopeFacts & { ok: true } & (CitedByPayload | ReferencesPayload));
+  | (EnvelopeFacts & { ok: true } & (
+        | CitedByPayload
+        | ReferencesPayload
+        | AnnotationUsesPayload
+      ));
 
 export function envelope(
   command: CitationsCommand,

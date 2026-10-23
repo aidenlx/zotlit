@@ -26,13 +26,18 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
+  ANNOTATION_USES_COMMAND,
   CITATIONS_GUIDE_COMMAND,
   CITED_BY_COMMAND,
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
 } from "./commands";
 import type { DocumentReferences, ItemLookup } from "./commands";
-import type { CitedByParam, ReferencesParam } from "./request";
+import type {
+  AnnotationUsesParam,
+  CitedByParam,
+  ReferencesParam,
+} from "./request";
 
 const logger = getLogger(["citation-index", "cli"]);
 
@@ -96,6 +101,9 @@ export function registerCitationsCli(
       };
     },
     index: {
+      getAnnotationUses: (indexedKey) =>
+        deps.citationIndex.getAnnotationUses(indexedKey),
+      coverage: () => deps.citationIndex.coverage,
       waitUntilSettled: (timeoutMs) =>
         deps.citationIndex.waitUntilSettled(timeoutMs),
       readLookup: (request) => deps.citationLookup.read(request),
@@ -115,6 +123,23 @@ export function registerCitationsCli(
     readDocument: (path) => readDocument(deps, path),
   });
 
+  plugin.registerCliHandler(
+    ANNOTATION_USES_COMMAND,
+    "List the notes that use one Zotero annotation, with every occurrence",
+    {
+      key: {
+        value: "<annotation-key>",
+        description:
+          "Annotation key, with a g<group-id> suffix for a group library",
+        required: true,
+      },
+      "expect-source": {
+        value: "<source-id>",
+        description: "Zotero source ID the call must match",
+      },
+    } satisfies Record<AnnotationUsesParam, CliFlag>,
+    handlers[ANNOTATION_USES_COMMAND],
+  );
   plugin.registerCliHandler(
     CITED_BY_COMMAND,
     "List the notes that cite one Zotero item, with the position of every citation",
