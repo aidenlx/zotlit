@@ -16,6 +16,8 @@ import { layerNoteIndex } from "./note-index/service";
 import type { NoteIndex } from "./note-index/service";
 import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
+import { layerProfile } from "./profile/service";
+import type { Profile } from "./profile/service";
 import { layerQueryClients } from "./query-client/service";
 import type { QueryClients } from "./query-client/service";
 import { layerPluginSettings } from "./settings/service";
@@ -46,6 +48,7 @@ export function pluginLayer(
   plugin: Plugin,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
+  | Profile
   | LibraryScope
   | ZoteroReads
   | PluginSettings
@@ -59,7 +62,7 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return layerLibraryScope.pipe(
+  return Layer.mergeAll(layerLibraryScope, layerProfile).pipe(
     Layer.provideMerge(layerZoteroReads(workerClient())),
     Layer.provideMerge(
       Layer.mergeAll(

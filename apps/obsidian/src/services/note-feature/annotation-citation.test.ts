@@ -83,7 +83,6 @@ async function render(
   return await renderAnnotationCitation(
     {
       template: options.template ?? citationTemplate(),
-      profile: { ready: Promise.resolve() },
       zoteroReads,
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     },

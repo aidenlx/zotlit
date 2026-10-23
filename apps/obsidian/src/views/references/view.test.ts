@@ -265,11 +265,8 @@ beforeEach(async () => {
     },
   } as unknown as App;
 
-  const profileReady = Promise.withResolvers<void>();
   const profile = {
     ...profileReader(defaults, app.metadataCache),
-    loaded: false,
-    ready: profileReady.promise,
   };
   reads = inProcessReadsService(memoryOpener(() => SEED).open);
   view = new TestReferencesView(
@@ -343,12 +340,7 @@ beforeEach(async () => {
 
   document.body.append(view.contentEl);
   await act(async () => {
-    const opening = view!.open();
-    await Promise.resolve();
-    expect(scans).toHaveLength(0);
-    profile.loaded = true;
-    profileReady.resolve();
-    await opening;
+    await view!.open();
   });
   await finishScan();
 });

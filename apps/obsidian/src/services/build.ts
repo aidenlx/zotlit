@@ -64,7 +64,7 @@ import { plainPandocEngine } from "./pandoc/plain";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
-import { ProfileService } from "./profile/service";
+import { plainProfile } from "./profile/plain";
 import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
@@ -337,15 +337,7 @@ export async function buildServices(
           useLedger,
         }),
     })
-    .use({
-      profile: ({ settings, template, noteIndex }) =>
-        new ProfileService({
-          app: plugin.app,
-          settings,
-          template,
-          noteIndex,
-        }),
-    })
+    .useValue({ profile: () => plainProfile(runtime) })
     .use({
       localBridge: ({
         settings,

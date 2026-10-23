@@ -47,8 +47,8 @@ import {
   prepareLiteratureNote,
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
+import type { PlainProfile } from "@/services/profile/plain";
 import { bindUnvalidatedDraftProfile } from "@/services/profile/service";
-import type { ProfileService } from "@/services/profile/service";
 import {
   loadCitationData,
   loadTemplateData,
@@ -78,7 +78,7 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     | "on"
   >;
   /** Reads the Profile a Shared Partial preview renders its bindings under. */
-  profile: Pick<ProfileService, "resolveProfile">;
+  profile: Pick<PlainProfile, "resolveProfile">;
 }
 export interface NativeRenderResult extends TemplateRenderResult {
   readonly sourcePath: string;

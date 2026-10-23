@@ -35,7 +35,8 @@ import {
   listInstalledStyles,
   resolveInstalledStyle,
 } from "@/services/pandoc/styles";
-import type { ProfileReader, ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -47,7 +48,7 @@ import { collectVaultTargets } from "./vault-targets";
 
 /** The Profile service as the bridge reads it: the registry plus exact source. */
 export type BridgeProfileReader = ProfileReader &
-  Pick<ProfileService, "getSource">;
+  Pick<PlainProfile, "getSource">;
 
 /** The selected Profile no longer has a document in this vault. */
 export class ProfileDocumentMissingError extends Error {
@@ -134,7 +135,6 @@ export function createLocalBridgeReads(
     },
 
     async selectedProfile(profileId) {
-      await deps.profile.ready;
       const selector = profileSelector(profileId);
       const resolved = selector && deps.profile.resolveProfile(selector);
       if (!selector || !resolved) {

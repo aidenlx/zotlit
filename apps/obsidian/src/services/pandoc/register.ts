@@ -178,7 +178,6 @@ export function registerPandocResolve(
         const selected = yield* decodeCliParams(params, cslParams, {
           command: CSL_COMMAND,
         });
-        yield* Effect.promise(() => deps.profile.ready);
         const { dataDir } = deps.zoteroPref;
         // A native run carries no vault Citation Locale: the installed style
         // keeps the locale behavior Zotero installed it with.

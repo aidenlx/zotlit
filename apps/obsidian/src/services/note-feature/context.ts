@@ -38,7 +38,7 @@ import { childNoteLink } from "@/services/note-import/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -76,8 +76,8 @@ interface NoteVaultApp {
  */
 export interface NoteFeatureDeps {
   profile: Pick<
-    ProfileService,
-    "ready" | "loaded" | "profiles" | "resolveProfile" | "profileOf"
+    PlainProfile,
+    "loaded" | "profiles" | "resolveProfile" | "profileOf"
   >;
   app: NoteVaultApp;
   template: Pick<

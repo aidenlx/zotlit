@@ -283,7 +283,6 @@ async function makeHarness(
   const cache = stack.use(
     new BibliographyRenderCache({
       profile: {
-        ready: Promise.resolve(),
         on: (event, callback) => profileEvents.on(event, callback),
       },
       db,

@@ -523,7 +523,7 @@ describe("CitationText", () => {
       const bibliographyRender = cleanup.use(
         new BibliographyRenderCache({
           queryClient,
-          profile: { ready: Promise.resolve(), on: () => () => {} },
+          profile: { on: () => () => {} },
           db: { on: () => () => {} },
           zoteroPref: { dataDir: "/unused", on: () => () => {} },
           settings: {

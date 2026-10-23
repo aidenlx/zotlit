@@ -83,7 +83,6 @@ export async function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<void> {
-  await deps.profile.ready;
   const { app, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.getStatus().kind !== "installed") {
     showEngineMissing(deps.openSettings);

@@ -14,7 +14,7 @@ import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { FileMenuSegment } from "@/services/file-menu";
 import { isLiteratureNote } from "@/services/note-index/service";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import { noteItem } from "./customize";
@@ -23,7 +23,7 @@ import type { CustomizeAction, CustomizeRequest } from "./customize";
 export interface CustomizeActionDeps {
   settings: Pick<PlainPluginSettings, "current">;
   /** The stamp reader: which Profile this note belongs to, if any. */
-  profile: Pick<ProfileService, "loaded" | "profileOf">;
+  profile: Pick<PlainProfile, "loaded" | "profileOf">;
   /** The shared Customize flow, the same one the settings rows open. */
   customize: CustomizeAction;
 }

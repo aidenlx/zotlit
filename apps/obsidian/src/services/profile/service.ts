@@ -5,7 +5,6 @@ import type { App, TFile } from "obsidian";
 import PQueue from "p-queue";
 import { parseDocument } from "yaml";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import {
   TemplateFacade,
   parseLiteratureNoteTemplate,
@@ -23,6 +22,20 @@ import {
 import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Schema,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -30,7 +43,7 @@ import {
   processLiveText,
   readLiveText,
 } from "@/lib/live-text";
-import { getLogger } from "@/lib/log";
+import { ObsidianApp } from "@/lib/obsidian-app";
 import { profileRevision } from "@/lib/profile-revision";
 import {
   DEFAULT_PROFILE,
@@ -42,6 +55,7 @@ import {
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
+import { NoteIndex } from "@/services/note-index/service";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
 import { bindProfile } from "@/services/profile/bindings";
@@ -51,22 +65,25 @@ import type {
   ResolvedLiteratureNoteProfileBindings,
 } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
-import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_TEMPLATES,
   RESERVED_PARTIAL_NAMES,
 } from "@/services/template/defaults";
+import { plainTemplateError } from "@/services/template/errors";
 import type { PlainTemplate } from "@/services/template/plain";
+import { Template } from "@/services/template/service";
 import type { LiteratureNoteTemplateStatus } from "@/services/template/service";
+
+import type { PlainProfile } from "./plain";
 
 const mintId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   PROFILE_ID_LENGTH,
 );
-const logger = getLogger(["profile"]);
 
 export type ProfileBindings = Pick<
   LiteratureNoteTemplateManifest,
@@ -227,9 +244,12 @@ export interface ProfileDeletionResult {
   movedFiles: number;
 }
 
-interface ProfileServiceDeps {
+interface ProfileEngineDeps {
+  readText(file: TFile): Promise<string>;
+  changed(): void;
+  log(message: string, fields: Record<string, unknown>): void;
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current">;
   template: Pick<
     PlainTemplate,
     | "exportLiteratureNotePackSource"
@@ -238,31 +258,26 @@ interface ProfileServiceDeps {
     | "unpackPartials"
     | "getLiteratureNoteTemplateStatuses"
     | "waitUntilSettled"
-    | "on"
   >;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
 export type ProfileReader = Pick<
-  ProfileService,
-  "ready" | "loaded" | "profiles" | "resolveProfile" | "profileOf" | "on"
+  PlainProfile,
+  "loaded" | "profiles" | "resolveProfile" | "profileOf" | "on"
 >;
 
-export class ProfileService extends Service {
+class ProfileEngine {
   readonly #mutate = new PQueue({ concurrency: 1 });
-  readonly #deps: ProfileServiceDeps;
-  readonly #events = createNanoEvents<{ changed: () => void }>();
+  readonly #deps: ProfileEngineDeps;
   #profiles: LiteratureNoteProfile[] = [];
   #diagnostics: ProfileDiagnostic[] = [];
   #defaultDocument: string | undefined;
   #defaultExcluded = false;
   #loaded = false;
-  ready: Promise<void>;
 
-  constructor(deps: ProfileServiceDeps) {
-    super();
+  constructor(deps: ProfileEngineDeps) {
     this.#deps = deps;
-    this.ready = this.#load();
   }
 
   get loaded(): boolean {
@@ -275,13 +290,12 @@ export class ProfileService extends Service {
     return this.#diagnostics;
   }
   get defaultDocumentPath(): string {
-    return join(
+    return this.documentPathIn(
       this.#deps.settings.current?.["template.folder"] ?? "templates",
-      this.#defaultDocument ?? DEFAULT_PROFILE_DOCUMENT,
     );
   }
-  on(event: "changed", callback: () => void): () => void {
-    return this.#events.on(event, callback);
+  documentPathIn(folder: string): string {
+    return join(folder, this.#defaultDocument ?? DEFAULT_PROFILE_DOCUMENT);
   }
 
   resolveProfile(selector: ProfileSelector): ResolvedProfile | undefined {
@@ -319,7 +333,6 @@ export class ProfileService extends Service {
   async prepareCreate(
     options: ProfileCreateOptions,
   ): Promise<PreparedProfileCreation> {
-    await this.ready;
     const requestedLabel = options.label.trim();
     const label = requestedLabel || m.settings_profile_new_name();
     const base = this.resolveProfile(DEFAULT_PROFILE);
@@ -401,7 +414,7 @@ export class ProfileService extends Service {
       document: entry.document,
       entry,
     });
-    logger.debug("Prepared Profile creation", { id, label, inherited });
+    this.#deps.log("Prepared Profile creation", { id, label, inherited });
     return {
       profile,
       source: content,
@@ -421,7 +434,6 @@ export class ProfileService extends Service {
 
   /** Read the effective look without ejecting the built-in Default document. */
   async getSource(selector: ProfileSelector): Promise<string> {
-    await this.ready;
     const profile = this.resolveProfile(selector);
     if (!profile)
       throw new Error(
@@ -435,7 +447,7 @@ export class ProfileService extends Service {
         throw new Error(
           m.settings_profile_source_missing({ document: profile.document }),
         );
-      return readLiveText(this.#deps.app, file);
+      return this.#deps.readText(file);
     }
     return this.getBuiltInSource();
   }
@@ -457,7 +469,6 @@ export class ProfileService extends Service {
     source: string,
     expected: ProfileDocumentExpectation,
   ): Promise<ProfileDocumentWrite> {
-    await this.ready;
     return this.#mutate.add(async () => {
       await this.#settle();
       const profile = this.resolveProfile(selector);
@@ -472,7 +483,7 @@ export class ProfileService extends Service {
       );
       if (write.state === "saved") {
         await this.#settle();
-        logger.debug("Saved a Profile document", { selector });
+        this.#deps.log("Saved a Profile document", { selector });
       }
       return write;
     });
@@ -536,16 +547,13 @@ export class ProfileService extends Service {
       reason: "document-exists",
       ...(file
         ? {
-            currentRevision: profileRevision(
-              await readLiveText(this.#deps.app, file),
-            ),
+            currentRevision: profileRevision(await this.#deps.readText(file)),
           }
         : {}),
     };
   }
 
   async setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void> {
-    await this.ready;
     return this.#mutate.add(async () => {
       await this.#settle();
       const profile = this.#profiles.find((entry) => entry.id === id);
@@ -558,7 +566,7 @@ export class ProfileService extends Service {
         return updateLiteratureNoteTemplateMatch(source, match);
       });
       await this.#settle();
-      logger.debug("Updated Profile match", {
+      this.#deps.log("Updated Profile match", {
         id,
         removed: match === undefined,
       });
@@ -593,7 +601,6 @@ export class ProfileService extends Service {
     selector: ProfileSelector,
     options: { label?: string } = {},
   ): Promise<LiteratureNoteProfile> {
-    await this.ready;
     return this.#mutate.add(async () => {
       const profile = this.resolveProfile(selector);
       if (!profile) throw new Error(`Unknown Profile: ${selector}`);
@@ -619,7 +626,6 @@ export class ProfileService extends Service {
 
   /** Freeze one export identity, effective bindings and partials for a Share sheet. */
   async prepareShare(selector: ProfileSelector): Promise<PreparedProfileShare> {
-    await this.ready;
     await this.#settle();
     const profile = this.resolveProfile(selector);
     if (!profile)
@@ -675,7 +681,7 @@ export class ProfileService extends Service {
       RESERVED_PARTIAL_NAMES.has(name),
     );
     const missing = offered(missingPartials);
-    logger.debug("Prepared Profile sharing", {
+    this.#deps.log("Prepared Profile sharing", {
       selector,
       id,
       partials,
@@ -755,7 +761,6 @@ export class ProfileService extends Service {
     source: string,
     options: ProfileImportOptions = {},
   ): Promise<PreparedProfileImport> {
-    await this.ready;
     await this.#settle();
     let parsed;
     try {
@@ -842,7 +847,7 @@ export class ProfileService extends Service {
     const partials = this.#deps.template.planPartialUnpack(
       manifest.partials ?? [],
     );
-    logger.debug("Prepared Profile import", {
+    this.#deps.log("Prepared Profile import", {
       id,
       path,
       kind: decision.kind,
@@ -909,7 +914,7 @@ export class ProfileService extends Service {
           await this.#settle();
           const imported = this.#profiles.find((profile) => profile.id === id);
           if (!imported) throw new Error(m.profile_import_excluded());
-          logger.debug("Imported Profile document", {
+          this.#deps.log("Imported Profile document", {
             id,
             path,
             replaced: !!held,
@@ -939,7 +944,6 @@ export class ProfileService extends Service {
 
   /** Atomically create Default or open the current document without changing it. */
   async materializeDefault(): Promise<{ file: TFile; created: boolean }> {
-    await this.ready;
     const path = this.defaultDocumentPath;
     await ensureParentFolder(this.#deps.app, path);
     let file: TFile;
@@ -958,7 +962,6 @@ export class ProfileService extends Service {
   }
 
   async restoreDefault(): Promise<void> {
-    await this.ready;
     const path = this.defaultDocumentPath;
     const file = this.#deps.app.vault.getFileByPath(path);
     if (file) await this.#deps.app.fileManager.trashFile(file);
@@ -966,7 +969,6 @@ export class ProfileService extends Service {
   }
 
   async prepareDelete(id: ProfileId): Promise<ProfileDeletionPlan> {
-    await this.ready;
     const source = this.#profiles.find((profile) => profile.id === id);
     if (!source) throw new Error("The Profile is unavailable");
     await this.#deps.noteIndex.whenIndexed();
@@ -1002,7 +1004,7 @@ export class ProfileService extends Service {
       ];
       return [{ profile, files }];
     });
-    logger.debug("Prepared Profile deletion", {
+    this.#deps.log("Prepared Profile deletion", {
       id,
       literatureNotes: literatureNotes.length,
       importedNotes: importedNotes.length,
@@ -1047,7 +1049,7 @@ export class ProfileService extends Service {
       importedNotes: plan.importedNotes.length,
       movedFiles,
     };
-    logger.debug("Deleted Profile after moving its notes", {
+    this.#deps.log("Deleted Profile after moving its notes", {
       id,
       target,
       ...result,
@@ -1058,23 +1060,10 @@ export class ProfileService extends Service {
   async #settle(): Promise<void> {
     if ((await this.#deps.template.waitUntilSettled(5000)) !== "settled")
       throw new Error("Profile documents did not finish scanning");
+    this.scan();
   }
 
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    stack.defer(
-      this.#deps.template.on("compile-status-changed", () => this.#scan()),
-    );
-    stack.defer(
-      this.#deps.settings.subscribe(() => this.#events.emit("changed")),
-    );
-    this.#scan();
-    this.#loaded = true;
-    this.#events.emit("changed");
-    this.commit(stack.move());
-  }
-
-  #scan(): void {
+  scan(): void {
     this.#profiles = [];
     this.#diagnostics = [];
     this.#defaultDocument = undefined;
@@ -1100,7 +1089,7 @@ export class ProfileService extends Service {
               ? validation.error.message
               : PROFILE_ID_RULE,
         });
-        logger.debug("Excluded invalid Profile document {path}", {
+        this.#deps.log("Excluded invalid Profile document {path}", {
           path: status.path,
           id,
         });
@@ -1123,7 +1112,7 @@ export class ProfileService extends Service {
     for (const [id, group] of groups) {
       if (group.length > 1) {
         const paths = group.map(({ path }) => path);
-        logger.debug("Excluded duplicate Profile ID {id} in {paths}", {
+        this.#deps.log("Excluded duplicate Profile ID {id} in {paths}", {
           id,
           paths,
         });
@@ -1150,7 +1139,7 @@ export class ProfileService extends Service {
         }),
       );
     }
-    logger.debug(
+    this.#deps.log(
       "Profile scan completed with {profiles} Profiles and {diagnostics} diagnostics",
       {
         profiles: this.#profiles.length,
@@ -1159,7 +1148,8 @@ export class ProfileService extends Service {
         defaultExcluded: this.#defaultExcluded,
       },
     );
-    if (this.#loaded) this.#events.emit("changed");
+    this.#loaded = true;
+    this.#deps.changed();
   }
 }
 
@@ -1217,10 +1207,12 @@ export function seedProfileEntry(
 ): LiteratureNoteProfile {
   const match = compileProfileMatch(manifest.match);
   if (match.state === "unevaluable")
-    logger.debug("Profile {id} match cannot be evaluated", {
-      id: manifest.id,
-      problem: match.problem,
-    });
+    Effect.runSync(
+      Effect.logDebug("Profile match cannot be evaluated").pipe(
+        Effect.annotateLogs({ id: manifest.id, problem: match.problem }),
+        withLogCategory("profile"),
+      ),
+    );
   return {
     id: manifest.id as ProfileId,
     label: manifest.name,
@@ -1331,3 +1323,405 @@ function updateProfilePackMetadata(
     throw error;
   }
 }
+
+/** The original values and Promise surface, implemented by the plain adapter. */
+export type ProfileOperations = Pick<
+  ProfileEngine,
+  | "loaded"
+  | "profiles"
+  | "diagnostics"
+  | "defaultDocumentPath"
+  | "resolveProfile"
+  | "profileOf"
+  | "getBuiltInSource"
+  | "prepareCreate"
+  | "create"
+  | "getSource"
+  | "saveSource"
+  | "setMatch"
+  | "duplicate"
+  | "prepareShare"
+  | "prepareImport"
+  | "ejectDefault"
+  | "materializeDefault"
+  | "restoreDefault"
+  | "prepareDelete"
+  | "delete"
+>;
+
+export class ProfileOperationError extends Schema.TaggedError<ProfileOperationError>()(
+  "ProfileOperationError",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+export interface ProfileState {
+  readonly loaded: boolean;
+  readonly profiles: readonly LiteratureNoteProfile[];
+  readonly diagnostics: readonly ProfileDiagnostic[];
+  readonly defaultDocumentPath: string;
+  readonly templateStatus: import("@/services/template/service").TemplateStatus;
+  readonly failure?: Cause.Cause<ProfileOperationError>;
+}
+
+type EffectOperations<T> = {
+  [K in keyof T]: T[K] extends (...args: infer P) => infer A
+    ? (...args: P) => Effect.Effect<Awaited<A>, ProfileOperationError>
+    : Effect.Effect<T[K]>;
+};
+
+export type ProfileCreation = Omit<PreparedProfileCreation, "create"> & {
+  create(): Effect.Effect<LiteratureNoteProfile, ProfileOperationError>;
+};
+export type ProfileImport = PreparedProfileImport extends infer P
+  ? P extends PreparedProfileImport
+    ? Omit<P, "import" | "previewSource"> & {
+        import(
+          options?: Parameters<P["import"]>[0],
+        ): Effect.Effect<LiteratureNoteProfile, ProfileOperationError>;
+        previewSource(
+          options?: Parameters<P["previewSource"]>[0],
+        ): Effect.Effect<string, ProfileOperationError>;
+      }
+    : never
+  : never;
+export type ProfileShare = Omit<PreparedProfileShare, "render"> & {
+  render(
+    options: ProfileShareOptions,
+  ): Effect.Effect<string, ProfileOperationError>;
+};
+
+export class Profile extends Context.Service<
+  Profile,
+  Omit<
+    EffectOperations<ProfileOperations>,
+    "prepareCreate" | "prepareImport" | "prepareShare"
+  > & {
+    readonly state: Effect.Effect<ProfileState>;
+    readonly changes: Stream.Stream<ProfileState>;
+    prepareCreate(
+      options: ProfileCreateOptions,
+    ): Effect.Effect<ProfileCreation, ProfileOperationError>;
+    prepareImport(
+      source: string,
+      options?: ProfileImportOptions,
+    ): Effect.Effect<ProfileImport, ProfileOperationError>;
+    prepareShare(
+      selector: ProfileSelector,
+    ): Effect.Effect<ProfileShare, ProfileOperationError>;
+  }
+>()("zotlit/profile/Profile") {}
+
+const operationError = (cause: unknown) =>
+  cause instanceof ProfileOperationError
+    ? cause
+    : new ProfileOperationError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      });
+const attempt = <A>(read: () => A) =>
+  Effect.try({ try: read, catch: operationError });
+const attemptPromise = <A>(read: () => Promise<A>) =>
+  Effect.tryPromise({ try: read, catch: operationError });
+
+export const layerProfile = Layer.effect(
+  Profile,
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    const settings = yield* PluginSettings;
+    const template = yield* Template;
+    const noteIndex = yield* NoteIndex;
+    const context = yield* Effect.context<never>();
+    const runSync = Effect.runSyncWith(context);
+    const read = <A, E>(effect: Effect.Effect<A, E>): A => {
+      const exit = runSync(Effect.exit(effect));
+      if (Exit.isFailure(exit))
+        throw plainTemplateError(Cause.squash(exit.cause));
+      return exit.value;
+    };
+    const runPromiseExit = Effect.runPromiseExitWith(context);
+    const runPromise = async <A, E>(
+      effect: Effect.Effect<A, E>,
+    ): Promise<A> => {
+      const exit = await runPromiseExit(effect);
+      if (Exit.isFailure(exit))
+        throw plainTemplateError(Cause.squash(exit.cause));
+      return exit.value;
+    };
+    const stopped = yield* Deferred.make<void>();
+    let released = false;
+    // Reads before a mutation can wait on another layer or the host. Cancel
+    // those waits on close so they cannot hold a protected write open forever.
+    // Calls after release keep the legacy service's callable read surface.
+    const preflight = <A, E>(effect: Effect.Effect<A, E>) =>
+      runPromise(
+        released
+          ? effect
+          : Effect.raceFirst(
+              effect,
+              Deferred.await(stopped).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    operationError(
+                      new Error("Profile service has been released"),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      );
+    const engine = new ProfileEngine({
+      app,
+      readText: (file) =>
+        preflight(attemptPromise(() => readLiveText(app, file))),
+      changed: () =>
+        runSync(SubscriptionRef.set(state, snapshot(runSync(template.status)))),
+      settings: {
+        get current() {
+          return runSync(settings.current);
+        },
+      },
+      template: {
+        exportLiteratureNotePackSource: (...args) =>
+          runPromise(template.exportLiteratureNotePackSource(...args)),
+        getPartialEntries: () => read(template.getPartialEntries()),
+        planPartialUnpack: (...args) =>
+          read(template.planPartialUnpack(...args)),
+        unpackPartials: (...args) =>
+          runPromise(template.unpackPartials(...args)),
+        getLiteratureNoteTemplateStatuses: () =>
+          read(template.getLiteratureNoteTemplateStatuses()),
+        waitUntilSettled: (...args) =>
+          runPromise(template.waitUntilSettled(...args)),
+      },
+      noteIndex: {
+        whenIndexed: () => preflight(noteIndex.whenIndexed()),
+        getNotesByProfile: (selector) =>
+          runSync(noteIndex.getNotesByProfile(selector)),
+      },
+      log: (message, fields) =>
+        runSync(
+          Effect.logDebug(message).pipe(
+            Effect.annotateLogs(fields),
+            withLogCategory("profile"),
+          ),
+        ),
+    });
+    const snapshot = (
+      templateStatus: ProfileState["templateStatus"],
+      failure?: ProfileState["failure"],
+    ): ProfileState => ({
+      loaded: engine.loaded,
+      profiles: engine.profiles,
+      diagnostics: engine.diagnostics,
+      defaultDocumentPath: engine.defaultDocumentPath,
+      templateStatus,
+      ...(failure ? { failure } : {}),
+    });
+    const state = yield* SubscriptionRef.make(snapshot(yield* template.status));
+    const scan = Effect.fn("Profile.scan")(
+      function* () {
+        yield* attempt(() => engine.scan());
+      },
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.interrupt
+          : Effect.gen(function* () {
+              yield* SubscriptionRef.set(
+                state,
+                snapshot(yield* template.status, cause),
+              );
+              yield* Effect.logWarning("Profile scan failed", cause);
+            }),
+      ),
+    );
+    // Legacy ready covered this registry scan only. Template's own layer owns
+    // its first read; NoteIndex's layout-ready indexing is not part of this barrier.
+    yield* scan();
+    yield* Stream.runForEach(template.changes, () => scan()).pipe(
+      Effect.forkScoped({ startImmediately: true }),
+    );
+    yield* Stream.runForEach(settings.changes, (saved) =>
+      SubscriptionRef.update(state, (previous) => ({
+        ...previous,
+        defaultDocumentPath: engine.documentPathIn(saved["template.folder"]),
+      })),
+    ).pipe(Effect.forkScoped({ startImmediately: true }));
+    // Operations close before dependency subscriptions. A write already started
+    // completes its vault work and registry scan before the layer releases them.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        released = true;
+      }),
+    );
+    const operations = yield* Scope.fork(yield* Scope.Scope);
+    let closed = false;
+    const owned = <A>(
+      effect: Effect.Effect<A, ProfileOperationError>,
+      write = false,
+    ) =>
+      closed
+        ? effect
+        : Effect.forkIn(effect, operations, {
+            startImmediately: true,
+            uninterruptible: write,
+          }).pipe(Effect.flatMap(Fiber.join));
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        closed = true;
+        yield* Deferred.succeed(stopped, undefined);
+      }),
+    );
+    return Profile.of({
+      state: SubscriptionRef.get(state),
+      changes: SubscriptionRef.changes(state).pipe(
+        Stream.interruptWhen(Deferred.await(stopped)),
+      ),
+      loaded: Effect.sync(() => engine.loaded),
+      profiles: Effect.sync(() => engine.profiles),
+      diagnostics: Effect.sync(() => engine.diagnostics),
+      defaultDocumentPath: Effect.sync(() => engine.defaultDocumentPath),
+      resolveProfile: Effect.fn("Profile.resolveProfile")(function* (
+        ...args: Parameters<ProfileOperations["resolveProfile"]>
+      ) {
+        return yield* attempt(() => engine.resolveProfile(...args));
+      }),
+      profileOf: Effect.fn("Profile.profileOf")(function* (
+        ...args: Parameters<ProfileOperations["profileOf"]>
+      ) {
+        return yield* attempt(() => engine.profileOf(...args));
+      }),
+      getBuiltInSource: Effect.fn("Profile.getBuiltInSource")(function* (
+        ...args: Parameters<ProfileOperations["getBuiltInSource"]>
+      ) {
+        return yield* attempt(() => engine.getBuiltInSource(...args));
+      }),
+      create: Effect.fn("Profile.create")(function* (
+        ...args: Parameters<ProfileOperations["create"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.create(...args)),
+          true,
+        );
+      }),
+      getSource: Effect.fn("Profile.getSource")(function* (
+        ...args: Parameters<ProfileOperations["getSource"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.getSource(...args)),
+          false,
+        );
+      }),
+      saveSource: Effect.fn("Profile.saveSource")(function* (
+        ...args: Parameters<ProfileOperations["saveSource"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.saveSource(...args)),
+          true,
+        );
+      }),
+      setMatch: Effect.fn("Profile.setMatch")(function* (
+        ...args: Parameters<ProfileOperations["setMatch"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.setMatch(...args)),
+          true,
+        );
+      }),
+      duplicate: Effect.fn("Profile.duplicate")(function* (
+        ...args: Parameters<ProfileOperations["duplicate"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.duplicate(...args)),
+          true,
+        );
+      }),
+      ejectDefault: Effect.fn("Profile.ejectDefault")(function* (
+        ...args: Parameters<ProfileOperations["ejectDefault"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.ejectDefault(...args)),
+          true,
+        );
+      }),
+      materializeDefault: Effect.fn("Profile.materializeDefault")(function* (
+        ...args: Parameters<ProfileOperations["materializeDefault"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.materializeDefault(...args)),
+          true,
+        );
+      }),
+      restoreDefault: Effect.fn("Profile.restoreDefault")(function* (
+        ...args: Parameters<ProfileOperations["restoreDefault"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.restoreDefault(...args)),
+          true,
+        );
+      }),
+      prepareDelete: Effect.fn("Profile.prepareDelete")(function* (
+        ...args: Parameters<ProfileOperations["prepareDelete"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.prepareDelete(...args)),
+          false,
+        );
+      }),
+      delete: Effect.fn("Profile.delete")(function* (
+        ...args: Parameters<ProfileOperations["delete"]>
+      ) {
+        return yield* owned(
+          attemptPromise(() => engine.delete(...args)),
+          true,
+        );
+      }),
+
+      prepareCreate: Effect.fn("Profile.prepareCreate")(function* (options) {
+        const plan = yield* owned(
+          attemptPromise(() => engine.prepareCreate(options)),
+        );
+        return {
+          ...plan,
+          create: Effect.fn("Profile.createPrepared")(function* () {
+            return yield* owned(
+              attemptPromise(() => plan.create()),
+              true,
+            );
+          }),
+        };
+      }),
+      prepareShare: Effect.fn("Profile.prepareShare")(function* (selector) {
+        const plan = yield* owned(
+          attemptPromise(() => engine.prepareShare(selector)),
+        );
+        return {
+          ...plan,
+          render: Effect.fn("Profile.renderShare")(function* (options) {
+            return yield* attempt(() => plan.render(options));
+          }),
+        };
+      }),
+      prepareImport: Effect.fn("Profile.prepareImport")(
+        function* (source, options) {
+          const plan = yield* owned(
+            attemptPromise(() => engine.prepareImport(source, options)),
+          );
+          return {
+            ...plan,
+            previewSource: Effect.fn("Profile.previewImport")(
+              function* (options) {
+                return yield* attempt(() => plan.previewSource(options));
+              },
+            ),
+            import: Effect.fn("Profile.importPrepared")(function* (options) {
+              return yield* owned(
+                attemptPromise(() => plan.import(options)),
+                true,
+              );
+            }),
+          };
+        },
+      ),
+    });
+  }).pipe(withLogCategory("profile")),
+);
