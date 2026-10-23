@@ -13,8 +13,8 @@ import assert from "node:assert/strict";
 // one citation each, a callout every fifth paragraph, and a fence every 25th.
 // Notes are truncated to exactly 10k, 100k and 1M UTF-16 characters.
 // Worker parse excludes message cloning; roundTripMs records it separately.
-// Post + apply uses the real index and its memory store, from the Node post
-// call and reply receipt to getFileScan completion. It excludes IPC wait and
+// Post + apply uses the real index and its memory store: request encoding and
+// Node posting, then reply receipt to getFileScan completion. It excludes IPC wait and
 // receive deserialization, browser scheduling and IndexedDB transaction latency.
 // Backfill uses the generated Fixture, an OS-warm filesystem read adapter, and
 // memory persistence on both paths. The legacy loop follows 14d461b93^; this
@@ -22,14 +22,14 @@ import assert from "node:assert/strict";
 // packages/e2e/src/citation-scan.e2e.ts. Host post + apply is diagnostic only.
 import { execFileSync } from "node:child_process";
 import { readdir, readFile, mkdir, rm, writeFile } from "node:fs/promises";
-import { cpus, platform, arch } from "node:os";
+import { cpus, platform, arch, loadavg } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { yieldToMain } from "@/lib/yield-to-main";
-import type { ParseClient, ParseReply } from "@/services/citation-parse/client";
+import type { ParseReply } from "@/services/citation-parse/client";
 
 // oxlint-disable-next-line no-restricted-imports -- this Node benchmark uses the guarded build tooling outside src.
 import { scanBenchmarkWorker } from "../../../scripts/scan-benchmark-worker";
@@ -64,6 +64,7 @@ async function readNotes(
 }
 
 it("meets the host scanner and worker budgets (#1695)", async () => {
+  const loadAtStart = loadavg();
   const root = await getWorkspaceRoot(import.meta.dirname);
   const output = join(root, ".scratch/scan-pipeline-bench");
   await mkdir(output, { recursive: true });
@@ -124,18 +125,9 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
           }
         }
         if (size === 100_000) {
-          let postMs = 0;
-          const parseClient: ParseClient = {
-            parse(request, signal) {
-              const start = performance.now();
-              const reply = worker.parse(request, signal);
-              postMs = performance.now() - start;
-              return reply;
-            },
-          };
           await using harness = await createCitationIndexHarness(
             { "draft.md": "" },
-            { parseClient, notes: false },
+            { parseClient: worker, notes: false },
           );
           for (let run = -3; run < RUNS; run++) {
             // Change membership on every edit, so equality cannot skip reverse-map updates.
@@ -143,7 +135,8 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
             const body = text.replace("[@work1]", `[@${citekey}]`);
             harness.metadataCache.change(harness.draft, body);
             const applied = await harness.index.getFileScan(harness.draft);
-            const elapsed = postMs + performance.now() - worker.receivedAt;
+            const elapsed =
+              worker.postMs + performance.now() - worker.receivedAt;
             if (run >= 0) cell.hostPostApplyMs.push(elapsed);
             assert.equal(applied?.citekeys.length, expected.citekeys.length);
             assert.equal(applied?.citekeys[0]?.raw, citekey);
@@ -284,6 +277,8 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
           platform: platform(),
           arch: arch(),
           node: process.version,
+          loadAtStart,
+          loadAtEnd: loadavg(),
         },
         runs: RUNS,
         cells,

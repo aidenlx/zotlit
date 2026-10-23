@@ -16,7 +16,7 @@ export interface RecoveringParseClient extends ParseClient {
 }
 
 export const makeRecoveringParseClient = Effect.fnUntraced(function* (
-  connect: () => ParseConnection,
+  connect: Effect.Effect<ParseConnection, ParseWorkerDied, Scope.Scope>,
 ): Effect.fn.Return<RecoveringParseClient, never, Scope.Scope> {
   const scope = yield* Effect.scope;
   const context = yield* Effect.context<never>();
@@ -25,12 +25,8 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
   let available = Deferred.makeUnsafe<Live>();
 
   const serve = Effect.gen(function* () {
-    const connection = yield* Effect.acquireRelease(
-      Effect.try({
-        try: connect,
-        catch: (error) => new ParseWorkerDied(String(error)),
-      }),
-      (client) => Effect.sync(() => client[Symbol.dispose]()),
+    const connection = yield* Effect.acquireRelease(connect, (client) =>
+      Effect.sync(() => client[Symbol.dispose]()),
     );
     const retired = yield* Deferred.make<void>();
     yield* Deferred.succeed(available, { connection, retired });

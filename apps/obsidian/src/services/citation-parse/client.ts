@@ -20,3 +20,7 @@ export interface ParseReply {
 export interface ParseClient {
   parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply>;
 }
+
+/** Decode the scanner-owned JSON once, after the RPC success envelope. */
+export const decodeParseReply = (json: string): ParseReply =>
+  JSON.parse(json) as ParseReply;
