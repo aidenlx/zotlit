@@ -175,6 +175,18 @@ const markdown = parser.configure({
   ],
   parseInline: [
     {
+      name: "PlainText",
+      before: "Escape",
+      parse(cx, next, pos) {
+        if (!isPlainCharacter(next)) return -1;
+        // None of this grammar's inline constructs opens with a letter, digit,
+        // or space. Consume the run once instead of trying every parser per character.
+        let end = pos + 1;
+        while (isPlainCharacter(cx.char(end))) end++;
+        return end;
+      },
+    },
+    {
       name: "InlineCode",
       parse(cx, next, pos) {
         if (next !== 96) return -1;
@@ -415,6 +427,8 @@ export function scanNote(text: string): NoteScanRecord {
     annotations: [],
     malformedAnnotationCitations: [],
   };
+  if (!text.includes("@") && !text.includes("[") && !text.includes("<"))
+    return record;
   const starts = [0];
   for (let at = text.indexOf("\n"); at >= 0; at = text.indexOf("\n", at + 1))
     starts.push(at + 1);
@@ -422,21 +436,24 @@ export function scanNote(text: string): NoteScanRecord {
     start: location(starts, from),
     end: location(starts, to),
   });
-  const body = text.split("");
+  const body: { from: number; to: number }[] = [];
   const tree = noteParser(text).parse(text);
-  tree.iterate({
-    enter({ name, from, to }) {
-      if (
-        ["FencedCode", "CodeBlock", "InlineCode", "Frontmatter"].includes(name)
-      ) {
-        mask(body, from, to);
-        return false;
-      }
-    },
-  });
+  if (text.includes("%%"))
+    tree.iterate({
+      enter({ name, from, to }) {
+        if (
+          ["FencedCode", "CodeBlock", "InlineCode", "Frontmatter"].includes(
+            name,
+          )
+        ) {
+          mask(body, from, to);
+          return false;
+        }
+      },
+    });
   // Pair markers after parsing: comments can cross quote and list boundaries,
   // while a marker inside code cannot open or close one.
-  const commentText = body.join("");
+  const commentText = maskedText(text, body);
   const comments: { from: number; to: number }[] = [];
   for (let from = commentText.indexOf("%%"); from >= 0; ) {
     const close = commentText.indexOf("%%", from + 2);
@@ -589,7 +606,7 @@ export function scanNote(text: string): NoteScanRecord {
       }
     },
   });
-  for (const citation of scanPandocCitations(body.join(""))) {
+  for (const citation of scanPandocCitations(maskedText(text, body))) {
     record.citations.push({
       start: citation.start,
       end: citation.end,
@@ -650,9 +667,56 @@ function addTrailingParagraph(
   );
 }
 
-function mask(body: string[], from: number, to: number): void {
-  for (let at = from; at < to; at++)
-    if (body[at] !== "\n" && body[at] !== "\r") body[at] = " ";
+function mask(
+  body: { from: number; to: number }[],
+  from: number,
+  to: number,
+): void {
+  body.push({ from, to });
+}
+
+function maskedText(
+  text: string,
+  ranges: { from: number; to: number }[],
+): string {
+  if (ranges.length === 0) return text;
+  // Each tree pass and the comment pass emits ordered ranges. Merge their overlaps
+  // before copying, so nested links and comments never copy a source span twice.
+  ranges.sort((a, b) => a.from - b.from);
+  const parts: string[] = [];
+  let copied = 0;
+  let from = ranges[0]!.from;
+  let to = ranges[0]!.to;
+  const append = () => {
+    parts.push(
+      text.slice(copied, from),
+      text
+        .slice(from, to)
+        .replaceAll(/[^\r\n]+/g, (run) => " ".repeat(run.length)),
+    );
+    copied = to;
+  };
+  for (let index = 1; index < ranges.length; index++) {
+    const next = ranges[index]!;
+    if (next.from <= to) to = Math.max(to, next.to);
+    else {
+      append();
+      from = next.from;
+      to = next.to;
+    }
+  }
+  append();
+  parts.push(text.slice(copied));
+  return parts.join("");
+}
+
+function isPlainCharacter(char: number): boolean {
+  return (
+    char === 32 ||
+    (char >= 48 && char <= 57) ||
+    (char >= 65 && char <= 90) ||
+    (char >= 97 && char <= 122)
+  );
 }
 
 function location(starts: readonly number[], offset: number): SourceLocation {
