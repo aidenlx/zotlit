@@ -961,7 +961,7 @@
   "settings_citation_wikilink_citations_name": "Wikilink citations",
   "settings_citation_wikilink_citations_desc": "Include unaliased links to literature notes in the references sidebar and ZotLit’s in-text features. Heading links, block links, and invalid citation fragments stay as links. This setting does not change export.",
   "settings_citation_annotation_citations_name": "Annotation citations",
-  "settings_citation_annotation_citations_desc": "Include empty-text Zotero annotation links in the references sidebar and ZotLit’s in-text features.",
+  "settings_citation_annotation_citations_desc": "Count Zotero annotation links with no link text, such as `[](zotero://…)`, as citations of the annotation’s item in the references sidebar and ZotLit’s in-text features. This setting does not change export.",
   "settings_citation_annotation_links_name": "Zotero annotation links",
   "settings_citation_annotation_links_desc": "Show the annotation when you hover a Zotero annotation link in a note, and let ZotLit open the link when you select it. When off, these links open in Zotero, as they do without ZotLit.",
   "settings_citation_graph_heading": "Graph view",

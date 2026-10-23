@@ -231,6 +231,17 @@ export class CitationIndex extends Service<void> {
     this.ready = this.#load();
   }
 
+  /** Wait for the file's pending parse; stale retained scans cannot validate navigation. */
+  async getFileScan(file: TFile): Promise<Readonly<FileScan> | null> {
+    await this.ready;
+    const scan = await this.#coverFile(file);
+    return scan &&
+      scan.mtime === file.stat.mtime &&
+      scan.size === file.stat.size
+      ? scan
+      : null;
+  }
+
   /**
    * The active document's shared citation membership and source order.
    *

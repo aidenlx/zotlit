@@ -59,8 +59,8 @@ export interface ReferenceActionDeps {
   app: App;
   /** Path of the document the listed references were scanned from. */
   getSourcePath: () => string | null;
-  /** Open the Literature Note of the Item a citekey names, creating it first when it has none. */
-  openCitekey: (citekey: string) => void;
+  /** Open the Literature Note of the Item an Indexed Key names, creating it first when it has none. */
+  openIndexedKey: (indexedKey: string) => void;
   onOpenEngineSettings: () => void;
   onChangeStyle: () => void;
   onDismissEngineHint: () => void;
@@ -107,10 +107,9 @@ export function createReferenceActions(
       ) {
         return;
       }
-      // No Literature Note yet — the citekey editor's one create-then-open
-      // flow makes it, then opens it.
+      // The resolved Item identity also reaches parents without a Citation Key.
       if (entry.linkpath === null) {
-        deps.openCitekey(entry.occurrences[0]!.raw);
+        deps.openIndexedKey(entry.id);
         return;
       }
       void deps.app.workspace.openLinkText(

@@ -76,8 +76,8 @@ export interface ReferencesViewDeps {
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
-  /** Opens the Literature Note a citekey names, creating it first when it has none. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /** Opens the Literature Note an Indexed Key names, creating it first when it has none. */
+  citekeyEditor: Pick<CitekeyEditor, "openIndexedKey">;
   /**
    * The active document's formatted citations, which say whether that document
    * shows Entry Serials — the gutter follows what the citations show.
@@ -186,7 +186,8 @@ export class ReferencesView extends ItemView {
     this.#actions = createReferenceActions({
       app,
       getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
-      openCitekey: (citekey) => void citekeyEditor.openCitekey(citekey, false),
+      openIndexedKey: (indexedKey) =>
+        void citekeyEditor.openIndexedKey(indexedKey, false),
       onOpenEngineSettings: () => this.#deps.openSettings(),
       onChangeStyle: () => this.#deps.openStyleSettings(),
       onDismissEngineHint: () => pandocEngine.decline(),

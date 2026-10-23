@@ -791,7 +791,7 @@
   "settings_citation_wikilink_citations_name": "Wiki 链接引用",
   "settings_citation_wikilink_citations_desc": "将指向文献笔记的链接视为引用，让参考文献侧边栏在文献引用标识之外也列出它们。",
   "settings_citation_annotation_citations_name": "批注引用",
-  "settings_citation_annotation_citations_desc": "将链接文字为空的 Zotero 批注链接纳入参考文献侧栏和 ZotLit 的文内引用功能。",
+  "settings_citation_annotation_citations_desc": "将没有链接文字的 Zotero 批注链接（如 `[](zotero://…)`）视为对批注所属条目的引用，纳入参考文献侧栏和 ZotLit 的文内引用功能。此设置不会更改导出方式。",
   "settings_citation_annotation_links_name": "Zotero 标注链接",
   "settings_citation_annotation_links_desc": "悬停在笔记中的 Zotero 标注链接上时显示该标注，并在选择链接时由 ZotLit 打开。关闭时，这些链接在 Zotero 中打开，与未安装 ZotLit 时相同。",
   "settings_citation_graph_heading": "关系图谱",

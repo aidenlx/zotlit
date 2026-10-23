@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { themeHook } from "@/lib/theme-hooks";
+import {
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
 import type {
   Citation,
   ReferenceSource,
@@ -195,6 +199,63 @@ function addKeylessNote(
 }
 
 describe("Document Citation Set integration", { timeout: 60_000 }, () => {
+  it("#1693 counts an earlier Annotation Citation in the shared numeric context", async () => {
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": `[](${annotationUri}) then @roe2025.` },
+      { zoteroRows: annotationRows },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NUMERIC_STYLE);
+    await text.ready;
+
+    const set = await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    expect(
+      set.citations.map(({ indexedKey, refNumber }) => [indexedKey, refNumber]),
+    ).toEqual([
+      [KEY_A, 1],
+      [KEY_B, 2],
+    ]);
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+    expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
+      "[1]",
+      "[2]",
+    ]);
+
+    harness.settings.update({ "citation.annotation-citations": false });
+    expect(
+      firstText(
+        (await readText(text, harness.draft)).formatted.get("@roe2025"),
+      ),
+    ).toBe("[1]");
+    harness.settings.update({ "citation.annotation-citations": true });
+    expect(
+      firstText(
+        (await readText(text, harness.draft)).formatted.get("@roe2025"),
+      ),
+    ).toBe("[2]");
+  });
+
+  it("#1693 renders indexed wikilinks without metadata-cache links", async () => {
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "[[Doe 2024]] then @roe2025." },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    await using engine = await openEngine();
+    await using text = openText(harness, engine, NUMERIC_STYLE);
+    await text.ready;
+    await harness.index.getDocumentCitationSet(harness.draft);
+    const rendered = await readText(text, harness.draft);
+    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+    expect(
+      firstText(
+        rendered.formatted.get(
+          citationKey({ source: "[@doe2024]", works: [KEY_A] }),
+        ),
+      ),
+    ).toBe("[1]");
+  });
+
   it("keeps numeric in-text and sidebar assignments aligned across source changes", async () => {
     await using harness = await createCitationIndexHarness(
       { "draft.md": BODY },
