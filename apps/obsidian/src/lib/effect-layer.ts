@@ -10,13 +10,12 @@ import { runtimeServices } from "./effect-services";
 
 /**
  * A runtime over `layer` and the runtime services (browser scheduling and
- * logging, both References, so absent from its type), built now and
- * synchronously; disposing `stack` disposes it. The runtime's scope is on the
- * stack before the build runs, so a build that throws releases what it had
- * already acquired when the stack unwinds.
+ * logging, both References, so absent from its type); disposing `stack`
+ * disposes it. The runtime's scope is on the stack before the build runs, so
+ * a build that fails releases what it acquired when the stack unwinds.
  *
- * A layer that suspends throws here: plugin load does not wait. Acquire
- * synchronously, and fork async startup onto the layer's Scope.
+ * Acquisition starts on the first run. Await `runtime.context()` before
+ * synchronous reads when a layer can acquire resources asynchronously.
  */
 export function buildRuntime<R>(
   layer: Layer.Layer<R>,
@@ -37,6 +36,5 @@ export function buildRuntime<R>(
       ),
     ),
   );
-  runtime.runSync(NativeEffect.void);
   return runtime;
 }
