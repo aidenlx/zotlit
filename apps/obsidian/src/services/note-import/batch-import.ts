@@ -474,7 +474,6 @@ function openNoteImportModal(
     total: ids.length,
     onClassify: async (controls) => {
       const classified = await classifyNoteImport(deps, ids, controls);
-      await deps.profile.ready;
       profilesEnabled = deps.profile.profiles.length > 0;
       if (profilesEnabled)
         profileChoice = await prepareImportProfiles(
@@ -602,7 +601,6 @@ function openChildImportModal(
     onClassify: async (controls) => {
       const parents = await classifyChildImport(deps, ids, controls);
       const allActions = parents.flatMap((parent) => parent.actions);
-      await deps.profile.ready;
       profilesEnabled = deps.profile.profiles.length > 0;
       if (profilesEnabled)
         profileChoice = await prepareImportProfiles(

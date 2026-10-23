@@ -65,7 +65,7 @@ import type {
   ProfileBindingSettings,
   ResolvedProfile,
 } from "@/services/profile/bindings";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
@@ -118,7 +118,7 @@ export type ImportVaultApp = {
 };
 
 interface NoteImporterDeps {
-  profile: Pick<ProfileService, "ready" | "resolveProfile" | "profileOf">;
+  profile: Pick<PlainProfile, "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
   noteIndex: Pick<
     PlainNoteIndex,
@@ -237,7 +237,6 @@ async function doImportNote(
   note: Note,
   options: ImportNoteOptions,
 ): Promise<WriteOutcome> {
-  await ctx.profile.ready;
   return ctx.writes.add(async () => {
     const { existing, profile } = await explicitImportTarget(
       ctx,
@@ -279,7 +278,6 @@ async function prepareExplicitImport(
   note: ChildNote,
   options: PrepareExplicitImportOptions,
 ): Promise<PreparedExplicitImport> {
-  await ctx.profile.ready;
   const { existing, profile, source, sourcePath } = await explicitImportTarget(
     ctx,
     note,

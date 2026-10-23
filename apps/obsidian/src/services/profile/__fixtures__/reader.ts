@@ -19,7 +19,7 @@ export function profileReader(
 ): ProfileReader {
   const current = () => typeof settings === "function" ? settings() : settings;
   return {
-    ready: Promise.resolve(), loaded: true,
+    loaded: true,
     on: () => () => {},
     get profiles() { return (current().profiles ?? []).map((entry) => ({ document: `zotlit-profile.${entry.label.toLowerCase()}.md`, path: "", bindings: {}, match: compileProfileMatch(undefined), ...entry })); },
     resolveProfile(selector) { return resolveProfile(current(), selector); },

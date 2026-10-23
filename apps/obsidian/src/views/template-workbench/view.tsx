@@ -116,7 +116,7 @@ import type {
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import { openCitationTemplate } from "@/services/template/actions";
 import type { PlainTemplate } from "@/services/template/plain";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
@@ -231,7 +231,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
       | "unpackPartials"
     >;
   profile?: Pick<
-    ProfileService,
+    PlainProfile,
     | "getSource"
     | "profileOf"
     | "getBuiltInSource"

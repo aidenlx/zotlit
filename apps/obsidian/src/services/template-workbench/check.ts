@@ -50,7 +50,7 @@ import {
   INVALID_PROFILE_ID,
   PROFILE_ID_MISMATCH,
 } from "./check-profile-document";
-import { readTemplateData, TemplateDataError } from "./data";
+import { readTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
@@ -739,10 +739,6 @@ export function createCheckHandler(deps: CheckDeps): CliCommandHandler {
       if (mode === "update") {
         // Any failure to read the baseline refuses the check.
         const refused = yield* Effect.gen(function* () {
-          yield* Effect.tryPromise({
-            try: () => deps.profile.ready,
-            catch: (cause) => new TemplateDataError({ cause }),
-          });
           const parent = yield* readTemplateData(
             deps.data,
             sourceContext.itemKey,

@@ -28,10 +28,8 @@ import { isErrno } from "@/lib/errno";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type {
-  ProfileDiagnostic,
-  ProfileService,
-} from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { ProfileDiagnostic } from "@/services/profile/service";
 import { DEFAULT_PROFILE_DOCUMENT } from "@/services/profile/service";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { citationPath, partialNameRefusal } from "@/services/template/defaults";
@@ -173,7 +171,14 @@ export const verifySavedSources = Effect.fn(
 
 export interface InspectDeps {
   app: App;
-  profile: ProfileService;
+  profile: Pick<
+    PlainProfile,
+    | "resolveProfile"
+    | "profiles"
+    | "diagnostics"
+    | "profileOf"
+    | "getBuiltInSource"
+  >;
   templates: Pick<
     PlainTemplate,
     | "javascriptTemplatesEnabled"
@@ -470,7 +475,6 @@ export function createInspectHandler(
         query["expect-source"] !== identity.source.id
       )
         return fail("TARGET_MISMATCH");
-      yield* Effect.promise(() => deps.profile.ready);
       const draftDocument: InspectDocument | undefined =
         draft && query.document?.startsWith("partial:")
           ? {

@@ -9,7 +9,7 @@ import type { VersionedCliHost } from "@/lib/cli-command";
 // apps/obsidian/policies/cli-text.md.
 import { Effect } from "@/lib/effect";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -76,7 +76,14 @@ interface TemplateWorkbenchRegistrationDeps {
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   settings: Pick<PlainPluginSettings, "current" | "update">;
-  profile: ProfileService;
+  profile: Pick<
+    PlainProfile,
+    | "resolveProfile"
+    | "profiles"
+    | "diagnostics"
+    | "profileOf"
+    | "getBuiltInSource"
+  >;
   templates: Pick<
     PlainTemplate,
     | "frontmatterFields"
@@ -347,7 +354,6 @@ export function registerTemplateWorkbench(
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
   const getIdentity = async () => {
-    await deps.profile.ready;
     return readWorkbenchIdentity(deps);
   };
   host.registerCliCommand(TEMPLATE_INSPECT_COMMAND, {
@@ -381,7 +387,6 @@ export function registerTemplateWorkbench(
     pluginVersion: host.manifest.version,
     getIdentity,
     selectNote: async (name) => {
-      await deps.profile.ready;
       return selectInspectionNote(deps, name);
     },
     loadData: (indexedKey, root, options) =>

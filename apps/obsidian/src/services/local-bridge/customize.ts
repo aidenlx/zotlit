@@ -14,7 +14,7 @@ import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainTemplate } from "@/services/template/plain";
 import {
@@ -83,10 +83,7 @@ export interface CustomizeDeps {
   webWorkbenchEnabled: boolean;
   app: App;
   settings: Pick<PlainPluginSettings, "current" | "update">;
-  profile: Pick<
-    ProfileService,
-    "ready" | "profiles" | "defaultDocumentPath" | "getSource"
-  >;
+  profile: Pick<PlainProfile, "profiles" | "defaultDocumentPath" | "getSource">;
   template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   localServer: Pick<LocalServerService, "effectivePort" | "on">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
@@ -102,7 +99,6 @@ export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
 export function createCustomize(deps: CustomizeDeps): CustomizeAction {
   return async (request) => {
-    await deps.profile.ready;
     const item =
       request.item === undefined ? activeNoteItem(deps.app) : request.item;
     const nativeRequest = { ...request, item };

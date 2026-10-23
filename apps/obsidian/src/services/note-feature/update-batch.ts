@@ -172,7 +172,6 @@ export async function runBatchUpdate(
   }
 
   await deps.noteIndex.whenIndexed();
-  await deps.profile.ready;
   if (profile !== undefined && !deps.profile.resolveProfile(profile)) {
     throw new BatchUpdateRefusedError(unknownProfileDiagnostic(profile));
   }

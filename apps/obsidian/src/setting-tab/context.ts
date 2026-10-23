@@ -12,7 +12,7 @@ import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { PlainManagedBinary } from "@/services/managed-binary/plain";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { ReleaseService } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
@@ -105,7 +105,25 @@ export interface SettingTabContext {
     | "updateDefaultLiteratureNoteProfileBindings"
     | "subscribe"
   >;
-  profile: ProfileService;
+  profile: Pick<
+    PlainProfile,
+    | "loaded"
+    | "profiles"
+    | "diagnostics"
+    | "resolveProfile"
+    | "on"
+    | "duplicate"
+    | "ejectDefault"
+    | "restoreDefault"
+    | "prepareDelete"
+    | "delete"
+    | "getSource"
+    | "defaultDocumentPath"
+    | "prepareCreate"
+    | "prepareShare"
+    | "prepareImport"
+    | "materializeDefault"
+  >;
   db: Pick<
     PlainZoteroReads,
     "refresh" | "state" | "error" | "on" | "activeReadMode"
