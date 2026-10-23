@@ -928,3 +928,13 @@ it.each([
 ])("$name", ({ text, citekeys }) => {
   expect(scanNote(text).citekeys.map(({ raw }) => raw)).toEqual(citekeys);
 });
+
+// #1695: export needs ranges even in notes that contain no citation opener.
+it.each([
+  ["`code`", [{ kind: "code", from: 0, to: 6 }]],
+  [">      ", [{ kind: "code", from: 6, to: 7 }]],
+  ["%%hidden%%", [{ kind: "comment", from: 0, to: 10 }]],
+  ["$5", [{ kind: "text-dollar", from: 0, to: 1 }]],
+])("keeps export ranges without citations: %s", (text, ranges) => {
+  expect(scanNote(text).ranges).toEqual(ranges);
+});
