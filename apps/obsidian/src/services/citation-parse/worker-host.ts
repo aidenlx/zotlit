@@ -31,7 +31,12 @@ export const connectParseWorker = Effect.fnUntraced(function* (
   );
   const client = yield* makeParseWorkerClient(() => {
     worker?.terminate();
-    worker = new Worker(url, { name: "zotlit-citation-parse" });
+    try {
+      worker = new Worker(url, { name: "zotlit-citation-parse" });
+    } catch (error) {
+      stop(new ParseWorkerDied(String(error)));
+      throw error;
+    }
     worker.addEventListener("error", (event) =>
       stop(new ParseWorkerDied(event.message)),
     );

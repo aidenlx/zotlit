@@ -220,3 +220,53 @@ it.effect.each([false, true])(
       expect(yield* Queue.size(spawned)).toBe(0);
     }),
 );
+
+it.effect(
+  "retries a failed worker construction before the request deadline (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const failed = yield* Queue.make<void>();
+      const spawned = yield* Queue.make<WorkerPort>();
+      const sent = yield* Queue.make<RpcMessage.FromClientEncoded>();
+      let attempts = 0;
+      vi.stubGlobal(
+        "Worker",
+        class extends WorkerPort {
+          constructor() {
+            super(sent);
+            if (++attempts === 1) {
+              Queue.offerUnsafe(failed, undefined);
+              throw new Error("Worker construction failed");
+            }
+          }
+          override addEventListener(
+            ...args: Parameters<EventTarget["addEventListener"]>
+          ) {
+            super.addEventListener(...args);
+            if (args[0] === "message") Queue.offerUnsafe(spawned, this);
+          }
+        },
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => vi.unstubAllGlobals()),
+      );
+      const client = yield* makeRecoveringParseClient(
+        connectParseWorker("worker source"),
+      );
+      client.start();
+      const pending = yield* Effect.promise((signal) =>
+        client.parse({ path: "draft.md", generation: 1, text: "" }, signal),
+      ).pipe(Effect.forkChild);
+      yield* Queue.take(failed);
+      yield* TestClock.adjust(100);
+      const worker = yield* Queue.take(spawned);
+      worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
+      const request = yield* Queue.take(sent);
+      if (request._tag !== "Request") throw new Error("Expected parse request");
+      worker.reply(request.id, "draft.md", 1);
+      expect(yield* Fiber.join(pending)).toMatchObject({
+        path: "draft.md",
+        generation: 1,
+      });
+    }),
+);
