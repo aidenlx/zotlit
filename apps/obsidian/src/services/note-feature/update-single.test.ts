@@ -31,7 +31,7 @@ function noteLessDeps(): SingleUpdateDeps {
     app: {} as SingleUpdateDeps["app"],
     zoteroReads: {
       state: "ready",
-      get ready(): never {
+      get reads(): never {
         throw new Error("create path reached: ZoteroReads read");
       },
       acquireRead: () => {

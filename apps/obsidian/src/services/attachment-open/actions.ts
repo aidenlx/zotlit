@@ -17,7 +17,7 @@ import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { activateAnnotView } from "@/views/annot-view/register";
 
 import type { TargetOpener, TargetReader } from "./open-target";
@@ -29,7 +29,7 @@ const logger = getLogger("attachment-open");
 /** What resolving a Literature Note's Attachments needs. */
 export interface AttachmentOpenLookupDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "acquireRead">;
+  reads: Pick<PlainZoteroReads, "acquireRead">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 

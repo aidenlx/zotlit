@@ -9,7 +9,7 @@ import { getLogger } from "@/lib/log";
 import { libraryLabel } from "@/services/library-scope/label";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { SnapshotItem } from "./snapshot";
 
@@ -60,7 +60,7 @@ export type AmbiguousCandidatesOf = (
 
 /** Where a candidate description reads its summary and its Library from. */
 export interface CandidateDeps {
-  db: Pick<ZoteroReadsService, "ready">;
+  db: Pick<PlainZoteroReads, "reads">;
   /** Names the Library each candidate lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
 }
@@ -90,7 +90,7 @@ async function readCandidateItems(
   candidates: readonly SnapshotItem[],
 ): Promise<ReadonlyMap<string, Item>> {
   try {
-    const { reads } = await db.ready;
+    const { reads } = db;
     return await Effect.runPromise(
       reads.ItemsByIndexedKeys({
         indexedKeys: candidates.map((candidate) => candidate.indexedKey),

@@ -20,7 +20,7 @@ import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -151,7 +151,7 @@ let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
-let reads: ZoteroReadsService | undefined;
+let reads: TestReads | undefined;
 let onCitedByInvalidated: (() => void) | undefined;
 /** What the Citation Index reports its resolution snapshot as. */
 let citekeyResolution: CitationKeyResolution;
@@ -278,8 +278,8 @@ beforeEach(async () => {
       app,
       db: {
         state: "ready",
-        get ready() {
-          return reads!.ready;
+        get reads() {
+          return reads!.reads;
         },
         acquireRead: () => reads!.acquireRead(),
         on: (event: string, callback: () => void) => {

@@ -14,14 +14,14 @@ import {
   selectorKey,
 } from "@/services/library-scope/scope";
 import { testItemMatches } from "@/services/profile-selection";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import type { ReaderDiagnosticSource } from "@/views/query-view/reader-diagnostic";
 
 import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
-  db: Pick<ZoteroReadsService, "acquireRead">,
+  db: Pick<PlainZoteroReads, "acquireRead">,
   query: Pick<QueryService, "run" | "customFieldNames"> | undefined,
 ): WorkbenchHost["matchData"] {
   return {

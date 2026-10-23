@@ -32,7 +32,7 @@ import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import {
   CSL_COMMAND,
@@ -62,7 +62,7 @@ export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "ready" | "activeReadMode">;
+  reads: Pick<PlainZoteroReads, "reads" | "activeReadMode">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
@@ -247,7 +247,7 @@ const readItems = Effect.fn("PandocCli.readItems")(function* (
   reads: PandocResolveDeps["reads"],
   indexedKeys: readonly string[],
 ) {
-  const { reads: api } = yield* Effect.tryPromise(() => reads.ready);
+  const { reads: api } = reads;
   const unique = [...new Set(indexedKeys)];
   const found = yield* api.ItemsByIndexedKeys({ indexedKeys: unique });
   const items = new Map<string, ResolvedItem>();

@@ -7,7 +7,7 @@ import { MatchPane, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
 
 import { Select } from "@/components/select";
 import { useObsidianApp } from "@/lib/app-context";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { onKeymap, templateWorkbenchTheme } from "./theme";
 
@@ -35,7 +35,7 @@ export function NativeMatchPane({
   onChooseItem,
 }: {
   controller: WorkbenchDocumentController;
-  db: Pick<ZoteroReadsService, "on">;
+  db: Pick<PlainZoteroReads, "on">;
   onChooseItem?: () => void;
 }) {
   const app = useObsidianApp();

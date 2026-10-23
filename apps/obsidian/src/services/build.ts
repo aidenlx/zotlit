@@ -81,8 +81,7 @@ import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { plainZoteroPref } from "./zotero-pref/plain";
-import { ZoteroReadsService } from "./zotero-reads/service";
-import { workerClient } from "./zotero-reads/worker-client";
+import { plainZoteroReads } from "./zotero-reads/plain";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -165,13 +164,8 @@ export async function buildServices(
     .useValue({
       chineseSegmenter: () => plainChineseSegmenter(runtime),
     })
-    .use({
-      // Interactive reads use their own worker; Citation Index bulk reads
-      // use a second capability registered below.
-      zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
-        new ZoteroReadsService({
-          client: workerClient({ settings, zoteroPref, chineseSegmenter }),
-        }),
+    .useValue({
+      zoteroReads: () => plainZoteroReads(runtime),
     })
     .use({
       excerptImage: () =>

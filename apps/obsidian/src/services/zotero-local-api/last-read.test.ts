@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import { Effect } from "@/lib/effect";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 
 import {
   ATTACHMENT_KEY,
@@ -231,7 +231,7 @@ it.each([null, "BBBBBBBBBBBB"])(
         reads: { DatabaseIdentity: () => Effect.succeed({ serverID }) },
         [Symbol.asyncDispose]: async () => {},
       }),
-    } as unknown as ZoteroReadsService;
+    } as unknown as TestReads;
     await writeReadUse(
       { reads, api: client },
       { attachmentKey: ATTACHMENT_KEY, instant: NOW, serverID: SERVER_ID },
@@ -249,7 +249,7 @@ it("contains a database failure without delaying local reading", async () => {
     acquireRead: async () => {
       throw new Error("closed database");
     },
-  } as unknown as ZoteroReadsService;
+  } as unknown as TestReads;
   await expect(
     writeReadUse(
       { reads, api: client },

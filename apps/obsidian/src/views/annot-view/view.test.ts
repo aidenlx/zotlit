@@ -48,16 +48,14 @@ it("settles a pending attachment load without restarting a closed view", async (
     },
     reads: {
       state: "ready",
-      ready: Promise.resolve({
-        reads: {
-          ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-          AnnotViewAttachments: () =>
-            Effect.promise(() => {
-              started.resolve();
-              return pending.promise;
-            }),
-        },
-      }),
+      reads: {
+        ItemsByIndexedKeys: () => Effect.succeed(new Map()),
+        AnnotViewAttachments: () =>
+          Effect.promise(() => {
+            started.resolve();
+            return pending.promise;
+          }),
+      },
     },
     libraryScope: { libraryRows: [] },
     annotations: { on: subscribe, read },
@@ -219,13 +217,11 @@ async function openSidebar(
     reads: {
       state: readsState,
       on: reads.on,
-      ready: Promise.resolve({
-        reads: {
-          ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-          AnnotViewAttachments: ({ key }: { key: string }) =>
-            Effect.succeed(attachmentsOf?.(key) ?? attachments),
-        },
-      }),
+      reads: {
+        ItemsByIndexedKeys: () => Effect.succeed(new Map()),
+        AnnotViewAttachments: ({ key }: { key: string }) =>
+          Effect.succeed(attachmentsOf?.(key) ?? attachments),
+      },
     },
     libraryScope: { libraryRows: [], on: () => () => {}, current: null },
     liveUpdate: {

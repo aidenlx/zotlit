@@ -22,12 +22,10 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { QueryService } from "@/services/item-query/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReadsEvents,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -216,18 +214,16 @@ async function harness(
   const zoteroEvents = createNanoEvents<ZoteroReadsEvents>();
   // Library Scope reads the Libraries through ZoteroReads, over the same client.
   const readsEvents = {
-    ready: Promise.resolve({
-      reads: {
-        Libraries: () =>
-          Effect.suspend(() =>
-            readable
-              ? Effect.succeed(getLibraries(client))
-              : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
-          ),
-      },
-    }),
+    reads: {
+      Libraries: () =>
+        Effect.suspend(() =>
+          readable
+            ? Effect.succeed(getLibraries(client))
+            : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
+        ),
+    },
     on: zoteroEvents.on.bind(zoteroEvents),
-  } as unknown as ZoteroReadsService;
+  } as unknown as TestReads;
   let readable = true;
   const fixture = stack.use(
     await profileServiceFixture(

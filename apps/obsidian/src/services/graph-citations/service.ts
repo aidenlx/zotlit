@@ -34,8 +34,8 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
@@ -84,7 +84,7 @@ const CITATION_INDEX_EVENTS = [
 
 export interface GraphCitationsDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "ready" | "on">;
+  reads: Pick<PlainZoteroReads, "reads" | "on">;
   libraryScope: Pick<LibraryScopeService, "current">;
   citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
   citationLookup: Pick<CitationLookup, "observe">;
@@ -576,10 +576,7 @@ export class GraphCitations extends Service<void> {
     this.#cancelLabelRead();
     if (this.#stopped) return;
     const fiber = Effect.runFork(
-      Effect.flatMap(
-        Effect.promise(() => this.#reads.ready),
-        ({ reads }) => reads.WorkLabels({ indexedKeys: [...keys] }),
-      ),
+      this.#reads.reads.WorkLabels({ indexedKeys: [...keys] }),
     );
     this.#labelRead = { keys, fiber };
     fiber.addObserver((exit) => {

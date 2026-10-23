@@ -5,7 +5,7 @@ import type { CliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { ANNOTATION_IMAGE_COMMAND, answerAnnotationImage } from "./cli-image";
 import { ExcerptSourceUnavailable, excerptRequestForKey } from "./request";
@@ -13,7 +13,7 @@ import type { ExcerptImageService } from "./service";
 import { publishExcerptPng } from "./temp-store";
 
 interface AnnotationImageDeps {
-  zoteroReads: ZoteroReadsService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   excerptImage: ExcerptImageService;
 }

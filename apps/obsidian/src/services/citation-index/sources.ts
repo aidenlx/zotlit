@@ -7,7 +7,7 @@ import { parseAttachmentPath } from "@zotlit/db/path";
 import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { Citation } from "./query";
 
@@ -119,7 +119,7 @@ function filename(path: string): string {
  *   caller reports rather than the Items it names as missing.
  */
 export async function readReferenceSources(
-  db: Pick<ZoteroReadsService, "state" | "acquireRead">,
+  db: Pick<PlainZoteroReads, "state" | "acquireRead">,
   citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
 ): Promise<ReferenceSourceJoin> {
   const sources = new Map<string, ReferenceSource>();

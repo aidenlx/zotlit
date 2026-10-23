@@ -9,7 +9,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { openLibraryView } from "@/views/library/register";
 import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
 
@@ -18,7 +18,7 @@ import { notFoundNoticeChange } from "./not-found-notice";
 import type { NotFoundSignal } from "./not-found-notice";
 
 export interface WelcomeRegistrationDeps {
-  reads: Pick<ZoteroReadsService, "on">;
+  reads: Pick<PlainZoteroReads, "on">;
   queries: Pick<PlainQueryClients, "invalidate">;
   settings: Pick<PlainPluginSettings, "update">;
 }

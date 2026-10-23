@@ -10,7 +10,7 @@ import { isPdfAttachment } from "@/services/attachment-open/resolve";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import { Service } from "@/services/service-base";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 const logger = getLogger("attachment-resolver");
 
@@ -86,7 +86,7 @@ export type AttachedFile = Extract<AttachmentLookup, { kind: "resolved" }> & {
 };
 
 export interface AttachmentResolverDeps {
-  reads: Pick<ZoteroReadsService, "ready" | "on" | "acquireRead">;
+  reads: Pick<PlainZoteroReads, "reads" | "on" | "acquireRead">;
   queries: Pick<
     PlainQueryClients,
     "client" | "ask" | "invalidate" | "peek" | "watch"

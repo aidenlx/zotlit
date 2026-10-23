@@ -9,13 +9,13 @@ import { Effect } from "@/lib/effect";
 
 import { LibraryScopeService } from "@/services/library-scope/service";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { ProfileService } from "@/services/profile/service";
 
 export async function profileServiceFixture(
   files: Record<string, string> = {},
-  reads?: Pick<ZoteroReadsService, "ready" | "on">,
+  reads?: Pick<PlainZoteroReads, "reads" | "on">,
 ) {
   await using stack = new AsyncDisposableStack();
   const host = createObsidianHost(files);
@@ -50,14 +50,12 @@ export async function profileServiceFixture(
   const libraryScope = stack.use(new LibraryScopeService({ settings,
     queries: stack.use(queryClientsFixture()),
     reads: reads ?? ({
-      ready: Promise.resolve({
-        reads: {
+      reads: {
           Libraries: () =>
             Effect.succeed([{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }]),
         },
-      }),
       on: () => () => {},
-    } as unknown as ZoteroReadsService),
+    } as unknown as PlainZoteroReads),
   }));
   const profile = stack.use(
     new ProfileService({ app, settings, template, noteIndex }),

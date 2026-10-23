@@ -3,8 +3,6 @@
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
 
-import { vi } from "vitest";
-
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect, Stream } from "@/lib/effect";
@@ -81,16 +79,8 @@ export async function resolverHarness(
       }),
     }),
   );
-  // Settle the lazy adapter's first source event before testing index events.
-  // A missing source is left unopened for the failure scenario.
-  if (seeds[0] !== null) {
-    const { reads: initial } = await reads.ready;
-    await Effect.runPromise(initial.Libraries({}));
-    await vi.waitFor(() => {
-      if (reads.state !== "ready")
-        throw new Error(`reads state is ${reads.state}, not ready`);
-    });
-  }
+  // The plugin builds the read layer before its consumers.
+  await reads.ready;
   let now = Temporal.Now.instant();
   const queries = stack.use(queryClientsFixture(() => now));
 

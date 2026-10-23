@@ -7,7 +7,7 @@ import {
   openAttachments,
 } from "@/lib/attachment-open";
 import { defaults } from "@/services/settings/schema";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -59,12 +59,12 @@ const ITEM_WITH_PDF = `
 function readsOver(
   stack: AsyncDisposableStack,
   seed: string | null = ITEM_WITH_PDF,
-): ZoteroReadsService {
+): TestReads {
   return stack.use(inProcessReadsService(memoryOpener(() => seed).open));
 }
 
 function lookupDeps(
-  reads: Pick<ZoteroReadsService, "acquireRead">,
+  reads: Pick<TestReads, "acquireRead">,
   overrides: Partial<AttachmentOpenLookupDeps> = {},
 ): AttachmentOpenLookupDeps {
   return {

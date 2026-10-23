@@ -1,58 +1,16 @@
-// The Web Worker adapter as a ZoteroReadsService client: spawn with the current settings, push every change.
-
+// Worker configuration follows the native dependency streams on the layer Scope.
 import { getLanguage } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
-import { Effect, FiberSet } from "@/lib/effect";
-import type { Scope } from "@/lib/effect";
-import type { PlainChineseSegmenter } from "@/services/chinese-segmenter/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { Settings } from "@/services/settings/schema";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import { Effect, Stream } from "@/lib/effect";
+import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 
-import type { ZoteroReadsClient } from "./in-process";
-import type { ReadsConfig, SegmenterBinary } from "./rpc";
+import type { ReadsConfig } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
-
-export interface WorkerClientDeps {
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
-  zoteroPref: Pick<PlainZoteroPref, "databasePath" | "on">;
-  chineseSegmenter: Pick<PlainChineseSegmenter, "getStatus" | "subscribe">;
-}
-
-/**
- * The readable Chinese Segmenter binary the Managed Binary reports: the
- * installed one, or during a reinstall the one installed before it, so a
- * reinstall pushes no segmenter change until it lands.
- */
-function installedSegmenter(
-  chineseSegmenter: Pick<PlainChineseSegmenter, "getStatus">,
-): SegmenterBinary | null {
-  const status = chineseSegmenter.getStatus();
-  switch (status.kind) {
-    case "installed":
-    case "installing":
-      return status.binary;
-    default:
-      return null;
-  }
-}
-
-function readsConfig(
-  settings: Readonly<Settings>,
-  { zoteroPref, chineseSegmenter }: Omit<WorkerClientDeps, "settings">,
-): ReadsConfig {
-  return {
-    databasePath: zoteroPref.databasePath,
-    readMode: settings["zotero.read-mode"],
-    autoRefresh: settings["zotero.auto-refresh"],
-    locale: getLanguage(),
-    chineseSegmenter: installedSegmenter(chineseSegmenter),
-    logLevel: settings["log.level"],
-  };
-}
 
 const sameConfig = (a: ReadsConfig, b: ReadsConfig) =>
   a.databasePath === b.databasePath &&
@@ -62,46 +20,50 @@ const sameConfig = (a: ReadsConfig, b: ReadsConfig) =>
   sameSegmenterBinary(a.chineseSegmenter, b.chineseSegmenter) &&
   a.logLevel === b.logLevel;
 
-/**
- * A client on the ZoteroReads Web Worker for the caller's scope. Every worker
- * it spawns starts with the current database path, Read Mode, auto-refresh
- * setting, UI locale, installed Chinese Segmenter, and log level; a later change reaches the live worker through
- * `Configure`. The scope's end terminates the worker.
- */
-export const workerClient = Effect.fnUntraced(function* ({
-  settings,
-  zoteroPref,
-  chineseSegmenter,
-}: WorkerClientDeps): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
-  let config = readsConfig(settings.current, { zoteroPref, chineseSegmenter });
-  // Pushes run in this scope, so the scope's end interrupts one in flight.
-  const run = yield* FiberSet.runtime(yield* FiberSet.make())();
+export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
+  const settings = yield* PluginSettings;
+  const pref = yield* ZoteroPref;
+  const segmenter = yield* ChineseSegmenter;
+  const configuration = Effect.gen(function* () {
+    const current = yield* settings.current;
+    const status = yield* segmenter.getStatus();
+    return {
+      databasePath: (yield* pref.current).databasePath,
+      readMode: current["zotero.read-mode"],
+      autoRefresh: current["zotero.auto-refresh"],
+      locale: getLanguage(),
+      chineseSegmenter:
+        status.kind === "installed" || status.kind === "installing"
+          ? status.binary
+          : null,
+      logLevel: current["log.level"],
+    } satisfies ReadsConfig;
+  });
+  let config = yield* configuration;
   const reads = yield* makeWorkerReads(
     connectWorker(
       workerSource,
       Effect.sync(() => config),
     ),
   );
-
-  const push = (): void => {
-    const current = settings.current;
-    if (!current) return;
-    const next = readsConfig(current, { zoteroPref, chineseSegmenter });
+  const push = Effect.fn("ZoteroReads.configure")(function* () {
+    const next = yield* configuration;
     if (sameConfig(next, config)) return;
     config = next;
-    run(Effect.ignore(reads.Configure(next)));
-  };
-  const unsubscribes = [
-    settings.subscribe(push),
-    zoteroPref.on("resolved-changed", push),
-    chineseSegmenter.subscribe(push),
-  ];
-  yield* Effect.addFinalizer(() =>
-    Effect.sync(() => {
-      for (const unsubscribe of unsubscribes) unsubscribe();
-    }),
+    yield* Effect.ignore(reads.Configure(next));
+  });
+  yield* Stream.mergeAll(
+    [
+      Stream.as(settings.changes, undefined),
+      Stream.as(pref.changes, undefined),
+      Stream.as(segmenter.changes, undefined),
+    ],
+    { concurrency: "unbounded" },
+  ).pipe(
+    Stream.runForEach(push),
+    Effect.forkScoped({ startImmediately: true }),
   );
-  // Reconcile changes made while the worker connection was being acquired.
-  push();
+  // Reconcile while acquisition was waiting for the worker handshake.
+  yield* push();
   return reads;
 });

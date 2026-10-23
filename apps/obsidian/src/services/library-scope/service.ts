@@ -8,7 +8,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
  * The policy is pure and lives in `./scope.ts`; this service owns only the
  * wiring: read the saved value (and its broken-override diagnostic) from
  * {@link PlainPluginSettings}, resolve it against the Libraries the
- * {@link ZoteroReadsService} last answered, and emit `changed` when the result
+ * {@link PlainZoteroReads} last answered, and emit `changed` when the result
  * stops meaning the same thing to consumers.
  *
  * ## Held Libraries
@@ -36,7 +36,7 @@ import { getLogger } from "@/lib/log";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import {
   DEFAULT_LIBRARY_SCOPE,
@@ -70,7 +70,7 @@ export interface LibraryScopeEvents {
 }
 
 export interface LibraryScopeDeps {
-  reads: Pick<ZoteroReadsService, "ready" | "on">;
+  reads: Pick<PlainZoteroReads, "reads" | "on">;
   queries: Pick<
     PlainQueryClients,
     "client" | "ask" | "invalidate" | "peek" | "watch"
@@ -188,7 +188,6 @@ export class LibraryScopeService extends Service<void> {
     );
     this.commit(stack.move());
 
-    await this.#reads.ready;
     await this.#readLibraries();
     this.#recompute();
     logger.info("Library scope ready", {
@@ -230,7 +229,7 @@ export class LibraryScopeService extends Service<void> {
   /** Read the Libraries into the held value; a failure keeps what it holds. */
   async #readLibraries(): Promise<void> {
     await this.#queries.ask<Library[]>(LIBRARIES_KEY, async ({ signal }) => {
-      const { reads } = await this.#reads.ready;
+      const { reads } = this.#reads;
       return Effect.runPromise(reads.Libraries({}), { signal });
     });
   }

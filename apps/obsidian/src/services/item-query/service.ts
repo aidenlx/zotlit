@@ -19,7 +19,7 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import {
   QUERY_COMMAND,
@@ -45,7 +45,7 @@ import type {
 interface QueryServiceDeps {
   pluginVersion: string;
   useLedger: Pick<PlainUseLedger, "uses" | "subscribe">;
-  reads: ZoteroReadsService;
+  reads: Pick<PlainZoteroReads, "reads">;
   zoteroPref: Pick<
     PlainZoteroPref,
     "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
@@ -107,7 +107,6 @@ export class QueryService extends Service {
     );
     this.#run = Effect.runSync(FiberMap.runtime(this.#jobs)());
     try {
-      await this.#deps.reads.ready;
       await this.#deps.libraryScope.ready;
     } catch (error) {
       // Recorded before the stack closes the jobs, which then reject with it.
@@ -365,7 +364,7 @@ export class QueryService extends Service {
       const reads = yield* Effect.interruptible(
         Effect.promise(async () => {
           await ready;
-          return (await deps.reads.ready).reads;
+          return deps.reads.reads;
         }),
       ).pipe(Effect.onInterrupt(() => report("requested")));
       const call = yield* Effect.forkChild(
