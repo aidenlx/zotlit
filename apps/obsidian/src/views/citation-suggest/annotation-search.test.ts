@@ -10,6 +10,7 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { QueryService } from "@/services/item-query/service";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -49,7 +50,7 @@ function setup(uses: Record<string, number> = {}) {
   const reads = inProcessReadsService(sharedClientOpener(scenario.db));
   const service = new QueryService({
     pluginVersion: "2.2.0-beta.2",
-    useLedger: { ready: Promise.resolve(), uses, on: () => () => {} },
+    useLedger: { ...inertUseLedger, uses },
     reads,
     zoteroPref: {
       sourceId: "captured-source",

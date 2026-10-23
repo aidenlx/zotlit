@@ -1,184 +1,240 @@
 import type { App, TFile } from "obsidian";
 
 import { isIndexedKey } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import {
+  Clock,
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Schema,
+  SubscriptionRef,
+} from "@/lib/effect";
+import type { Stream } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { acquireDisposable } from "@/lib/effect-scope";
+import { ObsidianApp } from "@/lib/obsidian-app";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { Service } from "@/services/service-base";
 
-export type UseKind = "opened" | "read" | "cited";
+const UseKind = Schema.Literals(["opened", "read", "cited"]);
+export type UseKind = typeof UseKind.Type;
 
 export interface Use {
   readonly instant: Temporal.Instant;
   readonly kind: UseKind;
 }
 
-interface UseLedgerEvents {
-  changed: () => void;
-}
-
-interface UseLedgerDeps {
-  app: App;
-  now?: () => Temporal.Instant;
-}
+/** The newest Use of each Item, keyed by Item key. */
+export type Ledger = Readonly<Record<string, Use>>;
 
 const STORAGE_KEY = "zotlit-use-ledger";
 const CAPACITY = 300;
 
 /** The last Use of each Item on this device, persisted per vault. */
-export class UseLedger extends Service {
-  readonly #app;
-  readonly #now;
-  readonly #emitter = createNanoEvents<UseLedgerEvents>();
-  readonly #excludedOpens = new Map<TFile, number>();
-  #current: Readonly<Record<string, Use>> = {};
-  ready: Promise<void>;
-
-  constructor({ app, now = () => Temporal.Now.instant() }: UseLedgerDeps) {
-    super();
-    this.#app = app;
-    this.#now = now;
-    this.ready = this.#load();
+export class UseLedger extends Context.Service<
+  UseLedger,
+  {
+    readonly current: Effect.Effect<Ledger>;
+    /** The ledger now, then each ledger a recorded Use replaces it with. */
+    readonly changes: Stream.Stream<Ledger>;
+    get(itemKey: string): Effect.Effect<Use | undefined>;
+    /** A snapshot for the query worker and the empty Item search. */
+    readonly uses: Effect.Effect<Readonly<Record<string, number>>>;
+    /**
+     * Keeps the newest Use and returns this action for live read write-back.
+     * Without `instant`, the Use happens now, by the Effect Clock.
+     */
+    record(
+      itemKey: string,
+      kind: UseKind,
+      instant?: Temporal.Instant,
+    ): Effect.Effect<Use>;
+    /** Keep a Companion update's own navigation outside the Use timeline. */
+    withoutNoteUse<A, E, R>(
+      file: TFile,
+      open: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, R>;
   }
+>()("zotlit/use-ledger/UseLedger") {}
 
-  get current(): Readonly<Record<string, Use>> {
-    return this.#current;
-  }
+/**
+ * The ledger loaded from local storage, recording Item notes as they open.
+ * Closing the scope stops recording.
+ */
+const makeUseLedger = Effect.gen(function* () {
+  const app = yield* ObsidianApp;
+  const ledger = yield* SubscriptionRef.make(newest(yield* readSaved(app)));
+  const excludedOpens = new Map<TFile, number>();
+  let closed = false;
 
-  get(itemKey: string): Use | undefined {
-    return this.#current[itemKey];
-  }
+  const now = Effect.map(Clock.currentTimeMillis, (millis) =>
+    Temporal.Instant.fromEpochMilliseconds(millis),
+  );
+  const current = SubscriptionRef.get(ledger);
 
-  /** A snapshot for the query worker and the empty Item search. */
-  get uses(): Readonly<Record<string, number>> {
-    return Object.fromEntries(
-      Object.entries(this.#current).map(([key, use]) => [
-        key,
-        use.instant.epochMilliseconds,
-      ]),
-    );
-  }
-
-  on<K extends keyof UseLedgerEvents>(
-    event: K,
-    callback: UseLedgerEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, callback);
-  }
-
-  /** Keeps the newest Use and returns this action for live read write-back. */
-  record(itemKey: string, kind: UseKind, instant = this.#now()): Use {
-    const use = Object.freeze({ instant, kind });
-    if (this.disposing || !isIndexedKey(itemKey)) return use;
-    const previous = this.get(itemKey);
-    if (previous && Temporal.Instant.compare(previous.instant, instant) > 0)
+  const record = Effect.fn("UseLedger.record")(function* (
+    itemKey: string,
+    kind: UseKind,
+    instant?: Temporal.Instant,
+  ) {
+    const use: Use = Object.freeze({ instant: instant ?? (yield* now), kind });
+    if (closed || !isIndexedKey(itemKey)) return use;
+    const before = yield* current;
+    const previous = before[itemKey];
+    if (previous && Temporal.Instant.compare(previous.instant, use.instant) > 0)
       return use;
-    this.#current = newest({ ...this.#current, [itemKey]: use });
-    this.#app.saveLocalStorage(
+    const next = newest({ ...before, [itemKey]: use });
+    app.saveLocalStorage(
       STORAGE_KEY,
       Object.fromEntries(
-        Object.entries(this.#current).map(([key, entry]) => [
+        Object.entries(next).map(([key, entry]) => [
           key,
           { instant: entry.instant.toString(), kind: entry.kind },
         ]),
       ),
     );
-    this.#emitter.emit("changed");
+    yield* SubscriptionRef.set(ledger, next);
     return use;
-  }
+  });
 
-  /** Keep a Companion update's own navigation outside the Use timeline. */
-  async withoutNoteUse<T>(file: TFile, open: () => Promise<T>): Promise<T> {
-    const flush = () => this.#app.workspace.requestActiveLeafEvents.run();
-    // Deliver a preceding user gesture before entering the operation's scope.
-    flush();
-    this.#excludedOpens.set(file, (this.#excludedOpens.get(file) ?? 0) + 1);
-    try {
-      return await open();
-    } finally {
-      try {
-        // Obsidian defers file-open. Deliver this open before releasing it.
-        flush();
-      } finally {
-        const remaining = this.#excludedOpens.get(file)! - 1;
-        if (remaining) this.#excludedOpens.set(file, remaining);
-        else this.#excludedOpens.delete(file);
-      }
-    }
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    const raw: unknown = this.#app.loadLocalStorage(STORAGE_KEY);
-    const loaded: Record<string, Use> = {};
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      for (const [key, value] of Object.entries(raw)) {
-        if (!isIndexedKey(key) || !value || typeof value !== "object") continue;
+  // Obsidian's callbacks run outside Effect; they run with the layer's own
+  // services, its Clock among them.
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
+  const { workspace, metadataCache } = app;
+  let enabled = false;
+  let pending: { file: TFile; instant: Temporal.Instant } | null = null;
+  workspace.onLayoutReady(() => {
+    if (closed) return;
+    enabled = true;
+  });
+  yield* acquireDisposable(() =>
+    registerEvent(
+      workspace.on("file-open", (file) => {
+        if (!enabled || closed) return;
+        pending = null;
+        if (!file || file.extension !== "md" || excludedOpens.has(file)) return;
+        const instant = run(now);
+        const cache = metadataCache.getFileCache(file);
+        const key = itemKeyFromFrontmatter(cache);
+        if (key) run(record(key, "opened", instant));
+        else if (!cache) pending = { file, instant };
+      }),
+    ),
+  );
+  yield* acquireDisposable(() =>
+    registerEvent(
+      metadataCache.on("changed", (file, _text, cache) => {
         if (
-          !("instant" in value) ||
-          typeof value.instant !== "string" ||
-          !("kind" in value)
+          !pending ||
+          pending.file !== file ||
+          workspace.getActiveFile() !== file
         )
-          continue;
-        const { kind } = value;
-        if (kind !== "opened" && kind !== "read" && kind !== "cited") continue;
-        try {
-          loaded[key] = Object.freeze({
-            instant: Temporal.Instant.from(value.instant),
-            kind,
-          });
-        } catch {
-          /* An unreadable entry carries no Use. */
-        }
-      }
-    }
-    this.#current = newest(loaded);
-    const { workspace, metadataCache } = this.#app;
-    let enabled = false;
-    let pending: { file: TFile; instant: Temporal.Instant } | null = null;
-    workspace.onLayoutReady(() => {
-      if (this.disposing) return;
-      enabled = true;
-    });
-    stack.use(
-      registerEvent(
-        workspace.on("file-open", (file) => {
-          if (!enabled || this.disposing) return;
-          pending = null;
-          if (!file || file.extension !== "md" || this.#excludedOpens.has(file))
-            return;
-          const instant = this.#now();
-          const cache = metadataCache.getFileCache(file);
-          const key = itemKeyFromFrontmatter(cache);
-          if (key) this.record(key, "opened", instant);
-          else if (!cache) pending = { file, instant };
-        }),
+          return;
+        const { instant } = pending;
+        pending = null;
+        const key = itemKeyFromFrontmatter(cache);
+        if (key) run(record(key, "opened", instant));
+      }),
+    ),
+  );
+  // Runs first on close: a Use recorded during teardown is not kept.
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      closed = true;
+    }),
+  );
+
+  // Obsidian defers file-open: deliver a pending open, so it lands inside or
+  // outside an operation's scope as it happened.
+  const flush = () => workspace.requestActiveLeafEvents.run();
+
+  return UseLedger.of({
+    current,
+    changes: SubscriptionRef.changes(ledger),
+    get: (itemKey) => Effect.map(current, (entries) => entries[itemKey]),
+    uses: Effect.map(current, (entries) =>
+      Object.fromEntries(
+        Object.entries(entries).map(([key, use]) => [
+          key,
+          use.instant.epochMilliseconds,
+        ]),
       ),
-    );
-    stack.use(
-      registerEvent(
-        metadataCache.on("changed", (file, _text, cache) => {
-          if (
-            !pending ||
-            pending.file !== file ||
-            workspace.getActiveFile() !== file
-          )
-            return;
-          const { instant } = pending;
-          pending = null;
-          const key = itemKeyFromFrontmatter(cache);
-          if (key) this.record(key, "opened", instant);
+    ),
+    record,
+    withoutNoteUse: (file, open) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          flush();
+          excludedOpens.set(file, (excludedOpens.get(file) ?? 0) + 1);
         }),
+        () => open,
+        () =>
+          Effect.sync(() => {
+            try {
+              flush();
+            } finally {
+              const remaining = excludedOpens.get(file)! - 1;
+              if (remaining) excludedOpens.set(file, remaining);
+              else excludedOpens.delete(file);
+            }
+          }),
       ),
-    );
-    this.commit(stack.move());
+  });
+}).pipe(withLogCategory("use-ledger"));
+
+export const layerUseLedger: Layer.Layer<UseLedger, never, ObsidianApp> =
+  Layer.effect(UseLedger, makeUseLedger);
+
+/**
+ * The Uses saved for this vault, or none when they cannot be read: the ledger
+ * builds during plugin load, so a failed read must not stop the plugin.
+ */
+function readSaved(app: App): Effect.Effect<Record<string, Use>> {
+  return Effect.try({
+    try: () => loadUses(app.loadLocalStorage(STORAGE_KEY)),
+    catch: (error) => error,
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
+        Effect.annotateLogs({ error }),
+        Effect.as({}),
+      ),
+    ),
+  );
+}
+
+const decodeSaved = Schema.decodeUnknownOption(
+  Schema.Record(Schema.String, Schema.Unknown),
+);
+const decodeEntry = Schema.decodeUnknownOption(
+  Schema.Struct({ instant: Schema.String, kind: UseKind }),
+);
+
+/** The Uses saved in local storage; an unreadable entry carries no Use. */
+function loadUses(raw: unknown): Record<string, Use> {
+  const loaded: Record<string, Use> = {};
+  const saved = Option.getOrElse(decodeSaved(raw), () => ({}));
+  for (const [key, value] of Object.entries(saved)) {
+    if (!isIndexedKey(key)) continue;
+    const entry = Option.getOrUndefined(decodeEntry(value));
+    const instant = entry && parseInstant(entry.instant);
+    if (entry && instant)
+      loaded[key] = Object.freeze({ instant, kind: entry.kind });
+  }
+  return loaded;
+}
+
+function parseInstant(text: string): Temporal.Instant | undefined {
+  try {
+    return Temporal.Instant.from(text);
+  } catch {
+    return undefined;
   }
 }
 
-function newest(
-  entries: Readonly<Record<string, Use>>,
-): Readonly<Record<string, Use>> {
+function newest(entries: Ledger): Ledger {
   return Object.freeze(
     Object.fromEntries(
       Object.entries(entries)

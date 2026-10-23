@@ -17,6 +17,11 @@ import { delimited } from "@zotlit/shared/delimited";
 
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import {
+  buildUseLedger,
+  fakeApp,
+  inertUseLedger,
+} from "@/services/use-ledger/__fixtures__";
 import type { ConnectionOpener } from "@/services/zotero-reads/connection";
 import {
   inProcessReadsService,
@@ -53,7 +58,7 @@ function setup(
   });
   const service = new QueryService({
     pluginVersion: "2.2.0-beta.2",
-    useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
+    useLedger: inertUseLedger,
     reads,
     zoteroPref: {
       sourceId: "captured-source",
@@ -848,7 +853,7 @@ describe("Item Query worker jobs", () => {
     failed.catch(() => {});
     const service = new QueryService({
       pluginVersion: "2.2.0-beta.2",
-      useLedger: { ready: Promise.resolve(), uses: {}, on: () => () => {} },
+      useLedger: inertUseLedger,
       reads,
       zoteroPref: {
         sourceId: "captured-source",
@@ -1375,4 +1380,24 @@ describe("typed Query View call", () => {
       { kind: "result", result: { returnedCount: 1 } },
     );
   });
+});
+
+// Failure mode: an open Query View keeps showing results ordered by stale
+// Uses after a new one is recorded.
+it("tells a Query View of a Use recorded after it subscribes", async () => {
+  await using stack = new AsyncDisposableStack();
+  const useLedger = buildUseLedger(fakeApp({ load: () => undefined }), stack);
+  const service = stack.use(
+    new QueryService({
+      pluginVersion: "2.2.0-beta.2",
+      useLedger,
+      reads: { ready: Promise.resolve() },
+      libraryScope: { ready: Promise.resolve() },
+    } as unknown as ConstructorParameters<typeof QueryService>[0]),
+  );
+  const changed = vi.fn();
+  stack.defer(service.on("changed", changed));
+
+  useLedger.record("AAAAAAAB", "opened");
+  await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce());
 });

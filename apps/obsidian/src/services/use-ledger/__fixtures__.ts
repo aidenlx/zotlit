@@ -1,0 +1,58 @@
+// A Use Ledger built from its layer over a fake App.
+import type { App } from "obsidian";
+
+import { Context, Effect, Layer } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
+import { ObsidianApp } from "@/lib/obsidian-app";
+
+import { plainUseLedger } from "./plain";
+import type { PlainUseLedger } from "./plain";
+import { layerUseLedger, UseLedger } from "./service";
+
+/** An App whose local storage is `storage`, with inert workspace events. */
+export function fakeApp(storage: {
+  load: () => unknown;
+  save?: (key: string, value: unknown) => void;
+  offref?: () => void;
+}): App {
+  const ref = () => ({ e: { offref: storage.offref ?? (() => {}) } });
+  return {
+    loadLocalStorage: storage.load,
+    saveLocalStorage: storage.save ?? (() => {}),
+    workspace: { onLayoutReady: () => {}, on: ref },
+    metadataCache: { on: ref },
+  } as unknown as App;
+}
+
+/** The ledger over `app`, open for the current Scope. */
+export function useLedgerOf(
+  app: App,
+): Effect.Effect<UseLedger["Service"], never, Scope.Scope> {
+  return Effect.map(Layer.build(ledgerOver(app)), Context.get(UseLedger));
+}
+
+/** The same ledger for a test outside Effect; `stack` closes it. */
+export function buildUseLedger(
+  app: App,
+  stack: AsyncDisposableStack,
+): PlainUseLedger {
+  return plainUseLedger(buildRuntime(ledgerOver(app), stack));
+}
+
+/** A ledger that holds no Use and records none. */
+export const inertUseLedger: PlainUseLedger = {
+  current: {},
+  get: () => undefined,
+  uses: {},
+  record: (_itemKey, kind, instant = Temporal.Now.instant()) => ({
+    instant,
+    kind,
+  }),
+  withoutNoteUse: (_file, open) => open(),
+  subscribe: () => () => {},
+};
+
+function ledgerOver(app: App): Layer.Layer<UseLedger> {
+  return layerUseLedger.pipe(Layer.provide(Layer.succeed(ObsidianApp, app)));
+}

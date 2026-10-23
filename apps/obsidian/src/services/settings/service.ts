@@ -77,6 +77,7 @@ import { debounce } from "obsidian";
 import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
+import { Context } from "@/lib/effect";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
 
@@ -547,8 +548,6 @@ export class SettingsService extends Service<void> {
     this.#overrides = validated?.cleaned ?? {};
     this.#broken = validated?.broken ?? new Map();
     if (this.#broken.size > 0) {
-      // `console` rather than LogTape: load runs before `LoggingService`
-      // configures the sinks, so a logger call here reaches nobody.
       console.warn(
         `invalid values in v10 data (${[...this.#broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
       );
@@ -770,6 +769,12 @@ export class SettingsService extends Service<void> {
     }
   }
 }
+
+/** {@link SettingsService} in the plugin's Layer graph, bridged until it converts. */
+export class PluginSettings extends Context.Service<
+  PluginSettings,
+  SettingsService
+>()("zotlit/settings/PluginSettings") {}
 
 /**
  * Drop non-schema keys (including reserved metadata), then per-key-validate

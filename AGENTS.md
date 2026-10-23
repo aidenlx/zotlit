@@ -120,7 +120,7 @@ Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-worksp
 
 ## Effect
 
-Build a new service's logic in Effect when it orchestrates async work: typed failures, retries or timeouts, concurrency, cancellation, or scoped resources. The service's lifecycle shell keeps the house pattern (`/obsidian-services`); Effect runs inside it. Plain synchronous logic stays plain TypeScript.
+Build a new Obsidian service as an Effect service: a `Context.Service` tag and a scoped `Layer` that joins the plugin's Layer graph. Legacy `Service` classes keep their shape until converted, and hook into the graph through a bridge layer. Run `/obsidian-services` before creating, converting, or wiring a service.
 
 Effect's API evolves between versions and may differ from your training data. Resolve the `effect` package from the relevant workspace. Read `AGENTS.md` inside the installed package before writing Effect code; follow its linked examples for the area being changed. Search the installed source before adding helpers.
 

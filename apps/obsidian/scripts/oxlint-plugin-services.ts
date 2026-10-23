@@ -1,0 +1,175 @@
+import { isMemberOf } from "./oxlint-ast.ts";
+import type { AstNode, Rule } from "./oxlint-ast.ts";
+
+const EFFECT_GENERATOR_CALLEES = new Set(["gen", "fn", "fnUntraced"]);
+
+const EFFECT = new Set(["Effect"]);
+
+/** `Effect.<name>`, where `name` is one of `names`. */
+function isEffectMember(
+  node: AstNode | undefined,
+  names: ReadonlySet<string>,
+): boolean {
+  return isMemberOf(node, EFFECT, (name) => names.has(name));
+}
+
+/**
+ * A generator handed to `Effect.gen(…)`, `Effect.fnUntraced(…)`, or
+ * `Effect.fn("name")(…)`: its body runs as Effect.
+ */
+function isEffectGenerator(node: AstNode): boolean {
+  if (node.type !== "FunctionExpression" || !node.generator) return false;
+  const call = node.parent;
+  if (call?.type !== "CallExpression" || !call.arguments?.includes(node))
+    return false;
+  const { callee } = call;
+  return (
+    isEffectMember(callee, EFFECT_GENERATOR_CALLEES) ||
+    (callee?.type === "CallExpression" &&
+      isEffectMember(callee.callee, EFFECT_GENERATOR_CALLEES))
+  );
+}
+
+/** `x[Symbol.dispose]` or `x[Symbol.asyncDispose]`. */
+function isDisposeKey(node: AstNode | undefined): boolean {
+  const key = node?.computed ? node.property : undefined;
+  return (
+    node?.type === "MemberExpression" &&
+    key?.type === "MemberExpression" &&
+    key.object?.type === "Identifier" &&
+    key.object.name === "Symbol" &&
+    (key.property?.name === "dispose" || key.property?.name === "asyncDispose")
+  );
+}
+
+/**
+ * Inside Effect, a resource's lifetime is its Scope (policies/resource-disposal.md
+ * → Effect code). Checks the generator's own body; a callback nested in it,
+ * such as the release of `Effect.acquireRelease`, is its own function.
+ */
+export const effectNativeResources: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require Scope-managed resources in Effect generators.",
+    },
+    messages: {
+      stack:
+        "Acquire with Effect.acquireRelease or Effect.addFinalizer; the generator's Scope owns its resources.",
+      using:
+        "Acquire with Effect.acquireRelease, or acquireDisposable from @/lib/effect-scope for a Disposable; the generator's Scope owns its resources.",
+      dispose:
+        "Release through the Scope: Effect.acquireRelease, Effect.addFinalizer, or acquireDisposable from @/lib/effect-scope.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const functions: boolean[] = [];
+    const inEffect = () => functions.at(-1) === true;
+    const enter = (node: unknown) =>
+      functions.push(isEffectGenerator(node as AstNode));
+    const exit = () => functions.pop();
+    return {
+      FunctionDeclaration: enter,
+      "FunctionDeclaration:exit": exit,
+      FunctionExpression: enter,
+      "FunctionExpression:exit": exit,
+      ArrowFunctionExpression: enter,
+      "ArrowFunctionExpression:exit": exit,
+      VariableDeclaration(node) {
+        if (
+          inEffect() &&
+          (node.kind === "using" || node.kind === "await using")
+        )
+          context.report({ node, messageId: "using" });
+      },
+      NewExpression(node) {
+        if (
+          inEffect() &&
+          node.callee.type === "Identifier" &&
+          (node.callee.name === "DisposableStack" ||
+            node.callee.name === "AsyncDisposableStack")
+        )
+          context.report({ node, messageId: "stack" });
+      },
+      CallExpression(node) {
+        if (inEffect() && isDisposeKey(node.callee as AstNode))
+          context.report({ node, messageId: "dispose" });
+      },
+    };
+  },
+};
+
+/**
+ * New services are Effect services (`/obsidian-services`). A legacy service
+ * keeps its class until it converts; oxlint.config.ts lists those files.
+ */
+export const noLegacyService: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require new services to be Effect services.",
+    },
+    messages: {
+      legacy:
+        "Build a new service as a Context.Service tag with a scoped Layer in pluginLayer (/obsidian-services → Effect services).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = ({ superClass }: { superClass?: AstNode | null }) => {
+      if (superClass?.type === "Identifier" && superClass.name === "Service")
+        context.report({ node: superClass as never, messageId: "legacy" });
+    };
+    return { ClassDeclaration: check, ClassExpression: check };
+  },
+};
+
+const TAG_ID = /^zotlit\/[a-z0-9-]+\/[A-Z][A-Za-z0-9]*$/;
+
+/** `Context.Service<…>()("id")`: the id names the module and the service. */
+export const serviceTagId: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require Context.Service ids of the form zotlit/<module>/<Name>.",
+    },
+    messages: {
+      id: 'Name the tag "zotlit/<module>/<Name>": the module it belongs to, then its class.',
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const inner = node.callee;
+        if (
+          inner.type !== "CallExpression" ||
+          inner.callee.type !== "MemberExpression" ||
+          inner.callee.object.type !== "Identifier" ||
+          inner.callee.object.name !== "Context" ||
+          inner.callee.property.type !== "Identifier" ||
+          inner.callee.property.name !== "Service"
+        )
+          return;
+        const [id] = node.arguments;
+        if (
+          id?.type !== "Literal" ||
+          typeof id.value !== "string" ||
+          !TAG_ID.test(id.value)
+        )
+          context.report({ node: id ?? node, messageId: "id" });
+      },
+    };
+  },
+};
+
+export default {
+  meta: { name: "zotlit-services" },
+  rules: {
+    "effect-native-resources": effectNativeResources,
+    "no-legacy-service": noLegacyService,
+    "service-tag-id": serviceTagId,
+  },
+};

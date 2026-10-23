@@ -34,7 +34,7 @@ Project-specific: settings live in `SettingsService` under flat dot-notation key
 
 ## Logging
 
-`src/lib/log.ts` provides the logger; `LoggingService` owns configuration.
+Log through Effect, filed under a category with `withLogCategory` from `src/lib/effect-log.ts`. Every `@/lib/effect` run entry point writes Effect's records to LogTape, where `layerLogging` (`src/services/log/service.ts`) owns the sinks and levels. `getLogger` from `src/lib/log.ts` is the legacy LogTape logger.
 
 ## UI text (JSON Language Packs)
 
@@ -56,9 +56,11 @@ When adding or changing the parameters of a `zotlit:*` command, decode them with
 
 When adding or changing a CLI schema or downloadable resource, inspect `src/services/template-workbench/schema.ts`, [ADR 0019](../../docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md), and `.github/workflows/release.yml` at the repository root. They own the version-pinned Resource Release pattern.
 
-## Debugging
+## Effect
 
-Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers, and log through LogTape. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+
+## Debugging
 
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.
 
@@ -70,6 +72,8 @@ Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alia
 
 - `pnpm exec vitest run path/to/file.test.ts` — single file.
 - `pnpm exec vitest` — watch mode.
+
+Write an Effect case with `it.effect` from `@/lib/effect-vitest`: it adds the plugin's runtime services (browser scheduler, LogTape logger) to `@effect/vitest`'s TestClock and TestConsole. Provide a `Logger.layer` to capture logs (`src/services/service-layer.test.ts`).
 
 `sleep` is an Obsidian global that doesn't exist in Node. Use `delay` from `@std/async` instead.
 
