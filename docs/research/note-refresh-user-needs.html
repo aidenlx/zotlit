@@ -1,0 +1,1718 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Note refresh needs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fbfaf7;
+        --panel: #ffffff;
+        --panel2: #f3f1ec;
+        --bd: #e3dfd6;
+        --tx: #1f1d1a;
+        --tx2: #5a554c;
+        --tx3: #8b857a;
+        --zot: #2563a8;
+        --zot-bg: #e6eef8;
+        --user: #2f7a4f;
+        --user-bg: #e4f2ea;
+        --live: #5b4bb0;
+        --live-bg: #ece9f8;
+        --cond: #a0700f;
+        --cond-bg: #f7eedb;
+        --bad: #b4382a;
+        --bad-bg: #f8e4e0;
+        --link: #6b4fd8;
+        --callout: #3b6fb6;
+        --callout-bg: #eaf1fb;
+        --hl-y: #ffe28a;
+        --sans:
+          "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+        --serif: "Source Serif 4", Georgia, serif;
+        --mono:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #171615;
+          --panel: #201f1d;
+          --panel2: #2a2825;
+          --bd: #3a3733;
+          --tx: #e8e4dc;
+          --tx2: #b3ada2;
+          --tx3: #857f75;
+          --zot: #7fb0ea;
+          --zot-bg: #1d2a3a;
+          --user: #6cc497;
+          --user-bg: #1b3026;
+          --live: #a99cf0;
+          --live-bg: #2a2640;
+          --cond: #e0b45a;
+          --cond-bg: #3a2f17;
+          --bad: #ef8a7c;
+          --bad-bg: #3d2320;
+          --link: #a993ff;
+          --callout: #86b1ec;
+          --callout-bg: #1e2a3a;
+          --hl-y: #6b5a17;
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #171615;
+        --panel: #201f1d;
+        --panel2: #2a2825;
+        --bd: #3a3733;
+        --tx: #e8e4dc;
+        --tx2: #b3ada2;
+        --tx3: #857f75;
+        --zot: #7fb0ea;
+        --zot-bg: #1d2a3a;
+        --user: #6cc497;
+        --user-bg: #1b3026;
+        --live: #a99cf0;
+        --live-bg: #2a2640;
+        --cond: #e0b45a;
+        --cond-bg: #3a2f17;
+        --bad: #ef8a7c;
+        --bad-bg: #3d2320;
+        --link: #a993ff;
+        --callout: #86b1ec;
+        --callout-bg: #1e2a3a;
+        --hl-y: #6b5a17;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--tx);
+        font: 16px/1.6 var(--sans);
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 16px 96px;
+      }
+      a {
+        color: var(--link);
+        text-underline-offset: 2px;
+      }
+      h1 {
+        font: 700 32px/1.2 var(--sans);
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font: 700 22px/1.3 var(--sans);
+        margin: 64px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--bd);
+      }
+      h3 {
+        font: 600 17px/1.35 var(--sans);
+        margin: 28px 0 6px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      .lead {
+        font: 400 18px/1.6 var(--serif);
+        color: var(--tx2);
+      }
+      .meta {
+        font-size: 13px;
+        color: var(--tx3);
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: var(--panel2);
+        padding: 1px 5px;
+        border-radius: 4px;
+        overflow-wrap: anywhere;
+      }
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 20px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .toc a {
+        display: inline-block;
+        padding: 4px 10px;
+        border: 1px solid var(--bd);
+        border-radius: 999px;
+        font-size: 13px;
+        text-decoration: none;
+        color: var(--tx2);
+        background: var(--panel);
+      }
+      .callout-box {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-left: 4px solid var(--live);
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin: 16px 0;
+      }
+      .callout-box.decided {
+        border-left-color: var(--user);
+      }
+      .fig {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 20px 0;
+      }
+      .fig figcaption {
+        font-size: 13px;
+        color: var(--tx3);
+        margin-top: 8px;
+      }
+      svg {
+        max-width: 100%;
+        height: auto;
+        display: block;
+      }
+      svg text {
+        font-family: var(--sans);
+        fill: var(--tx);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-size: 13px;
+        color: var(--tx2);
+        margin: 8px 0 12px;
+      }
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        margin-right: 6px;
+        vertical-align: -1px;
+        background: var(--c);
+      }
+      .infer {
+        font-size: 14.5px;
+        color: var(--tx2);
+        border-left: 3px dashed var(--bd);
+        padding-left: 10px;
+        margin-top: 10px;
+      }
+      .infer b {
+        color: var(--tx);
+      }
+      .src {
+        font: 500 11px/1 var(--mono);
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: var(--panel2);
+        color: var(--tx3);
+        white-space: nowrap;
+      }
+
+      /* job cards */
+      .jobs {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+      }
+      .job {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        padding: 12px 14px;
+        border-top: 4px solid var(--c);
+      }
+      .job h3 {
+        margin: 0 0 4px;
+        font-size: 15.5px;
+      }
+      .job p {
+        font-size: 14px;
+        color: var(--tx2);
+        margin: 4px 0;
+      }
+      .job .q {
+        font: italic 400 14.5px/1.45 var(--serif);
+        color: var(--tx);
+      }
+
+      /* anatomy */
+      .anat {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+      }
+      .anat .col {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .anat .col h4 {
+        margin: 0 0 4px;
+        font: 600 13.5px/1.3 var(--sans);
+      }
+      .anat .col h4 small {
+        display: block;
+        font-weight: 400;
+        color: var(--tx3);
+        font-size: 12px;
+      }
+      .blk {
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12.5px;
+        line-height: 1.35;
+        border: 1px solid transparent;
+      }
+      .blk.z {
+        background: var(--zot-bg);
+        color: var(--zot);
+        border-color: var(--zot);
+      }
+      .blk.u {
+        background: var(--user-bg);
+        color: var(--user);
+        border-color: var(--user);
+      }
+      .blk.l {
+        background: var(--live-bg);
+        color: var(--live);
+        border: 1px dashed var(--live);
+      }
+      .blk.x {
+        background: var(--bad-bg);
+        color: var(--bad);
+        border-color: var(--bad);
+      }
+      .blk.mk {
+        background: none;
+        border: 0;
+        padding: 0 8px;
+        font: 500 11px/1.3 var(--mono);
+        color: var(--tx3);
+      }
+
+      /* mock-ups */
+      .mocks {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+        gap: 14px;
+      }
+      .mock {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .mock .head {
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        border-bottom: 1px solid var(--bd);
+        background: var(--panel2);
+      }
+      .mock .head span {
+        display: block;
+        font-weight: 400;
+        color: var(--tx3);
+      }
+      .mock .note {
+        padding: 12px 14px;
+        font: 400 14.5px/1.55 var(--serif);
+        flex: 1;
+      }
+      .mock .note h5 {
+        font: 600 13.5px/1.3 var(--sans);
+        margin: 10px 0 4px;
+      }
+      .mock .note h5:first-child {
+        margin-top: 0;
+      }
+      .mock .who {
+        padding: 8px 12px;
+        border-top: 1px solid var(--bd);
+        font-size: 12.5px;
+        color: var(--tx2);
+      }
+      .mk-line {
+        font: 500 11px/1.4 var(--mono);
+        color: var(--tx3);
+      }
+      .gen {
+        border-left: 3px solid var(--zot);
+        padding-left: 8px;
+      }
+      .mine {
+        border-left: 3px solid var(--user);
+        padding-left: 8px;
+        background: var(--user-bg);
+        border-radius: 0 4px 4px 0;
+      }
+      .lost {
+        border-left: 3px solid var(--bad);
+        padding-left: 8px;
+        text-decoration: line-through;
+        color: var(--tx3);
+      }
+      .livebox {
+        border: 1px dashed var(--live);
+        background: var(--live-bg);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 13.5px;
+      }
+      .livebox .t {
+        font: 600 11.5px/1.3 var(--sans);
+        color: var(--live);
+        margin-bottom: 4px;
+      }
+      mark {
+        background: var(--hl-y);
+        color: inherit;
+        padding: 0 1px;
+      }
+      .uri {
+        color: var(--link);
+        font: 500 12px var(--mono);
+      }
+
+      /* tables */
+      .tablewrap {
+        overflow-x: auto;
+        margin: 12px 0;
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        background: var(--panel);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+        min-width: 680px;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--bd);
+      }
+      th {
+        background: var(--panel2);
+        font-weight: 600;
+        font-size: 12.5px;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td:first-child {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .mx td:not(:first-child) {
+        text-align: center;
+        font-size: 13px;
+      }
+      .d {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        vertical-align: -2px;
+      }
+      .d.f {
+        background: var(--user);
+      }
+      .d.h {
+        background: linear-gradient(90deg, var(--cond) 50%, transparent 50%);
+        border: 2px solid var(--cond);
+      }
+      .d.n {
+        border: 2px solid var(--bad);
+      }
+      .mx small {
+        display: block;
+        color: var(--tx3);
+        font-size: 11.5px;
+        line-height: 1.3;
+      }
+
+      /* decisions panel */
+      .settle {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+      }
+      .settle > div {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .settle h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      .settle ul {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 14px;
+      }
+      .settle li {
+        margin: 4px 0;
+      }
+      .settle .yes {
+        border-top: 4px solid var(--user);
+      }
+      .settle .no {
+        border-top: 4px solid var(--cond);
+      }
+
+      .tension {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 10px;
+        align-items: stretch;
+        margin: 12px 0;
+      }
+      .tension > div {
+        background: var(--panel);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 14.5px;
+      }
+      .tension .vs {
+        background: none;
+        border: 0;
+        display: flex;
+        align-items: center;
+        font: 700 13px var(--mono);
+        color: var(--tx3);
+        padding: 0;
+      }
+      .tension b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      ol.oq li {
+        margin: 6px 0;
+      }
+      @media (max-width: 640px) {
+        h1 {
+          font-size: 26px;
+        }
+        .tension {
+          grid-template-columns: 1fr;
+        }
+        .tension .vs {
+          justify-content: center;
+        }
+      }
+      footer {
+        margin-top: 64px;
+        font-size: 13px;
+        color: var(--tx3);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="meta">
+        ZotLit research · 2026-10-23 · source observations, no design
+        recommendation
+      </p>
+      <h1>What "refresh without losing my writing" is really for</h1>
+      <p class="lead">
+        Every Zotero-to-Obsidian plugin hears the same request: update my note
+        without destroying what I wrote. Under that one sentence are eleven
+        separate jobs. Some are about content that comes
+        <strong style="color: var(--zot)">from Zotero</strong>, some are about
+        text the <strong style="color: var(--user)">user wrote</strong>, and
+        some are <strong style="color: var(--cond)">conditions</strong> on both.
+        This page maps them, shows how each tool lays out a note, and says what
+        the two decisions taken today already settle.
+      </p>
+      <div class="callout-box">
+        <strong>How to read this.</strong> Bars and ratings count
+        <em>independent voices</em> across all sources, because reaction counts
+        are tiny (the highest is 31). Each claim in the source file carries a
+        label: <span class="src">handoff</span> for the third-party findings
+        report, <span class="src">prior crawl</span> for the maintainer's
+        2026-10-04 Reddit and Discord crawl, and
+        <span class="src">new</span> for evidence collected today. Text marked
+        <em>Inference</em> is the author's reading. The citable source with
+        every link is <code>note-refresh-user-needs.md</code> in this folder.
+        Neighbouring needs (search and insert) are in
+        <a
+          href="https://github.com/aidenlx/zotlit/blob/research/annotation-search-user-needs/docs/research/annotation-search-user-needs.md"
+          >annotation-search-user-needs.md</a
+        >.
+      </div>
+      <ul class="toc">
+        <li><a href="#map">Jobs map</a></li>
+        <li><a href="#jobs">The jobs</a></li>
+        <li><a href="#anatomy">Note anatomy</a></li>
+        <li><a href="#matrix">Mechanisms × jobs</a></li>
+        <li><a href="#mocks">Same note, three ways</a></li>
+        <li><a href="#copylive">Copy vs live</a></li>
+        <li><a href="#child">Child notes</a></li>
+        <li><a href="#settled">What is settled</a></li>
+        <li><a href="#tensions">Tensions & questions</a></li>
+      </ul>
+
+      <!-- ============ MAP ============ -->
+      <h2 id="map">The jobs at a glance</h2>
+      <p>
+        Bar length is the approximate number of independent people who voiced
+        the job. Colour is the job's group.
+      </p>
+      <div class="legend">
+        <span style="--c: var(--zot)">Comes from Zotero</span>
+        <span style="--c: var(--user)">The user wrote it</span>
+        <span style="--c: var(--cond)">Condition on both</span>
+      </div>
+      <figure class="fig">
+        <svg
+          viewBox="0 0 900 470"
+          role="img"
+          aria-label="Bar chart of independent voices per job, J1 to J11"
+        >
+          <g font-size="13">
+            <!-- scale: 22px per voice? use 20px per voice, bar starts x=300 -->
+            <text x="0" y="30">J7 Own sections and properties</text>
+            <rect
+              x="300"
+              y="18"
+              width="540"
+              height="16"
+              rx="3"
+              style="fill: var(--user)"
+            />
+            <text x="846" y="31" style="fill: var(--tx3)">~30</text>
+
+            <text x="0" y="70">J1 New annotations appear</text>
+            <rect
+              x="300"
+              y="58"
+              width="396"
+              height="16"
+              rx="3"
+              style="fill: var(--zot)"
+            />
+            <text x="702" y="71" style="fill: var(--tx3)">~22</text>
+
+            <text x="0" y="110">J9 Never lose work silently</text>
+            <rect
+              x="300"
+              y="98"
+              width="360"
+              height="16"
+              rx="3"
+              style="fill: var(--cond)"
+            />
+            <text x="666" y="111" style="fill: var(--tx3)">~20</text>
+
+            <text x="0" y="150">J4 Metadata changes arrive</text>
+            <rect
+              x="300"
+              y="138"
+              width="324"
+              height="16"
+              rx="3"
+              style="fill: var(--zot)"
+            />
+            <text x="630" y="151" style="fill: var(--tx3)">~18</text>
+
+            <text x="0" y="190">J2 Zotero edits arrive</text>
+            <rect
+              x="300"
+              y="178"
+              width="252"
+              height="16"
+              rx="3"
+              style="fill: var(--zot)"
+            />
+            <text x="558" y="191" style="fill: var(--tx3)">~14</text>
+
+            <text x="0" y="230">J10 Auto or manual (split)</text>
+            <rect
+              x="300"
+              y="218"
+              width="252"
+              height="16"
+              rx="3"
+              style="fill: var(--cond)"
+            />
+            <text x="558" y="231" style="fill: var(--tx3)">~14</text>
+
+            <text x="0" y="270">J8 Many notes at once</text>
+            <rect
+              x="300"
+              y="258"
+              width="216"
+              height="16"
+              rx="3"
+              style="fill: var(--zot)"
+            />
+            <text x="522" y="271" style="fill: var(--tx3)">~12</text>
+
+            <text x="0" y="310">J6 A thought by one highlight</text>
+            <rect
+              x="300"
+              y="298"
+              width="180"
+              height="16"
+              rx="3"
+              style="fill: var(--user)"
+            />
+            <text x="486" y="311" style="fill: var(--tx3)">~10</text>
+
+            <text x="0" y="350">J3 Deletions leave the note</text>
+            <rect
+              x="300"
+              y="338"
+              width="162"
+              height="16"
+              rx="3"
+              style="fill: var(--zot)"
+            />
+            <text x="468" y="351" style="fill: var(--tx3)">~9</text>
+
+            <text x="0" y="390">J5 Re-render after template change</text>
+            <rect
+              x="300"
+              y="378"
+              width="162"
+              height="16"
+              rx="3"
+              style="fill: var(--zot)"
+            />
+            <text x="468" y="391" style="fill: var(--tx3)">~9</text>
+
+            <text x="0" y="430">J11 References to a highlight hold</text>
+            <rect
+              x="300"
+              y="418"
+              width="144"
+              height="16"
+              rx="3"
+              style="fill: var(--cond)"
+            />
+            <text x="450" y="431" style="fill: var(--tx3)">~8</text>
+          </g>
+          <line x1="300" y1="10" x2="300" y2="445" style="stroke: var(--bd)" />
+          <text x="300" y="462" font-size="11.5" style="fill: var(--tx3)">
+            0
+          </text>
+          <text x="660" y="462" font-size="11.5" style="fill: var(--tx3)">
+            20 voices
+          </text>
+        </svg>
+        <figcaption>
+          J7 splits about evenly between body sections and frontmatter
+          properties. The third-party handoff independently ranks "my writing is
+          safe by default" and "frontmatter ownership is mixed" first and
+          second.
+        </figcaption>
+      </figure>
+
+      <!-- ============ JOBS ============ -->
+      <h2 id="jobs">The eleven jobs in one line each</h2>
+      <div class="jobs">
+        <div class="job" style="--c: var(--zot)">
+          <h3>J1 New annotations appear</h3>
+          <p class="q">
+            "I wish I didn't have to rerun the command… and frequently forget"
+          </p>
+          <p>
+            ZI #216 (+11). Append-by-date breaks on clocks and sync, and drops
+            new highlights in dated chunks.
+            <b>The live view removes this job from the update path.</b>
+          </p>
+        </div>
+        <div class="job" style="--c: var(--zot)">
+          <h3>J2 Zotero edits arrive</h3>
+          <p class="q">
+            "The only way… is to delete everything and sync again"
+          </p>
+          <p>
+            Readwise #29. Copies spread to summary notes go stale too (ZotLit
+            #294).
+          </p>
+        </div>
+        <div class="job" style="--c: var(--zot)">
+          <h3>J3 Deletions leave the note</h3>
+          <p>
+            Rarely raised; users split between "remove" and "mark". In a copy,
+            deletion collides with what the user wrote under it.
+          </p>
+        </div>
+        <div class="job" style="--c: var(--zot)">
+          <h3>J4 Metadata changes arrive</h3>
+          <p class="q">"the integration with Zotero is static"</p>
+          <p>
+            Citation #215 (+8). Titles, tags, citekeys: frontmatter that Bases
+            and Dataview read, so it must be file text.
+          </p>
+        </div>
+        <div class="job" style="--c: var(--zot)">
+          <h3>J5 Re-render after a template change</h3>
+          <p>
+            Wanted in bulk. Also the riskiest update: template mistakes
+            corrupted user regions (ZotFlow #79, ZotLit #1274).
+          </p>
+        </div>
+        <div class="job" style="--c: var(--user)">
+          <h3>J6 A thought by one highlight</h3>
+          <p class="q">
+            "manual comments and highlights exported together in their original
+            context"
+          </p>
+          <p>
+            Bibnotes #104 (+3). No region boundary can protect a line inside a
+            generated list. No one asked to type into a live view.
+          </p>
+        </div>
+        <div class="job" style="--c: var(--user)">
+          <h3>J7 Own sections and properties</h3>
+          <p class="q">
+            "I use my front matter to organise my papers by subject"
+          </p>
+          <p>
+            ZI #475 (+4). Summaries, status, rating, subject. Obsidian strips
+            YAML comments, so markers cannot live in frontmatter (ZI #317).
+          </p>
+        </div>
+        <div class="job" style="--c: var(--zot)">
+          <h3>J8 Many notes at once</h3>
+          <p class="q">"a mess to roll back as I have 2000+ pdfs"</p>
+          <p>Bibnotes #11. Wanted: scope to existing notes, and a preview.</p>
+        </div>
+        <div class="job" style="--c: var(--cond)">
+          <h3>J9 Never lose work silently</h3>
+          <p class="q">"This is scary and I have lost one set of notes"</p>
+          <p>
+            ZI #420. Readwise's append-only is the trust benchmark users cite.
+          </p>
+        </div>
+        <div class="job" style="--c: var(--cond)">
+          <h3>J10 Auto or manual</h3>
+          <p>
+            "Automatic" is asked for J1 and J2; a quick manual command for J4,
+            J5 and J8. It depends on the job, not the user.
+          </p>
+        </div>
+        <div class="job" style="--c: var(--cond)">
+          <h3>J11 References to a highlight hold</h3>
+          <p class="q">"I don't want to loose those backlinks"</p>
+          <p>
+            Forum 102028. Literal ask: a <code>^id</code>. Real needs: follow
+            back, see uses, survive updates.
+            <b>Decisions D1 and D2 serve these through the annotation URI.</b>
+          </p>
+        </div>
+      </div>
+
+      <!-- ============ ANATOMY ============ -->
+      <h2 id="anatomy">How each tool lays out a note</h2>
+      <p>
+        Each column is one note, top to bottom. The colour shows who owns each
+        part, and therefore what an update may replace.
+      </p>
+      <div class="legend">
+        <span style="--c: var(--zot)">Generated: an update replaces it</span>
+        <span style="--c: var(--user)">User's: an update must keep it</span>
+        <span style="--c: var(--live)"
+          >Live: rendered at view time, never written</span
+        >
+        <span style="--c: var(--bad)">Known failure point</span>
+      </div>
+      <figure class="fig">
+        <div class="anat">
+          <div class="col">
+            <h4>
+              Zotero Integration<small>whole-file re-render + persist</small>
+            </h4>
+            <div class="blk z">Frontmatter (overwritten)</div>
+            <div class="blk z">Metadata, annotations</div>
+            <div class="blk mk">%% begin notes %%</div>
+            <div class="blk u">
+              User notes: old text, then the new render appended
+            </div>
+            <div class="blk mk">%% end notes %%</div>
+            <div class="blk x">
+              %% Import Date %% footer drives lastImportDate
+            </div>
+          </div>
+          <div class="col">
+            <h4>Readwise, Kindle<small>append-only</small></h4>
+            <div class="blk z">Frontmatter (written once)</div>
+            <div class="blk u">
+              Highlights batch 1, with the user's edits and notes
+            </div>
+            <div class="blk z">## New highlights added 2026-10-23</div>
+            <div class="blk x">
+              Edits and metadata in the source never arrive
+            </div>
+          </div>
+          <div class="col">
+            <h4>ZotFlow<small>three zones, two-way regions</small></h4>
+            <div class="blk z">
+              Frontmatter: template keys; <code>??</code> fills if absent
+            </div>
+            <div class="blk z">Template content: "don't write here"</div>
+            <div class="blk l" style="border-style: solid">
+              Item note / comment regions: edits push to Zotero
+            </div>
+            <div class="blk u">Persist regions: local only</div>
+            <div class="blk mk">malformed markers → refuse to update</div>
+          </div>
+          <div class="col">
+            <h4>Better Notes<small>the Zotero note is the source</small></h4>
+            <div class="blk z">$-prefixed YAML keys (BN's)</div>
+            <div class="blk u">Other YAML keys</div>
+            <div class="blk z">Note body, synced both ways</div>
+            <div class="blk x">
+              Escaped <code>\[\[</code>, cluttered HTML, blanked notes
+            </div>
+          </div>
+          <div class="col">
+            <h4>ZotLit v2 today<small>one managed region</small></h4>
+            <div class="blk z">
+              Frontmatter: managed keys per field; user keys kept
+            </div>
+            <div class="blk z">Title, Zotero link, attachments</div>
+            <div class="blk mk">%%zt-managed%%</div>
+            <div class="blk z">## Notes → creates a file per child note</div>
+            <div class="blk l">## Annotations: zotquery block (text kept)</div>
+            <div class="blk mk">%%/zt-managed%%</div>
+            <div class="blk u">Everything the user writes outside</div>
+          </div>
+        </div>
+        <figcaption>
+          Sources: ZI Templating.md and <code>template.env.ts</code>; Readwise
+          docs; Kindle README; ZotFlow <code>source-notes.md</code>; Better
+          Notes README and issues; ZotLit <code>content.liquid</code> and
+          <code>obsidian.ts</code>. Details and links are in the Markdown file.
+        </figcaption>
+      </figure>
+
+      <!-- ============ MATRIX ============ -->
+      <h2 id="matrix">Mechanisms × jobs</h2>
+      <p>
+        <span class="d f"></span> serves the job ·
+        <span class="d h"></span> with caveats · <span class="d n"></span> does
+        not · — not applicable. The "durable link" column reflects decisions D1
+        and D2. Cells are the author's reading of the cited docs and reports.
+      </p>
+      <div class="tablewrap">
+        <table class="mx">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>
+                Copy, full re-render<br /><small>ZI default, Omnivore</small>
+              </th>
+              <th>
+                Copy, protected regions<br /><small
+                  >ZI persist, ZotFlow, ZotLit v2</small
+                >
+              </th>
+              <th>Append-only<br /><small>Readwise, Kindle</small></th>
+              <th>Live view<br /><small>Query Block, Dataview</small></th>
+              <th>Durable link<br /><small>URI + Citation Index</small></th>
+              <th>Two-way sync<br /><small>BN, ZotFlow regions</small></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>J1 New</td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d h"></span><small>dates fragile</small></td>
+              <td><span class="d f"></span><small>no action</small></td>
+              <td>—</td>
+              <td><span class="d f"></span></td>
+            </tr>
+            <tr>
+              <td>J2 Edited</td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span><small>hover is live</small></td>
+              <td><span class="d h"></span><small>conflicts</small></td>
+            </tr>
+            <tr>
+              <td>J3 Deleted</td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d h"></span><small>dangles</small></td>
+              <td><span class="d h"></span></td>
+            </tr>
+            <tr>
+              <td>J4 Metadata</td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d h"></span></td>
+              <td><span class="d n"></span><small>Bases read files</small></td>
+              <td>—</td>
+              <td><span class="d h"></span></td>
+            </tr>
+            <tr>
+              <td>J5 Template</td>
+              <td><span class="d f"></span></td>
+              <td><span class="d h"></span><small>boundary breaks</small></td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span></td>
+              <td>—</td>
+              <td><span class="d h"></span></td>
+            </tr>
+            <tr>
+              <td>J6 Thought by highlight</td>
+              <td><span class="d n"></span><small>lost</small></td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span><small>in own note</small></td>
+              <td><span class="d h"></span></td>
+            </tr>
+            <tr>
+              <td>J7 Own sections</td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span><small>if markers hold</small></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td>—</td>
+              <td><span class="d f"></span></td>
+            </tr>
+            <tr>
+              <td>J7 Own properties</td>
+              <td><span class="d n"></span></td>
+              <td><span class="d h"></span><small>per key</small></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td>—</td>
+              <td><span class="d h"></span></td>
+            </tr>
+            <tr>
+              <td>J8 Bulk</td>
+              <td><span class="d h"></span><small>risky</small></td>
+              <td><span class="d h"></span></td>
+              <td><span class="d h"></span></td>
+              <td><span class="d f"></span></td>
+              <td>—</td>
+              <td><span class="d h"></span></td>
+            </tr>
+            <tr>
+              <td>J9 Trust</td>
+              <td><span class="d n"></span></td>
+              <td><span class="d h"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d n"></span><small>loss reports</small></td>
+            </tr>
+            <tr>
+              <td>J11 References</td>
+              <td><span class="d n"></span></td>
+              <td><span class="d h"></span></td>
+              <td><span class="d f"></span></td>
+              <td><span class="d n"></span></td>
+              <td><span class="d f"></span><small>needs (a)–(c)</small></td>
+              <td><span class="d h"></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="infer">
+        <b>Inference.</b> No single column is all green. The live view and the
+        durable link together cover every Zotero-side job and J11, and they
+        write nothing that could be lost. What they leave is J4 (frontmatter
+        must be file text) and J6 (a line beside one highlight). Copies with
+        protected regions handle J4 and J7, but they are the column with the
+        failure history.
+      </p>
+
+      <!-- ============ MOCKS ============ -->
+      <h2 id="mocks">The same note, three ways, after one update</h2>
+      <p>
+        One paper, two highlights at first. The user wrote a summary and a line
+        under one highlight. Then, in Zotero, a third highlight was added and
+        the first highlight's comment was fixed. This is the note after the next
+        update.
+      </p>
+      <div class="mocks">
+        <div class="mock">
+          <div class="head">
+            Copy and re-render, with protected regions
+            <span
+              >ZotLit v2 before the Query Block (2026-10-14) · ZI persist</span
+            >
+          </div>
+          <div class="note">
+            <h5>Summary</h5>
+            <div class="mine">Argues X; method weak for Y.</div>
+            <div class="mk-line">%%zt-managed%%</div>
+            <h5>Annotations</h5>
+            <div class="gen">
+              <mark>"first highlight"</mark> (p. 3), <i>fixed comment</i>
+            </div>
+            <div class="lost">↳ My objection: sample is tiny</div>
+            <div class="gen"><mark>"second highlight"</mark> (p. 7)</div>
+            <div class="gen"><mark>"third highlight"</mark> (p. 9)</div>
+            <div class="mk-line">%%/zt-managed%%</div>
+          </div>
+          <div class="who">
+            J1 and J2 arrive. J7 survives.
+            <b style="color: var(--bad)">J6 is lost</b>: the line under a
+            highlight sat inside the region. Any <code>^id</code> on a highlight
+            is regenerated (ZI #276).
+          </div>
+        </div>
+        <div class="mock">
+          <div class="head">
+            Append-only
+            <span>Readwise · Kindle · ZI date filter</span>
+          </div>
+          <div class="note">
+            <h5>Summary</h5>
+            <div class="mine">Argues X; method weak for Y.</div>
+            <h5>Highlights</h5>
+            <div class="gen">
+              <mark>"first highlight"</mark> (p. 3), <i>old comment</i>
+            </div>
+            <div class="mine">↳ My objection: sample is tiny</div>
+            <div class="gen"><mark>"second highlight"</mark> (p. 7)</div>
+            <h5>New highlights, 2026-10-23</h5>
+            <div class="gen"><mark>"third highlight"</mark> (p. 9)</div>
+          </div>
+          <div class="who">
+            Nothing is lost: J6, J7, J9 and J11 hold.
+            <b style="color: var(--bad)">J2 never arrives</b> (the old comment
+            stays), new highlights land in a dated chunk out of order, and a
+            template change applies only to new items.
+          </div>
+        </div>
+        <div class="mock">
+          <div class="head">
+            Live view, with links where the user writes
+            <span>ZotLit v2 default · after D1 and D2</span>
+          </div>
+          <div class="note">
+            <h5>Summary</h5>
+            <div class="mine">Argues X; method weak for Y.</div>
+            <h5>My objections</h5>
+            <div class="mine">
+              "first highlight"
+              <span class="uri">[p. 3](zotero://…?annotation=K1)</span><br />
+              Sample is tiny.
+            </div>
+            <h5>Annotations</h5>
+            <div class="livebox">
+              <div class="t">zotquery · rendered now</div>
+              <mark>"first highlight"</mark>, <i>fixed comment</i> · ← used in 1
+              note<br />
+              <mark>"second highlight"</mark><br />
+              <mark>"third highlight"</mark>
+            </div>
+          </div>
+          <div class="who">
+            J1–J3 need no update. The objection lives in the user's section,
+            linked by URI: backlinks (D2), and it survives everything.
+            <b style="color: var(--cond)">Not covered:</b>
+            vault search over the live list, mobile, export, life without the
+            plugin. Those work only for the quoted copy in the user's section.
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ COPY VS LIVE ============ -->
+      <h2 id="copylive">Copy versus live view, after D1 and D2</h2>
+      <p>
+        With annotation URIs indexed, links carry the <em>identity</em> of a
+        highlight. What is left for a copy is the highlight's <em>text</em>.
+      </p>
+      <figure class="fig">
+        <svg
+          viewBox="0 0 900 300"
+          role="img"
+          aria-label="Diagram splitting what a copy did into identity, now carried by links, and text, still needing a copy"
+        >
+          <rect
+            x="10"
+            y="110"
+            width="200"
+            height="80"
+            rx="10"
+            style="fill: var(--zot-bg); stroke: var(--zot)"
+          />
+          <text
+            x="110"
+            y="145"
+            text-anchor="middle"
+            font-size="15"
+            font-weight="700"
+            style="fill: var(--zot)"
+          >
+            A copy in the note
+          </text>
+          <text
+            x="110"
+            y="167"
+            text-anchor="middle"
+            font-size="12.5"
+            style="fill: var(--tx2)"
+          >
+            used to do two jobs
+          </text>
+          <path
+            d="M210 135 C 260 135, 260 70, 310 70"
+            fill="none"
+            style="stroke: var(--tx3)"
+            stroke-width="2"
+          />
+          <path
+            d="M210 165 C 260 165, 260 230, 310 230"
+            fill="none"
+            style="stroke: var(--tx3)"
+            stroke-width="2"
+          />
+          <rect
+            x="310"
+            y="30"
+            width="250"
+            height="80"
+            rx="10"
+            style="fill: var(--user-bg); stroke: var(--user)"
+          />
+          <text
+            x="435"
+            y="62"
+            text-anchor="middle"
+            font-size="14.5"
+            font-weight="700"
+            style="fill: var(--user)"
+          >
+            Identity → durable URI
+          </text>
+          <text
+            x="435"
+            y="84"
+            text-anchor="middle"
+            font-size="12.5"
+            style="fill: var(--tx2)"
+          >
+            follow back · see uses · survive updates
+          </text>
+          <rect
+            x="310"
+            y="190"
+            width="250"
+            height="80"
+            rx="10"
+            style="fill: var(--cond-bg); stroke: var(--cond)"
+          />
+          <text
+            x="435"
+            y="222"
+            text-anchor="middle"
+            font-size="14.5"
+            font-weight="700"
+            style="fill: var(--cond)"
+          >
+            Text → still needs a copy
+          </text>
+          <text
+            x="435"
+            y="244"
+            text-anchor="middle"
+            font-size="12.5"
+            style="fill: var(--tx2)"
+          >
+            search · mobile · export · portability
+          </text>
+          <path
+            d="M560 70 L 620 70"
+            style="stroke: var(--tx3)"
+            stroke-width="2"
+          />
+          <path
+            d="M560 230 L 620 230"
+            style="stroke: var(--tx3)"
+            stroke-width="2"
+          />
+          <text x="630" y="64" font-size="13" font-weight="600">
+            Settled by D1 + D2
+          </text>
+          <text x="630" y="84" font-size="12" style="fill: var(--tx2)">
+            no copy needed in the region
+          </text>
+          <text x="630" y="224" font-size="13" font-weight="600">
+            Met where the user quotes
+          </text>
+          <text x="630" y="244" font-size="12" style="fill: var(--tx2)">
+            the insert writes text + citation + URI
+          </text>
+        </svg>
+        <figcaption>
+          Inference from J11's re-examination and the gap table below. No
+          evidence shows these text needs must be met inside the managed region.
+        </figcaption>
+      </figure>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Still not covered by live view + links</th>
+              <th>Evidence</th>
+              <th>Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Full-text search of highlight text</td>
+              <td>
+                "I can only search the dataview-results when I'm in
+                reading-mode" (forum 94872). Dataview output is not in the graph
+                (Dataview #465, #2486). ZotLit has its own annotation search.
+              </td>
+              <td>Moderate; no complaint about a Zotero live view yet</td>
+            </tr>
+            <tr>
+              <td>Writing under one highlight</td>
+              <td>
+                Bibnotes #13, #104 (+3); omnivore#45 "progressively process".
+                The Zotero comment is the only in-place home under S3.
+              </td>
+              <td>Moderate to strong</td>
+            </tr>
+            <tr>
+              <td>Portability without the plugin</td>
+              <td>
+                "my annotations are trapped" switch stories (prior crawl); PDF++
+                #208; copies saved a user who lost Zotero references (Reddit,
+                2026-10-21).
+              </td>
+              <td>Moderate; general, not about query blocks</td>
+            </tr>
+            <tr>
+              <td>Frozen snapshots</td>
+              <td>
+                The handoff's ZotLit #94 actually asks for a
+                <em>live</em> embed. Dataview Publisher exists. Print and export
+                snapshot a Query Block.
+              </td>
+              <td>Weak</td>
+            </tr>
+            <tr>
+              <td>Frontmatter ownership by key</td>
+              <td>
+                ZI #475 (+4), #317, #60, #138; forum 97588; BN #527. A file
+                problem, not a live-view one; v2 merges per key already.
+              </td>
+              <td>Strong, but orthogonal</td>
+            </tr>
+            <tr>
+              <td>Mobile</td>
+              <td>
+                ZotLit is desktop-only; "I do most of my reading and writing on
+                my iPad" (Reddit); forum 91637.
+              </td>
+              <td>Moderate</td>
+            </tr>
+            <tr>
+              <td>Pandoc and export</td>
+              <td>
+                "not having transclusion on export is actually a huge
+                limitation" (forum 3193).
+              </td>
+              <td>Moderate; about embeds in general</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ============ CHILD NOTES ============ -->
+      <h2 id="child">
+        Zotero child notes: does anyone need the implicit import?
+      </h2>
+      <p>
+        Today the default template's <code>## Notes</code> renders
+        <code>{{ note.noteLink }}</code> for each child note. Rendering that
+        link <em>is</em> the import: the first time a note is seen, a mirror
+        file is created; after that the file is frozen; the only refresh is an
+        explicit command that "Any local edits will be lost." No setting turns
+        it off; the template is the switch.
+      </p>
+      <figure class="fig">
+        <svg
+          viewBox="0 0 900 150"
+          role="img"
+          aria-label="Lifecycle of an implicitly imported child note: silent create, frozen copy, destructive refresh"
+        >
+          <g font-size="13">
+            <rect
+              x="10"
+              y="40"
+              width="190"
+              height="70"
+              rx="10"
+              style="fill: var(--zot-bg); stroke: var(--zot)"
+            />
+            <text
+              x="105"
+              y="70"
+              text-anchor="middle"
+              font-weight="700"
+              style="fill: var(--zot)"
+            >
+              Lit note rendered
+            </text>
+            <text
+              x="105"
+              y="90"
+              text-anchor="middle"
+              font-size="12"
+              style="fill: var(--tx2)"
+            >
+              noteLink touched
+            </text>
+            <path
+              d="M200 75 L 250 75"
+              style="stroke: var(--tx3)"
+              stroke-width="2"
+            />
+            <rect
+              x="250"
+              y="40"
+              width="190"
+              height="70"
+              rx="10"
+              style="fill: var(--cond-bg); stroke: var(--cond)"
+            />
+            <text
+              x="345"
+              y="70"
+              text-anchor="middle"
+              font-weight="700"
+              style="fill: var(--cond)"
+            >
+              File created
+            </text>
+            <text
+              x="345"
+              y="90"
+              text-anchor="middle"
+              font-size="12"
+              style="fill: var(--tx2)"
+            >
+              silently, once
+            </text>
+            <path
+              d="M440 75 L 490 75"
+              style="stroke: var(--tx3)"
+              stroke-width="2"
+            />
+            <rect
+              x="490"
+              y="40"
+              width="190"
+              height="70"
+              rx="10"
+              style="fill: var(--panel2); stroke: var(--bd)"
+            />
+            <text x="585" y="70" text-anchor="middle" font-weight="700">
+              Frozen copy
+            </text>
+            <text
+              x="585"
+              y="90"
+              text-anchor="middle"
+              font-size="12"
+              style="fill: var(--tx2)"
+            >
+              Zotero edits never arrive
+            </text>
+            <path
+              d="M680 75 L 730 75"
+              style="stroke: var(--tx3)"
+              stroke-width="2"
+            />
+            <rect
+              x="730"
+              y="40"
+              width="160"
+              height="70"
+              rx="10"
+              style="fill: var(--bad-bg); stroke: var(--bad)"
+            />
+            <text
+              x="810"
+              y="70"
+              text-anchor="middle"
+              font-weight="700"
+              style="fill: var(--bad)"
+            >
+              Explicit update
+            </text>
+            <text
+              x="810"
+              y="90"
+              text-anchor="middle"
+              font-size="12"
+              style="fill: var(--tx2)"
+            >
+              overwrites local edits
+            </text>
+          </g>
+        </svg>
+        <figcaption>
+          From <code>note-import/service.ts</code>,
+          <code>import-zotero-notes.mdx</code> ("Create-once behavior") and
+          <code>modal_reimport_note_desc</code>.
+        </figcaption>
+      </figure>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Persona (handoff, merged)</th>
+              <th>How common</th>
+              <th>What they need</th>
+              <th>Who would lose what without implicit import</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>P1 Writes a summary in Zotero</td>
+              <td>High</td>
+              <td>
+                See the <em>current</em> content in Obsidian, read-only (ZI
+                #274, #406, #414; forum 62204, 119047)
+              </td>
+              <td>
+                Reading and searching it in the vault without a command. But
+                today's copy goes stale, the very thing they complain about
+              </td>
+            </tr>
+            <tr>
+              <td>P2 "Add Note from Annotations"</td>
+              <td>Medium, legacy</td>
+              <td>The annotations; the note is a container</td>
+              <td>Nothing: Query shows the annotations</td>
+            </tr>
+            <tr>
+              <td>P3 One-time migration</td>
+              <td>Medium</td>
+              <td>Move notes into Obsidian once (BN #1198, forum 48600)</td>
+              <td>One command step</td>
+            </tr>
+            <tr>
+              <td>P4 Atomic notes</td>
+              <td>Low–medium</td>
+              <td>Choose which (ZotLit #494)</td>
+              <td>Nothing; implicit imports all of them</td>
+            </tr>
+            <tr>
+              <td>P5 Plugin-made notes</td>
+              <td>Low</td>
+              <td>Read-only view (discussion #944)</td>
+              <td>Nothing; avoids surprise files</td>
+            </tr>
+            <tr>
+              <td>P6 Two-way sync users</td>
+              <td>Low–medium</td>
+              <td>Real two-way (outside S2)</td>
+              <td>Nothing; they use BN</td>
+            </tr>
+            <tr>
+              <td>P7 Group collaborators</td>
+              <td>Low (new)</td>
+              <td>Read-only, filtered by author (ZI #352; forum 48600)</td>
+              <td>Nothing; implicit import pulls others' notes too</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="infer">
+        <b>Inference.</b> About 25 voices want child-note content in Obsidian,
+        and about 15 find copies stale, duplicated or unwanted. No voice on
+        either side names ZotLit v2's implicit import, and no one asked for a
+        file per child note without a command. Only ZotLit v2, among the tools
+        sampled, does that. Explicit import keeps P3 and P4. A link or live list
+        keeps discovery for P1 and P5 and cannot go stale. Nothing under S2
+        gives P1 "current and searchable" at once.
+      </p>
+
+      <!-- ============ SETTLED ============ -->
+      <h2 id="settled">What the decisions above already settle</h2>
+      <p>
+        Stances S1–S3 (notes live in Obsidian; no full two-way sync; note taking
+        stays out of Zotero) and decisions D1–D2 (no annotation
+        <code>^id</code>s; annotation URIs in the Citation Index) close several
+        questions before any design work.
+      </p>
+      <div class="settle">
+        <div class="yes">
+          <h3>Settled</h3>
+          <ul>
+            <li>
+              The region need not copy annotations: the live view meets J1–J3,
+              and links meet J11 (a)–(c).
+            </li>
+            <li>
+              No stable <code>^id</code>s to preserve through updates (D1).
+            </li>
+            <li>
+              "Where is this highlight used" and backlinks come from the index,
+              not from text (D2).
+            </li>
+            <li>
+              No merge of user lines interleaved in generated content; no tool
+              does it.
+            </li>
+            <li>
+              No two-way sync of child notes or annotations beyond the comment
+              editor (S2); P6 is out of scope.
+            </li>
+            <li>
+              Thoughts about a highlight live in Obsidian (S1, S3): the user's
+              own section with quote and URI, or the Zotero comment field.
+            </li>
+          </ul>
+        </div>
+        <div class="no">
+          <h3>Still open, with the user need behind it</h3>
+          <ul>
+            <li>
+              Frontmatter ownership by key, without markers in YAML (J7, J4).
+            </li>
+            <li>
+              A safe update: preview for batches, fail closed, no-op when
+              unchanged (J8, J9).
+            </li>
+            <li>
+              A home for J6 that users accept: they ask for append-only
+              interleaving most.
+            </li>
+            <li>
+              Text where the user needs it: search, mobile, export, portability.
+            </li>
+            <li>
+              Whether the implicit child-note import stays, and what P1 gets
+              instead.
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ============ TENSIONS ============ -->
+      <h2 id="tensions">Tensions and open questions</h2>
+      <div class="tension">
+        <div>
+          <b>Always current</b>The live view: J1–J3 for free, nothing to lose.
+        </div>
+        <div class="vs">vs</div>
+        <div>
+          <b>Editable and searchable</b>J6 and full-text search need text in a
+          file that the plugin then must not touch.
+        </div>
+      </div>
+      <div class="tension">
+        <div>
+          <b>One YAML block</b>Bases and Dataview need properties as file text.
+        </div>
+        <div class="vs">vs</div>
+        <div>
+          <b>Mixed owners</b>Zotero keys refresh, user keys stay, and YAML holds
+          no markers.
+        </div>
+      </div>
+      <div class="tension">
+        <div><b>An editable template</b>Users iterate on templates (J5).</div>
+        <div class="vs">vs</div>
+        <div>
+          <b>Old notes stay consistent</b>Each template edit can move the
+          boundary of user text.
+        </div>
+      </div>
+      <div class="tension">
+        <div><b>Safe</b>Append-only and create-only never lose anything.</div>
+        <div class="vs">vs</div>
+        <div>
+          <b>Effortless</b>Then metadata fixes and template changes never
+          arrive.
+        </div>
+      </div>
+      <h3>Open questions</h3>
+      <ol class="oq">
+        <li>
+          How do users split between writing beside highlights (J6) and in
+          separate sections (J7)? Nothing measures it.
+        </li>
+        <li>
+          With annotations live, is the inserted quote enough for search, mobile
+          and export, or do users want a "freeze to text"? The Query Block
+          default is nine days old; no v2 user has reported yet.
+        </li>
+        <li>
+          Does anyone link into the v2 managed region today, so that the D1
+          change breaks it? A vault-side count would answer this; user reports
+          would not.
+        </li>
+        <li>
+          Will annotation URIs written before D2, such as a callout's page link,
+          be indexed like new ones?
+        </li>
+        <li>
+          Do v2 users read, edit, or only follow the implicitly imported
+          child-note files?
+        </li>
+        <li>
+          Would P1 want a live, read-only rendering of a child note's body?
+          There is no notes dataset today.
+        </li>
+        <li>
+          Should region markers be visible syntax at all (ZI #157, ZotLit #1274,
+          ZotFlow #34)?
+        </li>
+        <li>
+          Do group collaborators want others' annotations in their live view, or
+          only their own (ZI #352)?
+        </li>
+      </ol>
+
+      <footer>
+        ZotLit · docs/research · 2026-10-23 · sources: third-party handoff,
+        prior crawl (2026-10-04), new collection. Full citations in
+        <code>note-refresh-user-needs.md</code>.
+      </footer>
+    </main>
+  </body>
+</html>
