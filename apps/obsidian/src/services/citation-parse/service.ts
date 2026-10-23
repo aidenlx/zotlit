@@ -1,7 +1,8 @@
 // Owns the parse worker from layout-ready until the layer's Scope closes.
 import workerSource from "virtual:citation-parse-worker";
 
-import { Context, Effect, Layer } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "@/lib/effect";
+import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { ParseFailed } from "./client";
@@ -23,8 +24,11 @@ export const layerCitationParse = Layer.effect(
     const client = yield* makeRecoveringParseClient(
       connectParseWorker(workerSource),
     );
-    const run = Effect.runSyncWith(yield* Effect.context<never>());
-    app.workspace.onLayoutReady(() => run(Effect.sync(() => client.start())));
+    const events = yield* obsidianEvents<{ layoutReady: [] }>();
+    app.workspace.onLayoutReady(events.callback("layoutReady"));
+    yield* Stream.runForEach(events.stream, () =>
+      Effect.sync(() => client.start()),
+    ).pipe(Effect.forkScoped);
     return CitationParse.of({
       parse: Effect.fn("CitationParse.parse")(function* (
         request: ParseRequest,

@@ -26,13 +26,18 @@ const CLIENT_ENTRY = `
 export { default } from "virtual:scan-worker";
 import { Effect, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
+import { decodeParseReply } from "@/services/citation-parse/client";
 import { makeParseWorkerClient } from "@/services/citation-parse/worker-client";
-export async function connect(spawn) {
+export async function connect(spawn, onEncode) {
   const { scope, close } = openScope();
   try {
-    const client = await Effect.runPromise(makeParseWorkerClient(spawn).pipe(Scope.provide(scope)));
+    const measureEncoding = onEncode && (() => {
+      const start = performance.now();
+      return () => onEncode(performance.now() - start);
+    });
+    const client = await Effect.runPromise(makeParseWorkerClient(spawn, measureEncoding).pipe(Scope.provide(scope)));
     return {
-      parse: (request, signal) => Effect.runPromise(Effect.suspend(() => client.Parse(request)), { signal }),
+      parse: (request, signal) => Effect.runPromise(Effect.suspend(() => client.Parse(request)).pipe(Effect.map(decodeParseReply)), { signal }),
       [Symbol.asyncDispose]: close,
     };
   } catch (error) {
@@ -49,6 +54,7 @@ export async function scanWorkerBundle<Reply>(): Promise<{
       MessagePort,
       "addEventListener" | "removeEventListener" | "postMessage"
     >,
+    onEncode?: (milliseconds: number) => void,
   ): Promise<BenchmarkParseClient<Reply>>;
 }> {
   const packageRoot = resolve(import.meta.dirname, "..");

@@ -5,8 +5,11 @@ import { expect, vi } from "vitest";
 import { Effect, Exit, Fiber, Queue } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
+import { makeParseHarness } from "./__fixtures__";
 import { makeRecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
+
+vi.mock("virtual:citation-parse-worker", () => ({ default: "" }));
 
 class WorkerPort extends EventTarget {
   terminated = false;
@@ -67,6 +70,41 @@ const fakeWorkers = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => Effect.sync(() => vi.unstubAllGlobals()));
   return { spawned };
 });
+
+it.effect(
+  "accepts readiness from a worker that starts before the next task (#1705)",
+  () =>
+    Effect.gen(function* () {
+      const sent = yield* Queue.make<RpcMessage.FromClientEncoded>();
+      vi.stubGlobal(
+        "Worker",
+        class extends WorkerPort {
+          constructor() {
+            super(sent);
+            queueMicrotask(() =>
+              this.dispatchEvent(new MessageEvent("message", { data: [0] })),
+            );
+          }
+          override postMessage(
+            message: [number, RpcMessage.FromClientEncoded?],
+          ) {
+            super.postMessage(message);
+            const request = message[1];
+            if (request?._tag === "Request")
+              queueMicrotask(() => this.reply(request.id, "fast.md", 1));
+          }
+        },
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => vi.unstubAllGlobals()),
+      );
+      const connection = yield* connectParseWorker("worker source");
+      const reply = yield* Effect.promise((signal) =>
+        connection.parse({ path: "fast.md", generation: 1, text: "" }, signal),
+      );
+      expect(reply).toMatchObject({ path: "fast.md", generation: 1 });
+    }),
+);
 
 it.effect(
   "cancels one RPC request and rejects its stale reply while another request completes (#1705)",
@@ -150,5 +188,35 @@ it.effect(
         return [first, second];
       }).pipe(Effect.scoped);
       expect(workers.every((worker) => worker.terminated)).toBe(true);
+    }),
+);
+
+it.effect.each([false, true])(
+  "starts parsing from layout readiness (%s) and closes with its runtime (#1705)",
+  (ready) =>
+    Effect.gen(function* () {
+      const { spawned } = yield* fakeWorkers;
+      const { runtime, parser, layoutReady } = yield* makeParseHarness(ready);
+      if (!ready) {
+        expect(yield* Queue.size(spawned)).toBe(0);
+        layoutReady();
+      }
+      const worker = yield* Queue.take(spawned);
+      worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
+      const pending = parser.parse(
+        { path: "draft.md", generation: 1, text: "" },
+        new AbortController().signal,
+      );
+      const request = yield* Queue.take(worker.sent);
+      if (request._tag !== "Request") throw new Error("Expected parse request");
+      worker.reply(request.id, "draft.md", 1);
+      expect(yield* Effect.promise(() => pending)).toMatchObject({
+        path: "draft.md",
+        generation: 1,
+      });
+      yield* runtime.disposeEffect;
+      expect(worker.terminated).toBe(true);
+      layoutReady();
+      expect(yield* Queue.size(spawned)).toBe(0);
     }),
 );

@@ -16,13 +16,16 @@ export async function scanBenchmarkWorker<ParseReply>() {
   const workers = stack.use(new AsyncDisposableStack());
   let receivedAt = 0;
   let workerMs = 0;
+  let encodeMs = 0;
+  let postMs = 0;
   // Start the Node worker inside the RPC spawner so its ready message cannot
   // arrive before the EventTarget bridge has an RPC listener.
   const client = stack.use(
-    await bundle.connect(() => {
-      const worker = workers.use(
-        new Worker(
-          `
+    await bundle.connect(
+      () => {
+        const worker = workers.use(
+          new Worker(
+            `
         const { parentPort } = require("node:worker_threads");
         const starts = new Map();
         // Measure before the runner receives a request; measure its matching Exit
@@ -42,40 +45,55 @@ export async function scanBenchmarkWorker<ParseReply>() {
         globalThis.self = parentPort;
         ${bundle.default}
       `,
-          { eval: true },
-        ),
-      );
-      const events = new EventTarget();
-      const port = {
-        addEventListener: events.addEventListener.bind(events),
-        removeEventListener: events.removeEventListener.bind(events),
-        postMessage: (data: unknown) => worker.postMessage(data),
-      };
-      worker.on("message", (message: TimedMessage) => {
-        const reply =
-          message.data[0] === 1
-            ? (message.data[1] as RpcMessage.FromServerEncoded)
-            : undefined;
-        if (reply?._tag === "Exit") {
-          receivedAt = performance.now();
-          workerMs = message.workerMs ?? 0;
-        }
-        events.dispatchEvent(
-          new MessageEvent("message", { data: message.data }),
+            { eval: true },
+          ),
         );
-      });
-      worker.on("error", (error) => {
-        events.dispatchEvent(
-          Object.assign(new Event("error"), { error, message: String(error) }),
-        );
-      });
-      return port;
-    }),
+        const events = new EventTarget();
+        const port = {
+          addEventListener: events.addEventListener.bind(events),
+          removeEventListener: events.removeEventListener.bind(events),
+          postMessage: (data: [number, RpcMessage.FromClientEncoded?]) => {
+            const start = performance.now();
+            worker.postMessage(data);
+            if (data[0] === 0 && data[1]?._tag === "Request")
+              postMs = encodeMs + performance.now() - start;
+          },
+        };
+        worker.on("message", (message: TimedMessage) => {
+          const reply =
+            message.data[0] === 1
+              ? (message.data[1] as RpcMessage.FromServerEncoded)
+              : undefined;
+          if (reply?._tag === "Exit") {
+            receivedAt = performance.now();
+            workerMs = message.workerMs ?? 0;
+          }
+          events.dispatchEvent(
+            new MessageEvent("message", { data: message.data }),
+          );
+        });
+        worker.on("error", (error) => {
+          events.dispatchEvent(
+            Object.assign(new Event("error"), {
+              error,
+              message: String(error),
+            }),
+          );
+        });
+        return port;
+      },
+      (milliseconds) => {
+        encodeMs = milliseconds;
+      },
+    ),
   );
   const resources = stack.move();
   return {
     get receivedAt() {
       return receivedAt;
+    },
+    get postMs() {
+      return postMs;
     },
     get workerMs() {
       return workerMs;

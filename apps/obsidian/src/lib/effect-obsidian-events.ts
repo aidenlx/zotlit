@@ -26,8 +26,8 @@ export const obsidianEvents = Effect.fnUntraced(function* <
       PubSub.publishUnsafe(bus, { type, args } as Payload<E>);
     };
 
-  const on = Effect.fnUntraced(function* <K extends keyof E>(
-    type: K,
+  const on = Effect.fnUntraced(function* (
+    type: keyof E,
     source: Pick<Events, "on" | "offref">,
     name: string,
   ) {

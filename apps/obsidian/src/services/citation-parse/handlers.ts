@@ -7,7 +7,7 @@ export const layerParseHandlers = CitationParseRpc.toLayer({
   // CitationParse.parse traces the service call; keep the scanner's hot path small.
   Parse: ({ path, generation, text }) =>
     Effect.try({
-      try: () => ({ path, generation, record: scanNote(text) }),
+      try: () => JSON.stringify({ path, generation, record: scanNote(text) }),
       catch: (error) => new ParseError({ message: String(error) }),
     }),
 });
