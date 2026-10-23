@@ -4,11 +4,13 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import type { CliData, CliHandler, Plugin } from "obsidian";
+import type { CliData } from "obsidian";
 
+import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
 import { createCliDiagnostics } from "@/lib/cli-diagnostic";
-import { decodeCliParams, noCliParams } from "@/lib/cli-params";
+import { catchRejection, decodeCliParams, noCliParams } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
+import { Effect } from "@/lib/effect";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 
 /**
@@ -65,33 +67,31 @@ interface LibraryScopeCliDeps {
 }
 
 export function registerLibraryScopeCli(
-  plugin: Plugin,
+  host: CliHost,
   deps: LibraryScopeCliDeps,
 ): void {
-  plugin.registerCliHandler(
-    LIBRARY_SCOPE_COMMAND,
-    "Report the resolved Library Scope: mode, available Libraries, and unavailable selectors",
-    null,
-    createLibraryScopeHandler(deps),
-  );
-  plugin.registerCliHandler(
-    LIBRARY_SCOPE_GUIDE_COMMAND,
-    "Print the zotlit:library-scope CLI guide",
-    null,
-    guideHandler,
-  );
+  host.registerCliCommand(LIBRARY_SCOPE_COMMAND, {
+    description:
+      "Report the resolved Library Scope: mode, available Libraries, and unavailable selectors",
+    flags: null,
+    handler: createLibraryScopeHandler(deps),
+  });
+  host.registerCliCommand(LIBRARY_SCOPE_GUIDE_COMMAND, {
+    description: "Print the zotlit:library-scope CLI guide",
+    flags: null,
+    handler: guideHandler,
+  });
 }
 
-function createLibraryScopeHandler(deps: LibraryScopeCliDeps): CliHandler {
-  return async (params: CliData): Promise<string> => {
-    const request = decodeCliParams(params, noCliParams, {
+function createLibraryScopeHandler(
+  deps: LibraryScopeCliDeps,
+): CliCommandHandler {
+  return Effect.fn("LibraryScopeCli.report")(function* (params: CliData) {
+    yield* decodeCliParams(params, noCliParams, {
       command: LIBRARY_SCOPE_COMMAND,
     });
-    if (request.kind === "invalid") {
-      return invalidRequest(LIBRARY_SCOPE_COMMAND, request);
-    }
 
-    await deps.libraryScope.ready;
+    yield* Effect.promise(() => deps.libraryScope.ready);
     const current = deps.libraryScope.current;
     if (current === null) {
       return envelope(LIBRARY_SCOPE_COMMAND, {
@@ -111,18 +111,20 @@ function createLibraryScopeHandler(deps: LibraryScopeCliDeps): CliHandler {
       available: current.available,
       unavailable: current.unavailable,
     });
-  };
+  }, answerRejection(LIBRARY_SCOPE_COMMAND));
 }
 
-const guideHandler: CliHandler = (params: CliData): string => {
-  const request = decodeCliParams(params, noCliParams, {
+const guideHandler: CliCommandHandler = (params) =>
+  decodeCliParams(params, noCliParams, {
     command: LIBRARY_SCOPE_GUIDE_COMMAND,
-  });
-  if (request.kind === "invalid") {
-    return invalidRequest(LIBRARY_SCOPE_GUIDE_COMMAND, request);
-  }
-  return renderGuide();
-};
+  }).pipe(
+    Effect.as(renderGuide()),
+    answerRejection(LIBRARY_SCOPE_GUIDE_COMMAND),
+  );
+
+/** A rejected request answers its diagnostic envelope. */
+const answerRejection = (command: LibraryScopeCommand) =>
+  catchRejection((rejected) => invalidRequest(command, rejected));
 
 function invalidRequest(
   command: LibraryScopeCommand,

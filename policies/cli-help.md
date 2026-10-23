@@ -10,7 +10,7 @@ Use yargs for argument parsing. The epilogue carries the detailed reference, bui
 
 Expose a guide subcommand that renders reference sections from the handler's own constants and vocabularies — the Template Workbench `guide.ts` is the pattern.
 
-Register each handler through the plugin's `registerCliHandler`, and reject with an `Error` whose message the caller can act on. `ZotLitPlugin.registerCliHandler` turns every rejection into its message text, which Obsidian prints as `Error: <message>` (`apps/obsidian/src/lib/cli-rejection.ts`).
+Register each handler as an Effect through `CliHost.registerCliCommand` (`apps/obsidian/src/lib/cli-command.ts`), and fail with an `Error` whose message the caller can act on. The plugin runs it on its runtime, and `ZotLitPlugin.registerCliHandler` turns every failure into its message text, which Obsidian prints as `Error: <message>` (`apps/obsidian/src/lib/cli-rejection.ts`).
 
 ## Placement
 

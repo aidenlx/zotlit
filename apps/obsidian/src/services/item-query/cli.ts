@@ -8,7 +8,11 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import type { CliData, CliHandler, Plugin } from "obsidian";
+import type { CliData } from "obsidian";
+
+import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
+import { catchRejection } from "@/lib/cli-params";
+import { Effect } from "@/lib/effect";
 
 import {
   envelope,
@@ -23,9 +27,11 @@ import {
   queryCancelFlags,
   rejectionDiagnostic,
 } from "./contract";
+import type { QueryCliCommand } from "./contract";
 import { decodeCancelArguments, decodeGuideArguments } from "./decode";
 import { GUIDE_TOPIC_NAMES, renderGuide } from "./guide";
 
+/** The runs of the service; interrupting a handler aborts its `signal`. */
 export interface QueryRuns {
   query(params: CliData, signal: AbortSignal): Promise<string>;
   values(params: CliData, signal: AbortSignal): Promise<string>;
@@ -33,53 +39,77 @@ export interface QueryRuns {
   cancel(id: string): boolean;
 }
 
-export function registerQueryCli(plugin: Plugin, runs: QueryRuns): void {
-  const unload = new AbortController();
-  plugin.register(() => unload.abort());
-  plugin.registerCliHandler(
-    QUERY_COMMAND,
-    "Query Zotero items and annotations as JSON; read zotlit:query-guide for syntax and zotlit:query-schema for the field catalog",
-    queryFlags,
-    (params) => runs.query(params, unload.signal),
-  );
-  plugin.registerCliHandler(
-    QUERY_SCHEMA_COMMAND,
-    "Get the version-pinned schema download, source custom fields, and CLI defaults as JSON",
-    { from: queryFlags.from },
-    (params) => runs.schema(params, unload.signal),
-  );
-  plugin.registerCliHandler(
-    QUERY_VALUES_COMMAND,
-    "List exact Collection paths or Tag names per Library before writing a filter",
-    queryValuesFlags,
-    (params) => runs.values(params, unload.signal),
-  );
-  plugin.registerCliHandler(
-    QUERY_GUIDE_COMMAND,
-    "Print the guide for zotlit:query, zotlit:query-values, zotlit:query-schema, and zotlit:query-cancel",
-    {
+export function registerQueryCli(host: CliHost, runs: QueryRuns): void {
+  host.registerCliCommand(QUERY_COMMAND, {
+    description:
+      "Query Zotero items and annotations as JSON; read zotlit:query-guide for syntax and zotlit:query-schema for the field catalog",
+    flags: queryFlags,
+    handler: runHandler("QueryCli.query", (params, signal) =>
+      runs.query(params, signal),
+    ),
+  });
+  host.registerCliCommand(QUERY_SCHEMA_COMMAND, {
+    description:
+      "Get the version-pinned schema download, source custom fields, and CLI defaults as JSON",
+    flags: { from: queryFlags.from },
+    handler: runHandler("QueryCli.schema", (params, signal) =>
+      runs.schema(params, signal),
+    ),
+  });
+  host.registerCliCommand(QUERY_VALUES_COMMAND, {
+    description:
+      "List exact Collection paths or Tag names per Library before writing a filter",
+    flags: queryValuesFlags,
+    handler: runHandler("QueryCli.values", (params, signal) =>
+      runs.values(params, signal),
+    ),
+  });
+  host.registerCliCommand(QUERY_GUIDE_COMMAND, {
+    description:
+      "Print the guide for zotlit:query, zotlit:query-values, zotlit:query-schema, and zotlit:query-cancel",
+    flags: {
       topic: {
         value: `<${GUIDE_TOPIC_NAMES.join("|")}>`,
         description: "Guide topic; omit it for the whole guide",
       },
     },
-    guideHandler,
-  );
-  plugin.registerCliHandler(
-    QUERY_CANCEL_COMMAND,
-    "Stop a running query started with id, and return as JSON whether one was running",
-    queryCancelFlags,
-    createQueryCancelHandler((id) => runs.cancel(id)),
-  );
+    handler: guideHandler,
+  });
+  host.registerCliCommand(QUERY_CANCEL_COMMAND, {
+    description:
+      "Stop a running query started with id, and return as JSON whether one was running",
+    flags: queryCancelFlags,
+    handler: createQueryCancelHandler((id) => runs.cancel(id)),
+  });
 }
 
-/** The guide is plain text; an unknown topic answers the diagnostic envelope. */
-export function guideHandler(params: CliData): string {
-  const topic = decodeGuideArguments(params);
-  return topic.kind === "invalid"
-    ? failure(QUERY_GUIDE_COMMAND, rejectionDiagnostic(topic))
-    : renderGuide(topic.value);
+/**
+ * A handler over one run of the service. The run's rejection, as a cancel by
+ * `zotlit:query-cancel`, is the handler's failure; interrupting the handler
+ * aborts the run.
+ */
+function runHandler(
+  name: string,
+  run: (params: CliData, signal: AbortSignal) => Promise<string>,
+): CliCommandHandler {
+  return Effect.fn(name)(function* (params: CliData) {
+    return yield* Effect.tryPromise({
+      try: (signal) => run(params, signal),
+      catch: (error) => error,
+    });
+  });
 }
+
+/** A rejected request answers the diagnostic envelope of `command`. */
+const answerRejection = (command: QueryCliCommand) =>
+  catchRejection((rejected) => failure(command, rejectionDiagnostic(rejected)));
+
+/** The guide is plain text; an unknown topic answers the diagnostic envelope. */
+export const guideHandler: CliCommandHandler = (params) =>
+  decodeGuideArguments(params).pipe(
+    Effect.map(renderGuide),
+    answerRejection(QUERY_GUIDE_COMMAND),
+  );
 
 /**
  * The cancel handler answers whether it requested the cancel of a running
@@ -88,17 +118,13 @@ export function guideHandler(params: CliData): string {
  */
 export function createQueryCancelHandler(
   cancel: (id: string) => boolean,
-): CliHandler {
-  return (params: CliData): string => {
-    const request = decodeCancelArguments(params);
-    if (request.kind === "invalid") {
-      return failure(QUERY_CANCEL_COMMAND, rejectionDiagnostic(request));
-    }
-    const id = request.value;
+): CliCommandHandler {
+  return Effect.fn("QueryCli.cancel")(function* (params: CliData) {
+    const id = yield* decodeCancelArguments(params);
     return envelope(QUERY_CANCEL_COMMAND, {
       ok: true,
       id,
       cancelRequested: cancel(id),
     });
-  };
+  }, answerRejection(QUERY_CANCEL_COMMAND));
 }

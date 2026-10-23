@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type {
@@ -227,7 +229,7 @@ function setup(options: SetupOptions = {}) {
       ),
   );
   const getCitedBy = vi.fn(async () => options.snapshot ?? CITED);
-  const lookupItem = vi.fn(() => Promise.resolve(lookup));
+  const lookupItem = vi.fn(() => Effect.succeed(lookup));
   const readDocument = vi.fn(
     async () =>
       documentReferences && {
@@ -267,16 +269,10 @@ function setup(options: SetupOptions = {}) {
     lookupItem,
     readDocument,
   });
-  const citedBy = (params: Record<string, string>): Promise<string> =>
-    Promise.resolve(handlers[CITED_BY_COMMAND](params));
-  const references = (params: Record<string, string>): Promise<string> =>
-    Promise.resolve(handlers[REFERENCES_COMMAND](params));
-  const guide = (params: Record<string, string>): Promise<string> =>
-    Promise.resolve(handlers[CITATIONS_GUIDE_COMMAND](params));
   return {
-    citedBy,
-    references,
-    guide,
+    citedBy: handlers[CITED_BY_COMMAND],
+    references: handlers[REFERENCES_COMMAND],
+    guide: handlers[CITATIONS_GUIDE_COMMAND],
     getIdentity,
     waitUntilSettled,
     readLookup,
@@ -290,216 +286,262 @@ function setup(options: SetupOptions = {}) {
 }
 
 describe("zotlit:cited-by", () => {
-  it("reports citing notes with occurrences, positions, and index states", async () => {
-    const { citedBy, getCitedBy } = setup();
+  it.effect(
+    "reports citing notes with occurrences, positions, and index states",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy, getCitedBy } = setup();
 
-    const output = await citedBy({ key: ITEM_KEY });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-    expect(getCitedBy).toHaveBeenCalledWith(
-      ITEM_KEY,
-      expect.any(CitationLookupAnswer),
-    );
-    expect(JSON.parse(output)).toEqual({
-      contractVersion: 3,
-      command: CITED_BY_COMMAND,
-      ok: true,
-      request: { key: ITEM_KEY },
-      identity: IDENTITY,
-      item: {
-        key: ITEM_KEY,
-        citekey: ITEM_CITEKEY,
-        summary: ITEM_SUMMARY,
-      },
-      groups: [{ path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] }],
-      omittedSyntaxes: [],
-      coverage: "complete",
-      resolution: "fresh",
-      syntaxes: SYNTAXES,
-    });
-  });
-
-  it("counts line and col from 1, and keeps offset counting from 0", async () => {
-    const { citedBy } = setup({
-      snapshot: {
-        groups: [
-          {
-            path: "notes/review.md",
-            occurrences: [occurrence(ITEM_CITEKEY, 0)],
+        expect(getCitedBy).toHaveBeenCalledWith(
+          ITEM_KEY,
+          expect.any(CitationLookupAnswer),
+        );
+        expect(JSON.parse(output)).toEqual({
+          contractVersion: 3,
+          command: CITED_BY_COMMAND,
+          ok: true,
+          request: { key: ITEM_KEY },
+          identity: IDENTITY,
+          item: {
+            key: ITEM_KEY,
+            citekey: ITEM_CITEKEY,
+            summary: ITEM_SUMMARY,
           },
-        ],
-        coverage: "complete",
-        resolution: "fresh",
-      },
-    });
+          groups: [
+            { path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] },
+          ],
+          omittedSyntaxes: [],
+          coverage: "complete",
+          resolution: "fresh",
+          syntaxes: SYNTAXES,
+        });
+      }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect(
+    "counts line and col from 1, and keeps offset counting from 0",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({
+          snapshot: {
+            groups: [
+              {
+                path: "notes/review.md",
+                occurrences: [occurrence(ITEM_CITEKEY, 0)],
+              },
+            ],
+            coverage: "complete",
+            resolution: "fresh",
+          },
+        });
 
-    const [first] = JSON.parse(output).groups[0].occurrences;
-    expect(first.position).toEqual({
-      start: { line: 1, col: 1, offset: 0 },
-      end: { line: 1, col: 8, offset: 7 },
-    });
-    expect(first.position.end.offset - first.position.start.offset).toBe(
-      ITEM_CITEKEY.length,
-    );
-  });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("reports citekey as excluded when the index says so", async () => {
-    const { citedBy } = setup({
-      syntaxes: { citekey: "excluded", wikilink: "included" },
-    });
+        const [first] = JSON.parse(output).groups[0].occurrences;
+        expect(first.position).toEqual({
+          start: { line: 1, col: 1, offset: 0 },
+          end: { line: 1, col: 8, offset: 7 },
+        });
+        expect(first.position.end.offset - first.position.start.offset).toBe(
+          ITEM_CITEKEY.length,
+        );
+      }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect("reports citekey as excluded when the index says so", () =>
+    Effect.gen(function* () {
+      const { citedBy } = setup({
+        syntaxes: { citekey: "excluded", wikilink: "included" },
+      });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      syntaxes: { citekey: "excluded", wikilink: "included" },
-    });
-  });
+      const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("answers an item nobody cites with empty groups and no omitted syntax", async () => {
-    const { citedBy } = setup({ snapshot: EMPTY });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        syntaxes: { citekey: "excluded", wikilink: "included" },
+      });
+    }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect(
+    "answers an item nobody cites with empty groups and no omitted syntax",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({ snapshot: EMPTY });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      groups: [],
-      omittedSyntaxes: [],
-    });
-  });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("reports the excluded syntax that held the item's occurrences", async () => {
-    const { citedBy } = setup({
-      snapshot: {
-        groups: [],
-        coverage: "complete",
-        resolution: "fresh",
-      },
-      citedByOmittedSyntaxes: ["wikilink"],
-    });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          groups: [],
+          omittedSyntaxes: [],
+        });
+      }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect(
+    "reports the excluded syntax that held the item's occurrences",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({
+          snapshot: {
+            groups: [],
+            coverage: "complete",
+            resolution: "fresh",
+          },
+          citedByOmittedSyntaxes: ["wikilink"],
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      groups: [],
-      omittedSyntaxes: ["wikilink"],
-    });
-  });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("reports omittedSyntaxes as an empty list when groups is non-empty and holds no excluded occurrence", async () => {
-    const { citedBy } = setup();
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          groups: [],
+          omittedSyntaxes: ["wikilink"],
+        });
+      }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect(
+    "reports omittedSyntaxes as an empty list when groups is non-empty and holds no excluded occurrence",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup();
 
-    expect(JSON.parse(output)).toMatchObject({ omittedSyntaxes: [] });
-  });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("reports the excluded syntax when a non-empty answer's item also has occurrences of it", async () => {
-    const { citedBy } = setup({
-      snapshot: {
-        groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
-        coverage: "complete",
-        resolution: "fresh",
-      },
-      citedByOmittedSyntaxes: ["wikilink"],
-    });
+        expect(JSON.parse(output)).toMatchObject({ omittedSyntaxes: [] });
+      }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect(
+    "reports the excluded syntax when a non-empty answer's item also has occurrences of it",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({
+          snapshot: {
+            groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
+            coverage: "complete",
+            resolution: "fresh",
+          },
+          citedByOmittedSyntaxes: ["wikilink"],
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      groups: [{ path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] }],
-      omittedSyntaxes: ["wikilink"],
-    });
-  });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("resolves a citation key through the resolution snapshot", async () => {
-    const { citedBy, readLookup, getCitedBy, lookupItem } = setup({
-      citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
-    });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          groups: [
+            { path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] },
+          ],
+          omittedSyntaxes: ["wikilink"],
+        });
+      }),
+  );
 
-    const output = await citedBy({ citekey: ITEM_CITEKEY });
+  it.effect("resolves a citation key through the resolution snapshot", () =>
+    Effect.gen(function* () {
+      const { citedBy, readLookup, getCitedBy, lookupItem } = setup({
+        citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
+      });
 
-    expect(readLookup).toHaveBeenCalledWith({
-      citekeys: [ITEM_CITEKEY],
-      indexedKeys: [],
-    });
-    expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
-    expect(getCitedBy).toHaveBeenCalledWith(
-      ITEM_KEY,
-      expect.any(CitationLookupAnswer),
-    );
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      request: { citekey: ITEM_CITEKEY },
-      item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: ITEM_SUMMARY },
-    });
-  });
+      const output = yield* citedBy({ citekey: ITEM_CITEKEY });
 
-  it("keeps the snapshot's verdict when a citation key names an item the source read leaves out", async () => {
-    const { citedBy } = setup({
-      citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
-      lookup: { presence: "absent", summary: null },
-    });
+      expect(readLookup).toHaveBeenCalledWith({
+        citekeys: [ITEM_CITEKEY],
+        indexedKeys: [],
+      });
+      expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
+      expect(getCitedBy).toHaveBeenCalledWith(
+        ITEM_KEY,
+        expect.any(CitationLookupAnswer),
+      );
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        request: { citekey: ITEM_CITEKEY },
+        item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: ITEM_SUMMARY },
+      });
+    }),
+  );
 
-    const output = await citedBy({ citekey: ITEM_CITEKEY });
+  it.effect(
+    "keeps the snapshot's verdict when a citation key names an item the source read leaves out",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({
+          citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
+          lookup: { presence: "absent", summary: null },
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: null },
-    });
-  });
+        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
 
-  it("answers ok with a null summary when the item fields cannot be read", async () => {
-    const { citedBy } = setup({
-      lookup: { presence: "present", summary: null },
-    });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: null },
+        });
+      }),
+  );
 
-    const output = await citedBy({ key: ITEM_KEY });
+  it.effect(
+    "answers ok with a null summary when the item fields cannot be read",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({
+          lookup: { presence: "present", summary: null },
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      item: { key: ITEM_KEY, summary: null },
-    });
-  });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-  it("reports degraded coverage and resolution as payload data", async () => {
-    const { citedBy } = setup({
-      snapshot: {
-        groups: [],
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          item: { key: ITEM_KEY, summary: null },
+        });
+      }),
+  );
+
+  it.effect("reports degraded coverage and resolution as payload data", () =>
+    Effect.gen(function* () {
+      const { citedBy } = setup({
+        snapshot: {
+          groups: [],
+          coverage: "degraded",
+          resolution: "failed",
+        },
+      });
+
+      expect(JSON.parse(yield* citedBy({ key: ITEM_KEY }))).toMatchObject({
+        ok: true,
         coverage: "degraded",
         resolution: "failed",
-      },
-    });
+      });
+    }),
+  );
 
-    expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
-      ok: true,
-      coverage: "degraded",
-      resolution: "failed",
-    });
-  });
+  it.effect(
+    "answers from the index when the Zotero database cannot be read",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy } = setup({
+          lookup: { presence: "unreadable", summary: null },
+          snapshot: {
+            groups: [],
+            coverage: "complete",
+            resolution: "failed",
+          },
+        });
 
-  it("answers from the index when the Zotero database cannot be read", async () => {
-    const { citedBy } = setup({
-      lookup: { presence: "unreadable", summary: null },
-      snapshot: {
-        groups: [],
-        coverage: "complete",
-        resolution: "failed",
-      },
-    });
-
-    expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
-      ok: true,
-      item: { key: ITEM_KEY, summary: null },
-      resolution: "failed",
-    });
-  });
+        expect(JSON.parse(yield* citedBy({ key: ITEM_KEY }))).toMatchObject({
+          ok: true,
+          item: { key: ITEM_KEY, summary: null },
+          resolution: "failed",
+        });
+      }),
+  );
 
   describe("selector", () => {
-    it.each([
+    it.effect.each<[string, Record<string, string>, string]>([
       ["both selectors", { key: ITEM_KEY, citekey: ITEM_CITEKEY }, "citekey"],
       ["neither selector", {}, "key"],
       ["an empty key", { key: "" }, "key"],
@@ -513,534 +555,615 @@ describe("zotlit:cited-by", () => {
       ],
       ["an unknown parameter", { key: ITEM_KEY, radius: "3" }, "radius"],
       ["a trailing vault", { key: ITEM_KEY, vault: "Other" }, "vault"],
-    ])("rejects %s", async (_label, params, parameter) => {
-      const { citedBy, getIdentity, waitUntilSettled } = setup();
+    ])("rejects %s", ([_label, params, parameter]) =>
+      Effect.gen(function* () {
+        const { citedBy, getIdentity, waitUntilSettled } = setup();
 
-      const response = JSON.parse(await citedBy(params)) as {
-        ok: boolean;
-        diagnostic: { code: string; hint: string; details: object };
-      };
+        const response = JSON.parse(yield* citedBy(params)) as {
+          ok: boolean;
+          diagnostic: { code: string; hint: string; details: object };
+        };
 
-      expect(response.ok).toBe(false);
-      expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
-      expect(response.diagnostic.hint).toBe(DIAGNOSTIC_HINTS.INVALID_SELECTOR);
-      expect(response.diagnostic.details).toEqual({ parameter });
-      expect(getIdentity).not.toHaveBeenCalled();
-      expect(waitUntilSettled).not.toHaveBeenCalled();
-    });
-  });
-
-  it("reports a key the connected source does not hold", async () => {
-    const { citedBy, getCitedBy } = setup({
-      lookup: { presence: "absent", summary: null },
-    });
-
-    const output = await citedBy({ key: ITEM_KEY });
-
-    expect(getCitedBy).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "KEY_NOT_FOUND",
-        hint: DIAGNOSTIC_HINTS.KEY_NOT_FOUND,
-        details: { key: ITEM_KEY },
-      },
-    });
-  });
-
-  it("uses one answer for the complete cited-by command when the source changes", async () => {
-    const { citedBy, readLookup, getCitedBy } = setup();
-    const nextItem = {
-      ...SNAPSHOT_ITEM,
-      itemID: 2,
-      key: "NEXT2345",
-      indexedKey: "NEXT2345",
-    };
-    const first = lookupAnswer({
-      [ITEM_CITEKEY]: { kind: "unique", item: SNAPSHOT_ITEM },
-    });
-    const next = lookupAnswer(
-      { [ITEM_CITEKEY]: { kind: "unique", item: nextItem } },
-      {},
-      "fixture:2",
+        expect(response.ok).toBe(false);
+        expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
+        expect(response.diagnostic.hint).toBe(
+          DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+        );
+        expect(response.diagnostic.details).toEqual({ parameter });
+        expect(getIdentity).not.toHaveBeenCalled();
+        expect(waitUntilSettled).not.toHaveBeenCalled();
+      }),
     );
-    readLookup.mockResolvedValueOnce(first).mockResolvedValue(next);
-    getCitedBy
-      .mockResolvedValueOnce(CITED)
-      .mockResolvedValue({ ...CITED, groups: [] });
-
-    const output = await citedBy({ citekey: ITEM_CITEKEY });
-
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      item: { key: ITEM_KEY },
-      groups: CITED.groups.map((group) => ({ path: group.path })),
-    });
-    expect(readLookup).toHaveBeenCalledOnce();
-    expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY, first);
   });
 
-  it("reports an unavailable fresh lookup instead of a missing citation key", async () => {
-    const { citedBy, readLookup, getCitedBy } = setup();
-    readLookup.mockRejectedValue(new Error("Citation worker unavailable"));
+  it.effect("reports a key the connected source does not hold", () =>
+    Effect.gen(function* () {
+      const { citedBy, getCitedBy } = setup({
+        lookup: { presence: "absent", summary: null },
+      });
 
-    const output = await citedBy({ citekey: ITEM_CITEKEY });
+      const output = yield* citedBy({ key: ITEM_KEY });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: { code: "INDEX_NOT_READY" },
-    });
-    expect(getCitedBy).not.toHaveBeenCalled();
-  });
+      expect(getCitedBy).not.toHaveBeenCalled();
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "KEY_NOT_FOUND",
+          hint: DIAGNOSTIC_HINTS.KEY_NOT_FOUND,
+          details: { key: ITEM_KEY },
+        },
+      });
+    }),
+  );
 
-  it("reports a citation key that resolves to no item", async () => {
-    const { citedBy, getCitedBy } = setup({
-      citekeyResolution: { kind: "missing" },
-    });
+  it.effect(
+    "uses one answer for the complete cited-by command when the source changes",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy, readLookup, getCitedBy } = setup();
+        const nextItem = {
+          ...SNAPSHOT_ITEM,
+          itemID: 2,
+          key: "NEXT2345",
+          indexedKey: "NEXT2345",
+        };
+        const first = lookupAnswer({
+          [ITEM_CITEKEY]: { kind: "unique", item: SNAPSHOT_ITEM },
+        });
+        const next = lookupAnswer(
+          { [ITEM_CITEKEY]: { kind: "unique", item: nextItem } },
+          {},
+          "fixture:2",
+        );
+        readLookup.mockResolvedValueOnce(first).mockResolvedValue(next);
+        getCitedBy
+          .mockResolvedValueOnce(CITED)
+          .mockResolvedValue({ ...CITED, groups: [] });
 
-    const output = await citedBy({ citekey: "roe2099" });
+        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
 
-    expect(getCitedBy).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "KEY_NOT_FOUND",
-        details: { citekey: "roe2099" },
-      },
-    });
-  });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          item: { key: ITEM_KEY },
+          groups: CITED.groups.map((group) => ({ path: group.path })),
+        });
+        expect(readLookup).toHaveBeenCalledOnce();
+        expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY, first);
+      }),
+  );
 
-  it("reports a citation key that names several items, with the key of each", async () => {
-    const { citedBy, getCitedBy } = setup({
-      citekeyResolution: {
-        kind: "ambiguous",
-        candidates: [
-          SNAPSHOT_ITEM,
-          {
-            itemID: 11,
-            libraryID: 4,
-            key: "ROEF6789",
-            indexedKey: "ROEF6789g7",
+  it.effect(
+    "reports an unavailable fresh lookup instead of a missing citation key",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy, readLookup, getCitedBy } = setup();
+        readLookup.mockRejectedValue(new Error("Citation worker unavailable"));
+
+        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
+
+        expect(JSON.parse(output)).toMatchObject({
+          ok: false,
+          diagnostic: { code: "INDEX_NOT_READY" },
+        });
+        expect(getCitedBy).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect("reports a citation key that resolves to no item", () =>
+    Effect.gen(function* () {
+      const { citedBy, getCitedBy } = setup({
+        citekeyResolution: { kind: "missing" },
+      });
+
+      const output = yield* citedBy({ citekey: "roe2099" });
+
+      expect(getCitedBy).not.toHaveBeenCalled();
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "KEY_NOT_FOUND",
+          details: { citekey: "roe2099" },
+        },
+      });
+    }),
+  );
+
+  it.effect(
+    "reports a citation key that names several items, with the key of each",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy, getCitedBy } = setup({
+          citekeyResolution: {
+            kind: "ambiguous",
+            candidates: [
+              SNAPSHOT_ITEM,
+              {
+                itemID: 11,
+                libraryID: 4,
+                key: "ROEF6789",
+                indexedKey: "ROEF6789g7",
+              },
+            ],
           },
-        ],
-      },
-    });
+        });
 
-    const output = await citedBy({ citekey: ITEM_CITEKEY });
+        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
 
-    // An Ambiguous Citation Key selects no Item, so the answer names the
-    // candidates instead of reading the citations of a chosen one.
-    expect(getCitedBy).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "AMBIGUOUS_CITEKEY",
-        hint: DIAGNOSTIC_HINTS.AMBIGUOUS_CITEKEY,
-        details: {
-          citekey: ITEM_CITEKEY,
-          candidates: [
-            { key: ITEM_KEY, libraryID: 1 },
-            { key: "ROEF6789g7", libraryID: 4 },
-          ],
+        // An Ambiguous Citation Key selects no Item, so the answer names the
+        // candidates instead of reading the citations of a chosen one.
+        expect(getCitedBy).not.toHaveBeenCalled();
+        expect(JSON.parse(output)).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "AMBIGUOUS_CITEKEY",
+            hint: DIAGNOSTIC_HINTS.AMBIGUOUS_CITEKEY,
+            details: {
+              citekey: ITEM_CITEKEY,
+              candidates: [
+                { key: ITEM_KEY, libraryID: 1 },
+                { key: "ROEF6789g7", libraryID: 4 },
+              ],
+            },
+          },
+        });
+      }),
+  );
+
+  it.effect("rejects a source mismatch before any data load", () =>
+    Effect.gen(function* () {
+      const { citedBy, waitUntilSettled, lookupItem, getCitedBy } = setup();
+
+      const output = yield* citedBy({
+        key: ITEM_KEY,
+        "expect-source": "other",
+      });
+
+      expect(waitUntilSettled).not.toHaveBeenCalled();
+      expect(lookupItem).not.toHaveBeenCalled();
+      expect(getCitedBy).not.toHaveBeenCalled();
+      expect(JSON.parse(output)).toEqual({
+        contractVersion: 3,
+        command: CITED_BY_COMMAND,
+        ok: false,
+        request: { key: ITEM_KEY },
+        identity: IDENTITY,
+        diagnostic: {
+          code: "TARGET_MISMATCH",
+          message: `Expected Zotero source 'other', connected to 'a1b2c3d4'.`,
+          hint: DIAGNOSTIC_HINTS.TARGET_MISMATCH,
+          details: { target: "source", expected: "other", actual: "a1b2c3d4" },
         },
-      },
-    });
-  });
+      });
+    }),
+  );
 
-  it("rejects a source mismatch before any data load", async () => {
-    const { citedBy, waitUntilSettled, lookupItem, getCitedBy } = setup();
+  it.effect("passes a matching source through to the index", () =>
+    Effect.gen(function* () {
+      const { citedBy, getCitedBy } = setup();
 
-    const output = await citedBy({ key: ITEM_KEY, "expect-source": "other" });
+      const output = yield* citedBy({
+        key: ITEM_KEY,
+        "expect-source": IDENTITY.source.id,
+      });
 
-    expect(waitUntilSettled).not.toHaveBeenCalled();
-    expect(lookupItem).not.toHaveBeenCalled();
-    expect(getCitedBy).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toEqual({
-      contractVersion: 3,
-      command: CITED_BY_COMMAND,
-      ok: false,
-      request: { key: ITEM_KEY },
-      identity: IDENTITY,
-      diagnostic: {
-        code: "TARGET_MISMATCH",
-        message: `Expected Zotero source 'other', connected to 'a1b2c3d4'.`,
-        hint: DIAGNOSTIC_HINTS.TARGET_MISMATCH,
-        details: { target: "source", expected: "other", actual: "a1b2c3d4" },
-      },
-    });
-  });
+      expect(getCitedBy).toHaveBeenCalledWith(
+        ITEM_KEY,
+        expect.any(CitationLookupAnswer),
+      );
+      expect(JSON.parse(output)).toMatchObject({ ok: true });
+    }),
+  );
 
-  it("passes a matching source through to the index", async () => {
-    const { citedBy, getCitedBy } = setup();
+  it.effect(
+    "returns a retryable diagnostic when the index stays transitional",
+    () =>
+      Effect.gen(function* () {
+        const { citedBy, lookupItem, getCitedBy } = setup({
+          settle: "timeout",
+          settleTimeoutMs: 25,
+        });
 
-    const output = await citedBy({
-      key: ITEM_KEY,
-      "expect-source": IDENTITY.source.id,
-    });
+        const output = yield* citedBy({ key: ITEM_KEY });
 
-    expect(getCitedBy).toHaveBeenCalledWith(
-      ITEM_KEY,
-      expect.any(CitationLookupAnswer),
-    );
-    expect(JSON.parse(output)).toMatchObject({ ok: true });
-  });
+        expect(lookupItem).not.toHaveBeenCalled();
+        expect(getCitedBy).not.toHaveBeenCalled();
+        expect(JSON.parse(output)).toMatchObject({
+          ok: false,
+          request: { key: ITEM_KEY },
+          identity: IDENTITY,
+          diagnostic: {
+            code: "INDEX_NOT_READY",
+            message: "The Citation Index did not settle within 25 ms.",
+            hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
+          },
+        });
+      }),
+  );
 
-  it("returns a retryable diagnostic when the index stays transitional", async () => {
-    const { citedBy, lookupItem, getCitedBy } = setup({
-      settle: "timeout",
-      settleTimeoutMs: 25,
-    });
-
-    const output = await citedBy({ key: ITEM_KEY });
-
-    expect(lookupItem).not.toHaveBeenCalled();
-    expect(getCitedBy).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      request: { key: ITEM_KEY },
-      identity: IDENTITY,
-      diagnostic: {
-        code: "INDEX_NOT_READY",
-        message: "The Citation Index did not settle within 25 ms.",
-        hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
-      },
-    });
-  });
-
-  it("waits for the index before reading it", async () => {
-    const order: string[] = [];
-    const handlers = createCitationsCliHandlers({
-      getIdentity: () => {
-        order.push("identity");
-        return IDENTITY;
-      },
-      index: {
-        citationKeys: () => [],
-        waitUntilSettled: () => {
-          order.push("settle");
-          return Promise.resolve("settled");
+  it.effect("waits for the index before reading it", () =>
+    Effect.gen(function* () {
+      const order: string[] = [];
+      const handlers = createCitationsCliHandlers({
+        getIdentity: () => {
+          order.push("identity");
+          return IDENTITY;
         },
-        readLookup: async () => lookupAnswer({}, { [ITEM_KEY]: ITEM_CITEKEY }),
-        getCitedBy: async () => {
-          order.push("cited-by");
-          return CITED;
+        index: {
+          citationKeys: () => [],
+          waitUntilSettled: () => {
+            order.push("settle");
+            return Promise.resolve("settled");
+          },
+          readLookup: async () =>
+            lookupAnswer({}, { [ITEM_KEY]: ITEM_CITEKEY }),
+          getCitedBy: async () => {
+            order.push("cited-by");
+            return CITED;
+          },
+          resolution: () => "fresh",
+          syntaxes: () => SYNTAXES,
+          documentOmittedSyntaxes: () => Promise.resolve([]),
+          citedByOmittedSyntaxes: () => Promise.resolve([]),
         },
-        resolution: () => "fresh",
-        syntaxes: () => SYNTAXES,
-        documentOmittedSyntaxes: () => Promise.resolve([]),
-        citedByOmittedSyntaxes: () => Promise.resolve([]),
-      },
-      lookupItem: () => {
-        order.push("lookup");
-        return Promise.resolve(PRESENT);
-      },
-      readDocument: async () => ({ ...DOCUMENT, lookup: lookupAnswer() }),
-    });
+        lookupItem: () =>
+          Effect.sync(() => {
+            order.push("lookup");
+            return PRESENT;
+          }),
+        readDocument: async () => ({ ...DOCUMENT, lookup: lookupAnswer() }),
+      });
 
-    await handlers[CITED_BY_COMMAND]({ key: ITEM_KEY });
+      yield* handlers[CITED_BY_COMMAND]({ key: ITEM_KEY });
 
-    expect(order).toEqual(["identity", "settle", "lookup", "cited-by"]);
-  });
+      expect(order).toEqual(["identity", "settle", "lookup", "cited-by"]);
+    }),
+  );
 });
 
 describe("zotlit:references", () => {
-  it("reports the document's entries in first-occurrence order, with identity and positions", async () => {
-    const { references, readDocument } = setup();
+  it.effect(
+    "reports the document's entries in first-occurrence order, with identity and positions",
+    () =>
+      Effect.gen(function* () {
+        const { references, readDocument } = setup();
 
-    const output = await references({ file: DOCUMENT_PATH });
+        const output = yield* references({ file: DOCUMENT_PATH });
 
-    expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
-    expect(JSON.parse(output)).toEqual({
-      contractVersion: 3,
-      command: REFERENCES_COMMAND,
-      ok: true,
-      request: { file: DOCUMENT_PATH },
-      identity: IDENTITY,
-      entries: [
-        {
-          refNumber: 1,
-          kind: "resolved",
-          key: ITEM_KEY,
-          citekey: ITEM_CITEKEY,
-          summary: SOURCE.summary,
-          linkpath: SOURCE.linkpath,
-          occurrences: [FIRST_REPORTED, REPEAT_REPORTED],
-        },
-        {
-          refNumber: 2,
-          kind: "unresolved",
-          citekey: "roe2099",
-          occurrences: [UNRESOLVED_REPORTED],
-        },
-        {
-          kind: "malformed",
-          occurrences: [MALFORMED_REPORTED],
-        },
-        {
-          refNumber: 3,
-          kind: "missing",
-          key: MISSING_ITEM_KEY,
-          occurrences: [MISSING_REPORTED],
-        },
-      ],
-      omittedSyntaxes: [],
-      database: "ready",
-      resolution: "fresh",
-      syntaxes: SYNTAXES,
-    });
-  });
-
-  it("counts line and col from 1, and keeps offset counting from 0", async () => {
-    const { references } = setup({
-      document: {
-        citations: [
-          {
-            indexedKey: null,
-            linkpath: null,
-            refNumber: 1,
-            occurrences: [occurrence("roe2099", 0)],
-          },
-        ],
-        errors: [],
-        sources: new Map(),
-        database: "ready",
-      },
-    });
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    const [first] = JSON.parse(output).entries[0].occurrences;
-    expect(first.position).toEqual({
-      start: { line: 1, col: 1, offset: 0 },
-      end: { line: 1, col: 8, offset: 7 },
-    });
-    expect(first.position.end.offset - first.position.start.offset).toBe(
-      "roe2099".length,
-    );
-  });
-
-  it("reports an unreadable Zotero database as payload state, not as missing items", async () => {
-    const { references } = setup({
-      document: {
-        citations: CITATIONS,
-        errors: [],
-        sources: new Map(),
-        database: "unreadable",
-      },
-      resolution: "failed",
-    });
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      database: "unreadable",
-      resolution: "failed",
-    });
-  });
-
-  it("reports citekey as excluded when the index says so", async () => {
-    const { references } = setup({
-      syntaxes: { citekey: "excluded", wikilink: "included" },
-    });
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      syntaxes: { citekey: "excluded", wikilink: "included" },
-    });
-  });
-
-  it("reports an ambiguous citation key with the exact key of every candidate", async () => {
-    const { references } = setup({
-      document: {
-        citations: [
-          {
-            indexedKey: null,
-            linkpath: null,
-            refNumber: 1,
-            occurrences: [UNRESOLVED_OCCURRENCE],
-          },
-        ],
-        errors: [],
-        sources: new Map(),
-        database: "ready",
-      },
-      citekeyResolution: {
-        kind: "ambiguous",
-        candidates: [
-          SNAPSHOT_ITEM,
-          {
-            itemID: 11,
-            libraryID: 4,
-            key: "ROEF6789",
-            indexedKey: "ROEF6789g7",
-          },
-        ],
-      },
-    });
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      entries: [
-        {
-          refNumber: 1,
-          kind: "ambiguous",
-          citekey: "roe2099",
-          candidates: [
-            { key: ITEM_KEY, libraryID: 1 },
-            { key: "ROEF6789g7", libraryID: 4 },
+        expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
+        expect(JSON.parse(output)).toEqual({
+          contractVersion: 3,
+          command: REFERENCES_COMMAND,
+          ok: true,
+          request: { file: DOCUMENT_PATH },
+          identity: IDENTITY,
+          entries: [
+            {
+              refNumber: 1,
+              kind: "resolved",
+              key: ITEM_KEY,
+              citekey: ITEM_CITEKEY,
+              summary: SOURCE.summary,
+              linkpath: SOURCE.linkpath,
+              occurrences: [FIRST_REPORTED, REPEAT_REPORTED],
+            },
+            {
+              refNumber: 2,
+              kind: "unresolved",
+              citekey: "roe2099",
+              occurrences: [UNRESOLVED_REPORTED],
+            },
+            {
+              kind: "malformed",
+              occurrences: [MALFORMED_REPORTED],
+            },
+            {
+              refNumber: 3,
+              kind: "missing",
+              key: MISSING_ITEM_KEY,
+              occurrences: [MISSING_REPORTED],
+            },
           ],
-          occurrences: [UNRESOLVED_REPORTED],
-        },
-      ],
-    });
-  });
+          omittedSyntaxes: [],
+          database: "ready",
+          resolution: "fresh",
+          syntaxes: SYNTAXES,
+        });
+      }),
+  );
+
+  it.effect(
+    "counts line and col from 1, and keeps offset counting from 0",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup({
+          document: {
+            citations: [
+              {
+                indexedKey: null,
+                linkpath: null,
+                refNumber: 1,
+                occurrences: [occurrence("roe2099", 0)],
+              },
+            ],
+            errors: [],
+            sources: new Map(),
+            database: "ready",
+          },
+        });
+
+        const output = yield* references({ file: DOCUMENT_PATH });
+
+        const [first] = JSON.parse(output).entries[0].occurrences;
+        expect(first.position).toEqual({
+          start: { line: 1, col: 1, offset: 0 },
+          end: { line: 1, col: 8, offset: 7 },
+        });
+        expect(first.position.end.offset - first.position.start.offset).toBe(
+          "roe2099".length,
+        );
+      }),
+  );
+
+  it.effect(
+    "reports an unreadable Zotero database as payload state, not as missing items",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup({
+          document: {
+            citations: CITATIONS,
+            errors: [],
+            sources: new Map(),
+            database: "unreadable",
+          },
+          resolution: "failed",
+        });
+
+        const output = yield* references({ file: DOCUMENT_PATH });
+
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          database: "unreadable",
+          resolution: "failed",
+        });
+      }),
+  );
+
+  it.effect("reports citekey as excluded when the index says so", () =>
+    Effect.gen(function* () {
+      const { references } = setup({
+        syntaxes: { citekey: "excluded", wikilink: "included" },
+      });
+
+      const output = yield* references({ file: DOCUMENT_PATH });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        syntaxes: { citekey: "excluded", wikilink: "included" },
+      });
+    }),
+  );
+
+  it.effect(
+    "reports an ambiguous citation key with the exact key of every candidate",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup({
+          document: {
+            citations: [
+              {
+                indexedKey: null,
+                linkpath: null,
+                refNumber: 1,
+                occurrences: [UNRESOLVED_OCCURRENCE],
+              },
+            ],
+            errors: [],
+            sources: new Map(),
+            database: "ready",
+          },
+          citekeyResolution: {
+            kind: "ambiguous",
+            candidates: [
+              SNAPSHOT_ITEM,
+              {
+                itemID: 11,
+                libraryID: 4,
+                key: "ROEF6789",
+                indexedKey: "ROEF6789g7",
+              },
+            ],
+          },
+        });
+
+        const output = yield* references({ file: DOCUMENT_PATH });
+
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          entries: [
+            {
+              refNumber: 1,
+              kind: "ambiguous",
+              citekey: "roe2099",
+              candidates: [
+                { key: ITEM_KEY, libraryID: 1 },
+                { key: "ROEF6789g7", libraryID: 4 },
+              ],
+              occurrences: [UNRESOLVED_REPORTED],
+            },
+          ],
+        });
+      }),
+  );
 
   // A candidate is one work's exact identity, which zotlit:template-data reads
   // in full and the sidebar presents; the index fact alone travels here.
-  it("names a candidate's library by its local id alone", async () => {
-    const { references } = setup({
-      document: {
-        citations: [
-          {
-            indexedKey: null,
-            linkpath: null,
-            refNumber: 1,
-            occurrences: [UNRESOLVED_OCCURRENCE],
-          },
+  it.effect("names a candidate's library by its local id alone", () =>
+    Effect.gen(function* () {
+      const { references } = setup({
+        document: {
+          citations: [
+            {
+              indexedKey: null,
+              linkpath: null,
+              refNumber: 1,
+              occurrences: [UNRESOLVED_OCCURRENCE],
+            },
+          ],
+          errors: [],
+          sources: new Map(),
+          database: "ready",
+        },
+        citekeyResolution: {
+          kind: "ambiguous",
+          candidates: [SNAPSHOT_ITEM, { ...SNAPSHOT_ITEM, itemID: 11 }],
+        },
+      });
+
+      const [candidate] = JSON.parse(yield* references({ file: DOCUMENT_PATH }))
+        .entries[0].candidates;
+
+      expect(Object.keys(candidate)).toStrictEqual(["key", "libraryID"]);
+    }),
+  );
+
+  it.effect("keeps a citekey that names no item unresolved", () =>
+    Effect.gen(function* () {
+      const { references } = setup({ citekeyResolution: { kind: "missing" } });
+
+      const output = yield* references({ file: DOCUMENT_PATH });
+
+      expect(JSON.parse(output)).toMatchObject({
+        entries: [
+          { kind: "resolved" },
+          { kind: "unresolved", citekey: "roe2099" },
+          { kind: "malformed" },
+          { kind: "missing" },
         ],
-        errors: [],
-        sources: new Map(),
-        database: "ready",
-      },
-      citekeyResolution: {
-        kind: "ambiguous",
-        candidates: [SNAPSHOT_ITEM, { ...SNAPSHOT_ITEM, itemID: 11 }],
-      },
-    });
+      });
+    }),
+  );
 
-    const [candidate] = JSON.parse(await references({ file: DOCUMENT_PATH }))
-      .entries[0].candidates;
+  it.effect(
+    "carries no CSL detail or attachment data in a resolved entry",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup();
 
-    expect(Object.keys(candidate)).toStrictEqual(["key", "libraryID"]);
-  });
+        const output = yield* references({ file: DOCUMENT_PATH });
 
-  it("keeps a citekey that names no item unresolved", async () => {
-    const { references } = setup({ citekeyResolution: { kind: "missing" } });
+        expect(output).not.toContain("csl");
+        expect(output).not.toContain("attachments");
+      }),
+  );
 
-    const output = await references({ file: DOCUMENT_PATH });
+  it.effect(
+    "answers a document that cites nothing with no entries and no omitted syntax",
+    () =>
+      Effect.gen(function* () {
+        const { references, documentOmittedSyntaxes } = setup({
+          document: {
+            citations: [],
+            errors: [],
+            sources: new Map(),
+            database: "ready",
+          },
+          documentOmittedSyntaxes: [],
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      entries: [
-        { kind: "resolved" },
-        { kind: "unresolved", citekey: "roe2099" },
-        { kind: "malformed" },
-        { kind: "missing" },
-      ],
-    });
-  });
+        const output = yield* references({ file: "notes/plain.md" });
 
-  it("carries no CSL detail or attachment data in a resolved entry", async () => {
-    const { references } = setup();
+        expect(documentOmittedSyntaxes).toHaveBeenCalledWith("notes/plain.md");
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          entries: [],
+          omittedSyntaxes: [],
+        });
+      }),
+  );
 
-    const output = await references({ file: DOCUMENT_PATH });
+  it.effect(
+    "reports wikilink as the excluded syntax that held the document's occurrences",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup({
+          document: {
+            citations: [],
+            errors: [],
+            sources: new Map(),
+            database: "ready",
+          },
+          syntaxes: { citekey: "included", wikilink: "excluded" },
+          documentOmittedSyntaxes: ["wikilink"],
+        });
 
-    expect(output).not.toContain("csl");
-    expect(output).not.toContain("attachments");
-  });
+        const output = yield* references({ file: "notes/wikilinks-only.md" });
 
-  it("answers a document that cites nothing with no entries and no omitted syntax", async () => {
-    const { references, documentOmittedSyntaxes } = setup({
-      document: {
-        citations: [],
-        errors: [],
-        sources: new Map(),
-        database: "ready",
-      },
-      documentOmittedSyntaxes: [],
-    });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          entries: [],
+          omittedSyntaxes: ["wikilink"],
+        });
+      }),
+  );
 
-    const output = await references({ file: "notes/plain.md" });
+  it.effect(
+    "reports citekey as the excluded syntax that held the document's occurrences",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup({
+          document: {
+            citations: [],
+            errors: [],
+            sources: new Map(),
+            database: "ready",
+          },
+          syntaxes: { citekey: "excluded", wikilink: "included" },
+          documentOmittedSyntaxes: ["citekey"],
+        });
 
-    expect(documentOmittedSyntaxes).toHaveBeenCalledWith("notes/plain.md");
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      entries: [],
-      omittedSyntaxes: [],
-    });
-  });
+        const output = yield* references({ file: "notes/citekeys-only.md" });
 
-  it("reports wikilink as the excluded syntax that held the document's occurrences", async () => {
-    const { references } = setup({
-      document: {
-        citations: [],
-        errors: [],
-        sources: new Map(),
-        database: "ready",
-      },
-      syntaxes: { citekey: "included", wikilink: "excluded" },
-      documentOmittedSyntaxes: ["wikilink"],
-    });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          entries: [],
+          omittedSyntaxes: ["citekey"],
+        });
+      }),
+  );
 
-    const output = await references({ file: "notes/wikilinks-only.md" });
+  it.effect(
+    "reports omittedSyntaxes as an empty list when entries is non-empty and the document holds no excluded occurrence",
+    () =>
+      Effect.gen(function* () {
+        const { references, documentOmittedSyntaxes } = setup();
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      entries: [],
-      omittedSyntaxes: ["wikilink"],
-    });
-  });
+        const output = yield* references({ file: DOCUMENT_PATH });
 
-  it("reports citekey as the excluded syntax that held the document's occurrences", async () => {
-    const { references } = setup({
-      document: {
-        citations: [],
-        errors: [],
-        sources: new Map(),
-        database: "ready",
-      },
-      syntaxes: { citekey: "excluded", wikilink: "included" },
-      documentOmittedSyntaxes: ["citekey"],
-    });
+        expect(documentOmittedSyntaxes).toHaveBeenCalledWith(DOCUMENT_PATH);
+        expect(JSON.parse(output)).toMatchObject({ omittedSyntaxes: [] });
+      }),
+  );
 
-    const output = await references({ file: "notes/citekeys-only.md" });
+  it.effect(
+    "reports the excluded syntax when a non-empty answer's document also holds occurrences of it",
+    () =>
+      Effect.gen(function* () {
+        const { references } = setup({
+          syntaxes: { citekey: "included", wikilink: "excluded" },
+          documentOmittedSyntaxes: ["wikilink"],
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      entries: [],
-      omittedSyntaxes: ["citekey"],
-    });
-  });
+        const output = yield* references({ file: DOCUMENT_PATH });
 
-  it("reports omittedSyntaxes as an empty list when entries is non-empty and the document holds no excluded occurrence", async () => {
-    const { references, documentOmittedSyntaxes } = setup();
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    expect(documentOmittedSyntaxes).toHaveBeenCalledWith(DOCUMENT_PATH);
-    expect(JSON.parse(output)).toMatchObject({ omittedSyntaxes: [] });
-  });
-
-  it("reports the excluded syntax when a non-empty answer's document also holds occurrences of it", async () => {
-    const { references } = setup({
-      syntaxes: { citekey: "included", wikilink: "excluded" },
-      documentOmittedSyntaxes: ["wikilink"],
-    });
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      omittedSyntaxes: ["wikilink"],
-    });
-  });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          omittedSyntaxes: ["wikilink"],
+        });
+      }),
+  );
 
   describe("selector", () => {
-    it.each([
+    it.effect.each<[string, Record<string, string>, string]>([
       ["no file", {}, "file"],
       ["an empty file", { file: "" }, "file"],
       ["a bare file", { file: "true" }, "file"],
@@ -1051,113 +1174,129 @@ describe("zotlit:references", () => {
       ],
       ["an unknown parameter", { file: DOCUMENT_PATH, key: ITEM_KEY }, "key"],
       ["a trailing vault", { file: DOCUMENT_PATH, vault: "Other" }, "vault"],
-    ])("rejects %s", async (_label, params, parameter) => {
-      const { references, getIdentity, waitUntilSettled, readDocument } =
-        setup();
+    ])("rejects %s", ([_label, params, parameter]) =>
+      Effect.gen(function* () {
+        const { references, getIdentity, waitUntilSettled, readDocument } =
+          setup();
 
-      const response = JSON.parse(await references(params)) as {
-        ok: boolean;
-        diagnostic: { code: string; hint: string; details: object };
-      };
+        const response = JSON.parse(yield* references(params)) as {
+          ok: boolean;
+          diagnostic: { code: string; hint: string; details: object };
+        };
 
-      expect(response.ok).toBe(false);
-      expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
-      expect(response.diagnostic.hint).toBe(DIAGNOSTIC_HINTS.INVALID_SELECTOR);
-      expect(response.diagnostic.details).toEqual({ parameter });
-      expect(getIdentity).not.toHaveBeenCalled();
+        expect(response.ok).toBe(false);
+        expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
+        expect(response.diagnostic.hint).toBe(
+          DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+        );
+        expect(response.diagnostic.details).toEqual({ parameter });
+        expect(getIdentity).not.toHaveBeenCalled();
+        expect(waitUntilSettled).not.toHaveBeenCalled();
+        expect(readDocument).not.toHaveBeenCalled();
+      }),
+    );
+  });
+
+  it.effect("reports a path the vault holds no note at", () =>
+    Effect.gen(function* () {
+      const { references } = setup({ document: null });
+
+      const output = yield* references({ file: "notes/gone.md" });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        request: { file: "notes/gone.md" },
+        identity: IDENTITY,
+        diagnostic: {
+          code: "FILE_NOT_FOUND",
+          message: "The vault holds no Markdown note at 'notes/gone.md'.",
+          hint: DIAGNOSTIC_HINTS.FILE_NOT_FOUND,
+          details: { file: "notes/gone.md" },
+        },
+      });
+    }),
+  );
+
+  it.effect("rejects a source mismatch before any data load", () =>
+    Effect.gen(function* () {
+      const { references, waitUntilSettled, readDocument } = setup();
+
+      const output = yield* references({
+        file: DOCUMENT_PATH,
+        "expect-source": "other",
+      });
+
       expect(waitUntilSettled).not.toHaveBeenCalled();
       expect(readDocument).not.toHaveBeenCalled();
-    });
-  });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        request: { file: DOCUMENT_PATH },
+        identity: IDENTITY,
+        diagnostic: {
+          code: "TARGET_MISMATCH",
+          details: { target: "source", expected: "other", actual: "a1b2c3d4" },
+        },
+      });
+    }),
+  );
 
-  it("reports a path the vault holds no note at", async () => {
-    const { references } = setup({ document: null });
+  it.effect(
+    "returns a retryable diagnostic when the index stays transitional",
+    () =>
+      Effect.gen(function* () {
+        const { references, readDocument } = setup({
+          settle: "timeout",
+          settleTimeoutMs: 25,
+        });
 
-    const output = await references({ file: "notes/gone.md" });
+        const output = yield* references({ file: DOCUMENT_PATH });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      request: { file: "notes/gone.md" },
-      identity: IDENTITY,
-      diagnostic: {
-        code: "FILE_NOT_FOUND",
-        message: "The vault holds no Markdown note at 'notes/gone.md'.",
-        hint: DIAGNOSTIC_HINTS.FILE_NOT_FOUND,
-        details: { file: "notes/gone.md" },
-      },
-    });
-  });
-
-  it("rejects a source mismatch before any data load", async () => {
-    const { references, waitUntilSettled, readDocument } = setup();
-
-    const output = await references({
-      file: DOCUMENT_PATH,
-      "expect-source": "other",
-    });
-
-    expect(waitUntilSettled).not.toHaveBeenCalled();
-    expect(readDocument).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      request: { file: DOCUMENT_PATH },
-      identity: IDENTITY,
-      diagnostic: {
-        code: "TARGET_MISMATCH",
-        details: { target: "source", expected: "other", actual: "a1b2c3d4" },
-      },
-    });
-  });
-
-  it("returns a retryable diagnostic when the index stays transitional", async () => {
-    const { references, readDocument } = setup({
-      settle: "timeout",
-      settleTimeoutMs: 25,
-    });
-
-    const output = await references({ file: DOCUMENT_PATH });
-
-    expect(readDocument).not.toHaveBeenCalled();
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "INDEX_NOT_READY",
-        message: "The Citation Index did not settle within 25 ms.",
-        hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
-      },
-    });
-  });
+        expect(readDocument).not.toHaveBeenCalled();
+        expect(JSON.parse(output)).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "INDEX_NOT_READY",
+            message: "The Citation Index did not settle within 25 ms.",
+            hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
+          },
+        });
+      }),
+  );
 });
 
 describe("zotlit:citations-guide", () => {
-  it("serves the page as literal prose, without an envelope", async () => {
-    const { guide, getIdentity, waitUntilSettled } = setup();
+  it.effect("serves the page as literal prose, without an envelope", () =>
+    Effect.gen(function* () {
+      const { guide, getIdentity, waitUntilSettled } = setup();
 
-    const output = await guide({});
+      const output = yield* guide({});
 
-    expect(() => JSON.parse(output)).toThrow();
-    expect(output).toContain("ZOTLIT-CITATIONS(1)");
-    expect(output).toContain(CITED_BY_COMMAND);
-    expect(output).toContain(REFERENCES_COMMAND);
-    expect(output).toContain(CITATIONS_GUIDE_COMMAND);
-    expect(getIdentity).not.toHaveBeenCalled();
-    expect(waitUntilSettled).not.toHaveBeenCalled();
-  });
+      expect(() => JSON.parse(output)).toThrow();
+      expect(output).toContain("ZOTLIT-CITATIONS(1)");
+      expect(output).toContain(CITED_BY_COMMAND);
+      expect(output).toContain(REFERENCES_COMMAND);
+      expect(output).toContain(CITATIONS_GUIDE_COMMAND);
+      expect(getIdentity).not.toHaveBeenCalled();
+      expect(waitUntilSettled).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("rejects a parameter, since the guide serves one page", async () => {
-    const { guide } = setup();
+  it.effect("rejects a parameter, since the guide serves one page", () =>
+    Effect.gen(function* () {
+      const { guide } = setup();
 
-    const output = await guide({ topic: "positions" });
+      const output = yield* guide({ topic: "positions" });
 
-    expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 3,
-      command: CITATIONS_GUIDE_COMMAND,
-      ok: false,
-      diagnostic: {
-        code: "INVALID_SELECTOR",
-        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
-        details: { parameter: "topic" },
-      },
-    });
-  });
+      expect(JSON.parse(output)).toMatchObject({
+        contractVersion: 3,
+        command: CITATIONS_GUIDE_COMMAND,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+          details: { parameter: "topic" },
+        },
+      });
+    }),
+  );
 });

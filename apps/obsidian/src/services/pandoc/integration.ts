@@ -2,7 +2,9 @@
 
 import type { CliData } from "obsidian";
 
+import type { CliCommandHandler } from "@/lib/cli-command";
 import { decodeCliParams, noCliParams, rejectionText } from "@/lib/cli-params";
+import { Effect } from "@/lib/effect";
 
 import { CONTRACT_VERSION } from "./contract";
 import {
@@ -21,11 +23,9 @@ export type {
   SavePandocIntegrationResult,
 } from "./integration-save";
 
-type PandocIntegrationHandler = (params: CliData) => string;
-
 export type PandocIntegrationHandlers = Record<
   typeof PANDOC_FILES_COMMAND | typeof PANDOC_GUIDE_COMMAND,
-  PandocIntegrationHandler
+  CliCommandHandler
 >;
 
 /** The version-matched pair distributed by one installed ZotLit build. */
@@ -40,8 +40,10 @@ export function createPandocIntegrationHandlers(
   pluginVersion: string,
 ): PandocIntegrationHandlers {
   return {
-    [PANDOC_FILES_COMMAND]: (params) => {
-      assertNoParameters(PANDOC_FILES_COMMAND, params);
+    [PANDOC_FILES_COMMAND]: Effect.fn("PandocCli.files")(function* (
+      params: CliData,
+    ) {
+      yield* assertNoParameters(PANDOC_FILES_COMMAND, params);
       return JSON.stringify(
         {
           contractVersion: CONTRACT_VERSION,
@@ -53,17 +55,25 @@ export function createPandocIntegrationHandlers(
         null,
         2,
       );
-    },
-    [PANDOC_GUIDE_COMMAND]: (params) => {
-      assertNoParameters(PANDOC_GUIDE_COMMAND, params);
+    }),
+    [PANDOC_GUIDE_COMMAND]: Effect.fn("PandocCli.guide")(function* (
+      params: CliData,
+    ) {
+      yield* assertNoParameters(PANDOC_GUIDE_COMMAND, params);
       return renderPandocGuide(pluginVersion);
-    },
+    }),
   };
 }
 
-function assertNoParameters(command: string, params: CliData): void {
-  const request = decodeCliParams(params, noCliParams, { command });
-  if (request.kind === "invalid") throw new TypeError(rejectionText(request));
+/** Fails with the rejection's text, hint included, which the CLI prints. */
+function assertNoParameters(
+  command: string,
+  params: CliData,
+): Effect.Effect<void, TypeError> {
+  return decodeCliParams(params, noCliParams, { command }).pipe(
+    Effect.asVoid,
+    Effect.mapError((rejection) => new TypeError(rejectionText(rejection))),
+  );
 }
 
 /** Man-style reference for ZotLit's part of the Native Pandoc Workflow. */

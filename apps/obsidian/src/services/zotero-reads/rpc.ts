@@ -29,17 +29,20 @@ import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 // The ZoteroReads contract: one RpcGroup and the Schema codecs both sides share.
-import { Predicate, Schema, SchemaGetter } from "@/lib/effect";
+import { Effect, Predicate, Schema, SchemaGetter } from "@/lib/effect";
+import type { SchemaIssue } from "@/lib/effect";
 import type { CitationLookupWireAnswer } from "@/services/citation-index/lookup";
 import type {
   CitekeyResolution,
   SnapshotItem,
 } from "@/services/citation-index/snapshot";
 import type { EffectiveReadMode } from "@/services/database/read-source";
+import { DecodedQuery, DecodedValues } from "@/services/item-query/query-codec";
 import type {
   QueryAnswer,
   QueryJob,
 } from "@/services/item-query/worker-protocol";
+import { libraryScopeWire } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { Settings, ZoteroReadMode } from "@/services/settings/schema";
 
@@ -74,6 +77,40 @@ function rawInt<T extends number>() {
  */
 function jsonObject<T extends object>() {
   return Schema.declare((u: unknown): u is T => Predicate.isObject(u));
+}
+
+/**
+ * A Query Job. The query or values listing the renderer decoded crosses
+ * through its own codec (`item-query/decode.ts`), so the worker reads it in
+ * the shape the decoder declares; the rest of the job is plain data.
+ */
+const QueryJobSchema = jsonObject<QueryJob>().pipe(
+  Schema.decodeTo(jsonObject<QueryJob>(), {
+    decode: SchemaGetter.transformEffect((job: QueryJob) =>
+      codeRequest(job, Schema.decodeUnknownEffect),
+    ),
+    encode: SchemaGetter.transformEffect((job: QueryJob) =>
+      codeRequest(job, Schema.encodeUnknownEffect),
+    ),
+  }),
+);
+
+/** `job` with its query or values listing passed through `code`. */
+function codeRequest(
+  job: QueryJob,
+  code: typeof Schema.decodeUnknownEffect,
+): Effect.Effect<QueryJob, SchemaIssue.Issue> {
+  const request =
+    "query" in job && job.query
+      ? code(DecodedQuery)(job.query).pipe(
+          Effect.map((query) => ({ ...job, query }) as QueryJob),
+        )
+      : "values" in job && job.values
+        ? code(DecodedValues)(job.values).pipe(
+            Effect.map((values) => ({ ...job, values }) as QueryJob),
+          )
+        : Effect.succeed(job);
+  return Effect.mapError(request, (error) => error.issue);
 }
 
 // --- Errors ---------------------------------------------------------------
@@ -482,23 +519,7 @@ const CitationResolutionSchema = Schema.Union([
 type _CitationResolution = Expect<
   Equals<typeof CitationResolutionSchema.Type, CitekeyResolution>
 >;
-const CitationScopeSchema = Schema.NullOr(
-  Schema.Union([
-    Schema.Struct({ mode: Schema.Literal("all") }),
-    Schema.Struct({
-      mode: Schema.Literal("selected"),
-      libraries: Schema.Array(
-        Schema.Union([
-          Schema.Struct({ type: Schema.Literal("personal") }),
-          Schema.Struct({
-            type: Schema.Literal("group"),
-            groupID: Schema.Number,
-          }),
-        ]),
-      ),
-    }),
-  ]),
-);
+const CitationScopeSchema = Schema.NullOr(libraryScopeWire);
 type _CitationScope = Expect<
   Equals<typeof CitationScopeSchema.Type, LibraryScope | null>
 >;
@@ -517,7 +538,7 @@ export class ZoteroReads extends RpcGroup.make(
     success: Schema.Void,
   }),
   Rpc.make("ItemQuery", {
-    payload: { job: jsonObject<QueryJob>(), ...snapshot },
+    payload: { job: QueryJobSchema, ...snapshot },
     success: jsonObject<QueryAnswer>(),
     error: ReadError,
   }),

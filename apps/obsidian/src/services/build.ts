@@ -1,6 +1,8 @@
 import type { FileSystemAdapter } from "obsidian";
 
+import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
+import { DisposableAbortController } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
@@ -121,6 +123,12 @@ export function buildServices(
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),
+    })
+    .useValue({
+      // Above every container service on the stack, so unload interrupts a
+      // command still running before the services it reads dispose.
+      runCli: () =>
+        cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
     })
     .useValue({
       queryClient: () => runtime.runSync(QueryClients.use(Effect.succeed)),

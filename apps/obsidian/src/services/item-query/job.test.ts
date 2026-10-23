@@ -1,8 +1,7 @@
-import { Deferred, Effect, Fiber } from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import {
   BULK_LIBRARY,
@@ -12,12 +11,14 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
+import { Deferred, Effect, Fiber } from "@/lib/effect";
+import { acquireDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
+import { workerQuery } from "./__fixtures__/worker-query";
 import { makeAttachmentFileResolver } from "./attachment-files";
 import { QUERY_COMMAND } from "./contract";
-import { decodeQuery } from "./decode";
-import type { DecodedQuery } from "./decode";
 import { runQueryJob } from "./job";
 import type { QueryJob } from "./worker-protocol";
 
@@ -58,20 +59,12 @@ const ATTACHMENT_PATHS = {
   baseAttachmentPath: null,
 };
 
-/** The query that the renderer decodes from `params`, as plain JSON. */
-function decoded(params: CliData): DecodedQuery {
-  const query = decodeQuery(params);
-  if (query.kind === "invalid")
-    throw new Error(`Malformed test query: ${query.message}`);
-  return JSON.parse(JSON.stringify(query.value)) as DecodedQuery;
-}
-
 function jobOf(params: CliData, stagePath?: string): QueryJob {
   return {
     schema: false,
     dataset: "items",
     command: QUERY_COMMAND,
-    query: decoded(params),
+    query: workerQuery(params),
     id: "job-1",
     ...IDENTITY,
     scope: MY_LIBRARY_SCOPE,
@@ -81,13 +74,18 @@ function jobOf(params: CliData, stagePath?: string): QueryJob {
 }
 
 const run = (scenario: ScenarioDatabase, job: QueryJob) =>
-  Effect.runPromise(
-    runQueryJob(job, {
-      client: scenario.db,
-      identity: IDENTITY,
-      attachmentFiles: makeAttachmentFileResolver(job.attachmentPaths),
-    }),
-  );
+  runQueryJob(job, {
+    client: scenario.db,
+    identity: IDENTITY,
+    attachmentFiles: makeAttachmentFileResolver(job.attachmentPaths),
+  });
+
+/** The scenario database, held for the case's scope. */
+const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
+  acquireDisposable(() => openScenarioDatabase(options));
+
+/** The text of the file at `path`. */
+const textOf = (path: string) => Effect.promise(() => readFile(path, "utf8"));
 
 /** The paths of an export from a scenario in a temporary directory. */
 function exportPaths(scenario: ScenarioDatabase) {
@@ -99,122 +97,142 @@ function exportPaths(scenario: ScenarioDatabase) {
 }
 
 describe("Query Job", () => {
-  it("answers inline with the pretty JSON of its envelope", async () => {
-    using scenario = openScenarioDatabase();
+  it.effect("answers inline with the pretty JSON of its envelope", () =>
+    Effect.gen(function* () {
+      const scenario = yield* scenarioOf();
 
-    const answer = await run(
-      scenario,
-      jobOf({ limit: "all", fields: '["title","creators"]' }),
-    );
-
-    expect(answer.receipt).toEqual({ kind: "inline" });
-    expect(answer.answer).toBe(
-      JSON.stringify(JSON.parse(answer.answer), null, 2),
-    );
-    expect(JSON.parse(answer.answer)).toMatchObject({
-      ok: true,
-      returnedCount: 10,
-    });
-  });
-
-  it.each([undefined, 'tags != "absent"'])(
-    "writes an export and warnings to the staging file and receipt: %s",
-    async (filter) => {
-      using scenario = openScenarioDatabase({ storage: "temp-directory" });
-      seedBulkLibrary(scenario.sqlite, 600);
-      const { output, stagePath } = exportPaths(scenario);
-      const params = { ...BULK, ...(filter ? { filter } : {}) };
-      const inline = await run(scenario, jobOf(params));
-
-      const answer = await run(
+      const answer = yield* run(
         scenario,
-        jobOf({ ...params, output }, stagePath),
+        jobOf({ limit: "all", fields: '["title","creators"]' }),
       );
-      const warnings = JSON.parse(inline.answer).warnings;
-      expect(warnings).toHaveLength(filter ? 1 : 0);
-      expect(JSON.parse(answer.answer).warnings).toEqual(warnings);
 
-      const bytes = Buffer.byteLength(inline.answer);
-      expect(answer.receipt).toEqual({ kind: "file", path: output, bytes });
+      expect(answer.receipt).toEqual({ kind: "inline" });
+      expect(answer.answer).toBe(
+        JSON.stringify(JSON.parse(answer.answer), null, 2),
+      );
       expect(JSON.parse(answer.answer)).toMatchObject({
         ok: true,
-        returnedCount: 600,
-        file: { path: output, bytes, format: "json" },
+        returnedCount: 10,
       });
-      expect(JSON.parse(answer.answer)).not.toHaveProperty("rows");
-      expect(await readFile(stagePath, "utf8")).toBe(inline.answer);
-      // The renderer publishes the staging file.
-      expect(await readdir(dirname(output))).not.toContain("items.json");
-    },
+    }),
   );
 
-  it("answers result-too-large for an inline result above the limit", async () => {
-    using scenario = openScenarioDatabase();
-    seedBulkLibrary(scenario.sqlite, 6000);
-
-    const answer = await run(scenario, jobOf(BULK));
-
-    expect(answer.receipt).toEqual({ kind: "inline" });
-    expect(JSON.parse(answer.answer)).toMatchObject({
-      ok: false,
-      diagnostic: { code: "result-too-large" },
-    });
-  });
-
-  it("answers output-error with no file receipt when the staging file does not close", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { output, stagePath } = exportPaths(scenario);
-    closeFailure.next = Object.assign(new Error("EIO: i/o error, close"), {
-      code: "EIO",
-    });
-
-    try {
-      const answer = await run(
-        scenario,
-        jobOf({ output, filter: 'tags != "absent"' }, stagePath),
-      );
-
-      expect(closeFailure.next).toBeUndefined();
-      expect(answer.receipt).toEqual({ kind: "inline" });
-      expect(JSON.parse(answer.answer)).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "output-error",
-          message: "EIO: i/o error, close",
-        },
-      });
-      expect(JSON.parse(answer.answer)).not.toHaveProperty("warnings");
-      // The staging file is not a complete export: no receipt publishes it.
-      expect(await readFile(stagePath, "utf8")).not.toBe("");
-    } finally {
-      closeFailure.next = undefined;
-    }
-  });
-
-  it("answers output-error when the staging file cannot be opened, and keeps the file there", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    const { output, stagePath } = exportPaths(scenario);
-    await writeFile(stagePath, "keep this content");
-
-    const answer = await run(scenario, jobOf({ output }, stagePath));
-
-    expect(answer.receipt).toEqual({ kind: "inline" });
-    expect(JSON.parse(answer.answer)).toMatchObject({
-      ok: false,
-      diagnostic: { code: "output-error" },
-    });
-    expect(await readFile(stagePath, "utf8")).toBe("keep this content");
-  });
-
-  it("gives another effect a turn at a pause of a bulk query on the job fiber", async () => {
-    using scenario = openScenarioDatabase({ storage: "temp-directory" });
-    seedBulkLibrary(scenario.sqlite, 20000);
-    const { output, stagePath } = exportPaths(scenario);
-    const events: string[] = [];
-    const firstPause = Deferred.makeUnsafe<void>();
-
-    const answer = await Effect.runPromise(
+  it.effect.each([undefined, 'tags != "absent"'])(
+    "writes an export and warnings to the staging file and receipt: %s",
+    (filter) =>
       Effect.gen(function* () {
+        const scenario = yield* scenarioOf({ storage: "temp-directory" });
+        seedBulkLibrary(scenario.sqlite, 600);
+        const { output, stagePath } = exportPaths(scenario);
+        const params = { ...BULK, ...(filter ? { filter } : {}) };
+        const inline = yield* run(scenario, jobOf(params));
+
+        const answer = yield* run(
+          scenario,
+          jobOf({ ...params, output }, stagePath),
+        );
+        const warnings = JSON.parse(inline.answer).warnings;
+        expect(warnings).toHaveLength(filter ? 1 : 0);
+        expect(JSON.parse(answer.answer).warnings).toEqual(warnings);
+
+        const bytes = Buffer.byteLength(inline.answer);
+        expect(answer.receipt).toEqual({ kind: "file", path: output, bytes });
+        expect(JSON.parse(answer.answer)).toMatchObject({
+          ok: true,
+          returnedCount: 600,
+          file: { path: output, bytes, format: "json" },
+        });
+        expect(JSON.parse(answer.answer)).not.toHaveProperty("rows");
+        expect(yield* textOf(stagePath)).toBe(inline.answer);
+        // The renderer publishes the staging file.
+        expect(
+          yield* Effect.promise(() => readdir(dirname(output))),
+        ).not.toContain("items.json");
+      }),
+  );
+
+  it.effect(
+    "answers result-too-large for an inline result above the limit",
+    () =>
+      Effect.gen(function* () {
+        const scenario = yield* scenarioOf();
+        seedBulkLibrary(scenario.sqlite, 6000);
+
+        const answer = yield* run(scenario, jobOf(BULK));
+
+        expect(answer.receipt).toEqual({ kind: "inline" });
+        expect(JSON.parse(answer.answer)).toMatchObject({
+          ok: false,
+          diagnostic: { code: "result-too-large" },
+        });
+      }),
+  );
+
+  it.effect(
+    "answers output-error with no file receipt when the staging file does not close",
+    () =>
+      Effect.gen(function* () {
+        const scenario = yield* scenarioOf({ storage: "temp-directory" });
+        const { output, stagePath } = exportPaths(scenario);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            closeFailure.next = undefined;
+          }),
+        );
+        closeFailure.next = Object.assign(new Error("EIO: i/o error, close"), {
+          code: "EIO",
+        });
+
+        const answer = yield* run(
+          scenario,
+          jobOf({ output, filter: 'tags != "absent"' }, stagePath),
+        );
+
+        expect(closeFailure.next).toBeUndefined();
+        expect(answer.receipt).toEqual({ kind: "inline" });
+        expect(JSON.parse(answer.answer)).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "output-error",
+            message: "EIO: i/o error, close",
+          },
+        });
+        expect(JSON.parse(answer.answer)).not.toHaveProperty("warnings");
+        // The staging file is not a complete export: no receipt publishes it.
+        expect(yield* textOf(stagePath)).not.toBe("");
+      }),
+  );
+
+  it.effect(
+    "answers output-error when the staging file cannot be opened, and keeps the file there",
+    () =>
+      Effect.gen(function* () {
+        const scenario = yield* scenarioOf({ storage: "temp-directory" });
+        const { output, stagePath } = exportPaths(scenario);
+        yield* Effect.promise(() => writeFile(stagePath, "keep this content"));
+
+        const answer = yield* run(scenario, jobOf({ output }, stagePath));
+
+        expect(answer.receipt).toEqual({ kind: "inline" });
+        expect(JSON.parse(answer.answer)).toMatchObject({
+          ok: false,
+          diagnostic: { code: "output-error" },
+        });
+        expect(yield* textOf(stagePath)).toBe("keep this content");
+      }),
+  );
+
+  // Live: the subject is a real timer task racing the job's scheduler pause.
+  it.live(
+    "gives another effect a turn at a pause of a bulk query on the job fiber",
+    () =>
+      Effect.gen(function* () {
+        const scenario = yield* scenarioOf({ storage: "temp-directory" });
+        seedBulkLibrary(scenario.sqlite, 20000);
+        const { output, stagePath } = exportPaths(scenario);
+        const events: string[] = [];
+        const firstPause = yield* Deferred.make<void>();
+
         const job = yield* Effect.forkChild(
           runQueryJob(jobOf({ ...BULK, output }, stagePath), {
             client: scenario.db,
@@ -236,15 +254,16 @@ describe("Query Job", () => {
         yield* Deferred.await(firstPause);
         yield* Effect.sleep("1 millis");
         events.push("other");
-        return yield* Fiber.join(job);
-      }),
-    );
+        const answer = yield* Fiber.join(job);
 
-    // The time-budget scheduler of the job ended a slice, and the other
-    // effect ran before the job resumed.
-    const other = events.indexOf("other");
-    expect(events[other - 1]).toBe("pause");
-    expect(events.slice(other)).toContain("resume");
-    expect(JSON.parse(answer.answer)).toMatchObject({ returnedCount: 20000 });
-  });
+        // The time-budget scheduler of the job ended a slice, and the other
+        // effect ran before the job resumed.
+        const other = events.indexOf("other");
+        expect(events[other - 1]).toBe("pause");
+        expect(events.slice(other)).toContain("resume");
+        expect(JSON.parse(answer.answer)).toMatchObject({
+          returnedCount: 20000,
+        });
+      }),
+  );
 });

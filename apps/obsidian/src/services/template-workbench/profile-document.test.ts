@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 import { InertTemplateError } from "@/services/template/errors";
 
 import {
@@ -76,8 +78,9 @@ function makeHandlers(options?: {
     }),
     pluginVersion: "1.2.3",
     getIdentity: () => IDENTITY,
-    loadCitation: async () => ({ kind: "not-found" }) as const,
-    loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
+    loadCitation: () => Effect.succeed({ kind: "not-found" } as const),
+    loadData: () =>
+      Effect.succeed({ kind: "data", data: { title: "Paper" } } as const),
     templates: {
       getCitationTemplateStatus: () => ({
         path: "Templates/zotlit-citation.md",
@@ -124,101 +127,113 @@ function makeHandlers(options?: {
 }
 
 describe("Template Workbench Profile documents", () => {
-  it("reports Profiles, their references, and missing document validation", async () => {
-    const { handlers } = makeHandlers();
+  it.effect(
+    "reports Profiles, their references, and missing document validation",
+    () =>
+      Effect.gen(function* () {
+        const { handlers } = makeHandlers();
 
-    const output = await handlers[TEMPLATE_STATUS_COMMAND]({});
+        const output = yield* handlers[TEMPLATE_STATUS_COMMAND]({});
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      profiles: [
-        { id: "default", label: "Default", document: "default.md" },
-        { id: BOOKS_ID, label: "Books", document: "books.md" },
-      ],
-      documents: [
-        {
-          reference: "books.md",
-          path: null,
-          validation: {
-            state: "missing",
-            diagnostic: {
-              code: "DOCUMENT_NOT_FOUND",
-              hint: DIAGNOSTIC_HINTS.DOCUMENT_NOT_FOUND,
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          profiles: [
+            { id: "default", label: "Default", document: "default.md" },
+            { id: BOOKS_ID, label: "Books", document: "books.md" },
+          ],
+          documents: [
+            {
+              reference: "books.md",
+              path: null,
+              validation: {
+                state: "missing",
+                diagnostic: {
+                  code: "DOCUMENT_NOT_FOUND",
+                  hint: DIAGNOSTIC_HINTS.DOCUMENT_NOT_FOUND,
+                },
+              },
             },
-          },
-        },
+            {
+              reference: "default.md",
+              path: "templates/default.md",
+              validation: { state: "valid", hasManagedBlock: true },
+            },
+          ],
+        });
+      }),
+  );
+
+  it.effect("reports an excluded Default only through its diagnostics", () =>
+    Effect.gen(function* () {
+      const { handlers, readProfiles } = makeHandlers();
+      const diagnostics = [
         {
-          reference: "default.md",
-          path: "templates/default.md",
-          validation: { state: "valid", hasManagedBlock: true },
+          code: "duplicate-profile-id" as const,
+          path: "templates/zotlit-profile.default.md",
+          paths: [
+            "templates/zotlit-profile.default.md",
+            "templates/zotlit-profile.copy.md",
+          ],
+          message: "Duplicate default ID",
         },
-      ],
-    });
-  });
+      ];
+      readProfiles.mockReturnValue({
+        defaultProfile: undefined,
+        profiles: [],
+        diagnostics,
+      });
+      const output = JSON.parse(yield* handlers[TEMPLATE_STATUS_COMMAND]({}));
+      expect(output.profiles).toEqual([]);
+      expect(output.profileDiagnostics).toEqual(diagnostics);
+    }),
+  );
 
-  it("reports an excluded Default only through its diagnostics", async () => {
-    const { handlers, readProfiles } = makeHandlers();
-    const diagnostics = [
-      {
-        code: "duplicate-profile-id" as const,
-        path: "templates/zotlit-profile.default.md",
-        paths: [
-          "templates/zotlit-profile.default.md",
-          "templates/zotlit-profile.copy.md",
-        ],
-        message: "Duplicate default ID",
-      },
-    ];
-    readProfiles.mockReturnValue({
-      defaultProfile: undefined,
-      profiles: [],
-      diagnostics,
-    });
-    const output = JSON.parse(await handlers[TEMPLATE_STATUS_COMMAND]({}));
-    expect(output.profiles).toEqual([]);
-    expect(output.profileDiagnostics).toEqual(diagnostics);
-  });
+  it.effect("refuses a second document selector before it reads the key", () =>
+    Effect.gen(function* () {
+      const { handlers, getDocument } = makeHandlers();
 
-  it("refuses a second document selector before it reads the key", async () => {
-    const { handlers, getDocument } = makeHandlers();
+      const output = yield* handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+        key: "not-a-key",
+        profile: "default",
+        document: "default.md",
+      });
 
-    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
-      key: "not-a-key",
-      profile: "default",
-      document: "default.md",
-    });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "Provide exactly one of profile, document, or source.",
+          details: { parameter: "document" },
+        },
+      });
+      expect(getDocument).not.toHaveBeenCalled();
+    }),
+  );
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "INVALID_SELECTOR",
-        message: "Provide exactly one of profile, document, or source.",
-        details: { parameter: "document" },
-      },
-    });
-    expect(getDocument).not.toHaveBeenCalled();
-  });
+  it.effect(
+    "renders an uninstalled source override against real item data without writes",
+    () =>
+      Effect.gen(function* () {
+        const { handlers, getDocument, renderSource } = makeHandlers();
+        const source = "---\nid: draft\n---\n# {{ zt.title }}";
 
-  it("renders an uninstalled source override against real item data without writes", async () => {
-    const { handlers, getDocument, renderSource } = makeHandlers();
-    const source = "---\nid: draft\n---\n# {{ zt.title }}";
+        const output = yield* handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+          key: "ITEM2345",
+          source,
+          "expect-source": IDENTITY.source.id,
+        });
 
-    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
-      key: "ITEM2345",
-      source,
-      "expect-source": IDENTITY.source.id,
-    });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: true,
+          request: { key: "ITEM2345", source },
+          render: { create: "# Paper\nmanaged", update: "managed" },
+        });
+        expect(renderSource).toHaveBeenCalledWith(source, { title: "Paper" });
+        expect(getDocument).not.toHaveBeenCalled();
+      }),
+  );
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: true,
-      request: { key: "ITEM2345", source },
-      render: { create: "# Paper\nmanaged", update: "managed" },
-    });
-    expect(renderSource).toHaveBeenCalledWith(source, { title: "Paper" });
-    expect(getDocument).not.toHaveBeenCalled();
-  });
-
-  it.each([
+  it.effect.each([
     {
       name: "missing document",
       params: { key: "ITEM2345", document: "missing.md" },
@@ -232,42 +247,49 @@ describe("Template Workbench Profile documents", () => {
       },
       code: "UNKNOWN_PROFILE_STAMP",
     },
-  ])("reports $name with its recovery hint", async ({ params, code }) => {
-    const { handlers } = makeHandlers();
-    const cliParams: Record<string, string> = {};
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) cliParams[key] = value;
-    }
+  ])("reports $name with its recovery hint", ({ params, code }) =>
+    Effect.gen(function* () {
+      const { handlers } = makeHandlers();
+      const cliParams: Record<string, string> = {};
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined) cliParams[key] = value;
+      }
 
-    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND](cliParams);
+      const output =
+        yield* handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND](cliParams);
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code,
-        hint: DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS],
-      },
-    });
-  });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code,
+          hint: DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS],
+        },
+      });
+    }),
+  );
 
-  it("prints an unresolved --profile argument verbatim instead of falling back to the default", async () => {
-    const { handlers } = makeHandlers();
+  it.effect(
+    "prints an unresolved --profile argument verbatim instead of falling back to the default",
+    () =>
+      Effect.gen(function* () {
+        const { handlers } = makeHandlers();
 
-    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
-      key: "ITEM2345",
-      profile: "nope",
-    });
+        const output = yield* handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+          key: "ITEM2345",
+          profile: "nope",
+        });
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "UNKNOWN_PROFILE_STAMP",
-        message: "No Literature Note Profile has the stamped ID 'nope'.",
-      },
-    });
-  });
+        expect(JSON.parse(output)).toMatchObject({
+          ok: false,
+          diagnostic: {
+            code: "UNKNOWN_PROFILE_STAMP",
+            message: "No Literature Note Profile has the stamped ID 'nope'.",
+          },
+        });
+      }),
+  );
 
-  it.each([
+  it.effect.each([
     {
       name: "duplicate Managed Block",
       error: new LiteratureNoteTemplateError(
@@ -318,63 +340,70 @@ describe("Template Workbench Profile documents", () => {
       error: new InertTemplateError("JavaScript Templates are disabled"),
       code: "ETA_OPT_IN_REQUIRED",
     },
-  ])("reports $name with its recovery hint", async ({ error, code }) => {
-    const { handlers } = makeHandlers({
-      renderSource: () => {
-        throw error;
-      },
-    });
+  ])("reports $name with its recovery hint", ({ error, code }) =>
+    Effect.gen(function* () {
+      const { handlers } = makeHandlers({
+        renderSource: () => {
+          throw error;
+        },
+      });
 
-    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
-      key: "ITEM2345",
-      source: "invalid source",
-    });
-    const registered = DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS];
-    // A document fault carries the parser's own recovery as its hint.
-    const recovery =
-      error instanceof LiteratureNoteTemplateError ? error.recovery : undefined;
+      const output = yield* handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+        key: "ITEM2345",
+        source: "invalid source",
+      });
+      const registered =
+        DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS];
+      // A document fault carries the parser's own recovery as its hint.
+      const recovery =
+        error instanceof LiteratureNoteTemplateError
+          ? error.recovery
+          : undefined;
 
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code,
-        message: error.message,
-        hint: recovery ?? registered,
-        severity: "error",
-        report:
-          recovery === undefined
-            ? [error.message, registered]
-            : [error.message, recovery, registered],
-      },
-    });
-  });
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code,
+          message: error.message,
+          hint: recovery ?? registered,
+          severity: "error",
+          report:
+            recovery === undefined
+              ? [error.message, registered]
+              : [error.message, recovery, registered],
+        },
+      });
+    }),
+  );
 
-  it("reports validation failures from an installed document", async () => {
-    const { handlers, getDocument } = makeHandlers();
-    getDocument.mockImplementationOnce(() => {
-      throw new LiteratureNoteTemplateError(
-        "duplicate-managed-block",
-        "Document has two Managed Blocks",
-        { recovery: "Keep one Managed Block." },
-      );
-    });
-
-    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
-      key: "ITEM2345",
-      document: "default.md",
-    });
-
-    expect(JSON.parse(output)).toMatchObject({
-      ok: false,
-      diagnostic: {
-        code: "DUPLICATE_MANAGED_BLOCK",
-        hint: "Keep one Managed Block.",
-        report: [
+  it.effect("reports validation failures from an installed document", () =>
+    Effect.gen(function* () {
+      const { handlers, getDocument } = makeHandlers();
+      getDocument.mockImplementationOnce(() => {
+        throw new LiteratureNoteTemplateError(
+          "duplicate-managed-block",
           "Document has two Managed Blocks",
-          "Keep one Managed Block.",
-          DIAGNOSTIC_HINTS.DUPLICATE_MANAGED_BLOCK,
-        ],
-      },
-    });
-  });
+          { recovery: "Keep one Managed Block." },
+        );
+      });
+
+      const output = yield* handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+        key: "ITEM2345",
+        document: "default.md",
+      });
+
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "DUPLICATE_MANAGED_BLOCK",
+          hint: "Keep one Managed Block.",
+          report: [
+            "Document has two Managed Blocks",
+            "Keep one Managed Block.",
+            DIAGNOSTIC_HINTS.DUPLICATE_MANAGED_BLOCK,
+          ],
+        },
+      });
+    }),
+  );
 });

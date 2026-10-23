@@ -1,11 +1,10 @@
 // Selector parsing: the request each citation command accepts, and the identity it asserts.
 
 import type { CliData } from "obsidian";
-import * as v from "valibot";
-
-import { isIndexedKey } from "@zotlit/db";
 
 import {
+  cliIndexedKey,
+  cliMap,
   cliNotApplicable,
   cliParams,
   cliValue,
@@ -14,7 +13,8 @@ import {
   expectSourceParam,
   noCliParams,
 } from "@/lib/cli-params";
-import type { CliParamName, CliRequest } from "@/lib/cli-params";
+import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
+import type { Effect } from "@/lib/effect";
 
 import { diagnostic } from "./envelope";
 import type { CitationsIdentity, Diagnostic } from "./envelope";
@@ -26,34 +26,25 @@ const citedByParams = cliVariants(
   ({ key, citekey }) =>
     key === undefined && citekey !== undefined ? "citekey" : "key",
   {
-    key: v.pipe(
-      cliParams(
-        {
-          citekey: cliNotApplicable(
-            `${SELECTOR_EXCLUSIVITY_MESSAGE} Both were set.`,
-          ),
-          key: v.pipe(
-            cliValue("key"),
-            v.check(isIndexedKey, (issue) => malformedKeyMessage(issue.input)),
-          ),
-          "expect-source": expectSourceParam,
-        },
-        { key: `${SELECTOR_EXCLUSIVITY_MESSAGE} Neither was set.` },
-      ),
-      v.transform(({ key }) => ({ key })),
-    ),
-    citekey: v.pipe(
-      cliParams({
-        citekey: cliValue("citekey"),
+    key: cliParams(
+      {
+        citekey: cliNotApplicable(
+          `${SELECTOR_EXCLUSIVITY_MESSAGE} Both were set.`,
+        ),
+        key: cliValue("key").check(cliIndexedKey(malformedKeyMessage)),
         "expect-source": expectSourceParam,
-      }),
-      v.transform(({ citekey }) => ({ citekey })),
-    ),
+      },
+      { key: `${SELECTOR_EXCLUSIVITY_MESSAGE} Neither was set.` },
+    ).pipe(cliMap(({ key }) => ({ key }))),
+    citekey: cliParams({
+      citekey: cliValue("citekey"),
+      "expect-source": expectSourceParam,
+    }).pipe(cliMap(({ citekey }) => ({ citekey }))),
   },
 );
 
 /** The one Item `cited-by` reports citers of, named either way round. */
-export type CitedBySelector = v.InferOutput<typeof citedByParams>;
+export type CitedBySelector = CliOutput<typeof citedByParams>;
 
 /** The parameters of `cited-by`, to type its `CliFlags`. */
 export type CitedByParam = CliParamName<typeof citedByParams>;
@@ -66,22 +57,19 @@ export type CitedByParam = CliParamName<typeof citedByParams>;
  */
 export function parseCitedByRequest(
   params: CliData,
-): CliRequest<CitedBySelector> {
+): Effect.Effect<CitedBySelector, CliRejection> {
   return decodeCliParams(params, citedByParams, { command: "cited-by" });
 }
 
-const referencesParams = v.pipe(
-  cliParams(
-    { file: cliValue("file"), "expect-source": expectSourceParam },
-    {
-      file: "references takes the vault-relative path of one Markdown note, as file=folder/note.md.",
-    },
-  ),
-  v.transform(({ file }) => ({ file })),
-);
+const referencesParams = cliParams(
+  { file: cliValue("file"), "expect-source": expectSourceParam },
+  {
+    file: "references takes the vault-relative path of one Markdown note, as file=folder/note.md.",
+  },
+).pipe(cliMap(({ file }) => ({ file })));
 
 /** The vault-relative path of the document `references` reads. */
-export type ReferencesSelector = v.InferOutput<typeof referencesParams>;
+export type ReferencesSelector = CliOutput<typeof referencesParams>;
 
 /** The parameters of `references`, to type its `CliFlags`. */
 export type ReferencesParam = CliParamName<typeof referencesParams>;
@@ -94,20 +82,19 @@ export type ReferencesParam = CliParamName<typeof referencesParams>;
  */
 export function parseReferencesRequest(
   params: CliData,
-): CliRequest<ReferencesSelector> {
+): Effect.Effect<ReferencesSelector, CliRejection> {
   return decodeCliParams(params, referencesParams, { command: "references" });
 }
 
-const guideParams = v.pipe(
-  noCliParams,
-  v.transform(() => null),
-);
+const guideParams = noCliParams.pipe(cliMap(() => null));
 
 /**
  * The guide answers the same page for every caller, so a parameter can only be
  * a mistaken call: rejecting it keeps a wrong assumption visible.
  */
-export function parseGuideRequest(params: CliData): CliRequest<null> {
+export function parseGuideRequest(
+  params: CliData,
+): Effect.Effect<null, CliRejection> {
   return decodeCliParams(params, guideParams, { command: "citations-guide" });
 }
 

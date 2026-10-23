@@ -1,4 +1,7 @@
-import { expect, it } from "vitest";
+import { expect } from "vitest";
+
+import { Deferred, Effect, Fiber } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 
 import { redPng } from "./__fixtures__/png";
 import { answerAnnotationImage } from "./cli-image";
@@ -34,73 +37,86 @@ const request: ExcerptRequest = {
   zoteroPngPath: "/zotero/cache/ABCDEFGH.png",
 };
 
-it("returns the Zotero cache path unchanged in the Annotation Image envelope", async () => {
-  const answer = JSON.parse(
-    await answerAnnotationImage(
-      { key: "ABCDEFGH" },
-      {
-        read: async () => request,
-        resolve: async () => ({
-          kind: "available",
-          provenance: "zotero",
-          freshness: "uncertain",
-          bytes: redPng,
-          format: PNG_FORMAT,
-          identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
-        }),
-        publish: async () => {
-          throw new Error("Zotero image must keep its original path");
-        },
-        exists: async () => false,
-      },
-    ),
-  );
-  expect(answer).toEqual({
-    contractVersion: 2,
-    command: "zotlit:annotation-image",
-    ok: true,
-    key: "ABCDEFGH",
-    path: "/zotero/cache/ABCDEFGH.png",
-    format: "png",
-    provenance: "zotero",
-  });
-});
-
-it.each(["rendered", "cache"] as const)(
-  "publishes %s bytes into the PNG store",
-  async (provenance) => {
-    const answer = JSON.parse(
-      await answerAnnotationImage(
-        { key: "ABCDEFGH" },
-        {
-          read: async () => request,
-          resolve: async () => ({
-            kind: "available",
-            provenance,
-            freshness: "checked",
-            bytes: redPng,
-            format: PNG_FORMAT,
-            identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
-          }),
-          publish: async (fingerprint, bytes) => {
-            expect(fingerprint).toBe("a".repeat(64));
-            expect(bytes).toEqual(redPng);
-            return "/temp/zotlit-excerpts/image.png";
+it.effect(
+  "returns the Zotero cache path unchanged in the Annotation Image envelope",
+  () =>
+    Effect.gen(function* () {
+      const answer = JSON.parse(
+        yield* answerAnnotationImage(
+          { key: "ABCDEFGH" },
+          {
+            read: () => Effect.succeed(request),
+            resolve: async () => ({
+              kind: "available",
+              provenance: "zotero",
+              freshness: "uncertain",
+              bytes: redPng,
+              format: PNG_FORMAT,
+              identity: {
+                key: "a".repeat(64),
+                fingerprint: "image",
+                pdf: null,
+              },
+            }),
+            publish: async () => {
+              throw new Error("Zotero image must keep its original path");
+            },
+            exists: async () => false,
           },
-          exists: async () => true,
-        },
-      ),
-    );
-    expect(answer).toMatchObject({
-      ok: true,
-      path: "/temp/zotlit-excerpts/image.png",
-      format: "png",
-      provenance,
-    });
-  },
+        ),
+      );
+      expect(answer).toEqual({
+        contractVersion: 2,
+        command: "zotlit:annotation-image",
+        ok: true,
+        key: "ABCDEFGH",
+        path: "/zotero/cache/ABCDEFGH.png",
+        format: "png",
+        provenance: "zotero",
+      });
+    }),
 );
 
-it.each(
+it.effect.each(["rendered", "cache"] as const)(
+  "publishes %s bytes into the PNG store",
+  (provenance) =>
+    Effect.gen(function* () {
+      const answer = JSON.parse(
+        yield* answerAnnotationImage(
+          { key: "ABCDEFGH" },
+          {
+            read: () => Effect.succeed(request),
+            resolve: async () => ({
+              kind: "available",
+              provenance,
+              freshness: "checked",
+              bytes: redPng,
+              format: PNG_FORMAT,
+              identity: {
+                key: "a".repeat(64),
+                fingerprint: "image",
+                pdf: null,
+              },
+            }),
+            publish: async (fingerprint, bytes) => {
+              expect(fingerprint).toBe("a".repeat(64));
+              expect(bytes).toEqual(redPng);
+              return "/temp/zotlit-excerpts/image.png";
+            },
+            exists: async () => true,
+          },
+        ),
+      );
+      expect(answer).toMatchObject({
+        ok: true,
+        path: "/temp/zotlit-excerpts/image.png",
+        format: "png",
+        provenance,
+      });
+    }),
+);
+
+it.effect.each(
   (
     [
       ["annotation-not-found", null, false, false],
@@ -118,14 +134,13 @@ it.each(
       ["render-timeout", request, true, true],
     ] as const
   ).map(([code, found, exists, timeout]) => ({ code, found, exists, timeout })),
-)(
-  "gives a recovery hint for $code",
-  async ({ code, found, exists, timeout }) => {
+)("gives a recovery hint for $code", ({ code, found, exists, timeout }) =>
+  Effect.gen(function* () {
     const answer = JSON.parse(
-      await answerAnnotationImage(
+      yield* answerAnnotationImage(
         { key: "ABCDEFGH" },
         {
-          read: async () => found,
+          read: () => Effect.succeed(found),
           resolve: async () => {
             if (timeout)
               throw new DOMException("The operation timed out", "TimeoutError");
@@ -143,37 +158,63 @@ it.each(
       diagnostic: { code, hint: expect.any(String) },
     });
     expect(answer.diagnostic.hint.length).toBeGreaterThan(10);
-  },
+  }),
 );
 
-it("reports a failed read with the reader's own message", async () => {
-  const controller = new AbortController();
-  const signals: (AbortSignal | undefined)[] = [];
-  const answer = JSON.parse(
-    await answerAnnotationImage(
-      { key: "ABCDEFGH" },
-      {
-        read: async (_, signal) => {
-          signals.push(signal);
-          throw new ExcerptSourceUnavailable({
-            message: "database disk is locked",
-          });
+it.effect("reports a failed read with the reader's own message", () =>
+  Effect.gen(function* () {
+    const answer = JSON.parse(
+      yield* answerAnnotationImage(
+        { key: "ABCDEFGH" },
+        {
+          read: () =>
+            Effect.fail(
+              new ExcerptSourceUnavailable({
+                message: "database disk is locked",
+              }),
+            ),
+          resolve: async () => ({ kind: "unavailable" }),
+          publish: async () => {
+            throw new Error("No bytes");
+          },
+          exists: async () => false,
         },
-        resolve: async () => ({ kind: "unavailable" }),
-        publish: async () => {
-          throw new Error("No bytes");
-        },
-        exists: async () => false,
+      ),
+    );
+    expect(answer).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "source-unavailable",
+        message: "database disk is locked",
       },
-      controller.signal,
-    ),
-  );
-  expect(signals).toEqual([controller.signal]);
-  expect(answer).toMatchObject({
-    ok: false,
-    diagnostic: {
-      code: "source-unavailable",
-      message: "database disk is locked",
-    },
-  });
-});
+    });
+  }),
+);
+
+it.effect("aborts the render when the answer is interrupted", () =>
+  Effect.gen(function* () {
+    const rendering = yield* Deferred.make<AbortSignal | undefined>();
+    const answering = yield* Effect.forkChild(
+      answerAnnotationImage(
+        { key: "ABCDEFGH" },
+        {
+          read: () => Effect.succeed(request),
+          resolve: (_, signal) => {
+            Deferred.doneUnsafe(rendering, Effect.succeed(signal));
+            return new Promise<never>(() => {});
+          },
+          publish: async () => {
+            throw new Error("No bytes");
+          },
+          exists: async () => false,
+        },
+      ),
+    );
+    const signal = yield* Deferred.await(rendering);
+    expect(signal?.aborted).toBe(false);
+
+    yield* Fiber.interrupt(answering);
+
+    expect(signal?.aborted).toBe(true);
+  }),
+);

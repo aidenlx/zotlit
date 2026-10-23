@@ -1,6 +1,6 @@
-import type { CliData, CliHandler } from "obsidian";
-
 // The Template Workbench commands and their response boundaries.
+import type { CliData } from "obsidian";
+
 import type {
   CitationTemplateData,
   CitationVariant,
@@ -16,8 +16,11 @@ import {
   serializeTemplateData,
 } from "@zotlit/workbench/explorer";
 
-import type { CliRequest } from "@/lib/cli-params";
-import { getLogger } from "@/lib/log";
+import type { CliCommandHandler } from "@/lib/cli-command";
+import { catchRejection } from "@/lib/cli-params";
+import type { CliRejection } from "@/lib/cli-params";
+import { Effect } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -36,6 +39,7 @@ import type {
 import type {
   CitationDataLoadResult,
   CitationSelector,
+  TemplateDataError,
   TemplateDataLoadResult,
 } from "./data";
 import { discoverTemplateData } from "./discovery";
@@ -96,7 +100,6 @@ export const FRONTMATTER_REORDER_COMMAND =
   "zotlit:frontmatter-reorder" as const satisfies WorkbenchCommand;
 
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
-const logger = getLogger("template-workbench");
 
 interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
@@ -109,12 +112,12 @@ interface TemplateWorkbenchDeps {
     indexedKey: string,
     root: ContractRoot,
     options?: { note?: string },
-  ) => Promise<TemplateDataLoadResult>;
+  ) => Effect.Effect<TemplateDataLoadResult, TemplateDataError>;
   /** Citation Template data for one example set or one chosen Item. */
   loadCitation: (
     selector: CitationSelector,
     variant: CitationVariant,
-  ) => Promise<CitationDataLoadResult>;
+  ) => Effect.Effect<CitationDataLoadResult, TemplateDataError>;
   settleTimeoutMs?: number;
   templates: {
     readonly javascriptTemplatesEnabled: boolean;
@@ -206,7 +209,7 @@ export type TemplateWorkbenchHandlers = Record<
   | typeof TEMPLATE_DATA_COMMAND
   | typeof TEMPLATE_DOCUMENT_RENDER_COMMAND
   | typeof TEMPLATE_GUIDE_COMMAND,
-  CliHandler
+  CliCommandHandler
 >;
 
 export function createTemplateWorkbenchHandlers(
@@ -221,229 +224,277 @@ export function createTemplateWorkbenchHandlers(
       ? notSettledDiagnostic(settleTimeoutMs)
       : initFailedDiagnostic();
 
+  const getIdentity = () => Effect.promise(async () => deps.getIdentity());
+  const waitUntilSettled = () =>
+    Effect.promise(() => deps.templates.waitUntilSettled(settleTimeoutMs));
+
   /**
    * The preamble both item-backed commands share: parse the selector, resolve
    * the connected identity, assert the caller's target, and wait for observed
    * Template edits to compile. `run` sees a valid request and a confirmed
-   * target, and owns the rest of its command's envelopes.
+   * target, and owns the rest of its command's envelopes. `span` names the
+   * command's trace span.
    */
-  const gated =
-    <T extends object>(
-      command: WorkbenchCommand,
-      parse: (params: CliData) => CliRequest<T>,
-      run: (request: T, identity: WorkbenchIdentity) => Promise<string>,
-    ): CliHandler =>
-    async (params: CliData): Promise<string> => {
-      const request = parse(params);
-      if (request.kind === "invalid") {
-        return envelope(command, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
+  const gated = <T extends object>(
+    { command, span }: { command: WorkbenchCommand; span: string },
+    parse: (params: CliData) => Effect.Effect<T, CliRejection>,
+    run: (
+      request: T,
+      identity: WorkbenchIdentity,
+    ) => Effect.Effect<string, unknown>,
+  ): CliCommandHandler =>
+    Effect.fn(span)(function* (params: CliData) {
+      const request = yield* parse(params);
 
-      const identity = await deps.getIdentity();
+      const identity = yield* getIdentity();
       const mismatch = targetMismatch(params, identity);
       if (mismatch) {
         return envelope(command, {
           ok: false,
-          request: request.value,
+          request,
           identity,
           diagnostic: mismatch,
         });
       }
 
-      const outcome = await deps.templates.waitUntilSettled(settleTimeoutMs);
+      const outcome = yield* waitUntilSettled();
       if (outcome !== "settled") {
         return envelope(command, {
           ok: false,
-          request: request.value,
-          identity,
-          diagnostic: settleDiagnostic(outcome),
-        });
-      }
-      return await run(request.value, identity);
-    };
-
-  return {
-    [TEMPLATE_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
-      const request = parseStatusRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(TEMPLATE_STATUS_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-
-      const outcome = await deps.templates.waitUntilSettled(settleTimeoutMs);
-      if (outcome !== "settled") {
-        return envelope(TEMPLATE_STATUS_COMMAND, {
-          ok: false,
-          diagnostic: settleDiagnostic(outcome),
-        });
-      }
-
-      return envelope(TEMPLATE_STATUS_COMMAND, {
-        ok: true,
-        pluginVersion: deps.pluginVersion,
-        identity: await deps.getIdentity(),
-        javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
-        templates: deps.templates.getTemplateFileStatuses(),
-        ...(deps.literatureNotes
-          ? literatureNoteAuthoringState(deps.literatureNotes)
-          : {}),
-      });
-    },
-
-    [TEMPLATE_DATA_COMMAND]: gated(
-      TEMPLATE_DATA_COMMAND,
-      parseDataRequest,
-      async (request, identity) => {
-        let selector: CitationSelector;
-        let noteContext: { note: string; profile: string } | undefined;
-        if ("note" in request) {
-          const selected = await deps.selectNote(request.note);
-          if (selected.error) {
-            const problem = INSPECT_DIAGNOSTICS[selected.error];
-            return envelope(TEMPLATE_DATA_COMMAND, {
-              ok: false,
-              request,
-              identity,
-              diagnostic: diagnostic(
-                "INVALID_SELECTOR",
-                `${problem.message} ${problem.hint}`,
-                { parameter: "note" },
-              ),
-            });
-          }
-          selector = { key: selected.note.key };
-          noteContext = { note: selected.note.path, profile: selected.profile };
-        } else {
-          selector =
-            "example" in request
-              ? { example: request.example }
-              : { key: request.key };
-        }
-        const echoed = {
           request,
           identity,
-          selection: {
-            ...selector,
-            root: request.root,
-            ...noteContext,
-          },
-        };
-        const result =
-          "example" in selector || request.root === "citation"
-            ? await deps.loadCitation(selector, "main")
-            : await deps.loadData(
-                selector.key,
-                request.root,
-                noteContext ? { note: noteContext.note } : undefined,
-              );
-        if (result.kind !== "data") {
-          return envelope(TEMPLATE_DATA_COMMAND, {
+          diagnostic: settleDiagnostic(outcome),
+        });
+      }
+      return yield* run(request, identity);
+    }, answerRejection(command));
+
+  return {
+    [TEMPLATE_STATUS_COMMAND]: Effect.fn("TemplateWorkbenchCli.status")(
+      function* (params: CliData) {
+        yield* parseStatusRequest(params);
+
+        const outcome = yield* waitUntilSettled();
+        if (outcome !== "settled") {
+          return envelope(TEMPLATE_STATUS_COMMAND, {
             ok: false,
-            ...echoed,
-            diagnostic: dataLoadDiagnostic(result, selectedObject(selector)),
+            diagnostic: settleDiagnostic(outcome),
           });
         }
 
-        let data: unknown;
-        try {
-          if (!request.full) {
-            const discovery = discoverTemplateData(
-              result.data,
-              request.root,
-              request,
-            );
-            if ("error" in discovery)
-              return envelope(TEMPLATE_DATA_COMMAND, {
-                ok: false,
-                ...echoed,
-                diagnostic: diagnostic("INVALID_SELECTOR", discovery.error!, {
-                  parameter: "path",
-                }),
-              });
-            return envelope(TEMPLATE_DATA_COMMAND, {
-              ok: true,
-              ...echoed,
-              discovery,
-            });
-          }
-          data = serializeTemplateData(result.data, request.root);
-        } catch (error) {
-          // A missing contract entry means the committed IR no longer matches
-          // the data shapes this build shipped — a plugin defect, not a fault
-          // the caller can correct from a diagnostic.
-          if (error instanceof ContractMetadataError) {
-            logger.error("Template data contract metadata is missing", {
-              error,
-              command: TEMPLATE_DATA_COMMAND,
-              selected: selectedObject(selector),
-              root: request.root,
-            });
-            throw error;
-          }
-          return envelope(TEMPLATE_DATA_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: templateFaultDiagnostic(error, {
-              template: null,
-              compileErrors: deps.templates.compileErrors,
-            }),
-          });
-        }
-
-        return envelope(TEMPLATE_DATA_COMMAND, {
+        return envelope(TEMPLATE_STATUS_COMMAND, {
           ok: true,
-          ...echoed,
-          zt: data,
+          pluginVersion: deps.pluginVersion,
+          identity: yield* getIdentity(),
+          javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
+          templates: deps.templates.getTemplateFileStatuses(),
+          ...(deps.literatureNotes
+            ? literatureNoteAuthoringState(deps.literatureNotes)
+            : {}),
         });
       },
+      answerRejection(TEMPLATE_STATUS_COMMAND),
+    ),
+
+    [TEMPLATE_DATA_COMMAND]: gated(
+      { command: TEMPLATE_DATA_COMMAND, span: "TemplateWorkbenchCli.data" },
+      parseDataRequest,
+      (request, identity) =>
+        Effect.gen(function* () {
+          let selector: CitationSelector;
+          let noteContext: { note: string; profile: string } | undefined;
+          if ("note" in request) {
+            const note = request.note;
+            const selected = yield* Effect.promise(() => deps.selectNote(note));
+            if (selected.error) {
+              const problem = INSPECT_DIAGNOSTICS[selected.error];
+              return envelope(TEMPLATE_DATA_COMMAND, {
+                ok: false,
+                request,
+                identity,
+                diagnostic: diagnostic(
+                  "INVALID_SELECTOR",
+                  `${problem.message} ${problem.hint}`,
+                  { parameter: "note" },
+                ),
+              });
+            }
+            selector = { key: selected.note.key };
+            noteContext = {
+              note: selected.note.path,
+              profile: selected.profile,
+            };
+          } else {
+            selector =
+              "example" in request
+                ? { example: request.example }
+                : { key: request.key };
+          }
+          const echoed = {
+            request,
+            identity,
+            selection: {
+              ...selector,
+              root: request.root,
+              ...noteContext,
+            },
+          };
+          const result = yield* loadFailure(
+            "example" in selector || request.root === "citation"
+              ? deps.loadCitation(selector, "main")
+              : deps.loadData(
+                  selector.key,
+                  request.root,
+                  noteContext ? { note: noteContext.note } : undefined,
+                ),
+          );
+          if (result.kind !== "data") {
+            return envelope(TEMPLATE_DATA_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: dataLoadDiagnostic(result, selectedObject(selector)),
+            });
+          }
+
+          let data: unknown;
+          try {
+            if (!request.full) {
+              const discovery = discoverTemplateData(
+                result.data,
+                request.root,
+                request,
+              );
+              if ("error" in discovery)
+                return envelope(TEMPLATE_DATA_COMMAND, {
+                  ok: false,
+                  ...echoed,
+                  diagnostic: diagnostic("INVALID_SELECTOR", discovery.error!, {
+                    parameter: "path",
+                  }),
+                });
+              return envelope(TEMPLATE_DATA_COMMAND, {
+                ok: true,
+                ...echoed,
+                discovery,
+              });
+            }
+            data = serializeTemplateData(result.data, request.root);
+          } catch (error) {
+            // A missing contract entry means the committed IR no longer matches
+            // the data shapes this build shipped — a plugin defect, not a fault
+            // the caller can correct from a diagnostic.
+            if (error instanceof ContractMetadataError) {
+              yield* Effect.logError(
+                "Template data contract metadata is missing",
+              ).pipe(
+                Effect.annotateLogs({
+                  error,
+                  command: TEMPLATE_DATA_COMMAND,
+                  selected: selectedObject(selector),
+                  root: request.root,
+                }),
+                withLogCategory("template-workbench"),
+              );
+              return yield* Effect.die(error);
+            }
+            return envelope(TEMPLATE_DATA_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: templateFaultDiagnostic(error, {
+                template: null,
+                compileErrors: deps.templates.compileErrors,
+              }),
+            });
+          }
+
+          return envelope(TEMPLATE_DATA_COMMAND, {
+            ok: true,
+            ...echoed,
+            zt: data,
+          });
+        }),
     ),
 
     [TEMPLATE_DOCUMENT_RENDER_COMMAND]: gated(
-      TEMPLATE_DOCUMENT_RENDER_COMMAND,
+      {
+        command: TEMPLATE_DOCUMENT_RENDER_COMMAND,
+        span: "TemplateWorkbenchCli.documentRender",
+      },
       parseDocumentRenderRequest,
-      async (request, identity) => {
-        const echoed = { request, identity };
-        const literatureNotes = deps.literatureNotes;
-        if (!literatureNotes) {
-          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: diagnostic(
-              "DOCUMENT_INVALID",
-              "Literature Note document rendering is unavailable.",
-            ),
-          });
-        }
-
-        let render: (data: object) => {
-          create: string;
-          update: string | null;
-        };
-        let document: { name: string; source?: string };
-        if ("source" in request) {
-          document = { name: "source", source: request.source };
-          render = (data) => literatureNotes.renderSource(request.source, data);
-        } else {
-          const reference =
-            "document" in request
-              ? request.document
-              : profileDocumentReference(literatureNotes, request.profile);
-          if (typeof reference !== "string") {
+      (request, identity) =>
+        Effect.gen(function* () {
+          const echoed = { request, identity };
+          const literatureNotes = deps.literatureNotes;
+          if (!literatureNotes) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
               ...echoed,
-              diagnostic: reference,
+              diagnostic: diagnostic(
+                "DOCUMENT_INVALID",
+                "Literature Note document rendering is unavailable.",
+              ),
             });
           }
-          document = { name: reference };
-          let resolved;
+
+          let render: (data: object) => {
+            create: string;
+            update: string | null;
+          };
+          let document: { name: string; source?: string };
+          if ("source" in request) {
+            document = { name: "source", source: request.source };
+            render = (data) =>
+              literatureNotes.renderSource(request.source, data);
+          } else {
+            const reference =
+              "document" in request
+                ? request.document
+                : profileDocumentReference(literatureNotes, request.profile);
+            if (typeof reference !== "string") {
+              return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+                ok: false,
+                ...echoed,
+                diagnostic: reference,
+              });
+            }
+            document = { name: reference };
+            let resolved;
+            try {
+              resolved = literatureNotes.getDocument(reference);
+            } catch (error) {
+              return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+                ok: false,
+                ...echoed,
+                diagnostic: literatureNoteDocumentDiagnostic(error, document),
+              });
+            }
+            if (!resolved) {
+              return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+                ok: false,
+                ...echoed,
+                diagnostic: documentNotFoundDiagnostic(reference),
+              });
+            }
+            render = (data) => ({
+              create: resolved.renderForCreate(data),
+              update: resolved.renderForUpdate(data),
+            });
+          }
+
+          const result = yield* loadFailure(deps.loadData(request.key, "note"));
+          if (result.kind !== "data") {
+            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+              ok: false,
+              ...echoed,
+              diagnostic: dataLoadDiagnostic(result, request.key),
+            });
+          }
           try {
-            resolved = literatureNotes.getDocument(reference);
+            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
+              ok: true,
+              ...echoed,
+              render: render(result.data),
+            });
           } catch (error) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
@@ -451,55 +502,29 @@ export function createTemplateWorkbenchHandlers(
               diagnostic: literatureNoteDocumentDiagnostic(error, document),
             });
           }
-          if (!resolved) {
-            return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
-              ok: false,
-              ...echoed,
-              diagnostic: documentNotFoundDiagnostic(reference),
-            });
-          }
-          render = (data) => ({
-            create: resolved.renderForCreate(data),
-            update: resolved.renderForUpdate(data),
-          });
-        }
-
-        const result = await deps.loadData(request.key, "note");
-        if (result.kind !== "data") {
-          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: dataLoadDiagnostic(result, request.key),
-          });
-        }
-        try {
-          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
-            ok: true,
-            ...echoed,
-            render: render(result.data),
-          });
-        } catch (error) {
-          return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: literatureNoteDocumentDiagnostic(error, document),
-          });
-        }
-      },
+        }),
     ),
 
-    [TEMPLATE_GUIDE_COMMAND]: (params: CliData): string => {
-      const request = parseGuideRequest(params);
-      if (request.kind === "invalid") {
-        return envelope(TEMPLATE_GUIDE_COMMAND, {
-          ok: false,
-          diagnostic: rejectionDiagnostic(request),
-        });
-      }
-      return renderGuide(request.value);
-    },
+    [TEMPLATE_GUIDE_COMMAND]: (params: CliData) =>
+      parseGuideRequest(params).pipe(
+        Effect.map(renderGuide),
+        answerRejection(TEMPLATE_GUIDE_COMMAND),
+      ),
   };
 }
+
+/**
+ * A load that failed fails the command with what failed, which Obsidian
+ * prints as the command's error.
+ */
+const loadFailure = <A>(load: Effect.Effect<A, TemplateDataError>) =>
+  Effect.mapError(load, ({ cause }) => cause);
+
+/** A rejected request answers its diagnostic envelope. */
+const answerRejection = (command: WorkbenchCommand) =>
+  catchRejection((rejected) =>
+    envelope(command, { ok: false, diagnostic: rejectionDiagnostic(rejected) }),
+  );
 
 function literatureNoteAuthoringState(
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,

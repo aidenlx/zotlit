@@ -11,9 +11,8 @@ import {
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
+import { workerQuery } from "@/services/item-query/__fixtures__/worker-query";
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
-import { decodeQuery } from "@/services/item-query/decode";
-import type { DecodedQuery } from "@/services/item-query/decode";
 import type { QueryJob } from "@/services/item-query/worker-protocol";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
@@ -58,14 +57,11 @@ function jobOf(
   params: Record<string, string>,
   stagePath?: string,
 ): QueryJob {
-  const query = decodeQuery(params);
-  if (query.kind === "invalid")
-    throw new Error(`Malformed test query: ${query.message}`);
   return {
     schema: false,
     dataset: "items",
     command: "zotlit:query",
-    query: JSON.parse(JSON.stringify(query.value)) as DecodedQuery,
+    query: workerQuery(params),
     id,
     ...IDENTITY,
     scope: MY_LIBRARY_SCOPE,
