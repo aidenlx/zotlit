@@ -55,7 +55,6 @@ export interface TemplateNoteLink {
    * Zotero. Rendering it never imports the child note.
    *
    * @ztFilter note_link
-   * @ztInert
    */
   noteLink: TemplateLink;
 }

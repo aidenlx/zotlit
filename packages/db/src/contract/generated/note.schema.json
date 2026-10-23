@@ -3909,16 +3909,6 @@
               },
               "required": ["$helper", "signature", "value"],
               "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "$inert": {
-                  "type": "string"
-                }
-              },
-              "required": ["$inert"],
-              "additionalProperties": false
             }
           ],
           "description": "Renders the link; default alias is the live title. It links the child note's imported note when one exists, and otherwise opens the note in Zotero. Rendering it never imports the child note."

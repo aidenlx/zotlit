@@ -1,5 +1,7 @@
 # Imported notes are mirrors, not literature notes
 
+> **Amended by [ADR 0079](0079-the-literature-note-body-is-the-users-and-rendering-has-no-side-effects.md).** Imported Notes are created only by command (import child notes, import all notes, batch import). Rendering a Literature Note never imports a Child Note: `noteLink` links an existing Imported Note, or else opens the Child Note in Zotero.
+
 Zotero Items can have Child Notes (rich-text notes attached to a library item). When ZotLit imports a Child Note into the vault, the resulting Obsidian file is an **Imported Note** — a managed mirror identified by `zotero-note-key` in frontmatter — **not** a Literature Note.
 
 The two note kinds are kept disjoint: `zotero-key` (Literature Notes) and `zotero-note-key` (Imported Notes) never appear on the same file. The Note Index maintains separate maps for each. `isLiteratureNote()` only checks `zotero-key`, so imported notes never pollute Literature Note lookups, citation resolution, or the update/overwrite flows.

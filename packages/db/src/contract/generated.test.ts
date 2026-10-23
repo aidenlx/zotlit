@@ -132,23 +132,23 @@ describe("serialized forms", () => {
   });
 
   it("appends the inert branch only for an inert-capable helper", () => {
-    const noteLinkOnNoteLink =
-      noteSchema.$defs.TemplateNoteLink.properties.noteLink;
-    expect(noteLinkOnNoteLink.oneOf).toHaveLength(2);
-    expect(noteLinkOnNoteLink.oneOf[1]).toEqual({
+    const imgLink =
+      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
+        .anyOf![0]!;
+    expect(imgLink.oneOf![0]!.properties.$helper).toEqual({
+      const: "imgLink",
+    });
+    expect(imgLink.oneOf).toHaveLength(2);
+    expect(imgLink.oneOf![1]).toEqual({
       type: "object",
       properties: { $inert: { type: "string" } },
       required: ["$inert"],
       additionalProperties: false,
     });
+    // A child note's noteLink always renders a link, so it has no inert branch.
     expect(
-      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
-        .anyOf![0]!.oneOf![0]!.properties.$helper,
-    ).toEqual({ const: "imgLink" });
-    expect(
-      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
-        .anyOf![0]!.oneOf,
-    ).toHaveLength(2);
+      noteSchema.$defs.TemplateNoteLink.properties.noteLink.oneOf,
+    ).toHaveLength(1);
   });
 
   it("serializes Temporal values as strings and shared cycles as ref-marker unions", () => {

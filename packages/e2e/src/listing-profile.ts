@@ -1,13 +1,13 @@
 // The listing Profile: the default Profile with a static annotation listing in
-// place of its Query Block, for cases that check Annotations rendered into the
-// note body.
+// a Managed Block in place of its Query Block, for cases that check
+// Annotations rendered into the note body and refilled on update.
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 
 /**
  * In-app source of a function from a Profile source to its listing Profile
  * source. It throws where the source has no Query Block.
  */
-export const LIST_ANNOTATIONS_JS = `(source)=>{const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');return listed;}`;
+export const LIST_ANNOTATIONS_JS = `(source)=>{const listed=source.replace(/## Annotations\\n\\n\`\`\`zotquery\\n[\\s\\S]*?\`\`\`\\n/,'{% managed %}\\n{% for annotation in zt.annotations %}\\n{% render_annotation annotation %}\\n{% endfor %}\\n{% endmanaged %}\\n');if(listed===source)throw new Error('Default Profile has no Query Block');return listed;}`;
 
 /**
  * Write the listing Profile as the default Profile's document, and wait until

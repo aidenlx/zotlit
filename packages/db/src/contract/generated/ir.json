@@ -3848,7 +3848,6 @@
             "name": "noteLink",
             "signature": "(alias?: string, subpath?: string) => string",
             "filter": "note_link",
-            "inert": true,
             "value": {
               "kind": "primitive",
               "type": "string"

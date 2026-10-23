@@ -7408,8 +7408,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ].join("\n");
         const managed = (text: string) =>
           /%%zt-managed%%\n([\s\S]*?)%%\/zt-managed%%/.exec(text)?.[1] ?? "";
+        // The default body renders once: the block is the note's own text,
+        // with no Managed Region around it.
         const createdText = await read();
-        expect(managed(createdText)).toContain(block);
+        expect(createdText).toContain(block);
+        expect(createdText).not.toContain("%%zt-managed%%");
         expect(createdText).not.toContain("[!note]");
 
         // The block shows the Item's own Annotations, as ZotLit Query gives
@@ -7518,23 +7521,25 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           "        direction: ASC\n```",
           "        direction: ASC\n      - property: type\n        direction: DESC\n```",
         );
-        expect(
-          await waitFor(async () => managed(await read()).includes(sorted)),
-        ).toBe(true);
+        expect(await waitFor(async () => (await read()).includes(sorted))).toBe(
+          true,
+        );
 
-        // A full update renders the Managed Region again and keeps the
-        // block text the note holds.
+        // A full update leaves a body with no Managed Region as the
+        // researcher has it.
         const update = () =>
           obJson<{ diagnostic: unknown }>(
             vaultId!,
             `(async()=>{const services=app.plugins.plugins.zotlit.services;const result=await services.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(itemKey)},scope:'full'});return JSON.stringify({diagnostic:result.diagnostic??null});})()`,
           );
+        const bodyOf = (text: string) => text.slice(text.indexOf("\n---\n"));
+        const beforeUpdate = await read();
         expect(await update()).toEqual({ diagnostic: null });
-        expect(managed(await read())).toContain(sorted);
+        expect(bodyOf(await read())).toBe(bodyOf(beforeUpdate));
 
         // A note ZotLit wrote before Mark Landing, with a static listing of
-        // one callout per Annotation under a plain page label, gets the block
-        // on its next full update. The Fixture no longer seeds that note
+        // one callout per Annotation under a plain page label in a Managed
+        // Region, gets the block on its next full update. The Fixture no longer seeds that note
         // (#1647), so write the one it held.
         const item = ITEMS.find(({ key: candidate }) => candidate === itemKey)!;
         const attachments = ATTACHMENTS.filter(
