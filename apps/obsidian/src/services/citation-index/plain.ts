@@ -27,7 +27,14 @@ export interface PlainCitationLookup {
 }
 
 export function plainCitationLookup(
-  runtime: ManagedRuntime.ManagedRuntime<CitationLookup, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<CitationLookup, never>,
+    "runSync"
+  > &
+    Pick<
+      ManagedRuntime.ManagedRuntime<never, never>,
+      "runPromiseExit" | "runFork" | "scope"
+    >,
 ): PlainCitationLookup {
   const service = runtime.runSync(CitationLookup);
   const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
@@ -108,8 +115,14 @@ export function plainCitationIndex(
       ? await runReleased(Effect.exit(effect))
       : await runtime.runPromiseExit(effect);
     // A call interrupted by unload reads the released service's terminal state.
-    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
+    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+      await runReleased(
+        Stream.runHead(
+          service.changes.pipe(Stream.filter((state) => state.stopped)),
+        ),
+      );
       exit = await runReleased(Effect.exit(effect));
+    }
     if (Exit.isSuccess(exit)) return exit.value;
     const error = Cause.squash(exit.cause);
     throw Cause.isUnknownError(error) ? error.cause : error;

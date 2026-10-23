@@ -1561,17 +1561,28 @@ describe("CitationIndex resolution", () => {
         const { index, metadataCache, store, vault, workspace } =
           await makeHarness({ "draft.md": "@doe2024." });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        let observed: PromiseWithResolvers<void> | undefined;
+        index.observeCitedBy(
+          KEY_A,
+          (snapshot) => snapshots.push(snapshot),
+          () => {
+            observed?.resolve();
+            return true;
+          },
+        );
         workspace.layoutReady();
         await index.whenIndexed();
+        await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+        observed = Promise.withResolvers<void>();
         vault.reads.length = 0;
         store.writes.length = 0;
 
         metadataCache.resolve(metadataCache.files.get("Doe 2024.md")!);
 
+        await observed.promise;
         expect(vault.reads).toEqual([]);
         expect(store.writes).toEqual([]);
-        await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
+        expect(snapshots.at(-1)?.groups).toHaveLength(1);
       }),
   );
 

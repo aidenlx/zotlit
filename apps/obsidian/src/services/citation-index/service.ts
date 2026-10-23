@@ -22,7 +22,8 @@ import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { CitationParse } from "@/services/citation-parse/service";
+import { plainCitationParse } from "@/services/citation-parse/plain";
+import type { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import { NoteIndex, resolveIndexedKey } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
@@ -33,6 +34,7 @@ import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
 import { CitationLookup } from "./lookup-service";
 import type { CitationLookupStatus } from "./lookup-service";
+import { plainCitationLookup } from "./plain";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
 
@@ -204,9 +206,8 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     const noteIndex = yield* NoteIndex;
     const settings = yield* PluginSettings;
     const lookup = yield* CitationLookup;
-    const parser = yield* CitationParse;
     const scope = yield* Scope.fork(yield* Scope.Scope);
-    const context = yield* Effect.context<never>();
+    const context = yield* Effect.context<CitationLookup | CitationParse>();
     const run = Effect.runSyncWith(context);
     const runPromise = Effect.runPromiseWith(context);
     const runner = {
@@ -241,16 +242,12 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         ),
       );
     };
-    const parseClient = {
-      parse: (
-        request: Parameters<typeof parser.parse>[0],
-        signal?: AbortSignal,
-      ) => runPromise(parser.parse(request), { signal }),
-    };
-    const readLookup = (
-      request: CitationLookupRequest,
-      options?: { signal?: AbortSignal },
-    ) => runPromise(lookup.read(request), options);
+    const parseClient = plainCitationParse({ runSync: run });
+    const lookupAdapter = plainCitationLookup({
+      ...runner,
+      runSync: run,
+      runPromiseExit: Effect.runPromiseExitWith(context),
+    });
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],
     ) =>
@@ -411,7 +408,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           (occurrence) => [occurrence, resolve(occurrence, file.path)] as const,
         ),
       );
-      const lookup = await readLookup(
+      const lookup = await lookupAdapter.read(
         {
           citekeys: [
             ...citekeys.map((occurrence) => occurrence.raw),
@@ -579,7 +576,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         });
       };
       const held = yield* Scope.provide(
-        acquireDisposable(() => run(lookup.observe(onChange))),
+        acquireDisposable(() => lookupAdapter.observe(onChange)),
         observationScope,
       );
       const publish = () => {
@@ -662,7 +659,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       ]);
       const lookup =
         answer ??
-        (await readLookup({
+        (await lookupAdapter.read({
           annotationKeys: annotationCitationKeys(),
           citekeys: [...occurrences.values()].flatMap((citations) =>
             citations.flatMap((occurrence) =>
@@ -698,7 +695,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         yield* Effect.all(
           [
             Effect.promise(() => whenIndexed()),
-            Effect.promise(() => runPromise(lookup.whenResolved())),
+            Effect.promise(() => lookupAdapter.whenResolved()),
           ],
           { concurrency: "unbounded" },
         );
@@ -818,7 +815,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         ),
       );
       const lookup = yield* Effect.tryPromise(() =>
-        readLookup({
+        lookupAdapter.read({
           citekeys: [
             ...captured.flatMap(({ occurrences }) =>
               occurrences.filter((o) => o.kind === "citekey").map((o) => o.raw),
@@ -1415,7 +1412,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       const citekeys = files.flatMap((file) => covered(file)?.citekeys ?? []);
       const lookup =
         answer ??
-        (await readLookup({
+        (await lookupAdapter.read({
           citekeys: citekeys.map((occurrence) => occurrence.raw),
           annotationKeys: annotationCitationKeys(),
         }));

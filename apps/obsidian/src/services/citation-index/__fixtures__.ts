@@ -237,6 +237,7 @@ export function citationIndexFixture(
           } as PluginSettings["Service"]),
           Layer.succeed(CitationLookup, deps.lookup),
           Layer.succeed(CitationParse, {
+            client: deps.parseClient,
             parse: (request) =>
               Effect.tryPromise({
                 try: (signal) => deps.parseClient.parse(request, signal),
