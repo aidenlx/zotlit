@@ -8,10 +8,12 @@ import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { makeRecoveringParseClient } from "@/services/citation-parse/recovering-client";
 import type { ParseConnection } from "@/services/citation-parse/recovering-client";
 
+import type { CitedBySnapshot } from "./service";
 import {
   createCitationIndexHarness,
   KEY_A,
   link,
+  makeFile,
   MemoryStore,
 } from "./test-harness";
 
@@ -144,6 +146,73 @@ it.each(["before", "during"])(
     });
     expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
     expect(store.records.get("draft.md")).toEqual(saved);
+  },
+);
+
+it.each(["edited", "new"])(
+  "notifies Cited By when an incremental %s note fails and later recovers (#1691)",
+  async (source) => {
+    const failRelease = Promise.withResolvers<void>();
+    const retryEntered = Promise.withResolvers<void>();
+    const retryRelease = Promise.withResolvers<void>();
+    let outcome: "success" | "failure" | "recovery" = "success";
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "@doe2024" },
+      {
+        notes: false,
+        parseClient: {
+          async parse(request, signal) {
+            if (outcome === "failure") {
+              await failRelease.promise;
+              throw new Error("Incremental parse failed");
+            }
+            if (outcome === "recovery") {
+              retryEntered.resolve();
+              await retryRelease.promise;
+            }
+            return inProcessParseClient.parse(request, signal);
+          },
+        },
+      },
+    );
+    harness.workspace.layoutReady();
+    await harness.index.whenIndexed();
+    const snapshots: CitedBySnapshot[] = [];
+    harness.index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+    await expect.poll(() => snapshots.at(-1)?.coverage).toBe("complete");
+    const file = source === "edited" ? harness.draft : makeFile("new.md", "");
+    const saved = structuredClone(harness.store.records.get(file.path));
+    outcome = "failure";
+    harness.metadataCache.change(file, "@poison");
+    const failed = harness.index.getDocumentCitationSet(file).catch(() => null);
+    failRelease.resolve();
+    await failed;
+    expect(harness.store.records.get(file.path)).toEqual(saved);
+    expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+      coverage: "degraded",
+      groups: [{ path: "draft.md" }],
+    });
+    await expect.poll(() => snapshots.at(-1)?.coverage).toBe("degraded");
+
+    outcome = "recovery";
+    harness.metadataCache.change(file, "@doe2024");
+    await retryEntered.promise;
+    try {
+      expect((await harness.index.getCitedBy(KEY_A)).coverage).toBe("degraded");
+      expect(snapshots.at(-1)?.coverage).toBe("degraded");
+    } finally {
+      retryRelease.resolve();
+    }
+    await harness.index.getDocumentCitationSet(file);
+    await expect
+      .poll(() => snapshots.at(-1))
+      .toMatchObject({
+        coverage: "complete",
+        groups:
+          source === "edited"
+            ? [{ path: "draft.md" }]
+            : [{ path: "draft.md" }, { path: "new.md" }],
+      });
   },
 );
 
@@ -566,6 +635,57 @@ it.each([0, 10_000])(
   },
 );
 
+it("replaces a blocked connection after its only note is deleted (#1691)", async () => {
+  const entered = Promise.withResolvers<void>();
+  let connections = 0;
+  let terminations = 0;
+  await using recovery = await recoveringClient(() => {
+    connections++;
+    const died = Promise.withResolvers<void>();
+    let blocked = false;
+    let stopped = false;
+    return {
+      died: died.promise,
+      async parse(request, signal) {
+        if (request.text === "@poison") {
+          blocked = true;
+          entered.resolve();
+        }
+        if (blocked) {
+          await died.promise;
+          throw new ParseWorkerDied("Blocked worker terminated");
+        }
+        return inProcessParseClient.parse(request, signal);
+      },
+      [Symbol.dispose]() {
+        if (stopped) return;
+        stopped = true;
+        terminations++;
+        died.resolve();
+      },
+    };
+  });
+  await using harness = await createCitationIndexHarness(
+    { "draft.md": "@poison" },
+    { notes: false, parseClient: recovery.client },
+  );
+  harness.workspace.layoutReady();
+  await entered.promise;
+  await recovery.advance(5_000);
+  harness.vault.deleteFile(harness.draft);
+  await harness.index.whenIndexed();
+  await recovery.advance(10_100);
+  expect(terminations).toBe(1);
+  expect(connections).toBe(2);
+  expect(harness.index.citationKeys()).toEqual([]);
+  expect(
+    await recovery.client.parse(
+      { path: "new.md", generation: 1, text: "@roe2025" },
+      new AbortController().signal,
+    ),
+  ).toMatchObject({ record: { citekeys: [{ raw: "roe2025" }] } });
+});
+
 it("settles backfill when the parse worker cannot start (#1691)", async () => {
   const entered = Promise.withResolvers<void>();
   await using recovery = await recoveringClient(() => {
@@ -591,45 +711,58 @@ it("settles backfill when the parse worker cannot start (#1691)", async () => {
   });
 });
 
-it("abandons a note after three worker deaths so backfill can settle (#1691)", async () => {
-  const store = new MemoryStore();
-  await using seed = await createCitationIndexHarness(
-    { "draft.md": "@doe2024" },
-    { store, notes: false },
-  );
-  await seed.index.getDocumentCitationSet(seed.draft);
-  const saved = structuredClone(store.records.get("draft.md"));
-  const attempts = Array.from({ length: 3 }, () =>
-    Promise.withResolvers<void>(),
-  );
-  let count = 0;
-  await using recovery = await recoveringClient(() => {
-    const died = Promise.withResolvers<void>();
-    return {
-      died: died.promise,
-      async parse(request, signal) {
-        if (request.path === "draft.md") {
-          attempts[count++]?.resolve();
-          died.resolve();
-          throw new ParseWorkerDied("This note crashed the worker");
-        }
-        return inProcessParseClient.parse(request, signal);
-      },
-      [Symbol.dispose]() {},
-    };
-  });
-  await using harness = await createCitationIndexHarness(
-    { "draft.md": "@poison", "neighbour.md": "@roe2025" },
-    { store, notes: false, parseClient: recovery.client },
-  );
-  harness.workspace.layoutReady();
-  await attempts[0]!.promise;
-  await recovery.advance(100);
-  await attempts[1]!.promise;
-  await recovery.advance(200);
-  await attempts[2]!.promise;
-  await harness.index.whenIndexed();
-  expect(count).toBe(3);
-  expect(store.records.get("draft.md")).toEqual(saved);
-  expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
-});
+it.each([1, 0])(
+  "abandons a note with scanner revision %i after three worker deaths so backfill can settle (#1691)",
+  async (revision) => {
+    const store = new MemoryStore();
+    await using seed = await createCitationIndexHarness(
+      { "draft.md": "@doe2024" },
+      { store, notes: false },
+    );
+    await seed.index.getDocumentCitationSet(seed.draft);
+    store.records.get("draft.md")!.scannerRevision = revision;
+    const saved = structuredClone(store.records.get("draft.md"));
+    const attempts = Array.from({ length: 3 }, () =>
+      Promise.withResolvers<void>(),
+    );
+    let count = 0;
+    await using recovery = await recoveringClient(() => {
+      const died = Promise.withResolvers<void>();
+      return {
+        died: died.promise,
+        async parse(request, signal) {
+          if (request.path === "draft.md") {
+            attempts[count++]?.resolve();
+            died.resolve();
+            throw new ParseWorkerDied("This note crashed the worker");
+          }
+          return inProcessParseClient.parse(request, signal);
+        },
+        [Symbol.dispose]() {},
+      };
+    });
+    await using harness = await createCitationIndexHarness(
+      { "draft.md": "@poison", "neighbour.md": "@roe2025" },
+      { store, notes: false, parseClient: recovery.client },
+    );
+    harness.workspace.layoutReady();
+    await attempts[0]!.promise;
+    await recovery.advance(100);
+    await attempts[1]!.promise;
+    await recovery.advance(200);
+    await attempts[2]!.promise;
+    let indexed = false;
+    const settled = harness.index.whenIndexed().then(() => {
+      indexed = true;
+    });
+    await expect.poll(() => indexed).toBe(true);
+    await settled;
+    expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+      coverage: "degraded",
+      groups: [{ path: "draft.md" }],
+    });
+    expect(count).toBe(3);
+    expect(store.records.get("draft.md")).toEqual(saved);
+    expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+  },
+);

@@ -84,6 +84,10 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
               ),
             ),
         }),
+        // Cancelling a waiter cannot stop synchronous work already in the worker.
+        Effect.onInterrupt(() =>
+          Effect.sync(() => connection[Symbol.dispose]()),
+        ),
         Effect.catch((error) =>
           error instanceof ParseWorkerDied
             ? Effect.andThen(Deferred.await(retired), Effect.fail(error))

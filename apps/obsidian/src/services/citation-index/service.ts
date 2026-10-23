@@ -213,7 +213,7 @@ export class CitationIndex extends Service<void> {
   #includeWikilinkCitations = false;
   #backfilled = false;
   #backfillBuild = -1;
-  #coverage: CitationCoverage = "indexing";
+  #backfillFailed = false;
   #stopped = false;
   readonly #stop = new AbortController();
 
@@ -546,7 +546,7 @@ export class CitationIndex extends Service<void> {
     this.#generations.clear();
     this.#failed.clear();
     this.#backfilled = false;
-    this.#coverage = "indexing";
+    this.#backfillFailed = false;
     this.#emitter.emit("cited-by-invalidated");
     try {
       await this.#store?.clear();
@@ -660,23 +660,20 @@ export class CitationIndex extends Service<void> {
     if (this.#backfillBuild === build) return;
     this.#backfillBuild = build;
     logger.debug("Citation index backfill started", { build });
-    let failed = false;
     try {
-      failed = await this.#backfill(build);
+      await this.#backfill(build);
     } catch (error) {
       logger.error("Citation index backfill failed", { error });
-      failed = true;
+      if (this.#stale(build)) return;
+      this.#backfillFailed = true;
     }
     if (this.#stopped || build !== this.#build) return;
     logger.debug("Citation index backfilled", { count: this.#scans.size });
     this.#backfilled = true;
-    this.#coverage = failed || this.#failed.size > 0 ? "degraded" : "complete";
     this.#emitter.emit("backfilled");
   }
 
-  /** @returns Whether at least one note could not be read. */
-  async #backfill(build: number): Promise<boolean> {
-    let failed = false;
+  async #backfill(build: number): Promise<void> {
     await Effect.runPromise(
       Effect.forEach(
         this.#app.vault.getMarkdownFiles(),
@@ -689,7 +686,7 @@ export class CitationIndex extends Service<void> {
               Effect.catch((error) =>
                 Effect.sync(() => {
                   if (this.#stale(build)) return;
-                  failed = true;
+                  this.#setFailed(file.path, true);
                   logger.warn("Citation backfill could not parse note", {
                     path: file.path,
                     error,
@@ -702,14 +699,13 @@ export class CitationIndex extends Service<void> {
       ).pipe(Effect.scoped),
       { signal: this.#stop.signal },
     );
-    if (this.#stale(build)) return failed;
+    if (this.#stale(build)) return;
     const present = new Set(
       this.#app.vault.getMarkdownFiles().map((file) => file.path),
     );
     for (const path of this.#scans.keys().toArray()) {
       if (!present.has(path)) this.#drop(path);
     }
-    return failed;
   }
 
   /** Whether a build other than `build` has taken over. */
@@ -724,7 +720,6 @@ export class CitationIndex extends Service<void> {
     const build = this.#build;
     this.#pending.get(path)?.stop.abort();
     this.#generations.set(path, generation);
-    this.#failed.delete(path);
     const stop = new AbortController();
     const signal = AbortSignal.any([stop.signal, this.#stop.signal]);
     const pending = {
@@ -744,7 +739,6 @@ export class CitationIndex extends Service<void> {
             replyGeneration !== generation
           )
             return null;
-          this.#failed.delete(currentPath);
           const scan: FileScan = {
             mtime,
             size,
@@ -762,16 +756,19 @@ export class CitationIndex extends Service<void> {
             prev?.mtime === mtime &&
             prev.size === size &&
             prev.scannerRevision === SCANNER_REVISION
-          )
+          ) {
+            this.#setFailed(currentPath, false);
             return prev;
+          }
           this.#setScan(currentPath, scan);
           this.#persist({ path: currentPath, ...scan });
+          this.#setFailed(currentPath, false);
           if (!same) this.#emitter.emit("changed", currentPath);
           return scan;
         })
         .catch((error: unknown) => {
           if (signal.aborted) return null;
-          this.#failed.add(pending.path);
+          this.#setFailed(pending.path, true);
           const retained = this.#scans.get(pending.path);
           if (retained) {
             logger.warn("Citation parse failed; retaining saved scan", {
@@ -789,6 +786,20 @@ export class CitationIndex extends Service<void> {
     };
     this.#pending.set(path, pending);
     return pending.promise;
+  }
+
+  get #coverage(): CitationCoverage {
+    if (!this.#backfilled) return "indexing";
+    return this.#backfillFailed || this.#failed.size > 0
+      ? "degraded"
+      : "complete";
+  }
+
+  #setFailed(path: string, failed: boolean): void {
+    const coverage = this.#coverage;
+    if (failed) this.#failed.add(path);
+    else this.#failed.delete(path);
+    if (this.#coverage !== coverage) this.#emitter.emit("cited-by-invalidated");
   }
 
   #covered(file: TFile): FileScan | null {
@@ -811,18 +822,14 @@ export class CitationIndex extends Service<void> {
       if (!this.#app.vault.getFileByPath(file.path)) return null;
       const known = this.#covered(file);
       // A grammar update keeps the last scan available while its replacement runs.
-      if (
-        !fresh &&
-        known &&
-        (known.scannerRevision !== SCANNER_REVISION ||
-          this.#failed.has(file.path))
-      )
+      if (!fresh && known && known.scannerRevision !== SCANNER_REVISION)
         return known;
       const pending = this.#pending.get(file.path);
       if (pending) {
         await pending.promise;
         continue;
       }
+      if (this.#failed.has(file.path)) return known;
       if (known && (!fresh || known.scannerRevision === SCANNER_REVISION))
         return known;
       if (!this.#app.vault.getFileByPath(file.path)) return null;
@@ -846,7 +853,7 @@ export class CitationIndex extends Service<void> {
 
   #drop(path: string): void {
     this.#restoreInvalidated?.add(path);
-    this.#failed.delete(path);
+    this.#setFailed(path, false);
     this.#generations.set(path, ++this.#generation);
     this.#pending.get(path)?.stop.abort();
     this.#pending.delete(path);
