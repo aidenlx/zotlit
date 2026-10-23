@@ -10,7 +10,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import {
   annotationItem,
   annotationPage,
@@ -222,7 +222,7 @@ export async function setup(
   stack.use(localApi);
   await localApi.ready;
 
-  const queryClient = new QueryClientService();
+  const queryClient = queryClientsFixture();
   stack.use(queryClient);
   const repository = new AnnotationRepository({
     db,

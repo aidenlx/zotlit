@@ -39,7 +39,8 @@ import type {
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
-import type { Held, QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 
 import { citationKey, presentedCitationEqual } from "./present";
@@ -99,7 +100,10 @@ export interface CitationTextDeps {
     "readCitations" | "readBibliography" | "on" | "vaultPresentation"
   >;
   /** The plugin-wide query client every Held Read is realized on. */
-  queryClient: QueryClientService;
+  queryClient: Pick<
+    PlainQueryClients,
+    "client" | "ask" | "read" | "peek" | "invalidate" | "watch"
+  >;
   /** The documents whose text stays held, for as long as each is open. */
   openDocuments: OpenDocuments;
 }

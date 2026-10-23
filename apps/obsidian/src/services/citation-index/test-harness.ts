@@ -23,7 +23,8 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeEvents } from "@/services/library-scope/service";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -700,7 +701,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   citekeys: CitekeysStub;
   libraryScope: LibraryScopeStub;
   /** The one client the owners built on this harness share. */
-  queryClient: QueryClientService;
+  queryClient: PlainQueryClients;
   /** Moves the client's clock one step past the failure cooldown deadline. */
   passCooldown: () => void;
 }
@@ -777,7 +778,7 @@ export async function createCitationIndexHarness(
   const settings =
     options.settingsService ?? new SettingsStub(options.settings);
   const clock = testClock();
-  const queryClient = stack.use(new QueryClientService({ now: clock.now }));
+  const queryClient = stack.use(queryClientsFixture(clock.now));
   const lookup = stack.use(
     new CitationLookup({
       reads: db,

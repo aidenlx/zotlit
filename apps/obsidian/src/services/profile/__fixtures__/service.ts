@@ -8,7 +8,7 @@ import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host
 import { Effect } from "@/lib/effect";
 
 import { LibraryScopeService } from "@/services/library-scope/service";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { ProfileService } from "@/services/profile/service";
@@ -48,7 +48,7 @@ export async function profileServiceFixture(
   );
   const noteIndex = buildNoteIndex(app, stack);
   const libraryScope = stack.use(new LibraryScopeService({ settings,
-    queries: stack.use(new QueryClientService()),
+    queries: stack.use(queryClientsFixture()),
     reads: reads ?? ({
       ready: Promise.resolve({
         reads: {

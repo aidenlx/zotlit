@@ -344,7 +344,6 @@ export default defineConfig({
         "src/services/pandoc/render-cache.ts",
         "src/services/pdf-annotation-editor/service.ts",
         "src/services/profile/service.ts",
-        "src/services/query-client/service.ts",
         "src/services/release/service.ts",
         "src/services/settings/service.ts",
         "src/services/template/migration.ts",
