@@ -32,7 +32,7 @@ import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { plainChineseSegmenter } from "./chinese-segmenter/plain";
-import { CitationLookup } from "./citation-index/lookup-service";
+import { plainCitationLookup } from "./citation-index/plain";
 import { CitationIndex } from "./citation-index/service";
 import { plainCitationParse } from "./citation-parse/plain";
 import { CitationPopover } from "./citation-popover/service";
@@ -542,9 +542,8 @@ export async function buildServices(
           metadataCache: plugin.app.metadataCache,
         }),
     })
-    .use({
-      citationLookup: ({ zoteroReads, libraryScope, queryClient }) =>
-        new CitationLookup({ reads: zoteroReads, libraryScope, queryClient }),
+    .useValue({
+      citationLookup: () => plainCitationLookup(runtime),
     })
     .useValue({
       citationParse: () => plainCitationParse(runtime),

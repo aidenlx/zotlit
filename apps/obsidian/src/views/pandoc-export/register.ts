@@ -14,7 +14,7 @@ import { getLogger } from "@/lib/log";
 import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
@@ -48,7 +48,7 @@ export interface PandocExportDeps {
   app: App;
   db: Pick<PlainZoteroReads, "reads">;
   /** Resolves the literal citation keys of the exported document. */
-  citationLookup: Pick<CitationLookup, "read">;
+  citationLookup: Pick<PlainCitationLookup, "read">;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "getEngine">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
   settings: Pick<PlainPluginSettings, "current">;

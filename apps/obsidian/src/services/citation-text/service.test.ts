@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,8 +6,10 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { Effect, Queue, Stream } from "@/lib/effect";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import type { CitationLookupState } from "@/services/citation-index/lookup-service";
 // @vitest-environment happy-dom
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import { scanNote } from "@/services/citation-index/scan-note";
@@ -206,10 +207,28 @@ async function makeHarness({
   const service = new CitationText({
     openDocuments,
     citationLookup: {
-      on: (_event: string, cb: () => void) => {
-        listeners.set("index:resolution-changed", cb);
-        return () => listeners.delete("index:resolution-changed");
-      },
+      changes: Stream.callback<CitationLookupState>(
+        Effect.fnUntraced(function* (queue) {
+          let revision = 0;
+          const publish = () => {
+            Queue.offerUnsafe(queue, {
+              status: "fresh",
+              revision: String(revision++),
+              stopped: false,
+            });
+          };
+          publish();
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              listeners.set("index:resolution-changed", publish);
+            }),
+            () =>
+              Effect.sync(() => {
+                listeners.delete("index:resolution-changed");
+              }),
+          );
+        }),
+      ),
     },
     app: {
       vault: {
@@ -1213,7 +1232,7 @@ describe("CitationText staleness", () => {
     citekeyResolutionChanged();
 
     expect(service.peek(NOTE.path)).not.toBeNull();
-    expect(invalidated).toBe(1);
+    await expect.poll(() => invalidated).toBe(1);
     await dispose();
   });
 

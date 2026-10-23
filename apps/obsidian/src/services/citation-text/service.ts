@@ -11,6 +11,9 @@ import {
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
 import { registerEvent } from "@/lib/disposables";
+import { Effect, Stream } from "@/lib/effect";
+import { openScope } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
 import type { OpenDocuments } from "@/lib/open-documents";
@@ -19,8 +22,8 @@ import {
   citationRuns,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { renderParsedCitation } from "@/services/citation-index/parsed-note";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
   Citation,
@@ -86,7 +89,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
-  citationLookup: Pick<CitationLookup, "on">;
+  citationLookup: Pick<PlainCitationLookup, "changes">;
   citationIndex: Pick<
     CitationIndex,
     "getDocumentCitationSet" | "getParsedDocument" | "on"
@@ -270,7 +273,19 @@ export class CitationText extends Service<void> {
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
-    stack.defer(this.#citationLookup.on("changed", () => this.#invalidate()));
+    const lookupScope = openScope();
+    stack.defer(lookupScope.close);
+    stack.defer(
+      subscribe(
+        { scope: lookupScope.scope, runFork: Effect.runFork },
+        this.#citationLookup.changes.pipe(
+          Stream.map((state) => state.revision),
+          Stream.changes,
+          Stream.drop(1),
+        ),
+        () => this.#invalidate(),
+      ),
+    );
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(

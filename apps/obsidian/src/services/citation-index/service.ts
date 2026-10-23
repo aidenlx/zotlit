@@ -7,7 +7,9 @@ import type { App, TAbstractFile } from "obsidian";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
-import { Clock, Effect, Option } from "@/lib/effect";
+import { Clock, Effect, Option, Stream } from "@/lib/effect";
+import { openScope } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveIndexedKey } from "@/services/note-index/service";
@@ -17,7 +19,8 @@ import type { Settings } from "@/services/settings/schema";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
-import type { CitationLookup, CitationLookupStatus } from "./lookup-service";
+import type { CitationLookupStatus } from "./lookup-service";
+import type { PlainCitationLookup } from "./plain";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
 
@@ -189,8 +192,8 @@ export interface CitationIndexOptions {
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
   lookup: Pick<
-    CitationLookup,
-    "read" | "observe" | "status" | "on" | "whenResolved"
+    PlainCitationLookup,
+    "read" | "observe" | "status" | "changes" | "whenResolved"
   >;
   /**
    * Where scans survive a restart; a store that fails to open costs a full
@@ -548,7 +551,21 @@ export class CitationIndex extends Service<void> {
       });
     };
     listeners.defer(this.on("changed", onChange));
-    listeners.defer(this.#lookup.on("status-changed", onChange));
+    const lookupScope = openScope();
+    listeners.defer(() => {
+      void lookupScope.close();
+    });
+    listeners.defer(
+      subscribe(
+        { scope: lookupScope.scope, runFork: Effect.runFork },
+        this.#lookup.changes.pipe(
+          Stream.map((state) => state.status),
+          Stream.changes,
+          Stream.drop(1),
+        ),
+        onChange,
+      ),
+    );
     listeners.defer(this.on("cited-by-invalidated", onChange));
     listeners.defer(this.on("backfilled", onChange));
     listeners.defer(this.on("membership-changed", onChange));

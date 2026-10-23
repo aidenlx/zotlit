@@ -9,7 +9,6 @@ import type {
 } from "obsidian";
 
 import type { Library, LibraryCitekey } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Effect } from "@/lib/effect";
@@ -41,7 +40,7 @@ import {
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { CitationLookup } from "./lookup-service";
+import { citationLookupFixture } from "./__fixtures__";
 import { CitationIndex } from "./service";
 import type {
   CitationIndexOptions,
@@ -276,7 +275,10 @@ export class DatabaseStub implements AsyncDisposable {
   itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: TestReads;
-  readonly #events = createNanoEvents<ZoteroReadsEvents>();
+  readonly #listeners = new Map<
+    keyof ZoteroReadsEvents,
+    Set<ZoteroReadsEvents[keyof ZoteroReadsEvents]>
+  >();
   readonly #ready = Promise.withResolvers<void>();
 
   constructor({
@@ -435,11 +437,14 @@ export class DatabaseStub implements AsyncDisposable {
     event: K,
     cb: ZoteroReadsEvents[K],
   ): () => void {
-    return this.#events.on(event, cb);
+    const listeners = this.#listeners.get(event) ?? new Set();
+    this.#listeners.set(event, listeners.add(cb));
+    return () => listeners.delete(cb);
   }
 
   changed(): void {
-    this.#events.emit("changed");
+    for (const listener of this.#listeners.get("changed") ?? [])
+      (listener as ZoteroReadsEvents["changed"])();
   }
 
   async replaceRows(seed: string): Promise<void> {
@@ -451,10 +456,9 @@ export class DatabaseStub implements AsyncDisposable {
 
   degrade(): void {
     this.state = "degraded";
-    this.#events.emit(
-      "degraded",
-      new DbUnavailable({ message: "Database unavailable" }),
-    );
+    const error = new DbUnavailable({ message: "Database unavailable" });
+    for (const listener of this.#listeners.get("degraded") ?? [])
+      (listener as ZoteroReadsEvents["degraded"])(error);
   }
 
   [Symbol.asyncDispose](): Promise<void> {
@@ -685,7 +689,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   app: App;
   draft: TFile;
   index: CitationIndex;
-  lookup: CitationLookup;
+  lookup: Awaited<ReturnType<typeof citationLookupFixture>>;
   metadataCache: MockMetadataCache;
   noteIndex: NoteIndexStub;
   settings: SettingsStub;
@@ -775,7 +779,7 @@ export async function createCitationIndexHarness(
   const clock = testClock();
   const queryClient = stack.use(queryClientsFixture(clock.now));
   const lookup = stack.use(
-    new CitationLookup({
+    await citationLookupFixture({
       reads: db,
       libraryScope,
       queryClient,

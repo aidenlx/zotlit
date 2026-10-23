@@ -13,7 +13,7 @@ import type { AnnotationPopover } from "@/services/annotation-popover/service";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
@@ -64,7 +64,7 @@ export interface CitekeyEditorDeps {
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
   settings: Pick<PlainPluginSettings, "current" | "subscribe">;
-  citationLookup: Pick<CitationLookup, "read"> & {
+  citationLookup: Pick<PlainCitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
