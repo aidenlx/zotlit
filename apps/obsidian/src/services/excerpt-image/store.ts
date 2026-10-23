@@ -7,6 +7,7 @@ import type { ExcerptImage, ExcerptImageFormat } from "./format";
 import type { ExcerptCache, ExcerptEntry, ExcerptIdentity } from "./service";
 
 export const EXCERPT_CACHE_BUDGET = 256 * 1024 * 1024;
+// Persisted version: packages/scripts/lib/format-versions.ts.
 const SCHEMA_VERSION = 2;
 
 export interface ExcerptStore extends ExcerptCache, Disposable {

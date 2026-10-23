@@ -60,6 +60,10 @@ When adding or changing a CLI schema or downloadable resource, inspect `src/serv
 
 Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers, and log through LogTape. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
 
+## Workers
+
+A new worker runs on `effect/rpc`; follow `src/services/zotero-reads/{rpc,worker,worker-launch,worker-host,in-process}.ts`.
+
 ## Debugging
 
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.

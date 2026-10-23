@@ -27,13 +27,14 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Create the worktree with `wt switch --create <branch> --base <integration-branch> --no-cd` (the project's pre-start hook bootstraps it) and name its path in the prompt. Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
    - calls the Skill tool with `tdd` to build the ticket;
+   - adds the ticket’s Fixture Vault page cases (`policies/fixture-pages.md`);
    - merges the integration branch tip into its own branch before reporting done
 
 5. Once an **implementer subagent** completes, run the Standards axis of `code-review` on the ticket's diff (`<integration-branch>...<ticket-branch>`) in a fresh subagent, and send its hard violations back to the implementer. Merge once the axis is clean: merge its work to the integration branch with a **merger subagent**. Then give the ticket its one progress comment and close it, as `docs/agents/issue-tracker.md` describes.
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all tickets are complete, call the Skill tool with `code-review` on the integration branch, and call `improve-codebase-architecture` scoped to the integration diff. Confirm each suspected bug in the running app before it counts as a finding; the user picks which architecture candidates to address. Fix all findings in a single **implementer subagent**, each at its **root**: the fix changes the design that let the defect happen — the module that owns the decision, the function every surface should share, the fake that hid it — and a local patch stands only where the root is out of scope and recorded as an open point (`policies/root-fixes.md`).
+7. Once all tickets are complete, merge the PR base branch into the integration branch and read the policies and standards that the merge changed. Run the final review and fix round from that merged tip. Call the Skill tool with `code-review` on the integration branch, and call `improve-codebase-architecture` scoped to the integration diff. Confirm each suspected bug in the running app before it counts as a finding; the user picks which architecture candidates to address. Fix all findings in a single **implementer subagent**, each at its **root**: the fix changes the design that let the defect happen — the module that owns the decision, the function every surface should share, the fake that hid it — and a local patch stands only where the root is out of scope and recorded as an open point (`policies/root-fixes.md`).
 
 8. If a draft PR exists, mark it ready for review. Otherwise, resolve each ticket the way the issue tracker closes work, and report the integration branch. Notify peer sessions that build on the integration branch once, now that it is done.
 

@@ -92,6 +92,7 @@ import { defaults, schema } from "./schema";
 import type { Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
+// Persisted version: packages/scripts/lib/format-versions.ts.
 const CURRENT_VERSION = 10;
 
 type SettingsKey = keyof typeof schema.entries;

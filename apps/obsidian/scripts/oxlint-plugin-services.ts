@@ -202,6 +202,118 @@ export const cliCommandRegistration: Rule = {
   },
 };
 
+interface WorkerNode extends AstNode {
+  readonly expression?: WorkerNode;
+  readonly typeAnnotation?: WorkerNode;
+  readonly typeName?: WorkerNode;
+}
+
+function memberName(node: AstNode): unknown {
+  return node.computed ? node.property?.value : node.property?.name;
+}
+
+function workerType(node: WorkerNode | undefined): boolean {
+  if (!node) return false;
+  if (node.type === "TSTypeAnnotation") return workerType(node.typeAnnotation);
+  return (
+    node.type === "TSTypeReference" &&
+    ["Worker", "DedicatedWorkerGlobalScope", "WorkerGlobalScope"].includes(
+      String(node.typeName?.name),
+    )
+  );
+}
+
+/** Worker transports follow ZoteroReads; file exceptions live in oxlint.config.ts. */
+export const workerRpc: Rule = {
+  meta: {
+    type: "problem",
+    docs: { description: "Run workers on effect/rpc." },
+    messages: {
+      rpc: "Run the worker on effect/rpc; follow src/services/zotero-reads/{rpc,worker,worker-launch,worker-host,in-process}.ts.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const isConstructor = (node: AstNode) =>
+      (node.type === "Identifier" && node.name === "Worker") ||
+      (node.type === "MemberExpression" && memberName(node) === "Worker");
+    const isWorker = (
+      node: WorkerNode | undefined,
+      seen = new Set<AstNode>(),
+    ): boolean => {
+      if (!node || seen.has(node)) return false;
+      seen.add(node);
+      if (workerType(node.typeAnnotation)) return true;
+      if (
+        node.type === "TSAsExpression" ||
+        node.type === "TSNonNullExpression" ||
+        node.type === "ChainExpression"
+      )
+        return isWorker(node.expression, seen);
+      if (node.type === "NewExpression")
+        return !!node.callee && isConstructor(node.callee);
+      if (node.type === "MemberExpression")
+        return (
+          String(memberName(node)).toLowerCase().endsWith("worker") ||
+          memberName(node) === "self"
+        );
+      if (node.type !== "Identifier" || typeof node.name !== "string")
+        return false;
+      for (
+        let scope = context.sourceCode.getScope(node as never);
+        scope;
+        scope = scope.upper!
+      ) {
+        const variable = scope.set.get(node.name);
+        if (!variable) continue;
+        for (const definition of variable.defs) {
+          if (workerType((definition.name as WorkerNode).typeAnnotation))
+            return true;
+          if (
+            definition.node.type === "VariableDeclarator" &&
+            isWorker(definition.node.init as WorkerNode, seen)
+          )
+            return true;
+        }
+        break;
+      }
+      return node.name === "self" || node.name.toLowerCase().endsWith("worker");
+    };
+    return {
+      NewExpression(node) {
+        if (isConstructor(node.callee as AstNode))
+          context.report({ node, messageId: "rpc" });
+      },
+      CallExpression(node) {
+        const callee = node.callee;
+        if (
+          callee.type !== "MemberExpression" ||
+          !isWorker(callee.object as WorkerNode)
+        )
+          return;
+        const method = memberName(callee as AstNode);
+        if (
+          method === "postMessage" ||
+          ((method === "addEventListener" ||
+            method === "on" ||
+            method === "once") &&
+            node.arguments[0]?.type === "Literal" &&
+            node.arguments[0].value === "message")
+        )
+          context.report({ node, messageId: "rpc" });
+      },
+      AssignmentExpression(node) {
+        if (
+          node.left.type === "MemberExpression" &&
+          memberName(node.left as AstNode) === "onmessage" &&
+          isWorker(node.left.object as WorkerNode)
+        )
+          context.report({ node, messageId: "rpc" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
@@ -209,5 +321,6 @@ export default {
     "effect-native-resources": effectNativeResources,
     "no-legacy-service": noLegacyService,
     "service-tag-id": serviceTagId,
+    "worker-rpc": workerRpc,
   },
 };

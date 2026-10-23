@@ -6,6 +6,7 @@ import type { LanguagePack } from "./language-pack.js";
 export { isSupportedLanguagePackFormatter } from "./language-pack.js";
 
 /** Pack schema this plugin build reads; packs declaring anything else are rejected. */
+// Persisted version: packages/scripts/lib/format-versions.ts.
 export const LANGUAGE_PACK_SCHEMA_VERSION = 1;
 
 /**

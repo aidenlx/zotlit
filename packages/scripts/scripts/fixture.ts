@@ -45,6 +45,7 @@ import {
   VAULT_CASES,
   writePairedRunState,
 } from "#fixture";
+import { forkFixtureData, removeFixtureFork } from "#fixture/fork";
 import { renderGuide } from "#fixture/guide";
 import { startMockLocalBridge } from "#fixture/local-bridge-server";
 import { runPairedRun } from "#fixture/paired-run";
@@ -361,6 +362,36 @@ const cli = yargs(hideBin(process.argv))
     async (argv) => {
       await selectScopeCase(layout, argv["scope-case"]);
       console.log(`Saved Library Scope: ${argv["scope-case"]}`);
+    },
+  )
+  .command(
+    "fork [name]",
+    "copy the built Zotero data to a writable named fork and print its absolute path",
+    (y) =>
+      y
+        .positional("name", {
+          type: "string",
+          describe:
+            "fork name: 1–64 letters, digits, hyphens or underscores, starting with a letter or digit",
+        })
+        .option("remove", {
+          type: "string",
+          describe:
+            "remove this named fork after restoring the previous Device Override",
+        })
+        .conflicts("name", "remove")
+        .check((argv) => {
+          if (!argv.name && !argv.remove)
+            throw new Error("Give a fork name or --remove <name>.");
+          return true;
+        }),
+    async (argv) => {
+      if (argv.remove !== undefined) {
+        await removeFixtureFork(layout, argv.remove);
+        console.log(`Removed Fixture fork: ${argv.remove}`);
+      } else {
+        console.log(await forkFixtureData(layout, argv.name!));
+      }
     },
   )
   .command(
