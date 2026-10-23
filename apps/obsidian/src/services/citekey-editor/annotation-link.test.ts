@@ -44,7 +44,9 @@ const PAREN = "formatting formatting-link-string string url";
 /**
  * The token nodes Obsidian's HyperMD mode makes of the inline links and code
  * spans these tests write, as Obsidian 1.14.4 tokenizes them. Plain text makes
- * no node, which leaves a gap between the nodes either side.
+ * no node, which leaves a gap between the nodes either side, and touching
+ * tokens of the same classes merge into one node, as the stream parser merges
+ * them.
  */
 function hypermdTokens(
   text: string,
@@ -52,7 +54,10 @@ function hypermdTokens(
   const nodes: { from: number; to: number; classes: string }[] = [];
   let at = 0;
   const push = (to: number, classes: string): void => {
-    if (to > at) nodes.push({ from: at, to, classes });
+    const last = nodes.at(-1);
+    if (to <= at) return;
+    if (last?.to === at && last.classes === classes) last.to = to;
+    else nodes.push({ from: at, to, classes });
     at = to;
   };
   while (at < text.length) {
@@ -176,6 +181,27 @@ describe("annotationLinkAtPos", () => {
     }
   });
 
+  it("answers the link that begins where the one before it ends", () => {
+    const first =
+      "[a](zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5)";
+    const state = EditorState.create({
+      doc: `${first}[b](zotero://open/library/items/RGRPDF24?annotation=Q8ZR4TDH)`,
+    });
+    expect(annotationLinkAtPos(state, first.length - 1)?.annotationKey).toBe(
+      "PUPR5FG5",
+    );
+    expect(annotationLinkAtPos(state, first.length)?.annotationKey).toBe(
+      "Q8ZR4TDH",
+    );
+  });
+
+  it("reads a link with empty text, whose brackets parse as one node", () => {
+    const state = EditorState.create({
+      doc: "[](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2)",
+    });
+    expect(annotationLinkAtPos(state, 10)?.annotationKey).toBe("FDRFQ7C2");
+  });
+
   it("answers nothing for what Obsidian does not parse as a link", () => {
     for (const doc of [
       `\`${LINK}\``,
@@ -271,5 +297,49 @@ describe("annotationLinkHoverExtension", () => {
     const anchor = shown[0]!.targetEl;
     expect(anchor.contains(linkText) && anchor.contains(url)).toBe(true);
     expect(anchor.textContent).toBe(LINK);
+  });
+
+  it("shows the second of two touching links when its text is hovered", () => {
+    const shown: AnnotationHoverRequest[] = [];
+    const first =
+      "[a](zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5)";
+    const second =
+      "[b](zotero://open/library/items/RGRPDF24?annotation=Q8ZR4TDH)";
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: first + second,
+        extensions: [
+          editorInfoField,
+          annotationLinkHoverExtension({
+            hoverPreferences: () =>
+              hoverPreferences({
+                ...defaults,
+                "citation.hover-require-mod-source": false,
+              }),
+            pagePreviewRequiresMod: () => true,
+            showAnnotation: (request) => shown.push(request),
+          }),
+          Prec.lowest(
+            EditorView.decorations.of(
+              Decoration.set([
+                Decoration.mark({ class: "cm-link" }).range(1, 2),
+                Decoration.mark({ class: "cm-link" }).range(
+                  first.length + 1,
+                  first.length + 2,
+                ),
+              ]),
+            ),
+          ),
+        ],
+      }),
+    });
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+    const secondText = view.dom.querySelectorAll<HTMLElement>(".cm-link")[1]!;
+
+    secondText.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+
+    expect(shown.map(({ link }) => link.annotationKey)).toEqual(["Q8ZR4TDH"]);
+    expect(shown[0]!.targetEl.textContent).toBe(second);
   });
 });

@@ -1,7 +1,7 @@
 // The CodeMirror side of annotation hover: the Durable Annotation Link under
 // the pointer, and the hover that shows the Annotation it names.
 
-import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
+import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
@@ -11,7 +11,8 @@ import { editorInfoField } from "obsidian";
 import { parseAnnotationOpenUri } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
-import type { DocRange } from "@/lib/editor-decoration";
+import { tokenNodes, visibleLineRanges } from "@/lib/editor-decoration";
+import type { DocRange, TokenNode } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import type { AnnotationHoverRequest } from "@/services/annotation-popover/service";
 import {
@@ -102,26 +103,12 @@ const annotationLinkMarks = ViewPlugin.fromClass(
 
 function markLinks(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
-  for (const range of visibleLines(view)) {
+  for (const range of visibleLineRanges(view)) {
     for (const { from, to } of annotationLinksIn(view.state, range)) {
       builder.add(from, to, linkMark);
     }
   }
   return builder.finish();
-}
-
-/** The visible ranges widened to whole lines, overlapping ones merged. */
-function visibleLines(view: EditorView): DocRange[] {
-  const { doc } = view.state;
-  const ranges: DocRange[] = [];
-  for (const range of view.visibleRanges) {
-    const from = doc.lineAt(range.from).from;
-    const to = doc.lineAt(range.to).to;
-    const last = ranges.at(-1);
-    if (last !== undefined && from <= last.to) last.to = Math.max(last.to, to);
-    else ranges.push({ from, to });
-  }
-  return ranges;
 }
 
 function hoverAt(
@@ -190,7 +177,9 @@ function linkElementAt(event: MouseEvent): HTMLElement | null {
 /**
  * The Durable Annotation Link covering document position `pos`, in its text
  * or in its URL. `pos` counts as inside at either boundary, the range test
- * {@link citekeyAtPos} runs too.
+ * {@link citekeyAtPos} runs too. Where one link ends as the next begins, the
+ * position answers the one beginning there — the start a hovered link's
+ * wrapper reports.
  *
  * @returns the Annotation the link names, or null where `pos` sits in no
  *   inline link to a Zotero Annotation.
@@ -200,7 +189,7 @@ export function annotationLinkAtPos(
   pos: number,
 ): DurableAnnotationLink | null {
   const line = state.doc.lineAt(pos);
-  const found = annotationLinksIn(state, line).find(
+  const found = annotationLinksIn(state, line).findLast(
     ({ from, to }) => from <= pos && pos <= to,
   );
   return found?.link ?? null;
@@ -216,10 +205,12 @@ function annotationLinksIn(
   state: EditorState,
   range: DocRange,
 ): AnnotationLinkSpan[] {
-  return markdownLinks(state, range).flatMap(({ from, to, url }) => {
-    const link = parseAnnotationOpenUri(url);
-    return link === null ? [] : [{ from, to, link }];
-  });
+  return markdownLinks(tokenNodes(state, range)).flatMap(
+    ({ from, to, url }) => {
+      const link = parseAnnotationOpenUri(url);
+      return link === null ? [] : [{ from, to, link }];
+    },
+  );
 }
 
 /**
@@ -237,17 +228,18 @@ const TOKEN_URL_PAREN = "formatting-link-string";
 const TOKEN_URL = "url";
 
 /**
- * Finds every inline `[text](url)` in `range` the way Obsidian's own
+ * Finds every inline `[text](url)` among `nodes` the way Obsidian's own
  * `getClickableTokenAt` reads one: a run of `link` nodes opened by `[`
  * and closed by `]`, met at once by `(`, the URL and `)`. Nodes must
  * touch, so plain text anywhere in between ends the run. Code, math and
  * frontmatter never carry the link classes, so they need no exclusion list.
+ * Empty text leaves the two brackets touching, which the parser merges into
+ * one `[]` node.
  *
- * @param range whole lines, so no link is cut by its edges.
+ * @param nodes the token nodes of whole lines, so no link is cut by an edge.
  */
 function markdownLinks(
-  state: EditorState,
-  range: DocRange,
+  nodes: readonly TokenNode[],
 ): { from: number; to: number; url: string }[] {
   const links: { from: number; to: number; url: string }[] = [];
   let run: {
@@ -258,44 +250,36 @@ function markdownLinks(
     url: string;
   } | null = null;
 
-  syntaxTree(state).iterate({
-    from: range.from,
-    to: range.to,
-    enter(node) {
-      const value = node.type.prop(tokenClassNodeProp);
-      if (value === undefined) return;
-      const classes = value.split(" ");
-      const text = state.doc.sliceString(node.from, node.to);
-      const bracket =
-        classes.includes(TOKEN_LINK_BRACKET) && classes.includes(TOKEN_LINK);
-      const paren = classes.includes(TOKEN_URL_PAREN);
+  for (const { from, to, classes, text } of nodes) {
+    const bracket =
+      classes.includes(TOKEN_LINK_BRACKET) && classes.includes(TOKEN_LINK);
+    const paren = classes.includes(TOKEN_URL_PAREN);
 
-      if (run !== null && node.from === run.at) {
-        run.at = node.to;
-        if (run.phase === "text") {
-          if (bracket && text === "]") run.phase = "closed";
-          else if (!classes.includes(TOKEN_LINK)) run = null;
-          return;
-        }
-        if (run.phase === "closed") {
-          if (paren && text === "(") {
-            run.phase = "url";
-            return;
-          }
-        } else if (paren && text === ")") {
-          links.push({ from: run.from, to: node.to, url: run.url });
-          run = null;
-          return;
-        } else if (classes.includes(TOKEN_URL)) {
-          run.url += text;
-          return;
-        }
+    if (run !== null && from === run.at) {
+      run.at = to;
+      if (run.phase === "text") {
+        if (bracket && text === "]") run.phase = "closed";
+        else if (!classes.includes(TOKEN_LINK)) run = null;
+        continue;
       }
-      run =
-        bracket && text === "["
-          ? { from: node.from, at: node.to, phase: "text", url: "" }
-          : null;
-    },
-  });
+      if (run.phase === "closed") {
+        if (paren && text === "(") {
+          run.phase = "url";
+          continue;
+        }
+      } else if (paren && text === ")") {
+        links.push({ from: run.from, to, url: run.url });
+        run = null;
+        continue;
+      } else if (classes.includes(TOKEN_URL)) {
+        run.url += text;
+        continue;
+      }
+    }
+    run =
+      bracket && (text === "[" || text === "[]")
+        ? { from, at: to, phase: text === "[" ? "text" : "closed", url: "" }
+        : null;
+  }
   return links;
 }
