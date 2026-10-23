@@ -9,6 +9,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
 import { createCitationEngine } from "./engine";
@@ -127,6 +128,7 @@ function ports(fixture: Fixture): ExportPorts & {
     return Promise.resolve({ source: "local-api" as const, items });
   });
   return {
+    citationParse: inProcessParseClient,
     prepareDocument,
     renderPrepared,
     fetchBibliography,
@@ -174,7 +176,7 @@ function run(
   const promise = exportCitedDocument(
     {
       document: { sourcePath: SOURCE, links: fixture.links ?? [] },
-      markdown: "Cited [[Zeta 2020]].\n",
+      markdown: (fixture.links ?? []).map((link) => link.original).join(" "),
       format: "docx",
       ...request,
     },
@@ -195,6 +197,25 @@ const CITED: Fixture = {
 };
 
 describe("exportCitedDocument", () => {
+  it.each([
+    "[](zotero://open/library/items/ABCD2345?page=12&annotation=EFGH6789)",
+    "[](<zotero://open/groups/7/items/ABCD2345?page=12&annotation=EFGH6789>)",
+  ])(
+    "keeps Annotation Citation source byte for byte: %s (#1694)",
+    async (markdown) => {
+      const running = run({}, { markdown });
+      await expect(running).resolves.toHaveProperty("output");
+      const [request] = running.ports.prepareDocument.mock.calls[0] as [
+        PrepareRequest,
+      ];
+      expect(request.markdown).toBe(markdown);
+      const [render] = running.ports.renderPrepared.mock.calls[0] as [
+        RenderRequest,
+      ];
+      expect(render.document.citedIds).toEqual([]);
+    },
+  );
+
   it.each([false, true])(
     "cites each Item by the CSL id its source gave it (snapshot unavailable: %s)",
     async (snapshotUnavailable) => {
@@ -331,7 +352,7 @@ describe("exportCitedDocument", () => {
       ];
       expect(
         JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-      ).toEqual({ citations: {} });
+      ).toEqual({ citations: {}, parsed: true });
     },
   );
 
@@ -534,6 +555,93 @@ describe(
   "exportCitedDocument over the real engine",
   { timeout: 60_000 },
   () => {
+    it("leaves a commented wikilink uncited beside the same visible link (#1694)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [link("Zeta 2020")] },
+          markdown: "%% [[Zeta 2020]] %%\n\nVisible [[Zeta 2020]].",
+          format: "html",
+        },
+        { ...ports({ ...CITED, links: [link("Zeta 2020")] }), engine },
+      );
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder().decode(
+        (result as { output: Uint8Array }).output,
+      );
+      expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+    });
+
+    it("exports a citation after a currency opener (#1694)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [] },
+          markdown: "$5 [@zeta2020] x$",
+          format: "html",
+        },
+        {
+          ...ports({
+            citekeys: { zeta2020: "ZETA1234" },
+            placed: { ZETA1234: ref("ZETA1234") },
+            items: { ZETA1234: ZETA },
+          }),
+          engine,
+        },
+      );
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder().decode(
+        (result as { output: Uint8Array }).output,
+      );
+      expect(html).toContain('data-cites="zeta2020"');
+      expect(html).toContain("$5");
+      expect(html).toContain("x$");
+    });
+
+    it.each([
+      {
+        name: "fenced code nested in a callout",
+        markdown:
+          "> [!note] Example\n> ~~~\n> [@hidden] [[Missing#cite:locator=2]]\n> ~~~\n\n[@zeta2020]",
+      },
+      {
+        name: "math with an escaped closing dollar",
+        markdown: "$x\\$ [@hidden]$\n\n[@zeta2020]",
+      },
+    ])(
+      "excludes $name from exported citations (#1694)",
+      async ({ markdown }) => {
+        await using engine = await createCitationEngine(
+          new Blob([await readFile(WASM_PATH)]),
+        );
+        const result = await exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: [] },
+            markdown,
+            format: "html",
+          },
+          {
+            ...ports({
+              citekeys: { zeta2020: "ZETA1234" },
+              placed: { ZETA1234: ref("ZETA1234") },
+              items: { ZETA1234: ZETA },
+            }),
+            engine,
+          },
+        );
+        expect(result).toHaveProperty("output");
+        const html = new TextDecoder().decode(
+          (result as { output: Uint8Array }).output,
+        );
+        expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+        expect(html).not.toContain('id="ref-hidden"');
+      },
+    );
+
     it("cites the demo note through the bundled sandbox filter", async () => {
       await using engine = await createCitationEngine(
         new Blob([await readFile(WASM_PATH)]),
@@ -562,6 +670,32 @@ describe(
       // One entry for Zeta, under the key the note writes rather than under the
       // item URI its source answered with.
       expect(html).not.toContain(ZETA_URI.id);
+    });
+
+    it("keeps export's explicit nocite membership (#1694)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [] },
+          markdown: '---\nnocite: "[@zeta2020]"\n---\n\nNo body citations.',
+          format: "html",
+        },
+        {
+          ...ports({
+            citekeys: { zeta2020: "ZETA1234" },
+            placed: { ZETA1234: ref("ZETA1234") },
+            items: { ZETA1234: ZETA },
+          }),
+          engine,
+        },
+      );
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder().decode(
+        (result as { output: Uint8Array }).output,
+      );
+      expect(html).toContain('id="ref-zeta2020"');
     });
 
     it("keeps Pandoc's nocite wildcard whole", async () => {

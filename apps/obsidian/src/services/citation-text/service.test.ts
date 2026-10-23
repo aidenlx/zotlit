@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -21,6 +20,8 @@ import {
   KEY_A,
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
+// @vitest-environment happy-dom
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import type {
   BibliographyRequest,
   RenderedCitation,
@@ -200,6 +201,7 @@ async function makeHarness({
     },
   );
   const service = new CitationText({
+    citationParse: inProcessParseClient,
     openDocuments,
     citationLookup: {
       on: (_event: string, cb: () => void) => {
@@ -324,6 +326,31 @@ async function readText(service: CitationText): Promise<DocumentCitations> {
 }
 
 describe("CitationText", () => {
+  it("renders a citation after a currency opener (#1694)", async () => {
+    const occurrence: CitationOccurrence = {
+      kind: "citekey",
+      raw: "alpha",
+      position: {
+        start: { line: 0, col: 4, offset: 4 },
+        end: { line: 0, col: 10, offset: 10 },
+      },
+    };
+    const h = await makeHarness({
+      body: "$5 [@alpha] x$",
+      documentCitationSet: {
+        occurrences: [occurrence],
+        citations: [{ ...citation("alpha"), occurrences: [occurrence] }],
+        errors: [],
+      },
+    });
+    try {
+      const held = await h.service.read(NOTE.path);
+      expect(firstText(held?.formatted.get("[@alpha]"))).toBe("«[@ALPHA234]»");
+    } finally {
+      await h.dispose();
+    }
+  });
+
   it("retries a failed resolution snapshot through a document read after the cooldown", async () => {
     await using cleanup = new AsyncDisposableStack();
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -357,6 +384,7 @@ describe("CitationText", () => {
     );
     const service = cleanup.use(
       new CitationText({
+        citationParse: inProcessParseClient,
         openDocuments: new OpenDocumentsStub(),
         app: h.app,
         db: items,

@@ -39,7 +39,6 @@ export {
   type ResolveOccurrence,
 } from "./query";
 export {
-  scanDocumentCitations,
   type CitationOccurrence,
   type CitationSyntax,
   type MalformedWikilinkCitation,

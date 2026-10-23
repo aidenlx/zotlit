@@ -23,6 +23,7 @@ import type {
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
@@ -290,7 +291,11 @@ async function render(options: {
     search: options.search ?? "",
     searchVisible: options.searchVisible ?? false,
   });
-  const actions = createCitedByActions({ app, store });
+  const actions = createCitedByActions({
+    app,
+    store,
+    citationParse: inProcessParseClient,
+  });
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -320,6 +325,16 @@ async function render(options: {
     setEphemeralState,
     store,
   };
+}
+
+async function waitForOccurrences(
+  container: Element,
+  count = 1,
+): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => Promise.resolve());
+    expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(count);
+  });
 }
 
 /** The source-group labels, in the order the sidebar shows them. */
@@ -574,6 +589,7 @@ describe("CitedBy", () => {
 
   it("highlights the citation inside its surrounding context", async () => {
     const { container } = await render({});
+    await waitForOccurrences(container);
     const card = container.querySelector("[data-occurrence]");
     const highlight = card?.querySelector("mark");
 
@@ -585,6 +601,7 @@ describe("CitedBy", () => {
 
   it("activates card navigation from the keyboard and from a mod-click", async () => {
     const { container, openLinkText, setEphemeralState } = await render({});
+    await waitForOccurrences(container);
     const card = container.querySelector("[data-occurrence]") as HTMLElement;
 
     await act(() => {
@@ -593,14 +610,18 @@ describe("CitedBy", () => {
       );
     });
     await act(async () => Promise.resolve());
-    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
-    expect(setEphemeralState).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false),
+    );
+    await vi.waitFor(() => expect(setEphemeralState).toHaveBeenCalledOnce());
 
     vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
     await act(() => card.click());
     await act(async () => Promise.resolve());
-    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", "tab");
-    expect(setEphemeralState).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() =>
+      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", "tab"),
+    );
+    await vi.waitFor(() => expect(setEphemeralState).toHaveBeenCalledTimes(2));
   });
 
   it("toggles a source row and opens its note from the dedicated button", async () => {
@@ -639,29 +660,33 @@ describe("CitedBy", () => {
       setActiveLeaf,
       setEphemeralState,
     } = await render({ duplicateSourceLeaf: true });
+    await waitForOccurrences(container);
 
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
     await act(async () => Promise.resolve());
 
-    expect(setEphemeralState).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(setEphemeralState).toHaveBeenCalledOnce());
     expect(oldSetEphemeralState).not.toHaveBeenCalled();
     expect(setActiveLeaf).toHaveBeenCalledOnce();
   });
 
   it("opens and reveals a current occurrence, but omits a stale range", async () => {
     const current = await render({});
+    await waitForOccurrences(current.container);
     await act(() =>
       (
         current.container.querySelector("[data-occurrence]") as HTMLElement
       ).click(),
     );
     await act(async () => Promise.resolve());
-    expect(current.openLinkText).toHaveBeenLastCalledWith(
-      group.path,
-      "",
-      false,
+    await vi.waitFor(() =>
+      expect(current.openLinkText).toHaveBeenLastCalledWith(
+        group.path,
+        "",
+        false,
+      ),
     );
     expect(current.setEphemeralState).toHaveBeenLastCalledWith({
       startLoc: group.occurrences[0]!.position.start,
@@ -673,12 +698,19 @@ describe("CitedBy", () => {
     root = undefined;
     document.body.replaceChildren();
     const stale = await render({ read: () => Promise.resolve("changed") });
+    await waitForOccurrences(stale.container);
     await act(() =>
       (
         stale.container.querySelector("[data-occurrence]") as HTMLElement
       ).click(),
     );
-    expect(stale.openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+    await vi.waitFor(() =>
+      expect(stale.openLinkText).toHaveBeenLastCalledWith(
+        group.path,
+        "",
+        false,
+      ),
+    );
     expect(stale.setEphemeralState).not.toHaveBeenCalled();
   });
 
@@ -698,6 +730,7 @@ describe("CitedBy", () => {
       read: () => Promise.resolve("See [[Roe 2025]]."),
       links: [{ link: "Doe 2024", original: "[[Doe 2024]]", position }],
     });
+    await waitForOccurrences(container);
 
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
@@ -705,7 +738,9 @@ describe("CitedBy", () => {
 
     expect(container.querySelector("mark")).toBeNull();
     expect(container.textContent).toContain("Preview unavailable");
-    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+    await vi.waitFor(() =>
+      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false),
+    );
     expect(setEphemeralState).not.toHaveBeenCalled();
   });
 
@@ -725,13 +760,16 @@ describe("CitedBy", () => {
       read: () => Promise.resolve(source),
       links: [{ link: "Doe 2024", original: "[[Doe 2024]]", position }],
     });
+    await waitForOccurrences(container);
 
     expect(container.querySelector("mark")?.textContent).toBe("[[Doe 2024]]");
     await act(() =>
       (container.querySelector("[data-occurrence]") as HTMLElement).click(),
     );
     await act(async () => Promise.resolve());
-    expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false);
+    await vi.waitFor(() =>
+      expect(openLinkText).toHaveBeenLastCalledWith(group.path, "", false),
+    );
     expect(setEphemeralState).toHaveBeenLastCalledWith({
       startLoc: position.start,
       endLoc: position.end,
@@ -1311,6 +1349,7 @@ describe("CitedBy", () => {
       "Alpha cites @doe2024 here.",
       "Beta cites @doe2024 there.",
     ];
+    await waitForOccurrences(container, 4);
     expect(excerpts()).toEqual(inSourceOrder);
 
     for (const mode of [

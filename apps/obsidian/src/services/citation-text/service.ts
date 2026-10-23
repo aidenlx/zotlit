@@ -7,7 +7,7 @@ import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
-import type { CitationKey } from "@/lib/citation-source";
+import type { CitationKey, ScannedCitation } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
@@ -20,13 +20,14 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import { scanDocumentCitations } from "@/services/citation-index/service";
+import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
   Citation,
   CitationIndex,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import type { ParseClient } from "@/services/citation-parse/client";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -85,6 +86,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
+  citationParse: ParseClient;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationLookup: Pick<CitationLookup, "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
@@ -127,6 +129,7 @@ export interface CitationTextDeps {
  */
 export class CitationText extends Service<void> {
   readonly #app;
+  readonly #citationParse;
   readonly #db;
   readonly #citationIndex;
   readonly #citationLookup;
@@ -144,6 +147,7 @@ export class CitationText extends Service<void> {
   constructor(deps: CitationTextDeps) {
     super();
     this.#app = deps.app;
+    this.#citationParse = deps.citationParse;
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#citationLookup = deps.citationLookup;
@@ -365,8 +369,17 @@ export class CitationText extends Service<void> {
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
     const body = await this.#app.vault.cachedRead(file);
+    const { record } = await this.#citationParse.parse(
+      { path: file.path, generation: 0, text: body },
+      new AbortController().signal,
+    );
     const set = await this.#citationIndex.getDocumentCitationSet(file);
-    const wikilinks = this.#wikilinkCitations(file, body, set);
+    const wikilinks = this.#wikilinkCitations({
+      file,
+      body,
+      set,
+      links: record.links,
+    });
     const literal = worksByCitekey(set.citations);
     const works = await this.#readCited([
       ...literal.values(),
@@ -376,7 +389,12 @@ export class CitationText extends Service<void> {
     // Both syntaxes go to one render in document order, so a numbering style
     // counts every citation of the document once and in the order it reads.
     const placed = [
-      ...literalCitations(body, set.occurrences, literal),
+      ...literalCitations({
+        body,
+        scanned: record.citations,
+        occurrences: set.occurrences,
+        works: literal,
+      }),
       ...wikilinks.citations,
     ].sort((a, b) => a.start - b.start);
     const citations = placed.flatMap((citation) => {
@@ -520,16 +538,20 @@ export class CitationText extends Service<void> {
    * The Citations one document's Literature Note wikilinks write, each as the
    * Pandoc source the exporter would write it as.
    *
-   * Link occurrences come from Obsidian's own metadata cache, which already
-   * omits links inside code, and a Citation Run is read from the document text
-   * that joins them. A Markdown-syntax link and an aliased one stay out, the
-   * same two exclusions the display surfaces make.
+   * Worker links supply the source ranges; the Document Citation Set selects
+   * members. The text between links decides which ones form a Citation Run.
    */
-  #wikilinkCitations(
-    file: TFile,
-    body: string,
-    { occurrences, lookup, citations: grouped }: DocumentCitationSet,
-  ): DocumentWikilinks {
+  #wikilinkCitations({
+    file,
+    body,
+    set: { occurrences, lookup, citations: grouped },
+    links,
+  }: {
+    file: TFile;
+    body: string;
+    set: DocumentCitationSet;
+    links: NoteScanRecord["links"];
+  }): DocumentWikilinks {
     const members = new Set(
       occurrences
         .filter((occurrence) => occurrence.kind === "wikilink")
@@ -566,10 +588,8 @@ export class CitationText extends Service<void> {
     };
 
     const runs = citationRuns(
-      (this.#app.metadataCache.getFileCache(file)?.links ?? []).filter((link) =>
-        members.has(link.position.start.offset),
-      ),
-      (link) => wikilinkCitation(link.link, context),
+      links.filter((link) => members.has(link.position.start.offset)),
+      (link) => wikilinkCitation(link.target, context),
       (previous, next) =>
         body.slice(previous.position.end.offset, next.position.start.offset),
     );
@@ -716,19 +736,25 @@ function worksByCitekey(cited: readonly Citation[]): Map<string, string> {
 /**
  * The literal Citation Clusters of a document body, in document order.
  *
- * @param works the Item each literal citekey of the document names.
+ * The work map names the Item each literal citekey resolves to.
  */
-function literalCitations(
-  body: string,
-  occurrences: readonly CitationOccurrence[],
-  works: ReadonlyMap<string, string>,
-): PlacedCitation[] {
+function literalCitations({
+  body,
+  scanned,
+  occurrences,
+  works,
+}: {
+  body: string;
+  scanned: readonly ScannedCitation[];
+  occurrences: readonly CitationOccurrence[];
+  works: ReadonlyMap<string, string>;
+}): PlacedCitation[] {
   const members = new Set(
     occurrences
       .filter((occurrence) => occurrence.kind === "citekey")
       .map((occurrence) => occurrence.position.start.offset),
   );
-  return scanDocumentCitations(body)
+  return scanned
     .filter(({ keys }) => keys.every((key) => members.has(key.start)))
     .map(({ start, end, keys }) => {
       const source = body.slice(start, end);

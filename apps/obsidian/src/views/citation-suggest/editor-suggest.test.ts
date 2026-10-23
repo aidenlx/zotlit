@@ -9,6 +9,10 @@ import type {
   CitationKeyResolution,
   CitekeyResolution,
 } from "@/services/citation-index/service";
+import {
+  createCitationIndexHarness,
+  KEY_A,
+} from "@/services/citation-index/test-harness";
 import { ItemLookup } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
@@ -475,6 +479,26 @@ describe("Citation Suggester document citations", () => {
     } as unknown as CitationSuggestDeps);
     return { suggest, search, [Symbol.dispose]: () => suggest.close() };
   }
+
+  it("uses the Document Citation Set through comments, math and nested code (#1694)", async () => {
+    await using index = await createCitationIndexHarness({
+      "draft.md": [
+        "%% [@roe2025] %%",
+        "$x [@roe2025]$",
+        "> [!note] Example",
+        "> ~~~",
+        "> [@roe2025]",
+        "> ~~~",
+        "",
+        "$5 [@doe2024] x$",
+      ].join("\n"),
+    });
+    const set = await index.index.getDocumentCitationSet(index.draft);
+    expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([KEY_A]);
+    using h = setup(index.index.getDocumentCitationSet.bind(index.index));
+    await h.suggest.getSuggestions({ ...context, file: index.draft });
+    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [KEY_A] });
+  });
 
   it("reads once per dropdown and skips unresolved keys", async () => {
     const read = vi.fn().mockResolvedValue({

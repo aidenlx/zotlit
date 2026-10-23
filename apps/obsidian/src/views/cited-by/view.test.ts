@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
 import { TFile } from "obsidian";
 import type {
@@ -16,6 +15,8 @@ import type {
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
+// @vitest-environment happy-dom
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
@@ -107,6 +108,7 @@ describe("CitedByView", () => {
     );
     view = new TestCitedByView({} as WorkspaceLeaf, {
       app,
+      citationParse: inProcessParseClient,
       citationIndex: { observeCitedBy },
     });
     expect(view.getIcon()).toBe("file-input");
@@ -233,6 +235,7 @@ describe("CitedByView", () => {
     );
     view = new TestCitedByView({} as WorkspaceLeaf, {
       app,
+      citationParse: inProcessParseClient,
       citationIndex: { observeCitedBy },
     });
     document.body.append(view.contentEl);
@@ -597,7 +600,11 @@ function makeHarness() {
   );
 
   return {
-    deps: { app, citationIndex: { observeCitedBy } },
+    deps: {
+      app,
+      citationParse: inProcessParseClient,
+      citationIndex: { observeCitedBy },
+    },
     note,
     plain,
     duplicate,

@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Keymap, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
@@ -15,6 +14,8 @@ import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citat
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { Citation } from "@/services/citation-index/service";
+// @vitest-environment happy-dom
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import {
   ALPHA_KEY,
   citation,
@@ -162,6 +163,7 @@ async function makeHarness({
   );
   const citationText = stack.use(
     new CitationText({
+      citationParse: inProcessParseClient,
       openDocuments: new OpenDocumentsStub(),
       citationLookup,
       profile: profileReader(defaults, {

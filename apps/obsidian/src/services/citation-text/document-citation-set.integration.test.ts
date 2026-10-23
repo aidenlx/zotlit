@@ -22,6 +22,7 @@ import {
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
@@ -447,6 +448,7 @@ function openText(
   styleXml: string,
 ): CitationText {
   return new CitationText({
+    citationParse: inProcessParseClient,
     openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
     app,

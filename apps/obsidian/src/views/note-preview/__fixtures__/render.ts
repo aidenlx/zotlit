@@ -1,3 +1,4 @@
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
@@ -113,6 +114,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
   await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
   const deps: NativeRenderDeps = {
+    citationParse: inProcessParseClient,
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
     zoteroReads,

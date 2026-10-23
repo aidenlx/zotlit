@@ -1,20 +1,11 @@
-// The built-in export: one document read once, its Citations resolved
-// in-process, its bibliography pulled live from Zotero, and that same read
-// document rendered.
-//
-// Pandoc reads the document before anything is resolved, so what the export
-// cites is what Pandoc itself found — one parser, not a second one that has to
-// agree with it. Both Citation Syntaxes arrive as Citations of that document:
-// a Literature Note wikilink through the sandbox filter, a literal
-// `@citation-key` through Pandoc's own reader.
-//
-// All-or-nothing, like the CLI path: an unresolved Citation or an incomplete
-// bibliography stops the export before citeproc runs, so an exported document
-// never carries a silently incomplete bibliography.
+// Built-in export resolves the worker-selected citations, then formats them with Pandoc.
+// Export retains its own Literature Note link membership and bibliography contract.
 
 import type { CslItemData } from "@zotlit/db";
 
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import type { NoteScanRecord } from "@/services/citation-index/scan-note";
+import type { ParseClient } from "@/services/citation-parse/client";
 
 import type {
   BibliographyFailure,
@@ -28,6 +19,7 @@ import type {
   PreparedDocument,
 } from "./engine";
 import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
+import parsedCitationsFilter from "./filter/parsed-citations.lua?raw";
 import { collectCitationLinks } from "./resolve";
 import type { ResolveDocument } from "./resolve";
 
@@ -35,9 +27,9 @@ import type { ResolveDocument } from "./resolve";
 export { type BibliographySource } from "./bibliography";
 
 export interface ExportRequest {
-  /** The document being exported, as Obsidian's caches see it. */
+  /** The source path resolves links; the worker reads membership from markdown. */
   document: ResolveDocument;
-  /** Its Markdown source, exactly as Pandoc reads it. */
+  /** The original Markdown source read from the vault. */
   markdown: string;
   format: DocumentFormat;
   /** CSL style XML; the engine's embedded default style when omitted. */
@@ -50,6 +42,7 @@ export interface ExportRequest {
 }
 
 export interface ExportPorts {
+  citationParse: ParseClient;
   /**
    * Indexed Key of the Literature Note `linkpath` names, resolved from
    * `sourcePath`; `null` for a missing target or an ordinary note.
@@ -113,12 +106,9 @@ export type ExportResult = { output: Uint8Array } | { error: ExportFailure };
 /**
  * Render one Obsidian document as a cited `docx` or `html` file.
  *
- * Pandoc reads the document first, with the sandbox filter turning every
- * Literature Note wikilink into a Citation that names its Item by an Injected
- * Id, which no literal citation key can spell.
- * What comes back is the document's complete Citation set — wikilinks and
- * literal `@citation-key` text alike — and every one of them is resolved to a
- * Zotero Item before citeproc runs.
+ * The parse worker selects citation spans. Pandoc reads those sources through
+ * the export filters, naming each linked Item by an Injected Id that no literal
+ * citation key can spell. Every cited Item is resolved before citeproc runs.
  *
  * Each cited Item then takes one canonical CSL id: the citation key the author
  * wrote, where a literal Citation named it, and otherwise the id its
@@ -130,8 +120,28 @@ export async function exportCitedDocument(
   request: ExportRequest,
   ports: ExportPorts,
 ): Promise<ExportResult> {
+  const { record } = await ports.citationParse.parse(
+    {
+      path: request.document.sourcePath,
+      generation: 0,
+      text: request.markdown,
+    },
+    new AbortController().signal,
+  );
   const { links, errors } = collectCitationLinks(
-    request.document,
+    {
+      sourcePath: request.document.sourcePath,
+      links: record.links
+        .filter((link) => !link.embedded)
+        .map((link) => ({
+          link: link.target,
+          original: request.markdown.slice(
+            link.position.start.offset,
+            link.position.end.offset,
+          ),
+          position: link.position,
+        })),
+    },
     ports.resolveIndexedKey,
   );
   if (errors.length > 0) {
@@ -149,14 +159,20 @@ export async function exportCitedDocument(
     links.map(({ linkpath, indexedKey }) => [linkpath, injectedId(indexedKey)]),
   );
 
+  const parsed = parsedSources(request.markdown, record);
   let prepared: PreparedDocument;
   try {
     prepared = await ports.engine.prepareDocument({
-      markdown: request.markdown,
-      luaFilters: [pandocSandboxFilter],
+      markdown: parsed.markdown,
+      luaFilters: [parsedCitationsFilter, pandocSandboxFilter],
       files: {
+        "zotlit-parsed.json": JSON.stringify({
+          prefix: parsed.prefix,
+          fragments: parsed.fragments,
+        }),
         [PANDOC_RESOLVE_MAP_FILENAME]: JSON.stringify({
           citations: Object.fromEntries(wikilinked),
+          parsed: true,
         }),
       },
     });
@@ -204,6 +220,48 @@ export async function exportCitedDocument(
   } catch (error) {
     return { error: { kind: "engine", detail: describeError(error) } };
   }
+}
+
+/** Only worker-selected sources are read as citations by the export filters. */
+function parsedSources(
+  markdown: string,
+  record: NoteScanRecord,
+): {
+  markdown: string;
+  prefix: string;
+  fragments: Record<string, { source: string; kind: "citation" | "link" }>;
+} {
+  const spans = [
+    ...record.citations.map((citation) => ({
+      ...citation,
+      kind: "citation" as const,
+    })),
+    ...record.links
+      .filter((link) => !link.embedded)
+      .map(({ position }) => ({
+        start: position.start.offset,
+        end: position.end.offset,
+        kind: "link" as const,
+      })),
+  ].sort((left, right) => left.start - right.start || right.end - left.end);
+  const prefix = `zotlit-${crypto.randomUUID()}`;
+  const fragments: Record<
+    string,
+    { source: string; kind: "citation" | "link" }
+  > = {};
+  let result = "";
+  let from = 0;
+  for (const [index, span] of spans.entries()) {
+    if (span.start < from) continue;
+    const id = `${prefix}-${index}`;
+    fragments[id] = {
+      source: markdown.slice(span.start, span.end),
+      kind: span.kind,
+    };
+    result += `${markdown.slice(from, span.start)}[]{#${id}}`;
+    from = span.end;
+  }
+  return { markdown: result + markdown.slice(from), prefix, fragments };
 }
 
 /** One document's Citations, each placed on the Zotero Item it names. */

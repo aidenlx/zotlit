@@ -3,20 +3,19 @@ import { Keymap, TFile } from "obsidian";
 import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 
-import {
-  documentWikilinks,
-  occurrencesEqual,
-  scanCitekeyOccurrences,
-} from "@/services/citation-index/scan";
+import { occurrencesEqual } from "@/services/citation-index/scan";
+import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import type {
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
+import type { ParseClient } from "@/services/citation-parse/client";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
 export async function openCitedByOccurrence(
   app: App,
   options: {
+    citationParse: ParseClient;
     group: CitedByGroup;
     occurrence: CitationOccurrence;
     event: MouseEvent;
@@ -30,10 +29,16 @@ export async function openCitedByOccurrence(
     return;
   }
 
+  const mtime = file.stat.mtime;
   let current: CitationOccurrence | null = null;
   try {
     const source = await app.vault.cachedRead(file);
-    current = currentOccurrence({ app, file, source, occurrence });
+    const { record } = await options.citationParse.parse(
+      { path: file.path, generation: 0, text: source },
+      new AbortController().signal,
+    );
+    if (file.stat.mtime === mtime)
+      current = currentOccurrence(record, occurrence);
   } catch {
     // Opening the note remains useful when its current source cannot be read.
   }
@@ -51,50 +56,15 @@ export async function openCitedByOccurrence(
   });
 }
 
-export function currentOccurrence(options: {
-  app: App;
-  file: TFile;
-  source: string;
-  occurrence: CitationOccurrence;
-}): CitationOccurrence | null {
-  const { app, file, source, occurrence } = options;
-  if (occurrence.kind === "citekey") {
-    return (
-      scanCitekeyOccurrences(source).find((candidate) =>
-        occurrencesEqual([candidate], [occurrence]),
-      ) ?? null
-    );
-  }
-  for (const link of app.metadataCache.getFileCache(file)?.links ?? []) {
-    if (
-      source.slice(link.position.start.offset, link.position.end.offset) !==
-      link.original
-    ) {
-      continue;
-    }
-    const candidate = documentWikilinks([link]).occurrences[0];
-    if (
-      candidate &&
-      occurrencesEqual([candidate], [occurrence]) &&
-      positionMatchesSource(source, candidate)
-    ) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function positionMatchesSource(
-  source: string,
+export function currentOccurrence(
+  record: NoteScanRecord,
   occurrence: CitationOccurrence,
-): boolean {
-  const { start, end } = occurrence.position;
-  const beforeStart = source.slice(0, start.offset);
-  const beforeEnd = source.slice(0, end.offset);
+): CitationOccurrence | null {
+  const candidates =
+    occurrence.kind === "citekey" ? record.citekeys : record.wikilinks;
   return (
-    start.line === beforeStart.split("\n").length - 1 &&
-    start.col === start.offset - (beforeStart.lastIndexOf("\n") + 1) &&
-    end.line === beforeEnd.split("\n").length - 1 &&
-    end.col === end.offset - (beforeEnd.lastIndexOf("\n") + 1)
+    candidates.find((candidate) =>
+      occurrencesEqual([candidate], [occurrence]),
+    ) ?? null
   );
 }

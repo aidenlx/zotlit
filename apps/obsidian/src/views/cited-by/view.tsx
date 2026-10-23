@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { ParseClient } from "@/services/citation-parse/client";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
 import { CitedByActionsContext, createCitedByActions } from "./actions";
@@ -23,6 +24,7 @@ export const CITED_BY_VIEW_TYPE = "zotlit-cited-by";
 
 export interface CitedByViewDeps {
   app: App;
+  citationParse: ParseClient;
   citationIndex: Pick<CitationIndex, "observeCitedBy">;
 }
 
@@ -45,7 +47,11 @@ export class CitedByView extends ItemView {
     super(leaf);
     this.contentEl.addClass("zt-root", "zt-cited-by-view");
     this.#deps = deps;
-    this.#actions = createCitedByActions({ app: deps.app, store: this.#store });
+    this.#actions = createCitedByActions({
+      app: deps.app,
+      store: this.#store,
+      citationParse: deps.citationParse,
+    });
   }
 
   override getViewType(): string {
