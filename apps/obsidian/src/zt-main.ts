@@ -577,6 +577,7 @@ export default class ZotLitPlugin extends Plugin {
       templates: services.template,
       profile: services.profile,
       nativePreview: {
+        citationParse: services.citationParse,
         app: this.app,
         zoteroReads: services.zoteroReads,
         noteIndex: services.noteIndex,
@@ -601,6 +602,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerNotePreview(this, {
+      citationParse: services.citationParse,
       app: this.app,
       itemLookup: services.itemLookup,
       profile: services.profile,
@@ -685,6 +687,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerPandocExport(this, {
+      citationParse: services.citationParse,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,

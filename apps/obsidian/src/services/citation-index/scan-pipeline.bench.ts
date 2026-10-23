@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // Run on an idle host. Three warm-ups precede 15 measured samples per case;
 // gates use medians and the JSON retains every sample, CPU and Node version.
 // A 10x size increase permits at most 15x parse time (50% timing tolerance).
-// The other budgets are 100 ms worker parse, 2 ms post + apply, and a Fixture
+// The other budgets are 100 ms worker parse and a Fixture
 // backfill median no greater than the legacy median. A failure exits nonzero
 // after writing .scratch/scan-pipeline-bench/results.json.
 //
@@ -18,7 +18,8 @@ import assert from "node:assert/strict";
 // receive deserialization, browser scheduling and IndexedDB transaction latency.
 // Backfill uses the generated Fixture, an OS-warm filesystem read adapter, and
 // memory persistence on both paths. The legacy loop follows 14d461b93^; this
-// host comparison is separate from the lead's desktop smoke verification.
+// host comparison is separate from the desktop renderer gate in
+// packages/e2e/src/citation-scan.e2e.ts. Host post + apply is diagnostic only.
 import { execFileSync } from "node:child_process";
 import { readdir, readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { cpus, platform, arch } from "node:os";
@@ -32,7 +33,7 @@ import type { ParseClient } from "@/services/citation-parse/client";
 
 // oxlint-disable-next-line no-restricted-imports -- this Node benchmark uses the guarded build tooling outside src.
 import { scanBenchmarkWorker } from "../../../scripts/scan-benchmark-worker";
-import { scanCitekeyOccurrences } from "./scan";
+import { scanCitekeyOccurrences } from "./__fixtures__/legacy-citekey-scan";
 import { scanNote } from "./scan-note";
 import { createCitationIndexHarness } from "./test-harness";
 
@@ -79,7 +80,7 @@ async function readNotes(
   return notes;
 }
 
-it("meets the scan pipeline budgets (#1695)", async () => {
+it("meets the host scanner and worker budgets (#1695)", async () => {
   const root = await getWorkspaceRoot(import.meta.dirname);
   const output = join(root, ".scratch/scan-pipeline-bench");
   await mkdir(output, { recursive: true });
@@ -91,7 +92,7 @@ it("meets the scan pipeline budgets (#1695)", async () => {
     parseMs: number[];
     workerMs: number[];
     roundTripMs: number[];
-    rendererMs: number[];
+    hostPostApplyMs: number[];
   }[] = [];
   for (const dense of [false, true])
     for (const links of [false, true]) {
@@ -116,7 +117,7 @@ it("meets the scan pipeline budgets (#1695)", async () => {
           parseMs: [] as number[],
           workerMs: [] as number[],
           roundTripMs: [] as number[],
-          rendererMs: [] as number[],
+          hostPostApplyMs: [] as number[],
         };
         cells.push(cell);
         for (let run = -3; run < RUNS; run++) {
@@ -160,7 +161,7 @@ it("meets the scan pipeline budgets (#1695)", async () => {
             harness.metadataCache.change(harness.draft, body);
             const applied = await harness.index.getFileScan(harness.draft);
             const elapsed = postMs + performance.now() - worker.receivedAt;
-            if (run >= 0) cell.rendererMs.push(elapsed);
+            if (run >= 0) cell.hostPostApplyMs.push(elapsed);
             assert.equal(applied?.citekeys.length, expected.citekeys.length);
             assert.equal(applied?.citekeys[0]?.raw, citekey);
             assert.equal(
@@ -285,12 +286,6 @@ it("meets the scan pipeline budgets (#1695)", async () => {
         median(cell.workerMs),
         100,
       );
-    if (cell.rendererMs.length)
-      check(
-        `100k post+apply ms: dense=${cell.dense}, links=${cell.links}`,
-        median(cell.rendererMs),
-        2,
-      );
   }
   check(
     "Fixture backfill worker/legacy",
@@ -324,7 +319,9 @@ it("meets the scan pipeline budgets (#1695)", async () => {
       links: cell.links,
       parseMs: median(cell.parseMs),
       workerMs: cell.workerMs.length ? median(cell.workerMs) : null,
-      rendererMs: cell.rendererMs.length ? median(cell.rendererMs) : null,
+      hostPostApplyMs: cell.hostPostApplyMs.length
+        ? median(cell.hostPostApplyMs)
+        : null,
     })),
   );
   // oxlint-disable-next-line no-console -- report every gate before failing the run.

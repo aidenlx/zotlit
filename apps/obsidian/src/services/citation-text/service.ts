@@ -8,7 +8,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { formatPandocCitation } from "@zotlit/templates/pandoc-citation";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
-import type { CitationKey } from "@/lib/citation-source";
+import type { CitationKey, ScannedCitation } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
 import { itemSummary } from "@/lib/item-summary";
@@ -21,13 +21,13 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import { scanDocumentCitations } from "@/services/citation-index/service";
 import type {
   Citation,
   CitationIndex,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import type { ParseClient } from "@/services/citation-parse/client";
 import type { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -86,6 +86,7 @@ interface CitationTextEvents {
 
 export interface CitationTextDeps {
   app: App;
+  citationParse: ParseClient;
   db: Pick<ZoteroReadsService, "state" | "acquireRead">;
   citationLookup: Pick<CitationLookup, "on">;
   citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
@@ -128,6 +129,7 @@ export interface CitationTextDeps {
  */
 export class CitationText extends Service<void> {
   readonly #app;
+  readonly #citationParse;
   readonly #db;
   readonly #citationIndex;
   readonly #citationLookup;
@@ -145,6 +147,7 @@ export class CitationText extends Service<void> {
   constructor(deps: CitationTextDeps) {
     super();
     this.#app = deps.app;
+    this.#citationParse = deps.citationParse;
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#citationLookup = deps.citationLookup;
@@ -366,6 +369,10 @@ export class CitationText extends Service<void> {
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await Promise.all([this.#noteIndex.whenIndexed(), this.#profile.ready]);
     const body = await this.#app.vault.cachedRead(file);
+    const { record } = await this.#citationParse.parse(
+      { path: file.path, generation: 0, text: body },
+      new AbortController().signal,
+    );
     const set = await this.#citationIndex.getDocumentCitationSet(file);
     const wikilinks = this.#wikilinkCitations(file, body, set);
     const literal = worksByCitekey(set.citations);
@@ -377,7 +384,12 @@ export class CitationText extends Service<void> {
 
     // Every admitted syntax contributes to the same document render context.
     const placed = [
-      ...literalCitations(body, set.occurrences, literal),
+      ...literalCitations({
+        body,
+        scanned: record.citations,
+        occurrences: set.occurrences,
+        works: literal,
+      }),
       ...wikilinks,
     ];
     const citations = placed.flatMap((citation) => {
@@ -724,19 +736,25 @@ function worksByCitekey(cited: readonly Citation[]): Map<string, string> {
 /**
  * The literal Citation Clusters of a document body, in document order.
  *
- * @param works the Item each literal citekey of the document names.
+ * The work map names the Item each literal citekey resolves to.
  */
-function literalCitations(
-  body: string,
-  occurrences: readonly CitationOccurrence[],
-  works: ReadonlyMap<string, string>,
-): PlacedCitation[] {
+function literalCitations({
+  body,
+  scanned,
+  occurrences,
+  works,
+}: {
+  body: string;
+  scanned: readonly ScannedCitation[];
+  occurrences: readonly CitationOccurrence[];
+  works: ReadonlyMap<string, string>;
+}): PlacedCitation[] {
   const members = new Set(
     occurrences
       .filter((occurrence) => occurrence.kind === "citekey")
       .map((occurrence) => occurrence.position.start.offset),
   );
-  return scanDocumentCitations(body)
+  return scanned
     .filter(({ keys }) => keys.every((key) => members.has(key.start)))
     .map(({ start, end, keys }) => {
       const source = body.slice(start, end);

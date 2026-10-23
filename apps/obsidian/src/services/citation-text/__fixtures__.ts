@@ -1,6 +1,6 @@
 // The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
 
-import { scanDocumentCitations } from "@/services/citation-index/service";
+import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   Citation,
   CitationOccurrence,
@@ -41,16 +41,7 @@ export function citation(
 }
 
 export function literalOccurrences(body: string): CitationOccurrence[] {
-  return scanDocumentCitations(body)
-    .flatMap((source) => source.keys)
-    .map((key) => ({
-      kind: "citekey",
-      raw: key.citekey,
-      position: {
-        start: { line: 0, col: key.start, offset: key.start },
-        end: { line: 0, col: key.end, offset: key.end },
-      },
-    }));
+  return scanNote(body).citekeys;
 }
 
 /** One formatted citation, as the render cache hands it over. */
@@ -81,7 +72,7 @@ export function noted(source: string): RenderedCitation {
         ],
       },
     ],
-    citations: scanDocumentCitations(source).flatMap(({ keys }) =>
+    citations: scanNote(source).citations.flatMap(({ keys }) =>
       keys.map(({ citekey }) => ({ id: citekey, mode: "normal" as const })),
     ),
   };

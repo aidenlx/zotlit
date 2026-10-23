@@ -25,8 +25,58 @@ const obsidianImportPaths = [
 ];
 
 const commonImports = {
-  patterns: [parentImportPattern],
+  patterns: [
+    parentImportPattern,
+    {
+      group: ["**/citation-index/scan", "./scan"],
+      importNames: [
+        "scanDocumentCitations",
+        "scanCitekeyOccurrences",
+        "documentWikilinks",
+        "maskExclusions",
+        "maskWikilinks",
+      ],
+      message: "Read document citations through the citation parse worker.",
+    },
+  ],
   paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
+};
+
+const runtimeImports = {
+  ...commonImports,
+  paths: [
+    {
+      name: "@/lib/effect",
+      importNames: ["ManagedRuntime", "Scheduler"],
+      allowTypeImports: true,
+      message:
+        "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
+    },
+    {
+      name: "effect",
+      allowTypeImports: true,
+      message:
+        "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
+    },
+    {
+      name: "effect/Effect",
+      allowTypeImports: true,
+      message: "Use Effect from @/lib/effect for Chromium scheduling.",
+    },
+    {
+      name: "effect/ManagedRuntime",
+      allowTypeImports: true,
+      message:
+        "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+    },
+    {
+      name: "effect/Scheduler",
+      allowTypeImports: true,
+      message:
+        "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
+    },
+    ...commonImports.paths,
+  ],
 };
 
 export default defineConfig({
@@ -47,47 +97,18 @@ export default defineConfig({
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
-    "no-restricted-imports": [
-      "error",
-      {
-        ...commonImports,
-        paths: [
-          {
-            name: "@/lib/effect",
-            importNames: ["ManagedRuntime", "Scheduler"],
-            allowTypeImports: true,
-            message:
-              "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
-          },
-          {
-            name: "effect",
-            allowTypeImports: true,
-            message:
-              "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
-          },
-          {
-            name: "effect/Effect",
-            allowTypeImports: true,
-            message: "Use Effect from @/lib/effect for Chromium scheduling.",
-          },
-          {
-            name: "effect/ManagedRuntime",
-            allowTypeImports: true,
-            message:
-              "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
-          },
-          {
-            name: "effect/Scheduler",
-            allowTypeImports: true,
-            message:
-              "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
-          },
-          ...commonImports.paths,
-        ],
-      },
-    ],
+    "no-restricted-imports": ["error", runtimeImports],
   },
   overrides: [
+    {
+      files: ["src/services/citekey-editor/decorate.ts"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          { ...runtimeImports, patterns: [parentImportPattern] },
+        ],
+      },
+    },
     {
       files: ["src/views/annot-view/*.{ts,tsx}"],
       excludeFiles: ["**/*.test.{ts,tsx}"],
