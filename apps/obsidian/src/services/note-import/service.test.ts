@@ -17,8 +17,8 @@ import type {
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import {
   inProcessReadsService,
@@ -220,7 +220,7 @@ function makeBlockingAttachmentImport(): AttachmentImportService {
         "attachment.folder-path": "Attachments",
       }),
       subscribe: () => () => undefined,
-    } as unknown as SettingsService,
+    } as unknown as PlainPluginSettings,
     zoteroPref: {
       dataDir: "/nonexistent-zotero-data",
       baseAttachmentPath: null,

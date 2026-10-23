@@ -22,7 +22,8 @@ import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -70,7 +71,7 @@ export interface LocalBridgeEvents {
 export interface LocalBridgeServiceDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;

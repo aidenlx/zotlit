@@ -17,7 +17,8 @@ import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { QueryClientService } from "@/services/query-client/service";
 import { ReleaseService } from "@/services/release/service";
-import { SettingsService } from "@/services/settings/service";
+import { buildSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import { WelcomeBanner } from "./banner";
 import type { WelcomeBannerDeps } from "./banner";
@@ -58,10 +59,10 @@ async function setup(data: Record<string, unknown> = {}) {
 }
 
 /** The settings of plugin data that `plugin` holds. */
-function loadSettings(plugin: PluginStub): SettingsService {
+function loadSettings(plugin: PluginStub): PlainPluginSettings {
   const identity = (raw: unknown) => raw;
   return cleanup.use(
-    new SettingsService({
+    buildSettings({
       plugin,
       migrateLegacy: identity,
       migrateV1: identity,
@@ -78,7 +79,10 @@ function loadSettings(plugin: PluginStub): SettingsService {
 }
 
 /** What the banner reads, over `settings`, beside a Zotero database of 3 Items. */
-function bannerDeps(app: App, settings: SettingsService): WelcomeBannerDeps {
+function bannerDeps(
+  app: App,
+  settings: PlainPluginSettings,
+): WelcomeBannerDeps {
   const events = createNanoEvents<Record<string, () => void>>();
   const deps: WelcomeBannerDeps = {
     app,

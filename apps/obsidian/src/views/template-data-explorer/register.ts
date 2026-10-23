@@ -1,12 +1,12 @@
-import "./style.css";
 import type { App, PaneType, Plugin } from "obsidian";
 
+import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -28,7 +28,7 @@ export interface ExplorerRegistrationDeps {
   noteIndex: NoteIndex;
   zoteroPref: ZoteroPrefService;
   itemLookup: ItemLookup;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
   templates: TemplateService;
 }
 

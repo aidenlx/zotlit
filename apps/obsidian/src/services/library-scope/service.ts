@@ -7,7 +7,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
  *
  * The policy is pure and lives in `./scope.ts`; this service owns only the
  * wiring: read the saved value (and its broken-override diagnostic) from
- * {@link SettingsService}, resolve it against the Libraries the
+ * {@link PlainPluginSettings}, resolve it against the Libraries the
  * {@link ZoteroReadsService} last answered, and emit `changed` when the result
  * stops meaning the same thing to consumers.
  *
@@ -35,7 +35,7 @@ import { Effect } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
 import type { QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
@@ -75,7 +75,10 @@ export interface LibraryScopeDeps {
     QueryClientService,
     "client" | "ask" | "invalidate" | "peek" | "watch"
   >;
-  settings: SettingsService;
+  settings: Pick<
+    PlainPluginSettings,
+    "current" | "loaded" | "diagnostics" | "subscribe"
+  >;
 }
 
 export class LibraryScopeService extends Service<void> {

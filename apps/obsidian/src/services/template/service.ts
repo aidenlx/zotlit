@@ -59,8 +59,8 @@ import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import {
   CITATION_TEMPLATE_NAME,
@@ -109,7 +109,7 @@ export interface TemplateServiceEvents {
 
 export interface TemplateServiceOptions {
   app: App;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
 }
 
 /**

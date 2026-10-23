@@ -8,7 +8,7 @@ import type { App, Plugin } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { QueryClientService } from "@/services/query-client/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { openLibraryView } from "@/views/library/register";
 import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
@@ -20,7 +20,7 @@ import type { NotFoundSignal } from "./not-found-notice";
 export interface WelcomeRegistrationDeps {
   reads: Pick<ZoteroReadsService, "on">;
   queries: Pick<QueryClientService, "invalidate">;
-  settings: Pick<SettingsService, "update">;
+  settings: Pick<PlainPluginSettings, "update">;
 }
 
 export function registerWelcomeView(
@@ -89,7 +89,7 @@ function notFoundNotice(locate: () => void): BaseNotice {
 /** Show the Welcome View banner again, above the Library View brought forward. */
 export async function openWelcomeView(
   app: App,
-  settings: Pick<SettingsService, "update">,
+  settings: Pick<PlainPluginSettings, "update">,
 ): Promise<void> {
   settings.update({ "welcome.dismissed": false });
   const view = await openLibraryView(app);

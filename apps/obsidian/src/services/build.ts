@@ -69,7 +69,7 @@ import { ProfileService } from "./profile/service";
 import { QueryClients } from "./query-client/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { PluginSettings } from "./settings/service";
+import { plainPluginSettings } from "./settings/plain";
 import {
   LiteratureNoteTemplateMigrationService,
   loadLiteratureNoteTemplateMigrationData,
@@ -120,7 +120,7 @@ export function buildServices(
 
   return container
     .useValue({
-      settings: () => runtime.runSync(PluginSettings.use(Effect.succeed)),
+      settings: () => plainPluginSettings(runtime),
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),

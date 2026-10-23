@@ -12,8 +12,9 @@ import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { LocalServerService } from "@/services/local-server/service";
 import type { ProfileReader } from "@/services/profile/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import type { BridgeProfileWriter } from "./save";
@@ -27,7 +28,7 @@ const BOOKS_PROFILE = "Bk7Qm2Xr9Tz4";
 const ITEM = { key: "IANNP5A2", title: "Why research findings are false" };
 
 interface SettingsStub {
-  service: SettingsService;
+  service: PlainPluginSettings;
   update: ReturnType<typeof vi.fn>;
   push(patch: Partial<Settings>): void;
 }
@@ -50,7 +51,7 @@ function makeSettings(overrides: Partial<Settings>): SettingsStub {
         return () => subscribers.delete(cb);
       },
       update,
-    } as unknown as SettingsService,
+    } as unknown as PlainPluginSettings,
     push(patch) {
       current = { ...current, ...patch };
       for (const cb of subscribers) cb(current);

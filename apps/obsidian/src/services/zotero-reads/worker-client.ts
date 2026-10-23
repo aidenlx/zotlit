@@ -8,8 +8,8 @@ import { sameSegmenterBinary } from "@zotlit/item-lookup";
 import { Effect, FiberSet } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import type { ChineseSegmenterService } from "@/services/chinese-segmenter/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -17,7 +17,7 @@ import type { ReadsConfig, SegmenterBinary } from "./rpc";
 import { connectWorker, makeWorkerReads } from "./worker-host";
 
 export interface WorkerClientDeps {
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "loaded" | "subscribe">;
   zoteroPref: ZoteroPrefService;
   chineseSegmenter: ChineseSegmenterService;
 }

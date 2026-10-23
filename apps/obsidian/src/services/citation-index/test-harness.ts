@@ -615,8 +615,8 @@ export class SettingsStub {
     if (options.readyImmediately ?? true) this.#ready.resolve();
   }
 
-  get ready(): Promise<void> {
-    return this.#ready.promise;
+  get loaded(): Promise<Readonly<Settings>> {
+    return this.#ready.promise.then(() => this.current);
   }
 
   settle(): void {

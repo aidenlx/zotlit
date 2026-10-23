@@ -12,8 +12,8 @@ import { getLogger } from "@/lib/log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
@@ -187,7 +187,7 @@ export interface CitationIndexOptions {
   parseClient: Pick<PlainCitationParse, "parse">;
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
-  settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "loaded" | "current" | "subscribe">;
   lookup: Pick<
     CitationLookup,
     "read" | "observe" | "status" | "on" | "whenResolved"
@@ -964,7 +964,7 @@ export class CitationIndex extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
+    await this.#settings.loaded;
     const initial = this.#settings.current;
     if (initial) {
       this.#includePandocCitations = initial["citation.pandoc-citations"];

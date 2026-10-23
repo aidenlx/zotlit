@@ -13,7 +13,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
-import { SettingsService } from "@/services/settings/service";
+import { buildSettings } from "@/services/settings/__fixtures__";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 import { QueryView } from "@/views/query-view/view";
@@ -90,7 +90,7 @@ async function openLibrary() {
     "library.document": STORED_EARLIER,
   });
   const settings = cleanup.use(
-    new SettingsService({
+    buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,
@@ -104,7 +104,7 @@ async function openLibrary() {
       migrateV9: (raw) => raw,
     }),
   );
-  await settings.ready;
+  await settings.loaded;
   const saveData = vi.spyOn(plugin, "saveData");
   const off = () => () => {};
   const deps = {

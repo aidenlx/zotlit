@@ -236,7 +236,6 @@ export default defineConfig({
         "src/zt-main.ts",
         "src/services/build.ts",
         "src/services/service-base.ts",
-        "src/services/settings/service.ts",
         "src/services/log/**",
       ],
       rules: {
@@ -347,7 +346,6 @@ export default defineConfig({
         "src/services/profile/service.ts",
         "src/services/query-client/service.ts",
         "src/services/release/service.ts",
-        "src/services/settings/service.ts",
         "src/services/template/migration.ts",
         "src/services/template/service.ts",
         "src/services/wikilink-editor/service.ts",

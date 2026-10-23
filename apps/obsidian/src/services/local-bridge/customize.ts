@@ -16,7 +16,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import {
   profileCustomization,
@@ -38,7 +38,7 @@ const SERVER_START_TIMEOUT_MS = 10_000;
  * enabling it for a web launch.
  */
 export function workbenchEnabled(
-  settings: Pick<SettingsService, "current">,
+  settings: Pick<PlainPluginSettings, "current">,
 ): boolean {
   return settings.current?.["server.workbench"] ?? false;
 }
@@ -83,7 +83,7 @@ export type ConfirmLaunch = (
 export interface CustomizeDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: Pick<SettingsService, "current" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   profile: Pick<
     ProfileService,
     "ready" | "profiles" | "defaultDocumentPath" | "getSource"

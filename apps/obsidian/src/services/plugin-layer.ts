@@ -10,8 +10,8 @@ import type { CitationParse } from "./citation-parse/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { QueryClients, QueryClientService } from "./query-client/service";
 import { serviceLayer } from "./service-layer";
-import { settingsMigrations } from "./settings/migrate";
-import { PluginSettings, SettingsService } from "./settings/service";
+import { layerPluginSettings } from "./settings/service";
+import type { PluginSettings } from "./settings/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
 
@@ -40,20 +40,6 @@ export function pluginLayer(
     Layer.provideMerge(
       layerLogging.pipe(Layer.provide(layerLogOutput(plugin))),
     ),
-    Layer.provideMerge(layerSettings(plugin)),
+    Layer.provideMerge(layerPluginSettings(plugin)),
   );
-}
-
-function layerSettings(plugin: Plugin): Layer.Layer<PluginSettings> {
-  return serviceLayer(PluginSettings, {
-    key: "settings",
-    make: Effect.sync(
-      () =>
-        new SettingsService({
-          plugin,
-          ...settingsMigrations,
-          handoff: plugin.app,
-        }),
-    ),
-  });
 }

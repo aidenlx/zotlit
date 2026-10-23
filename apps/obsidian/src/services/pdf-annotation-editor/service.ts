@@ -14,7 +14,7 @@ import { getLogger } from "@/lib/log";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import { registerAnnotationAnchorCapture } from "./anchor-capture";
 import { PdfViewBinding } from "./binding";
@@ -65,7 +65,7 @@ export interface PdfAnnotationEditorDeps {
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
   libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
-  settings: Pick<SettingsService, "current" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   /** Records an accepted read locally; also retains its Attachment for live write-back. */
   recordRead?: (read: PdfRead) => void;
   /** The clock each binding's cooldown countdown is read against. */

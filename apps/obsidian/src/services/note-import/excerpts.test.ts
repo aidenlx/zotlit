@@ -31,8 +31,8 @@ import type {
   ExcerptRequest,
 } from "@/services/excerpt-image/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -115,7 +115,7 @@ async function fixture(mode = "normal") {
       settings: {
         loaded: Promise.resolve(settings),
         subscribe: () => () => {},
-      } as unknown as SettingsService,
+      } as unknown as PlainPluginSettings,
       zoteroPref: { ...paths, on: () => () => {} },
     }),
   );

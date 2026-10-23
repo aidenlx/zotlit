@@ -6,7 +6,7 @@ import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import { CurrentAnswer, takeEnter } from "./current-answer";
 import { FirstAnswerGate } from "./first-answer";
@@ -22,7 +22,7 @@ import type {
 export interface ItemSearchDeps {
   app: App;
   lookup: Pick<ItemLookup, "openSession">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current">;
 }
 
 export abstract class ItemSearchModal extends SuggestModal<SearchHit> {

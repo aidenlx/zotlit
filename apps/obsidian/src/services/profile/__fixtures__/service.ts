@@ -1,7 +1,8 @@
+import { buildSettings } from "@/services/settings/__fixtures__";
 import type { App, Plugin } from "obsidian";
 
 import { NoteIndex } from "@/services/note-index/service";
-import { SettingsService } from "@/services/settings/service";
+
 import { TemplateService } from "@/services/template/service";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 
@@ -29,7 +30,7 @@ export async function profileServiceFixture(
   } as unknown as App;
   const plugin = new PluginStub(app, { __VERSION__: 10 });
   const settings = stack.use(
-    new SettingsService({
+    buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,

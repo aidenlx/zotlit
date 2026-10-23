@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Library } from "@zotlit/db";
 
 import { QueryClientService } from "@/services/query-client/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,
@@ -290,7 +290,7 @@ async function makeService(
     new LibraryScopeService({
       reads,
       queries,
-      settings: settings as unknown as SettingsService,
+      settings: settings as unknown as PlainPluginSettings,
     }),
   );
   await service.ready;

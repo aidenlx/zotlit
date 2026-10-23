@@ -32,9 +32,9 @@ import type {
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import { freshnessSignal } from "@/services/zotero-local-api/__fixtures__";
 import type { WireAnnotation } from "@/services/zotero-local-api/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
@@ -435,7 +435,10 @@ export function markGestures() {
  * The settings the reader keeps each tool's colour in: the shipped defaults,
  * with a write held in memory the way a save holds it on disk.
  */
-export function readerSettings(): Pick<SettingsService, "current" | "update"> {
+export function readerSettings(): Pick<
+  PlainPluginSettings,
+  "current" | "update"
+> {
   let current: Settings = { ...defaults };
   return {
     get current() {

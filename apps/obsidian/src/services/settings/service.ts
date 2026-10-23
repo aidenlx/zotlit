@@ -1,5 +1,5 @@
 /**
- * `SettingsService` — reactive, validated, single-flight settings store for
+ * `PluginSettings` — reactive, validated, single-flight settings store for
  * the Obsidian plugin. Owns a flat key→primitive map, persisted sparsely
  * through `Plugin.loadData/saveData`, reactive via Svelte-store-compatible
  * `subscribe`.
@@ -11,7 +11,7 @@
  * Key alignment between `schema.entries` and `defaults` is enforced at compile
  * time via the const's `Readonly<Settings>` annotation plus an inner
  * `satisfies Settings`; value-constraint validity is exercised once by a
- * vitest case. The class is intentionally concrete (no `<TSchema>` generic).
+ * vitest case. The service is intentionally concrete (no `<TSchema>` generic).
  *
  * `null` is a legal settings value (used by keys whose concrete default is
  * host-dependent and resolved at the consume site). The service surfaces
@@ -54,7 +54,7 @@
  * A v10 override on a known key whose value fails per-key validation is a
  * *broken override*. Its effective value is that key's default in every
  * snapshot (`current`, `loaded`, subscribers), while the raw value stays in
- * `#broken` and is written back on every save, so an unrelated mutation cannot
+ * `broken` and is written back on every save, so an unrelated mutation cannot
  * silently discard it. `diagnostics` names each broken key so a consumer can
  * report it. `update()` and `reset()` of that key clear the entry, which is the
  * only way the raw value leaves the file. Migration paths do not preserve
@@ -73,13 +73,23 @@
  *   `saveData()`.
  */
 
-import { debounce } from "obsidian";
 import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
-import { Context } from "@/lib/effect";
+import {
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import { Service } from "@/services/service-base";
 
 import {
   classifyDiskData,
@@ -88,6 +98,7 @@ import {
   VERSION_KEY,
 } from "./classify";
 import type { HydrationOrigin } from "./classify";
+import { settingsMigrations } from "./migrate";
 import { defaults, schema } from "./schema";
 import type { Settings } from "./schema";
 
@@ -128,8 +139,7 @@ export interface SettingsDiagnostic {
 /** Raw values of broken overrides, keyed by the settings key they belong to. */
 type BrokenOverrides = ReadonlyMap<SettingsKey, unknown>;
 
-export interface SettingsServiceOptions {
-  plugin: Pick<Plugin, "loadData" | "saveData">;
+export interface PluginSettingsOptions {
   /**
    * Throwing or returning a non-plain value triggers the defaults fallback.
    */
@@ -183,498 +193,457 @@ export interface SettingsServiceOptions {
 const LAST_WRITE = Symbol.for("zotlit.settings.last-write");
 type Handoff = { [LAST_WRITE]?: Promise<void> };
 
-export class SettingsService extends Service<void> {
-  readonly #plugin;
-  readonly #handoff: Handoff | undefined;
-  readonly #migrateLegacy;
-  readonly #migrateV1;
-  readonly #migrateV2;
-  readonly #migrateV3;
-  readonly #migrateV4;
-  readonly #migrateV5;
-  readonly #migrateV6;
-  readonly #migrateV7;
-  readonly #migrateV8;
-  readonly #migrateV9;
-  readonly #scheduleSave;
-  readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
-
-  #overrides: Partial<Settings> = {};
-  #broken: BrokenOverrides = new Map();
-  #loaded = false;
-  #hydrationOrigin: HydrationOrigin | null = null;
-  #pendingWrite: Promise<void> | undefined;
-  /** Whether the plugin began to unload: each change then goes to the next instance. */
-  #released = false;
-
-  ready: Promise<void>;
-
-  constructor(options: SettingsServiceOptions) {
-    super();
-    this.#plugin = options.plugin;
-    this.#migrateLegacy = options.migrateLegacy;
-    this.#migrateV1 = options.migrateV1;
-    this.#migrateV2 = options.migrateV2;
-    this.#migrateV3 = options.migrateV3;
-    this.#migrateV4 = options.migrateV4;
-    this.#migrateV5 = options.migrateV5;
-    this.#migrateV6 = options.migrateV6;
-    this.#migrateV7 = options.migrateV7;
-    this.#migrateV8 = options.migrateV8;
-    this.#migrateV9 = options.migrateV9;
-    this.#handoff = options.handoff as Handoff | undefined;
-    this.#scheduleSave = debounce(
-      () => this.#performSave(),
-      SAVE_DEBOUNCE_MS,
-      true,
-    );
-    this.ready = this.#load();
+/** The settings store. The layer builds synchronously; `loaded` waits for disk hydration. */
+export class PluginSettings extends Context.Service<
+  PluginSettings,
+  {
+    readonly current: Effect.Effect<Readonly<Settings> | null>;
+    readonly loaded: Effect.Effect<Readonly<Settings>>;
+    readonly diagnostics: Effect.Effect<readonly SettingsDiagnostic[]>;
+    readonly hydrationOrigin: Effect.Effect<HydrationOrigin | null>;
+    readonly changes: Stream.Stream<Readonly<Settings> | null>;
+    update(
+      patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch),
+    ): Effect.Effect<Readonly<Settings>, unknown>;
+    reset(
+      keys?: readonly (keyof Settings)[],
+    ): Effect.Effect<Readonly<Settings>, unknown>;
+    updateDefaultLiteratureNoteProfileBindings(
+      patch: Partial<ResolvedLiteratureNoteProfileBindings>,
+    ): Effect.Effect<void, unknown>;
+    flush(): Effect.Effect<void, unknown>;
+    release(): Effect.Effect<void>;
   }
+>()("zotlit/settings/PluginSettings") {}
 
-  /**
-   * Latest effective settings, or `null` before load finishes.
-   * @returns a fresh shallow clone so callers cannot mutate internal state.
-   */
-  get current(): Readonly<Settings> | null {
-    if (!this.#loaded) return null;
-    return this.#snapshot();
-  }
+/** Native settings layer, below logging and every consumer in the plugin graph. */
+export function layerPluginSettings(
+  plugin: Pick<Plugin, "loadData" | "saveData"> & Partial<Pick<Plugin, "app">>,
+  options: Partial<PluginSettingsOptions> = {},
+): Layer.Layer<PluginSettings> {
+  return Layer.effect(PluginSettings, makePluginSettings(plugin, options));
+}
 
-  /**
-   * Awaitable snapshot.
-   * @returns a fresh shallow clone of the *latest*
-   * settings — taken at await time, not at access time — so callers reading
-   * shortly after a sequence of `update()` calls observe the post-mutation
-   * state.
-   * @throws the load failure if startup failed.
-   */
-  get loaded(): Promise<Readonly<Settings>> {
-    return this.ready.then(() => this.#snapshot());
-  }
+const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
+  plugin: Pick<Plugin, "loadData" | "saveData"> & Partial<Pick<Plugin, "app">>,
+  options: Partial<PluginSettingsOptions>,
+) {
+  const {
+    migrateLegacy,
+    migrateV1,
+    migrateV2,
+    migrateV3,
+    migrateV4,
+    migrateV5,
+    migrateV6,
+    migrateV7,
+    migrateV8,
+    migrateV9,
+  } = { ...settingsMigrations, ...options };
+  const handoff = (options.handoff ?? plugin.app) as Handoff | undefined;
+  const state = yield* Effect.acquireRelease(
+    SubscriptionRef.make<Readonly<Settings> | null>(null),
+    (state) => PubSub.shutdown(state.pubsub),
+  );
+  const hydrated = yield* Deferred.make<void>();
+  let overrides: Partial<Settings> = {};
+  let broken: BrokenOverrides = new Map();
+  let hydrationOrigin: HydrationOrigin | null = null;
+  let loaded = false;
+  let released = false;
+  let closed = false;
+  let dirty = false;
+  let pendingWrite: Fiber.Fiber<void, unknown> | undefined;
+  let timer: Fiber.Fiber<void> | undefined;
+  // Saves stay alive until the close finalizer has flushed the last edit.
+  const writes = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
+  const context = yield* Effect.context<never>();
+  const runPromise = Effect.runPromiseWith(context);
+  const snapshot = (): Settings => ({ ...defaults, ...overrides });
+  const current = Effect.map(SubscriptionRef.get(state), (value) =>
+    value === null ? null : snapshot(),
+  );
 
-  /**
-   * Broken overrides carried by the current state — the keys whose snapshot
-   * value is the schema default because the persisted value failed validation.
-   * Empty before load finishes and whenever the file is clean.
-   * @returns fresh clones of the rejected values, so a consumer that reports
-   * them cannot mutate what stays persisted. Values come from `data.json`, so
-   * they are JSON data and always structured-cloneable.
-   */
-  get diagnostics(): readonly SettingsDiagnostic[] {
-    return [...this.#broken].map(([key, value]) => ({
-      key,
-      value: structuredClone(value),
-    }));
-  }
-
-  /**
-   * Bucketed origin of the completed load, for the release service's
-   * same-launch onboarding branch. `null` before load finishes. This is the
-   * in-memory signal: the Legacy Data marker self-destructs once migration
-   * rewrites the file, so on-disk classification can't be re-derived later.
-   */
-  get hydrationOrigin(): HydrationOrigin | null {
-    return this.#hydrationOrigin;
-  }
-
-  /**
-   * Fires synchronously with the current value (`null` before load), then
-   * again with a cloned snapshot on every successful load / mutation.
-   * @returns an idempotent unsubscribe function.
-   */
-  subscribe(fn: (value: Readonly<Settings> | null) => void): () => void {
-    this.#subscribers.add(fn);
-    invokeSubscriber(fn, this.#loaded ? this.#snapshot() : null);
-    return () => {
-      this.#subscribers.delete(fn);
+  const performSave = Effect.fn("PluginSettings.save")(function* () {
+    dirty = false;
+    const payload = {
+      [VERSION_KEY]: CURRENT_VERSION,
+      ...Object.fromEntries(broken),
+      ...overrides,
     };
-  }
-
-  /** Update the default Profile bindings. */
-  updateDefaultLiteratureNoteProfileBindings(
-    patch: Partial<ResolvedLiteratureNoteProfileBindings>,
-  ): void {
-    this.#requireLoaded("updateDefaultLiteratureNoteProfileBindings");
-    this.update((current) => ({
-      "note.default-profile": {
-        ...current["note.default-profile"],
-        bindings: {
-          ...current["note.default-profile"].bindings,
-          ...patch,
-        },
-      },
-    }));
-  }
-
-  /**
-   * Apply a partial patch (or the result of an updater function) and schedule
-   * a debounced save.
-   * @returns a fresh clone of the post-mutation effective settings.
-   * @throws before load finished, on unknown keys, on the reserved
-   * `__VERSION__` key, or on full-schema validation failure (original
-   * `safeParse` issues attached as `cause`).
-   * @param patchOrUpdater a partial patch or an updater function.
-   * `RESET_SETTING` as a patch value deletes that key's override; any other
-   * value (including one equal to the default) becomes an explicit override.
-   * Either way the key's broken override, if any, leaves the file.
-   */
-  update(
-    patchOrUpdater:
-      | SettingsPatch
-      | ((current: Readonly<Settings>) => SettingsPatch),
-  ): Readonly<Settings> {
-    this.#requireLoaded("update");
-
-    const patch =
-      typeof patchOrUpdater === "function"
-        ? patchOrUpdater(this.#snapshot())
-        : patchOrUpdater;
-
-    for (const key of Object.keys(patch)) assertWritableKey(key, "update");
-
-    const nextOverrides = { ...this.#overrides };
-    const nextBroken = new Map(this.#broken);
-    for (const key of Object.keys(patch)) {
-      const value = (patch as Record<string, unknown>)[key];
-      if (value === RESET_SETTING) {
-        delete nextOverrides[key as keyof Settings];
-      } else {
-        (nextOverrides as Record<string, unknown>)[key] = value;
-      }
-      nextBroken.delete(key as SettingsKey);
-    }
-
-    return this.#commitMutation(nextOverrides, nextBroken, "update");
-  }
-
-  /**
-   * Delete overrides — broken ones included — for the given keys (or every
-   * override when `keys` is omitted). Validates the post-reset effective
-   * object through the full schema, schedules a debounced save, and returns a
-   * fresh clone.
-   * @throws before load finished or on unknown keys.
-   */
-  reset(keys?: readonly (keyof Settings)[]): Readonly<Settings> {
-    this.#requireLoaded("reset");
-
-    if (keys !== undefined) {
-      for (const key of keys) assertWritableKey(key, "reset");
-    }
-
-    const nextOverrides = { ...this.#overrides };
-    const nextBroken = new Map(this.#broken);
-    if (keys === undefined) {
-      for (const key of Object.keys(nextOverrides)) {
-        delete nextOverrides[key as keyof Settings];
-      }
-      nextBroken.clear();
-    } else {
-      for (const key of keys) {
-        delete nextOverrides[key];
-        nextBroken.delete(key);
-      }
-    }
-
-    return this.#commitMutation(nextOverrides, nextBroken, "reset");
-  }
-
-  /**
-   * Drain pending writes:
-   * 1. Fire the debounced save immediately (if scheduled).
-   * 2. Await the in-flight write, if any.
-   *
-   * Safe to call before `ready` resolves — it will simply observe that no
-   * write is scheduled and return. Rejects with the underlying I/O failure
-   * when a save is pending and `Plugin.saveData()` throws.
-   */
-  async flush(): Promise<void> {
-    const runResult = this.#scheduleSave.run();
-    if (runResult) await runResult;
-    const pending = this.#pendingWrite;
-    if (pending) await pending;
-  }
-
-  /**
-   * Start writing any pending change now, as the plugin unloads, and leave
-   * the write where the next instance waits for it before it loads. A change
-   * made after this, such as a view that saves its state as it closes, is
-   * written at once and handed on the same way.
-   */
-  release(): void {
-    this.#released = true;
-    this.#handOff();
-  }
-
-  /** Write every change now, and leave that write as the last one. */
-  #handOff(): void {
-    const write = this.flush().catch((error: unknown) => {
-      console.error("settings save on unload failed", error);
+    const earlier = pendingWrite;
+    // A storage call can throw before the immediately started fiber returns.
+    let fiber: Fiber.Fiber<void, unknown> | undefined;
+    const write = Effect.gen(function* () {
+      if (earlier) yield* Fiber.await(earlier);
+      yield* Effect.tryPromise({
+        try: () => plugin.saveData(payload),
+        catch: (error) => error,
+      });
+    }).pipe(
+      Effect.uninterruptible,
+      Effect.tapCause((cause) =>
+        reportFailure("background save failed", cause),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (pendingWrite === fiber) pendingWrite = undefined;
+        }),
+      ),
+      withLogCategory("settings"),
+    );
+    fiber = yield* Effect.forkIn(write, writes, {
+      startImmediately: true,
     });
-    if (this.#handoff) this.#handoff[LAST_WRITE] = write;
-  }
+    pendingWrite = fiber;
+    return fiber;
+  });
 
-  #snapshot(): Settings {
-    return { ...defaults, ...this.#overrides };
-  }
+  const flush = Effect.fn("PluginSettings.flush")(function* () {
+    if (timer) {
+      timer.interruptUnsafe();
+      timer = undefined;
+    }
+    const pending = dirty ? yield* performSave() : pendingWrite;
+    if (pending) yield* Fiber.join(pending);
+  }, Effect.uninterruptible);
 
-  /**
-   * Shared mutation tail: full-schema validate then commit-notify-schedule.
-   * @throws with `cause: result.issues` on validation failure; leaves state
-   * unchanged so callers can retry with corrected input.
-   */
-  #commitMutation(
+  // Obsidian unload is synchronous. The Promise is also the reload handoff;
+  // the save it waits for belongs to `writes`, which scope close drains.
+  const handOff = Effect.fn("PluginSettings.handOff")(function* () {
+    const write = runPromise(
+      flush().pipe(
+        Effect.catchCause((cause) =>
+          reportFailure("settings save on unload failed", cause),
+        ),
+      ),
+    );
+    if (handoff) handoff[LAST_WRITE] = write;
+  });
+
+  const commitMutation = Effect.fn("PluginSettings.commitMutation")(function* (
     nextOverrides: Partial<Settings>,
     nextBroken: BrokenOverrides,
     op: "update" | "reset",
-  ): Readonly<Settings> {
+  ) {
     const candidate: Settings = { ...defaults, ...nextOverrides };
     const result = v.safeParse(schema, candidate);
-    if (!result.success) {
-      const error = new Error(
-        `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
+    if (!result.success)
+      return yield* Effect.fail(
+        new Error(
+          `SettingsService.${op}(): invalid settings — ${v.summarize(result.issues)}`,
+          { cause: result.issues },
+        ),
       );
-      (error as { cause?: unknown }).cause = result.issues;
-      throw error;
-    }
-    this.#overrides = nextOverrides;
-    this.#broken = nextBroken;
-    this.#notify();
-    this.#scheduleSave();
-    if (this.#released) this.#handOff();
-    return candidate;
-  }
+    overrides = nextOverrides;
+    broken = nextBroken;
+    yield* SubscriptionRef.set(state, candidate);
+    dirty = true;
+    if (timer) timer.interruptUnsafe();
+    timer = yield* Effect.forkIn(
+      Effect.sleep(SAVE_DEBOUNCE_MS).pipe(
+        Effect.andThen(flush()),
+        Effect.catchCause(() => Effect.void),
+      ),
+      writes,
+    );
+    if (released) yield* handOff();
+    return snapshot();
+  });
 
-  #notify(): void {
-    const value = this.#loaded ? this.#snapshot() : null;
-    for (const fn of this.#subscribers) invokeSubscriber(fn, value);
-  }
-
-  /**
-   * Eager single-flight load. Acquires a local stack with a flush defer so
-   * disposal drains pending writes; ownership transfers via `commit()` only
-   * after the in-memory state is chosen and subscribers are notified.
-   */
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    stack.defer(async () => {
-      await this.flush();
+  const requireLoaded = (op: string) =>
+    Effect.try({
+      try: () => {
+        if (closed)
+          throw new Error(`SettingsService.${op}(): settings scope is closed`);
+        if (!loaded)
+          throw new Error(
+            `SettingsService.${op}(): settings have not loaded yet — await service.loaded before mutating`,
+          );
+      },
+      catch: (error) => error,
     });
 
-    const last = this.#handoff?.[LAST_WRITE];
-    if (last) await last;
-    const raw = await this.#plugin.loadData();
-    await this.#hydrateFrom(raw);
+  const update = Effect.fn("PluginSettings.update")(function* (
+    patchOrUpdater:
+      | SettingsPatch
+      | ((current: Readonly<Settings>) => SettingsPatch),
+  ) {
+    yield* requireLoaded("update");
+    const patch = yield* Effect.try({
+      try: () => {
+        const patch =
+          typeof patchOrUpdater === "function"
+            ? patchOrUpdater(snapshot())
+            : patchOrUpdater;
+        for (const key of Object.keys(patch)) assertWritableKey(key, "update");
+        return patch;
+      },
+      catch: (error) => error,
+    });
+    const nextOverrides = { ...overrides };
+    const nextBroken = new Map(broken);
+    for (const key of Object.keys(patch)) {
+      const value = (patch as Record<string, unknown>)[key];
+      if (value === RESET_SETTING) delete nextOverrides[key as keyof Settings];
+      else (nextOverrides as Record<string, unknown>)[key] = value;
+      nextBroken.delete(key as SettingsKey);
+    }
+    return yield* commitMutation(nextOverrides, nextBroken, "update");
+  });
 
-    this.#loaded = true;
-    this.#notify();
-    this.commit(stack.move());
-  }
+  const reset = Effect.fn("PluginSettings.reset")(function* (
+    keys?: readonly (keyof Settings)[],
+  ) {
+    yield* requireLoaded("reset");
+    yield* Effect.try({
+      try: () => {
+        for (const key of keys ?? []) assertWritableKey(key, "reset");
+      },
+      catch: (error) => error,
+    });
+    const nextOverrides = { ...overrides };
+    const nextBroken = new Map(broken);
+    for (const key of keys ?? (Object.keys(nextOverrides) as SettingsKey[])) {
+      delete nextOverrides[key];
+      nextBroken.delete(key);
+    }
+    if (keys === undefined) nextBroken.clear();
+    return yield* commitMutation(nextOverrides, nextBroken, "reset");
+  });
 
-  async #hydrateFrom(raw: unknown): Promise<void> {
+  const hydrateFrom = Effect.fn("PluginSettings.hydrateFrom")(function* (
+    raw: unknown,
+  ) {
     const classification = classifyDiskData(raw);
-    this.#hydrationOrigin = hydrationOriginOf(classification.kind);
+    hydrationOrigin = hydrationOriginOf(classification.kind);
     switch (classification.kind) {
       case "missing": {
-        this.#overrides = {};
+        overrides = {};
         return;
       }
       case "v10": {
-        this.#loadV10(classification.raw);
+        yield* loadV10(classification.raw);
         return;
       }
       case "v9": {
-        await this.#loadV9Migration(classification.raw);
+        yield* loadV9Migration(classification.raw);
         return;
       }
       case "v8": {
-        await this.#loadV8Migration(classification.raw);
+        yield* loadV8Migration(classification.raw);
         return;
       }
       case "v7": {
-        await this.#loadV7Migration(classification.raw);
+        yield* loadV7Migration(classification.raw);
         return;
       }
       case "v6": {
-        await this.#loadV6Migration(classification.raw);
+        yield* loadV6Migration(classification.raw);
         return;
       }
       case "v5": {
-        await this.#loadV5Migration(classification.raw);
+        yield* loadV5Migration(classification.raw);
         return;
       }
       case "v4": {
-        await this.#loadV4Migration(classification.raw);
+        yield* loadV4Migration(classification.raw);
         return;
       }
       case "v3": {
-        await this.#loadV3Migration(classification.raw);
+        yield* loadV3Migration(classification.raw);
         return;
       }
       case "v2": {
-        await this.#loadV2Migration(classification.raw);
+        yield* loadV2Migration(classification.raw);
         return;
       }
       case "v1": {
-        await this.#loadV1Migration(classification.raw);
+        yield* loadV1Migration(classification.raw);
         return;
       }
       case "legacy": {
-        await this.#loadLegacy(classification.raw);
+        yield* loadLegacy(classification.raw);
         return;
       }
       case "future": {
-        console.warn(
+        yield* Effect.logWarning(
           `data version ${classification.version} is newer than supported (${CURRENT_VERSION}); falling back to defaults`,
         );
-        this.#overrides = {};
+        overrides = {};
         return;
       }
       case "malformed": {
-        console.warn(
+        yield* Effect.logWarning(
           `malformed data on disk (${classification.reason}); falling back to defaults`,
         );
-        this.#overrides = {};
+        overrides = {};
         return;
       }
     }
-  }
+  });
 
   /**
    * Permissive v10 load: drop non-schema keys, hold bad per-key values as
    * broken overrides, then full-schema check for cross-field constraints.
    * Whole-object failure → defaults fallback with no rewrite.
    */
-  #loadV10(raw: Record<string, unknown>): void {
-    const validated = this.#validateOverrides(raw, "v10 data");
-    this.#overrides = validated?.cleaned ?? {};
-    this.#broken = validated?.broken ?? new Map();
-    if (this.#broken.size > 0) {
-      console.warn(
-        `invalid values in v10 data (${[...this.#broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
+  const loadV10 = Effect.fn("PluginSettings.loadV10")(function* (
+    raw: Record<string, unknown>,
+  ) {
+    const validated = yield* validateOverrides(raw, "v10 data");
+    overrides = validated?.cleaned ?? {};
+    broken = validated?.broken ?? new Map();
+    if (broken.size > 0) {
+      yield* Effect.logWarning(
+        `invalid values in v10 data (${[...broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
       );
     }
-  }
+  });
 
   /** Run the v9→v10 compatibility migration and persist the cleaned result. */
-  async #loadV9Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV9, raw, "v9 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV9Migration = Effect.fn("PluginSettings.loadV9Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV9, raw, "v9 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    const validated = this.#validateOverrides(migrated, "v9 migration result");
-    this.#overrides = validated?.cleaned ?? {};
-    await this.#writeBestEffort({
-      [VERSION_KEY]: CURRENT_VERSION,
-      ...validated?.cleaned,
-    });
-  }
+      const validated = yield* validateOverrides(
+        migrated,
+        "v9 migration result",
+      );
+      overrides = validated?.cleaned ?? {};
+      yield* writeBestEffort({
+        [VERSION_KEY]: CURRENT_VERSION,
+        ...validated?.cleaned,
+      });
+    },
+  );
 
   /** Run the v8→v9 compatibility migration and delegate to v9→v10. */
-  async #loadV8Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV8, raw, "v8 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV8Migration = Effect.fn("PluginSettings.loadV8Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV8, raw, "v8 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV9Migration(migrated);
-  }
+      yield* loadV9Migration(migrated);
+    },
+  );
 
   /** Run the v7→v8 compatibility migration and delegate to v8→v9. */
-  async #loadV7Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV7, raw, "v7 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV7Migration = Effect.fn("PluginSettings.loadV7Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV7, raw, "v7 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV8Migration(migrated);
-  }
+      yield* loadV8Migration(migrated);
+    },
+  );
 
   /** Run the v6→v7 compatibility migration and delegate to v7→v8. */
-  async #loadV6Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV6, raw, "v6 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV6Migration = Effect.fn("PluginSettings.loadV6Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV6, raw, "v6 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV7Migration(migrated);
-  }
+      yield* loadV7Migration(migrated);
+    },
+  );
 
   /** Run the v5→v6 compatibility migration and delegate to v6→v7. */
-  async #loadV5Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV5, raw, "v5 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV5Migration = Effect.fn("PluginSettings.loadV5Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV5, raw, "v5 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV6Migration(migrated);
-  }
+      yield* loadV6Migration(migrated);
+    },
+  );
 
   /** Run the v4→v5 compatibility migration and delegate to v5→v6. */
-  async #loadV4Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV4, raw, "v4 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV4Migration = Effect.fn("PluginSettings.loadV4Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV4, raw, "v4 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV5Migration(migrated);
-  }
+      yield* loadV5Migration(migrated);
+    },
+  );
 
   /** Run the v3→v4 compatibility migration and delegate to the v4 migration. */
-  async #loadV3Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV3, raw, "v3 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV3Migration = Effect.fn("PluginSettings.loadV3Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV3, raw, "v3 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV4Migration(migrated);
-  }
+      yield* loadV4Migration(migrated);
+    },
+  );
 
   /**
    * v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration. Runs the v2 hook, then delegates to the v3
    * migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
-  async #loadV2Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV2, raw, "v2 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV2Migration = Effect.fn("PluginSettings.loadV2Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV2, raw, "v2 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV3Migration(migrated);
-  }
+      yield* loadV3Migration(migrated);
+    },
+  );
 
   /**
    * v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration. Runs the v1 hook, then delegates to the
    * v2 migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
-  async #loadV1Migration(raw: Record<string, unknown>): Promise<void> {
-    const migrated = runMigrationHook(this.#migrateV1, raw, "v1 migration");
-    if (migrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
-      return;
-    }
+  const loadV1Migration = Effect.fn("PluginSettings.loadV1Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(migrateV1, raw, "v1 migration");
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
 
-    await this.#loadV2Migration(migrated);
-  }
+      yield* loadV2Migration(migrated);
+    },
+  );
 
   /**
    * v0 → v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration chain. Runs the legacy hook first
@@ -685,20 +654,22 @@ export class SettingsService extends Service<void> {
    * `{ [VERSION_KEY]: 10 }` write) stays here; persistence beyond that point is
    * `#loadV1Migration`'s.
    */
-  async #loadLegacy(raw: Record<string, unknown>): Promise<void> {
-    const legacyMigrated = runMigrationHook(
-      this.#migrateLegacy,
+  const loadLegacy = Effect.fn("PluginSettings.loadLegacy")(function* (
+    raw: Record<string, unknown>,
+  ) {
+    const legacyMigrated = yield* runMigrationHook(
+      migrateLegacy,
       raw,
       "legacy migration",
     );
     if (legacyMigrated === null) {
-      this.#overrides = {};
-      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      overrides = {};
+      yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
       return;
     }
 
-    await this.#loadV1Migration(legacyMigrated);
-  }
+    yield* loadV1Migration(legacyMigrated);
+  });
 
   /**
    * Shared disk-recovery tail: split known keys into cleaned and broken
@@ -706,76 +677,107 @@ export class SettingsService extends Service<void> {
    * constraints. Returns `null` when that check fails (callers fall back to
    * defaults). Failures are logged with `context` as the source prefix.
    */
-  #validateOverrides(
-    raw: Record<string, unknown>,
-    context: string,
-  ): { cleaned: Partial<Settings>; broken: BrokenOverrides } | null {
-    const { cleaned, broken } = cleanKnownOverrides(raw);
-    const result = v.safeParse(schema, { ...defaults, ...cleaned });
-    if (!result.success) {
-      console.warn(
-        `${context} failed full-schema validation (${v.summarize(result.issues)}); falling back to defaults`,
-      );
-      return null;
-    }
-    return { cleaned, broken };
-  }
+  const validateOverrides = Effect.fn("PluginSettings.validateOverrides")(
+    function* (
+      raw: Record<string, unknown>,
+      context: string,
+    ): Effect.fn.Return<{
+      cleaned: Partial<Settings>;
+      broken: BrokenOverrides;
+    } | null> {
+      const { cleaned, broken } = cleanKnownOverrides(raw);
+      const result = v.safeParse(schema, { ...defaults, ...cleaned });
+      if (!result.success) {
+        yield* Effect.logWarning(
+          `${context} failed full-schema validation (${v.summarize(result.issues)}); falling back to defaults`,
+        );
+        return null;
+      }
+      return { cleaned, broken };
+    },
+  );
 
   /** Errors are logged but never bubble up — load continues with the already-chosen in-memory state. */
-  async #writeBestEffort(payload: Record<string, unknown>): Promise<void> {
-    try {
-      await this.#plugin.saveData(payload);
-    } catch (error) {
-      console.error("settings migration write failed", error);
-    }
-  }
-
-  /**
-   * Promise tracked in `#pendingWrite` with identity-guarded clearing so an
-   * older write cannot wipe a newer one. A no-op `.catch` handler prevents
-   * unhandled-rejection warnings on fire-and-forget timer firings while keeping
-   * failures observable through `flush()`.
-   */
-  #performSave(): Promise<void> {
-    const payload = {
-      [VERSION_KEY]: CURRENT_VERSION,
-      ...Object.fromEntries(this.#broken),
-      ...this.#overrides,
-    };
-    const earlier = this.#pendingWrite;
-    let promise!: Promise<void>;
-    promise = (async () => {
-      try {
-        // One write at a time, so the last change begun is the last to land.
-        if (earlier) await earlier.catch(() => {});
-        await this.#plugin.saveData(payload);
-      } finally {
-        if (this.#pendingWrite === promise) {
-          this.#pendingWrite = undefined;
-        }
-      }
-    })();
-    this.#pendingWrite = promise;
-    promise.catch((error: unknown) => {
-      console.error("background save failed", error);
-    });
-    return promise;
-  }
-
-  #requireLoaded(op: string): void {
-    if (!this.#loaded) {
-      throw new Error(
-        `SettingsService.${op}(): settings have not loaded yet — await service.ready (or service.loaded) before mutating`,
+  const writeBestEffort = Effect.fn("PluginSettings.writeBestEffort")(
+    function* (payload: Record<string, unknown>) {
+      yield* Effect.tryPromise(() => plugin.saveData(payload)).pipe(
+        Effect.uninterruptible,
+        Effect.catchCause((cause) =>
+          reportFailure("settings migration write failed", cause),
+        ),
       );
-    }
-  }
-}
+    },
+  );
 
-/** {@link SettingsService} in the plugin's Layer graph, bridged until it converts. */
-export class PluginSettings extends Context.Service<
-  PluginSettings,
-  SettingsService
->()("zotlit/settings/PluginSettings") {}
+  const load = Effect.gen(function* () {
+    const last = handoff?.[LAST_WRITE];
+    if (last) yield* Effect.promise(() => last);
+    const raw = yield* Effect.tryPromise(() => plugin.loadData());
+    yield* hydrateFrom(raw);
+  }).pipe(
+    Effect.catchCause((cause) =>
+      reportFailure("Could not read settings; using defaults", cause),
+    ),
+    Effect.andThen(
+      Effect.gen(function* () {
+        if (closed) return;
+        loaded = true;
+        yield* SubscriptionRef.set(state, snapshot());
+        yield* Deferred.succeed(hydrated, undefined);
+      }),
+    ),
+    withLogCategory("settings"),
+  );
+  yield* Effect.forkScoped(load, { startImmediately: true });
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      closed = true;
+    }).pipe(
+      Effect.andThen(flush()),
+      Effect.catchCause((cause) =>
+        reportFailure("settings save on close failed", cause),
+      ),
+    ),
+  );
+
+  return PluginSettings.of({
+    current,
+    loaded: Deferred.await(hydrated).pipe(Effect.map(snapshot)),
+    changes: SubscriptionRef.changes(state).pipe(
+      Stream.map((value) => (value === null ? null : { ...value })),
+    ),
+    diagnostics: Effect.sync(() =>
+      [...broken].map(([key, value]) => ({
+        key,
+        value: structuredClone(value),
+      })),
+    ),
+    hydrationOrigin: Effect.sync(() => hydrationOrigin),
+    update,
+    reset,
+    updateDefaultLiteratureNoteProfileBindings: Effect.fn(
+      "PluginSettings.updateDefaultLiteratureNoteProfileBindings",
+    )(function* (patch) {
+      yield* update((current) => ({
+        "note.default-profile": {
+          ...current["note.default-profile"],
+          bindings: { ...current["note.default-profile"].bindings, ...patch },
+        },
+      }));
+    }),
+    flush,
+    release: Effect.fn("PluginSettings.release")(function* () {
+      released = true;
+      yield* handOff();
+    }),
+  });
+}, withLogCategory("settings"));
+
+const reportFailure = (message: string, error: unknown) =>
+  Effect.logError(message).pipe(
+    Effect.annotateLogs({ error }),
+    withLogCategory("settings"),
+  );
 
 /**
  * Drop non-schema keys (including reserved metadata), then per-key-validate
@@ -806,26 +808,26 @@ function cleanKnownOverrides(raw: Record<string, unknown>): {
  * into a single failure signal (`null`) so callers share one fallback path.
  * Logs at the call site with `stage` naming which migration step failed.
  */
-function runMigrationHook(
+const runMigrationHook = Effect.fn("PluginSettings.migrate")(function* (
   hook: (raw: unknown) => unknown,
   raw: unknown,
   stage: string,
-): Record<string, unknown> | null {
+): Effect.fn.Return<Record<string, unknown> | null> {
   let migrated: unknown;
   try {
     migrated = hook(raw);
   } catch (error) {
-    console.warn(`${stage} threw; falling back to defaults`, error);
+    yield* Effect.logWarning(`${stage} threw; falling back to defaults`, error);
     return null;
   }
   if (!isPlainObject(migrated)) {
-    console.warn(
+    yield* Effect.logWarning(
       `${stage} returned a non-plain value; falling back to defaults`,
     );
     return null;
   }
   return migrated;
-}
+});
 
 function assertWritableKey(key: string, op: string): void {
   if (key === VERSION_KEY) {
@@ -835,21 +837,5 @@ function assertWritableKey(key: string, op: string): void {
   }
   if (!isSettingsKey(key)) {
     throw new Error(`SettingsService.${op}(): unknown settings key '${key}'`);
-  }
-}
-
-/**
- * `ready` should rejects only for `Plugin.loadData()` failures, and
- * `update()` must remain synchronous; an isolated try/catch ensures a
- * misbehaving subscriber cannot break either invariant or stop the fan-out.
- */
-function invokeSubscriber(
-  fn: (value: Readonly<Settings> | null) => void,
-  value: Readonly<Settings> | null,
-): void {
-  try {
-    fn(value);
-  } catch (error) {
-    console.error("subscriber threw", error);
   }
 }

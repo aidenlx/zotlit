@@ -39,8 +39,8 @@ import type { NoteIndex } from "@/services/note-index/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -104,7 +104,7 @@ export interface NoteFeatureDeps {
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<SettingsService, "current" | "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (

@@ -38,7 +38,7 @@ import type {
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type {
@@ -77,7 +77,7 @@ export interface NoteImportDeps {
   view: NoteImportView;
   /** A note write's reads: one lease spans the write and what it imports. */
   zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "state">;
-  settings: Pick<SettingsService, "loaded" | "update">;
+  settings: Pick<PlainPluginSettings, "loaded" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;

@@ -17,8 +17,8 @@ import {
 } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import type { AnnotationPopover } from "./service";
 
@@ -30,7 +30,7 @@ const LINK_SELECTOR = 'a.external-link[href^="zotero://open/"]';
 export interface AnnotationLinkReadingDeps {
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  settings: Pick<SettingsService, "ready" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
 }
@@ -67,7 +67,7 @@ export class AnnotationLinkReading extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     const { settings, plugin } = this.#deps;
-    await settings.ready;
+    await settings.loaded;
     stack.defer(
       settings.subscribe((current) => {
         if (!current) return;

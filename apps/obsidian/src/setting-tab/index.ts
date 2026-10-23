@@ -6,10 +6,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
-import type {
-  SettingsPatch,
-  SettingsService,
-} from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsPatch } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -53,7 +51,13 @@ export interface ZotLitSettingTabOptions {
   webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
-  settings: SettingsService;
+  settings: Pick<
+    PlainPluginSettings,
+    | "current"
+    | "update"
+    | "updateDefaultLiteratureNoteProfileBindings"
+    | "subscribe"
+  >;
   profile: ProfileService;
   db: ZoteroReadsService;
   libraryScope: LibraryScopeService;
@@ -78,7 +82,13 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #webWorkbenchEnabled: boolean;
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
-  readonly #settings: SettingsService;
+  readonly #settings: Pick<
+    PlainPluginSettings,
+    | "current"
+    | "update"
+    | "updateDefaultLiteratureNoteProfileBindings"
+    | "subscribe"
+  >;
   readonly #db: ZoteroReadsService;
   readonly #libraryScope: LibraryScopeService;
   readonly #zoteroPref: ZoteroPrefService;
@@ -209,7 +219,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.update();
   }
 
-  /** Bridge declarative `control` reads to {@link SettingsService}. */
+  /** Bridge declarative `control` reads to {@link PlainPluginSettings}. */
   override getControlValue(key: string): unknown {
     if (isProfileControlKey(key)) {
       return getProfileControlValue(this.#settings, key);
@@ -222,7 +232,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     return value;
   }
 
-  /** Bridge declarative `control` writes to {@link SettingsService}. */
+  /** Bridge declarative `control` writes to {@link PlainPluginSettings}. */
   override setControlValue(key: string, value: unknown): void {
     if (isProfileControlKey(key)) {
       setProfileControlValue(this.#settings, key, value);

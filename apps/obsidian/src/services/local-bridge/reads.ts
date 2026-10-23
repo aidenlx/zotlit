@@ -37,7 +37,7 @@ import {
   resolveInstalledStyle,
 } from "@/services/pandoc/styles";
 import type { ProfileReader, ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type {
@@ -70,7 +70,7 @@ export class SelectedItemUnavailableError extends Error {
 
 export interface LocalBridgeReadDeps {
   app: App;
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<PlainPluginSettings, "loaded">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   noteIndex: Pick<
     NoteIndex,

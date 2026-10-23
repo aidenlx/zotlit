@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DOCS_COMPANION } from "@/lib/constants";
 import type { HydrationOrigin } from "@/services/settings/classify";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 import { ReleaseService } from "./service";
@@ -18,11 +18,11 @@ function fakeApp(): App {
 function fakeSettings(
   pending: boolean,
   update: (patch: unknown) => void,
-): SettingsService {
+): PlainPluginSettings {
   return {
     current: { "release.migration-pending": pending } as Partial<Settings>,
     update,
-  } as unknown as SettingsService;
+  } as unknown as PlainPluginSettings;
 }
 
 function makeService(pending: boolean, update: (patch: unknown) => void) {
@@ -114,7 +114,7 @@ async function runCheck(opts: {
     } as Partial<Settings>),
     hydrationOrigin: opts.origin,
     update,
-  } as unknown as SettingsService;
+  } as unknown as PlainPluginSettings;
   const app = {
     workspace: {
       onLayoutReady: (cb: () => void | Promise<void>) => {
@@ -227,7 +227,7 @@ describe("ReleaseService update", () => {
       settings: {
         current: { "release.update-pending": true } as Partial<Settings>,
         update,
-      } as unknown as SettingsService,
+      } as unknown as PlainPluginSettings,
     });
     service.acknowledgeUpdate();
     expect(update).toHaveBeenCalledWith({ "release.update-pending": false });
@@ -247,7 +247,7 @@ describe("ReleaseService checked", () => {
       } as Partial<Settings>),
       hydrationOrigin: "absent",
       update: vi.fn(),
-    } as unknown as SettingsService;
+    } as unknown as PlainPluginSettings;
     await using service = new ReleaseService({
       app: {
         workspace: {

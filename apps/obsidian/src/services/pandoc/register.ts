@@ -30,7 +30,7 @@ import { Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
@@ -64,7 +64,7 @@ export interface PandocResolveDeps {
   app: App;
   reads: Pick<ZoteroReadsService, "ready" | "activeReadMode">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
 }
 

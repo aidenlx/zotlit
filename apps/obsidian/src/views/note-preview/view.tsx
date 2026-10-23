@@ -1,6 +1,7 @@
-import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
 import { apiVersion, ItemView, setIcon } from "obsidian";
+
+import "./style.css";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { useEffect } from "react";
@@ -52,7 +53,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import {
   templateFolderOf,
   templatePartialName,
@@ -95,7 +96,7 @@ import { createNativePreviewStore, NativePreviewSession } from "./session";
 import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
   profile: Pick<
     ProfileService,

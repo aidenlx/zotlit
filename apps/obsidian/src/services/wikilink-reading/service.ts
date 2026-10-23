@@ -42,7 +42,7 @@ import type { CitationHover } from "@/services/citekey-navigation";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import {
   hasInternalLink,
@@ -64,7 +64,7 @@ export interface WikilinkReadingDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
 }
 
 /**
@@ -125,7 +125,7 @@ export class WikilinkReading extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
+    await this.#settings.loaded;
 
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),

@@ -12,10 +12,8 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { QueryClientService } from "@/services/query-client/service";
 import type { ReleaseService } from "@/services/release/service";
-import type {
-  SettingsPatch,
-  SettingsService,
-} from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsPatch } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
@@ -48,7 +46,7 @@ export interface WelcomeBannerDeps {
   reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
   queries: Pick<QueryClientService, "peek" | "read">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
-  settings: Pick<SettingsService, "subscribe" | "update" | "flush">;
+  settings: Pick<PlainPluginSettings, "subscribe" | "update" | "flush">;
   setupActions: SetupActions;
   templateMigration: Pick<
     LiteratureNoteTemplateMigrationService,

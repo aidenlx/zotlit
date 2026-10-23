@@ -16,7 +16,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { getLogger } from "@/lib/log";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { createLiveUpdateApp } from "./live-update-app";
@@ -105,7 +106,7 @@ export interface LocalServerEvents {
 }
 
 export interface LocalServerServiceDeps {
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "loaded" | "subscribe">;
   zoteroPref: ZoteroPrefService;
   noteIndex: NoteIndex;
 }

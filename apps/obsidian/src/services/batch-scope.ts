@@ -18,7 +18,7 @@ import { libraryLabel } from "@/services/library-scope/label";
 import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type {
   ZoteroReadsApi,
   ZoteroReadsService,
@@ -126,7 +126,7 @@ export async function resolveBatchScope(
 /** The services a library-wide run reaches its Library Scope through. */
 export interface BatchScopePlanDeps {
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<PlainPluginSettings, "loaded">;
   libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
 }
 

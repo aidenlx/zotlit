@@ -38,7 +38,7 @@ import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/servi
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
@@ -138,7 +138,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "loaded" | "update">;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {

@@ -171,7 +171,9 @@ class ZoteroPrefStub {
 
 class SettingsStub {
   current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
+  get loaded() {
+    return Promise.resolve(this.current);
+  }
   readonly #listeners = new Set<
     (settings: Readonly<Settings> | null) => void
   >();

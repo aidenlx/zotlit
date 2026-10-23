@@ -5,8 +5,9 @@ import { expect } from "vitest";
 
 import { Effect, Exit, Fiber, Layer, Queue, Scope } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
+import { settingsOf } from "@/services/settings/__fixtures__";
 import { settingsMigrations } from "@/services/settings/migrate";
-import { PluginSettings, SettingsService } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import { layerLogging, LogOutput, STARTUP_LOG_SETTINGS } from "./service";
 
@@ -66,7 +67,7 @@ const logging = Effect.fnUntraced(function* (
         : new Promise(() => {}),
     saveData: async () => {},
   } as unknown as Plugin;
-  const settings = new SettingsService({ plugin, ...settingsMigrations });
+  const settings = yield* settingsOf({ plugin, ...settingsMigrations });
   const layer = layerLogging.pipe(
     Layer.provide(Layer.succeed(LogOutput, output)),
     Layer.provide(Layer.succeed(PluginSettings, settings)),
@@ -109,7 +110,7 @@ it.effect("applies each change, closing the log file it turns off", () =>
     });
     yield* TestClock.adjust(CONFIGURE_TIME);
 
-    settings.update({ "log.to-file": false });
+    yield* settings.update({ "log.to-file": false });
     expect(zotlitLogger(yield* Queue.take(started)).sinks).toEqual(["console"]);
     yield* TestClock.adjust(CONFIGURE_TIME);
 
@@ -151,9 +152,9 @@ it.effect("applies only the newest of the changes made while one applies", () =>
     yield* Layer.build(layer);
     yield* Queue.take(started);
 
-    settings.update({ "log.level": "debug" });
-    settings.update({ "log.level": "warning" });
-    settings.update({ "log.level": "error" });
+    yield* settings.update({ "log.level": "debug" });
+    yield* settings.update({ "log.level": "warning" });
+    yield* settings.update({ "log.level": "error" });
     yield* TestClock.adjust(CONFIGURE_TIME);
 
     expect(zotlitLogger(yield* Queue.take(started)).lowestLevel).toBe("error");
@@ -199,7 +200,7 @@ it.effect("reports a change it cannot apply and applies it again later", () =>
       new Error("boom"),
     ]);
 
-    settings.update({ "citation.editor-suggester": false });
+    yield* settings.update({ "citation.editor-suggester": false });
     expect(zotlitLogger(yield* Queue.take(started)).lowestLevel).toBe("debug");
     yield* TestClock.adjust(CONFIGURE_TIME);
   }),

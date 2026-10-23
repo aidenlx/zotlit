@@ -20,7 +20,7 @@ import type { QueryViewValue } from "@/services/item-query/query-view";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
@@ -82,7 +82,10 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
   useLedger: Pick<PlainUseLedger, "get">;
-  settings: Pick<SettingsService, "update" | "flush" | "current" | "loaded">;
+  settings: Pick<
+    PlainPluginSettings,
+    "update" | "flush" | "current" | "loaded"
+  >;
   libraryScope: QueryViewDeps["libraryScope"] &
     LibraryTreeDeps["libraryScope"] &
     Pick<LibraryScopeService, "effective">;

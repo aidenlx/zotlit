@@ -38,7 +38,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { QueryClientService } from "@/services/query-client/service";
-import { SettingsService } from "@/services/settings/service";
+import { buildSettings } from "@/services/settings/__fixtures__";
 import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import {
@@ -432,7 +432,7 @@ function pluginData(stored?: unknown) {
     ...(stored !== undefined && { "library.document": stored }),
   });
   const settings = cleanup.use(
-    new SettingsService({
+    buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,

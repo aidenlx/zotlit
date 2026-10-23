@@ -12,8 +12,8 @@ import { getLogger } from "@/lib/log";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type {
@@ -92,7 +92,7 @@ export interface LiteratureNoteTemplateMigrationDataDeps {
   zoteroReads: ZoteroReadsService;
   libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
   noteIndex: NoteIndex;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "loaded" | "update" | "flush">;
   templates: TemplateService;
   zoteroPref: ZoteroPrefService;
 }
