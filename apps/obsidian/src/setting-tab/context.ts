@@ -20,6 +20,7 @@ import type { Release } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import type { PlainTemplate } from "@/services/template/plain";
+import type { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -71,10 +72,11 @@ export type AnnotationCapabilityActions = Pick<
  * The Write Authorization the "Zotero editing" row asks for, through the one
  * Allow editing every entry shares, and forgets.
  */
-export type WriteAuthorizationActions = {
-  forgetAuthorization(): Promise<void>;
-  remembered(): Promise<boolean>;
-} & Pick<CapabilityNotices, "allowEditing">;
+export type WriteAuthorizationActions = Pick<
+  ZoteroLocalApi["Service"],
+  "forgetAuthorization" | "remembered"
+> &
+  Pick<CapabilityNotices, "allowEditing">;
 
 /** The attachment-import surface the setting tab needs: read and edit the grants. */
 export type AttachmentImportActions = Pick<

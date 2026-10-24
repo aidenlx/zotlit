@@ -107,6 +107,11 @@ function ctx(): SettingTabContext {
       getSituation: () => ({ kind: "unavailable" }),
       endonym: "English",
     },
+    writeAuthorization: {
+      allowEditing: () => {},
+      forgetAuthorization: () => Effect.void,
+      remembered: () => Effect.succeed(false),
+    },
     requestUpdate: () => {},
   } as unknown as SettingTabContext;
 }

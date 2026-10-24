@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { ButtonComponent } from "obsidian";
+import type { App } from "obsidian";
 import { expect, vi } from "vitest";
 
 import { DOCS_COMPANION } from "@/lib/constants";
@@ -13,6 +14,36 @@ import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
 
 /** The configured Literature Note template folder in the fixture settings. */
 const CONFIGURED_TEMPLATE_FOLDER = "templates";
+
+it.effect("Release.openReleaseNote succeeds when the view cannot open", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const setViewState = vi
+        .fn()
+        .mockRejectedValue(new Error("Cannot open view"));
+      const app = {
+        workspace: {
+          onLayoutReady: () => {},
+          getLeavesOfType: () => [],
+          getLeaf: () => ({ setViewState }),
+          revealLeaf: vi.fn(),
+        },
+        internalPlugins: {
+          getEnabledPluginById: () => true,
+        },
+      } as unknown as App;
+      const fixture = yield* releaseOf({
+        app,
+        layoutReady: () => {},
+        current: () => ({}) as Settings,
+      });
+
+      yield* fixture.release.openReleaseNote();
+
+      expect(setViewState).toHaveBeenCalledOnce();
+    }),
+  ),
+);
 
 it.effect("Release.acknowledgeMigration clears the pending flag when set", () =>
   Effect.scoped(

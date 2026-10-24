@@ -107,6 +107,9 @@ export function layerRelease(options: {
             Effect.annotateLogs({ url, target: "web-viewer" }),
           );
         },
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Cannot open the release note", cause),
+        ),
       );
 
       const acknowledgeMigration = Effect.fn("Release.acknowledgeMigration")(

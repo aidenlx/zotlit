@@ -1,11 +1,11 @@
+// The Citation Popover: document citation entries and source-less works under the vault presentation.
 import type { App, HoverParent, TFile } from "obsidian";
 import type { ReactNode } from "react";
 
 import { registerEvent } from "@/lib/disposables";
-import { Cause, Context, Effect, Exit, Layer, Scope } from "@/lib/effect";
+import { Cause, Context, Effect, Exit, Layer } from "@/lib/effect";
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
-import { subscribe } from "@/lib/effect-stream";
-// The Citation Popover: document citation entries and source-less works under the vault presentation.
 import * as m from "@/lib/i18n/generated/messages";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
@@ -26,6 +26,7 @@ import type { CitationLookupStatus } from "@/services/citation-index/lookup-serv
 import { CitationIndex } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
+import type { CitekeyResolution } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import { CitationText } from "@/services/citation-text/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
@@ -207,11 +208,7 @@ export const layerCitationPopover: Layer.Layer<
     const text = yield* CitationText;
     const render = yield* BibliographyRender;
     const profiles = yield* Profile;
-    const context = yield* Effect.context<never>();
-    const run = Effect.runSyncWith(context);
-    const runExit = Effect.runPromiseExitWith(context);
-    const scope = yield* Scope.fork(yield* Scope.Scope);
-    const runtime = { runFork: Effect.runForkWith(context), scope };
+    const bridge = yield* scopedBridge;
     let stopped = false;
     const visits = new HoverVisits<CitationVisitState>(() => ({
       reading: null,
@@ -231,7 +228,17 @@ export const layerCitationPopover: Layer.Layer<
       fields: Record<string, unknown>,
     ) => {
       const write = level === "debug" ? Effect.logDebug : Effect.logWarning;
-      run(write(message).pipe(Effect.annotateLogs(fields)));
+      bridge.runSync(write(message).pipe(Effect.annotateLogs(fields)));
+    };
+    const held = async <A, E>(
+      effect: Effect.Effect<A, E>,
+      closed: A,
+      options?: { signal?: AbortSignal },
+    ): Promise<A> => {
+      const exit = await bridge.runPromiseExit(effect, options);
+      if (Exit.isSuccess(exit)) return exit.value;
+      if (Cause.hasInterruptsOnly(exit.cause)) return closed;
+      throw Cause.squash(exit.cause);
     };
     const lookupReleased = () =>
       new DOMException("Citation Lookup released", "AbortError");
@@ -239,18 +246,18 @@ export const layerCitationPopover: Layer.Layer<
       app,
       db: {
         get state() {
-          return run(reads.current).state;
+          return bridge.runSync(reads.current).state;
         },
         get reads() {
           return reads.reads;
         },
         acquireRead: () =>
           acquireReadLease(reads, {
-            runPromiseExit: runExit,
+            runPromiseExit: bridge.runPromiseExit,
             closed: () => stopped,
           }),
       },
-      lookupStatus: () => run(lookup.current).status,
+      lookupStatus: () => bridge.runSync(lookup.current).status,
       async readLookup(request, { signal }) {
         if (stopped) throw lookupReleased();
         const selected = {
@@ -258,53 +265,47 @@ export const layerCitationPopover: Layer.Layer<
           indexedKeys: [...(request.indexedKeys ?? [])],
           annotationKeys: [...(request.annotationKeys ?? [])],
         };
-        const exit = await runExit(lookup.read(selected), { signal });
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (stopped || Cause.hasInterruptsOnly(exit.cause))
-          throw lookupReleased();
-        throw Cause.squash(exit.cause);
+        const answer = await held(lookup.read(selected), undefined, { signal });
+        if (answer === undefined) throw lookupReleased();
+        return answer;
       },
       async getDocumentCitationSet(file, options) {
-        const exit = await runExit(
+        const result = await held(
           index.getDocumentCitationSet(file, options),
+          undefined,
           { signal: options?.signal },
         );
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (Cause.hasInterruptsOnly(exit.cause))
+        if (result === undefined)
           throw new DOMException("Citation Index released", "AbortError");
-        const error = Cause.squash(exit.cause);
-        throw Cause.isUnknownError(error) ? error.cause : error;
+        return result;
       },
       libraryScope: {
         get current() {
-          return run(libraries.current);
+          return bridge.runSync(libraries.current);
         },
       },
       async readText(path, { signal }) {
         if (stopped) return null;
-        const exit = await runExit(text.read(path, { signal }), { signal });
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (Cause.hasInterruptsOnly(exit.cause)) return null;
-        throw Cause.squash(exit.cause);
+        return held(text.read(path, { signal }), null, { signal });
       },
-      vaultPresentation: () => run(render.state).vaultPresentation,
+      vaultPresentation: () => bridge.runSync(render.state).vaultPresentation,
       async renderBibliography(items, presentation) {
-        const exit = await runExit(render.render(items, presentation));
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (Cause.hasInterruptsOnly(exit.cause))
-          return { kind: "unavailable", reason: "failed" };
-        throw Cause.squash(exit.cause);
+        return held(render.render(items, presentation), {
+          kind: "unavailable",
+          reason: "failed",
+        } as const);
       },
       async readBibliography(items, { signal }) {
-        const exit = await runExit(render.readBibliography(items, { signal }), {
-          signal,
-        });
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (Cause.hasInterruptsOnly(exit.cause))
+        const result = await held(
+          render.readBibliography(items, { signal }),
+          undefined,
+          { signal },
+        );
+        if (result === undefined)
           throw new DOMException("Held read released", "AbortError");
-        throw Cause.squash(exit.cause);
+        return result;
       },
-      profile: profileReaderOf(profiles, run),
+      profile: profileReaderOf(profiles, bridge.runSync),
       log,
     };
     function showVisit(request: PopoverRequest): Promise<void> {
@@ -324,12 +325,12 @@ export const layerCitationPopover: Layer.Layer<
       const draw = (): void => {
         void read();
       };
-      subscriptions.defer(subscribe(runtime, renderInvalidated(render), draw));
+      subscriptions.defer(bridge.subscribe(renderInvalidated(render), draw));
       if (!("work" in request) || request.work.kind === "citekey") {
-        subscriptions.defer(subscribe(runtime, lookupChanged(lookup), draw));
+        subscriptions.defer(bridge.subscribe(lookupChanged(lookup), draw));
         let freshness = deps.lookupStatus();
         subscriptions.defer(
-          subscribe(runtime, lookupStatusChanged(lookup), () => {
+          bridge.subscribe(lookupStatusChanged(lookup), () => {
             const previous = freshness;
             freshness = deps.lookupStatus();
             if (freshness === "failed") showFailure(currentVisit);
@@ -486,7 +487,7 @@ async function readWork(
   }
   let indexedKey: string;
   if (work.kind === "citekey") {
-    let resolution: import("../citation-index/service").CitekeyResolution;
+    let resolution: CitekeyResolution;
     try {
       resolution = (
         await deps.readLookup({ citekeys: [work.citekey] }, { signal })
@@ -527,6 +528,7 @@ async function readWork(
   const bibliography = await deps
     .readBibliography([source.csl], { signal })
     .catch((error: unknown) => {
+      if (signal.aborted) return null;
       deps.log("warn", "Cannot format source-less Item", {
         indexedKey,
         error,

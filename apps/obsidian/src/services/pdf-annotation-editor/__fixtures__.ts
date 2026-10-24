@@ -731,14 +731,23 @@ export async function repositoryOver(
   { external }: { external?: readonly string[] } = {},
 ) {
   const zotero = zoteroLibrary(records.map(wireOf));
-  const { repository, requests, client, dbEvents, serverEvents } =
-    await writable(stack, zotero.answers, { external });
+  const {
+    repository,
+    requests,
+    client,
+    dbEvents,
+    serverEvents,
+    localApiService,
+    bridge,
+  } = await writable(stack, zotero.answers, { external });
   const list = await repository.read("RGRPDF24");
   return {
     repository,
     zotero,
     requests,
     list,
+    localApiService,
+    bridge,
     /**
      * Zotero imports one Annotation from the PDF file, and a database refresh
      * tells the repository, which locks it.

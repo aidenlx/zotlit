@@ -11,6 +11,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import {
   lookupAnswer,
@@ -652,6 +653,39 @@ describe("source-less presentation updates", () => {
     const shown = await run.shown();
     expect(shown.textContent).toContain("Second work");
     expect(shown.textContent).not.toContain("First work");
+  });
+
+  it("does not warn when a superseded source-less read is aborted", async () => {
+    using warn = vi.spyOn(getLogger("citation-popover"), "warn");
+    await using run = workHarness();
+    run.db.holds([
+      { itemID: 1, key: "ABCD2345", title: "First work" },
+      { itemID: 2, key: "EFGH2345", title: "Second work" },
+    ]);
+    const first = Promise.withResolvers<BibliographyRenderResult | null>();
+    const second = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const firstHover = run.showUnder({
+      kind: "item",
+      indexedKey: "ABCD2345",
+    });
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
+    const secondHover = run.showUnder({
+      kind: "item",
+      indexedKey: "EFGH2345",
+    });
+
+    first.resolve(null);
+    second.resolve(null);
+    await Promise.all([firstHover, secondHover]);
+
+    expect(warn).not.toHaveBeenCalledWith(
+      "Cannot format source-less Item",
+      expect.anything(),
+    );
   });
 
   it("retains the new Item data when an older render finishes later", async () => {

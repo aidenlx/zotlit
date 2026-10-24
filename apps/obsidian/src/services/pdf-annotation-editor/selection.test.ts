@@ -25,7 +25,11 @@ import {
   viewport,
 } from "./__fixtures__";
 import type { readerSurfaces } from "./__fixtures__";
-import { ingestCapability, selectMarkHandles } from "./reader-surface-state";
+import {
+  ingestCapability,
+  selectMarkHandles,
+  setCommenting,
+} from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
 /** Every notice the reader shows, by its text. */
@@ -1101,15 +1105,21 @@ it("takes no typed name into a tag draft a database switch hid", async () => {
   expect(h.writes()).toEqual([]);
 });
 
-it("closes the mark editor when no tag session can start", async () => {
+it("opens no tag editor while no tag session can start", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
-  // The probe settles the reader before a tag gesture can start.
-  h.zotero.quit();
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  // The repository forgets this device's write authorization before the reader
+  // hears that editing is no longer writable.
+  await h.bridge.runPromise(h.localApiService.forgetAuthorization());
   await h.repository.probe();
 
-  expect(h.popup()).toBeNull();
-  expect(h.store.getState().floating).toEqual({ kind: "none" });
+  expect(h.popup()).not.toBeNull();
+  expect(h.repository.capabilityFor("RGRPDF24").kind).not.toBe("writable");
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+
+  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(tagInput(popup.hoverEl)).toBeNull();
 });
 
 it("binds the held tags panel to Save tags and Discard, and keeps it through a refresh", async () => {
@@ -1176,15 +1186,23 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
   expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]);
 });
 
-it("closes the editor when no draft can be started", async () => {
+it("falls back to the comment field, and closes the editor, when no draft can be started", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
-  // The probe settles the reader before an editor can start.
-  h.zotero.quit();
+  // The repository forgets this device's write authorization before the reader
+  // hears that editing is no longer writable.
+  await h.bridge.runPromise(h.localApiService.forgetAuthorization());
   await h.repository.probe();
 
-  expect(h.popup()).toBeNull();
-  expect(h.store.getState().floating).toEqual({ kind: "none" });
+  expect(h.popup()).not.toBeNull();
+  expect(h.repository.capabilityFor("RGRPDF24").kind).not.toBe("writable");
+
+  setCommenting(h.store, true);
+
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  expect(commentView(popup.hoverEl)).toBeNull();
+  expect(commentField(popup.hoverEl)).not.toBeNull();
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
 });
 
 /**

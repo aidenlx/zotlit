@@ -1,7 +1,7 @@
+// Reads Zotero's data live, from the local API a running Zotero serves on loopback.
 import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
-// Reads Zotero's data live, from the local API a running Zotero serves on loopback.
 
 import { AbortError } from "@/lib/abort-error";
 import { getLogger } from "@/lib/log";

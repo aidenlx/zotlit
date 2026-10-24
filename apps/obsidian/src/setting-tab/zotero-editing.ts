@@ -151,11 +151,13 @@ function renderEditingRow(
    */
   const refreshRemembered = (): void => {
     const read = ++reads;
-    void ctx.writeAuthorization.remembered().then((value) => {
-      if (read !== reads) return;
-      remembered = value;
-      apply();
-    });
+    void ctx.bridge
+      .runPromise(ctx.writeAuthorization.remembered())
+      .then((value) => {
+        if (read !== reads) return;
+        remembered = value;
+        apply();
+      });
   };
 
   setting
@@ -198,8 +200,8 @@ function renderEditingRow(
     .addButton((button) => {
       forgetButton = button;
       button.setButtonText(m.settings_zotero_editing_forget()).onClick(() => {
-        void ctx.writeAuthorization
-          .forgetAuthorization()
+        void ctx.bridge
+          .runPromise(ctx.writeAuthorization.forgetAuthorization())
           .then(refreshRemembered);
       });
     });

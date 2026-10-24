@@ -7,7 +7,7 @@
 import type { App, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -212,21 +212,19 @@ function whenListening(
     return Promise.resolve(true);
   const { promise, resolve } = Promise.withResolvers<boolean>();
   let off = () => {};
-  let first = true;
   const timer = window.setTimeout(() => {
     off();
     resolve(false);
   }, SERVER_START_TIMEOUT_MS);
-  off = effect.subscribe(localServer.effectivePortChanges, (port) => {
-    if (first) {
-      first = false;
-      return;
-    }
-    if (port === null) return;
-    window.clearTimeout(timer);
-    off();
-    resolve(true);
-  });
+  off = effect.subscribe(
+    Stream.drop(localServer.effectivePortChanges, 1),
+    (port) => {
+      if (port === null) return;
+      window.clearTimeout(timer);
+      off();
+      resolve(true);
+    },
+  );
   return promise;
 }
 

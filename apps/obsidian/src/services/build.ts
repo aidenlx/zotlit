@@ -118,6 +118,9 @@ export async function buildServices(
   );
   await runtime.context();
   const bridge = effectBridge(runtime);
+  const zoteroReadsService = runtime.runSync(ZoteroReads);
+  const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
+  const localApi = localApiPort(zoteroLocalApiService, bridge);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -208,12 +211,11 @@ export async function buildServices(
           ).getBasePath(),
         }),
     })
-    .useValue({ zoteroLocalApi: () => runtime.runSync(ZoteroLocalApi) })
+    .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
     .use({
       annotationRepository: ({
         zoteroReads,
         queryClient,
-        zoteroLocalApi,
         zoteroPref,
         excerptImage,
       }) =>
@@ -221,7 +223,7 @@ export async function buildServices(
           runtime,
           db: zoteroReads,
           queryClient,
-          localApi: localApiPort(zoteroLocalApi, bridge),
+          localApi,
           // A session's first read of an Attachment has no list that stood
           // before it to compare against, so it is compared against the image
           // this device persists for the Annotation instead — the display's own
@@ -243,10 +245,10 @@ export async function buildServices(
         }),
     })
     .use({
-      capabilityNotices: ({ annotationRepository, zoteroLocalApi }) =>
+      capabilityNotices: ({ annotationRepository }) =>
         new CapabilityNotices({
           capabilities: annotationRepository,
-          writes: localApiPort(zoteroLocalApi, bridge),
+          writes: localApi,
           openEditingSettings: () =>
             revealSetting(
               plugin.app,
@@ -275,7 +277,7 @@ export async function buildServices(
             useLedger.record(itemKey, "read", instant);
             void writeReadUse(
               {
-                reads: runtime.runSync(ZoteroReads),
+                reads: zoteroReadsService,
                 bridge,
                 api: zoteroLocalApi,
               },

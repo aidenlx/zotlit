@@ -1,5 +1,5 @@
 // The Zotero Reader as a Reader Session, translated from the companion's pushes.
-import { Effect } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import type {
@@ -78,14 +78,9 @@ export class ZoteroReaderSession extends ReaderSessionHost {
     this.#bridge = bridge;
     this.#resolve = resolve;
     this.refresh();
-    let first = true;
     this.#stopTracking = bridge.subscribe(
-      liveUpdate.readerTargetChanges,
+      Stream.drop(liveUpdate.readerTargetChanges, 1),
       (pushed) => {
-        if (first) {
-          first = false;
-          return;
-        }
         if (pushed) this.#track(pushed);
       },
     );

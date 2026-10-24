@@ -32,6 +32,19 @@ export async function writeReadUse(
     serverID: string | null;
   },
 ): Promise<void> {
+  const log = (
+    level: "debug" | "trace",
+    message: string,
+    fields: Record<string, unknown>,
+  ): void => {
+    const write = level === "trace" ? Effect.logTrace : Effect.logDebug;
+    bridge.runSync(
+      write(message).pipe(
+        Effect.annotateLogs(fields),
+        withLogCategory("last-read"),
+      ),
+    );
+  };
   const parsed = parseIndexedKey(attachmentKey);
   const state = bridge.runSync(api.state);
   if (
@@ -40,33 +53,23 @@ export async function writeReadUse(
     state.kind !== "available" ||
     !state.authorized
   ) {
-    bridge.runSync(
-      Effect.logTrace("Read write-back skipped").pipe(
-        Effect.annotateLogs({
-          attachmentKey,
-          reason: !parsed
-            ? "invalid attachment"
-            : parsed.groupID !== null
-              ? "group attachment"
-              : state.kind !== "available"
-                ? "unavailable"
-                : "unauthorized",
-        }),
-        withLogCategory("last-read"),
-      ),
-    );
+    log("trace", "Read write-back skipped", {
+      attachmentKey,
+      reason: !parsed
+        ? "invalid attachment"
+        : parsed.groupID !== null
+          ? "group attachment"
+          : state.kind !== "available"
+            ? "unavailable"
+            : "unauthorized",
+    });
     return;
   }
   if (resolvedServerID === null || resolvedServerID !== state.source.serverID) {
-    bridge.runSync(
-      Effect.logTrace("Read write-back skipped").pipe(
-        Effect.annotateLogs({
-          attachmentKey,
-          reason: "resolved source differs",
-        }),
-        withLogCategory("last-read"),
-      ),
-    );
+    log("trace", "Read write-back skipped", {
+      attachmentKey,
+      reason: "resolved source differs",
+    });
     return;
   }
   try {
@@ -79,26 +82,19 @@ export async function writeReadUse(
       serverID = database.serverID;
     }
     if (serverID !== resolvedServerID) {
-      bridge.runSync(
-        Effect.logTrace("Read write-back skipped").pipe(
-          Effect.annotateLogs({
-            attachmentKey,
-            reason: "current database differs",
-          }),
-          withLogCategory("last-read"),
-        ),
-      );
+      log("trace", "Read write-back skipped", {
+        attachmentKey,
+        reason: "current database differs",
+      });
       return;
     }
     await bridge.runPromise(
       api.writeLastRead(attachmentKey, serverID, instant),
     );
   } catch (error) {
-    bridge.runSync(
-      Effect.logDebug("Could not write this read Use to Zotero").pipe(
-        Effect.annotateLogs({ attachmentKey, error }),
-        withLogCategory("last-read"),
-      ),
-    );
+    log("debug", "Could not write this read Use to Zotero", {
+      attachmentKey,
+      error,
+    });
   }
 }

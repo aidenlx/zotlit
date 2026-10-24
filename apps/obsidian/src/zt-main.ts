@@ -372,11 +372,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         writeAuthorization: {
           allowEditing: () => services.capabilityNotices.allowEditing(),
           forgetAuthorization: () =>
-            services.bridge.runPromise(
-              services.zoteroLocalApi.forgetAuthorization(),
-            ),
-          remembered: () =>
-            services.bridge.runPromise(services.zoteroLocalApi.remembered()),
+            services.zoteroLocalApi.forgetAuthorization(),
+          remembered: () => services.zoteroLocalApi.remembered(),
         },
         template: services.template,
         release: services.release,

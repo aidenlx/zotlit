@@ -6,6 +6,7 @@ import type {
   SettingDefinitionGroup,
 } from "obsidian";
 
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
 import {
@@ -73,7 +74,18 @@ function renderMigrationReminderButtons(
       // See the blur comment in templates.ts's renderJsTemplatesButton: the
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
-      void ctx.bridge.runPromise(ctx.release.acknowledgeMigration());
+      void ctx.bridge.runPromise(
+        ctx.release
+          .acknowledgeMigration()
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                "Cannot mark the migration reminder done",
+                cause,
+              ),
+            ),
+          ),
+      );
     }),
   );
 }
