@@ -328,7 +328,7 @@ const makeService = Effect.fnUntraced(function* (
     }),
   );
   const f = yield* libraryScopeFixture(client, {
-    __VERSION__: 10,
+    __VERSION__: 11,
     [LIBRARY_SCOPE_KEY]: options.broken
       ? "nonsense"
       : (options.scope ?? { mode: "all" }),

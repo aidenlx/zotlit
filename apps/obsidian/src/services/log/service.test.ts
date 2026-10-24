@@ -61,7 +61,7 @@ const logging = Effect.fnUntraced(function* (
     ),
   });
   const plugin = {
-    loadData: async () => ({ __VERSION__: 10, ...saved }),
+    loadData: async () => ({ __VERSION__: 11, ...saved }),
     saveData: async () => {},
   } as unknown as Plugin;
   const settings = yield* settingsOf({ plugin, ...settingsMigrations });

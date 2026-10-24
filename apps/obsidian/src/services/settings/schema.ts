@@ -131,22 +131,11 @@ export const schema = v.object({
    * trigger that overlaps a citation trigger opens nothing.
    */
   "citation.annotation-trigger": v.string(),
-  /**
-   * Treat Durable Annotation Links in notes: hover shows the Annotation and a
-   * click can open it in Obsidian's reader. Off leaves every one to Zotero.
-   */
-  "citation.annotation-links": v.boolean(),
-  /**
-   * Open a clicked Durable Annotation Link in Obsidian's reader, with the
-   * Annotation selected; off hands it to Zotero. Needs `citation.annotation-links`.
-   */
-  "citation.open-annotation-links": v.boolean(),
   "citation.show-citekey-in-suggester": v.boolean(),
   /** Include Pandoc citation syntax in the shared document citation set. */
   "citation.pandoc-citations": v.boolean(),
   /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
   "citation.wikilink-citations": v.boolean(),
-  "citation.annotation-citations": v.boolean(),
   /** Add Graph Citations — citation edges and Cited Work Nodes — to Obsidian's graph views. */
   "citation.graph-citations": v.boolean(),
   /** Show recognized Citations with the selected CSL style. */
@@ -213,6 +202,11 @@ export const schema = v.object({
    */
   "reader.open-file-links": v.boolean(),
   /**
+   * Open a clicked Durable Annotation Link in Obsidian's reader, with the
+   * Annotation selected; off hands it to Zotero.
+   */
+  "reader.open-annotation-links": v.boolean(),
+  /**
    * The colour each PDF reader annotation tool draws in. Sparse, so a tool
    * never recoloured follows Zotero's own default.
    */
@@ -276,12 +270,9 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.at-trigger": false,
   // A bracket like the Citation Suggester's `[@`, and `>` for a quote.
   "citation.annotation-trigger": "[>",
-  "citation.annotation-links": true,
-  "citation.open-annotation-links": true,
   "citation.show-citekey-in-suggester": false,
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
-  "citation.annotation-citations": true,
   "citation.graph-citations": true,
   "citation.show-formatted": true,
   "citation.open-as-links": false,
@@ -313,6 +304,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "attachment.import": true,
   "reader.focus-annot-view": true,
   "reader.open-file-links": true,
+  "reader.open-annotation-links": true,
   "reader.annotation-colors": {},
   "reader.recent-colors": [],
   "reader.ink-width": DEFAULT_INK_WIDTH,

@@ -20,7 +20,7 @@ import { layerLibraryScope, LibraryScope } from "./service";
 
 export const libraryScopeFixture = Effect.fnUntraced(function* (
   client: Effect.Effect<ZoteroReadsClient, never, Scope.Scope>,
-  saved: unknown = { __VERSION__: 10 },
+  saved: unknown = { __VERSION__: 11 },
 ) {
   const context = yield* Effect.context<never>();
   return yield* Effect.acquireRelease(
@@ -31,7 +31,7 @@ export const libraryScopeFixture = Effect.fnUntraced(function* (
 
 export async function openLibraryScope(
   client: Effect.Effect<ZoteroReadsClient, never, Scope.Scope>,
-  saved: unknown = { __VERSION__: 10 },
+  saved: unknown = { __VERSION__: 11 },
   context = Context.empty(),
 ) {
   await using stack = new AsyncDisposableStack();

@@ -57,6 +57,32 @@ describe("hover settings", () => {
   });
 });
 
+describe("citation source settings", () => {
+  it("offers only the citation syntaxes that remain enabled", () => {
+    const ctx = {
+      runtime: testRuntime(),
+      app: { internalPlugins: { getEnabledPluginById: () => null } },
+      settings: { current: defaults },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      manifest: { version: "test" },
+      template: { loaded: false },
+    } as unknown as SettingTabContext;
+    const sourceGroup = citationsPageItems(ctx).find(
+      (item) =>
+        "type" in item &&
+        item.type === "group" &&
+        item.heading === m.settings_citation_sources_heading(),
+    );
+    if (!sourceGroup || !("items" in sourceGroup) || !sourceGroup.items)
+      throw new Error("citation source group missing");
+
+    expect(sourceGroup.items).toMatchObject([
+      { id: "settings_citation_pandoc_citations" },
+      { id: "settings_citation_wikilink_citations" },
+    ]);
+  });
+});
+
 describe("referencesStyleOptions", () => {
   it("offers the embedded default ahead of the installed styles", () => {
     expect(referencesStyleOptions([APA, NATURE], STYLE_DEFAULT)).toEqual([

@@ -21,18 +21,18 @@
  *
  * ## Disk format
  *
- * - `data.json` is sparse: `{ __VERSION__: 10, ...overrides }`. Never persist
- *   `{ __VERSION__: 10, ...current }` — defaults-filled output defeats the
+ * - `data.json` is sparse: `{ __VERSION__: 11, ...overrides }`. Never persist
+ *   `{ __VERSION__: 11, ...current }` — defaults-filled output defeats the
  *   format and bloats user files.
  * - Default-equal override values are still explicit overrides and must
  *   persist; do not auto-delete a key because its value equals the default.
- * - V9 load is non-writing: non-schema keys are dropped in memory only and may
+ * - V11 load is non-writing: non-schema keys are dropped in memory only and may
  *   disappear on the next explicit save, while a known key whose value fails
  *   validation keeps its raw value on disk (see Broken overrides).
  * - V1 data migrates to v2 (`migrateV1`): every `note.frontmatter-fields` item
  *   gains a required `language`, stamped `"javascript"` except for the three
  *   byte-exact v1 default exprs, which become their Liquid equivalents.
- * - Legacy through v9→v10 migration writes are best-effort
+ * - Legacy through v10→v11 migration writes are best-effort
  *   cleanup; failures are logged but never tracked in `pendingWrite` and never
  *   block load.
  *
@@ -51,7 +51,7 @@
  *
  * ## Broken overrides
  *
- * A v10 override on a known key whose value fails per-key validation is a
+ * A v11 override on a known key whose value fails per-key validation is a
  * *broken override*. Its effective value is that key's default in every
  * snapshot (`current`, `loaded`, subscribers), while the raw value stays in
  * `broken` and is written back on every save, so an unrelated mutation cannot
@@ -107,7 +107,7 @@ import type { Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
 // Persisted version: packages/scripts/lib/format-versions.ts.
-const CURRENT_VERSION = 10;
+const CURRENT_VERSION = 11;
 
 type SettingsKey = keyof typeof schema.entries;
 
@@ -183,6 +183,10 @@ export interface PluginSettingsOptions {
    * Throwing or returning a non-plain value triggers the defaults fallback.
    */
   migrateV9: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV10: (raw: unknown) => unknown;
   /**
    * The object this plugin's instances share across a reload, such as the
    * `App`. An instance leaves its last write on it as it unloads, and the next
@@ -263,6 +267,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     migrateV7,
     migrateV8,
     migrateV9,
+    migrateV10,
   } = { ...settingsMigrations, ...options };
   const handoff = (options.handoff ?? plugin.app) as Handoff | undefined;
   const stopped = yield* Deferred.make<void>();
@@ -439,8 +444,12 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
         overrides = {};
         return;
       }
+      case "v11": {
+        yield* loadV11(classification.raw);
+        return;
+      }
       case "v10": {
-        yield* loadV10(classification.raw);
+        yield* loadV10Migration(classification.raw);
         return;
       }
       case "v9": {
@@ -501,24 +510,50 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   });
 
   /**
-   * Permissive v10 load: drop non-schema keys, hold bad per-key values as
+   * Permissive v11 load: drop non-schema keys, hold bad per-key values as
    * broken overrides, then full-schema check for cross-field constraints.
    * Whole-object failure → defaults fallback with no rewrite.
    */
-  const loadV10 = Effect.fn("PluginSettings.loadV10")(function* (
+  const loadV11 = Effect.fn("PluginSettings.loadV11")(function* (
     raw: Record<string, unknown>,
   ) {
-    const validated = yield* validateOverrides(raw, "v10 data");
+    const validated = yield* validateOverrides(raw, "v11 data");
     overrides = validated?.cleaned ?? {};
     broken = validated?.broken ?? new Map();
     if (broken.size > 0) {
       yield* Effect.logWarning(
-        `invalid values in v10 data (${[...broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
+        `invalid values in v11 data (${[...broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
       );
     }
   });
 
-  /** Run the v9→v10 compatibility migration and persist the cleaned result. */
+  /** Run the v10→v11 compatibility migration and persist the cleaned result. */
+  const loadV10Migration = Effect.fn("PluginSettings.loadV10Migration")(
+    function* (raw: Record<string, unknown>) {
+      const migrated = yield* runMigrationHook(
+        migrateV10,
+        raw,
+        "v10 migration",
+      );
+      if (migrated === null) {
+        overrides = {};
+        yield* writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+        return;
+      }
+
+      const validated = yield* validateOverrides(
+        migrated,
+        "v10 migration result",
+      );
+      overrides = validated?.cleaned ?? {};
+      yield* writeBestEffort({
+        [VERSION_KEY]: CURRENT_VERSION,
+        ...validated?.cleaned,
+      });
+    },
+  );
+
+  /** Run the v9→v10 compatibility migration and delegate to v10→v11. */
   const loadV9Migration = Effect.fn("PluginSettings.loadV9Migration")(
     function* (raw: Record<string, unknown>) {
       const migrated = yield* runMigrationHook(migrateV9, raw, "v9 migration");
@@ -528,15 +563,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
         return;
       }
 
-      const validated = yield* validateOverrides(
-        migrated,
-        "v9 migration result",
-      );
-      overrides = validated?.cleaned ?? {};
-      yield* writeBestEffort({
-        [VERSION_KEY]: CURRENT_VERSION,
-        ...validated?.cleaned,
-      });
+      yield* loadV10Migration(migrated);
     },
   );
 
@@ -625,7 +652,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   );
 
   /**
-   * v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration. Runs the v2 hook, then delegates to the v3
+   * v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 → v11 migration. Runs the v2 hook, then delegates to the v3
    * migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
@@ -643,7 +670,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   );
 
   /**
-   * v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration. Runs the v1 hook, then delegates to the
+   * v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 → v11 migration. Runs the v1 hook, then delegates to the
    * v2 migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
@@ -661,12 +688,12 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   );
 
   /**
-   * v0 → v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration chain. Runs the legacy hook first
+   * v0 → v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 → v11 migration chain. Runs the legacy hook first
    * (v0 had no frontmatter fields, so the v1→v2 stamp is a no-op there), then
    * delegates to {@link #loadV1Migration} so the rest of the chain — running
    * `migrateV1` and the permissive cleanup that follows — lives in one place.
    * The legacy hook's own failure branch (defaults + best-effort
-   * `{ [VERSION_KEY]: 10 }` write) stays here; persistence beyond that point is
+   * `{ [VERSION_KEY]: 11 }` write) stays here; persistence beyond that point is
    * `#loadV1Migration`'s.
    */
   const loadLegacy = Effect.fn("PluginSettings.loadLegacy")(function* (

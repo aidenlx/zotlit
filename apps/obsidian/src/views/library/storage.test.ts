@@ -88,7 +88,7 @@ async function openLibrary() {
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
   const plugin = new PluginStub(host.app as unknown as App, {
-    __VERSION__: 10,
+    __VERSION__: 11,
     "library.document": STORED_EARLIER,
   });
   const settings = cleanup.use(

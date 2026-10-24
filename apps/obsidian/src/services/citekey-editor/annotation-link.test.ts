@@ -109,8 +109,6 @@ vi.mock("obsidian", async (importOriginal) => {
 import { editorInfoField } from "obsidian";
 
 import type { AnnotationHoverRequest } from "@/services/annotation-popover/service";
-import { hoverPreferences } from "@/services/citekey-navigation";
-import { defaults } from "@/services/settings/schema";
 
 import {
   annotationLinkAtPos,
@@ -217,7 +215,7 @@ describe("annotationLinkAtPos", () => {
 // (`packages/e2e/src/annotation-links.e2e.ts`), which cannot move the pointer
 // within one link.
 describe("annotationLinkHoverExtension", () => {
-  it("hovers once while the pointer moves inside one link", () => {
+  it("shows the annotation without a citation hover setting", () => {
     const shown: AnnotationHoverRequest[] = [];
     // The link text classed the way Obsidian's Markdown highlighter classes it.
     const view = new EditorView({
@@ -230,8 +228,6 @@ describe("annotationLinkHoverExtension", () => {
             Decoration.set([Decoration.mark({ class: "cm-link" }).range(5, 9)]),
           ),
           annotationLinkHoverExtension({
-            hoverPreferences: () => hoverPreferences(defaults),
-            pagePreviewRequiresMod: () => true,
             showAnnotation: (request) => shown.push(request),
           }),
         ],
@@ -265,12 +261,6 @@ describe("annotationLinkHoverExtension", () => {
         extensions: [
           editorInfoField,
           annotationLinkHoverExtension({
-            hoverPreferences: () =>
-              hoverPreferences({
-                ...defaults,
-                "citation.hover-require-mod-source": false,
-              }),
-            pagePreviewRequiresMod: () => true,
             showAnnotation: (request) => shown.push(request),
           }),
           Prec.lowest(
@@ -312,12 +302,6 @@ describe("annotationLinkHoverExtension", () => {
         extensions: [
           editorInfoField,
           annotationLinkHoverExtension({
-            hoverPreferences: () =>
-              hoverPreferences({
-                ...defaults,
-                "citation.hover-require-mod-source": false,
-              }),
-            pagePreviewRequiresMod: () => true,
             showAnnotation: (request) => shown.push(request),
           }),
           Prec.lowest(

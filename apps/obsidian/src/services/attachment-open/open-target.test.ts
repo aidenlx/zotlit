@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { defaults } from "@/services/settings/schema";
+
 import { FILES, openerHarness } from "./__fixtures__";
 import type { OpenTarget } from "./open-target";
 
@@ -319,6 +321,20 @@ describe("follow", () => {
         pane: "tab",
       },
     ]);
+  });
+
+  it("leaves a Durable Annotation Link to Zotero when the Reader setting is off", async () => {
+    await using stack = new AsyncDisposableStack();
+    const { opener, opened, handed } = await openerHarness(stack, {
+      settings: {
+        ...defaults,
+        "reader.open-annotation-links": false,
+      },
+    });
+
+    expect(opener.follow(DURABLE, false)).toBeNull();
+    expect(opened).toEqual([]);
+    expect(handed).toEqual([]);
   });
 
   it("opens the Attachment a Durable Annotation Link names where another keeps the same file", async () => {

@@ -84,9 +84,8 @@ export interface TargetOpenerDeps {
   reader: TargetReader;
   native: NativeOpener;
   /**
-   * Read per followed link: `citation.annotation-links` and
-   * `citation.open-annotation-links` decide whether a Durable Annotation Link
-   * is ZotLit's to follow at all.
+   * Read per followed link: `reader.open-annotation-links` decides whether a
+   * Durable Annotation Link is ZotLit's to follow.
    */
   settings: Pick<PlainPluginSettings, "current">;
   /** The vault's own directory, for telling an in-vault file from one outside. */
@@ -219,10 +218,9 @@ export function createTargetOpener({
    * page number. It is carried only when it reads as one; the Annotation's own
    * page wins over it whenever the reader can place the Annotation.
    *
-   * The link is ZotLit's to follow only while the settings say so: with
-   * `citation.annotation-links` off ZotLit treats none of these links, and
-   * with `citation.open-annotation-links` off a click is Zotero's. Either way
-   * the link reaches Zotero as written, as it would without ZotLit.
+   * The link is ZotLit's to follow only while
+   * `reader.open-annotation-links` is on; otherwise the click is Zotero's and
+   * the link reaches Zotero as written.
    */
   const followDurable = (
     url: string,
@@ -231,10 +229,7 @@ export function createTargetOpener({
     const link = parseAnnotationOpenUri(url);
     if (link === null) return null;
     const current = settings.current ?? defaults;
-    if (
-      !current["citation.annotation-links"] ||
-      !current["citation.open-annotation-links"]
-    ) {
+    if (!current["reader.open-annotation-links"]) {
       logger.debug("Durable Annotation Link left to Zotero", {
         attachmentKey: link.attachmentKey,
         groupID: link.groupID,
