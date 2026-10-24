@@ -1,5 +1,7 @@
 // Where Effect Scopes meet code that lives outside Effect: a service's load,
 // a lease, a `Disposable` from Obsidian.
+import type { Component } from "obsidian";
+
 import { Cause, Effect, Exit, Scope } from "@/lib/effect";
 
 import { withLogCategory } from "./effect-log";
@@ -43,6 +45,22 @@ export function openScope(): {
         ),
       ),
   };
+}
+
+/**
+ * A Scope that closes when `component` unloads, for Effect work an edge (a
+ * view, a render child, a modal) holds while it stands. Its finalizers run
+ * once: on unload, or earlier when the caller closes the Scope itself. A
+ * failed finalizer is logged, and the rest still run.
+ */
+export function componentScope(
+  component: Pick<Component, "register">,
+): Effect.Effect<Scope.Closeable> {
+  return Effect.sync(() => {
+    const { scope, close } = openScope();
+    component.register(() => void close());
+    return scope;
+  });
 }
 
 /**
