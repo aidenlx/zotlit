@@ -21,6 +21,29 @@ export function changesUntil<A>(
 }
 
 /**
+ * Run `handle` for each element of `stream` on the current Scope: the Effect
+ * side of {@link subscribe}, for a layer consuming another service's Stream.
+ * Started immediately, so the consumer attaches before acquisition returns. A
+ * failing element is logged with its cause and later elements still arrive.
+ */
+export function forkEach<A, R, R2 = never>(
+  stream: Stream.Stream<A, never, R>,
+  handle: (value: A) => Effect.Effect<unknown, unknown, R2> | void,
+) {
+  return Stream.runForEach(stream, (value) =>
+    Effect.suspend(() => handle(value) ?? Effect.void).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.interrupt
+          : Effect.logError("Stream consumer failed", cause).pipe(
+              withLogCategory("effect-stream"),
+            ),
+      ),
+    ),
+  ).pipe(Effect.forkScoped({ startImmediately: true }));
+}
+
+/**
  * Call `callback` with each element of `stream`, run by `runtime`, until the
  * returned function stops the subscription. No element reaches `callback`
  * after that function returns. Attaches before returning; each throwing

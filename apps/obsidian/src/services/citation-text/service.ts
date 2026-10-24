@@ -23,7 +23,7 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable } from "@/lib/effect-scope";
-import { changesUntil, subscribe } from "@/lib/effect-stream";
+import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
@@ -693,8 +693,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
           openDocuments.subscribe(intake.callback("open")),
         );
         const initialSettlement = yield* queryService.current;
-        subscribe(
-          runner,
+        yield* forkEach(
           Stream.dropWhile(
             queryService.changes,
             (next) => next === initialSettlement,
@@ -710,15 +709,14 @@ export const layerCitationText = (open?: OpenDocuments) =>
             });
           },
         );
-        subscribe(runner, index.events, (event) => {
+        yield* forkEach(index.events, (event) => {
           if (event.type === "membership-changed") invalidate();
           else if (event.type === "changed") invalidate(event.path);
         });
         // A moved Literature Note or the first Full Scan can change the Item
         // a wikilink resolves to across every document.
         const initialNotes = yield* notes.current;
-        subscribe(
-          runner,
+        yield* forkEach(
           Stream.dropWhile(notes.changes, (next) => next === initialNotes),
           (event) => {
             if (event.type === "changed" || event.type === "indexed")
@@ -728,12 +726,12 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // A rebuilt lookup snapshot can change literal keys and the native
         // citation key carried by a wikilink's Literature Note.
         let revision = (yield* lookup.current).revision;
-        subscribe(runner, lookup.changes, (next) => {
+        yield* forkEach(lookup.changes, (next) => {
           if (revision === next.revision) return;
           revision = next.revision;
           invalidate();
         });
-        subscribe(runner, renders.events, (event) => {
+        yield* forkEach(renders.events, (event) => {
           if (event._tag === "invalidated") invalidate();
         });
         // Install every subscription before this fallible host read. A later
