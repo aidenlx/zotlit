@@ -21,6 +21,8 @@ import {
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
+import type { AvailableExcerpt } from "@/services/excerpt-image/service";
+import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import { plainQueryClients } from "@/services/query-client/plain";
 import { layerQueryClients } from "@/services/query-client/service";
 import {
@@ -44,6 +46,8 @@ import type {
 } from "@/services/zotero-local-api/__fixtures__";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { WireTag } from "@/services/zotero-local-api/wire";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {
   ZoteroReadLease,
@@ -257,12 +261,32 @@ export async function setup(
     prefEvents,
   } = await localApiClient(answers, clientOptions);
   stack.use(localApi);
+  const pref = Layer.succeed(
+    ZoteroPref,
+    stubService<ZoteroPref["Service"]>("ZoteroPref", {
+      current: Effect.succeed({
+        dataDir: "/Zotero",
+        baseAttachmentPath: null,
+      } as ZoteroPrefSnapshot),
+    }),
+  );
+  const excerptImages = persistedExcerpt
+    ? stubService<ExcerptImageService>("ExcerptImageService", {
+        stored: async ({ annotation, source }) => {
+          const fingerprint = await persistedExcerpt(annotation, source);
+          return fingerprint === null
+            ? null
+            : ({ identity: { fingerprint } } as AvailableExcerpt);
+        },
+      })
+    : undefined;
 
   const runtime = buildRuntime(
     Layer.mergeAll(
       Layer.succeed(ZoteroReads, readsService),
       layerQueryClients,
       Layer.succeed(ZoteroLocalApi, localApiService),
+      pref,
     ),
     stack,
   );
@@ -274,9 +298,9 @@ export async function setup(
   const repositoryContext = await runtime.runPromise(
     Layer.buildWithScope(
       layerAnnotationRepository({
+        excerptImages: () => excerptImages ?? null,
         now: repositoryNow ?? (() => NOW),
         writeToken,
-        persistedExcerpt,
       }).pipe(Layer.provide(Layer.succeedContext(dependencies))),
       repositoryScope,
     ),

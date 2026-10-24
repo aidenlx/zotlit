@@ -1,8 +1,8 @@
-import type { EffectBridge } from "@/lib/effect-bridge";
 // The one place the user is told why editing is blocked: the imperative shell
 // over `capability-notices.ts`, which decides what is said and how often.
 //
 // @see apps/obsidian/policies/ui-seams.md
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";

@@ -41,7 +41,6 @@ import { ExcerptDisplayService } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { savedExcerptRequest } from "./excerpt-image/request";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
@@ -117,27 +116,7 @@ export async function buildServices(
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
-        // A session's first read of an Attachment has no list that stood
-        // before it to compare against, so it is compared against the image
-        // this device persists for the Annotation instead — the display's own
-        // stored-outcome read, so an Annotation this device never cached has
-        // no baseline here exactly as it has no image to replace there.
-        persistedExcerpt: async (annotation, source) => {
-          if (!excerptImages) return null;
-          const zoteroPref = plainZoteroPref(runtime);
-          const zoteroReads = plainZoteroReads(runtime);
-          const request = await savedExcerptRequest({
-            annotation,
-            source,
-            sourceScope: zoteroPref.dataDir,
-            zoteroReads,
-            paths: zoteroPref,
-          });
-          if (!request) return null;
-          return (
-            (await excerptImages.stored(request))?.identity.fingerprint ?? null
-          );
-        },
+        excerptImages: () => excerptImages ?? null,
         excerptDisplay: () => excerptDisplays ?? null,
       },
     ),

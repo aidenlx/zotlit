@@ -10,50 +10,42 @@ type EventOf<Tag extends ZoteroReadsEvent["_tag"]> = Extract<
   { _tag: Tag }
 >;
 
+const byTag = <Tag extends ZoteroReadsEvent["_tag"]>(
+  source: EventsSource,
+  tag: Tag,
+) =>
+  source.events.pipe(
+    Stream.filter((event): event is EventOf<Tag> => event._tag === tag),
+  );
+
 export function refreshRequested(
   source: EventsSource,
 ): StreamType.Stream<void> {
-  return source.events.pipe(
-    Stream.filter((event) => event._tag === "refresh-requested"),
-    Stream.map(() => undefined),
-  );
+  return byTag(source, "refresh-requested").pipe(Stream.map(() => undefined));
 }
 
 export function changed(source: EventsSource): StreamType.Stream<void> {
-  return source.events.pipe(
-    Stream.filter((event) => event._tag === "changed"),
-    Stream.map(() => undefined),
-  );
+  return byTag(source, "changed").pipe(Stream.map(() => undefined));
 }
 
 export function degraded(
   source: EventsSource,
 ): StreamType.Stream<EventOf<"degraded">["error"]> {
-  return source.events.pipe(
-    Stream.filter((event) => event._tag === "degraded"),
-    Stream.map((event) => event.error),
-  );
+  return byTag(source, "degraded").pipe(Stream.map((event) => event.error));
 }
 
 export function refreshFailed(
   source: EventsSource,
 ): StreamType.Stream<EventOf<"refresh-failed">["error"]> {
-  return source.events.pipe(
-    Stream.filter((event) => event._tag === "refresh-failed"),
+  return byTag(source, "refresh-failed").pipe(
     Stream.map((event) => event.error),
   );
 }
 
 export function refreshing(source: EventsSource): StreamType.Stream<boolean> {
-  return source.events.pipe(
-    Stream.filter((event) => event._tag === "refreshing"),
-    Stream.map((event) => event.active),
-  );
+  return byTag(source, "refreshing").pipe(Stream.map((event) => event.active));
 }
 
 export function dbFileMissing(source: EventsSource): StreamType.Stream<void> {
-  return source.events.pipe(
-    Stream.filter((event) => event._tag === "db-file-missing"),
-    Stream.map(() => undefined),
-  );
+  return byTag(source, "db-file-missing").pipe(Stream.map(() => undefined));
 }

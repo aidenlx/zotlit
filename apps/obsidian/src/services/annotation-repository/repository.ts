@@ -63,7 +63,7 @@ import type {
 } from "./history";
 import { firstLockRefusal, lockOf } from "./lock";
 import type { AnnotationLock, LockedVerb, LockReason } from "./lock";
-import { readHeld, refreshDatabase, runPromise } from "./reads";
+import { readAll, readHeld, refreshDatabase } from "./reads";
 import {
   resolvesSilently,
   sameStoredGeometry,
@@ -517,7 +517,7 @@ export type AnnotationRepositoryEvent =
 export interface AnnotationRepositoryCoreDeps {
   bridge: Pick<
     EffectBridge,
-    "runSync" | "runPromiseExit" | "subscribe" | "closed"
+    "runSync" | "runPromise" | "runPromiseExit" | "subscribe" | "closed"
   >;
   db: Pick<ZoteroReads["Service"], "snapshot" | "events" | "refresh">;
   queryClient: Pick<
@@ -921,6 +921,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     this.#now = now;
     this.#writeToken = writeToken;
     this.#persistedExcerpt = persistedExcerpt;
+    this.#publish = publish;
     this.#stack.defer(
       this.#bridge.subscribe(changed(this.#db), () => {
         this.#dropDatabasePartition();
@@ -937,7 +938,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
               continue;
             this.#cancelTextSave(field, draft);
             drafts.set(id, { ...draft, manualSave: true });
-            publish({
+            this.#publish({
               _tag: "annotation-changed",
               annotationKey: draft.annotationKey,
             });
@@ -953,14 +954,13 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
             continue;
           this.#setDraft("tags", { ...draft, manualSave: true });
         }
-        publish({ _tag: "capability-changed" });
+        this.#publish({ _tag: "capability-changed" });
       }),
     );
     this.#stack.defer(() => this.#cancelAllTextSaves());
     this.#stack.defer(() => {
       this.#commandGeneration += 1;
     });
-    this.#publish = publish;
   }
 
   readonly #publish;
@@ -4059,13 +4059,10 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
     const attachmentKeys = [...batch.keys()];
     try {
       await using lease = await acquireReadLease(this.#db, this.#bridge);
-      const [entries, libraries, database] = await Promise.all([
-        runPromise(
-          this.#bridge,
-          lease.reads.AnnotationsOfAttachments({ attachmentKeys }),
-        ),
-        runPromise(this.#bridge, lease.reads.Libraries({})),
-        runPromise(this.#bridge, lease.reads.DatabaseIdentity({})),
+      const [entries, libraries, database] = await readAll(this.#bridge, [
+        lease.reads.AnnotationsOfAttachments({ attachmentKeys }),
+        lease.reads.Libraries({}),
+        lease.reads.DatabaseIdentity({}),
       ]);
       logger.debug("Annotations batch read from the Zotero database", {
         attachments: attachmentKeys.length,

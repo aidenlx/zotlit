@@ -1,12 +1,16 @@
 // The Effect service over the Annotation Repository core.
-import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
+import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
+import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { localApiPort } from "@/services/zotero-local-api/port";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { AnnotationRepositoryCore } from "./repository";
@@ -343,13 +347,13 @@ export class AnnotationRepository extends Context.Service<
 >()("zotlit/annotation-repository/AnnotationRepository") {}
 
 export function layerAnnotationRepository(options: {
-  readonly persistedExcerpt?: AnnotationRepositoryCoreDeps["persistedExcerpt"];
+  readonly excerptImages: () => Pick<ExcerptImageService, "stored"> | null;
   readonly now?: () => Temporal.Instant;
   readonly writeToken?: () => string;
 }): Layer.Layer<
   AnnotationRepository,
   never,
-  ZoteroReads | QueryClients | ZoteroLocalApi
+  ZoteroReads | QueryClients | ZoteroLocalApi | ZoteroPref
 > {
   return Layer.effect(
     AnnotationRepository,
@@ -357,9 +361,25 @@ export function layerAnnotationRepository(options: {
       const reads = yield* ZoteroReads;
       const queries = yield* QueryClients;
       const api = yield* ZoteroLocalApi;
+      const pref = yield* ZoteroPref;
+      const now = options.now ?? instantClock(yield* Clock.Clock);
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
+      const excerptRequest = savedExcerptRequestOver({ reads, pref, bridge });
+      // A session's first read of an Attachment has no list that stood
+      // before it to compare against, so it is compared against the image
+      // this device persists for the Annotation instead — the display's own
+      // stored-outcome read, so an Annotation this device never cached has
+      // no baseline here exactly as it has no image to replace there.
+      const persistedExcerpt: AnnotationRepositoryCoreDeps["persistedExcerpt"] =
+        async (annotation, source) => {
+          const images = options.excerptImages();
+          if (!images) return null;
+          const request = await excerptRequest({ annotation, source });
+          if (!request) return null;
+          return (await images.stored(request))?.identity.fingerprint ?? null;
+        };
       const core = yield* acquireAsyncDisposable(() =>
         Promise.resolve(
           new AnnotationRepositoryCore({
@@ -371,10 +391,19 @@ export function layerAnnotationRepository(options: {
               void PubSub.publishUnsafe(bus, event);
             },
             ...options,
+            now,
+            persistedExcerpt,
           }),
         ),
       );
       const events = Stream.fromPubSub(bus);
+      const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
+        events.pipe(
+          Stream.filter(
+            (event): event is Extract<AnnotationRepositoryEvent, { _tag: T }> =>
+              event._tag === tag,
+          ),
+        );
       return AnnotationRepository.of({
         read: (attachmentKey) => Effect.promise(() => core.read(attachmentKey)),
         hold: (attachmentKeys) => Effect.sync(() => core.hold(attachmentKeys)),
@@ -439,76 +468,32 @@ export function layerAnnotationRepository(options: {
           Effect.sync(() => core.canRedo(attachmentKey)),
         undo: (attachmentKey) => Effect.promise(() => core.undo(attachmentKey)),
         redo: (attachmentKey) => Effect.promise(() => core.redo(attachmentKey)),
-        annotationsChanged: events.pipe(
-          Stream.filter(
-            (
-              event,
-            ): event is Extract<
-              AnnotationRepositoryEvent,
-              { _tag: "annotations-changed" }
-            > => event._tag === "annotations-changed",
-          ),
+        annotationsChanged: byTag("annotations-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),
         ),
-        excerptPixelsChanged: events.pipe(
-          Stream.filter(
-            (
-              event,
-            ): event is Extract<
-              AnnotationRepositoryEvent,
-              { _tag: "excerpt-pixels-changed" }
-            > => event._tag === "excerpt-pixels-changed",
-          ),
+        excerptPixelsChanged: byTag("excerpt-pixels-changed").pipe(
           Stream.map(({ record, source }) => ({ record, source })),
         ),
-        capabilityChanges: events.pipe(
-          Stream.filter(
-            (
-              event,
-            ): event is Extract<
-              AnnotationRepositoryEvent,
-              { _tag: "capability-changed" }
-            > => event._tag === "capability-changed",
-          ),
+        capabilityChanges: byTag("capability-changed").pipe(
           Stream.as(undefined),
         ),
-        annotationChanged: events.pipe(
-          Stream.filter(
-            (
-              event,
-            ): event is Extract<
-              AnnotationRepositoryEvent,
-              { _tag: "annotation-changed" }
-            > => event._tag === "annotation-changed",
-          ),
+        annotationChanged: byTag("annotation-changed").pipe(
           Stream.map(({ annotationKey }) => annotationKey),
         ),
-        historyChanged: events.pipe(
-          Stream.filter(
-            (
-              event,
-            ): event is Extract<
-              AnnotationRepositoryEvent,
-              { _tag: "history-changed" }
-            > => event._tag === "history-changed",
-          ),
+        historyChanged: byTag("history-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),
         ),
-        writeConflicts: events.pipe(
-          Stream.filter(
-            (
-              event,
-            ): event is Extract<
-              AnnotationRepositoryEvent,
-              { _tag: "write-conflict" }
-            > => event._tag === "write-conflict",
-          ),
+        writeConflicts: byTag("write-conflict").pipe(
           Stream.map(({ annotationKey, attachmentKey }) => ({
             annotationKey,
             attachmentKey,
           })),
         ),
       });
-    }).pipe(Effect.orDie, withLogCategory("annotation-repository")),
+    }).pipe(
+      // Failed repository dependency wiring during core construction is a defect.
+      Effect.orDie,
+      withLogCategory("annotation-repository"),
+    ),
   );
 }

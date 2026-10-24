@@ -1,8 +1,7 @@
 // Effect exit handling for the repository's plain read seams.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 
-import { Cause, Exit } from "@/lib/effect";
-import type { Effect } from "@/lib/effect";
+import { Cause, Effect, Exit } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { QueryClients } from "@/services/query-client/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
@@ -25,15 +24,17 @@ export async function readHeld<T>(
   if (bridge.closed()) return null;
   const exit = await bridge.runPromiseExit(queries.read(key, read));
   if (Exit.isSuccess(exit)) return exit.value;
-  if (exit.cause.reasons.every(Cause.isInterruptReason)) return null;
+  if (Cause.hasInterruptsOnly(exit.cause)) return null;
   throw Cause.squash(exit.cause);
 }
 
-export async function runPromise<A, E>(
-  bridge: Pick<EffectBridge, "runPromiseExit">,
-  effect: Effect.Effect<A, E>,
-): Promise<A> {
-  const exit = await bridge.runPromiseExit(effect);
-  if (Exit.isSuccess(exit)) return exit.value;
-  throw Cause.squash(exit.cause);
+export function readAll<A, B, C, E>(
+  bridge: Pick<EffectBridge, "runPromise">,
+  effects: readonly [
+    Effect.Effect<A, E, never>,
+    Effect.Effect<B, E, never>,
+    Effect.Effect<C, E, never>,
+  ],
+): Promise<readonly [A, B, C]> {
+  return bridge.runPromise(Effect.all(effects, { concurrency: "unbounded" }));
 }

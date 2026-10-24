@@ -28,6 +28,7 @@ import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
 import { layerDatabaseActions } from "./database/actions";
 import type { ExcerptDisplayService } from "./excerpt-image/display";
+import type { ExcerptImageService } from "./excerpt-image/service";
 import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
@@ -89,9 +90,7 @@ export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: TemplateMigrationOptions,
   annotations: {
-    readonly persistedExcerpt?: Parameters<
-      typeof layerAnnotationRepository
-    >[0]["persistedExcerpt"];
+    readonly excerptImages: () => Pick<ExcerptImageService, "stored"> | null;
     readonly excerptDisplay: () => Pick<ExcerptDisplayService, "open"> | null;
   },
 ): Layer.Layer<
@@ -141,7 +140,7 @@ export function pluginLayer(
     ),
     Layer.provideMerge(
       layerAnnotationRepository({
-        persistedExcerpt: annotations.persistedExcerpt,
+        excerptImages: annotations.excerptImages,
       }).pipe(startingAs("AnnotationRepository")),
     ),
     Layer.provideMerge(
