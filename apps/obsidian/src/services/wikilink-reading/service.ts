@@ -1,10 +1,10 @@
-import { MarkdownView, setTooltip } from "obsidian";
-import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 // The Wikilink Reading Rendering service: it registers the Markdown
 // post-processor, answers which Literature Note a linkpath names, rewrites the
 // Citations it placed when their text changes, and asks the open reading views
 // to render again when something outside their documents changed which links
 // it touches.
+import { MarkdownView, setTooltip } from "obsidian";
+import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";

@@ -22,8 +22,8 @@ import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { plainCitationParse } from "@/services/citation-parse/plain";
-import type { CitationParse } from "@/services/citation-parse/service";
+import type { ParseClient } from "@/services/citation-parse/client";
+import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import { NoteIndex, resolveIndexedKey } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
@@ -34,7 +34,6 @@ import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
 import { CitationLookup } from "./lookup-service";
 import type { CitationLookupStatus } from "./lookup-service";
-import { plainCitationLookup } from "./plain";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
 
@@ -206,8 +205,9 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     const noteIndex = yield* NoteIndex;
     const settings = yield* PluginSettings;
     const lookup = yield* CitationLookup;
+    const parser = yield* CitationParse;
     const scope = yield* Scope.fork(yield* Scope.Scope);
-    const context = yield* Effect.context<CitationLookup | CitationParse>();
+    const context = yield* Effect.context<never>();
     const run = Effect.runSyncWith(context);
     const runPromise = Effect.runPromiseWith(context);
     const runner = {
@@ -242,12 +242,26 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         ),
       );
     };
-    const parseClient = plainCitationParse({ runSync: run });
-    const lookupAdapter = plainCitationLookup({
-      ...runner,
-      runSync: run,
-      runPromiseExit: Effect.runPromiseExitWith(context),
-    });
+    const runPromiseExit = Effect.runPromiseExitWith(context);
+    const parseClient: ParseClient = {
+      parse: (request, signal) => runPromise(parser.parse(request), { signal }),
+    };
+    const lookupReleased = () =>
+      new DOMException("Citation Lookup released", "AbortError");
+    const lookupAdapter = {
+      async read(
+        request: CitationLookupRequest,
+        options?: { signal?: AbortSignal },
+      ) {
+        if (scope.state._tag === "Closed") throw lookupReleased();
+        const exit = await runPromiseExit(lookup.read(request), options);
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (Cause.hasInterruptsOnly(exit.cause)) throw lookupReleased();
+        throw Cause.squash(exit.cause);
+      },
+      observe: (changed: () => void) => run(lookup.observe(changed)),
+      whenResolved: () => runPromise(lookup.whenResolved()),
+    };
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],
     ) =>

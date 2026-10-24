@@ -105,8 +105,9 @@ export const effectNativeResources: Rule = {
 };
 
 /**
- * New services are Effect services (`/obsidian-services`). A legacy service
- * keeps its class until it converts; oxlint.config.ts lists those files.
+ * New services are Effect services (policies/services.md → Conversion scope).
+ * A legacy service keeps its class until the change made for its conversion;
+ * oxlint.config.ts lists those files as the backlog.
  */
 export const noLegacyService: Rule = {
   meta: {
@@ -131,7 +132,11 @@ export const noLegacyService: Rule = {
 
 const TAG_ID = /^zotlit\/[a-z0-9-]+\/[A-Z][A-Za-z0-9]*$/;
 
-/** `Context.Service<…>()("id")`: the id names the module and the service. */
+/**
+ * `Context.Service<…>()("id")`: the id names the module and the service. Tag
+ * ids key the runtime's Context and show in spans and logs, so a reader can
+ * go from an id in a trace to the file that declares it.
+ */
 export const serviceTagId: Rule = {
   meta: {
     type: "problem",
@@ -226,7 +231,12 @@ function workerType(node: WorkerNode | undefined): boolean {
   );
 }
 
-/** Worker transports follow ZoteroReads; file exceptions live in oxlint.config.ts. */
+/**
+ * Worker transports follow ZoteroReads (docs/adr/0068): an effect/rpc group
+ * gives typed operations and errors, interrupts reach the worker, and the
+ * layer's Scope ends the worker. A raw `postMessage` protocol re-earns each of
+ * those by hand. File exceptions live in oxlint.config.ts.
+ */
 export const workerRpc: Rule = {
   meta: {
     type: "problem",
@@ -370,8 +380,8 @@ function keyName(node: EventNode): string | undefined {
 }
 
 /**
- * A plain adapter (`<service>/plain.ts`) hands out its service's Streams and
- * state. Plain code subscribes with `subscribe(runtime, stream, callback)`
+ * A plain adapter (`<service>/plain.ts`, policies/services.md → Plain adapter)
+ * hands out its service's Streams and state. Plain code subscribes with `subscribe(runtime, stream, callback)`
  * from `@/lib/effect-stream`. The helper attaches before returning, isolates
  * each callback's failures, and goes quiet after runtime disposal. An
  * adapter's own `on`/`subscribe` would each have to re-earn those guarantees.
@@ -412,7 +422,7 @@ export const plainAdapterStreams: Rule = {
 
 /**
  * Inside a layer, Obsidian events enter through `obsidianEvents` from
- * `@/lib/effect-obsidian-events`, which gives one ordered intake and a failure
+ * `@/lib/effect-obsidian-events` (policies/events.md → Obsidian events), which gives one ordered intake and a failure
  * boundary per event. A bare `registerEvent` gives neither. A function nested
  * in an Effect generator counts too, such as the acquire callback of
  * `acquireDisposable`.
@@ -456,7 +466,8 @@ const FUNCTION_TYPES = new Set([
 
 /**
  * A layer consumes another service's Stream with `forkEach` from
- * `@/lib/effect-stream`, which forks the consumer on the layer's Scope.
+ * `@/lib/effect-stream` (policies/events.md → Subscribing from plain code),
+ * which forks the consumer on the layer's Scope.
  * `subscribe(runtime, stream, callback)` is the plain-code bridge: inside a
  * layer it hands back an unsubscribe no Scope owns, and it needs a hand-built
  * runner. Only a call whose nearest function is the layer's Effect generator
