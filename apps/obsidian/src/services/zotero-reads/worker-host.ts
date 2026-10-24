@@ -10,7 +10,6 @@ import {
   Effect,
   Exit,
   Fiber,
-  FiberSet,
   Layer,
   Option,
   Ref,
@@ -96,7 +95,8 @@ type ForwardedRead = (payload: unknown, options?: unknown) => unknown;
  * scope's end terminates it, since the platform layer only sends the close
  * message. Its log records reach the plugin's logger under their own
  * categories. Its read snapshots carry an owner tag of this connection's own,
- * so the scope's end also removes the ones a crashed worker left behind.
+ * so the scope's end also starts removing the ones a crashed worker left
+ * behind.
  */
 export const connectWorker = Effect.fnUntraced(function* (
   source: string,
@@ -117,11 +117,9 @@ export const connectWorker = Effect.fnUntraced(function* (
   const snapshotOwner = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
   /** Every database path a worker of this connection was given. */
   const databasePaths = yield* Ref.make<ReadonlySet<string>>(new Set());
-  const reaps = yield* FiberSet.make();
   // Added first, so it runs last: once every worker here is terminated, no
-  // snapshot with this tag has a reader left. Detached, so neither a respawn
-  // nor unload waits on the file system; the sweep reports its own failures,
-  // and what it cannot remove the next launch reaps.
+  // snapshot with this tag has a reader left. The detached sweep neither
+  // holds a respawn nor unload open; the next launch reaps what it cannot.
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       const { databasePath } = yield* config;
@@ -130,13 +128,10 @@ export const connectWorker = Effect.fnUntraced(function* (
         next.add(databasePath);
         return next;
       });
-      yield* FiberSet.run(
-        reaps,
-        reapClones({
-          owner: snapshotOwner,
-          parents: [tmpdir(), ...Array.from(paths, readParentBeside)],
-        }).pipe(Effect.ignore),
-      );
+      yield* reapClones({
+        owner: snapshotOwner,
+        parents: [tmpdir(), ...Array.from(paths, readParentBeside)],
+      }).pipe(Effect.ignore, Effect.forkDetach);
     }),
   );
   // Added before the protocol, so it runs after the protocol's close message:
@@ -216,7 +211,13 @@ export const connectWorker = Effect.fnUntraced(function* (
             const { port1, port2 } = new MessageChannel();
             const nextScope = yield* Scope.fork(hostScope);
             yield* Scope.provide(
-              Layer.build(layerHostLogPort(port1)),
+              Layer.build(
+                layerHostLogPort(port1, {
+                  malformedMessage:
+                    "Ignored a malformed Zotero reads worker log record",
+                  category: ["zotero-reads"],
+                }),
+              ),
               nextScope,
             );
             const previous = yield* Ref.getAndSet(logScope, nextScope);

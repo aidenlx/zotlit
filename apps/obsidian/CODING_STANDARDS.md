@@ -49,7 +49,7 @@ Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
 
 `getLogger` from `@/lib/log` is the legacy LogTape logger, for files that have no Effect in them yet.
 
-`layerLogging` in `src/services/log/service.ts` owns LogTape's configuration; the dev-only `enableStartupLogging` is the one other caller. The ZoteroReads and citation-parse workers log through Effect: the worker posts each record over a port (`lib/effect-log-port.ts`) and the host re-emits it into the renderer's Effect logger at the plugin's log level.
+`layerLogging` in `src/services/log/service.ts` owns LogTape's configuration; the dev-only `enableStartupLogging` is the one other caller. The ZoteroReads worker logs through Effect and posts each record over a port (`lib/effect-log-port.ts`); the host re-emits it into the renderer's Effect logger at the plugin's log level. The citation-parse worker has no logger.
 
 ## View state and menus
 

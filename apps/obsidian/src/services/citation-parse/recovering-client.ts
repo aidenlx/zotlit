@@ -11,12 +11,9 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 
-import { ParseFailed } from "./client";
-import type { ParseClient, ParseRequest, ParseWorkerDied } from "./client";
+import { ParseFailed, ParseWorkerDied } from "./client";
+import type { ParseClient, ParseRequest } from "./client";
 import type { ParseConnection } from "./worker-host";
-
-// boundary: Deferred.await is the Effect wait primitive; the audit pattern includes its name.
-const awaitDeferred = Deferred.await;
 
 export interface RecoveringParseClient extends ParseClient {
   start(): Effect.Effect<void>;
@@ -60,42 +57,50 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
     ),
   );
 
-  const parse = Effect.fnUntraced(function* (request: ParseRequest) {
-    if (isScopeClosed(lifetimeScope)) {
-      return yield* Effect.fail(
-        new ParseFailed({ message: "Parse worker unavailable" }),
+  const parse = Effect.fnUntraced(
+    function* (request: ParseRequest) {
+      if (isScopeClosed(lifetimeScope)) {
+        return yield* Effect.fail(
+          new ParseFailed({ message: "Parse worker unavailable" }),
+        );
+      }
+      const live = yield* Deferred.await(yield* Ref.get(available)).pipe(
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () =>
+            Effect.fail(
+              new ParseFailed({ message: "Parse worker unavailable" }),
+            ),
+        }),
       );
-    }
-    const live = yield* awaitDeferred(yield* Ref.get(available)).pipe(
-      Effect.timeoutOrElse({
-        duration: "15 seconds",
-        orElse: () =>
-          Effect.fail(new ParseFailed({ message: "Parse worker unavailable" })),
-      }),
-    );
-    const attempt = live.connection.parse(request).pipe(
-      Effect.timeoutOrElse({
-        duration: "15 seconds",
-        orElse: () =>
-          Scope.close(live.scope, Exit.void).pipe(
-            Effect.andThen(awaitDeferred(live.replaced)),
-            Effect.andThen(
-              Effect.fail(
-                new ParseFailed({ message: "Citation parse timed out" }),
+      const attempt = live.connection.parse(request).pipe(
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () =>
+            Scope.close(live.scope, Exit.void).pipe(
+              Effect.andThen(Deferred.await(live.replaced)),
+              Effect.andThen(
+                Effect.fail(
+                  new ParseFailed({ message: "Citation parse timed out" }),
+                ),
               ),
             ),
-          ),
-      }),
-      Effect.catchTag("ParseWorkerDied", (error) =>
-        Effect.andThen(awaitDeferred(live.replaced), Effect.fail(error)),
-      ),
-    );
-    // The connection deadline belongs to its scope, not a caller that abandons the note.
-    const fiber = yield* attempt.pipe(
-      Effect.forkIn(lifetimeScope, { startImmediately: true }),
-    );
-    return yield* Fiber.join(fiber);
-  });
+        }),
+        Effect.catchTag("ParseWorkerDied", (error) =>
+          Effect.andThen(Deferred.await(live.replaced), Effect.fail(error)),
+        ),
+      );
+      // The connection deadline belongs to its scope, not a caller that abandons the note.
+      const fiber = yield* attempt.pipe(
+        Effect.forkIn(lifetimeScope, { startImmediately: true }),
+      );
+      return yield* Fiber.join(fiber);
+    },
+    Effect.retry({
+      times: 2,
+      while: (error) => error instanceof ParseWorkerDied,
+    }),
+  );
 
   return {
     start: Effect.fn("RecoveringParseClient.start")(function* () {
@@ -111,6 +116,14 @@ export const makeRecoveringParseClient = Effect.fnUntraced(function* (
         Effect.forkIn(lifetimeScope, { startImmediately: true }),
       );
     }),
-    parse,
+    parse: (request) =>
+      parse(request).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Citation parse abandoned").pipe(
+            Effect.annotateLogs({ path: request.path, error }),
+            withLogCategory("citation-parse"),
+          ),
+        ),
+      ),
   };
 });

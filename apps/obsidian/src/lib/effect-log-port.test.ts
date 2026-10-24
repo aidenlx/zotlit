@@ -1,8 +1,17 @@
+import { TestClock } from "effect/testing";
 import { describe, expect, vi } from "vitest";
 
 import { logLibrary } from "@zotlit/shared/logging";
 
-import { Cause, Effect, Layer, Logger, Ref, References } from "@/lib/effect";
+import {
+  Cause,
+  Effect,
+  Layer,
+  Logger,
+  Queue,
+  Ref,
+  References,
+} from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
 import { LogCategory, withLogCategory } from "./effect-log";
@@ -19,21 +28,24 @@ interface CapturedLog {
   readonly message: unknown;
   readonly category: readonly string[];
   readonly annotations: Readonly<Record<string, unknown>>;
+  readonly timestamp: number;
 }
 
-const captureLogger = (captured: CapturedLog[]) =>
-  Logger.make(({ logLevel, message, fiber }) => {
-    captured.push({
+const captureLogger = (captured: Queue.Queue<CapturedLog>) =>
+  Logger.make(({ logLevel, message, fiber, date }) => {
+    Queue.offerUnsafe(captured, {
       level: logLevel,
       message,
       category: fiber.getRef(LogCategory),
       annotations: fiber.getRef(References.CurrentLogAnnotations),
+      timestamp: date.getTime(),
     });
   });
 
-const yieldToConsumer = Effect.gen(function* () {
-  for (let turn = 0; turn < 20; turn++) yield* Effect.yieldNow;
-});
+const HOST_LOG_PORT = {
+  malformedMessage: "Ignored a malformed Zotero reads worker log record",
+  category: ["zotero-reads"],
+} as const;
 
 class FakePort implements LogMessagePort {
   peer: FakePort | undefined;
@@ -71,14 +83,14 @@ const logThrough = (
 describe("Effect log port", () => {
   it.effect("round-trips the level, category, annotations, and details", () =>
     Effect.gen(function* () {
-      const captured: CapturedLog[] = [];
+      const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
       const level = yield* Ref.make<PortLogLevel | null>("trace");
       const workerLayer = layerPortLogger(ports.worker, level);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* Layer.build(layerHostLogPort(ports.host));
+          yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
           yield* logThrough(
             workerLayer,
             "zotero-reads",
@@ -86,31 +98,28 @@ describe("Effect log port", () => {
               Effect.annotateLogs({ itemID: 7, library: "ABCD" }),
             ),
           );
-          yield* yieldToConsumer;
+          expect(yield* Queue.take(captured)).toEqual({
+            level: "Info",
+            message: ["Opened database", { mode: "copy" }],
+            category: ["zotero-reads"],
+            annotations: { itemID: 7, library: "ABCD" },
+            timestamp: expect.any(Number),
+          });
         }),
       ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
-
-      expect(captured).toEqual([
-        {
-          level: "Info",
-          message: ["Opened database", { mode: "copy" }],
-          category: ["zotero-reads"],
-          annotations: { itemID: 7, library: "ABCD" },
-        },
-      ]);
     }),
   );
 
   it.effect("honours the level on each record and a later level change", () =>
     Effect.gen(function* () {
-      const captured: CapturedLog[] = [];
+      const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
       const level = yield* Ref.make<PortLogLevel | null>("info");
       const workerLayer = layerPortLogger(ports.worker, level);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* Layer.build(layerHostLogPort(ports.host));
+          yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
           yield* logThrough(
             workerLayer,
             "zotero-reads",
@@ -133,26 +142,27 @@ describe("Effect log port", () => {
             "zotero-reads",
             Effect.logError("disabled"),
           );
-          yield* yieldToConsumer;
+          const first = yield* Queue.take(captured);
+          const second = yield* Queue.take(captured);
+          expect([first.message, second.message]).toEqual([
+            ["shown"],
+            ["shown after configure"],
+          ]);
         }),
       ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
-
-      expect(captured.map(({ message }) => message)).toEqual([
-        ["shown"],
-        ["shown after configure"],
-      ]);
     }),
   );
 
   it.effect("re-emits library logs through the worker Effect logger", () =>
     Effect.gen(function* () {
-      const captured: CapturedLog[] = [];
+      const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
       const level = yield* Ref.make<PortLogLevel | null>("trace");
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* Layer.build(layerHostLogPort(ports.host));
+          yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
+          yield* TestClock.adjust("123 millis");
           yield* Effect.sync(() =>
             logLibrary({
               level: "debug",
@@ -161,21 +171,19 @@ describe("Effect log port", () => {
               properties: { plan: "candidates" },
             }),
           );
-          yield* yieldToConsumer;
+          const emitted = yield* Queue.take(captured);
+          expect(emitted).toEqual({
+            level: "Debug",
+            message: ["Candidate plan selected"],
+            category: ["zotlit", "item-query"],
+            annotations: { plan: "candidates" },
+            timestamp: 123,
+          });
         }).pipe(
           Effect.provide(layerPortLogger(ports.worker, level)),
           Effect.provide(layerLibraryLogPort),
         ),
       ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
-
-      expect(captured).toEqual([
-        {
-          level: "Debug",
-          message: ["Candidate plan selected"],
-          category: ["zotlit", "item-query"],
-          annotations: { plan: "candidates" },
-        },
-      ]);
     }),
   );
 
@@ -183,14 +191,14 @@ describe("Effect log port", () => {
     "replaces an uncloneable annotation instead of failing to post",
     () =>
       Effect.gen(function* () {
-        const captured: CapturedLog[] = [];
+        const captured = yield* Queue.unbounded<CapturedLog>();
         const ports = channel();
         const level = yield* Ref.make<PortLogLevel | null>("trace");
         const workerLayer = layerPortLogger(ports.worker, level);
 
         yield* Effect.scoped(
           Effect.gen(function* () {
-            yield* Layer.build(layerHostLogPort(ports.host));
+            yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
             yield* logThrough(
               workerLayer,
               "zotero-reads",
@@ -201,63 +209,56 @@ describe("Effect log port", () => {
                 }),
               ),
             );
-            yield* yieldToConsumer;
+            expect((yield* Queue.take(captured)).annotations).toEqual({
+              safe: "value",
+              rejected: "Symbol(annotation)",
+            });
           }),
         ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
-
-        expect(captured[0]?.annotations).toEqual({
-          safe: "value",
-          rejected: "Symbol(annotation)",
-        });
       }),
   );
 
   it.effect("reports a failed post once for each failure kind", () =>
     Effect.gen(function* () {
-      const error = new TypeError("port closed");
+      const errors = [
+        new TypeError("port closed"),
+        new RangeError("port detached"),
+      ] as const;
+      let attempt = 0;
       const postMessage = vi.fn(() => {
-        throw error;
+        throw errors[attempt++];
       });
       const consoleError = vi
         .spyOn(console, "error")
         .mockImplementation(() => undefined);
       const level = yield* Ref.make<PortLogLevel | null>("trace");
       const workerLogger = makePortLogger({ postMessage }, level);
-      const options = {
-        message: ["failed"],
-        logLevel: "Error" as const,
-        cause: Cause.empty,
-        fiber: {
-          getRef: (reference: unknown) =>
-            reference === LogCategory
-              ? ["zotero-reads"]
-              : reference === References.CurrentLogAnnotations
-                ? {}
-                : [],
-        },
-        // oxlint-disable-next-line no-restricted-globals -- Effect supplies Date in Logger.Options.
-        date: new Date(0),
-      };
 
-      workerLogger.log(options as never);
-      workerLogger.log(options as never);
+      yield* Effect.gen(function* () {
+        yield* Effect.logError("first failed post");
+        yield* Effect.logError("second failed post");
+      }).pipe(Effect.provide(Logger.layer([workerLogger])));
 
       expect(postMessage).toHaveBeenCalledTimes(2);
-      expect(consoleError).toHaveBeenCalledOnce();
+      expect(consoleError).toHaveBeenCalledTimes(2);
+      expect(consoleError.mock.calls.map(([, kind]) => kind)).toEqual([
+        "TypeError: port closed",
+        "RangeError: port detached",
+      ]);
       consoleError.mockRestore();
     }),
   );
 
   it.effect("emits the squashed cause under the error annotation", () =>
     Effect.gen(function* () {
-      const captured: CapturedLog[] = [];
+      const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
       const level = yield* Ref.make<PortLogLevel | null>("trace");
       const workerLogger = makePortLogger(ports.worker, level);
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* Layer.build(layerHostLogPort(ports.host));
+          yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
           workerLogger.log({
             message: ["Citation lookup failed"],
             logLevel: "Error",
@@ -273,40 +274,45 @@ describe("Effect log port", () => {
             // oxlint-disable-next-line no-restricted-globals -- Effect supplies Date in Logger.Options.
             date: new Date(0),
           } as never);
-          yield* yieldToConsumer;
+          expect(yield* Queue.take(captured)).toMatchObject({
+            level: "Error",
+            message: ["Citation lookup failed"],
+            category: ["citation-index"],
+            annotations: {
+              itemID: 9,
+              error: {
+                name: "TypeError",
+                message: "bad lookup",
+              },
+            },
+          });
         }),
       ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
-
-      expect(captured[0]).toMatchObject({
-        level: "Error",
-        message: ["Citation lookup failed"],
-        category: ["citation-index"],
-        annotations: {
-          itemID: 9,
-          error: {
-            name: "TypeError",
-            message: "bad lookup",
-          },
-        },
-      });
     }),
   );
 
   it.effect("closes the host port and ends its consumer with the Scope", () =>
     Effect.gen(function* () {
-      const captured: CapturedLog[] = [];
+      const captured = yield* Queue.unbounded<CapturedLog>();
       const ports = channel();
+      const level = yield* Ref.make<PortLogLevel | null>("trace");
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* Layer.build(layerHostLogPort(ports.host));
+          yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
           expect(ports.host.onmessage).not.toBeNull();
+          yield* Effect.logInfo("before close").pipe(
+            Effect.provide(layerPortLogger(ports.worker, level)),
+          );
+          expect(yield* Queue.take(captured)).toMatchObject({
+            message: ["before close"],
+          });
         }),
       ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
 
       expect(ports.host.onmessage).toBeNull();
       expect(ports.host.closed).toBe(true);
-      expect(captured).toEqual([]);
+      expect(Queue.sizeUnsafe(captured)).toBe(0);
     }),
   );
 });

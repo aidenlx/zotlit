@@ -680,7 +680,7 @@ describe("classifyStream", () => {
     }),
   );
 
-  it.effect("fails a pre-aborted classification before any read", () =>
+  it.effect("interrupts a pre-aborted classification before any read", () =>
     Effect.gen(function* () {
       const abort = new AbortController();
       abort.abort();
@@ -695,6 +695,9 @@ describe("classifyStream", () => {
       );
 
       expect(Exit.isFailure(exit)).toBe(true);
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+        true,
+      );
       expect(read).not.toHaveBeenCalled();
       expect(processSlice).not.toHaveBeenCalled();
     }),

@@ -21,6 +21,9 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run"
   },
+  "dependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",

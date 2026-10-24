@@ -164,9 +164,6 @@ function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
   return Effect.tryPromise({ try: run, catch: (error) => error });
 }
 
-// boundary: Deferred.await is the Effect wait primitive; the audit pattern matches its name.
-const waitFor = Deferred.await;
-
 export function buildSqliteUri(
   dbPath: string,
   options: SqliteUriOptions,
@@ -230,7 +227,7 @@ const makePendingRead = Effect.fnUntraced(function* () {
       else yield* Deferred.succeed(deferred, acquired.read);
     });
   return {
-    result: waitFor(deferred),
+    result: Deferred.await(deferred),
     complete,
     fail: (error: unknown) =>
       Effect.gen(function* () {

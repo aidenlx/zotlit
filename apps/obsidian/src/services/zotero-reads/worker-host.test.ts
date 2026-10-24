@@ -880,9 +880,15 @@ describe("connectWorker read snapshot cleanup", () => {
     () =>
       Effect.gen(function* () {
         let terminatedAtReap: boolean | undefined;
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const completed = yield* Deferred.make<void>();
         const reap = vi.fn(() =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             terminatedAtReap = StandInWorker.spawned[0]!.terminated;
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(release);
+            yield* Deferred.succeed(completed, undefined);
           }),
         );
         let databasePath = join("zotero", "zotero.sqlite");
@@ -898,6 +904,7 @@ describe("connectWorker read snapshot cleanup", () => {
           yield* connection.died;
           expect(reap).not.toHaveBeenCalled();
           yield* Scope.close(scope, Exit.void);
+          yield* Deferred.await(started);
           return owner;
         });
 
@@ -911,6 +918,13 @@ describe("connectWorker read snapshot cleanup", () => {
             join("moved", ZOTERO_DB_READ_PARENT_DIRNAME),
           ],
         });
+        expect(Deferred.isDoneUnsafe(completed)).toBe(false);
+        const settling = yield* Effect.forkChild(
+          Deferred.await(completed).pipe(Effect.timeoutOption("1 second")),
+        );
+        yield* Deferred.succeed(release, undefined);
+        yield* TestClock.adjust("1 second");
+        expect(Option.isSome(yield* Fiber.join(settling))).toBe(true);
       }),
   );
 

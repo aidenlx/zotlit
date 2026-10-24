@@ -1,8 +1,9 @@
 import { setLibraryLogSink } from "@zotlit/shared/logging";
-import type { LibraryLogRecord } from "@zotlit/shared/logging";
+import type { LibraryLogLevel, LibraryLogRecord } from "@zotlit/shared/logging";
 
 import {
   Cause,
+  Clock,
   Effect,
   Layer,
   Logger,
@@ -57,6 +58,17 @@ const LEVELS: Readonly<Record<PortLogLevel, LogLevel.LogLevel>> = {
   debug: "Debug",
   info: "Info",
   warning: "Warn",
+  error: "Error",
+  fatal: "Fatal",
+};
+
+const LIBRARY_LEVELS: Readonly<
+  Record<LibraryLogLevel, LogPortRecord["level"]>
+> = {
+  trace: "Trace",
+  debug: "Debug",
+  info: "Info",
+  warn: "Warn",
   error: "Error",
   fatal: "Fatal",
 };
@@ -211,28 +223,19 @@ export const layerLibraryLogPort: Layer.Layer<never> = Layer.effectDiscard(
       () => Effect.sync(() => setLibraryLogSink(undefined)),
     );
     yield* Stream.fromQueue(records).pipe(
-      Stream.runForEach((record) => {
-        return emitLogPortRecord({
-          level:
-            record.level === "warn"
-              ? "Warn"
-              : record.level === "trace"
-                ? "Trace"
-                : record.level === "debug"
-                  ? "Debug"
-                  : record.level === "info"
-                    ? "Info"
-                    : record.level === "error"
-                      ? "Error"
-                      : "Fatal",
-          category: record.category,
-          message: record.message,
-          details: [],
-          annotations: record.properties,
-          error: null,
-          timestamp: Temporal.Now.instant().epochMilliseconds,
-        });
-      }),
+      Stream.runForEach((record) =>
+        Effect.gen(function* () {
+          yield* emitLogPortRecord({
+            level: LIBRARY_LEVELS[record.level],
+            category: record.category,
+            message: record.message,
+            details: [],
+            annotations: record.properties,
+            error: null,
+            timestamp: yield* Clock.currentTimeMillis,
+          });
+        }),
+      ),
       Effect.forkScoped,
     );
   }),
@@ -258,7 +261,16 @@ const emitLogPortRecord = (record: LogPortRecord) => {
  * The DOM callback is the only boundary. It queues the record, and a scoped
  * fiber re-emits it through the current renderer Effect logger.
  */
-export const layerHostLogPort = (port: LogMessagePort): Layer.Layer<never> =>
+export const layerHostLogPort = (
+  port: LogMessagePort,
+  {
+    malformedMessage,
+    category,
+  }: {
+    readonly malformedMessage: string;
+    readonly category: readonly [string, ...string[]];
+  },
+): Layer.Layer<never> =>
   Layer.effectDiscard(
     Effect.gen(function* () {
       const records = yield* Queue.unbounded<LogPortRecord, Cause.Done>();
@@ -281,9 +293,9 @@ export const layerHostLogPort = (port: LogMessagePort): Layer.Layer<never> =>
           const record = Schema.decodeUnknownOption(LogPortRecordSchema)(data);
           return Option.match(record, {
             onNone: () =>
-              Effect.logWarning(
-                "Ignored a malformed Zotero reads worker log record",
-              ).pipe(withLogCategory("zotero-reads")),
+              Effect.logWarning(malformedMessage).pipe(
+                withLogCategory(...category),
+              ),
             onSome: emitLogPortRecord,
           });
         }),

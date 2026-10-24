@@ -8,13 +8,12 @@ import {
   SCENARIO_LIBRARIES,
 } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
-import { setLibraryLogSink } from "@zotlit/shared/logging";
-import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryDataset } from ".";
 import { ItemQueryError } from "./error";
 import { runEffect } from "./test-helpers";
+import type { CapturedLog } from "./test-helpers";
 
 let scenario: ScenarioDatabase;
 beforeAll(() => {
@@ -22,12 +21,10 @@ beforeAll(() => {
 });
 afterAll(() => scenario.close());
 
-const logs: LibraryLogRecord[] = [];
+const logs: CapturedLog[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
-beforeAll(() => setLibraryLogSink((record) => logs.push(record)));
-afterAll(() => setLibraryLogSink(undefined));
 
 async function run(
   dataset: QueryDataset<any>,
@@ -41,7 +38,7 @@ async function run(
       ...request,
     }),
     // A cap of the whole Library: a key selection plans a candidate set.
-    { client: scenario.db, tuning: { capRatio: 1 } },
+    { client: scenario.db, tuning: { capRatio: 1 }, logs },
   );
   return exit;
 }

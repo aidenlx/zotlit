@@ -680,15 +680,7 @@ async function recoveringClient(connect: () => PromiseParseConnection) {
   return {
     client: {
       parse: (request: ParseRequest) =>
-        Effect.provideContext(
-          client.parse(request).pipe(
-            Effect.retry({
-              times: 2,
-              while: (error) => error instanceof ParseWorkerDied,
-            }),
-          ),
-          context,
-        ),
+        Effect.provideContext(client.parse(request), context),
     },
     advance: (millis: number) =>
       Effect.runPromiseWith(context)(TestClock.adjust(millis)),

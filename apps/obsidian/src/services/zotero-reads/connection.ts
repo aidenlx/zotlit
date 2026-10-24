@@ -1,8 +1,8 @@
+// The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
 import { getZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { checkDatabaseLayout } from "@zotlit/db/item-query";
 
-// The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
 import { Context, Duration, Effect, Layer, RcRef, Ref } from "@/lib/effect";
 import type { Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
@@ -85,29 +85,23 @@ export function makeDatabaseGenerations() {
     clientGenerations.set(client, generation);
     clientFiles.set(client, file);
   });
-  const databaseGenerationEffect = Effect.fnUntraced(function* (
-    client: NodeDatabaseClient,
-  ): Effect.fn.Return<number, DbUnavailable> {
-    const generation = clientGenerations.get(client);
-    if (generation === undefined)
-      return yield* Effect.fail(
-        new DbUnavailable({
-          message: "The client was not opened by this connection",
-        }),
-      );
-    return generation;
-  });
   return {
     /**
      * Record the database a validated client reads: the file it opened from
      * and the Zotero identity inside it.
      *
-     * @throws The identity read's error, after the client closes.
+     * @returns Fails with the identity read's error after the client closes.
      * @see {@link validateClient}, which closes a client the same way.
      */
     record,
-    databaseGeneration: (client: NodeDatabaseClient): number =>
-      Effect.runSync(databaseGenerationEffect(client)),
+    databaseGeneration: (client: NodeDatabaseClient): number => {
+      const generation = clientGenerations.get(client);
+      if (generation === undefined)
+        throw new DbUnavailable({
+          message: "The client was not opened by this connection",
+        });
+      return generation;
+    },
     databaseFile: (client: NodeDatabaseClient): string | null =>
       clientFiles.get(client) ?? null,
   };
@@ -139,9 +133,8 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
  * Prove a client reads as a Zotero database before it serves: its layout has
  * every table and column the readers need, so a copy that validates is a copy
  * Item Query reads. The layout read stays with the client, so the readers and
- * `reportSchemaVersions` run no statement for it again. A client that fails is
- * closed before the throw; a layout the readers cannot read throws
- * `ItemQueryLayoutError`.
+ * `reportSchemaVersions` run no statement for it again. On failure, the Effect
+ * closes the client before it fails with the layout error.
  */
 export const validateClient = Effect.fnUntraced(function* (
   client: NodeDatabaseClient,

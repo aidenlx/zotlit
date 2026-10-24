@@ -1,31 +1,35 @@
 import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, vi } from "vitest";
 
-import { Effect, Fiber } from "@/lib/effect";
+import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
 import { verifySnapshot } from "./snapshot-integrity";
 
 class FakeWorker {
   static last: FakeWorker;
+  static ready = Deferred.makeUnsafe<void>();
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror:
     | ((event: { message: string; preventDefault(): void }) => void)
     | null = null;
   onmessageerror: (() => void) | null = null;
   terminate = vi.fn();
-  postMessage = vi.fn();
+  postMessage = vi.fn(() => {
+    Deferred.doneUnsafe(FakeWorker.ready, Exit.void);
+  });
   constructor() {
     FakeWorker.last = this;
   }
 }
 
 function start() {
+  FakeWorker.ready = Deferred.makeUnsafe<void>();
   vi.stubGlobal("Worker", FakeWorker);
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:owned-test");
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   const result = verifySnapshot("/owned/snapshot.sqlite");
-  return { result, revoke };
+  return { ready: FakeWorker.ready, result, revoke };
 }
 
 afterEach(() => {
@@ -39,11 +43,11 @@ describe("snapshot integrity worker lifecycle", () => {
     () =>
       Effect.scoped(
         Effect.gen(function* () {
-          const { result, revoke } = start();
+          const { ready, result, revoke } = start();
           const fiber = yield* Effect.forkScoped(result, {
             startImmediately: true,
           });
-          yield* Effect.yieldNow;
+          yield* Deferred.await(ready);
           const worker = FakeWorker.last;
           expect(worker.postMessage).toHaveBeenCalledWith(
             "/owned/snapshot.sqlite",
@@ -61,11 +65,11 @@ describe("snapshot integrity worker lifecycle", () => {
       () =>
         Effect.scoped(
           Effect.gen(function* () {
-            const { result, revoke } = start();
+            const { ready, result, revoke } = start();
             const fiber = yield* Effect.forkScoped(result, {
               startImmediately: true,
             });
-            yield* Effect.yieldNow;
+            yield* Deferred.await(ready);
             const worker = FakeWorker.last;
             worker.onmessage!({ data });
             const error = yield* Fiber.join(fiber).pipe(Effect.flip);
@@ -81,11 +85,11 @@ describe("snapshot integrity worker lifecycle", () => {
   it.effect("propagates startup/query errors and releases resources", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const { result, revoke } = start();
+        const { ready, result, revoke } = start();
         const fiber = yield* Effect.forkScoped(result, {
           startImmediately: true,
         });
-        yield* Effect.yieldNow;
+        yield* Deferred.await(ready);
         const worker = FakeWorker.last;
         worker.onerror!({
           message: "SQLite unavailable",
@@ -101,11 +105,11 @@ describe("snapshot integrity worker lifecycle", () => {
   it.effect("rejects a reply decoding failure and releases resources", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const { result, revoke } = start();
+        const { ready, result, revoke } = start();
         const fiber = yield* Effect.forkScoped(result, {
           startImmediately: true,
         });
-        yield* Effect.yieldNow;
+        yield* Deferred.await(ready);
         const worker = FakeWorker.last;
         worker.onmessageerror!();
         const error = yield* Fiber.join(fiber).pipe(Effect.flip);
@@ -120,11 +124,11 @@ describe("snapshot integrity worker lifecycle", () => {
   it.effect("terminates a validator that never replies", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const { result, revoke } = start();
+        const { ready, result, revoke } = start();
         const fiber = yield* Effect.forkScoped(result, {
           startImmediately: true,
         });
-        yield* Effect.yieldNow;
+        yield* Deferred.await(ready);
         const worker = FakeWorker.last;
         yield* TestClock.adjust("60 seconds");
         const error = yield* Fiber.join(fiber).pipe(Effect.flip);

@@ -1,23 +1,17 @@
 import { Effect, Exit } from "effect";
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-
-import { setLibraryLogSink } from "@zotlit/shared/logging";
-import type { LibraryLogRecord } from "@zotlit/shared/logging";
+import { beforeEach, expect, it } from "vitest";
 
 import { runCandidatePass } from "./candidate-pass";
 import type { CandidateDataset } from "./dataset";
 import { planFilter } from "./filter-plan";
 import { runEffect } from "./test-helpers";
+import type { CapturedLog } from "./test-helpers";
 import { PRODUCTION_TUNING } from "./tuning";
 
-const logs: LibraryLogRecord[] = [];
+const logs: CapturedLog[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
-beforeAll(() => {
-  setLibraryLogSink((record) => logs.push(record));
-});
-afterAll(() => setLibraryLogSink(undefined));
 
 function fake(
   count: number,
@@ -76,10 +70,11 @@ it.each(["items", "attachments", "annotations"] as const)(
         },
         tuning: PRODUCTION_TUNING,
       }),
+      { logs },
     );
     expect(run.exit).toEqual(Exit.succeed(new Set([1, 2, 3])));
     expect(reads).toEqual([1]);
-    expect(logs[0]?.rawMessage).toBe(
+    expect(logs[0]?.message).toBe(
       "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
     );
     expect(logs[0]?.properties).toEqual({
@@ -119,6 +114,7 @@ async function choose(
       },
       tuning: { ...PRODUCTION_TUNING, forceScan, relationPageBudget },
     }),
+    { logs },
   );
   if (run.exit._tag === "Failure") throw new Error(String(run.exit.cause));
   return run.exit.value;
@@ -216,9 +212,8 @@ it.each([
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({
       category: ["zotlit", "item-query"],
-      level: "debug",
-      rawMessage:
-        "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
+      level: "Debug",
+      message: "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
       properties: {
         libraryID: 1,
         groupID: null,
@@ -495,6 +490,7 @@ it.each([false, true])(
         },
         tuning: PRODUCTION_TUNING,
       }),
+      { logs },
     );
     // An exhausted budget scans; otherwise the children are the candidates.
     if (!Exit.isSuccess(run.exit)) throw new Error(String(run.exit.cause));

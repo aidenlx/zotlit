@@ -2,7 +2,7 @@
 import { Context, Effect } from "effect";
 import type { Layer } from "effect";
 
-import { logLibrary } from "@zotlit/shared/logging";
+import { withLogCategory } from "@zotlit/shared/logging";
 
 import {
   layerSegmenterJieba,
@@ -43,12 +43,13 @@ const log = (
   message: string,
   properties?: Readonly<Record<string, unknown>>,
 ) =>
-  logLibrary({
-    level,
-    category: ["zotlit", "item-lookup", "segmenter"],
-    message,
-    properties,
-  });
+  (level === "warn"
+    ? Effect.logWarning(message)
+    : Effect.logInfo(message)
+  ).pipe(
+    Effect.annotateLogs(properties ?? {}),
+    withLogCategory("zotlit", "item-lookup", "segmenter"),
+  );
 
 type SegmenterService = (typeof Segmenter)["Service"];
 
@@ -89,9 +90,9 @@ export function makeSegmenterSwitch(
     reader.read(binary).pipe(
       Effect.flatMap((bytes) => segmenterOf(layerSegmenterJieba(bytes))),
       Effect.tap(() =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (loaded && !sameSegmenterBinary(loaded, binary)) {
-            log(
+            yield* log(
               "warn",
               "The Chinese Segmenter keeps its first binary until the realm restarts",
               { loaded: loaded.name, requested: binary.name },
@@ -99,17 +100,17 @@ export function makeSegmenterSwitch(
           }
           loaded ??= binary;
           jieba = true;
-          log("info", "The Chinese Segmenter cuts CJK text", {
+          yield* log("info", "The Chinese Segmenter cuts CJK text", {
             binary: binary.name,
           });
         }),
       ),
       Effect.catchTag("SegmenterUnavailable", (error) =>
         Effect.andThen(
-          Effect.sync(() => {
+          Effect.gen(function* () {
             // The next `resolve` with the same binary tries it again.
             requested = null;
-            log(
+            yield* log(
               "warn",
               "The Chinese Segmenter did not start; CJK text uses Intl.Segmenter",
               { binary: binary.name, error: error.message },
@@ -127,11 +128,13 @@ export function makeSegmenterSwitch(
       if (sameSegmenterBinary(next, requested)) return Effect.undefined;
       requested = next;
       if (next) return install(next);
-      log(
-        "info",
-        "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
+      return Effect.andThen(
+        log(
+          "info",
+          "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
+        ),
+        toNone,
       );
-      return toNone;
     });
 
   return { resolve };

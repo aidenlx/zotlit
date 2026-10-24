@@ -6,9 +6,6 @@ import { decodeParseReply, ParseFailed, ParseWorkerDied } from "./client";
 import type { ParseRequest, ParseReply } from "./client";
 import { makeParseWorkerClient } from "./worker-client";
 
-// boundary: Deferred.await is the Effect wait primitive; the audit pattern includes its name.
-const awaitDeferred = Deferred.await;
-
 class EarlyMessageWorker extends EventTarget {
   readonly #worker: Worker;
   readonly #earlyMessages: unknown[] = [];
@@ -103,10 +100,10 @@ export const connectParseWorker = Effect.fnUntraced(function* (
     Effect.mapError((error) => new ParseWorkerDied({ message: String(error) })),
   );
   return {
-    died: awaitDeferred(death),
+    died: Deferred.await(death),
     parse: (request) =>
       Effect.raceFirst(
-        awaitDeferred(death).pipe(Effect.flatMap(Effect.fail)),
+        Deferred.await(death).pipe(Effect.flatMap(Effect.fail)),
         client.Parse(request).pipe(
           Effect.mapError(
             (error) => new ParseFailed({ message: String(error) }),
@@ -121,7 +118,7 @@ export const connectParseWorker = Effect.fnUntraced(function* (
             Effect.flatMap(Deferred.isDone(death), (stopped) =>
               stopped
                 ? Effect.flatMap(
-                    awaitDeferred(death),
+                    Deferred.await(death),
                     (
                       error,
                     ): Effect.Effect<never, ParseWorkerDied | ParseFailed> =>

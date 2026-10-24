@@ -1,5 +1,5 @@
-import { AbortError } from "@/lib/abort-error";
 // Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
+import { AbortError } from "@/lib/abort-error";
 import { Cause, Effect, Exit, Ref, Stream } from "@/lib/effect";
 import { formatErrorMessage } from "@/lib/toast";
 import type {
@@ -64,8 +64,8 @@ export function classifyStream<A, E>(
   processSlice: (slice: readonly A[]) => void,
 ): Effect.Effect<void, E> {
   return Effect.gen(function* () {
-    // A run started on an already-aborted signal completes, so check first.
-    yield* Effect.sync(() => controls.signal.throwIfAborted());
+    // Check before requesting so an already-aborted run starts no read.
+    if (controls.signal.aborted) return yield* Effect.interrupt;
     function* requests() {
       for (let start = 0; start < itemIDs.length; start += 500) {
         yield itemIDs.slice(start, start + 500);

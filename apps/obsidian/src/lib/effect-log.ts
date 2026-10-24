@@ -1,6 +1,5 @@
+// The renderer's Effect-to-LogTape logging bridge.
 import { getLogger as getLogTapeLogger } from "@logtape/logtape";
-// Effect is the plugin's logging API; its records reach the LogTape sinks
-// `layerLogging` configures.
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Logger from "effect/Logger";

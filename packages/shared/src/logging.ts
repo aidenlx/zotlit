@@ -1,3 +1,19 @@
+// The library log sink and the shared Effect log category for library packages.
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+
+/** The category a worker record carries through the plugin's log bridge. */
+export const LogCategory = Context.Reference<readonly string[]>(
+  "zotlit/effect-log/LogCategory",
+  { defaultValue: () => [] },
+);
+
+/** File the logs of an Effect under `category`. */
+export const withLogCategory =
+  (...category: [string, ...string[]]) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.provideService(self, LogCategory, category);
+
 /** A log level understood by the plugin's LogTape and Effect bridges. */
 export type LibraryLogLevel =
   | "trace"
@@ -14,8 +30,6 @@ export interface LibraryLogRecord {
   readonly category: readonly [string, ...string[]];
   readonly message: string;
   readonly properties: Readonly<Record<string, unknown>>;
-  /** The original message before placeholder substitution. */
-  readonly rawMessage: string;
 }
 
 export type LibraryLogSink = (record: LibraryLogRecord) => void;
@@ -46,7 +60,6 @@ export const logLibrary = ({
     level,
     category,
     message,
-    rawMessage: message,
     properties: properties ?? {},
   });
 };

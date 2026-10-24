@@ -92,9 +92,6 @@ const logWarningCause = (
     withLogCategory("zotero-reads"),
   );
 
-// boundary: Deferred.await is the Effect wait primitive; the audit pattern matches its name.
-const waitFor = Deferred.await;
-
 /** A watcher the source can close; the part of `fs.FSWatcher` it uses. */
 interface Watcher {
   close(): void;
@@ -858,11 +855,11 @@ export function layerSource(options?: SourceOptions): Layer.Layer<Connection> {
       return Connection.of({
         // A read before the first open waits for it, as callers once waited on
         // the service's `ready`.
-        borrow: Effect.andThen(waitFor(firstSettled), clients.borrow),
+        borrow: Effect.andThen(Deferred.await(firstSettled), clients.borrow),
         changes,
         // Fails when the lane's last refresh failed, also when the previous
         // client keeps serving; `Changes` tells the two apart.
-        refresh: Effect.flatMap(enqueueRefresh(), waitFor),
+        refresh: Effect.flatMap(enqueueRefresh(), Deferred.await),
         notifyExternalChange: Effect.gen(function* () {
           yield* logDebug("External change signalled, scheduling refresh");
           yield* scheduleWatchedRefresh({ trusted: true });

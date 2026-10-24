@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it } from "vitest";
 
 import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 import {
@@ -10,20 +10,22 @@ import {
   seedBulkAttachments,
   seedBulkLibrary,
 } from "@zotlit/db/test-scenario";
-import { setLibraryLogSink } from "@zotlit/shared/logging";
-import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery } from ".";
 import type { RunEvent } from "./test-helpers";
 import { runEffect } from "./test-helpers";
+import type { CapturedLog } from "./test-helpers";
 import { PRODUCTION_TUNING } from "./tuning";
 
-const logs: LibraryLogRecord[] = [];
+const logs: CapturedLog[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
-beforeAll(() => setLibraryLogSink((record) => logs.push(record)));
-afterAll(() => setLibraryLogSink(undefined));
+
+const runQuery = (
+  query: Parameters<typeof runEffect>[0],
+  options: Parameters<typeof runEffect>[1] = {},
+) => runEffect(query, { ...options, logs });
 
 /** The properties of each plan record the candidate pass logged. */
 const planRecords = () =>
@@ -64,12 +66,12 @@ it.each([
       fields: [],
       sort: [],
     });
-    const actual = await runEffect(query, {
+    const actual = await runQuery(query, {
       client: scenario.db,
       tuning: { capRatio: 1 },
     });
     expect(planRecords()).toMatchObject([{ plan: "candidates", reason: null }]);
-    const scan = await runEffect(query, {
+    const scan = await runQuery(query, {
       client: scenario.db,
       tuning: { forceScan: true },
     });
@@ -110,11 +112,11 @@ it.each([
         filter,
         fields: [],
       });
-      const actual = await runEffect(query, {
+      const actual = await runQuery(query, {
         client: scenario.db,
         tuning: { capRatio: 1 },
       });
-      const scan = await runEffect(query, {
+      const scan = await runQuery(query, {
         client: scenario.db,
         tuning: { forceScan: true },
       });
@@ -136,8 +138,8 @@ it("reads 100,000 tagged parents with no Attachments in one candidate statement"
     filter: 'item.tags.contains("bulk")',
     fields: [],
   });
-  const actual = await runEffect(query, { client: scenario.db });
-  const scan = await runEffect(query, {
+  const actual = await runQuery(query, { client: scenario.db });
+  const scan = await runQuery(query, {
     client: scenario.db,
     tuning: { forceScan: true },
   });
@@ -170,8 +172,8 @@ it("reads a Collection of 100,000 parents with 100 Annotations outside it in one
     filter: 'item.collections.within("Mass")',
     fields: [],
   });
-  const actual = await runEffect(query, { client: scenario.db });
-  const scan = await runEffect(query, {
+  const actual = await runQuery(query, { client: scenario.db });
+  const scan = await runQuery(query, {
     client: scenario.db,
     tuning: { forceScan: true },
   });
@@ -206,11 +208,11 @@ it.each([1, 1_001])(
           filter,
           fields: [],
         });
-        const actual = await runEffect(query, {
+        const actual = await runQuery(query, {
           client: scenario.db,
           tuning: { capRatio: 1 },
         });
-        const scan = await runEffect(query, {
+        const scan = await runQuery(query, {
           client: scenario.db,
           tuning: { forceScan: true },
         });
@@ -242,14 +244,14 @@ it.each([ATTACHMENTS, ANNOTATIONS])(
       fields: [],
       sort: [],
     });
-    const actual = await runEffect(query, {
+    const actual = await runQuery(query, {
       client: scenario.db,
       tuning: { capRatio: 1 },
     });
     expect(planRecords()).toMatchObject([
       { plan: "scan", reason: "parent-page-budget-exhausted" },
     ]);
-    const scan = await runEffect(query, {
+    const scan = await runQuery(query, {
       client: scenario.db,
       tuning: { forceScan: true },
     });
@@ -295,9 +297,9 @@ it("keeps other-Library children outside the Parent Record budget", async () => 
   scenario.sqlite.exec(
     "update items set libraryID = 1 where itemID in (select itemID from itemAttachments where parentItemID is null) and libraryID = 3",
   );
-  const actual = await runEffect(query, { client: scenario.db });
+  const actual = await runQuery(query, { client: scenario.db });
   expect(planRecords()).toMatchObject([{ plan: "candidates", reason: null }]);
-  const scan = await runEffect(query, {
+  const scan = await runQuery(query, {
     client: scenario.db,
     tuning: { forceScan: true },
   });
