@@ -11,7 +11,7 @@ import {
 import type { HttpMethod } from "effect/http";
 
 import { AbortError } from "@/lib/abort-error";
-import { Context, Effect, Exit, Layer, Option } from "@/lib/effect";
+import { Cause, Context, Effect, Exit, Layer, Option } from "@/lib/effect";
 
 /**
  * Zotero refuses requests it reads as browser traffic: a `Mozilla/` user agent,
@@ -145,7 +145,9 @@ export async function exchangeWithZotero(
   );
   if (Exit.isSuccess(exit)) return exit.value;
   if (signal?.aborted) throw new AbortError();
-  const error = Option.getOrUndefined(Exit.findErrorOption(exit));
+  const error = Option.getOrElse(Exit.findErrorOption(exit), () =>
+    Cause.squash(exit.cause),
+  );
   const reason = HttpClientError.isHttpClientError(error)
     ? error.reason
     : error;
