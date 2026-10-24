@@ -1,14 +1,40 @@
-// The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
+import type { App } from "obsidian";
 
+import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import type { OpenDocuments } from "@/lib/open-documents";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { CitationLookupState } from "@/services/citation-index/lookup-service";
+import type {
+  PlainCitationIndex,
+  PlainCitationLookup,
+} from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
+import { CitationIndex } from "@/services/citation-index/service";
+import type { CitationIndexEvent } from "@/services/citation-index/service";
 import type {
   Citation,
   CitationOccurrence,
 } from "@/services/citation-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import { NoteIndex } from "@/services/note-index/service";
+import type { NoteIndexChange } from "@/services/note-index/service";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
+import { BibliographyRender } from "@/services/pandoc/render-cache";
+import type { BibliographyRenderEvent } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
+import { Profile } from "@/services/profile/service";
+import type { ProfileReader } from "@/services/profile/service";
+// The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import { QueryClients } from "@/services/query-client/service";
+import type { HeldReadChange } from "@/services/query-client/service";
 
+import { plainCitationText } from "./plain";
 import type { FormattedOccurrence, PresentedCitation } from "./present";
+import { layerCitationText } from "./service";
 
 /** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
 export const ALPHA_KEY = "ALPHA234";
@@ -105,3 +131,158 @@ export function firstText(
 ): string | undefined {
   return occurrenceTexts(held)[0];
 }
+
+/** The real CitationText layer over already-owned consumer fixture dependencies. */
+export interface CitationTextFixtureDeps {
+  app: App;
+  citationIndex: Pick<PlainCitationIndex, "getParsedDocument" | "on">;
+  citationLookup: Pick<PlainCitationLookup, "on">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "on">;
+  profile: ProfileReader;
+  bibliographyRender: Pick<
+    PlainBibliographyRender,
+    "readCitations" | "readBibliography" | "vaultPresentation" | "on"
+  >;
+  queryClient: Pick<
+    PlainQueryClients,
+    "client" | "ask" | "read" | "peek" | "invalidate" | "watch"
+  >;
+  openDocuments: OpenDocuments;
+}
+
+export function citationTextFixture(
+  deps: CitationTextFixtureDeps,
+  context: Context.Context<never> = Context.empty(),
+) {
+  const stack = new AsyncDisposableStack();
+  const callbacks = <A>(
+    register: (emit: (event: A) => void) => (() => void)[],
+  ) => {
+    const bus = Effect.runSync(PubSub.unbounded<A>());
+    for (const off of register((value) => PubSub.publishUnsafe(bus, value)))
+      stack.defer(off);
+    stack.defer(() => Effect.runSync(PubSub.shutdown(bus)));
+    return Stream.fromPubSub(bus);
+  };
+  let revision = 0;
+  const initialLookup = { revision: "0" } as CitationLookupState;
+  const initialNote = { type: "initial" } as const;
+  const queries = deps.queryClient;
+  const runtime = buildRuntime(
+    layerCitationText(deps.openDocuments).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(ObsidianApp, deps.app),
+          Layer.succeed(CitationIndex, {
+            getParsedDocument: (file, signal) =>
+              Effect.tryPromise({
+                try: () => deps.citationIndex.getParsedDocument(file, signal),
+                catch: (error) => error,
+              }),
+            events: callbacks<CitationIndexEvent>((emit) => [
+              deps.citationIndex.on("changed", (path) =>
+                emit({ type: "changed", path }),
+              ),
+              deps.citationIndex.on("membership-changed", () =>
+                emit({ type: "membership-changed" }),
+              ),
+            ]),
+          } as CitationIndex["Service"]),
+          Layer.succeed(CitationLookup, {
+            current: Effect.succeed(initialLookup),
+            changes: callbacks<CitationLookupState>((emit) => [
+              deps.citationLookup.on("changed", () =>
+                emit({ ...initialLookup, revision: String(++revision) }),
+              ),
+            ]),
+          } as CitationLookup["Service"]),
+          Layer.succeed(NoteIndex, {
+            current: Effect.succeed(initialNote),
+            whenIndexed: () =>
+              Effect.promise(() => deps.noteIndex.whenIndexed()),
+            changes: callbacks<NoteIndexChange>((emit) => [
+              deps.noteIndex.on("changed", (file) =>
+                emit({ type: "changed", file }),
+              ),
+              deps.noteIndex.on("indexed", () => emit({ type: "indexed" })),
+            ]),
+          } as NoteIndex["Service"]),
+          Layer.succeed(Profile, {
+            loaded: Effect.sync(() => deps.profile.loaded),
+            profiles: Effect.sync(() => deps.profile.profiles),
+            resolveProfile: (
+              ...args: Parameters<ProfileReader["resolveProfile"]>
+            ) => Effect.sync(() => deps.profile.resolveProfile(...args)),
+            profileOf: (...args: Parameters<ProfileReader["profileOf"]>) =>
+              Effect.sync(() => deps.profile.profileOf(...args)),
+          } as unknown as Profile["Service"]),
+          Layer.succeed(BibliographyRender, {
+            state: Effect.sync(() => ({
+              vaultPresentation: deps.bibliographyRender.vaultPresentation,
+              missingStyle: null,
+            })),
+            readCitations: (...args) =>
+              Effect.tryPromise({
+                try: () => deps.bibliographyRender.readCitations(...args),
+                catch: (error) => error,
+              }),
+            readBibliography: (...args) =>
+              Effect.tryPromise({
+                try: () => deps.bibliographyRender.readBibliography(...args),
+                catch: (error) => error,
+              }),
+            events: callbacks<BibliographyRenderEvent>((emit) => [
+              deps.bibliographyRender.on("invalidated", () =>
+                emit({ _tag: "invalidated" }),
+              ),
+            ]),
+          } as BibliographyRender["Service"]),
+          Layer.succeed(QueryClients, {
+            client: queries.client,
+            current: Effect.succeed(null),
+            changes: callbacks<HeldReadChange>((emit) => {
+              let changed = false;
+              return [
+                queries.watch([], {
+                  changed: () => {
+                    changed = true;
+                  },
+                  settled: (key, held) => {
+                    emit({ key, held, changed });
+                    changed = false;
+                  },
+                }),
+              ];
+            }),
+            ask: (key, fn) =>
+              Effect.tryPromise({
+                try: () => queries.ask(key, fn),
+                catch: (error) => error,
+              }),
+            read: (key, fn, signal) =>
+              Effect.tryPromise({
+                try: () => queries.read(key, fn, signal),
+                catch: (error) => error,
+              }),
+            peek: (key) => Effect.sync(() => queries.peek(key)),
+            invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
+            watch: (prefix, on) => Effect.sync(() => queries.watch(prefix, on)),
+          } as QueryClients["Service"]),
+        ),
+      ),
+      Layer.provideMerge(Layer.succeedContext(context)),
+    ),
+    stack,
+  );
+  try {
+    return Object.assign(plainCitationText(runtime), {
+      runtime,
+      [Symbol.asyncDispose]: () => stack.disposeAsync(),
+    });
+  } catch (error) {
+    void stack.disposeAsync();
+    throw error;
+  }
+}
+
+export type CitationTextFixture = ReturnType<typeof citationTextFixture>;

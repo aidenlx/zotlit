@@ -6,6 +6,7 @@ import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
@@ -15,7 +16,7 @@ import type {
   CitationLookupObservation,
 } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
-import type { CitationText } from "@/services/citation-text/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
@@ -30,11 +31,12 @@ import {
 const logger = getLogger("wikilink-editor");
 
 export interface WikilinkEditorDeps {
+  runtime: Parameters<typeof subscribe<unknown, never>>[0];
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension">;
   noteIndex: Pick<PlainNoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "peek" | "on">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
@@ -66,6 +68,7 @@ export class WikilinkEditor extends Service<void> {
   readonly #plugin;
   readonly #noteIndex;
   readonly #citationText;
+  readonly #runtime;
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
@@ -86,6 +89,7 @@ export class WikilinkEditor extends Service<void> {
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#citationText = deps.citationText;
+    this.#runtime = deps.runtime;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
@@ -128,8 +132,16 @@ export class WikilinkEditor extends Service<void> {
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
     // lands or goes stale — until then they keep native presentation.
-    stack.defer(this.#citationText.on("changed", (path) => this.#redraw(path)));
-    stack.defer(this.#citationText.on("invalidated", () => this.#redraw()));
+    stack.defer(
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#redraw(path),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#redraw(),
+      ),
+    );
 
     this.commit(stack.move());
   }

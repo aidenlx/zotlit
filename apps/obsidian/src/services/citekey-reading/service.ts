@@ -10,6 +10,7 @@ import type {
   Plugin,
 } from "obsidian";
 
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
@@ -27,6 +28,7 @@ import type {
   CitationLookupObservation,
 } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   citationContent,
   citationElement,
@@ -43,7 +45,6 @@ import type {
   CitationKeyState,
   PresentedCitation,
 } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   attachCitationHover,
@@ -102,10 +103,11 @@ function shownEqual(
 }
 
 export interface CitekeyReadingDeps {
+  runtime: Parameters<typeof subscribe<unknown, never>>[0];
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "on" | "peek">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** What a literal citekey names, which is what tells missing from Ambiguous. */
   citationLookup: {
     observe(changed: () => void): CitationLookupObservation;
@@ -147,6 +149,7 @@ export class CitekeyReading extends Service<void> {
   readonly #app;
   readonly #plugin;
   readonly #citationText;
+  readonly #runtime;
   readonly #citationLookup;
   readonly #citekeyEditor;
   readonly #citationPopover;
@@ -167,6 +170,7 @@ export class CitekeyReading extends Service<void> {
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
+    this.#runtime = deps.runtime;
     this.#citationLookup = deps.citationLookup;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
@@ -190,10 +194,14 @@ export class CitekeyReading extends Service<void> {
     // rewrites when all text goes stale — which a citekey resolution snapshot
     // rebuild counts as.
     stack.defer(
-      this.#citationText.on("invalidated", () => this.#sections.refresh()),
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#sections.refresh(),
+      ),
     );
     stack.defer(
-      this.#citationText.on("changed", (path) => this.#sections.refresh(path)),
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#sections.refresh(path),
+      ),
     );
     // A rendered citation carries this service's own click and hover handlers,
     // so the reading views render again without it once it is gone. The flag

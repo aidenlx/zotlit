@@ -103,7 +103,10 @@ interface IndexCallbacks {
 export type PlainCitationIndex = ReturnType<typeof plainCitationIndex>;
 
 export function plainCitationIndex(
-  runtime: ManagedRuntime.ManagedRuntime<CitationIndex, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<CitationIndex, never>,
+    "runSync" | "runPromiseExit" | "runFork" | "scope"
+  >,
 ) {
   const service = runtime.runSync(CitationIndex);
   const context = runtime.runSync(Effect.context<never>());

@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor, MarkdownRenderChild } from "obsidian";
+import {
+  beforeEach as beforeStreamTest,
+  afterEach as afterStreamTest,
+} from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
+import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -21,6 +27,14 @@ import type { Settings } from "@/services/settings/schema";
 
 import { internalLink, section } from "./__fixtures__/internal-link";
 import { WikilinkReading } from "./service";
+
+let streamStack: AsyncDisposableStack;
+let streamRuntime: ReturnType<typeof buildRuntime<never>>;
+beforeStreamTest(() => {
+  streamStack = new AsyncDisposableStack();
+  streamRuntime = buildRuntime(Layer.empty, streamStack);
+});
+afterStreamTest(() => streamStack.disposeAsync());
 
 /** The one Literature Note the metadata-cache stand-in knows. */
 const WANG = "literatures/wangMutationalClinicalSpectrum2020a";
@@ -116,6 +130,7 @@ async function harness({
     containerEl,
   });
   const service = new WikilinkReading({
+    runtime: streamRuntime,
     app: {
       workspace: {
         getLeavesOfType: () => [{ view }],
@@ -780,17 +795,14 @@ interface HeldText {
 }
 
 class CitationTextStub {
+  readonly #changedBus = Effect.runSync(PubSub.unbounded<string>());
+  readonly #invalidatedBus = Effect.runSync(PubSub.unbounded<void>());
+  readonly changed = Stream.fromPubSub(this.#changedBus);
+  readonly invalidated = Stream.fromPubSub(this.#invalidatedBus);
   #citekeys: Record<string, string>;
   #formatted: Record<string, string>;
   #pending: boolean;
   readonly #presentationFailure: ProfilePresentationFailure | undefined;
-  readonly #listeners: Record<
-    "changed" | "invalidated",
-    Set<(path?: string) => void>
-  > = {
-    changed: new Set(),
-    invalidated: new Set(),
-  };
 
   constructor(
     formatted: Record<string, string>,
@@ -846,16 +858,9 @@ class CitationTextStub {
     };
   }
 
-  on(
-    event: "changed" | "invalidated",
-    cb: (path?: string) => void,
-  ): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
   emit(event: "changed" | "invalidated" = "invalidated", path?: string): void {
-    for (const cb of this.#listeners[event]) cb(path);
+    if (event === "changed") PubSub.publishUnsafe(this.#changedBus, path!);
+    else PubSub.publishUnsafe(this.#invalidatedBus, undefined);
   }
 }
 

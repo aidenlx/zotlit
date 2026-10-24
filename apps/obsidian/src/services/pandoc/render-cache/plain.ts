@@ -108,7 +108,10 @@ export interface PlainBibliographyRender {
 }
 
 export function plainBibliographyRender(
-  runtime: ManagedRuntime.ManagedRuntime<BibliographyRender, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<BibliographyRender, never>,
+    "runSync" | "runPromiseExit" | "runFork" | "scope"
+  >,
 ): PlainBibliographyRender {
   const service = runtime.runSync(BibliographyRender);
   const context = runtime.runSync(Effect.context<never>());

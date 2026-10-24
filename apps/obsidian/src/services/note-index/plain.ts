@@ -31,7 +31,10 @@ export interface PlainNoteIndex {
 }
 
 export function plainNoteIndex(
-  runtime: ManagedRuntime.ManagedRuntime<NoteIndex, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<NoteIndex, never>,
+    "runSync" | "runPromiseExit" | "runFork" | "scope"
+  >,
 ): PlainNoteIndex {
   const index = runtime.runSync(NoteIndex.use(Effect.succeed));
   // The legacy service retained its maps after release. Keep the runtime's

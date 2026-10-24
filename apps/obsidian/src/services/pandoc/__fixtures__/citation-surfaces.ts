@@ -37,7 +37,7 @@ import {
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { CitationPopover } from "@/services/citation-popover/service";
 import { firstText } from "@/services/citation-text/__fixtures__";
-import { CitationText } from "@/services/citation-text/service";
+import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -348,7 +348,7 @@ export async function openCitationVault({
   );
 
   const citationText = stack.use(
-    new CitationText({
+    citationTextFixture({
       openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
@@ -359,11 +359,11 @@ export async function openCitationVault({
       queryClient: harness.queryClient,
     }),
   );
-  await citationText.ready;
 
   const view = new TestReferencesView(
     {} as WorkspaceLeaf,
     {
+      runtime: citationText.runtime,
       app: sidebarApp(harness),
       profile: profileReader(() => settings.current, harness.metadataCache),
       db: harness.db,

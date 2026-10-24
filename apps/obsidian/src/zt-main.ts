@@ -640,6 +640,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       }),
     );
     registerReferencesView(this, {
+      runtime: services.runtime,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,

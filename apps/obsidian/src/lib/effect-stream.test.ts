@@ -15,7 +15,7 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { LogCategory } from "@/lib/effect-log";
-import { changesUntil, subscribe } from "@/lib/effect-stream";
+import { changesUntil, forkEach, subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 it.effect(
@@ -178,5 +178,51 @@ it.effect("runtime interruption closes an active subscription", () =>
     yield* PubSub.publish(bus, 2);
     stop();
     expect(received).toEqual([1]);
+  }),
+);
+
+// #1705: a layer's consumer attaches before acquisition returns, so changes
+// published right after it are all delivered.
+it.effect("forkEach attaches before returning and isolates failures", () =>
+  Effect.gen(function* () {
+    const logs: Cause.Cause<unknown>[] = [];
+    const bus = yield* PubSub.unbounded<number>();
+    const delivered = yield* Queue.unbounded<number>();
+    yield* forkEach(Stream.fromPubSub(bus), (value) => {
+      if (value === 1) throw new Error("consumer failed");
+      return Queue.offer(delivered, value);
+    }).pipe(
+      Effect.provideService(
+        Logger.CurrentLoggers,
+        new Set([Logger.make(({ cause }) => logs.push(cause))]),
+      ),
+    );
+    yield* PubSub.publish(bus, 1);
+    yield* PubSub.publish(bus, 2);
+    expect(yield* Queue.take(delivered)).toBe(2);
+    expect(logs.some((cause) => Cause.hasDies(cause))).toBe(true);
+  }),
+);
+
+it.effect("forkEach stops when its Scope closes", () =>
+  Effect.gen(function* () {
+    const bus = yield* PubSub.unbounded<number>();
+    const delivered = yield* Queue.unbounded<number>();
+    const finished = yield* Deferred.make<void>();
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        yield* forkEach(
+          Stream.fromPubSub(bus).pipe(
+            Stream.ensuring(Deferred.succeed(finished, undefined)),
+          ),
+          (value) => Queue.offer(delivered, value),
+        );
+        yield* PubSub.publish(bus, 1);
+        expect(yield* Queue.take(delivered)).toBe(1);
+      }),
+    );
+    yield* Deferred.await(finished);
+    yield* PubSub.publish(bus, 2);
+    expect(yield* Queue.size(delivered)).toBe(0);
   }),
 );

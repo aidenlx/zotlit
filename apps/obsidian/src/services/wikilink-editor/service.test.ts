@@ -1,13 +1,27 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
+import {
+  beforeEach as beforeStreamTest,
+  afterEach as afterStreamTest,
+} from "vitest";
 import { describe, expect, it } from "vitest";
 
+import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
 import { WikilinkEditor } from "./service";
+
+let streamStack: AsyncDisposableStack;
+let streamRuntime: ReturnType<typeof buildRuntime<never>>;
+beforeStreamTest(() => {
+  streamStack = new AsyncDisposableStack();
+  streamRuntime = buildRuntime(Layer.empty, streamStack);
+});
+afterStreamTest(() => streamStack.disposeAsync());
 
 /** The markdown leaves two notes are open in, as the workspace hands them out. */
 const leaves = (dispatched: string[]) =>
@@ -40,6 +54,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   let registered: Extension[] = [];
   let reconfigures = 0;
   const service = new WikilinkEditor({
+    runtime: streamRuntime,
     app: {
       workspace: {
         updateOptions: () => reconfigures++,
@@ -163,10 +178,10 @@ describe("WikilinkEditor redraw", () => {
 });
 
 class CitationTextStub {
-  readonly #listeners: Record<
-    "changed" | "invalidated",
-    Set<(path?: string) => void>
-  > = { changed: new Set(), invalidated: new Set() };
+  readonly #changedBus = Effect.runSync(PubSub.unbounded<string>());
+  readonly #invalidatedBus = Effect.runSync(PubSub.unbounded<void>());
+  readonly changed = Stream.fromPubSub(this.#changedBus);
+  readonly invalidated = Stream.fromPubSub(this.#invalidatedBus);
 
   peek(): null {
     return null;
@@ -176,16 +191,9 @@ class CitationTextStub {
     return Promise.resolve([]);
   }
 
-  on(
-    event: "changed" | "invalidated",
-    cb: (path?: string) => void,
-  ): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
   emit(event: "changed" | "invalidated", path?: string): void {
-    for (const cb of this.#listeners[event]) cb(path);
+    if (event === "changed") PubSub.publishUnsafe(this.#changedBus, path!);
+    else PubSub.publishUnsafe(this.#invalidatedBus, undefined);
   }
 }
 

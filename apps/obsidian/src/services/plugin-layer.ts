@@ -12,6 +12,8 @@ import { layerCitationIndex } from "./citation-index/service";
 import type { CitationIndex } from "./citation-index/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
+import { layerCitationText } from "./citation-text/service";
+import type { CitationText } from "./citation-text/service";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
 import { layerLogging, layerLogOutput } from "./log/service";
@@ -54,6 +56,7 @@ export function pluginLayer(
   plugin: Plugin,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
+  | CitationText
   | CitationIndex
   | BibliographyRender
   | CitationLookup
@@ -71,7 +74,8 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return layerCitationIndex().pipe(
+  return layerCitationText().pipe(
+    Layer.provideMerge(layerCitationIndex()),
     Layer.provideMerge(
       Layer.mergeAll(layerBibliographyRender, layerCitationLookup),
     ),

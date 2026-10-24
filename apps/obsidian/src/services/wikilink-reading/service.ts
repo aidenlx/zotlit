@@ -7,6 +7,7 @@
 import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
@@ -25,13 +26,13 @@ import type { RunMember } from "@/lib/wikilink-citation";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   citationContent,
   sectionCoordinates,
   showCitation,
 } from "@/services/citation-text/present";
 import type { ShownCitation } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   clickWikilinkCitation,
@@ -55,11 +56,12 @@ import "./style.css";
 const logger = getLogger("wikilink-reading");
 
 export interface WikilinkReadingDeps {
+  runtime: Parameters<typeof subscribe<unknown, never>>[0];
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   noteIndex: Pick<PlainNoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "on" | "peek">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
@@ -98,6 +100,7 @@ export class WikilinkReading extends Service<void> {
   readonly #plugin;
   readonly #noteIndex;
   readonly #citationText;
+  readonly #runtime;
   readonly #citekeyEditor;
   readonly #citationPopover;
   readonly #settings;
@@ -117,6 +120,7 @@ export class WikilinkReading extends Service<void> {
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#citationText = deps.citationText;
+    this.#runtime = deps.runtime;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
@@ -140,10 +144,14 @@ export class WikilinkReading extends Service<void> {
     // sections of that document rewrite on its change, and every live section
     // rewrites when all text goes stale.
     stack.defer(
-      this.#citationText.on("invalidated", () => this.#sections.refresh()),
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#sections.refresh(),
+      ),
     );
     stack.defer(
-      this.#citationText.on("changed", (path) => this.#sections.refresh(path)),
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#sections.refresh(path),
+      ),
     );
     // A reading view holds the text this service wrote, so the views render
     // again without it once it is gone. The flag goes first: the post-processor

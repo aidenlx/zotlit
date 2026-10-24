@@ -6,7 +6,6 @@ import "./style.css";
 import { revealSetting } from "@/lib/open-settings";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainPandocEngine } from "@/services/pandoc/plain";
@@ -29,7 +28,8 @@ export interface ReferencesRegistrationDeps {
   citationIndex: PlainCitationIndex;
   citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: Pick<PlainLibraryScope, "current">;
-  citationText: CitationText;
+  citationText: ReferencesViewDeps["citationText"];
+  runtime: ReferencesViewDeps["runtime"];
   citekeyEditor: CitekeyEditor;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
   bibliographyRender: Pick<
@@ -43,6 +43,7 @@ export function registerReferencesView(
   deps: ReferencesRegistrationDeps,
 ): void {
   const viewDeps: ReferencesViewDeps = {
+    runtime: deps.runtime,
     app: deps.app,
     profile: deps.profile,
     db: deps.db,

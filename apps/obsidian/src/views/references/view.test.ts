@@ -2,9 +2,15 @@
 import { TFile } from "obsidian";
 import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
+import {
+  beforeEach as beforeStreamTest,
+  afterEach as afterStreamTest,
+} from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
+import { Layer, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { citationOutcome } from "@/services/citation-index/outcome";
@@ -27,6 +33,14 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { ReferencesView } from "./view";
+
+let streamStack: AsyncDisposableStack;
+let streamRuntime: ReturnType<typeof buildRuntime<never>>;
+beforeStreamTest(() => {
+  streamStack = new AsyncDisposableStack();
+  streamRuntime = buildRuntime(Layer.empty, streamStack);
+});
+afterStreamTest(() => streamStack.disposeAsync());
 
 type RenderedBibliography = Extract<
   BibliographyRenderOutcome,
@@ -301,7 +315,9 @@ beforeEach(async () => {
         },
         on: () => () => undefined,
       },
+      runtime: streamRuntime,
       citationText: {
+        changed: Stream.empty,
         peek: (): Held<DocumentCitations> | null =>
           heldCitations === null
             ? null
@@ -310,9 +326,6 @@ beforeEach(async () => {
                 status: "fresh",
                 settled: Promise.resolve(heldCitations),
               },
-        on: (_event: string, _callback: (path: string) => void) => {
-          return () => undefined;
-        },
       },
       citekeyEditor: { openIndexedKey: () => Promise.resolve() },
       pandocEngine: {

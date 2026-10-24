@@ -35,7 +35,10 @@ export interface PlainQueryClients {
 }
 
 export function plainQueryClients(
-  runtime: ManagedRuntime.ManagedRuntime<QueryClients, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<QueryClients, never>,
+    "runSync" | "runPromiseExit" | "runFork" | "scope"
+  >,
 ): PlainQueryClients {
   const queries = runtime.runSync(QueryClients.use(Effect.succeed));
   // ManagedRuntime cannot be reused after disposal. Its Scope closes before
