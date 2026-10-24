@@ -37,7 +37,6 @@ catalog:
   happy-dom: ^20.9.0
   hono: ^4.13.0
   yaml: ^2.9.0
-  "@effect/platform-node": 4.0.0
   "@effect/tsgo": 0.56.0
   "@effect/vitest": 4.0.0
   "@logtape/logtape": ^2.0.7

@@ -27,7 +27,7 @@
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@effect/platform-browser": "4.0.0",
-    "@effect/platform-node": "catalog:",
+    "@effect/platform-node": "4.0.0",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
     "@lezer/markdown": "catalog:",
