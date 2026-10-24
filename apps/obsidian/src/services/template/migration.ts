@@ -1,7 +1,7 @@
 import { join } from "node:path/posix";
-import type { FileManager, Vault, Workspace } from "obsidian";
+import type { FileManager, TFile, Vault, Workspace } from "obsidian";
 
-import type { CiteRef } from "@zotlit/db";
+import type { CiteRef, Library } from "@zotlit/db";
 import {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
   LegacyTemplateConversionError,
@@ -19,19 +19,20 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
+import type { SettingsPatch } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsApi,
+} from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
-import type { PlainTemplate } from "./plain";
 import { Template, templateFailure } from "./service";
+import type { TemplateOperations } from "./service";
 import type {
   ConvertedLegacyProfileDocument,
   ConvertedLegacyTemplateDocuments,
@@ -100,15 +101,24 @@ export interface MigrationVerificationData {
 
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
-  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
-  settings: Pick<PlainPluginSettings, "current" | "update" | "flush">;
-  templates: Pick<PlainTemplate, "render" | "renderCitation">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  zoteroReads: { acquireRead(): Promise<ZoteroReadLease> };
+  libraryScope: {
+    resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope;
+  };
+  noteIndex: {
+    whenIndexed(): Promise<void>;
+    getNotesByItemKey(indexedKey: string): TFile[];
+    getImportedNoteByNoteKey(noteKey: string): TFile[];
+  };
+  settings: {
+    readonly current: Readonly<Settings>;
+    update(
+      patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch),
+    ): Readonly<Settings>;
+    flush(): Promise<void>;
+  };
+  templates: Pick<TemplateOperations, "render" | "renderCitation">;
+  zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir" | "baseAttachmentPath">;
 }
 
 /** Load one real in-scope Zotero item through the Workbench's inert render seam. */

@@ -6,9 +6,11 @@
 import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import { Effect, Layer } from "@/lib/effect";
+import { PluginHost } from "@/lib/plugin-host";
+import { CitationIndex } from "@/services/citation-index/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 import {
   ANNOTATION_USES_COMMAND,
@@ -26,11 +28,31 @@ import type {
 interface CitationsCliRegistrationDeps {
   app: App;
   citationIndex: Pick<
-    PlainCitationIndex,
+    CitationIndex["Service"],
     "readCitedBy" | "readReferences" | "readAnnotationUses"
   >;
-  zoteroPref: Pick<PlainZoteroPref, "sourceId" | "databasePath">;
+  zoteroPref: {
+    readonly current: Effect.Effect<
+      Pick<ZoteroPrefSnapshot, "sourceId" | "databasePath">
+    >;
+  };
 }
+
+/** The `zotlit:cited-by`, `zotlit:references` and `zotlit:annotation-uses` commands. */
+export const layerCitationsCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | CitationIndex | ZoteroPref
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    registerCitationsCli(host, {
+      app: host.app,
+      citationIndex: yield* CitationIndex,
+      zoteroPref: yield* ZoteroPref,
+    });
+  }),
+);
 
 /** Neither selector is `required`: the command takes exactly one. */
 function citedByFlags(): CliFlags {
@@ -69,19 +91,15 @@ export function registerCitationsCli(
   deps: CitationsCliRegistrationDeps,
 ): void {
   const handlers = createCitationsCliHandlers({
-    getIdentity: async () => {
-      return {
+    getIdentity: () =>
+      Effect.map(deps.zoteroPref.current, ({ sourceId, databasePath }) => ({
         vault: {
           name: deps.app.vault.getName(),
           // Desktop-only plugin: the adapter is always a FileSystemAdapter.
           path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
         },
-        source: {
-          id: deps.zoteroPref.sourceId,
-          databasePath: deps.zoteroPref.databasePath,
-        },
-      };
-    },
+        source: { id: sourceId, databasePath },
+      })),
     index: deps.citationIndex,
   });
 

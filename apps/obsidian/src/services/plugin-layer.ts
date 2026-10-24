@@ -1,11 +1,14 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
 import type { Plugin } from "obsidian";
 
+import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { PluginHost } from "@/lib/plugin-host";
 
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
+import { layerCitationsCli } from "./citation-index/cli/register";
 import { layerCitationLookup } from "./citation-index/lookup-service";
 import type { CitationLookup } from "./citation-index/lookup-service";
 import { layerCitationIndex } from "./citation-index/service";
@@ -14,12 +17,16 @@ import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
+import { layerLibraryScopeCli } from "./library-scope/cli";
+import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import { layerNoteIndex } from "./note-index/service";
 import type { NoteIndex } from "./note-index/service";
+import { layerCitationStyleNotice } from "./pandoc/notices";
+import { layerPandocResolve } from "./pandoc/register";
 import { layerBibliographyRender } from "./pandoc/render-cache";
 import type { BibliographyRender } from "./pandoc/render-cache";
 import { layerPandocEngine } from "./pandoc/service";
@@ -31,6 +38,7 @@ import type { QueryClients } from "./query-client/service";
 import { layerPluginSettings } from "./settings/service";
 import type { PluginSettings } from "./settings/service";
 import { startingAs } from "./startup-failure";
+import { layerCitationTemplateActions } from "./template/actions";
 import { layerTemplateMigration } from "./template/migration";
 import type {
   TemplateMigration,
@@ -53,9 +61,13 @@ import { workerClient } from "./zotero-reads/worker-client";
  * logs from its first line and closes before them. Every service reads time
  * from the Effect Clock, which a test replaces. Each layer starts under its
  * service's name, so a defect during acquisition names what failed.
+ *
+ * Above the services sit the layers that register a service's notices and
+ * commands on `plugin`. They hold no service of their own, so unloading the
+ * plugin releases them before the services they read.
  */
 export function pluginLayer(
-  plugin: Plugin,
+  plugin: Plugin & CliHost,
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
   | CitationText
@@ -76,7 +88,7 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  return layerCitationText().pipe(
+  const services = layerCitationText().pipe(
     startingAs("CitationText"),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
     Layer.provideMerge(
@@ -125,4 +137,13 @@ export function pluginLayer(
       layerPluginSettings(plugin).pipe(startingAs("PluginSettings")),
     ),
   );
+  const registrations = Layer.mergeAll(
+    layerCitationsCli.pipe(startingAs("CitationsCli")),
+    layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
+    layerCitationTemplateActions.pipe(startingAs("CitationTemplateActions")),
+    layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
+    layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
+    layerPandocResolve.pipe(startingAs("PandocResolve")),
+  ).pipe(Layer.provide(Layer.succeed(PluginHost, plugin)));
+  return registrations.pipe(Layer.provideMerge(services));
 }

@@ -1,77 +1,93 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it as plainIt, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { Effect, Exit, Scope, Stream } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
 
 import {
   citationStyleMissingNotice,
-  subscribeCitationStyleMissing,
+  watchCitationStyleMissing,
 } from "./notices";
+import type { BibliographyRenderState } from "./render-cache";
 
 function styleEvents(existing = false) {
-  const event = testEvent<string>();
+  const event = testEvent<BibliographyRenderState>();
+  const stateOf = (missingStyle: string | null): BibliographyRenderState => ({
+    vaultPresentation: {} as BibliographyRenderState["vaultPresentation"],
+    missingStyle,
+  });
   const style = "http://www.zotero.org/styles/missing";
   return {
     cache: {
-      missingStyle: existing
-        ? event.stream.pipe(Stream.prepend([style]))
-        : event.stream,
+      // The state a subscriber starts from, then each one the test emits.
+      changes: Stream.unwrap(
+        Effect.sync(() =>
+          event.stream.pipe(Stream.prepend([stateOf(existing ? style : null)])),
+        ),
+      ),
     },
-    emit: () => event.emit(style),
+    emit: () => event.emit(stateOf(style)),
     hasListener: () => event.subscribers > 0,
   };
 }
 
 describe("citationStyleMissingNotice", () => {
-  it("carries the approved copy and opens settings through its action", () => {
-    const openSettings = vi.fn();
-    const notice = citationStyleMissingNotice(openSettings);
+  plainIt(
+    "carries the approved copy and opens settings through its action",
+    () => {
+      const openSettings = vi.fn();
+      const notice = citationStyleMissingNotice(openSettings);
 
-    expect(notice).toMatchObject({
-      title:
-        "The selected citation and references style isn’t installed in Zotero.",
-      action: "Open settings",
-    });
+      expect(notice).toMatchObject({
+        title:
+          "The selected citation and references style isn’t installed in Zotero.",
+        action: "Open settings",
+      });
 
-    notice.openSettings();
-    expect(openSettings).toHaveBeenCalledOnce();
-  });
+      notice.openSettings();
+      expect(openSettings).toHaveBeenCalledOnce();
+    },
+  );
 });
 
-describe("subscribeCitationStyleMissing", () => {
-  it("shows a notice when the missing style was found before subscription", () => {
-    const events = styleEvents(true);
-    const hide = vi.fn();
-    const showNotice = vi.fn(() => ({ hide }));
+describe("watchCitationStyleMissing", () => {
+  it.effect(
+    "shows a notice when the missing style was found before the start",
+    () =>
+      Effect.gen(function* () {
+        const events = styleEvents(true);
+        const hide = vi.fn();
+        const showNotice = vi.fn(() => ({ hide }));
+        const watched = yield* Scope.make();
+        yield* watchCitationStyleMissing(events.cache, showNotice).pipe(
+          Scope.provide(watched),
+        );
 
-    const dispose = subscribeCitationStyleMissing(
-      testRuntime(),
-      events.cache as never,
-      showNotice,
-    );
+        expect(showNotice).toHaveBeenCalledOnce();
+        yield* Scope.close(watched, Exit.void);
+        expect(hide).toHaveBeenCalledOnce();
+        expect(events.hasListener()).toBe(false);
+      }),
+  );
 
-    expect(showNotice).toHaveBeenCalledOnce();
-    dispose();
-    expect(hide).toHaveBeenCalledOnce();
-    expect(events.hasListener()).toBe(false);
-  });
+  it.effect(
+    "watches for the plugin lifecycle and hides the active notice at its end",
+    () =>
+      Effect.gen(function* () {
+        const events = styleEvents();
+        const hide = vi.fn();
+        const showNotice = vi.fn(() => ({ hide }));
+        const watched = yield* Scope.make();
+        yield* watchCitationStyleMissing(events.cache, showNotice).pipe(
+          Scope.provide(watched),
+        );
 
-  it("subscribes for the plugin lifecycle and hides the active notice at its end", () => {
-    const events = styleEvents();
-    const hide = vi.fn();
-    const showNotice = vi.fn(() => ({ hide }));
-    const dispose = subscribeCitationStyleMissing(
-      testRuntime(),
-      events.cache as never,
-      showNotice,
-    );
+        events.emit();
+        expect(showNotice).toHaveBeenCalledOnce();
 
-    events.emit();
-    expect(showNotice).toHaveBeenCalledOnce();
-
-    dispose();
-    expect(hide).toHaveBeenCalledOnce();
-    expect(events.hasListener()).toBe(false);
-  });
+        yield* Scope.close(watched, Exit.void);
+        expect(hide).toHaveBeenCalledOnce();
+        expect(events.hasListener()).toBe(false);
+      }),
+  );
 });

@@ -58,7 +58,8 @@ function ports(
         : { sourcePath: SOURCE, links: fixture.links ?? [] },
     resolveIndexedKey: (linkpath) => fixture.notes?.[linkpath] ?? null,
     database: {
-      describe: () => ({ dataDir: "/Zotero", readMode: "immutable" }),
+      describe: () =>
+        Effect.succeed({ dataDir: "/Zotero", readMode: "immutable" }),
       read,
     },
   };

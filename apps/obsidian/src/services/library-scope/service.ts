@@ -64,6 +64,21 @@ export class LibraryScope extends Context.Service<
   }
 >()("zotlit/library-scope/LibraryScope") {}
 
+/**
+ * The states whose resolution or validity differs from the one before,
+ * after the replayed state a subscriber starts from.
+ */
+export function scopeChanges(
+  changes: Stream.Stream<LibraryScopeState>,
+): Stream.Stream<LibraryScopeState> {
+  return changes.pipe(
+    Stream.changesWith(
+      (a, b) => a.current === b.current && a.invalid === b.invalid,
+    ),
+    Stream.drop(1),
+  );
+}
+
 export const layerLibraryScope = Layer.effect(
   LibraryScope,
   Effect.gen(function* () {

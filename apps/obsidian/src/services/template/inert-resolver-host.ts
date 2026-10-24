@@ -22,9 +22,8 @@ import {
   commentToMarkdown,
   createCommentTurndown,
 } from "@/lib/turndown/comment";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 export { findExistingLitNote };
 export type { ExcerptImageContext };
@@ -44,13 +43,13 @@ export async function resolveObsidianExcerptImageContext(options: {
 }
 
 export interface ObsidianInertNoteResolverDeps {
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
+  noteIndex: {
+    getNotesByItemKey(indexedKey: string): TFile[];
+    getImportedNoteByNoteKey(noteKey: string): TFile[];
+  };
   fileManager: Pick<FileManager, "generateMarkdownLink">;
   vault: Pick<Vault, "getFileByPath">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir" | "baseAttachmentPath">;
   sourcePath: string;
   excerptImages: ExcerptImageContext;
 }

@@ -1,20 +1,25 @@
 import { describe, expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { Effect } from "@/lib/effect";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, Layer } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
+import { PluginHost } from "@/lib/plugin-host";
+import type { PluginHostShape } from "@/lib/plugin-host";
 
 import {
   LIBRARY_SCOPE_COMMAND,
   LIBRARY_SCOPE_GUIDE_COMMAND,
+  layerLibraryScopeCli,
   registerLibraryScopeCli,
 } from "./cli";
 import type { ResolvedLibraryScope } from "./scope";
+import { LibraryScope } from "./service";
 
 function setup(current: ResolvedLibraryScope | null) {
   const { host, commands, command } = fakeCliHost();
   registerLibraryScopeCli(host, {
-    libraryScope: { current },
+    libraryScope: { current: Effect.succeed(current) },
   });
   return {
     commands,
@@ -181,3 +186,29 @@ describe("Library Scope CLI registration", () => {
       }),
   );
 });
+
+it.effect("registers its commands when the layer is built", () =>
+  Effect.gen(function* () {
+    const { host, commands } = fakeCliHost();
+    yield* Layer.build(
+      layerLibraryScopeCli.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(PluginHost, host as PluginHostShape),
+            Layer.succeed(
+              LibraryScope,
+              stubService<LibraryScope["Service"]>("LibraryScope", {
+                current: Effect.succeed(null),
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect([...commands.keys()]).toEqual([
+      LIBRARY_SCOPE_COMMAND,
+      LIBRARY_SCOPE_GUIDE_COMMAND,
+    ]);
+  }),
+);

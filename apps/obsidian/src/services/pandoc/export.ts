@@ -9,7 +9,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import type { ParseClient } from "@/services/citation-parse/client";
 
 import type {
   BibliographyFailure,
@@ -45,7 +45,7 @@ export interface ExportRequest {
 }
 
 export interface ExportPorts {
-  citationParse: Pick<PlainCitationParse, "parse">;
+  citationParse: Pick<ParseClient, "parse">;
   /**
    * Indexed Key of the Literature Note `linkpath` names, resolved from
    * `sourcePath`; `null` for a missing target or an ordinary note.

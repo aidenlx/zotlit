@@ -68,7 +68,7 @@ export interface ResolvePorts {
    */
   resolveIndexedKey: (linkpath: string, sourcePath: string) => string | null;
   database: {
-    describe: () => DatabaseDescription;
+    describe: () => Effect.Effect<DatabaseDescription>;
     /**
      * Every lookup under one read lease, keyed by Indexed Key. A key the
      * database has no live Item for is absent; `null` means no read lease.
@@ -119,7 +119,7 @@ export const resolveCitations = Effect.fn("Pandoc.resolveCitations")(function* (
     links.map((link) => link.indexedKey),
   );
   if (!items) {
-    const { dataDir, readMode } = ports.database.describe();
+    const { dataDir, readMode } = yield* ports.database.describe();
     errors.push({
       code: "database-unavailable",
       message: `Cannot read the Zotero database in data directory "${dataDir}" (read mode: ${readMode ?? "unavailable"}).`,

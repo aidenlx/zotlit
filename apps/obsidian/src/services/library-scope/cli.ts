@@ -10,8 +10,10 @@ import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
 import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import { catchRejection, decodeCliParams, noCliParams } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import { Effect, Layer } from "@/lib/effect";
+import { PluginHost } from "@/lib/plugin-host";
+
+import { LibraryScope } from "./service";
 
 /**
  * The wire format of the `zotlit:library-scope` commands, versioned on its
@@ -63,8 +65,28 @@ function envelope(command: LibraryScopeCommand, tail: object): string {
 }
 
 interface LibraryScopeCliDeps {
-  libraryScope: Pick<PlainLibraryScope, "current">;
+  libraryScope: Pick<LibraryScope["Service"], "current">;
 }
+
+/**
+ * The `zotlit:library-scope` commands, for e2e: they read the resolved
+ * Library Scope after a Scope Case switch through the plugin's own CLI
+ * Contract surface rather than an internal eval. A dev-build diagnostic port,
+ * never registered in a production build.
+ */
+export const layerLibraryScopeCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | LibraryScope
+> = __DEV__
+  ? Layer.effectDiscard(
+      Effect.gen(function* () {
+        registerLibraryScopeCli(yield* PluginHost, {
+          libraryScope: yield* LibraryScope,
+        });
+      }),
+    )
+  : Layer.empty;
 
 export function registerLibraryScopeCli(
   host: CliHost,
@@ -91,7 +113,7 @@ function createLibraryScopeHandler(
       command: LIBRARY_SCOPE_COMMAND,
     });
 
-    const current = deps.libraryScope.current;
+    const current = yield* deps.libraryScope.current;
     if (current === null) {
       return envelope(LIBRARY_SCOPE_COMMAND, {
         ok: false,

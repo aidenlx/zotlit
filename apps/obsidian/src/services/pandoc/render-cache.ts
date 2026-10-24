@@ -131,6 +131,17 @@ export interface ReadOptions {
   signal?: AbortSignal;
 }
 
+/** The style IDs a render finds unavailable, each once until it clears. */
+export function missingStyleChanges(
+  changes: Stream.Stream<BibliographyRenderState>,
+): Stream.Stream<string> {
+  return changes.pipe(
+    Stream.map((state) => state.missingStyle),
+    Stream.changes,
+    Stream.filter((style): style is string => style !== null),
+  );
+}
+
 export const layerBibliographyRender = Layer.effect(
   BibliographyRender,
   Effect.gen(function* () {

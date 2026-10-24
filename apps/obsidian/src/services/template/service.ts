@@ -74,7 +74,6 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
@@ -122,7 +121,7 @@ const EMBEDDED_DEFAULT_WINNER = {
 
 interface TemplateEngineOptions {
   app: App;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: { readonly current: Readonly<Settings> };
   changed: () => void;
   flushRequested: () => void;
   intakePending: () => number;

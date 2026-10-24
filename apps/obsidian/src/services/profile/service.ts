@@ -55,7 +55,6 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
@@ -66,7 +65,6 @@ import type {
   ResolvedLiteratureNoteProfileBindings,
 } from "@/services/profile/bindings";
 import { relocatedNotePath } from "@/services/profile/relocation";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import {
@@ -75,11 +73,12 @@ import {
   RESERVED_PARTIAL_NAMES,
 } from "@/services/template/defaults";
 import { plainTemplateError } from "@/services/template/errors";
-import type { PlainTemplate } from "@/services/template/plain";
 import { Template } from "@/services/template/service";
-import type { LiteratureNoteTemplateStatus } from "@/services/template/service";
-
-import type { PlainProfile } from "./plain";
+import type {
+  LiteratureNoteTemplateStatus,
+  TemplateOperations,
+  TemplateStatus,
+} from "@/services/template/service";
 
 const mintId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
@@ -250,24 +249,29 @@ interface ProfileEngineDeps {
   changed(): void;
   log(message: string, fields: Record<string, unknown>): void;
   app: App;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: { readonly current: Readonly<Settings> };
   template: Pick<
-    PlainTemplate,
-    | "status"
+    TemplateOperations,
     | "exportLiteratureNotePackSource"
     | "getPartialEntries"
     | "planPartialUnpack"
     | "unpackPartials"
     | "getLiteratureNoteTemplateStatuses"
     | "waitUntilSettled"
-  >;
-  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByProfile">;
+  > & { readonly status: TemplateStatus };
+  noteIndex: {
+    whenIndexed(): Promise<void>;
+    getNotesByProfile(selector: ProfileSelector): {
+      literatureNotes: TFile[];
+      importedNotes: TFile[];
+    };
+  };
 }
 
 export type ProfileReader = Pick<
-  PlainProfile,
-  "loaded" | "profiles" | "resolveProfile" | "profileOf" | "changed"
->;
+  ProfileOperations,
+  "loaded" | "profiles" | "resolveProfile" | "profileOf"
+> & { readonly changed: Stream.Stream<void> };
 
 class ProfileEngine {
   readonly #mutate = new PQueue({ concurrency: 1 });
@@ -277,7 +281,7 @@ class ProfileEngine {
   #defaultDocument: string | undefined;
   #defaultExcluded = false;
   #loaded = false;
-  #scannedTemplateStatus: PlainTemplate["status"] | undefined;
+  #scannedTemplateStatus: TemplateStatus | undefined;
 
   constructor(deps: ProfileEngineDeps) {
     this.#deps = deps;

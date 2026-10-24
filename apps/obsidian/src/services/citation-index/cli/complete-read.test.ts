@@ -26,8 +26,10 @@ function commands(h: CitationIndexHarness) {
     app: h.app,
     citationIndex: h.index,
     zoteroPref: {
-      sourceId: "test",
-      databasePath: "/test/zotero.sqlite",
+      current: Effect.succeed({
+        sourceId: "test",
+        databasePath: "/test/zotero.sqlite",
+      }),
     },
   });
   return cli.command;
