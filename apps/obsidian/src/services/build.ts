@@ -653,12 +653,10 @@ export async function buildServices(
         }),
     })
     .use({
-      annotationLinkReading: ({ annotationPopover, settings }) =>
+      annotationLinkReading: ({ annotationPopover }) =>
         new AnnotationLinkReading({
-          runtime,
           app: plugin.app,
           plugin,
-          settings,
           annotationPopover,
         }),
     })

@@ -401,6 +401,24 @@ export function migrateV9ToV10(raw: unknown): Record<string, unknown> {
   };
 }
 
+/**
+ * Make annotation links independent of citation settings. Hover is always
+ * available; the reader choice moves to the Reader settings. Annotation
+ * Citations stop contributing to the Document Citation Set.
+ */
+export function migrateV10ToV11(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const {
+    "citation.annotation-links": _annotationLinks,
+    "citation.annotation-citations": _annotationCitations,
+    "citation.open-annotation-links": openAnnotationLinks,
+    ...rest
+  } = raw;
+  return typeof openAnnotationLinks === "boolean"
+    ? { ...rest, "reader.open-annotation-links": openAnnotationLinks }
+    : rest;
+}
+
 /** Each migration `SettingsService` runs, under the option that takes it. */
 export const settingsMigrations = {
   migrateLegacy: migrateLegacyV0,
@@ -413,4 +431,5 @@ export const settingsMigrations = {
   migrateV7: migrateV7ToV8,
   migrateV8: migrateV8ToV9,
   migrateV9: migrateV9ToV10,
+  migrateV10: migrateV10ToV11,
 };

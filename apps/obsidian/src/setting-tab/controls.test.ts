@@ -74,7 +74,7 @@ it.effect(
       );
       yield* Effect.promise(() => settings.flush());
       expect(disk).toMatchObject({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "citation.at-trigger": true,
         "template.auto-trim-leading": false,
         "log.level": null,

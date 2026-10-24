@@ -2566,7 +2566,7 @@ describe("the generated Obsidian vault", () => {
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
 
-    expect(data.__VERSION__).toBe(10);
+    expect(data.__VERSION__).toBe(11);
     expect(data["note.default-profile"]).toEqual({
       bindings: {
         "note.literature-folder": "literatures",

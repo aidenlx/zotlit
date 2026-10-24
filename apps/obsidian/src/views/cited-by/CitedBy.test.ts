@@ -17,13 +17,8 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Deferred, Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
-import {
-  annotationRows,
-  annotationUri,
-} from "@/services/citation-index/__fixtures__/annotations";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
@@ -31,11 +26,6 @@ import type {
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
-import {
-  createCitationIndexHarness,
-  KEY_A,
-} from "@/services/citation-index/test-harness";
-import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import { CitedByActionsContext, createCitedByActions } from "./actions";
 import { CitedBy } from "./CitedBy";
@@ -808,84 +798,6 @@ describe("CitedBy", () => {
       endLoc: position.end,
       line: 0,
     });
-  });
-
-  it("#1693 previews, searches, and reveals an Annotation Citation", async () => {
-    const source = `Evidence from estuaries [](${annotationUri}).`;
-    await using harness = await createCitationIndexHarness(
-      { "draft.md": source },
-      { zoteroRows: annotationRows },
-    );
-    await harness.index.getDocumentCitationSet(harness.draft);
-    const cited = await harness.index.getCitedBy(KEY_A);
-    const occurrence = cited.groups[0]!.occurrences[0]!;
-    const { container, openLinkText, setEphemeralState } = await render({
-      snapshot: cited,
-      citationIndex: harness.index,
-      stats: { "draft.md": harness.draft.stat },
-      read: () => Promise.resolve(source),
-      search: "estuaries",
-    });
-    expect(container.textContent).toContain("Evidence from estuaries");
-    expect(container.querySelector("mark")?.textContent).toBe(
-      `[](${annotationUri})`,
-    );
-    await act(() =>
-      (container.querySelector("[data-occurrence]") as HTMLElement).click(),
-    );
-    await act(() =>
-      waitForState(() => {
-        expect(openLinkText).toHaveBeenLastCalledWith("draft.md", "", false);
-        expect(setEphemeralState).toHaveBeenLastCalledWith({
-          startLoc: occurrence.position.start,
-          endLoc: occurrence.position.end,
-          line: 0,
-        });
-      }),
-    );
-  });
-
-  it("#1693 waits for the stored parse when a preview follows a note edit", async () => {
-    const source = `Evidence [](${annotationUri}).`;
-    const gate = Deferred.makeUnsafe<void>();
-    let editing = false;
-    await using harness = await createCitationIndexHarness(
-      { "draft.md": source },
-      {
-        zoteroRows: annotationRows,
-        parseClient: {
-          parse: (request) =>
-            Effect.suspend(() =>
-              editing ? Deferred.await(gate) : Effect.void,
-            ).pipe(Effect.andThen(inProcessParseClient.parse(request))),
-        },
-      },
-    );
-    await harness.index.getDocumentCitationSet(harness.draft);
-    const cited = await harness.index.getCitedBy(KEY_A);
-    editing = true;
-    const edited = `${source} More context.`;
-    harness.metadataCache.change(harness.draft, edited);
-    const { container } = await render({
-      snapshot: cited,
-      citationIndex: harness.index,
-      stats: { "draft.md": harness.draft.stat },
-      previewsPending: true,
-      read: () => Promise.resolve(edited),
-    });
-    await act(async () => {
-      Deferred.doneUnsafe(gate, Effect.void);
-      await harness.index.getDocumentCitationSet(harness.draft);
-    });
-    await expect
-      .poll(async () => {
-        await act(yieldToMain);
-        return container.textContent;
-      })
-      .toContain("More context.");
-    expect(container.querySelector("mark")?.textContent).toBe(
-      `[](${annotationUri})`,
-    );
   });
 
   it("collapses and expands every source group from one toolbar toggle", async () => {

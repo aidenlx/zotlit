@@ -18,6 +18,7 @@ import {
   migrateV7ToV8,
   migrateV8ToV9,
   migrateV9ToV10,
+  migrateV10ToV11,
 } from "./migrate";
 import { defaults } from "./schema";
 import { RESET_SETTING } from "./service";
@@ -114,7 +115,7 @@ it.effect(
   "preserves the completed template conversion across a settings reload",
   () =>
     Effect.gen(function* () {
-      const plugin = new PluginStub({ __VERSION__: 10 });
+      const plugin = new PluginStub({ __VERSION__: 11 });
       const service = (yield* makeService({ plugin })).service;
       yield* Effect.promise(() => service.loaded);
       service.update({
@@ -168,7 +169,7 @@ describe("PluginSettings loading", () => {
           highlightEmoji("magenta", settings["note.import-highlight-mappings"]),
         ).toBeNull();
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.import-colored-highlights": enabled,
           }),
@@ -243,7 +244,7 @@ describe("PluginSettings loading", () => {
           },
         });
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": service.current?.["note.default-profile"],
         });
       }),
@@ -327,7 +328,7 @@ describe("PluginSettings loading", () => {
       expect(() => service.update({ "server.hostname": "/x" })).not.toThrow();
       yield* Effect.promise(() => service.flush());
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.hostname": "/x",
       });
     }),
@@ -346,11 +347,11 @@ describe("PluginSettings loading", () => {
   );
 
   it.effect(
-    "valid v10 sparse object loads schema-known overrides and does not save",
+    "valid v11 sparse object loads schema-known overrides and does not save",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.hostname": "/from-disk",
         });
         const saveSpy = vi.spyOn(plugin, "saveData");
@@ -365,11 +366,11 @@ describe("PluginSettings loading", () => {
   );
 
   it.effect(
-    "v10 non-schema keys are ignored and the file is not rewritten",
+    "v11 non-schema keys are ignored and the file is not rewritten",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.hostname": "/ok",
           unknownKey: "noise",
         });
@@ -385,11 +386,11 @@ describe("PluginSettings loading", () => {
   );
 
   it.effect(
-    "v10 invalid per-key values fall back to their default and the file is not rewritten",
+    "v11 invalid per-key values fall back to their default and the file is not rewritten",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.hostname": "/kept",
           "server.enabled": "not-a-boolean",
         });
@@ -405,11 +406,11 @@ describe("PluginSettings loading", () => {
   );
 
   it.effect(
-    "v10 frontmatter field missing language falls back to the default and other keys survive",
+    "v11 frontmatter field missing language falls back to the default and other keys survive",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.frontmatter-fields": [
             { key: "title", expr: "zt.title", merge: "replace" },
           ],
@@ -461,7 +462,7 @@ describe("PluginSettings default Profile", () => {
       });
       yield* Effect.promise(() => service.flush());
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "note.default-profile": {
           bindings: {
             "note.literature-folder": "Reading",
@@ -513,10 +514,10 @@ describe("PluginSettings hydrationOrigin", () => {
     }),
   );
 
-  it.effect("reports 'current' for v10 data", () =>
+  it.effect("reports 'current' for v11 data", () =>
     Effect.gen(function* () {
       const { service } = yield* makeService({
-        plugin: new PluginStub({ __VERSION__: 10, "server.hostname": "R" }),
+        plugin: new PluginStub({ __VERSION__: 11, "server.hostname": "R" }),
       });
       yield* Effect.promise(() => service.loaded);
       expect(service.hydrationOrigin).toBe("current");
@@ -526,7 +527,7 @@ describe("PluginSettings hydrationOrigin", () => {
 
 describe("PluginSettings legacy migration", () => {
   it.effect(
-    "migrates schema-known keys, drops non-schema keys, writes v10 best-effort",
+    "migrates schema-known keys, drops non-schema keys, writes v11 best-effort",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -543,7 +544,7 @@ describe("PluginSettings legacy migration", () => {
           migratedSettings({ "note.literature-folder": "/from-legacy" }),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/from-legacy",
           }),
@@ -567,7 +568,7 @@ describe("PluginSettings legacy migration", () => {
         migratedSettings({ "note.literature-folder": "/kept" }),
       );
       expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "note.default-profile": defaultProfileWith({
           "note.literature-folder": "/kept",
         }),
@@ -576,7 +577,7 @@ describe("PluginSettings legacy migration", () => {
   );
 
   it.effect(
-    "falls back to defaults on migration throw and writes empty v10",
+    "falls back to defaults on migration throw and writes empty v11",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({ legacy: "stuff" });
@@ -589,7 +590,7 @@ describe("PluginSettings legacy migration", () => {
         });
         yield* Effect.promise(() => service.loaded);
         expect(service.current).toEqual(defaults);
-        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 10 });
+        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 11 });
         expect(warnSpy).toHaveBeenCalled();
       }),
   );
@@ -606,7 +607,7 @@ describe("PluginSettings legacy migration", () => {
         });
         yield* Effect.promise(() => service.loaded);
         expect(service.current).toEqual(defaults);
-        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 10 });
+        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 11 });
       }),
   );
 
@@ -625,7 +626,7 @@ describe("PluginSettings legacy migration", () => {
         });
         yield* Effect.promise(() => service.loaded);
         expect(service.current).toEqual(defaults);
-        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 10 });
+        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 11 });
       }),
   );
 
@@ -655,9 +656,9 @@ describe("PluginSettings legacy migration", () => {
   );
 });
 
-describe("PluginSettings v1→v10 migration", () => {
+describe("PluginSettings v1→v11 migration", () => {
   it.effect(
-    "migrates schema-known keys, drops non-schema keys, writes v10 best-effort",
+    "migrates schema-known keys, drops non-schema keys, writes v11 best-effort",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -672,7 +673,7 @@ describe("PluginSettings v1→v10 migration", () => {
           migratedSettings({ "note.literature-folder": "/from-v1" }),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/from-v1",
           }),
@@ -681,7 +682,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "drops invalid schema-known values and writes v10 without them",
+    "drops invalid schema-known values and writes v11 without them",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -696,7 +697,7 @@ describe("PluginSettings v1→v10 migration", () => {
           migratedSettings({ "note.literature-folder": "/kept" }),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/kept",
           }),
@@ -705,7 +706,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "drops frontmatter fields still missing merge after migration and writes v10 without them",
+    "drops frontmatter fields still missing merge after migration and writes v11 without them",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -720,7 +721,7 @@ describe("PluginSettings v1→v10 migration", () => {
           migratedSettings({ "note.literature-folder": "/kept" }),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/kept",
           }),
@@ -729,7 +730,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "happy path: stamps/rewrites frontmatter field language and writes v10 exactly once",
+    "happy path: stamps/rewrites frontmatter field language and writes v11 exactly once",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -783,7 +784,7 @@ describe("PluginSettings v1→v10 migration", () => {
           ),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.frontmatter-fields": migratedFields,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/from-v1",
@@ -815,7 +816,7 @@ describe("PluginSettings v1→v10 migration", () => {
           migratedSettings({ "note.literature-folder": "/kept" }),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/kept",
           }),
@@ -824,7 +825,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "falls back to defaults on migrateV1 throw and writes empty v10",
+    "falls back to defaults on migrateV1 throw and writes empty v11",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -840,7 +841,7 @@ describe("PluginSettings v1→v10 migration", () => {
         });
         yield* Effect.promise(() => service.loaded);
         expect(service.current).toEqual(defaults);
-        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 10 });
+        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 11 });
         expect(warnSpy).toHaveBeenCalled();
       }),
   );
@@ -860,11 +861,11 @@ describe("PluginSettings v1→v10 migration", () => {
         });
         yield* Effect.promise(() => service.loaded);
         expect(service.current).toEqual(defaults);
-        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 10 });
+        expect(saveSpy).toHaveBeenCalledExactlyOnceWith({ __VERSION__: 11 });
       }),
   );
 
-  it.effect("v2 data runs all compatibility migrations and writes v10", () =>
+  it.effect("v2 data runs all compatibility migrations and writes v11", () =>
     Effect.gen(function* () {
       const plugin = new PluginStub({
         __VERSION__: 2,
@@ -888,7 +889,7 @@ describe("PluginSettings v1→v10 migration", () => {
         ),
       );
       expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "citation.open-as-links": true,
         "note.default-profile": defaultProfileWith({
           "note.literature-folder": "/from-v2",
@@ -898,7 +899,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "v3 data carries Citation Key Links into Pandoc navigation and writes v10",
+    "v3 data carries Citation Key Links into Pandoc navigation and writes v11",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -921,7 +922,7 @@ describe("PluginSettings v1→v10 migration", () => {
           ),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "citation.open-as-links": true,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/from-v3",
@@ -955,7 +956,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "v4 data drops the retired Citation Key Property and writes v10",
+    "v4 data drops the retired Citation Key Property and writes v11",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -974,7 +975,7 @@ describe("PluginSettings v1→v10 migration", () => {
           migratedSettings({ "note.literature-folder": "/from-v4" }),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/from-v4",
           }),
@@ -982,50 +983,53 @@ describe("PluginSettings v1→v10 migration", () => {
       }),
   );
 
+  it.effect("v5 data preserves the Pandoc and wikilink choices", () =>
+    Effect.gen(function* () {
+      const plugin = new PluginStub({
+        __VERSION__: 5,
+        "citation.citekey-indexing": false,
+        "citation.wikilink-citations": true,
+      });
+      const saveSpy = vi.spyOn(plugin, "saveData");
+      const { service } = yield* makeService({
+        plugin,
+        migrateV5: migrateV5ToV6,
+      });
+      yield* Effect.promise(() => service.loaded);
+
+      expect(service.current).toEqual({
+        ...defaults,
+        "citation.pandoc-citations": false,
+        "citation.wikilink-citations": true,
+      });
+      expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
+        __VERSION__: 11,
+        "citation.pandoc-citations": false,
+        "citation.wikilink-citations": true,
+        "note.default-profile": defaultProfileWith(),
+      });
+    }),
+  );
+
   it.effect(
-    "v5 data preserves the Pandoc and wikilink choices and enables Annotation Citations",
+    "moves the Annotation Link opening choice to the Reader setting",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
-          __VERSION__: 5,
-          "citation.citekey-indexing": false,
-          "citation.wikilink-citations": true,
+          __VERSION__: 10,
+          "citation.open-annotation-links": false,
         });
         const saveSpy = vi.spyOn(plugin, "saveData");
         const { service } = yield* makeService({
           plugin,
-          migrateV5: migrateV5ToV6,
+          migrateV10: migrateV10ToV11,
         });
         yield* Effect.promise(() => service.loaded);
-
-        expect(service.current?.["citation.annotation-citations"]).toBe(true);
-        expect(service.current).toEqual({
-          ...defaults,
-          "citation.pandoc-citations": false,
-          "citation.wikilink-citations": true,
-        });
+        expect(service.current["reader.open-annotation-links"]).toBe(false);
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
-          "citation.pandoc-citations": false,
-          "citation.wikilink-citations": true,
-          "note.default-profile": defaultProfileWith(),
+          __VERSION__: 11,
+          "reader.open-annotation-links": false,
         });
-      }),
-  );
-
-  it.effect(
-    "preserves the Annotation Citations choice across a settings reload",
-    () =>
-      Effect.gen(function* () {
-        const { plugin, service } = yield* makeService();
-        yield* Effect.promise(() => service.loaded);
-        service.update({ "citation.annotation-citations": false });
-        yield* Effect.promise(() => service.flush());
-        const reloaded = (yield* makeService({ plugin })).service;
-        yield* Effect.promise(() => reloaded.loaded);
-        expect(reloaded.current?.["citation.annotation-citations"]).toBe(false);
-        reloaded.update({ "citation.annotation-citations": RESET_SETTING });
-        expect(reloaded.current?.["citation.annotation-citations"]).toBe(true);
       }),
   );
 
@@ -1050,7 +1054,7 @@ describe("PluginSettings v1→v10 migration", () => {
         ),
       );
       expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "citation.open-as-links": true,
         "note.default-profile": defaultProfileWith({
           "note.literature-folder": "/from-v6",
@@ -1060,7 +1064,7 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "v7 data materializes the Pandoc navigation default and writes v10",
+    "v7 data materializes the Pandoc navigation default and writes v11",
     () =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
@@ -1080,7 +1084,7 @@ describe("PluginSettings v1→v10 migration", () => {
           ),
         );
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "citation.open-as-links": true,
           "note.default-profile": defaultProfileWith({
             "note.literature-folder": "/from-v7",
@@ -1089,7 +1093,7 @@ describe("PluginSettings v1→v10 migration", () => {
       }),
   );
 
-  it.effect("v7 data keeps an explicit navigation opt-out and writes v10", () =>
+  it.effect("v7 data keeps an explicit navigation opt-out and writes v11", () =>
     Effect.gen(function* () {
       const plugin = new PluginStub({
         __VERSION__: 7,
@@ -1106,7 +1110,7 @@ describe("PluginSettings v1→v10 migration", () => {
         "citation.open-as-links": false,
       });
       expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "citation.open-as-links": false,
         "note.default-profile": defaultProfileWith(),
       });
@@ -1135,7 +1139,7 @@ describe("PluginSettings v1→v10 migration", () => {
           },
         });
         expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith(),
           "zotero.library-scope": {
             mode: "selected",
@@ -1171,7 +1175,7 @@ describe("PluginSettings v1→v10 migration", () => {
         },
       });
       expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "citation.open-as-links": true,
         "note.default-profile": defaultProfileWith(),
         "zotero.library-scope": {
@@ -1215,11 +1219,11 @@ describe("PluginSettings v1→v10 migration", () => {
       },
     ],
   ] as const)(
-    "a current v10 library scope naming %s loads unchanged and is not rewritten",
+    "a current v11 library scope naming %s loads unchanged and is not rewritten",
     ([_label, scope]) =>
       Effect.gen(function* () {
         const plugin = new PluginStub({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "zotero.library-scope": scope,
         });
         const saveSpy = vi.spyOn(plugin, "saveData");
@@ -1232,10 +1236,10 @@ describe("PluginSettings v1→v10 migration", () => {
   );
 
   it.effect(
-    "version 11 is future and falls back to defaults with a warning",
+    "version 12 is future and falls back to defaults with a warning",
     () =>
       Effect.gen(function* () {
-        const plugin = new PluginStub({ __VERSION__: 11 });
+        const plugin = new PluginStub({ __VERSION__: 12 });
         const { service } = yield* makeService({ plugin });
         yield* Effect.promise(() => service.loaded);
         expect(service.current).toEqual(defaults);
@@ -1248,7 +1252,7 @@ describe("PluginSettings broken overrides", () => {
   const makeBrokenService = () =>
     makeService({
       plugin: new PluginStub({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.enabled": "not-a-boolean",
         "server.hostname": "/kept",
       }),
@@ -1291,7 +1295,7 @@ describe("PluginSettings broken overrides", () => {
       Effect.gen(function* () {
         const { service, plugin } = yield* makeService({
           plugin: new PluginStub({
-            __VERSION__: 10,
+            __VERSION__: 11,
             "note.frontmatter-fields": [{ bogus: true }],
           }),
         });
@@ -1306,7 +1310,7 @@ describe("PluginSettings broken overrides", () => {
         service.update({ "server.hostname": "/moved" });
         yield* Effect.promise(() => service.flush());
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.frontmatter-fields": [{ bogus: true }],
           "server.hostname": "/moved",
         });
@@ -1322,7 +1326,7 @@ describe("PluginSettings broken overrides", () => {
         service.update({ "server.hostname": "/moved" });
         yield* Effect.promise(() => service.flush());
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.enabled": "not-a-boolean",
           "server.hostname": "/moved",
         });
@@ -1338,7 +1342,7 @@ describe("PluginSettings broken overrides", () => {
       Effect.gen(function* () {
         const brokenScope = { mode: "selected", libraries: [] };
         const plugin = new PluginStub({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "zotero.library-scope": brokenScope,
         });
         const { service } = yield* makeService({ plugin });
@@ -1354,7 +1358,7 @@ describe("PluginSettings broken overrides", () => {
         service.update({ "server.hostname": "/moved" });
         yield* Effect.promise(() => service.flush());
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "zotero.library-scope": brokenScope,
           "server.hostname": "/moved",
         });
@@ -1363,7 +1367,7 @@ describe("PluginSettings broken overrides", () => {
         yield* Effect.promise(() => service.flush());
         expect(service.diagnostics).toEqual([]);
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "zotero.library-scope": { mode: "all" },
           "server.hostname": "/moved",
         });
@@ -1381,7 +1385,7 @@ describe("PluginSettings broken overrides", () => {
         expect(service.current?.["server.enabled"]).toBe(true);
         expect(service.diagnostics).toEqual([]);
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.enabled": true,
           "server.hostname": "/kept",
         });
@@ -1402,7 +1406,7 @@ describe("PluginSettings broken overrides", () => {
         { key: "server.enabled", value: "not-a-boolean" },
       ]);
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.enabled": "not-a-boolean",
         "server.hostname": "/moved",
       });
@@ -1417,7 +1421,7 @@ describe("PluginSettings broken overrides", () => {
       yield* Effect.promise(() => service.flush());
       expect(service.diagnostics).toEqual([]);
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.hostname": "/kept",
       });
     }),
@@ -1431,7 +1435,7 @@ describe("PluginSettings broken overrides", () => {
       yield* Effect.promise(() => service.flush());
       expect(service.diagnostics).toEqual([]);
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.hostname": "/kept",
       });
     }),
@@ -1444,21 +1448,21 @@ describe("PluginSettings broken overrides", () => {
       service.reset();
       yield* Effect.promise(() => service.flush());
       expect(service.diagnostics).toEqual([]);
-      expect(plugin.__data).toEqual({ __VERSION__: 10 });
+      expect(plugin.__data).toEqual({ __VERSION__: 11 });
     }),
   );
 
   it.effect("unknown keys stay dropped without a diagnostic", () =>
     Effect.gen(function* () {
       const { service, plugin } = yield* makeService({
-        plugin: new PluginStub({ __VERSION__: 10, unknownKey: "noise" }),
+        plugin: new PluginStub({ __VERSION__: 11, unknownKey: "noise" }),
       });
       yield* Effect.promise(() => service.loaded);
       expect(service.diagnostics).toEqual([]);
       service.update({ "server.hostname": "/x" });
       yield* Effect.promise(() => service.flush());
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.hostname": "/x",
       });
     }),
@@ -1477,7 +1481,7 @@ describe("PluginSettings broken overrides", () => {
         yield* Effect.promise(() => service.loaded);
         expect(service.diagnostics).toEqual([]);
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "note.default-profile": defaultProfileWith(),
           "server.hostname": "/kept",
         });
@@ -1549,14 +1553,14 @@ describe("PluginSettings mutations", () => {
         service.update({ "server.hostname": "/x", "server.enabled": true });
         yield* Effect.promise(() => service.flush());
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.hostname": "/x",
           "server.enabled": true,
         });
         service.update({ "server.hostname": RESET_SETTING });
         yield* Effect.promise(() => service.flush());
         expect(plugin.__data).toEqual({
-          __VERSION__: 10,
+          __VERSION__: 11,
           "server.enabled": true,
         });
       }),
@@ -1571,7 +1575,7 @@ describe("PluginSettings mutations", () => {
       });
       yield* Effect.promise(() => service.flush());
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.hostname": defaults["server.hostname"],
       });
     }),
@@ -1712,7 +1716,7 @@ describe("PluginSettings persistence", () => {
       service.update({ "server.enabled": true });
       yield* Effect.promise(() => service.flush());
       expect(plugin.__data).toEqual({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.enabled": true,
       });
     }),
@@ -1729,7 +1733,7 @@ describe("PluginSettings persistence", () => {
       expect(saveSpy).not.toHaveBeenCalled();
       yield* Effect.promise(() => service.flush());
       expect(saveSpy).toHaveBeenCalledExactlyOnceWith({
-        __VERSION__: 10,
+        __VERSION__: 11,
         "server.hostname": "/c",
       });
     }),
