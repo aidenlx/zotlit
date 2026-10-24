@@ -738,7 +738,7 @@ describe("migrateV9ToV10", () => {
 });
 
 describe("migrateV10ToV11", () => {
-  it("moves the annotation opening choice to the Reader settings", () => {
+  it("moves the annotation opening choice to the Reader settings and keeps the citation source", () => {
     expect(
       migrateV10ToV11({
         __VERSION__: 10,
@@ -749,6 +749,7 @@ describe("migrateV10ToV11", () => {
       }),
     ).toEqual({
       __VERSION__: 10,
+      "citation.annotation-citations": true,
       "reader.open-annotation-links": false,
       "server.enabled": true,
     });
@@ -761,7 +762,7 @@ describe("migrateV10ToV11", () => {
         "citation.annotation-links": false,
         "citation.annotation-citations": false,
       }),
-    ).toEqual({ __VERSION__: 10 });
+    ).toEqual({ __VERSION__: 10, "citation.annotation-citations": false });
   });
 
   it("returns an empty object for non-plain inputs", () => {

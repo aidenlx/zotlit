@@ -17,7 +17,10 @@ import { registerCitationsCli } from "./register";
 
 const setup = Effect.fn("CitationsCliTest.setup")(function* (
   body = `[@doe2024] [](${annotationUri})`,
-  options: CitationIndexHarnessOptions = { zoteroRows: annotationRows },
+  options: CitationIndexHarnessOptions = {
+    zoteroRows: annotationRows,
+    settings: { "citation.annotation-citations": true },
+  },
 ) {
   const h = yield* acquireAsyncDisposable(() =>
     createCitationIndexHarness({ "draft.md": body }, options),
@@ -187,10 +190,15 @@ it.effect(
                 raw: "doe2024",
                 position: { start: { line: 1, col: 2, offset: 1 } },
               },
+              {
+                kind: "annotation",
+                raw: "ANN23456",
+                position: { start: { line: 2, col: 1, offset: 11 } },
+              },
             ],
           },
         ],
-        omittedSyntaxes: ["annotation"],
+        omittedSyntaxes: [],
         database: "ready",
       });
       const cited = JSON.parse(
@@ -226,7 +234,7 @@ it.effect(
 );
 
 it.effect(
-  "omits an unresolved Annotation Citation and its malformed form",
+  "presents grouped unresolved, missing Annotation and malformed outcomes",
   () =>
     Effect.gen(function* () {
       const h = yield* setup(
@@ -237,15 +245,17 @@ it.effect(
       );
       expect(result.entries).toMatchObject([
         { kind: "unresolved", citekey: "unknown" },
+        { kind: "unresolved", annotationKey: "ZZZZZZZZ" },
+        { kind: "malformed" },
       ]);
-      expect(result.omittedSyntaxes).toEqual(["annotation"]);
       const set = yield* Effect.promise(() =>
         h.index.getDocumentCitationSet(h.draft),
       );
       expect(set.citations.map((c) => c.outcome)).toMatchObject([
         { kind: "unresolved-key" },
+        { kind: "missing-annotation" },
       ]);
-      expect(set.errors).toEqual([]);
+      expect(set.errors[0]?.outcome).toEqual({ kind: "malformed" });
     }),
 );
 

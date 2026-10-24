@@ -27,7 +27,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         const layout=app.workspace.getLayout();
         cleanup.defer(()=>app.workspace.changeLayout(layout));
         const settings=services.settings.current;
-        const keys=['citation.pandoc-citations','citation.wikilink-citations','attachment.import'];
+        const keys=['citation.pandoc-citations','citation.wikilink-citations','citation.annotation-citations','attachment.import'];
         cleanup.defer(()=>services.settings.update(Object.fromEntries(keys.map(key=>[key,settings[key]]))));
         services.settings.update(Object.fromEntries(keys.map(key=>[key,key!=='attachment.import'])));
         const profilePath=services.profile.defaultDocumentPath;

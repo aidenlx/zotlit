@@ -430,7 +430,7 @@ async function pluginData(stored?: unknown) {
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
   const plugin = new PluginStub(host.app as unknown as App, {
-    __VERSION__: 11,
+    __VERSION__: 10,
     ...(stored !== undefined && { "library.document": stored }),
   });
   const settings = cleanup.use(

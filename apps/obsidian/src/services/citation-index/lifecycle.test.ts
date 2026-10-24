@@ -141,6 +141,7 @@ it.effect(
           awaitReady: false,
           settings: {
             "citation.pandoc-citations": false,
+            "citation.annotation-citations": false,
           },
           openStore: async () => {
             entered.resolve();
