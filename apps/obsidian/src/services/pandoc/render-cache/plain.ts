@@ -3,6 +3,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
@@ -131,7 +132,7 @@ export function plainBibliographyRender(
   ): Promise<A> => {
     // Retain the legacy read surface after release, including unavailable
     // engine/style outcomes. A disposed ManagedRuntime cannot run it itself.
-    const exit = await (runtime.scope.state._tag === "Closed"
+    const exit = await (isScopeClosed(runtime.scope)
       ? runReleased(effect)
       : runtime.runPromiseExit(effect));
     if (Exit.isSuccess(exit)) return exit.value;

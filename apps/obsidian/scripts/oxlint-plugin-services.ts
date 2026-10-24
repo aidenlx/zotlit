@@ -577,6 +577,47 @@ export const interruptPredicate: Rule = {
   },
 };
 
+/** `<x>.state._tag`: a Scope's open or closed state, read by hand. */
+function isStateTag(node: AstNode | undefined): boolean {
+  return (
+    node?.type === "MemberExpression" &&
+    node.property?.name === "_tag" &&
+    node.object?.type === "MemberExpression" &&
+    node.object.property?.name === "state"
+  );
+}
+
+/**
+ * A plain adapter asks whether its runtime is released through `isScopeClosed`
+ * from `@/lib/effect-scope`, so every adapter reads release the same way.
+ */
+export const scopeClosed: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: { description: "Require isScopeClosed to test a closed Scope." },
+    messages: {
+      helper:
+        "Test the Scope with `isScopeClosed(scope)` from @/lib/effect-scope.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const closed = (side: AstNode | undefined) =>
+      side?.type === "Literal" && side.value === "Closed";
+    return {
+      BinaryExpression(node) {
+        const left = node.left as AstNode;
+        const right = node.right as AstNode;
+        if (
+          (isStateTag(left) && closed(right)) ||
+          (isStateTag(right) && closed(left))
+        )
+          context.report({ node, messageId: "helper" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
@@ -588,6 +629,7 @@ export default {
     "no-nanoevents": noNanoevents,
     "obsidian-events-intake": obsidianEventsIntake,
     "plain-adapter-streams": plainAdapterStreams,
+    "scope-closed": scopeClosed,
     "service-tag-id": serviceTagId,
     "state-stream": stateStream,
     "worker-rpc": workerRpc,

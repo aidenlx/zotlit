@@ -7,6 +7,7 @@ import type {
 
 import { Cause, Effect, Exit } from "@/lib/effect";
 import type { ManagedRuntime, Stream } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 
 import { QueryClients } from "./service";
 import type { Held, HeldReadChange, HeldReadEvents } from "./service";
@@ -41,7 +42,7 @@ export function plainQueryClients(
   const queries = runtime.runSync(QueryClients.use(Effect.succeed));
   // ManagedRuntime cannot be reused after disposal. Its Scope closes before
   // finalizers run, so pending consumers also see the released contract.
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   const runSync = <T>(effect: Effect.Effect<T>, released: () => T): T =>
     closed() ? released() : runtime.runSync(effect);
   // Runtime disposal interrupts callers before closing the layer. Preserve

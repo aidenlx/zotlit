@@ -1,6 +1,7 @@
 /** Document citation text for the editor and reading surfaces. */
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 
 import { CitationText } from "./service";
 
@@ -11,7 +12,7 @@ export function plainCitationText(
 ) {
   const service = runtime.runSync(CitationText);
   const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   return {
     get current() {
       return run(service.current);

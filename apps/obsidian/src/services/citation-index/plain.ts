@@ -1,6 +1,7 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { CitationLookup, inertObservation } from "./lookup-service";
@@ -36,7 +37,7 @@ export function plainCitationLookup(
 ): PlainCitationLookup {
   const service = runtime.runSync(CitationLookup);
   const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   const released = () =>
     new DOMException("Citation Lookup released", "AbortError");
   return {
@@ -91,7 +92,7 @@ export function plainCitationIndex(
   const context = runtime.runSync(Effect.context<never>());
   const run = Effect.runSyncWith(context);
   const runReleased = Effect.runPromiseWith(context);
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   async function invoke<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
     let exit = closed()
       ? await runReleased(Effect.exit(effect))

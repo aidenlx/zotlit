@@ -10,6 +10,7 @@ import {
   layerStreamConsumer,
   obsidianEventsIntake,
   plainAdapterStreams,
+  scopeClosed,
   serviceTagId,
   stateStream,
   workerRpc,
@@ -243,6 +244,23 @@ tester.run("interrupt-predicate", interruptPredicate, {
     {
       code: "if (Exit.hasInterrupts(exit)) return;",
       errors: [{ messageId: "only" }],
+    },
+  ],
+});
+
+tester.run("scope-closed", scopeClosed, {
+  valid: [
+    "if (isScopeClosed(runtime.scope)) return;",
+    'if (status._tag === "Closed") return;',
+  ],
+  invalid: [
+    {
+      code: 'const closed = () => runtime.scope.state._tag === "Closed";',
+      errors: [{ messageId: "helper" }],
+    },
+    {
+      code: 'if ("Closed" === scope.state._tag) return;',
+      errors: [{ messageId: "helper" }],
     },
   ],
 });

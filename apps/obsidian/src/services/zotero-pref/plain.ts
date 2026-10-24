@@ -1,6 +1,7 @@
 /** Zotero preferences for settings, views, and legacy services. */
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 
 import type { PrefValue } from "./prefs-file";
 import { ZoteroPref } from "./service";
@@ -23,7 +24,7 @@ export function plainZoteroPref(
 ): PlainZoteroPref {
   const pref = runtime.runSync(ZoteroPref.use(Effect.succeed));
   const context = runtime.runSync(Effect.context<ZoteroPref>());
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   // ManagedRuntime rejects runs after disposal. The held service still permits
   // snapshot and file reads, and its closed guard makes setters no-ops. Keep the
   // runtime's context for those released calls (Effect's run*With boundary).

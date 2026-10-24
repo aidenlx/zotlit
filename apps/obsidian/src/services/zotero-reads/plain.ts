@@ -1,7 +1,7 @@
 /** Database reads for views and legacy services, on the plugin runtime. */
 import { Cause, Effect, Exit, Scope, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { openScope } from "@/lib/effect-scope";
+import { isScopeClosed, openScope } from "@/lib/effect-scope";
 
 import { DbUnavailable } from "./rpc";
 import { ZoteroReads } from "./service";
@@ -36,7 +36,7 @@ export function plainZoteroReads(
   const service = runtime.runSync(ZoteroReads);
   const context = runtime.runSync(Effect.context<never>());
   const read = Effect.runSyncWith(context);
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   return {
     get state() {
       return read(service.current).state;

@@ -18,6 +18,7 @@ import {
   Semaphore,
   Stream,
 } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 import { getLogger } from "@/lib/log";
 import { readParentBeside } from "@/services/database/read-parent";
 import type { EffectiveReadMode } from "@/services/database/read-source";
@@ -418,7 +419,7 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   const ensureConnected = connecting
     .withPermits(1)(
       Effect.suspend(() => {
-        if (hostScope.state._tag === "Closed")
+        if (isScopeClosed(hostScope))
           return Effect.fail(
             new DbUnavailable({ message: "The database worker stopped" }),
           );

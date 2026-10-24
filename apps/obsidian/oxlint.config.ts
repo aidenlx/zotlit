@@ -168,8 +168,14 @@ export default defineConfig({
         "zotlit-services/layer-stream-consumer": "error",
         "zotlit-services/no-legacy-service": "error",
         "zotlit-services/obsidian-events-intake": "error",
+        "zotlit-services/scope-closed": "error",
         "zotlit-services/state-stream": "error",
       },
+    },
+    {
+      // The helper the rule points at.
+      files: ["src/lib/effect-scope.ts"],
+      rules: { "zotlit-services/scope-closed": "off" },
     },
     {
       files: ["src/**"],

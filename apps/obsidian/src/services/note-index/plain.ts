@@ -3,6 +3,7 @@ import type { TFile } from "obsidian";
 
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
+import { isScopeClosed } from "@/lib/effect-scope";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
 import { NoteIndex } from "./service";
@@ -38,7 +39,7 @@ export function plainNoteIndex(
   const readReleased = Effect.runSyncWith(
     runtime.runSync(Effect.context<never>()),
   );
-  const closed = () => runtime.scope.state._tag === "Closed";
+  const closed = () => isScopeClosed(runtime.scope);
   const read = <A>(effect: Effect.Effect<A>): A =>
     closed() ? readReleased(effect) : runtime.runSync(effect);
   const wait = async (effect: Effect.Effect<void>) => {

@@ -19,7 +19,7 @@ import {
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { acquireDisposable } from "@/lib/effect-scope";
+import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ParseClient } from "@/services/citation-parse/client";
@@ -253,14 +253,14 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         request: CitationLookupRequest,
         options?: { signal?: AbortSignal },
       ) {
-        if (scope.state._tag === "Closed") throw lookupReleased();
+        if (isScopeClosed(scope)) throw lookupReleased();
         const exit = await runPromiseExit(lookup.read(request), options);
         if (Exit.isSuccess(exit)) return exit.value;
         if (Cause.hasInterruptsOnly(exit.cause)) throw lookupReleased();
         throw Cause.squash(exit.cause);
       },
       observe: (changed: () => void) =>
-        scope.state._tag === "Closed"
+        isScopeClosed(scope)
           ? inertObservation()
           : run(lookup.observe(changed)),
       whenResolved: () =>

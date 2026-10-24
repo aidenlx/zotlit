@@ -2,6 +2,7 @@
 import type { ManagedRuntime, SubscriptionRef } from "@/lib/effect";
 import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { isScopeClosed } from "@/lib/effect-scope";
 
 /** The plugin runtime surface used by plain Stream consumers. */
 export type SubscriptionRuntime = Pick<
@@ -77,7 +78,7 @@ export function subscribe<A, R>(
   stream: Stream.Stream<A, never, R>,
   callback: (value: A) => void,
 ): () => void {
-  if (runtime.scope.state._tag === "Closed") return () => {};
+  if (isScopeClosed(runtime.scope)) return () => {};
   let active = true;
   const fiber = runtime.runFork(
     Stream.runForEach(stream, (value) =>
