@@ -17,6 +17,7 @@ import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
+import { layerDatabaseActions } from "./database/actions";
 import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
@@ -141,6 +142,7 @@ export function pluginLayer(
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
     layerCitationTemplateActions.pipe(startingAs("CitationTemplateActions")),
+    layerDatabaseActions.pipe(startingAs("DatabaseActions")),
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),

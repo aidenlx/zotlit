@@ -6,7 +6,7 @@ import { DisposableAbortController } from "@/lib/disposables";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
-import { libraryTagNames } from "@/services/database/library-tag-names";
+import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
   createProfileCreator,
   createProfileImporter,
@@ -177,6 +177,9 @@ export async function buildServices(
     .useValue({
       zoteroReads: () => plainZoteroReads(runtime),
     })
+    .useValue({
+      libraryTagNames: () => libraryTagNamesOf(runtime),
+    })
     .use({
       excerptImage: () =>
         new ExcerptImageService({
@@ -288,6 +291,7 @@ export async function buildServices(
         annotationRepository,
         capabilityNotices,
         zoteroReads,
+        libraryTagNames,
         noteIndex,
         settings,
       }) => {
@@ -303,8 +307,7 @@ export async function buildServices(
           attachments: attachmentResolver,
           annotations: annotationRepository,
           noteIndex,
-          libraryTagNames: (annotationKey) =>
-            libraryTagNames(zoteroReads, annotationKey),
+          libraryTagNames,
           settings,
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
