@@ -272,17 +272,4 @@ describe("createPdfReader", () => {
 
     expect(activateAnnotView).not.toHaveBeenCalled();
   });
-
-  it("reveals for a settings service that has not loaded yet, matching the default", () => {
-    onOpenedOf(
-      lookupDeps(
-        { ready: new Promise(() => {}) } as never,
-        {
-          settings: { current: Effect.succeed(null) },
-        } as unknown as Partial<AttachmentOpenLookupDeps>,
-      ),
-    )();
-
-    expect(activateAnnotView).toHaveBeenCalledOnce();
-  });
 });

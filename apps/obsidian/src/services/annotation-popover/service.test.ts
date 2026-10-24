@@ -151,7 +151,7 @@ describe("AnnotationPopover", () => {
       } as ZoteroPrefSnapshot),
     });
     const runtime = buildRuntime(
-      layerAnnotationPopover().pipe(
+      layerAnnotationPopover.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(AnnotationRepository, repository),
@@ -243,7 +243,7 @@ describe("AnnotationPopover", () => {
       } as ZoteroPrefSnapshot),
     });
     const runtime = buildRuntime(
-      layerAnnotationPopover().pipe(
+      layerAnnotationPopover.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(AnnotationRepository, repository),

@@ -96,7 +96,7 @@ export function renderSuggestion(
   }
 
   if (
-    bridge.runSync(settings.current)?.["citation.show-citekey-in-suggester"] &&
+    bridge.runSync(settings.current)["citation.show-citekey-in-suggester"] &&
     citationKey
   ) {
     titleEl.createSpan({ cls: CITEKEY_CHIP_CLASS, text: citationKey });

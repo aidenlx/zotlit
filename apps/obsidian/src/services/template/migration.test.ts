@@ -78,21 +78,21 @@ async function makeHarness(
   const trashFile = vi.fn(async (file: { path: string }) => {
     files.delete(file.path);
   });
+  const snapshot = () => ({ ...defaults, ...state }) as Settings;
   const update = vi.fn(
     (patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch)) =>
       Effect.sync(() => {
-        const current = { ...defaults, ...state } as Settings;
         Object.assign(
           state,
-          typeof patch === "function" ? patch(current) : patch,
+          typeof patch === "function" ? patch(snapshot()) : patch,
         );
-        return { ...defaults, ...state } as Settings;
+        return snapshot();
       }),
   );
   const flush = vi.fn(() => Effect.void);
   const settings = Object.assign(
     stubService<PluginSettings["Service"]>("PluginSettings", {
-      current: Effect.sync(() => ({ ...defaults, ...state }) as Settings),
+      current: Effect.sync(snapshot),
     }),
     { update, flush },
   );

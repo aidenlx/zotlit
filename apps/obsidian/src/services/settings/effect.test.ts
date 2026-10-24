@@ -336,8 +336,8 @@ it.effect("#1705 a throwing subscriber receives both immediate edits", () =>
       if (value["server.hostname"] === "/a") throw new Error("listener failed");
       if (value["server.hostname"] === "/b") delivered.resolve();
     });
-    bridge.runSync(settings.update({ "server.hostname": "/a" }));
-    bridge.runSync(settings.update({ "server.hostname": "/b" }));
+    yield* settings.update({ "server.hostname": "/a" });
+    yield* settings.update({ "server.hostname": "/b" });
     yield* Effect.promise(() => delivered.promise);
     stop();
     expect(seen.slice(-2)).toEqual(["/a", "/b"]);

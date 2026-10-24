@@ -284,7 +284,7 @@ export class AttachmentImportService extends Service<void> {
     });
     stack.defer(
       this.#bridge.subscribe(this.#settings.changes, (value) => {
-        if (value?.["attachment.import"]) void this.#rebuildRoots();
+        if (value["attachment.import"]) void this.#rebuildRoots();
       }),
     );
     // Every root reads from Zotero's prefs — the data directory the storage and

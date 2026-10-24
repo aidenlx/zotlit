@@ -53,12 +53,7 @@ export async function prepareAnnotationInsert(
     !signal.aborted &&
     options.valid() &&
     options.sourceScope === ctx.zoteroPref.dataDir;
-  if (
-    !valid() ||
-    !ctx.singleExcerpt ||
-    !ctx.bridge.runSync(ctx.settings.current)
-  )
-    return null;
+  if (!valid() || !ctx.singleExcerpt) return null;
   const paths = {
     dataDir: ctx.zoteroPref.dataDir,
     baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,

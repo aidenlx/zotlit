@@ -108,7 +108,9 @@ export function layerRelease(options: {
           );
         },
         Effect.catchCause((cause) =>
-          Effect.logWarning("Cannot open the release note", cause),
+          Effect.logWarning("Cannot open the release note").pipe(
+            Effect.annotateLogs({ error: Cause.squash(cause) }),
+          ),
         ),
       );
 

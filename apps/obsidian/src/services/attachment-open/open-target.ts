@@ -25,7 +25,6 @@ import type {
   AttachmentLookup,
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
-import { defaults } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
@@ -231,7 +230,7 @@ export function createTargetOpener({
   ): Promise<OpenOutcome> | null => {
     const link = parseAnnotationOpenUri(url);
     if (link === null) return null;
-    const current = bridge.runSync(settings.current) ?? defaults;
+    const current = bridge.runSync(settings.current);
     if (!current["reader.open-annotation-links"]) {
       logger.debug("Durable Annotation Link left to Zotero", {
         attachmentKey: link.attachmentKey,

@@ -6,7 +6,6 @@ import type { TFile } from "obsidian";
 import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { defaults } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 import {
   classifyTemplateFolderFile,
@@ -18,10 +17,7 @@ export function templateFolderOf(
   settings: Pick<PluginSettings["Service"], "current">,
   bridge: Pick<EffectBridge, "runSync">,
 ): string {
-  return (
-    bridge.runSync(settings.current)?.["template.folder"] ??
-    defaults["template.folder"]
-  );
+  return bridge.runSync(settings.current)["template.folder"];
 }
 
 /**

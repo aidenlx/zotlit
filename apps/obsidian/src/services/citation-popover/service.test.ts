@@ -9,9 +9,10 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { Stream } from "@/lib/effect";
+import { Logger, References, Stream } from "@/lib/effect";
+import type { Layer } from "@/lib/effect";
+import { LogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import {
   lookupAnswer,
@@ -339,7 +340,27 @@ describe("source-less Citation Popover", () => {
   });
 });
 
-function workHarness() {
+/** A Logger layer that records the Effect warnings the popover writes. */
+function captureWarnings() {
+  const warnings: {
+    message: unknown;
+    category: readonly string[];
+    annotations: Readonly<Record<string, unknown>>;
+  }[] = [];
+  const logs: Layer.Layer<never> = Logger.layer([
+    Logger.make(({ logLevel, message, fiber }) => {
+      if (logLevel !== "Warn") return;
+      warnings.push({
+        message: Array.isArray(message) ? message[0] : message,
+        category: fiber.getRef(LogCategory),
+        annotations: fiber.getRef(References.CurrentLogAnnotations),
+      });
+    }),
+  ]);
+  return { warnings, logs };
+}
+
+function workHarness(options: { logs?: Layer.Layer<never> } = {}) {
   const events = testEvents<Record<string, () => void>>([
     "changed",
     "status-changed",
@@ -365,14 +386,17 @@ function workHarness() {
     () => Promise<BibliographyRenderResult | null>
   >(async () => null);
   const open = vi.fn();
-  const popover = citationPopoverFixture({
-    app: {},
-    db,
-    citationLookup,
-    libraryScope: { current: [] },
-    profile: profileReader(),
-    bibliographyRender: { readBibliography, ...events.streams },
-  });
+  const popover = citationPopoverFixture(
+    {
+      app: {},
+      db,
+      citationLookup,
+      libraryScope: { current: [] },
+      profile: profileReader(),
+      bibliographyRender: { readBibliography, ...events.streams },
+    },
+    options,
+  );
   const { service, runtime } = popover;
   const element = document.createElement("div");
   const root = createRoot(element);
@@ -655,9 +679,29 @@ describe("source-less presentation updates", () => {
     expect(shown.textContent).not.toContain("First work");
   });
 
+  it("warns when a source-less read fails", async () => {
+    const { warnings, logs } = captureWarnings();
+    await using run = workHarness({ logs });
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.readBibliography.mockRejectedValueOnce(new Error("renderer crashed"));
+
+    await run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
+
+    expect(warnings).toEqual([
+      {
+        message: "Cannot format source-less Item",
+        category: ["citation-popover"],
+        annotations: {
+          indexedKey: "ABCD2345",
+          error: new Error("renderer crashed"),
+        },
+      },
+    ]);
+  });
+
   it("does not warn when a superseded source-less read is aborted", async () => {
-    using warn = vi.spyOn(getLogger("citation-popover"), "warn");
-    await using run = workHarness();
+    const { warnings, logs } = captureWarnings();
+    await using run = workHarness({ logs });
     run.db.holds([
       { itemID: 1, key: "ABCD2345", title: "First work" },
       { itemID: 2, key: "EFGH2345", title: "Second work" },
@@ -678,14 +722,12 @@ describe("source-less presentation updates", () => {
       indexedKey: "EFGH2345",
     });
 
-    first.resolve(null);
+    // The first read fails because the second hover aborted it.
+    first.reject(new DOMException("Aborted", "AbortError"));
     second.resolve(null);
     await Promise.all([firstHover, secondHover]);
 
-    expect(warn).not.toHaveBeenCalledWith(
-      "Cannot format source-less Item",
-      expect.anything(),
-    );
+    expect(warnings).toEqual([]);
   });
 
   it("retains the new Item data when an older render finishes later", async () => {

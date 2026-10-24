@@ -68,7 +68,7 @@ const logger = getLogger(["setting-tab", "profiles"]);
 function profileActionsLocked(ctx: SettingTabContext): boolean {
   return (
     !ctx.profile.loaded ||
-    !!ctx.bridge.runSync(ctx.settings.current)?.[
+    !!ctx.bridge.runSync(ctx.settings.current)[
       "note.template-conversion-pending"
     ]
   );
@@ -523,7 +523,7 @@ export function getProfileControlValue(
     "note-profile:default:".length,
   ) as ProfileControlField;
   return (
-    bridge.runSync(settings.current)?.["note.default-profile"].bindings[
+    bridge.runSync(settings.current)["note.default-profile"].bindings[
       bindingKeys[field]
     ] ?? ""
   );

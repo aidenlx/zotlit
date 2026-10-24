@@ -13,8 +13,7 @@ import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
 function serverEnabled(ctx: SettingTabContext): () => boolean {
-  return () =>
-    ctx.bridge.runSync(ctx.settings.current)?.["server.enabled"] ?? false;
+  return () => ctx.bridge.runSync(ctx.settings.current)["server.enabled"];
 }
 
 /**
@@ -127,7 +126,7 @@ export function liveUpdatesItems(
           setting.setDesc(
             listening
               ? m.settings_zotero_local_server_on({ port })
-              : ctx.bridge.runSync(ctx.settings.current)?.["server.enabled"]
+              : ctx.bridge.runSync(ctx.settings.current)["server.enabled"]
                 ? m.settings_zotero_local_server_not_listening()
                 : m.settings_zotero_local_server_off(),
           );
