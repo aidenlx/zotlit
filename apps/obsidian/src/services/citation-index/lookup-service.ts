@@ -8,6 +8,7 @@ import {
   Context,
   Deferred,
   Effect,
+  Exit,
   Fiber,
   Layer,
   PubSub,
@@ -16,7 +17,7 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { subscribe } from "@/lib/effect-stream";
+import { forkEach } from "@/lib/effect-stream";
 import { LibraryScope } from "@/services/library-scope/service";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
@@ -75,11 +76,6 @@ export const layerCitationLookup = Layer.effect(
     const run = Effect.runSyncWith(context);
     const runPromise = Effect.runPromiseWith(context);
     const subscriptions = yield* Scope.fork(scope);
-    const runner = {
-      scope: subscriptions,
-      runFork: <A, E>(effect: Effect.Effect<A, E>) =>
-        run(Effect.forkIn(effect, subscriptions, { startImmediately: true })),
-    };
     const state = yield* SubscriptionRef.make<CitationLookupState>({
       status: "pending",
       revision: null,
@@ -246,23 +242,29 @@ export const layerCitationLookup = Layer.effect(
         }
       };
       const unsubscribe = observer.subscribe(publish);
-      const offInvalidated = subscribe(runner, invalidated, () => {
-        if (request) observer.setOptions(options());
-      });
+      const observation = yield* Scope.fork(subscriptions);
       const dispose = (): void => {
         if (disposed) return;
         disposed = true;
         unsubscribe();
         observer.destroy();
-        offInvalidated();
-        offStopped();
+        void runPromise(Scope.close(observation, Exit.void));
         observations.delete(dispose);
         current = null;
         previous = undefined;
       };
-      const offStopped = subscribe(runner, changes, (state) => {
-        if (state.stopped) dispose();
-      });
+      yield* Scope.provide(
+        forkEach(invalidated, (): void => {
+          if (request && !disposed) observer.setOptions(options());
+        }),
+        observation,
+      );
+      yield* Scope.provide(
+        forkEach(changes, (state): void => {
+          if (state.stopped) dispose();
+        }),
+        observation,
+      );
       observations.add(dispose);
       return {
         get current() {

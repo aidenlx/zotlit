@@ -20,7 +20,7 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable } from "@/lib/effect-scope";
-import { subscribe } from "@/lib/effect-stream";
+import { forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { plainCitationParse } from "@/services/citation-parse/plain";
 import type { CitationParse } from "@/services/citation-parse/service";
@@ -610,23 +610,17 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           log("warn", "Cited-by observer failed", { error });
         }
       };
-      const observationRunner = {
-        scope: observationScope,
-        runFork: <A, E>(effect: Effect.Effect<A, E>) =>
-          run(
-            Effect.forkIn(effect, observationScope, { startImmediately: true }),
+      yield* Effect.all([
+        forkEach(events, onChange),
+        forkEach(changes, onChange),
+        forkEach(
+          lookup.changes.pipe(
+            Stream.map((value) => value.status),
+            Stream.changes,
           ),
-      };
-      subscribe(observationRunner, events, onChange);
-      subscribe(observationRunner, changes, onChange);
-      subscribe(
-        observationRunner,
-        lookup.changes.pipe(
-          Stream.map((value) => value.status),
-          Stream.changes,
+          onChange,
         ),
-        onChange,
-      );
+      ]).pipe(Scope.provide(observationScope));
       yield* Scope.provide(
         Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -1576,7 +1570,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         .on(event, app.metadataCache, event)
         .pipe(Scope.provide(scope));
     yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
-    subscribe(runner, settings.changes, applySettings);
+    yield* forkEach(settings.changes, applySettings).pipe(Scope.provide(scope));
     // Store acquisition and restoration are exactly the old startup barrier.
     yield* Effect.gen(function* () {
       const opened = yield* Effect.acquireRelease(

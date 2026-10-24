@@ -448,11 +448,58 @@ export const obsidianEventsIntake: Rule = {
   },
 };
 
+const FUNCTION_TYPES = new Set([
+  "FunctionExpression",
+  "FunctionDeclaration",
+  "ArrowFunctionExpression",
+]);
+
+/**
+ * A layer consumes another service's Stream with `forkEach` from
+ * `@/lib/effect-stream`, which forks the consumer on the layer's Scope.
+ * `subscribe(runtime, stream, callback)` is the plain-code bridge: inside a
+ * layer it hands back an unsubscribe no Scope owns, and it needs a hand-built
+ * runner. Only a call whose nearest function is the layer's Effect generator
+ * is reported; a nested plain function, such as a per-call observer that
+ * returns its own unsubscribe to a plain caller, keeps `subscribe`.
+ */
+export const layerStreamConsumer: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require forkEach for a Stream consumer in a layer body.",
+    },
+    messages: {
+      forkEach:
+        "Consume the Stream with `yield* forkEach(stream, handle)` from @/lib/effect-stream so the layer's Scope owns it (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const inLayerBody = (node: AstNode) => {
+      for (let at = node.parent; at; at = at.parent)
+        if (FUNCTION_TYPES.has(at.type)) return isEffectGenerator(at);
+      return false;
+    };
+    return {
+      CallExpression(node) {
+        if (
+          node.callee.type === "Identifier" &&
+          node.callee.name === "subscribe" &&
+          inLayerBody(node as AstNode)
+        )
+          context.report({ node, messageId: "forkEach" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
     "cli-command-registration": cliCommandRegistration,
     "effect-native-resources": effectNativeResources,
+    "layer-stream-consumer": layerStreamConsumer,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
     "obsidian-events-intake": obsidianEventsIntake,

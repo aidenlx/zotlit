@@ -6,6 +6,7 @@ import {
   effectNativeResources,
   noLegacyService,
   noNanoevents,
+  layerStreamConsumer,
   obsidianEventsIntake,
   plainAdapterStreams,
   serviceTagId,
@@ -199,6 +200,30 @@ tester.run("plain-adapter-streams", plainAdapterStreams, {
     {
       code: "class PlainLookup { on() {} }",
       errors: [{ messageId: "emitter" }],
+    },
+  ],
+});
+
+tester.run("layer-stream-consumer", layerStreamConsumer, {
+  valid: [
+    `Effect.gen(function* () { yield* forkEach(settings.changes, apply); })`,
+    // Plain code bridges into the runtime.
+    `function attach(runtime) { return subscribe(runtime, changes, apply); }`,
+    // A per-call observer returns its unsubscribe to a plain caller.
+    `Effect.gen(function* () {
+      return { observe: (cb) => subscribe(runner, changes, cb) };
+    })`,
+  ],
+  invalid: [
+    {
+      code: `Effect.gen(function* () { subscribe(runner, settings.changes, apply); })`,
+      errors: [{ messageId: "forkEach" }],
+    },
+    {
+      code: `Effect.fn("layer")(function* () {
+        const off = subscribe(runner, changes, apply);
+      })`,
+      errors: [{ messageId: "forkEach" }],
     },
   ],
 });
