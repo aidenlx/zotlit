@@ -131,6 +131,16 @@ export interface ReadOptions {
   signal?: AbortSignal;
 }
 
+/** Each bibliography render invalidation. */
+export function renderInvalidated(
+  render: Pick<BibliographyRender["Service"], "events">,
+): Stream.Stream<void> {
+  return render.events.pipe(
+    Stream.filter((event) => event._tag === "invalidated"),
+    Stream.map(() => undefined),
+  );
+}
+
 /** The style IDs a render finds unavailable, each once until it clears. */
 export function missingStyleChanges(
   changes: Stream.Stream<BibliographyRenderState>,

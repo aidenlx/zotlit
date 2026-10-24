@@ -7,6 +7,7 @@ import {
 } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
@@ -164,8 +165,12 @@ async function harness({
         opened.push([citekey, pane]),
     },
     citationPopover: {
-      show: (request: CitationHoverRequest) => requests.push(request),
+      show: (request: CitationHoverRequest) => {
+        requests.push(request);
+        return Effect.void;
+      },
     },
+    bridge: stack.use(openTestBridge()),
     citationIndex,
     settings,
   } as never);

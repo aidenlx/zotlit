@@ -16,6 +16,8 @@ import { layerCitationIndex } from "./citation-index/service";
 import type { CitationIndex } from "./citation-index/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
+import { layerCitationPopover } from "./citation-popover/service";
+import type { CitationPopover } from "./citation-popover/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
 import { layerDatabaseActions } from "./database/actions";
@@ -78,6 +80,7 @@ export function pluginLayer(
   migration: TemplateMigrationOptions,
 ): Layer.Layer<
   | CitationText
+  | CitationPopover
   | CitationIndex
   | BibliographyRender
   | CitationLookup
@@ -97,8 +100,9 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  const services = layerCitationText().pipe(
-    startingAs("CitationText"),
+  const services = layerCitationPopover.pipe(
+    startingAs("CitationPopover"),
+    Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
     Layer.provideMerge(
       Layer.mergeAll(

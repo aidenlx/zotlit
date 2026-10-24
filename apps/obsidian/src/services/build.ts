@@ -559,28 +559,7 @@ export async function buildServices(
       bibliographyRender: () => plainBibliographyRender(runtime),
     })
     .useValue({ citationText: () => plainCitationText(runtime) })
-    .use({
-      citationPopover: ({
-        profile,
-        zoteroReads,
-        citationIndex,
-        citationLookup,
-        citationText,
-        bibliographyRender,
-        libraryScope,
-      }): CitationPopover =>
-        new CitationPopover({
-          runtime,
-          profile,
-          app: plugin.app,
-          db: zoteroReads,
-          citationIndex,
-          citationLookup,
-          citationText,
-          bibliographyRender,
-          libraryScope,
-        }),
-    })
+    .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
     .use({
       annotationPopover: ({
         annotationRepository,
@@ -621,6 +600,7 @@ export async function buildServices(
         settings,
         citationLookup,
         libraryScope,
+        bridge,
       }) =>
         new CitekeyEditor({
           runtime,
@@ -638,6 +618,7 @@ export async function buildServices(
           settings,
           citationLookup,
           libraryScope,
+          bridge,
         }),
     })
     .use({
@@ -656,6 +637,7 @@ export async function buildServices(
         citationPopover,
         settings,
         citationLookup,
+        bridge,
       }) =>
         new WikilinkEditor({
           runtime,
@@ -667,6 +649,7 @@ export async function buildServices(
           citationPopover,
           settings,
           citationLookup,
+          bridge,
         }),
     })
     .use({
@@ -676,6 +659,7 @@ export async function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
+        bridge,
       }) =>
         new WikilinkReading({
           runtime,
@@ -686,6 +670,7 @@ export async function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
+          bridge,
         }),
     })
     .use({
@@ -695,6 +680,7 @@ export async function buildServices(
         citationPopover,
         citekeyEditor,
         settings,
+        bridge,
       }) =>
         new CitekeyReading({
           runtime,
@@ -705,6 +691,7 @@ export async function buildServices(
           citationPopover,
           citekeyEditor,
           settings,
+          bridge,
         }),
     })
     .use({
@@ -717,6 +704,7 @@ export async function buildServices(
         citekeyEditor,
         citationPopover,
         settings,
+        bridge,
       }) =>
         new GraphCitations({
           runtime,
@@ -729,6 +717,7 @@ export async function buildServices(
           citekeyEditor,
           citationPopover,
           settings,
+          bridge,
         }),
     });
 }

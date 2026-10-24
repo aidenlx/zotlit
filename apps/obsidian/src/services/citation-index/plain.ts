@@ -4,7 +4,12 @@ import type { ManagedRuntime } from "@/lib/effect";
 import { isScopeClosed } from "@/lib/effect-scope";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
-import { CitationLookup, inertObservation } from "./lookup-service";
+import {
+  CitationLookup,
+  inertObservation,
+  lookupChanged,
+  lookupStatusChanged,
+} from "./lookup-service";
 import type {
   CitationLookupObservation,
   CitationLookupState,
@@ -65,16 +70,8 @@ export function plainCitationLookup(
     async whenResolved() {
       if (!closed()) await runtime.runPromiseExit(service.whenResolved());
     },
-    changed: service.changes.pipe(
-      Stream.changesWith((a, b) => a.revision === b.revision),
-      Stream.drop(1),
-      Stream.map(() => undefined),
-    ),
-    "status-changed": service.changes.pipe(
-      Stream.changesWith((a, b) => a.status === b.status),
-      Stream.drop(1),
-      Stream.map(() => undefined),
-    ),
+    changed: lookupChanged(service),
+    "status-changed": lookupStatusChanged(service),
   };
 }
 

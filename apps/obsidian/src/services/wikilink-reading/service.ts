@@ -6,6 +6,7 @@
 import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -68,7 +69,8 @@ export interface WikilinkReadingDeps {
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
-  citationPopover: CitationPopover;
+  citationPopover: Pick<CitationPopover["Service"], "show">;
+  bridge: Pick<EffectBridge, "runSync">;
   settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
@@ -106,6 +108,7 @@ export class WikilinkReading extends Service<void> {
   readonly #citationText;
   readonly #citekeyEditor;
   readonly #citationPopover;
+  readonly #bridge;
   readonly #settings;
 
   /** The source and display settings that decide what a link displays. */
@@ -126,6 +129,7 @@ export class WikilinkReading extends Service<void> {
     this.#citationText = deps.citationText;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
+    this.#bridge = deps.bridge;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -348,7 +352,8 @@ export class WikilinkReading extends Service<void> {
       open: (citekey, pane) => {
         void this.#citekeyEditor.openCitekey(citekey, pane);
       },
-      showPopover: (request) => this.#citationPopover.show(request),
+      showPopover: (request) =>
+        this.#bridge.runSync(this.#citationPopover.show(request)),
       hoverPreferences: () => this.#display.hover,
       hoverTarget: () => {
         const hoverParent = this.#viewOf(element);

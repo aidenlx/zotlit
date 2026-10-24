@@ -7,13 +7,10 @@ import type { MouseEvent } from "react";
 import { itemSelectUri } from "@zotlit/db";
 
 import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
-import { getLogger } from "@/lib/log";
 import type { MenuAnchor } from "@/lib/menu";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import type { CitationEntryBlock } from "./blocks";
-
-const logger = getLogger("citation-popover");
 
 export interface CitationPopoverActions {
   /**
@@ -42,6 +39,7 @@ export interface CitationPopoverActionDeps {
   switchProfile: (path: string) => void;
   /** Refresh source-less Item availability before any action. */
   prepare?: (block: CitationEntryBlock) => Promise<CitationEntryBlock | null>;
+  log(level: "debug", message: string, fields: Record<string, unknown>): void;
 }
 
 export function createCitationPopoverActions({
@@ -50,6 +48,7 @@ export function createCitationPopoverActions({
   hide,
   switchProfile,
   prepare,
+  log,
 }: CitationPopoverActionDeps): CitationPopoverActions {
   /** Whether the last action ran; `onDone` hides only after one that did. */
   let completed: boolean | Promise<boolean> = true;
@@ -75,7 +74,7 @@ export function createCitationPopoverActions({
     onOpenNote(block, event) {
       const pane = navigationPaneOf(event);
       act(block, (current) => {
-        logger.debug("Citation popover opens note", {
+        log("debug", "Citation popover opens note", {
           citekey: block.citekey,
           pane,
         });
@@ -84,7 +83,7 @@ export function createCitationPopoverActions({
     },
     onOpenInZotero(block) {
       act(block, (current) => {
-        logger.debug("Citation popover selects in Zotero", {
+        log("debug", "Citation popover selects in Zotero", {
           itemKey: block.itemKey,
         });
         window.open(itemSelectUri(current.itemKey, current.groupID));
@@ -99,7 +98,7 @@ export function createCitationPopoverActions({
         ? { rect: button.getBoundingClientRect(), doc: button.ownerDocument }
         : undefined;
       act(block, (current) => {
-        logger.debug("Citation popover opens an attachment", {
+        log("debug", "Citation popover opens an attachment", {
           itemKey: block.itemKey,
           attachments: block.attachments.length,
         });

@@ -1,37 +1,65 @@
-import type { App, HoverParent } from "obsidian";
+import type { App, HoverParent, TFile } from "obsidian";
 import type { ReactNode } from "react";
 
 import { registerEvent } from "@/lib/disposables";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { Cause, Context, Effect, Exit, Layer, Scope } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { subscribe } from "@/lib/effect-stream";
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
+import { ObsidianApp } from "@/lib/obsidian-app";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
   describeCandidates,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type { PlainCitationLookup } from "@/services/citation-index/plain";
+import type {
+  CitationLookupAnswer,
+  CitationLookupRequest,
+} from "@/services/citation-index/lookup";
+import {
+  CitationLookup,
+  lookupChanged,
+  lookupStatusChanged,
+} from "@/services/citation-index/lookup-service";
+import type { CitationLookupStatus } from "@/services/citation-index/lookup-service";
+import { CitationIndex } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/service";
-import type {} from "@/services/citation-index/service";
-import type { PlainCitationText } from "@/services/citation-text/plain";
+import type { DocumentCitationSet } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
+import { CitationText } from "@/services/citation-text/service";
+import type { DocumentCitations } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
   documentCitationPresentation,
   documentPresentation,
+  profileReaderOf,
 } from "@/services/pandoc/document-presentation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
-import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
+import {
+  BibliographyRender,
+  renderInvalidated,
+} from "@/services/pandoc/render-cache";
+import type {
+  BibliographyRenderOutcome,
+  BibliographyRenderResult,
+  ReadOptions,
+  RenderPresentation,
+} from "@/services/pandoc/render-cache";
+import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
-import { Service } from "@/services/service-base";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { acquireReadLease } from "@/services/zotero-reads/lease";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsApi,
+  ZoteroReadsState,
+} from "@/services/zotero-reads/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -42,33 +70,50 @@ import { CitationPopoverContent } from "./content";
 import { HoverVisits } from "./visits";
 import type { HoverVisit } from "./visits";
 
-const logger = getLogger("citation-popover");
-
-export interface CitationPopoverDeps {
-  runtime: SubscriptionRuntime;
+/** What one popover read reaches outside Effect. */
+interface PopoverReads {
   app: App;
-  db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
-  citationLookup: Pick<
-    PlainCitationLookup,
-    "read" | "status" | "changed" | "status-changed"
-  >;
-  citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
+  db: {
+    readonly state: ZoteroReadsState["state"];
+    readonly reads: ZoteroReadsApi;
+    acquireRead(): Promise<ZoteroReadLease>;
+  };
+  lookupStatus(): CitationLookupStatus;
+  readLookup(
+    request: CitationLookupRequest,
+    options: { signal: AbortSignal },
+  ): Promise<CitationLookupAnswer>;
+  getDocumentCitationSet(
+    file: TFile,
+    options: Parameters<CitationIndex["Service"]["getDocumentCitationSet"]>[1],
+  ): Promise<DocumentCitationSet>;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<PlainLibraryScope, "current">;
+  libraryScope: {
+    readonly current: ResolvedLibraryScope | null;
+  };
   /** The formatted citations of the hovered document, read for this popover. */
-  citationText: Pick<PlainCitationText, "read">;
-  profile: ProfileReader;
+  readText(
+    path: string,
+    options: { signal: AbortSignal },
+  ): Promise<DocumentCitations | null>;
+  profile: Pick<ProfileReader, "loaded" | "profileOf">;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
-  bibliographyRender: Pick<
-    PlainBibliographyRender,
-    | "render"
-    | "readBibliography"
-    | "changed"
-    | "settled"
-    | "invalidated"
-    | "style-missing"
-    | "vaultPresentation"
-  >;
+  vaultPresentation(): Effect.Success<
+    BibliographyRender["Service"]["state"]
+  >["vaultPresentation"];
+  renderBibliography(
+    items: Parameters<BibliographyRender["Service"]["render"]>[0],
+    presentation: RenderPresentation,
+  ): Promise<BibliographyRenderOutcome>;
+  readBibliography(
+    items: Parameters<BibliographyRender["Service"]["readBibliography"]>[0],
+    options: ReadOptions & { signal: AbortSignal },
+  ): Promise<BibliographyRenderResult | null>;
+  log(
+    level: "debug" | "warn",
+    message: string,
+    fields: Record<string, unknown>,
+  ): void;
 }
 
 /** One work shown independently of a document or citation occurrence. */
@@ -112,107 +157,16 @@ type PopoverVisit = HoverVisit<CitationVisitState>;
  * and a note-class style's own note text are all read again, so a Citation
  * Presentation change leaves nothing of the previous style on screen.
  */
-export class CitationPopover extends Service {
-  readonly #deps;
-  readonly #visits = new HoverVisits<CitationVisitState>(() => ({
-    reading: null,
-    content: null,
-  }));
-  #closed = false;
-  ready: Promise<void>;
-
-  constructor(deps: CitationPopoverDeps) {
-    super();
-    this.#deps = deps;
-    this.ready = this.#load();
+export class CitationPopover extends Context.Service<
+  CitationPopover,
+  {
+    show(request: CitationHoverRequest): Effect.Effect<void>;
+    /** Completes once the hover's first read has drawn, or was dropped because the pointer moved on or the popover hid. */
+    showWork(request: WorkHoverRequest): Effect.Effect<void>;
+    /** Closes the owner's visit, including a card still waiting to open. */
+    hide(parent: HoverParent, targetEl?: HTMLElement): Effect.Effect<void>;
   }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    stack.defer(() => {
-      this.#closed = true;
-      this.#visits.hideAll();
-    });
-    this.commit(stack.move());
-  }
-
-  show(request: CitationHoverRequest): void {
-    void this.#show(request);
-  }
-
-  /**
-   * @returns settles once the hover's first read has drawn, or has been
-   *   dropped because the pointer moved on or the popover hid. A hover needs
-   *   not wait on it.
-   */
-  showWork(request: WorkHoverRequest): Promise<void> {
-    return this.#show(request);
-  }
-
-  /** Closes the owner's visit, including a card still waiting to open. */
-  hide(parent: HoverParent, targetEl?: HTMLElement): void {
-    this.#visits.hide(parent, targetEl);
-  }
-
-  #show(request: PopoverRequest): Promise<void> {
-    if (this.#closed) return Promise.resolve();
-    const deps = this.#deps;
-    const currentVisit = this.#visits.open(
-      request.hoverParent,
-      request.targetEl,
-    );
-    const { popover, subscriptions, state } = currentVisit;
-    subscriptions.defer(() => state.reading?.abort());
-    const read = (): Promise<void> => {
-      state.reading?.abort();
-      const reading = new AbortController();
-      state.reading = reading;
-      return fill(deps, currentVisit, {
-        request,
-        signal: reading.signal,
-      });
-    };
-    const draw = (): void => {
-      void read();
-    };
-    subscriptions.defer(
-      subscribe(deps.runtime, deps.bibliographyRender["invalidated"], draw),
-    );
-    if (!("work" in request) || request.work.kind === "citekey") {
-      subscriptions.defer(
-        subscribe(deps.runtime, deps.citationLookup["changed"], draw),
-      );
-      let freshness = deps.citationLookup.status;
-      subscriptions.defer(
-        subscribe(deps.runtime, deps.citationLookup["status-changed"], () => {
-          const previous = freshness;
-          freshness = deps.citationLookup.status;
-          if (freshness === "failed") showFailure(currentVisit);
-          else if (freshness === "fresh" && previous === "failed") draw();
-        }),
-      );
-    }
-    if (!("work" in request)) {
-      subscriptions.use(
-        registerEvent(
-          deps.app.metadataCache.on("deleted", (file) => {
-            if (file.path === request.sourcePath) {
-              popover.hide();
-            }
-          }),
-        ),
-      );
-      subscriptions.use(
-        registerEvent(
-          deps.app.metadataCache.on("changed", (file) => {
-            if (file.path === request.sourcePath) draw();
-          }),
-        ),
-      );
-    }
-    return read();
-  }
-}
+>()("zotlit/citation-popover/CitationPopover") {}
 
 /** What one read of a hovered citation puts on screen. */
 interface PopoverRead {
@@ -231,9 +185,194 @@ interface PopoverRead {
   unavailable?: "database" | "item";
 }
 
+export const layerCitationPopover: Layer.Layer<
+  CitationPopover,
+  never,
+  | ObsidianApp
+  | ZoteroReads
+  | CitationLookup
+  | CitationIndex
+  | LibraryScope
+  | CitationText
+  | BibliographyRender
+  | Profile
+> = Layer.effect(
+  CitationPopover,
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    const reads = yield* ZoteroReads;
+    const lookup = yield* CitationLookup;
+    const index = yield* CitationIndex;
+    const libraries = yield* LibraryScope;
+    const text = yield* CitationText;
+    const render = yield* BibliographyRender;
+    const profiles = yield* Profile;
+    const context = yield* Effect.context<never>();
+    const run = Effect.runSyncWith(context);
+    const runExit = Effect.runPromiseExitWith(context);
+    const scope = yield* Scope.fork(yield* Scope.Scope);
+    const runtime = { runFork: Effect.runForkWith(context), scope };
+    let stopped = false;
+    const visits = new HoverVisits<CitationVisitState>(() => ({
+      reading: null,
+      content: null,
+    }));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        stopped = true;
+        visits.hideAll();
+      }),
+    );
+
+    // Keep each service's read contract after the plugin closes.
+    const log = (
+      level: "debug" | "warn",
+      message: string,
+      fields: Record<string, unknown>,
+    ) => {
+      const write = level === "debug" ? Effect.logDebug : Effect.logWarning;
+      run(write(message).pipe(Effect.annotateLogs(fields)));
+    };
+    const lookupReleased = () =>
+      new DOMException("Citation Lookup released", "AbortError");
+    const deps: PopoverReads = {
+      app,
+      db: {
+        get state() {
+          return run(reads.current).state;
+        },
+        get reads() {
+          return reads.reads;
+        },
+        acquireRead: () =>
+          acquireReadLease(reads, {
+            runPromiseExit: runExit,
+            closed: () => stopped,
+          }),
+      },
+      lookupStatus: () => run(lookup.current).status,
+      async readLookup(request, { signal }) {
+        if (stopped) throw lookupReleased();
+        const selected = {
+          citekeys: [...(request.citekeys ?? [])],
+          indexedKeys: [...(request.indexedKeys ?? [])],
+          annotationKeys: [...(request.annotationKeys ?? [])],
+        };
+        const exit = await runExit(lookup.read(selected), { signal });
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (stopped || Cause.hasInterruptsOnly(exit.cause))
+          throw lookupReleased();
+        throw Cause.squash(exit.cause);
+      },
+      async getDocumentCitationSet(file, options) {
+        const exit = await runExit(
+          index.getDocumentCitationSet(file, options),
+          { signal: options?.signal },
+        );
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (Cause.hasInterruptsOnly(exit.cause))
+          throw new DOMException("Citation Index released", "AbortError");
+        const error = Cause.squash(exit.cause);
+        throw Cause.isUnknownError(error) ? error.cause : error;
+      },
+      libraryScope: {
+        get current() {
+          return run(libraries.current);
+        },
+      },
+      async readText(path, { signal }) {
+        if (stopped) return null;
+        const exit = await runExit(text.read(path, { signal }), { signal });
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (Cause.hasInterruptsOnly(exit.cause)) return null;
+        throw Cause.squash(exit.cause);
+      },
+      vaultPresentation: () => run(render.state).vaultPresentation,
+      async renderBibliography(items, presentation) {
+        const exit = await runExit(render.render(items, presentation));
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (Cause.hasInterruptsOnly(exit.cause))
+          return { kind: "unavailable", reason: "failed" };
+        throw Cause.squash(exit.cause);
+      },
+      async readBibliography(items, { signal }) {
+        const exit = await runExit(render.readBibliography(items, { signal }), {
+          signal,
+        });
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (Cause.hasInterruptsOnly(exit.cause))
+          throw new DOMException("Held read released", "AbortError");
+        throw Cause.squash(exit.cause);
+      },
+      profile: profileReaderOf(profiles, run),
+      log,
+    };
+    function showVisit(request: PopoverRequest): Promise<void> {
+      if (stopped) return Promise.resolve();
+      const currentVisit = visits.open(request.hoverParent, request.targetEl);
+      const { popover, subscriptions, state } = currentVisit;
+      subscriptions.defer(() => state.reading?.abort());
+      const read = (): Promise<void> => {
+        state.reading?.abort();
+        const reading = new AbortController();
+        state.reading = reading;
+        return fill(deps, currentVisit, {
+          request,
+          signal: reading.signal,
+        });
+      };
+      const draw = (): void => {
+        void read();
+      };
+      subscriptions.defer(subscribe(runtime, renderInvalidated(render), draw));
+      if (!("work" in request) || request.work.kind === "citekey") {
+        subscriptions.defer(subscribe(runtime, lookupChanged(lookup), draw));
+        let freshness = deps.lookupStatus();
+        subscriptions.defer(
+          subscribe(runtime, lookupStatusChanged(lookup), () => {
+            const previous = freshness;
+            freshness = deps.lookupStatus();
+            if (freshness === "failed") showFailure(currentVisit);
+            else if (freshness === "fresh" && previous === "failed") draw();
+          }),
+        );
+      }
+      if (!("work" in request)) {
+        subscriptions.use(
+          // oxlint-disable-next-line zotlit-services/obsidian-events-intake -- This registration belongs to one visit, not the layer.
+          registerEvent(
+            app.metadataCache.on("deleted", (file) => {
+              if (file.path === request.sourcePath) popover.hide();
+            }),
+          ),
+        );
+        subscriptions.use(
+          // oxlint-disable-next-line zotlit-services/obsidian-events-intake -- This registration belongs to one visit, not the layer.
+          registerEvent(
+            app.metadataCache.on("changed", (file) => {
+              if (file.path === request.sourcePath) draw();
+            }),
+          ),
+        );
+      }
+      return read();
+    }
+
+    return CitationPopover.of({
+      show: (request) =>
+        Effect.sync(() => {
+          void showVisit(request);
+        }),
+      showWork: (request) => Effect.promise(() => showVisit(request)),
+      hide: (parent, targetEl) =>
+        Effect.sync(() => visits.hide(parent, targetEl)),
+    });
+  }).pipe(withLogCategory("citation-popover")),
+);
+
 /** A superseded request draws nothing and hides nothing. */
 async function fill(
-  deps: CitationPopoverDeps,
+  deps: PopoverReads,
   visit: PopoverVisit,
   { request, signal }: { request: PopoverRequest; signal: AbortSignal },
 ): Promise<void> {
@@ -245,7 +384,7 @@ async function fill(
       : readBlocks(deps, request, signal));
   } catch (error) {
     if (signal.aborted) return;
-    logger.warn("Cannot read the entries of a hovered citation", {
+    deps.log("warn", "Cannot read the entries of a hovered citation", {
       path: "sourcePath" in request ? request.sourcePath : undefined,
       error,
     });
@@ -303,6 +442,7 @@ async function fill(
         : undefined,
     hide: () => popover.hide(),
     switchProfile: (path) => requestProfileSwitch(deps.app, path),
+    log: deps.log,
   });
   visit.state.content = (
     <CitationPopoverContent
@@ -315,7 +455,7 @@ async function fill(
     />
   );
   const shown = popover.render(visit.state.content);
-  logger.debug("Citation popover entries read", {
+  deps.log("debug", "Citation popover entries read", {
     path: "sourcePath" in request ? request.sourcePath : undefined,
     blocks: blocks.length,
     note: note !== undefined && note.length > 0,
@@ -324,7 +464,7 @@ async function fill(
 }
 
 async function readWork(
-  deps: CitationPopoverDeps,
+  deps: PopoverReads,
   request: WorkHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
@@ -337,7 +477,7 @@ async function readWork(
   };
   if (deps.db.state === "degraded")
     return { ...empty, unavailable: "database" };
-  if (work.kind === "citekey" && deps.citationLookup.status === "pending") {
+  if (work.kind === "citekey" && deps.lookupStatus() === "pending") {
     return {
       ...empty,
       pending: true,
@@ -349,7 +489,7 @@ async function readWork(
     let resolution: import("../citation-index/service").CitekeyResolution;
     try {
       resolution = (
-        await deps.citationLookup.read({ citekeys: [work.citekey] }, { signal })
+        await deps.readLookup({ citekeys: [work.citekey] }, { signal })
       ).resolve(work.citekey);
     } catch (error) {
       if (signal.aborted) throw error;
@@ -384,10 +524,13 @@ async function readWork(
   if (!source) return { ...empty, unavailable: "item" };
   // Read through to the render that stands: the popover shows one entry and
   // has no stale list of its own to keep on screen meanwhile.
-  const bibliography = await deps.bibliographyRender
+  const bibliography = await deps
     .readBibliography([source.csl], { signal })
     .catch((error: unknown) => {
-      logger.warn("Cannot format source-less Item", { indexedKey, error });
+      deps.log("warn", "Cannot format source-less Item", {
+        indexedKey,
+        error,
+      });
       return null;
     });
   const entry = bibliography?.entries.find(
@@ -413,13 +556,13 @@ async function readWork(
 }
 
 async function readBlocks(
-  deps: CitationPopoverDeps,
+  deps: PopoverReads,
   request: CitationHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
   const file = deps.app.vault.getFileByPath(request.sourcePath);
   if (!file) {
-    logger.debug("Hovered citation sits in no note", {
+    deps.log("debug", "Hovered citation sits in no note", {
       path: request.sourcePath,
     });
     return {
@@ -430,29 +573,28 @@ async function readBlocks(
     };
   }
   const citekeys = request.works.map(({ citekey }) => citekey);
-  const { citations, lookup, sources } =
-    await deps.citationIndex.getDocumentCitationSet(file, {
+  const { citations, lookup, sources } = await deps.getDocumentCitationSet(
+    file,
+    {
       signal,
       include: { citekeys },
-    });
+    },
+  );
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
-  const pending = deps.citationLookup.status === "pending";
+  const pending = deps.lookupStatus() === "pending";
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
   const presented = documentCitationPresentation(
     documentPresentation(deps.app.metadataCache, file, deps.profile),
-    deps.bibliographyRender.vaultPresentation,
+    deps.vaultPresentation(),
     { citations, works: sources },
   );
   const outcome =
     presented.kind === "unusable"
       ? null
-      : await deps.bibliographyRender.render(
-          presented.items,
-          presented.presentation,
-        );
+      : await deps.renderBibliography(presented.items, presented.presentation);
   const entries = buildReferenceEntries(citations, {
     bibliography:
       outcome?.kind === "held"
@@ -465,7 +607,7 @@ async function readBlocks(
   // The document's own citations as they stand now, rather than as the hover
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
-  const text = await deps.citationText.read(file.path, { signal });
+  const text = await deps.readText(file.path, { signal });
   const libraries = new Map(
     (deps.libraryScope.current?.available ?? []).map((library) => [
       library.libraryID,

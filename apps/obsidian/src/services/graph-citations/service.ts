@@ -12,6 +12,7 @@ import type {
 
 import { disposable, registerEvent } from "@/lib/disposables";
 import { Effect, Exit, Fiber } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { workLabel } from "@/lib/item-summary";
@@ -115,7 +116,8 @@ export interface GraphCitationsDeps {
   >;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
-  citationPopover: Pick<CitationPopover, "showWork" | "hide">;
+  citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
+  bridge: Pick<EffectBridge, "runPromise" | "runSync">;
   settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
@@ -196,6 +198,7 @@ export class GraphCitations extends Service<void> {
   readonly #noteIndex;
   readonly #citekeyEditor;
   readonly #citationPopover;
+  readonly #bridge;
   readonly #settings;
   /** The Citekey Navigation open action, which every node surface runs. */
   readonly #open = (citekey: string, pane: NavigationPane): void => {
@@ -241,6 +244,7 @@ export class GraphCitations extends Service<void> {
     this.#noteIndex = deps.noteIndex;
     this.#citekeyEditor = deps.citekeyEditor;
     this.#citationPopover = deps.citationPopover;
+    this.#bridge = deps.bridge;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -762,6 +766,7 @@ export class GraphCitations extends Service<void> {
       app: this.#app,
       settings: this.#settings,
       citationPopover: this.#citationPopover,
+      bridge: this.#bridge,
       open: (indexedKey, pane) => {
         void this.#citekeyEditor.openIndexedKey(indexedKey, pane);
       },

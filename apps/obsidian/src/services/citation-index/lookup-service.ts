@@ -61,6 +61,28 @@ export class CitationLookup extends Context.Service<
 const LOOKUP_KEY = ["citation-lookup"] as const;
 const GC_TIME = Temporal.Duration.from({ minutes: 5 }).total("milliseconds");
 
+/** Each Citation Lookup answer revision that replaces the previous one. */
+export function lookupChanged(
+  lookup: Pick<CitationLookup["Service"], "changes">,
+): Stream.Stream<void> {
+  return lookup.changes.pipe(
+    Stream.changesWith((a, b) => a.revision === b.revision),
+    Stream.drop(1),
+    Stream.map(() => undefined),
+  );
+}
+
+/** Each Citation Lookup status that replaces the previous one. */
+export function lookupStatusChanged(
+  lookup: Pick<CitationLookup["Service"], "changes">,
+): Stream.Stream<void> {
+  return lookup.changes.pipe(
+    Stream.changesWith((a, b) => a.status === b.status),
+    Stream.drop(1),
+    Stream.map(() => undefined),
+  );
+}
+
 export function inertObservation(): CitationLookupObservation {
   return { current: null, set: () => {}, [Symbol.dispose]: () => {} };
 }

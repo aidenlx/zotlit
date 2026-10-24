@@ -25,11 +25,20 @@ import "./style.css";
 
 const logger = getLogger("graph-citations");
 
+/** The popover runners this hover boundary uses, without making the file an Effect owner. */
+interface PopoverBridge {
+  runPromise(
+    effect: ReturnType<CitationPopover["Service"]["showWork"]>,
+  ): PromiseLike<void>;
+  runSync(effect: ReturnType<CitationPopover["Service"]["hide"]>): void;
+}
+
 /** What one graph leaf's hover wrap reads the world through. */
 export interface NodeHoverDeps {
   app: App;
   settings: Pick<PlainPluginSettings, "current">;
-  citationPopover: Pick<CitationPopover, "showWork" | "hide">;
+  citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
+  bridge: PopoverBridge;
   /** Opens the exact Item displayed in the popover. */
   open: (indexedKey: string, pane: NavigationPane) => void;
 }
@@ -63,7 +72,7 @@ export function wrapNodeHover(
   additions: () => GraphCitationAdditions,
 ): Disposable {
   const { renderer } = members;
-  const stand = new NodeStand(members, deps.citationPopover);
+  const stand = new NodeStand(members, deps.citationPopover, deps.bridge);
   const context: NodeHoverContext = { members, deps, stand, additions };
   const stack = new DisposableStack();
   stack.defer(
@@ -154,13 +163,15 @@ function hoverNode(
     return true;
   }
   logger.debug("Graph node shows its entry", { id, work: node.work });
-  void deps.citationPopover.showWork({
-    event: evt,
-    hoverParent: members.engine,
-    targetEl: stand.take(position, id),
-    work: node.work,
-    open: deps.open,
-  });
+  void deps.bridge.runPromise(
+    deps.citationPopover.showWork({
+      event: evt,
+      hoverParent: members.engine,
+      targetEl: stand.take(position, id),
+      work: node.work,
+      open: deps.open,
+    }),
+  );
   return true;
 }
 
@@ -268,7 +279,8 @@ class NodeStand implements Disposable {
 
   constructor(
     members: GraphLeafMembers,
-    citationPopover: Pick<CitationPopover, "hide">,
+    citationPopover: Pick<CitationPopover["Service"], "hide">,
+    readonly bridge: Pick<PopoverBridge, "runSync">,
   ) {
     this.#members = members;
     this.#citationPopover = citationPopover;
@@ -322,7 +334,9 @@ class NodeStand implements Disposable {
   retainNodes(nodes: GraphData["nodes"]): void {
     for (const [anchor, id] of this.#anchors) {
       if (Object.hasOwn(nodes, id)) continue;
-      this.#citationPopover.hide(this.#members.engine, anchor);
+      this.bridge.runSync(
+        this.#citationPopover.hide(this.#members.engine, anchor),
+      );
       const popover = this.#members.engine.hoverPopover;
       if (popover?.targetEl === anchor) popover.hide();
       anchor.remove();
@@ -332,7 +346,7 @@ class NodeStand implements Disposable {
 
   [Symbol.dispose](): void {
     this.release();
-    this.#citationPopover.hide(this.#members.engine);
+    this.bridge.runSync(this.#citationPopover.hide(this.#members.engine));
     const popover = this.#members.engine.hoverPopover;
     if (popover?.targetEl && this.#anchors.has(popover.targetEl))
       popover.hide();

@@ -4,7 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { wrapNodeHover } from "@/services/graph-citations/hover";
@@ -21,7 +21,7 @@ import {
   withState,
 } from "@/services/zotero-reads/test-utils";
 
-import { CitationPopover } from "./service";
+import { citationPopoverFixture } from "./__fixtures__";
 import type { WorkHoverRequest } from "./service";
 
 /** Every reads stand-in a test opened, disposed after it. */
@@ -66,8 +66,7 @@ function harness() {
   /** The signal of every document-text read a visit started, in order. */
   const textReads: AbortSignal[] = [];
   const db = reads();
-  const service = new CitationPopover({
-    runtime: testRuntime(),
+  const popover = citationPopoverFixture({
     app: {
       vault: { getFileByPath: (path: string) => ({ path }) },
       metadataCache: {
@@ -122,13 +121,16 @@ function harness() {
       readBibliography,
       vaultPresentation: { styleId: null, locale: null },
     },
-  } as never);
+  });
+  const { service, runtime } = popover;
+  const bridge = effectBridge(runtime);
   return {
     parent,
     first,
     second,
     targets,
     service,
+    bridge,
     render,
     readBibliography,
     open,
@@ -142,20 +144,33 @@ function harness() {
     ) {
       await db.ready;
       await act(async () => {
-        void service.showWork({
-          event: new MouseEvent("mouseover"),
-          hoverParent: owner,
-          targetEl,
-          work:
-            typeof work === "string"
-              ? { kind: "citekey", citekey: work }
-              : work,
-          open,
-        });
+        await runtime.runPromise(
+          service.showWork({
+            event: new MouseEvent("mouseover"),
+            hoverParent: owner,
+            targetEl,
+            work:
+              typeof work === "string"
+                ? { kind: "citekey", citekey: work }
+                : work,
+            open,
+          }),
+        );
       });
     },
+    showDocument(request: Parameters<typeof service.show>[0]): void {
+      bridge.runSync(service.show(request));
+    },
+    hide(parent: HoverParent, targetEl?: HTMLElement): void {
+      bridge.runSync(service.hide(parent, targetEl));
+    },
+    async close(): Promise<void> {
+      await popover[Symbol.asyncDispose]();
+    },
     async [Symbol.asyncDispose]() {
-      await act(() => service[Symbol.asyncDispose]());
+      await act(async () => {
+        await popover[Symbol.asyncDispose]();
+      });
       targets.remove();
     },
   };
@@ -247,7 +262,7 @@ describe("Citation Popover visits", () => {
   it("cancels pending cards and subscriptions on service unload", async () => {
     await using run = harness();
     await run.show("alpha");
-    await run.service[Symbol.asyncDispose]();
+    await run.close();
     await vi.advanceTimersByTimeAsync(1000);
     expect(run.parent.hoverPopover).toBeNull();
     expect(document.querySelector(".zt-citation-popover")).toBeNull();
@@ -257,7 +272,7 @@ describe("Citation Popover visits", () => {
 
   it("releases the previous document's subscriptions when showing a graph work", async () => {
     await using run = harness();
-    run.service.show({
+    run.showDocument({
       event: new MouseEvent("mouseover"),
       hoverParent: run.parent,
       targetEl: run.first,
@@ -293,12 +308,17 @@ describe("Citation Popover visits", () => {
     run.events.emit("invalidated");
     await act(async () => {});
     run.readBibliography.mockReturnValueOnce(next.promise);
-    await run.show({ kind: "item", indexedKey: "BCDE3456" }, run.second);
+    const showing = run.show(
+      { kind: "item", indexedKey: "BCDE3456" },
+      run.second,
+    );
+    await vi.waitFor(() => expect(card.textContent).not.toContain("Alpha"));
     expect(card.textContent).not.toContain("Alpha");
     expect(card.querySelector('[role="button"]')).toBeNull();
     await act(async () => {
       next.resolve(null);
     });
+    await showing;
     await act(async () => {
       old.reject(new Error("Stale render failed"));
     });
@@ -326,7 +346,7 @@ describe("Citation Popover visits", () => {
     async (action) => {
       await using run = harness();
       await act(() =>
-        run.service.show({
+        run.showDocument({
           event: new MouseEvent("mouseover"),
           hoverParent: run.parent,
           targetEl: run.first,
@@ -341,8 +361,8 @@ describe("Citation Popover visits", () => {
 
       await act(async () => {
         if (action === "retarget") await run.show("beta", run.second);
-        else if (action === "hide") run.service.hide(run.parent);
-        else await run.service[Symbol.asyncDispose]();
+        else if (action === "hide") run.hide(run.parent);
+        else await run.close();
       });
 
       await vi.advanceTimersByTimeAsync(0);
@@ -383,6 +403,7 @@ describe("Citation Popover visits", () => {
             current: { "citation.hover-action": "popover" },
           } as never,
           citationPopover: run.service,
+          bridge: run.bridge,
           open: run.open,
         },
         () => ({ citedWorkNodes: new Map([["alpha", "alpha"]]) }) as never,

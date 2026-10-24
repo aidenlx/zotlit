@@ -21,9 +21,11 @@ import type {
 } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
@@ -615,7 +617,15 @@ async function makeFixture(options: FixtureOptions = {}) {
   );
   const openCitekey = vi.fn(() => Promise.resolve());
   const openIndexedKey = vi.fn(() => Promise.resolve());
-  const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
+  const citationPopover = stubService<
+    import("@/services/citation-popover/service").CitationPopover["Service"] & {
+      showWork: ReturnType<typeof vi.fn>;
+    }
+  >("CitationPopover", {
+    showWork: vi.fn(() => Effect.void),
+    hide: vi.fn(() => Effect.void),
+  });
+  const bridge = owned.use(openTestBridge());
   const readsEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   const reads = {
     reads: {
@@ -665,6 +675,7 @@ async function makeFixture(options: FixtureOptions = {}) {
     noteIndex,
     citekeyEditor: { openCitekey, openIndexedKey },
     citationPopover,
+    bridge,
     settings,
   });
   const engines: FakeEngine[] = [];

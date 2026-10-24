@@ -9,7 +9,6 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
@@ -32,8 +31,8 @@ import {
 } from "@/services/zotero-reads/test-utils";
 import type { SeededWork } from "@/services/zotero-reads/test-utils";
 
+import { citationPopoverFixture } from "./__fixtures__";
 import type { CitationPopoverContentProps } from "./content";
-import { CitationPopover } from "./service";
 import type { WorkHoverRequest } from "./service";
 
 const popovers = vi.hoisted(
@@ -84,6 +83,9 @@ function reads(works: readonly SeededWork[] = []) {
     get ready() {
       return service.ready;
     },
+    get reads() {
+      return service.reads;
+    },
     acquireRead: () => service.acquireRead(),
     holds(next: readonly SeededWork[]) {
       client.$client.exec(`${CLEAR_WORKS_SQL}\n${worksSql(next)}`);
@@ -125,8 +127,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
         ),
       ),
   );
-  const service = new CitationPopover({
-    runtime: testRuntime(),
+  const popover = citationPopoverFixture({
     app: {
       vault: {
         getFileByPath: () => file,
@@ -180,23 +181,26 @@ function harness(read: () => Promise<DocumentCitations | null>) {
           },
         }),
     },
-  } as never);
+  });
+  const { service, runtime } = popover;
   const show = () =>
-    service.show({
-      event: new MouseEvent("mouseover"),
-      hoverParent: { hoverPopover: null },
-      sourcePath: NOTE.path,
-      targetEl: document.createElement("span"),
-      works: [{ citekey: "ghost" }],
-      shown: {
-        citation: {
-          source: "[@ghost]",
-          keys: [{ citekey: "ghost", start: 1, end: 7 }],
+    runtime.runSync(
+      service.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        sourcePath: NOTE.path,
+        targetEl: document.createElement("span"),
+        works: [{ citekey: "ghost" }],
+        shown: {
+          citation: {
+            source: "[@ghost]",
+            keys: [{ citekey: "ghost", start: 1, end: 7 }],
+          },
+          at: { kind: "offset", start: 0 },
         },
-        at: { kind: "offset", start: 0 },
-      },
-      open: vi.fn(),
-    });
+        open: vi.fn(),
+      }),
+    );
   return {
     citationText,
     readLookup,
@@ -205,7 +209,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
       for (const cb of deleted) cb(NOTE);
     },
     show,
-    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
+    [Symbol.asyncDispose]: () => popover[Symbol.asyncDispose](),
   };
 }
 
@@ -281,8 +285,7 @@ describe("source-less Citation Popover", () => {
       ],
       hasEntryMarkers: true,
     }));
-    await using service = new CitationPopover({
-      runtime: testRuntime(),
+    await using popover = citationPopoverFixture({
       app: {},
       db: reads([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]),
       citationLookup: {
@@ -299,15 +302,19 @@ describe("source-less Citation Popover", () => {
         invalidated: Stream.empty,
         "style-missing": Stream.empty,
       },
-    } as never);
-
-    void service.showWork({
-      event: new MouseEvent("mouseover"),
-      hoverParent: { hoverPopover: null },
-      targetEl: document.createElement("span"),
-      work: { kind: "item", indexedKey: "ABCD2345" },
-      open: vi.fn(),
     });
+
+    void Promise.resolve(
+      popover.runtime.runPromise(
+        popover.service.showWork({
+          event: new MouseEvent("mouseover"),
+          hoverParent: { hoverPopover: null },
+          targetEl: document.createElement("span"),
+          work: { kind: "item", indexedKey: "ABCD2345" },
+          open: vi.fn(),
+        }),
+      ),
+    ).catch(() => {});
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalled());
     const content = popovers[0]!.render.mock.calls.at(
@@ -357,15 +364,15 @@ function workHarness() {
     () => Promise<BibliographyRenderResult | null>
   >(async () => null);
   const open = vi.fn();
-  const service = new CitationPopover({
-    runtime: testRuntime(),
+  const popover = citationPopoverFixture({
     app: {},
     db,
     citationLookup,
     libraryScope: { current: [] },
     profile: profileReader(),
     bibliographyRender: { readBibliography, ...events.streams },
-  } as never);
+  });
+  const { service, runtime } = popover;
   const element = document.createElement("div");
   const root = createRoot(element);
   const parent = { hoverPopover: null };
@@ -380,26 +387,32 @@ function workHarness() {
     show(
       work: WorkHoverRequest["work"] = { kind: "item", indexedKey: "ABCD2345" },
     ) {
-      void service.showWork({
-        event: new MouseEvent("mouseover"),
-        hoverParent: { hoverPopover: null },
-        targetEl: element,
-        work,
-        open,
-      });
+      void Promise.resolve(
+        runtime.runPromise(
+          service.showWork({
+            event: new MouseEvent("mouseover"),
+            hoverParent: { hoverPopover: null },
+            targetEl: element,
+            work,
+            open,
+          }),
+        ),
+      ).catch(() => {});
     },
     /**
      * Hovers `work` under one parent the harness keeps, on a target of its
      * own; settles once that hover's first read drew or was dropped.
      */
     showUnder(work: WorkHoverRequest["work"]): Promise<void> {
-      return service.showWork({
-        event: new MouseEvent("mouseover"),
-        hoverParent: parent,
-        targetEl: document.createElement("span"),
-        work,
-        open,
-      });
+      return runtime.runPromise(
+        service.showWork({
+          event: new MouseEvent("mouseover"),
+          hoverParent: parent,
+          targetEl: document.createElement("span"),
+          work,
+          open,
+        }),
+      );
     },
     async shown() {
       await vi.waitFor(() =>
@@ -414,7 +427,7 @@ function workHarness() {
       return element;
     },
     async [Symbol.asyncDispose]() {
-      await service[Symbol.asyncDispose]();
+      await popover[Symbol.asyncDispose]();
       root.unmount();
     },
   };
@@ -456,10 +469,11 @@ describe("source-less lookup states", () => {
     expect((await run.shown()).textContent).toBe(
       m.citation_popover_database_unavailable(),
     );
-    expect(run.citationLookup.read).toHaveBeenCalledWith(
-      { citekeys: ["doe2024"] },
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(run.citationLookup.read).toHaveBeenCalledWith({
+      citekeys: ["doe2024"],
+      indexedKeys: [],
+      annotationKeys: [],
+    });
   });
 
   it("distinguishes an unavailable database from an absent exact Item", async () => {
@@ -764,8 +778,7 @@ it.each([false, true])(
           : annotationRows,
       },
     );
-    await using service = new CitationPopover({
-      runtime: testRuntime(),
+    await using popover = citationPopoverFixture({
       app: h.app,
       db: h.db,
       citationIndex: h.index,
@@ -782,22 +795,23 @@ it.each([false, true])(
         render: () => Promise.resolve({ kind: "unavailable" }),
       } as never,
     });
-    await service.ready;
-    service.show({
-      event: new MouseEvent("mouseover"),
-      hoverParent: { hoverPopover: null },
-      sourcePath: h.draft.path,
-      targetEl: document.createElement("span"),
-      works: [{ citekey: "doe2024", indexedKey: "ABCD2345" }],
-      shown: {
-        citation: {
-          source: "[@doe2024]",
-          keys: [{ citekey: "doe2024", start: 1, end: 9 }],
+    popover.runtime.runSync(
+      popover.service.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        sourcePath: h.draft.path,
+        targetEl: document.createElement("span"),
+        works: [{ citekey: "doe2024", indexedKey: "ABCD2345" }],
+        shown: {
+          citation: {
+            source: "[@doe2024]",
+            keys: [{ citekey: "doe2024", start: 1, end: 9 }],
+          },
+          at: { kind: "offset", start: 0 },
         },
-        at: { kind: "offset", start: 0 },
-      },
-      open: () => {},
-    });
+        open: () => {},
+      }),
+    );
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
     const content = popovers[0]!.render.mock
       .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
