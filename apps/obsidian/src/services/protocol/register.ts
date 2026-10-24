@@ -77,7 +77,10 @@ export interface ProtocolDeps extends SingleUpdateDeps {
     "sourceId" | "dataDir" | "baseAttachmentPath"
   >;
   liveUpdate: LocalServerService;
-  zoteroReads: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    "state" | "reads" | "acquireRead" | "snapshot"
+  >;
   /** Opens the Attachment `open-attachment` names. */
   opener: Pick<TargetOpener, "open">;
 }

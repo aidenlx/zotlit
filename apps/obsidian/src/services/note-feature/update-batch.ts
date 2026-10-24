@@ -12,7 +12,7 @@ import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type { BatchProfilePickerDeps } from "@/services/batch-profile-choice";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
 import type { BatchProfileCount } from "@/services/batch-profile-summary";
-import { classifyStream, runBatchWrite } from "@/services/batch-run";
+import { classifyStream, runBatch, runBatchWrite } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
   BatchRunControls,
@@ -23,6 +23,7 @@ import {
   batchGroupKey,
   batchGroups,
   batchLibraries,
+  effectLibraryScope,
   planBatchScope,
   withUnavailableLibraries,
 } from "@/services/batch-scope";
@@ -522,64 +523,69 @@ async function classifyActions(
   const skipped: NotFoundEntry[] = [];
   const notFound: NotFoundEntry[] = [];
   const kept: { label: string; profile: string; reason: string }[] = [];
-  await classifyStream(
-    {
-      itemIDs,
-      read: (ids) => lease.reads.DisplayRefs({ itemIDs: ids }),
-    },
-    controls,
-    (slice) => {
-      for (const { itemID, ref } of slice) {
-        if (!ref) {
-          notFound.push({
-            itemID,
-            label: m.batch_update_unknown_item({ id: itemID }),
-          });
-          continue;
-        }
-        const file = resolveLiteratureNoteWithWarning(
-          deps.noteIndex.getNotesByItemKey(ref.indexedKey),
-        );
-        const label = itemLabel(ref.title, itemID);
-        const row = {
-          itemID,
-          indexedKey: ref.indexedKey,
-          label,
-          libraryID: ref.libraryID,
-        };
-        if (file) {
-          const stamped = deps.profile.profileOf(file);
-          if (
-            profilesEnabled &&
-            stamped.ok &&
-            profile !== undefined &&
-            stamped.profile.selector !== profile
-          ) {
-            kept.push({
-              label,
-              profile: profileLabel(stamped.profile),
-              reason: m.batch_profile_kept_reason({
-                label: profileLabel(stamped.profile),
-                requested: profileLabel(deps.profile.resolveProfile(profile)!),
-              }),
+  await runBatch(
+    classifyStream(
+      {
+        itemIDs,
+        read: (ids) => lease.reads.DisplayRefs({ itemIDs: ids }),
+      },
+      controls,
+      (slice) => {
+        for (const { itemID, ref } of slice) {
+          if (!ref) {
+            notFound.push({
+              itemID,
+              label: m.batch_update_unknown_item({ id: itemID }),
             });
-          } else {
-            actions.push({
-              ...row,
-              kind: "update",
-              file,
-              ...(stamped.ok
-                ? { profile: stamped.profile }
-                : { unknownStamp: stamped.stamped.stamp }),
-            });
+            continue;
           }
-        } else if (scope === "metadata") {
-          skipped.push({ itemID, label });
-        } else {
-          actions.push({ ...row, kind: "create" });
+          const file = resolveLiteratureNoteWithWarning(
+            deps.noteIndex.getNotesByItemKey(ref.indexedKey),
+          );
+          const label = itemLabel(ref.title, itemID);
+          const row = {
+            itemID,
+            indexedKey: ref.indexedKey,
+            label,
+            libraryID: ref.libraryID,
+          };
+          if (file) {
+            const stamped = deps.profile.profileOf(file);
+            if (
+              profilesEnabled &&
+              stamped.ok &&
+              profile !== undefined &&
+              stamped.profile.selector !== profile
+            ) {
+              kept.push({
+                label,
+                profile: profileLabel(stamped.profile),
+                reason: m.batch_profile_kept_reason({
+                  label: profileLabel(stamped.profile),
+                  requested: profileLabel(
+                    deps.profile.resolveProfile(profile)!,
+                  ),
+                }),
+              });
+            } else {
+              actions.push({
+                ...row,
+                kind: "update",
+                file,
+                ...(stamped.ok
+                  ? { profile: stamped.profile }
+                  : { unknownStamp: stamped.stamped.stamp }),
+              });
+            }
+          } else if (scope === "metadata") {
+            skipped.push({ itemID, label });
+          } else {
+            actions.push({ ...row, kind: "create" });
+          }
         }
-      }
-    },
+      },
+    ),
+    controls.signal,
   );
 
   const libraries = batchLibraries(
@@ -635,36 +641,38 @@ async function executeBatchActions(
 
   // The run's item loads and updates read one Snapshot, held until the run
   // settles.
-  const result = await runBatchWrite({
-    zoteroReads: deps.zoteroReads,
-    tasks: actions.map((a) => ({ ...a, id: a.itemID })),
-    controls,
-    concurrency: 32,
-    run: async (task, reads) => {
-      const outcome = await runAction(deps, task, { ...baseContext, reads });
-      if (
-        plan.profileCounts &&
-        task.profile &&
-        (outcome === "created" || outcome === "updated")
-      ) {
-        const count = plan.profileCounts.get(task.profile.selector) ?? {
-          label: profileLabel(task.profile),
-          created: 0,
-          updated: 0,
-        };
-        count[outcome]++;
-        plan.profileCounts.set(task.profile.selector, count);
-      }
-      return outcome;
-    },
-    onTaskFailed: (task, error) => {
-      logger.warn("Batch update item failed", {
-        itemID: task.itemID,
-        error,
-      });
-    },
-    haltOn: (error) => error instanceof InertTemplateError,
-  });
+  const result = await runBatch(
+    runBatchWrite({
+      zoteroReads: deps.zoteroReads,
+      tasks: actions.map((a) => ({ ...a, id: a.itemID })),
+      controls,
+      concurrency: 32,
+      run: async (task, reads) => {
+        const outcome = await runAction(deps, task, { ...baseContext, reads });
+        if (
+          plan.profileCounts &&
+          task.profile &&
+          (outcome === "created" || outcome === "updated")
+        ) {
+          const count = plan.profileCounts.get(task.profile.selector) ?? {
+            label: profileLabel(task.profile),
+            created: 0,
+            updated: 0,
+          };
+          count[outcome]++;
+          plan.profileCounts.set(task.profile.selector, count);
+        }
+        return outcome;
+      },
+      onTaskFailed: (task, error) => {
+        logger.warn("Batch update item failed", {
+          itemID: task.itemID,
+          error,
+        });
+      },
+      haltOn: (error) => error instanceof InertTemplateError,
+    }),
+  );
 
   logger.info("Batch update finished", {
     ...result,
@@ -785,7 +793,16 @@ export async function runBatchUpdateAll(
     return { outcome: "db-unavailable" };
   }
 
-  const plan = await planBatchScope(deps, "literature-items", target);
+  const plan = await runBatch(
+    planBatchScope(
+      {
+        zoteroReads: deps.zoteroReads,
+        libraryScope: effectLibraryScope(deps.libraryScope),
+      },
+      "literature-items",
+      target,
+    ),
+  );
   if (plan.outcome !== "resolved") {
     return { outcome: plan.outcome };
   }

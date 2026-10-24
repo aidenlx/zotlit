@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ItemRef } from "@zotlit/db";
 
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { InertTemplateError } from "@/services/template/errors";
@@ -37,6 +38,7 @@ function noteLessDeps(): SingleUpdateDeps {
       acquireRead: () => {
         throw new Error("create path reached: ZoteroReads lease acquired");
       },
+      snapshot: Effect.die(new Error("the snapshot must not be opened")),
     },
     settings: {} as SingleUpdateDeps["settings"],
     libraryScope: {
