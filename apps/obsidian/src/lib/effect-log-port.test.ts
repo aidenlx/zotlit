@@ -5,6 +5,7 @@ import { logLibrary } from "@zotlit/shared/logging";
 
 import {
   Cause,
+  DateTime,
   Effect,
   Layer,
   Logger,
@@ -185,8 +186,12 @@ describe("Effect log port", () => {
             timestamp: LIBRARY_LOG_TIME,
           });
         }).pipe(
-          Effect.provide(layerPortLogger(ports.worker, level)),
-          Effect.provide(layerLibraryLogPort),
+          Effect.provide(
+            Layer.mergeAll(
+              layerPortLogger(ports.worker, level),
+              layerLibraryLogPort,
+            ),
+          ),
         ),
       ).pipe(Effect.provide(Logger.layer([captureLogger(captured)])));
     }),
@@ -279,8 +284,7 @@ describe("Effect log port", () => {
                     ? { itemID: 9 }
                     : [],
             },
-            // oxlint-disable-next-line no-restricted-globals -- Effect supplies Date in Logger.Options.
-            date: new Date(0),
+            date: DateTime.toDateUtc(DateTime.makeUnsafe(0)),
           } as never);
           expect(yield* Queue.take(captured)).toMatchObject({
             level: "Error",

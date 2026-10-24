@@ -200,7 +200,7 @@ export const makePortLogger = (
           : rejectedText(error);
       if (failedKinds.current.has(kind)) return;
       failedKinds.current = new Set(failedKinds.current).add(kind);
-      // oxlint-disable-next-line no-console -- the logger cannot report its own port failure.
+      // oxlint-disable-next-line effecttsgo/global-console -- the port cannot log its own post failure through Effect without recursing.
       console.error("ZotLit worker log port failed:", kind, error);
     }
   });
