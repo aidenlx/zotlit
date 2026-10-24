@@ -1,5 +1,6 @@
 // A Managed Binary layer over fake device ports, with the same handle as the plugin.
 import { Context, Layer } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import { bindManagedBinary } from "./handle";
@@ -32,7 +33,7 @@ export async function buildManagedBinary<
   );
   await runtime.context();
   const service = runtime.runSync(tag);
-  const handle = bindManagedBinary(runtime, service);
+  const handle = bindManagedBinary(effectBridge(runtime), service);
   return { service, handle, runtime };
 }
 

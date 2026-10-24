@@ -3,6 +3,7 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
@@ -117,6 +118,7 @@ export async function buildServices(
     stack,
   );
   await runtime.context();
+  const bridge = effectBridge(runtime);
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -174,7 +176,7 @@ export async function buildServices(
     })
     .useValue({
       chineseSegmenter: () =>
-        bindManagedBinary(runtime, runtime.runSync(ChineseSegmenter)),
+        bindManagedBinary(bridge, runtime.runSync(ChineseSegmenter)),
     })
     .useValue({
       zoteroReads: () => plainZoteroReads(runtime),
@@ -565,7 +567,7 @@ export async function buildServices(
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
       pandocEngine: () =>
-        bindManagedBinary(runtime, runtime.runSync(PandocEngine)),
+        bindManagedBinary(bridge, runtime.runSync(PandocEngine)),
     })
     .useValue({
       bibliographyRender: () => plainBibliographyRender(runtime),

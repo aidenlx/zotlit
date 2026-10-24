@@ -1,9 +1,11 @@
 /** Database reads for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit, Scope, Stream } from "@/lib/effect";
+import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { isScopeClosed, openScope } from "@/lib/effect-scope";
+import { effectBridge } from "@/lib/effect-bridge";
+import { isScopeClosed } from "@/lib/effect-scope";
 
-import { DbUnavailable } from "./rpc";
+import { acquireReadLease } from "./lease";
+import type { DbUnavailable } from "./rpc";
 import { ZoteroReads } from "./service";
 import type {
   ZoteroReadLease,
@@ -26,13 +28,10 @@ export interface PlainZoteroReads extends ZoteroReadsState {
   notifyExternalChange(): void;
 }
 
-const leakedLeases = new FinalizationRegistry<() => Promise<void>>(
-  (close) => void close(),
-);
-
 export function plainZoteroReads(
   runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>,
 ): PlainZoteroReads {
+  const bridge = effectBridge(runtime);
   const service = runtime.runSync(ZoteroReads);
   const context = runtime.runSync(Effect.context<never>());
   const read = Effect.runSyncWith(context);
@@ -55,34 +54,7 @@ export function plainZoteroReads(
     },
     reads: service.reads,
     snapshot: service.snapshot,
-    acquireRead: async () => {
-      if (closed())
-        throw new DbUnavailable({ message: "ZoteroReads is closed" });
-      const { scope, close } = openScope();
-      try {
-        const exit = await runtime.runPromiseExit(
-          Scope.provide(service.snapshot, scope),
-        );
-        if (Exit.isFailure(exit)) {
-          if (closed())
-            throw new DbUnavailable({ message: "ZoteroReads is closed" });
-          throw Cause.squash(exit.cause);
-        }
-        const reads = exit.value;
-        const token = {};
-        leakedLeases.register(reads, close, token);
-        return {
-          reads,
-          [Symbol.asyncDispose]: () => {
-            leakedLeases.unregister(token);
-            return close();
-          },
-        };
-      } catch (error) {
-        await close();
-        throw error;
-      }
-    },
+    acquireRead: () => acquireReadLease(service, bridge),
     refresh: async () => {
       if (closed()) return;
       const exit = await runtime.runPromiseExit(service.refresh());
