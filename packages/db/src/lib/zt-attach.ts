@@ -1,8 +1,6 @@
-import { getLogger } from "@logtape/logtape";
+import { logLibrary } from "@zotlit/shared/logging";
 
 import { isItemKey } from "./zt-item-key";
-
-const logger = getLogger(["zotlit", "db", "attachments"]);
 
 /**
  * Maps Zotero's numeric attachment link-mode IDs to string names. `4`
@@ -26,7 +24,12 @@ export function linkModeToName(linkMode: LinkMode): LinkModeName | "unknown" {
   const name = LINK_MODE[linkMode];
   if (name) return name;
 
-  logger.warn("Unknown attachment link mode {linkMode}", { linkMode });
+  logLibrary({
+    level: "warn",
+    category: ["zotlit", "db", "attachments"],
+    message: "Unknown attachment link mode {linkMode}",
+    properties: { linkMode },
+  });
   return "unknown";
 }
 

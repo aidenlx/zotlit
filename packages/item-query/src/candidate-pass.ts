@@ -1,5 +1,6 @@
-import { getLogger } from "@logtape/logtape";
 import { Effect } from "effect";
+
+import { logLibrary } from "@zotlit/shared/logging";
 
 import type { CandidateDataset } from "./dataset";
 import type { FilterNode } from "./filter-plan";
@@ -10,8 +11,6 @@ import {
 } from "./relation-candidates";
 import type { TargetLibrary } from "./request";
 import type { Tuning } from "./tuning";
-
-const logger = getLogger(["zotlit", "item-query"]);
 
 /** Choose the candidate set or the scan independently for each Target Library. */
 export const runCandidatePass = Effect.fnUntraced(function* ({
@@ -44,9 +43,11 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
     ? yield* readDatasetCandidates(plan, library.libraryID, cap!)
     : null;
   const candidates = typeof outcome === "string" ? null : outcome;
-  logger.debug(
-    "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
-    {
+  logLibrary({
+    level: "debug",
+    category: ["zotlit", "item-query"],
+    message: "ZotLit Query uses {plan} for {dataset} in Library {libraryID}",
+    properties: {
       dataset: dataset.id,
       libraryID: library.libraryID,
       groupID: library.groupID,
@@ -64,6 +65,6 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
                 ? outcome
                 : "unsupported-filter",
     },
-  );
+  });
   return candidates;
 });

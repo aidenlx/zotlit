@@ -356,8 +356,11 @@ async function prepareImportProfiles(
   let indexedKey: string | undefined;
   if (first.note.parentItemID !== null) {
     await using lease = await deps.zoteroReads.acquireRead();
-    indexedKey = (await readDisplayRef(lease.reads, first.note.parentItemID))
-      ?.indexedKey;
+    indexedKey = (
+      await Effect.runPromise(
+        readDisplayRef(lease.reads, first.note.parentItemID),
+      )
+    )?.indexedKey;
   }
   const plansFor = async (selector: ProfileSelector) => {
     let plans = cache.get(selector);

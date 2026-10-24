@@ -1,11 +1,9 @@
-// Reads the signed-in Zotero account's identity from the `settings` table.
-import { getLogger } from "@logtape/logtape";
+import { logLibrary } from "@zotlit/shared/logging";
 
+// Reads the signed-in Zotero account's identity from the `settings` table.
 import type { NodeDatabaseClient } from "@/client/node";
 
 import { defineQuery } from "./_shared";
-
-const logger = getLogger(["zotlit", "db", "account"]);
 
 /**
  * How Zotero identifies the signed-in account. It writes `localUserKey` on
@@ -78,9 +76,12 @@ export function getZoteroIdentity(db: NodeDatabaseClient): ZoteroUserIdentity {
   );
   const localUserKey = text("localUserKey");
   if (resolvedUserID == null && localUserKey == null)
-    logger.warn(
-      "Zotero database carries neither userID nor localUserKey; personal-library items have no Item URI to build",
-    );
+    logLibrary({
+      level: "warn",
+      category: ["zotlit", "db", "account"],
+      message:
+        "Zotero database carries neither userID nor localUserKey; personal-library items have no Item URI to build",
+    });
   return {
     userID: resolvedUserID,
     localUserKey,

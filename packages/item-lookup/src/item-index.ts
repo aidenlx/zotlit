@@ -21,7 +21,6 @@
  * - A locale or Segmenter change through `configure` rebuilds every held
  *   list.
  */
-import { getLogger } from "@logtape/logtape";
 import {
   Cause,
   Context,
@@ -44,6 +43,7 @@ import type {
   Item,
   LanguageNameLookup,
 } from "@zotlit/db";
+import { logLibrary } from "@zotlit/shared/logging";
 
 import { makeEngineIndexBuilder, searchEngineIndex } from "./engine";
 import type { EngineIndex, SearchMatches, SearchOptions } from "./engine";
@@ -136,10 +136,16 @@ export class ItemIndex extends Context.Service<
   }
 >()("zotlit/item-lookup/ItemIndex") {}
 
-const logger = getLogger(["zotlit", "item-lookup", "item-index"]);
-
 /** Ids read per `items` call during a build. */
 const SLICE_SIZE = 500;
+
+const log = (message: string, properties?: Readonly<Record<string, unknown>>) =>
+  logLibrary({
+    level: "debug",
+    category: ["zotlit", "item-lookup", "item-index"],
+    message,
+    properties,
+  });
 
 interface BuiltIndex {
   readonly engine: EngineIndex;
@@ -284,7 +290,7 @@ function makeItemIndex(initial: IndexSettings) {
           Effect.andThen(
             drop(entry),
             Effect.sync(() => {
-              logger.debug("Item index dropped; source unavailable", {
+              log("Item index dropped; source unavailable", {
                 libraries: entry.libraries,
                 error,
               });
@@ -318,7 +324,7 @@ function makeItemIndex(initial: IndexSettings) {
           held.config === version &&
           signaturesEqual(held.signatures, signatures)
         ) {
-          logger.debug("Item index up to date; skipping rebuild", {
+          log("Item index up to date; skipping rebuild", {
             libraries: entry.libraries,
             generation: pinned.generation,
           });
@@ -326,7 +332,7 @@ function makeItemIndex(initial: IndexSettings) {
           yield* holdOnce({ ...held, binding });
           return;
         }
-        logger.debug("Item index build started", {
+        log("Item index build started", {
           libraries: entry.libraries,
           generation: pinned.generation,
           reason:
@@ -358,7 +364,7 @@ function makeItemIndex(initial: IndexSettings) {
           config: version,
           binding,
         });
-        logger.debug("Item index built", {
+        log("Item index built", {
           libraries: entry.libraries,
           count: engine.size,
           durationMs: performance.now() - startedAt,
@@ -414,7 +420,7 @@ function makeItemIndex(initial: IndexSettings) {
     const requestRebuild = (entry: Entry): void => {
       if (entry.lane) {
         entry.rerun = true;
-        logger.debug("Item index rebuild coalesced; trailing rerun scheduled", {
+        log("Item index rebuild coalesced; trailing rerun scheduled", {
           libraries: entry.libraries,
         });
       } else {
@@ -427,7 +433,7 @@ function makeItemIndex(initial: IndexSettings) {
       for (const [key, entry] of entries) {
         if (!entry.asked && entry.waiters === 0 && entry !== latest) {
           entries.delete(key);
-          logger.debug("Item index evicted; no search since the last change", {
+          log("Item index evicted; no search since the last change", {
             libraries: entry.libraries,
           });
           const fiber = entry.lane?.fiber;
@@ -443,7 +449,7 @@ function makeItemIndex(initial: IndexSettings) {
 
     const onConfig = Effect.sync(() => {
       configVersion++;
-      logger.debug("Item index configuration changed; rebuilding", {
+      log("Item index configuration changed; rebuilding", {
         lists: entries.size,
       });
       for (const entry of entries.values()) requestRebuild(entry);

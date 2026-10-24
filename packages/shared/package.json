@@ -10,6 +10,7 @@
   "exports": {
     "./delimited": "./dist/delimited.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
+    "./logging": "./dist/logging.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
     "./package.json": "./package.json"
   },

@@ -89,12 +89,7 @@ function open({ options, alter, ddl }: Copy) {
 /** Whether ZoteroReads validates a fresh client of `copy`. */
 function zoteroReadsValidates(copy: Copy): boolean {
   using scenario = open(copy);
-  try {
-    validateClient(scenario.db);
-    return true;
-  } catch {
-    return false;
-  }
+  return Exit.isSuccess(Effect.runSyncExit(validateClient(scenario.db)));
 }
 
 /** Whether Item Query reads every Library of a fresh client of `copy`. */
@@ -139,7 +134,7 @@ describe("validateClient and Item Query", () => {
   it.each(NOT_ZOTERO)("refuses $name as not a Zotero database", (copy) => {
     using plain = open(copy);
 
-    expect(() => validateClient(plain.db)).toThrow(
+    expect(() => Effect.runSync(validateClient(plain.db))).toThrow(
       "This file is not a Zotero database. Check the Zotero data directory in ZotLit settings.",
     );
   });
@@ -147,7 +142,7 @@ describe("validateClient and Item Query", () => {
   it("refuses a copy the readers cannot read with the layout error", () => {
     using scenario = open(UNREADABLE[0]!);
 
-    expect(() => validateClient(scenario.db)).toThrow(
+    expect(() => Effect.runSync(validateClient(scenario.db))).toThrow(
       expect.objectContaining({
         _tag: "ItemQueryLayoutError",
         missing: [{ table: "fieldsCombined", column: "custom" }],
@@ -159,7 +154,7 @@ describe("validateClient and Item Query", () => {
     using scenario = openScenarioDatabase();
     const statements = countStatements(scenario.sqlite);
 
-    validateClient(scenario.db);
+    Effect.runSync(validateClient(scenario.db));
     const validated = statements();
     getSchemaVersions(scenario.db);
     getLibraries(scenario.db);

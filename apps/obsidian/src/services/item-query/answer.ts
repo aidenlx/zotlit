@@ -40,7 +40,7 @@ import type { DelimitedFormat } from "@zotlit/shared/delimited";
 import { resourceReleaseUrl } from "@/lib/constants";
 import { Cause, Data, Effect } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log-category";
 import {
   resolveLibraryScope,
   selectorKey,
@@ -74,8 +74,6 @@ import type {
   QueryViewCommand,
   QueryViewReply,
 } from "./worker-protocol";
-
-const logger = getLogger(["item-query"]);
 
 /** What the answer reads of a Query Job. */
 export type AnswerJob = QueryCommand & {
@@ -337,10 +335,10 @@ export function answerView(
     return viewReply(command, { kind: "result", result });
   }).pipe(
     Effect.catch((failed) =>
-      Effect.succeed(
+      Effect.map(failureDiagnostic(failed, named?.parameter), (diagnostic) =>
         viewReply(command, {
           kind: "failed",
-          diagnostic: failureDiagnostic(failed, named?.parameter),
+          diagnostic,
           ...(failed._tag === "ItemQueryError" &&
             failed.formulaDiagnostics && {
               formulaDiagnostics: failed.formulaDiagnostics,
@@ -717,11 +715,8 @@ function answerFailure(
   ): Effect.Effect<QueryReply, never, R> =>
     run.pipe(
       Effect.catch((failed) =>
-        Effect.sync(() =>
-          inline(
-            command,
-            failure(command, failureDiagnostic(failed, parameter)),
-          ),
+        Effect.map(failureDiagnostic(failed, parameter), (diagnostic) =>
+          inline(command, failure(command, diagnostic)),
         ),
       ),
       Effect.catchDefect(dieOfDefect),
@@ -729,36 +724,48 @@ function answerFailure(
 }
 
 /** Log a defect of one run and die with an `Error` that wraps it. */
-function dieOfDefect(defect: unknown): Effect.Effect<never> {
-  logger.error("ZotLit Query failed with a defect", {
-    cause: Cause.pretty(Cause.die(defect)),
-  });
-  return Effect.die(
-    new Error("ZotLit Query failed with an internal error.", {
-      cause: defect,
+const dieOfDefect = (defect: unknown): Effect.Effect<never> =>
+  Effect.logError("ZotLit Query failed with a defect").pipe(
+    Effect.annotateLogs({
+      cause: Cause.pretty(Cause.die(defect)),
     }),
+    withLogCategory("item-query"),
+    Effect.andThen(
+      Effect.die(
+        new Error("ZotLit Query failed with an internal error.", {
+          cause: defect,
+        }),
+      ),
+    ),
   );
-}
 
 function failureDiagnostic(
   failed: AnswerFailure,
   parameter: NamedLibraries["parameter"] | undefined,
-): Diagnostic {
-  if (failed._tag === "QueryOutputError") return failed.diagnostic;
-  if (failed._tag === "TargetLibrariesUnavailable") {
-    return targetLibrariesFailure(failed, parameter);
-  }
-  if (failed._tag === "ItemQueryError") return failed.diagnostic;
+): Effect.Effect<Diagnostic> {
+  if (failed._tag === "QueryOutputError")
+    return Effect.succeed(failed.diagnostic);
+  if (failed._tag === "TargetLibrariesUnavailable")
+    return Effect.succeed(targetLibrariesFailure(failed, parameter));
+  if (failed._tag === "ItemQueryError")
+    return Effect.succeed(failed.diagnostic);
   if (failed._tag === "ItemQueryLayoutError") {
     // `@zotlit/db` logs the missing layout and the versions once per copy.
-    return diagnostic("unsupported-database-layout", failed.message);
+    return Effect.succeed(
+      diagnostic("unsupported-database-layout", failed.message),
+    );
   }
-  logger.error("ZotLit Query failed to read the Zotero database", {
-    error: failed,
-  });
-  return diagnostic(
-    "database-error",
-    `ZotLit Query could not read the Zotero database: ${messageOf(failed.cause)}`,
+  return Effect.logError(
+    "ZotLit Query failed to read the Zotero database",
+  ).pipe(
+    Effect.annotateLogs({ error: failed }),
+    withLogCategory("item-query"),
+    Effect.as(
+      diagnostic(
+        "database-error",
+        `ZotLit Query could not read the Zotero database: ${messageOf(failed.cause)}`,
+      ),
+    ),
   );
 }
 

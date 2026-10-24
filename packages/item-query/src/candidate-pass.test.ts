@@ -1,7 +1,8 @@
-import { configureSync, resetSync } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { Effect, Exit } from "effect";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { runCandidatePass } from "./candidate-pass";
 import type { CandidateDataset } from "./dataset";
@@ -9,24 +10,14 @@ import { planFilter } from "./filter-plan";
 import { runEffect } from "./test-helpers";
 import { PRODUCTION_TUNING } from "./tuning";
 
-const logs: LogRecord[] = [];
+const logs: LibraryLogRecord[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
 beforeAll(() => {
-  configureSync({
-    sinks: { capture: (record) => logs.push(record) },
-    loggers: [
-      {
-        category: ["zotlit", "item-query"],
-        sinks: ["capture"],
-        lowestLevel: "debug",
-      },
-      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
-    ],
-  });
+  setLibraryLogSink((record) => logs.push(record));
 });
-afterAll(() => resetSync());
+afterAll(() => setLibraryLogSink(undefined));
 
 function fake(
   count: number,

@@ -512,7 +512,9 @@ async function parentLiteratureNote(
   options: Pick<ImportNoteOptions, "reads">,
 ): Promise<TFile | undefined> {
   if (note.parentItemID === null) return undefined;
-  const parent = await readDisplayRef(options.reads, note.parentItemID);
+  const parent = await Effect.runPromise(
+    readDisplayRef(options.reads, note.parentItemID),
+  );
   if (!parent) return undefined;
   return ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
 }

@@ -463,7 +463,7 @@ async function resolveProtocolItem(
   }
 
   const { reads } = deps.zoteroReads;
-  const ref = await readDisplayRef(reads, query.item);
+  const ref = await Effect.runPromise(readDisplayRef(reads, query.item));
   if (!ref) {
     logger.warn("Protocol handler: item not found", {
       action,

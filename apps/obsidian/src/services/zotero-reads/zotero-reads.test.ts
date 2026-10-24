@@ -2274,9 +2274,9 @@ describe("ZoteroReads SearchItems", () => {
           const hits = yield* withSegmenter(
             {
               chineseSegmenter: INSTALLED,
-              readSegmenter: async (binary) => {
+              readSegmenter: (binary) => {
                 asked.push(binary);
-                return bytes;
+                return Effect.succeed(bytes);
               },
             },
             (reads) => reads.SearchItems(JIEBA_ONLY),
@@ -2292,7 +2292,7 @@ describe("ZoteroReads SearchItems", () => {
         Effect.gen(function* () {
           const bytes = yield* Effect.promise(() => jiebaBytes());
           const result = yield* withSegmenter(
-            { readSegmenter: async () => bytes },
+            { readSegmenter: () => Effect.succeed(bytes) },
             (reads, ran) =>
               Effect.gen(function* () {
                 yield* reads.SearchItems(JIEBA_ONLY);

@@ -1,9 +1,18 @@
-import { Effect, Exit, Layer, Option, Scope, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Ref,
+  Scope,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 // Database ownership behind the ZoteroReads interface: Read Mode, refresh lane, watcher gate, lifetimes.
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +28,7 @@ import type {
 import { Connection } from "./connection";
 import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
+import { DbUnavailable } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
 import { layerSource } from "./source";
 import type { SourcePorts } from "./source";
@@ -84,13 +94,36 @@ interface FakeWatcher {
 function testPorts() {
   const watchers: FakeWatcher[] = [];
   const reads: PreparedRead[] = [];
+  const releases: PreparedRead[] = [];
+  const releaseGate = Effect.runSync(
+    Ref.make<{
+      entered: Deferred.Deferred<void>;
+      release: Deferred.Deferred<void>;
+    } | null>(null),
+  );
   const ports = {
-    prepareRead: vi.fn(async (mode: ReadsConfig["readMode"], path: string) => {
-      const read = await prepareRead(mode, path);
-      reads.push(read);
-      return read;
-    }),
-    snapshotSource: vi.fn(snapshotSource),
+    prepareRead: vi.fn<SourcePorts["prepareRead"]>(
+      (mode: ReadsConfig["readMode"], path: string) =>
+        prepareRead(mode, path).pipe(
+          Effect.tap((read) => Effect.sync(() => reads.push(read))),
+          Effect.flatMap((read) =>
+            Effect.acquireRelease(Effect.succeed(read), () =>
+              Ref.getAndSet(releaseGate, null).pipe(
+                Effect.flatMap((gate) =>
+                  gate
+                    ? Effect.andThen(
+                        Deferred.succeed(gate.entered, undefined),
+                        Deferred.await(gate.release),
+                      )
+                    : Effect.void,
+                ),
+                Effect.andThen(Effect.sync(() => releases.push(read))),
+              ),
+            ),
+          ),
+        ),
+    ),
+    snapshotSource: vi.fn<SourcePorts["snapshotSource"]>(snapshotSource),
     watch: vi.fn((path: string, _options: unknown, listener: unknown) => {
       const watcher: FakeWatcher = {
         path,
@@ -104,9 +137,9 @@ function testPorts() {
         },
       };
     }),
-    reapReadClones: vi.fn(async () => {}),
+    reapReadClones: vi.fn<SourcePorts["reapReadClones"]>(() => Effect.void),
   } satisfies Partial<SourcePorts>;
-  return { ports, watchers, reads };
+  return { ports, watchers, reads, releases, releaseGate };
 }
 
 /**
@@ -201,12 +234,9 @@ async function startSource(
  * settled, so it was scheduled ahead of that request and has decided by then.
  */
 async function gatesDecided(
-  ports: ReturnType<typeof testPorts>["ports"],
+  _ports: ReturnType<typeof testPorts>["ports"],
   source: { version: () => Promise<number> },
 ): Promise<void> {
-  await Promise.allSettled(
-    ports.snapshotSource.mock.results.map((result) => result.value),
-  );
   await source.version();
 }
 
@@ -218,16 +248,19 @@ function emitDirEvent(watchers: FakeWatcher[], filename: string): void {
 
 /** A held `prepareRead`: it waits for `release`, then reads for real. */
 function holdRead(ports: ReturnType<typeof testPorts>["ports"]) {
-  const held = Promise.withResolvers<void>();
-  ports.prepareRead.mockImplementationOnce(async (mode, path) => {
-    await held.promise;
-    return prepareRead(mode, path);
-  });
-  return { release: () => held.resolve() };
+  const held = Effect.runSync(Deferred.make<void>());
+  ports.prepareRead.mockImplementationOnce((mode, path) =>
+    Effect.andThen(Deferred.await(held), prepareRead(mode, path)),
+  );
+  return { release: () => Effect.runSync(Deferred.succeed(held, undefined)) };
 }
 
 const tagsSince = (events: ChangeEvent[], start: number) =>
   events.slice(start).map((event) => event._tag);
+
+const awaitFingerprint = (
+  gate: Deferred.Deferred<SourceFingerprint>,
+): Effect.Effect<SourceFingerprint, DbUnavailable> => Deferred.await(gate);
 
 describe("ZoteroReads source", () => {
   it("opens the configured read source at startup", async () => {
@@ -327,7 +360,9 @@ describe("ZoteroReads source", () => {
 
   it("leaves degraded once a refresh opens the source", async () => {
     const { ports } = testPorts();
-    ports.prepareRead.mockRejectedValueOnce(new Error("busy"));
+    ports.prepareRead.mockImplementationOnce(() =>
+      Effect.fail(new DbUnavailable({ message: "busy" })),
+    );
     await using source = await startSource(config(), ports);
     await source.run(Effect.ignore(source.reads.Libraries({})));
     await source.sawTags([
@@ -350,7 +385,9 @@ describe("ZoteroReads source", () => {
     const before = source.events.length;
 
     writeLibrary(dbPath, 2);
-    ports.prepareRead.mockRejectedValueOnce(new Error("busy"));
+    ports.prepareRead.mockImplementationOnce(() =>
+      Effect.fail(new DbUnavailable({ message: "busy" })),
+    );
     await expect(
       source.run(Effect.flip(source.reads.Refresh())),
     ).resolves.toMatchObject({ _tag: "DbUnavailable", message: "busy" });
@@ -484,7 +521,7 @@ describe("ZoteroReads source", () => {
   });
 
   it("hands a borrower the newest client while an unread one is released", async () => {
-    const { ports, reads } = testPorts();
+    const { ports, releaseGate } = testPorts();
     await using source = await startSource(config(), ports);
     await source.version();
     // Read #2 is swapped in and never borrowed before the next refresh.
@@ -492,20 +529,16 @@ describe("ZoteroReads source", () => {
 
     // Releasing read #2 is slow; a read arriving meanwhile must get read #3
     // and keep it after the release completes.
-    const entered = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    const second = reads[1]!;
-    const dispose = second[Symbol.asyncDispose].bind(second);
-    second[Symbol.asyncDispose] = async () => {
-      entered.resolve();
-      await release.promise;
-      await dispose();
+    const gate = {
+      entered: Effect.runSync(Deferred.make<void>()),
+      release: Effect.runSync(Deferred.make<void>()),
     };
+    Effect.runSync(Ref.set(releaseGate, gate));
     writeLibrary(dbPath, 3);
     const refresh = source.run(source.reads.Refresh());
-    await entered.promise;
+    await Effect.runPromise(Deferred.await(gate.entered));
     await expect(source.version()).resolves.toBe(3);
-    release.resolve();
+    Effect.runSync(Deferred.succeed(gate.release, undefined));
     await refresh;
 
     await expect(source.version()).resolves.toBe(3);
@@ -663,7 +696,9 @@ describe("ZoteroReads source", () => {
       const { ports } = testPorts();
       await using source = await startSource(config(), ports);
       await source.idle();
-      ports.prepareRead.mockRejectedValueOnce(new Error("busy"));
+      ports.prepareRead.mockImplementationOnce(() =>
+        Effect.fail(new DbUnavailable({ message: "busy" })),
+      );
       await source.run(Effect.flip(source.reads.Refresh()));
       await source.idle();
       const before = source.events.length;
@@ -684,12 +719,16 @@ describe("ZoteroReads source", () => {
         await source.idle();
         const before = source.events.length;
         if (observation === "unreadable") {
-          ports.snapshotSource.mockRejectedValueOnce(new Error("EIO"));
+          ports.snapshotSource.mockImplementationOnce(() =>
+            Effect.fail(new DbUnavailable({ message: "EIO" })),
+          );
         } else {
-          ports.snapshotSource.mockImplementationOnce(async (path) => ({
-            ...(await snapshotSource(path)),
-            wal: { state: "unstable" },
-          }));
+          ports.snapshotSource.mockImplementationOnce((path) =>
+            Effect.map(snapshotSource(path), (fingerprint) => ({
+              ...fingerprint,
+              wal: { state: "unstable" },
+            })),
+          );
         }
 
         await source.run(source.reads.NotifyExternalChange());
@@ -721,11 +760,11 @@ describe("ZoteroReads source", () => {
       const { ports } = testPorts();
       await using source = await startSource(config(), ports);
       await source.idle();
-      const fingerprint = await snapshotSource(dbPath);
-      const gate = Promise.withResolvers<SourceFingerprint>();
+      const fingerprint = await Effect.runPromise(snapshotSource(dbPath));
+      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
       using cleanup = new DisposableStack();
-      cleanup.defer(() => gate.resolve(fingerprint));
-      ports.snapshotSource.mockImplementationOnce(() => gate.promise);
+      cleanup.defer(() => Effect.runSync(Deferred.succeed(gate, fingerprint)));
+      ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       const before = source.events.length;
 
       await source.run(source.reads.NotifyExternalChange());
@@ -736,7 +775,7 @@ describe("ZoteroReads source", () => {
       const forced = source.run(source.reads.Refresh());
       // The request must join the active lane before its fingerprint settles.
       await source.version();
-      gate.resolve(fingerprint);
+      Effect.runSync(Deferred.succeed(gate, fingerprint));
       await forced;
 
       await source.sawTags(
@@ -752,11 +791,11 @@ describe("ZoteroReads source", () => {
       await source.idle();
       const next = join(dir, "next.sqlite");
       writeLibrary(next, 3);
-      const fingerprint = await snapshotSource(dbPath);
-      const gate = Promise.withResolvers<SourceFingerprint>();
+      const fingerprint = await Effect.runPromise(snapshotSource(dbPath));
+      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
       using cleanup = new DisposableStack();
-      cleanup.defer(() => gate.resolve(fingerprint));
-      ports.snapshotSource.mockImplementationOnce(() => gate.promise);
+      cleanup.defer(() => Effect.runSync(Deferred.succeed(gate, fingerprint)));
+      ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       const before = source.events.length;
 
       await source.run(source.reads.NotifyExternalChange());
@@ -765,7 +804,7 @@ describe("ZoteroReads source", () => {
         expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
       );
       await source.run(source.reads.Configure(config({ databasePath: next })));
-      gate.resolve(fingerprint);
+      Effect.runSync(Deferred.succeed(gate, fingerprint));
 
       await source.sawTags(
         ["refreshing", "changed", "changed", "refreshing"],
@@ -779,7 +818,9 @@ describe("ZoteroReads source", () => {
       await using source = await startSource(config(), ports);
       await source.version();
 
-      ports.snapshotSource.mockRejectedValueOnce(new Error("EIO"));
+      ports.snapshotSource.mockImplementationOnce(() =>
+        Effect.fail(new DbUnavailable({ message: "EIO" })),
+      );
       emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
 
@@ -872,8 +913,8 @@ describe("ZoteroReads source", () => {
 
       // Inside the gate the timer has already cleared itself, so switching
       // auto-refresh off cannot cancel the tick; it must refuse on its own.
-      const gate = Promise.withResolvers<SourceFingerprint>();
-      ports.snapshotSource.mockImplementationOnce(() => gate.promise);
+      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
+      ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       writeLibrary(dbPath, 2);
       emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
@@ -882,7 +923,9 @@ describe("ZoteroReads source", () => {
       );
 
       await source.run(source.reads.Configure(config({ autoRefresh: false })));
-      gate.resolve(await snapshotSource(dbPath));
+      Effect.runSync(
+        Deferred.succeed(gate, await Effect.runPromise(snapshotSource(dbPath))),
+      );
       await gatesDecided(ports, source);
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
@@ -895,8 +938,8 @@ describe("ZoteroReads source", () => {
       const source = await startSource(config(), ports);
       await source.version();
 
-      const gate = Promise.withResolvers<SourceFingerprint>();
-      ports.snapshotSource.mockImplementationOnce(() => gate.promise);
+      const gate = Effect.runSync(Deferred.make<SourceFingerprint, never>());
+      ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       writeLibrary(dbPath, 2);
       emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
@@ -906,7 +949,9 @@ describe("ZoteroReads source", () => {
 
       // Teardown completes with the tick interrupted inside its gate.
       await source.close();
-      gate.resolve(await snapshotSource(dbPath));
+      Effect.runSync(
+        Deferred.succeed(gate, await Effect.runPromise(snapshotSource(dbPath))),
+      );
 
       expect(ports.prepareRead).toHaveBeenCalledOnce();
     });
@@ -917,8 +962,16 @@ describe("ZoteroReads source", () => {
       await source.version();
       const boundAtStartup = ports.watch.mock.calls.length;
 
-      const late = Promise.withResolvers<PreparedRead>();
-      ports.prepareRead.mockImplementationOnce(() => late.promise);
+      const acquired = Effect.runSync(Deferred.make<PreparedRead>());
+      const late = Effect.runSync(Deferred.make<void>());
+      ports.prepareRead.mockImplementationOnce((mode, path) =>
+        Effect.gen(function* () {
+          const read = yield* prepareRead(mode, path);
+          yield* Deferred.succeed(acquired, read);
+          yield* Deferred.await(late);
+          return read;
+        }),
+      );
       await source.idle();
       const before = source.events.length;
       source.detach(source.reads.Refresh());
@@ -927,10 +980,11 @@ describe("ZoteroReads source", () => {
       );
       await source.close();
 
-      const read = await prepareRead("copy", dbPath);
-      const dispose = vi.spyOn(read, Symbol.asyncDispose);
-      late.resolve(read);
-      await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+      const read = await Effect.runPromise(Deferred.await(acquired));
+      Effect.runSync(Deferred.succeed(late, undefined));
+      await expect(readdir(dirname(read.path))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
 
       expect(ports.watch).toHaveBeenCalledTimes(boundAtStartup);
       expect(watchers.every((w) => w.closed)).toBe(true);
@@ -942,8 +996,8 @@ describe("ZoteroReads source", () => {
       const source = await startSource(config(), ports);
       await source.version();
 
-      const late = Promise.withResolvers<PreparedRead>();
-      ports.prepareRead.mockImplementationOnce(() => late.promise);
+      const late = Effect.runSync(Deferred.make<PreparedRead, DbUnavailable>());
+      ports.prepareRead.mockImplementationOnce(() => Deferred.await(late));
       await source.idle();
       const before = source.events.length;
       source.detach(source.reads.Refresh());
@@ -952,7 +1006,9 @@ describe("ZoteroReads source", () => {
       );
       // Teardown completes with the refresh interrupted inside its read.
       await source.close();
-      late.reject(new Error("gone"));
+      Effect.runSync(
+        Deferred.fail(late, new DbUnavailable({ message: "gone" })),
+      );
 
       const tags = tagsSince(source.events, before);
       expect(tags).not.toContain("refresh-failed");
@@ -960,42 +1016,36 @@ describe("ZoteroReads source", () => {
     });
 
     it("leaves nothing open when teardown lands while the old read is released", async () => {
-      const { ports, watchers, reads } = testPorts();
+      const { ports, watchers, reads, releases, releaseGate } = testPorts();
       const source = await startSource(config(), ports);
       await source.version();
 
       // Releasing the previous read removes its clone: a real await, and a
       // window for teardown while the new client is being handed over.
-      const entered = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      const first = reads[0]!;
-      const dispose = first[Symbol.asyncDispose].bind(first);
-      first[Symbol.asyncDispose] = async () => {
-        entered.resolve();
-        await release.promise;
-        await dispose();
+      const gate = {
+        entered: Effect.runSync(Deferred.make<void>()),
+        release: Effect.runSync(Deferred.make<void>()),
       };
+      Effect.runSync(Ref.set(releaseGate, gate));
       source.detach(source.reads.Refresh());
-      await entered.promise;
-      const handedOver = vi.spyOn(reads[1]!, Symbol.asyncDispose);
+      await Effect.runPromise(Deferred.await(gate.entered));
       const closing = source.close();
-      release.resolve();
+      Effect.runSync(Deferred.succeed(gate.release, undefined));
       await closing;
 
-      expect(handedOver).toHaveBeenCalledOnce();
+      expect(releases).toHaveLength(2);
+      expect(releases).toEqual(expect.arrayContaining(reads));
       expect(watchers.every((w) => w.closed)).toBe(true);
     });
 
     it("closes every client and releases every read on teardown", async () => {
-      const { ports, reads } = testPorts();
+      const { ports, reads, releases } = testPorts();
       const source = await startSource(config(), ports);
       await source.version();
       await source.run(source.reads.Refresh());
       expect(reads).toHaveLength(2);
-      const current = vi.spyOn(reads[1]!, Symbol.asyncDispose);
-
       await source.close();
-      expect(current).toHaveBeenCalledOnce();
+      expect(releases).toEqual(reads);
     });
   });
 

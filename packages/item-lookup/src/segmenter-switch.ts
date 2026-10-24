@@ -1,7 +1,8 @@
 // The Item Index's Chinese Segmenter switch: the installed binary it cuts CJK text with, or `Intl.Segmenter`.
-import { getLogger } from "@logtape/logtape";
 import { Context, Effect } from "effect";
 import type { Layer } from "effect";
+
+import { logLibrary } from "@zotlit/shared/logging";
 
 import {
   layerSegmenterJieba,
@@ -37,7 +38,17 @@ export class SegmenterBinaryReader extends Context.Service<
   }
 >()("zotlit/item-lookup/SegmenterBinaryReader") {}
 
-const logger = getLogger(["zotlit", "item-lookup", "segmenter"]);
+const log = (
+  level: "info" | "warn",
+  message: string,
+  properties?: Readonly<Record<string, unknown>>,
+) =>
+  logLibrary({
+    level,
+    category: ["zotlit", "item-lookup", "segmenter"],
+    message,
+    properties,
+  });
 
 type SegmenterService = (typeof Segmenter)["Service"];
 
@@ -80,14 +91,15 @@ export function makeSegmenterSwitch(
       Effect.tap(() =>
         Effect.sync(() => {
           if (loaded && !sameSegmenterBinary(loaded, binary)) {
-            logger.warn(
+            log(
+              "warn",
               "The Chinese Segmenter keeps its first binary until the realm restarts",
               { loaded: loaded.name, requested: binary.name },
             );
           }
           loaded ??= binary;
           jieba = true;
-          logger.info("The Chinese Segmenter cuts CJK text", {
+          log("info", "The Chinese Segmenter cuts CJK text", {
             binary: binary.name,
           });
         }),
@@ -97,7 +109,8 @@ export function makeSegmenterSwitch(
           Effect.sync(() => {
             // The next `resolve` with the same binary tries it again.
             requested = null;
-            logger.warn(
+            log(
+              "warn",
               "The Chinese Segmenter did not start; CJK text uses Intl.Segmenter",
               { binary: binary.name, error: error.message },
             );
@@ -114,7 +127,8 @@ export function makeSegmenterSwitch(
       if (sameSegmenterBinary(next, requested)) return Effect.undefined;
       requested = next;
       if (next) return install(next);
-      logger.info(
+      log(
+        "info",
         "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
       );
       return toNone;

@@ -2,9 +2,8 @@ import type { LibraryCitekey } from "@zotlit/db";
 
 // Worker-owned citation maps: a native citekey's Items, and an Item's native citekey.
 import { Effect, Stream } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log-category";
 
-const logger = getLogger("citation-index");
 const SNAPSHOT_SLICE_MS = 4;
 
 /** Construction and comparison share one worker work budget. */
@@ -102,10 +101,13 @@ export class CitekeySnapshot {
             libraryOrder.get(a.libraryID)! - libraryOrder.get(b.libraryID)! ||
             a.itemID - b.itemID,
         );
-        logger.debug("Ambiguous citation key in library scope", {
-          citekey,
-          candidates: candidates.length,
-        });
+        yield* Effect.logDebug("Ambiguous citation key in library scope").pipe(
+          Effect.annotateLogs({
+            citekey,
+            candidates: candidates.length,
+          }),
+          withLogCategory("citation-index"),
+        );
       }
     }
 

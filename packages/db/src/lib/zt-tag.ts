@@ -1,8 +1,6 @@
-import { getLogger } from "@logtape/logtape";
+import { logLibrary } from "@zotlit/shared/logging";
 
 import { defineToString } from "./to-string";
-
-const logger = getLogger(["zotlit", "db", "tags"]);
 
 /**
  * `itemTags.type`: 0 (default) is a manual tag, 1 is an automatic tag.
@@ -37,7 +35,12 @@ export function tagTypeToName(type: number): TagTypeName | "unknown" {
   const name = (TAG_TYPE as Partial<Record<number, TagTypeName>>)[type];
   if (name) return name;
 
-  logger.warn("Unknown tag type {type}", { type });
+  logLibrary({
+    level: "warn",
+    category: ["zotlit", "db", "tags"],
+    message: "Unknown tag type {type}",
+    properties: { type },
+  });
   return "unknown";
 }
 
