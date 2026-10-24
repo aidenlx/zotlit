@@ -4,6 +4,7 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { filterTag } from "@/lib/effect-stream";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { Held } from "@/services/query-client/service";
@@ -390,7 +391,7 @@ export function layerAnnotationRepository(options: {
             publish: (event) => {
               void PubSub.publishUnsafe(bus, event);
             },
-            ...options,
+            writeToken: options.writeToken,
             now,
             persistedExcerpt,
           }),
@@ -398,12 +399,7 @@ export function layerAnnotationRepository(options: {
       );
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
-        events.pipe(
-          Stream.filter(
-            (event): event is Extract<AnnotationRepositoryEvent, { _tag: T }> =>
-              event._tag === tag,
-          ),
-        );
+        filterTag(events, tag);
       return AnnotationRepository.of({
         read: (attachmentKey) => Effect.promise(() => core.read(attachmentKey)),
         hold: (attachmentKeys) => Effect.sync(() => core.hold(attachmentKeys)),

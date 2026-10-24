@@ -72,9 +72,10 @@ function hasSource(node: ModuleStatement): boolean {
 
 /**
  * Rejects a LogTape logger import in a module that imports Effect, including
- * a type-only import or a re-export, but not a type-only import of the bridge. Effect's logger carries the category,
- * annotations and spans through the host's configured sinks; a direct LogTape
- * import bypasses that contract (policies/logging.md).
+ * a type-only import or a re-export, but not a type-only import of the
+ * bridge. Effect's logger carries the category, annotations and spans through
+ * the host's configured sinks; a direct LogTape import bypasses that contract
+ * (policies/logging.md).
  */
 export const noLogTapeInEffectFile: Rule = {
   meta: {

@@ -1,6 +1,7 @@
 // The ZoteroReads event Streams shared by the service and its plain adapter.
 import { Stream } from "@/lib/effect";
 import type { Stream as StreamType } from "@/lib/effect";
+import { filterTag } from "@/lib/effect-stream";
 
 import type { ZoteroReads, ZoteroReadsEvent } from "./service";
 
@@ -13,10 +14,7 @@ type EventOf<Tag extends ZoteroReadsEvent["_tag"]> = Extract<
 const byTag = <Tag extends ZoteroReadsEvent["_tag"]>(
   source: EventsSource,
   tag: Tag,
-) =>
-  source.events.pipe(
-    Stream.filter((event): event is EventOf<Tag> => event._tag === tag),
-  );
+) => filterTag(source.events, tag);
 
 export function refreshRequested(
   source: EventsSource,

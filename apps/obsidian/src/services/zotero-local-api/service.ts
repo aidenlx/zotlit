@@ -3,7 +3,7 @@ import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
-import { forkEach } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import type { ZoteroTransport } from "@/lib/zotero-http";
 import { LocalServer } from "@/services/local-server/service";
 import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
@@ -238,12 +238,7 @@ export function layerZoteroLocalApi(options: {
 
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends LocalApiEvent["_tag"]>(tag: T) =>
-        events.pipe(
-          Stream.filter(
-            (event): event is Extract<LocalApiEvent, { _tag: T }> =>
-              event._tag === tag,
-          ),
-        );
+        filterTag(events, tag);
       return ZoteroLocalApi.of({
         demandSource: () => Effect.sync(() => session.demandSource()),
         state: Effect.sync(() => session.state),

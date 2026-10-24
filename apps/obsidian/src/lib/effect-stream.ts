@@ -4,6 +4,18 @@ import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 
+/** The events of one tag from a tagged-union Stream, narrowed to that member. */
+export function filterTag<
+  A extends { readonly _tag: string },
+  T extends A["_tag"],
+>(stream: Stream.Stream<A>, tag: T): Stream.Stream<Extract<A, { _tag: T }>> {
+  return stream.pipe(
+    Stream.filter(
+      (event): event is Extract<A, { _tag: T }> => event._tag === tag,
+    ),
+  );
+}
+
 /** The plugin runtime surface used by plain Stream consumers. */
 export type SubscriptionRuntime = Pick<
   ManagedRuntime.ManagedRuntime<never, never>,
