@@ -2,7 +2,8 @@
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import type { PlainPandocEngine } from "@/services/pandoc/plain";
+import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
+import type { CitationEngine } from "@/services/pandoc/engine";
 import { layerBibliographyRender } from "@/services/pandoc/render-cache";
 import { PandocEngine } from "@/services/pandoc/service";
 import type { PlainProfile } from "@/services/profile/plain";
@@ -33,7 +34,7 @@ export interface BibliographyRenderFixtureOptions {
     | "db-file-missing"
     | "refresh-requested"
   >;
-  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "getEngine">;
+  pandocEngine: Pick<ManagedBinaryHandle<CitationEngine>, "binary">;
   zoteroPref: Pick<
     PlainZoteroPref,
     "dataDir" | "changed" | "data-dir-changed" | "resolved-changed"
@@ -134,14 +135,9 @@ export async function bibliographyRenderFixture(
         Layer.succeed(
           PandocEngine,
           stubService<PandocEngine["Service"]>("PandocEngine", {
-            getStatus: () =>
-              Effect.sync(() => options.pandocEngine.getStatus()),
-            getEngine: () =>
-              Effect.tryPromise({
-                try: () => options.pandocEngine.getEngine(),
-                catch: (error) => error as Error,
-              }),
-            changes: options.pandocEngine.changes,
+            getStatus: () => options.pandocEngine.binary.getStatus(),
+            getEngine: () => options.pandocEngine.binary.getEngine(),
+            changes: options.pandocEngine.binary.changes,
           }),
         ),
         Layer.succeed(

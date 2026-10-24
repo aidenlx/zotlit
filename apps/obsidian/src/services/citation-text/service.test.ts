@@ -5,6 +5,7 @@ import { describe, expect, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
@@ -31,8 +32,10 @@ import {
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import type {
   BibliographyRequest,
+  CitationEngine,
   RenderedCitation,
 } from "@/services/pandoc/engine";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
@@ -575,14 +578,26 @@ describe("CitationText", () => {
                   changes: Stream.empty,
                 },
                 pandocEngine: {
-                  getStatus: () => ({
-                    kind: "installed",
-                    version: "3.10",
-                    binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
-                  }),
-                  changes: Stream.empty,
-                  getEngine: async () =>
-                    ({ renderCitations, renderBibliography }) as never,
+                  binary: stubService<ManagedBinaryApi<CitationEngine>>(
+                    "PandocEngine",
+                    {
+                      getStatus: () =>
+                        Effect.succeed({
+                          kind: "installed",
+                          version: "3.10",
+                          binary: {
+                            directory: "pandoc-engine",
+                            name: "pandoc.wasm",
+                          },
+                        }),
+                      changes: Stream.empty,
+                      getEngine: () =>
+                        Effect.succeed({
+                          renderCitations,
+                          renderBibliography,
+                        } as never),
+                    },
+                  ),
                 },
               },
               context,

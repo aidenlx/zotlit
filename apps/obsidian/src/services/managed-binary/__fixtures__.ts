@@ -1,8 +1,8 @@
-// A Managed Binary layer over fake device ports, with the same adapter as the plugin.
+// A Managed Binary layer over fake device ports, with the same handle as the plugin.
 import { Context, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 
-import { plainManagedBinary } from "./plain";
+import { bindManagedBinary } from "./handle";
 import { managedBinaryPorts } from "./platform";
 import { layerManagedBinary, ManagedBinaryPlatform } from "./service";
 import type {
@@ -32,17 +32,18 @@ export async function buildManagedBinary<
   );
   await runtime.context();
   const service = runtime.runSync(tag);
-  return Object.assign(plainManagedBinary(runtime, service), { runtime });
+  const handle = bindManagedBinary(runtime, service);
+  return { service, handle, runtime };
 }
 
-/** A disposable test owner around the plain adapter, which has no lifecycle API. */
+/** A disposable test owner around the handle and its service. */
 export async function openManagedBinary<
   Engine extends Disposable | AsyncDisposable,
 >(binary: ManagedBinary<Engine>, ports: ManagedBinaryHostPorts) {
   await using stack = new AsyncDisposableStack();
-  const adapter = await buildManagedBinary(binary, ports, stack);
+  const built = await buildManagedBinary(binary, ports, stack);
   const owned = stack.move();
-  return Object.assign(adapter, {
+  return Object.assign(built, {
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
   });
 }

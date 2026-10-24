@@ -9,7 +9,7 @@ import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type { PlainPandocEngine } from "@/services/pandoc/plain";
+import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -43,7 +43,7 @@ export interface ReferencesRegistrationDeps {
   libraryScope: Pick<PlainLibraryScope, "current">;
   citationText: ReferencesViewDeps["citationText"];
   citekeyEditor: CitekeyEditor;
-  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "decline">;
+  pandocEngine: Pick<ManagedBinaryHandle, "binary" | "runSync">;
   bibliographyRender: Pick<
     PlainBibliographyRender,
     | "render"

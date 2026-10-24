@@ -2,9 +2,11 @@
 import { expect } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { plainSettingsOf } from "@/services/settings/__fixtures__";
 
 import { ZotLitSettingTab } from "./index";
@@ -36,7 +38,16 @@ it.effect(
         changed: Stream.empty,
         "compile-status-changed": Stream.empty,
       };
-      const changes = { changes: Stream.empty };
+      const changes = {
+        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+          "ManagedBinary",
+          {
+            changes: Stream.empty,
+          },
+        ),
+        runSync: Effect.runSync,
+        runPromise: Effect.runPromise,
+      };
       const tab = new ZotLitSettingTab({
         runtime: testRuntime(),
         plugin: { app: {}, register: (off: () => void) => cleanup.push(off) },

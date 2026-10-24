@@ -12,9 +12,12 @@ import { join } from "node:path";
 import type { App, Command, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
@@ -156,8 +159,30 @@ function openVault({
     {
       app,
       pandocEngine: {
-        getStatus: () => ({ kind: engineInstalled ? "installed" : "absent" }),
-        getEngine,
+        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+          "PandocEngine",
+          {
+            getStatus: () =>
+              Effect.succeed(
+                engineInstalled
+                  ? {
+                      kind: "installed",
+                      version: "test",
+                      binary: {
+                        directory: "pandoc-engine",
+                        name: "pandoc.wasm",
+                      },
+                    }
+                  : { kind: "absent" },
+              ),
+            getEngine: () =>
+              Effect.promise(getEngine).pipe(
+                Effect.map(() => ({ [Symbol.dispose]: () => undefined })),
+              ),
+          },
+        ),
+        runSync: Effect.runSync,
+        runPromise: Effect.runPromise,
       },
       zoteroPref: { dataDir: DATA_DIR },
       citationLookup: {

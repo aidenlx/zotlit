@@ -9,8 +9,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
-import { Layer, Stream } from "@/lib/effect";
+import { Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -21,6 +22,7 @@ import type {
 } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/sources";
 import type { DocumentCitations } from "@/services/citation-text/present";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
@@ -336,9 +338,21 @@ beforeEach(async () => {
       },
       citekeyEditor: { openIndexedKey: () => Promise.resolve() },
       pandocEngine: {
-        getStatus: () => ({ kind: "installed", version: "test" }),
-        changes: Stream.empty,
-        decline: () => undefined,
+        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+          "PandocEngine",
+          {
+            getStatus: () =>
+              Effect.succeed({
+                kind: "installed",
+                version: "test",
+                binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+              }),
+            changes: Stream.empty,
+            decline: () => Effect.void,
+          },
+        ),
+        runSync: Effect.runSync,
+        runPromise: Effect.runPromise,
       },
       bibliographyRender: {
         vaultPresentation: { styleId: null, locale: null },

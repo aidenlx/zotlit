@@ -16,6 +16,7 @@ import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
@@ -28,9 +29,9 @@ import {
   styleSourceOf,
   vaultPresentation,
 } from "@/services/pandoc/document-presentation";
+import type { CitationEngine } from "@/services/pandoc/engine";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
-import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
@@ -49,7 +50,10 @@ export interface PandocExportDeps {
   db: Pick<PlainZoteroReads, "reads">;
   /** Resolves the literal citation keys of the exported document. */
   citationLookup: Pick<PlainCitationLookup, "read">;
-  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "getEngine">;
+  pandocEngine: Pick<
+    ManagedBinaryHandle<CitationEngine>,
+    "binary" | "runSync" | "runPromise"
+  >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
   settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
@@ -84,7 +88,9 @@ export async function runPandocExport(
   deps: PandocExportDeps,
 ): Promise<void> {
   const { app, pandocEngine, zoteroPref, settings } = deps;
-  if (pandocEngine.getStatus().kind !== "installed") {
+  if (
+    pandocEngine.runSync(pandocEngine.binary.getStatus()).kind !== "installed"
+  ) {
     showEngineMissing(deps.openSettings);
     return;
   }
@@ -157,7 +163,9 @@ export async function runPandocExport(
 
   let output: Uint8Array;
   try {
-    const engine = await pandocEngine.getEngine();
+    const engine = await pandocEngine.runPromise(
+      pandocEngine.binary.getEngine(),
+    );
     if (!engine) return;
     const result = await exportCitedDocument(
       {
@@ -235,7 +243,7 @@ async function exportPresentation(
 
 function exportPorts(
   deps: PandocExportDeps,
-  engine: NonNullable<Awaited<ReturnType<PlainPandocEngine["getEngine"]>>>,
+  engine: CitationEngine,
 ): ExportPorts {
   const { app, citationLookup, db, zoteroPref } = deps;
   return {
