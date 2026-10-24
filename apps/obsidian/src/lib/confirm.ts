@@ -13,7 +13,7 @@ export interface ConfirmOptions {
   cta?: boolean;
 }
 
-/** `true` once the user takes the action; `false` when the modal closes. */
+/** @returns `true` once the user takes the action; `false` when the modal closes. */
 export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
   const { action, cancel, title, content, destructive, cta } = options;
   return modalAnswer<boolean>((resolve) => {

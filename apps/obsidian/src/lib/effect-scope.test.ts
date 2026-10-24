@@ -1,9 +1,31 @@
 import { Component } from "obsidian";
 import { expect } from "vitest";
 
-import { Effect, Exit, Scope } from "@/lib/effect";
+import { Context, Effect, Exit, Scope } from "@/lib/effect";
 import { componentScope } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
+
+class Probe extends Context.Service<Probe, string>()(
+  "zotlit/effect-scope/Probe",
+) {}
+
+it.effect("componentScope runs its finalizers with the caller's services", () =>
+  Effect.gen(function* () {
+    const component = new Component();
+    component.load();
+    const scope = yield* componentScope(component);
+    const seen: string[] = [];
+    yield* Scope.addFinalizer(
+      scope,
+      Effect.serviceOption(Probe).pipe(
+        Effect.map((probe) => (probe._tag === "Some" ? probe.value : "none")),
+        Effect.flatMap((value) => Effect.sync(() => seen.push(value))),
+      ),
+    );
+    component.unload();
+    expect(seen).toEqual(["caller"]);
+  }).pipe(Effect.provideService(Probe, "caller")),
+);
 
 it.effect("componentScope closes when the component unloads", () =>
   Effect.gen(function* () {

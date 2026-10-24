@@ -48,17 +48,28 @@ export function openScope(): {
 }
 
 /**
- * A Scope that closes when `component` unloads, for Effect work an edge (a
- * view, a render child, a modal) holds while it stands. Its finalizers run
- * once: on unload, or earlier when the caller closes the Scope itself. A
- * failed finalizer is logged, and the rest still run.
+ * Finalizers run once: on unload, or earlier when the caller closes the Scope
+ * itself. They run with the caller's services, and a failed one is logged
+ * while the rest still run.
+ *
+ * @param component The edge (a view, a render child, a modal) whose unload
+ *   closes the Scope.
+ * @returns A Scope for the Effect work the edge holds while it stands.
  */
 export function componentScope(
   component: Pick<Component, "register">,
 ): Effect.Effect<Scope.Closeable> {
-  return Effect.sync(() => {
-    const { scope, close } = openScope();
-    component.register(() => void close());
+  return Effect.gen(function* () {
+    const scope = yield* Scope.make();
+    const run = Effect.runPromiseWith(yield* Effect.context<never>());
+    component.register(
+      () =>
+        void run(
+          Scope.close(scope, Exit.void).pipe(
+            logFailure("Could not close a scope"),
+          ),
+        ),
+    );
     return scope;
   });
 }

@@ -8,12 +8,13 @@ export interface ClosableModal {
 }
 
 /**
- * The user's answer to a modal, as an Effect.
+ * The first `settle` wins: a modal that closes itself after a choice does not
+ * replace the choice with its dismiss value.
  *
- * `open` builds the modal, opens it, and returns it. It calls `settle` with
- * the choice, and with the dismiss value from the modal's close callback. The
- * first `settle` wins: a modal that closes itself after a choice does not
- * replace the choice with its dismiss value. An interrupt closes the modal.
+ * @param open Builds the modal, opens it, and returns it. It calls `settle`
+ *   with the choice, and with the dismiss value from the modal's close
+ *   callback.
+ * @returns The user's answer. An interrupt closes the modal.
  */
 export function awaitModal<A>(
   open: (settle: (answer: A) => void) => ClosableModal,

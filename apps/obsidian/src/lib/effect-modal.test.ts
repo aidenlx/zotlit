@@ -1,9 +1,8 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 
 import { Effect, Fiber } from "@/lib/effect";
 import { awaitModal } from "@/lib/effect-modal";
 import { it } from "@/lib/effect-vitest";
-import { modalAnswer } from "@/lib/modal-answer";
 
 /** A modal that, as Obsidian's, calls its close callback once it closes. */
 function fakeModal<A>(dismissed: A) {
@@ -70,11 +69,19 @@ it.effect("awaitModal closes the modal once on interrupt", () =>
   }),
 );
 
-test("modalAnswer opens the modal before it returns, and answers once", async () => {
-  const { modal, opener } = fakeModal<boolean>(false);
-  const answer = modalAnswer(opener);
-  expect(modal.isOpen).toBe(true);
-  modal.choose(true);
-  await expect(answer).resolves.toBe(true);
-  expect(modal.closes).toBe(1);
-});
+it.effect("awaitModal keeps a choice that settles after the modal closed", () =>
+  Effect.gen(function* () {
+    // A SuggestModal closes before it reports the choice, so the modal
+    // guards its dismiss value and settles the choice after close.
+    let settle: (value: string | null) => void = () => undefined;
+    let closes = 0;
+    const fiber = yield* awaitModal<string | null>((next) => {
+      settle = next;
+      return { close: () => closes++ };
+    }).pipe(Effect.forkChild({ startImmediately: true }));
+    closes++;
+    settle("picked");
+    expect(yield* Fiber.join(fiber)).toBe("picked");
+    expect(closes).toBe(1);
+  }),
+);

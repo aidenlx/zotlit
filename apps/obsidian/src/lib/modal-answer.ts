@@ -5,8 +5,10 @@ import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
 
 /**
- * {@link awaitModal} as a Promise. The modal opens before this returns, and
- * the first answer wins.
+ * {@link awaitModal} as a Promise.
+ *
+ * @param open As for {@link awaitModal}.
+ * @returns The first answer. The modal opens before this returns.
  */
 export function modalAnswer<A>(
   open: (settle: (answer: A) => void) => ClosableModal,
