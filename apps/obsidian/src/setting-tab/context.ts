@@ -13,7 +13,7 @@ import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { PlainManagedBinary } from "@/services/managed-binary/plain";
+import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { ReleaseService } from "@/services/release/service";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -39,8 +39,8 @@ export type ReleaseTabActions = Pick<
 
 /** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
 export type ManagedBinaryActions = Pick<
-  PlainManagedBinary,
-  "getStatus" | "changes" | "install" | "uninstall"
+  ManagedBinaryHandle,
+  "binary" | "runSync" | "runPromise"
 >;
 
 /** The Local Server surface the setting tab needs: the bound port and its edges. */

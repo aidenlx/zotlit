@@ -55,9 +55,11 @@ describe("Chinese Segmenter", () => {
     Effect.promise(async () => {
       const device = memoryDevice();
       await using segmenter = await open(device);
-      await segmenter.install();
+      await segmenter.handle.runPromise(segmenter.service.install());
 
-      const { module } = (await segmenter.getEngine())!;
+      const { module } = (await segmenter.handle.runPromise(
+        segmenter.service.getEngine(),
+      ))!;
       initSync({ module });
 
       expect(cut_for_search("长江流域的城市化研究", true)).toEqual([
@@ -88,9 +90,13 @@ describe("Chinese Segmenter", () => {
           pin,
         });
 
-        await expect(segmenter.install()).rejects.toThrow();
+        await expect(
+          segmenter.handle.runPromise(segmenter.service.install()),
+        ).rejects.toThrow();
 
-        expect(segmenter.getStatus()).toMatchObject({
+        expect(
+          segmenter.handle.runSync(segmenter.service.getStatus()),
+        ).toMatchObject({
           kind: "failed",
           failure: { code: "init-failed" },
         });

@@ -13,6 +13,7 @@ import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { profileRuntimeOf } from "@/services/profile/__fixtures__";
 import type { Held } from "@/services/query-client/service";
 import { layerQueryClients } from "@/services/query-client/service";
@@ -383,21 +384,21 @@ class PandocEngineStub {
     binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
   };
   readonly #events = testEvent<void>();
-
-  getStatus(): PandocEngineStatus {
-    return this.#status;
-  }
-
-  readonly changes = Stream.suspend(() =>
-    this.#events.stream.pipe(
-      Stream.map(() => this.#status),
-      Stream.prepend([this.#status]),
-    ),
+  readonly binary = stubService<ManagedBinaryApi<CitationEngine>>(
+    "PandocEngine",
+    {
+      getStatus: () => Effect.sync(() => this.#status),
+      getEngine: () => Effect.promise(() => Promise.resolve(this.engine)),
+      changes: Stream.suspend(() =>
+        this.#events.stream.pipe(
+          Stream.map(() => this.#status),
+          Stream.prepend([this.#status]),
+        ),
+      ),
+    },
   );
-
-  getEngine(): Promise<CitationEngine> {
-    return Promise.resolve(this.engine);
-  }
+  readonly runSync = Effect.runSync;
+  readonly runPromise = Effect.runPromise;
 
   /** An install, an uninstall, or a restart: every one wakes the subscribers. */
   setStatus(status: PandocEngineStatus): void {

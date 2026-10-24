@@ -7,7 +7,8 @@ import {
 } from "vitest";
 import { expect, it, vi } from "vitest";
 
-import { Layer, Stream } from "@/lib/effect";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import {
   annotationRows,
@@ -17,6 +18,7 @@ import {
   createCitationIndexHarness,
   KEY_A,
 } from "@/services/citation-index/test-harness";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import { ReferencesView } from "./view";
@@ -59,9 +61,15 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
     citekeyEditor: { openIndexedKey: async () => {} },
     profile: profileReader(harness.settings.current, app.metadataCache),
     pandocEngine: {
-      getStatus: () => ({ kind: "absent" }),
-      changes: Stream.empty,
-      decline: () => {},
+      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+        "ManagedBinary",
+        {
+          getStatus: () => Effect.succeed({ kind: "absent" }),
+          changes: Stream.empty,
+          decline: () => Effect.void,
+        },
+      ),
+      runSync: Effect.runSync,
     },
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },

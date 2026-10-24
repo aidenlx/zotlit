@@ -26,6 +26,7 @@ import type {
 import type { PlainCitationText } from "@/services/citation-text/plain";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import {
   documentCitationPresentation,
   documentPresentation,
@@ -35,7 +36,6 @@ import type {
   DocumentPresentationFailure,
   DocumentPresentation,
 } from "@/services/pandoc/document-presentation";
-import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
@@ -102,7 +102,7 @@ export interface ReferencesViewDeps {
    * shows Entry Serials — the gutter follows what the citations show.
    */
   citationText: Pick<PlainCitationText, "peek" | "changed">;
-  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "decline">;
+  pandocEngine: Pick<ManagedBinaryHandle, "binary" | "runSync">;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     PlainBibliographyRender,
@@ -210,7 +210,8 @@ export class ReferencesView extends ItemView {
         void citekeyEditor.openIndexedKey(indexedKey, false),
       onOpenEngineSettings: () => this.#deps.openSettings(),
       onChangeStyle: () => this.#deps.openStyleSettings(),
-      onDismissEngineHint: () => pandocEngine.decline(),
+      onDismissEngineHint: () =>
+        pandocEngine.runSync(pandocEngine.binary.decline()),
       getCopySnapshot: () => this.#copySnapshot,
       writeClipboard: writeClipboardRichText,
       notify: (message) => void new BaseNotice(message),
@@ -287,8 +288,10 @@ export class ReferencesView extends ItemView {
       }),
     );
     this.register(
-      subscribe(this.#deps.runtime, Stream.drop(pandocEngine.changes, 1), () =>
-        this.#reload(),
+      subscribe(
+        this.#deps.runtime,
+        Stream.drop(pandocEngine.binary.changes, 1),
+        () => this.#reload(),
       ),
     );
     // What the cache holds is what this pane shows, so its wholesale drop —
@@ -480,13 +483,17 @@ export class ReferencesView extends ItemView {
     // Retained formatted entries answer for the render that is about to be
     // replaced, so the reload alone puts copy out of reach, before its read.
     this.#formatting =
-      this.#deps.pandocEngine.getStatus().kind === "installed"
+      this.#deps.pandocEngine.runSync(
+        this.#deps.pandocEngine.binary.getStatus(),
+      ).kind === "installed"
         ? "pending"
         : "unavailable";
     this.#refreshCopy();
     this.#publishResolution();
     const sources = this.#sources;
-    const engine = this.#deps.pandocEngine.getStatus();
+    const engine = this.#deps.pandocEngine.runSync(
+      this.#deps.pandocEngine.binary.getStatus(),
+    );
     const entries = buildReferenceEntries(citations, {
       bibliography: {
         entries: this.#onScreen,

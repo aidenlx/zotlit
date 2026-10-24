@@ -4,12 +4,20 @@ import type { Setting as ObsidianSetting, SettingDefinition } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ManagedBinaryStatus } from "@/services/managed-binary/service";
+import type {
+  ManagedBinaryApi,
+  ManagedBinaryStatus,
+} from "@/services/managed-binary/service";
 
 import { chineseSegmenterDefinition } from "./chinese-segmenter";
-import type { SettingsKey, SettingTabContext } from "./context";
+import type {
+  ManagedBinaryActions,
+  SettingsKey,
+  SettingTabContext,
+} from "./context";
 import { managedBinaryDefinition } from "./managed-binary";
 import type { ManagedBinaryCopy } from "./managed-binary";
 import { pandocEngineDefinition } from "./pandoc-engine";
@@ -41,12 +49,26 @@ const COPY: ManagedBinaryCopy = {
   },
 };
 
-function binary(status: ManagedBinaryStatus) {
+function binary(status: ManagedBinaryStatus): ManagedBinaryActions & {
+  install: ReturnType<typeof vi.fn>;
+  uninstall: ReturnType<typeof vi.fn>;
+} {
+  const install = vi.fn(() => Effect.void);
+  const uninstall = vi.fn(() => Effect.void);
   return {
-    getStatus: () => status,
-    changes: Stream.empty,
-    install: vi.fn(() => Promise.resolve()),
-    uninstall: vi.fn(() => Promise.resolve()),
+    binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+      "ManagedBinary",
+      {
+        getStatus: () => Effect.succeed(status),
+        changes: Stream.empty,
+        install,
+        uninstall,
+      },
+    ),
+    runSync: Effect.runSync,
+    runPromise: Effect.runPromise,
+    install,
+    uninstall,
   };
 }
 
