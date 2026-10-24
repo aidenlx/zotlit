@@ -1,4 +1,4 @@
-import { Effect } from "@/lib/effect-worker";
+import { Effect } from "@/lib/effect";
 import { scanNote } from "@/services/citation-index/scan-note";
 
 import { CitationParseRpc, ParseError } from "./rpc";

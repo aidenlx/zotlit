@@ -2,7 +2,7 @@
 import * as BrowserWorkerRunner from "@effect/platform-browser/BrowserWorkerRunner";
 import { RpcServer } from "effect/rpc";
 
-import { Layer, runFork } from "@/lib/effect-worker";
+import { Effect, Layer } from "@/lib/effect";
 
 import { layerParseHandlers } from "./handlers";
 import { CitationParseRpc } from "./rpc";
@@ -17,5 +17,5 @@ RpcServer.layer(CitationParseRpc, { disableTracing: true }).pipe(
     ),
   ),
   Layer.launch,
-  runFork,
+  Effect.runFork,
 );
