@@ -1,6 +1,7 @@
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
+import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
@@ -70,14 +71,17 @@ it.effect(
           notes: false,
           awaitReady: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               parseSignal = signal;
-              const result = await inProcessParseClient.parse(request, signal);
+              const result = await Effect.runPromise(
+                inProcessParseClient.parse(request),
+                { signal },
+              );
               parsing.resolve();
               await reply.promise;
               replied.resolve();
               return result;
-            },
+            }),
           },
         },
       );
@@ -329,11 +333,14 @@ it.effect(
           store,
           notes: false,
           parseClient: {
-            async parse(request, signal) {
-              const reply = await inProcessParseClient.parse(request, signal);
+            parse: effectTestParse(async (request, signal) => {
+              const reply = await Effect.runPromise(
+                inProcessParseClient.parse(request),
+                { signal },
+              );
               parsed?.resolve();
               return reply;
-            },
+            }),
           },
         },
       );

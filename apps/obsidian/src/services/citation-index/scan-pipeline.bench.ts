@@ -30,6 +30,7 @@ import { expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { effectTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type { ParseReply } from "@/services/citation-parse/client";
 
@@ -71,6 +72,9 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
   const output = join(root, ".scratch/scan-pipeline-bench");
   await mkdir(output, { recursive: true });
   await using worker = await scanBenchmarkWorker<ParseReply>();
+  const effectWorker = effectTestParseClient((request, signal) =>
+    worker.parse(request, signal),
+  );
   const cells: {
     size: number;
     dense: boolean;
@@ -129,7 +133,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
         if (size === 100_000) {
           await using harness = await createCitationIndexHarness(
             { "draft.md": "" },
-            { parseClient: worker, notes: false },
+            { parseClient: effectWorker, notes: false },
           );
           for (let run = -3; run < RUNS; run++) {
             // Change membership on every edit, so equality cannot skip reverse-map updates.
@@ -189,7 +193,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
           run % 2 === 0 ? ["legacy", "worker"] : ["worker", "legacy"];
         for (const mode of modes) {
           await using harness = await createCitationIndexHarness(documents, {
-            parseClient: worker,
+            parseClient: effectWorker,
             notes: false,
           });
           // Both paths read the same files through the same host adapter. Setup and

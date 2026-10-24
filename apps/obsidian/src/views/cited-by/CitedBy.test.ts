@@ -17,6 +17,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { Deferred, Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {
@@ -846,17 +847,17 @@ describe("CitedBy", () => {
 
   it("#1693 waits for the stored parse when a preview follows a note edit", async () => {
     const source = `Evidence [](${annotationUri}).`;
-    const gate = Promise.withResolvers<void>();
+    const gate = Deferred.makeUnsafe<void>();
     let editing = false;
     await using harness = await createCitationIndexHarness(
       { "draft.md": source },
       {
         zoteroRows: annotationRows,
         parseClient: {
-          async parse(request, signal) {
-            if (editing) await gate.promise;
-            return inProcessParseClient.parse(request, signal);
-          },
+          parse: (request) =>
+            Effect.suspend(() =>
+              editing ? Deferred.await(gate) : Effect.void,
+            ).pipe(Effect.andThen(inProcessParseClient.parse(request))),
         },
       },
     );
@@ -873,7 +874,7 @@ describe("CitedBy", () => {
       read: () => Promise.resolve(edited),
     });
     await act(async () => {
-      gate.resolve();
+      Deferred.doneUnsafe(gate, Effect.void);
       await harness.index.getDocumentCitationSet(harness.draft);
     });
     await expect

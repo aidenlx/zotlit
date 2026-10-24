@@ -3,6 +3,7 @@ import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
+import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
@@ -963,8 +964,11 @@ describe("CitationIndex resolution", () => {
           {
             settings: { "citation.wikilink-citations": true },
             parseClient: {
-              async parse(request, signal) {
-                const reply = await inProcessParseClient.parse(request, signal);
+              parse: effectTestParse(async (request, signal) => {
+                const reply = await Effect.runPromise(
+                  inProcessParseClient.parse(request),
+                  { signal },
+                );
                 if (request.path === "draft.md") {
                   reply.record.wikilinks = [
                     {
@@ -975,7 +979,7 @@ describe("CitationIndex resolution", () => {
                   ];
                 }
                 return reply;
-              },
+              }),
             },
           },
         );
@@ -1634,10 +1638,13 @@ describe("CitationIndex resolution", () => {
             { "draft.md": "@doe2024." },
             {
               parseClient: {
-                parse(request, signal) {
+                parse: effectTestParse(async (request, signal) => {
                   scanStarted?.resolve();
-                  return inProcessParseClient.parse(request, signal);
-                },
+                  return Effect.runPromise(
+                    inProcessParseClient.parse(request),
+                    { signal },
+                  );
+                }),
               },
             },
           );

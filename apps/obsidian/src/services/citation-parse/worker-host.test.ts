@@ -2,10 +2,11 @@ import type { RpcMessage } from "effect/rpc";
 import { TestClock } from "effect/testing";
 import { expect, vi } from "vitest";
 
-import { Effect, Exit, Fiber, Queue } from "@/lib/effect";
+import { Cause, Effect, Exit, Fiber, Queue } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
 import { makeParseHarness } from "./__fixtures__";
+import { ParseWorkerDied } from "./client";
 import { makeRecoveringParseClient } from "./recovering-client";
 import { connectParseWorker } from "./worker-host";
 
@@ -99,9 +100,11 @@ it.effect(
         Effect.sync(() => vi.unstubAllGlobals()),
       );
       const connection = yield* connectParseWorker("worker source");
-      const reply = yield* Effect.promise((signal) =>
-        connection.parse({ path: "fast.md", generation: 1, text: "" }, signal),
-      );
+      const reply = yield* connection.parse({
+        path: "fast.md",
+        generation: 1,
+        text: "",
+      });
       expect(reply).toMatchObject({ path: "fast.md", generation: 1 });
     }),
 );
@@ -115,14 +118,7 @@ it.effect(
       const worker = yield* Queue.take(spawned);
       worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
       const call = (generation: number) =>
-        Effect.tryPromise({
-          try: (signal) =>
-            connection.parse(
-              { path: "draft.md", generation, text: "" },
-              signal,
-            ),
-          catch: (error) => error,
-        });
+        connection.parse({ path: "draft.md", generation, text: "" });
       const first = yield* call(1).pipe(Effect.forkChild);
       const request1 = yield* Queue.take(worker.sent);
       expect(request1._tag).toBe("Request");
@@ -148,8 +144,35 @@ it.effect(
     }),
 );
 
+it.effect("rejects an in-flight parse when its worker dies (#1705)", () =>
+  Effect.gen(function* () {
+    const { spawned } = yield* fakeWorkers;
+    yield* Effect.gen(function* () {
+      const client = yield* makeRecoveringParseClient(
+        connectParseWorker("worker source"),
+      );
+      yield* client.start();
+      const pending = yield* client
+        .parse({ path: "draft.md", generation: 1, text: "" })
+        .pipe(Effect.forkChild);
+      const first = yield* Queue.take(spawned);
+      first.dispatchEvent(new MessageEvent("message", { data: [0] }));
+      const request1 = yield* Queue.take(first.sent);
+      if (request1._tag !== "Request")
+        throw new Error("Expected parse request");
+      first.dispatchEvent(
+        Object.assign(new Event("error"), { message: "Worker crashed" }),
+      );
+      const exit = yield* Fiber.await(pending);
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit))
+        expect(Cause.squash(exit.cause)).toBeInstanceOf(ParseWorkerDied);
+    }).pipe(Effect.scoped);
+  }),
+);
+
 it.effect(
-  "restarts after a worker death, drops the dead worker's reply, and terminates on scope close (#1705)",
+  "recovers on the next parse, drops the dead worker's reply, and releases both workers (#1705)",
   () =>
     Effect.gen(function* () {
       const { spawned } = yield* fakeWorkers;
@@ -157,12 +180,10 @@ it.effect(
         const client = yield* makeRecoveringParseClient(
           connectParseWorker("worker source"),
         );
-        client.start();
-        const pending = yield* Effect.tryPromise({
-          try: (signal) =>
-            client.parse({ path: "draft.md", generation: 3, text: "" }, signal),
-          catch: (error) => error,
-        }).pipe(Effect.forkChild);
+        yield* client.start();
+        const firstParse = yield* client
+          .parse({ path: "draft.md", generation: 1, text: "" })
+          .pipe(Effect.forkChild);
         const first = yield* Queue.take(spawned);
         first.dispatchEvent(new MessageEvent("message", { data: [0] }));
         const request1 = yield* Queue.take(first.sent);
@@ -171,15 +192,19 @@ it.effect(
         first.dispatchEvent(
           Object.assign(new Event("error"), { message: "Worker crashed" }),
         );
+        expect(Exit.isFailure(yield* Fiber.await(firstParse))).toBe(true);
         yield* TestClock.adjust(100);
         const second = yield* Queue.take(spawned);
         second.dispatchEvent(new MessageEvent("message", { data: [0] }));
+        const next = yield* client
+          .parse({ path: "draft.md", generation: 3, text: "" })
+          .pipe(Effect.forkChild);
         let request2 = yield* Queue.take(second.sent);
         while (request2._tag !== "Request")
           request2 = yield* Queue.take(second.sent);
         first.reply(request1.id, "stale.md", 2);
         second.reply(request2.id, "draft.md", 3);
-        expect(yield* Fiber.join(pending)).toMatchObject({
+        expect(yield* Fiber.join(next)).toMatchObject({
           path: "draft.md",
           generation: 3,
         });
@@ -253,10 +278,10 @@ it.effect(
       const client = yield* makeRecoveringParseClient(
         connectParseWorker("worker source"),
       );
-      client.start();
-      const pending = yield* Effect.promise((signal) =>
-        client.parse({ path: "draft.md", generation: 1, text: "" }, signal),
-      ).pipe(Effect.forkChild);
+      yield* client.start();
+      const pending = yield* client
+        .parse({ path: "draft.md", generation: 1, text: "" })
+        .pipe(Effect.forkChild);
       yield* Queue.take(failed);
       yield* TestClock.adjust(100);
       const worker = yield* Queue.take(spawned);

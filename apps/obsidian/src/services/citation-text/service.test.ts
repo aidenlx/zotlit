@@ -252,9 +252,12 @@ async function makeHarness({
           facts: new ParsedNote(
             body,
             (
-              await inProcessParseClient.parse(
-                { path: NOTE.path, generation: 0, text: body },
-                new AbortController().signal,
+              await Effect.runPromise(
+                inProcessParseClient.parse({
+                  path: NOTE.path,
+                  generation: 0,
+                  text: body,
+                }),
               )
             ).record,
           ),

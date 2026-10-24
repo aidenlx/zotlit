@@ -23,7 +23,7 @@ import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import type { ParseClient } from "@/services/citation-parse/client";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import { NoteIndex, resolveIndexedKey } from "@/services/note-index/service";
@@ -244,7 +244,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       );
     };
     const runPromiseExit = Effect.runPromiseExitWith(context);
-    const parseClient: ParseClient = {
+    const parseClient: Pick<PlainCitationParse, "parse"> = {
       parse: (request, signal) => runPromise(parser.parse(request), { signal }),
     };
     const lookupReleased = () =>

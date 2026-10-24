@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 
+import { Effect } from "@/lib/effect";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildReferenceEntries } from "@/views/references/entries";
 
@@ -161,10 +162,10 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
       zoteroRows: annotationRows,
       notes: false,
       parseClient: {
-        parse: (...args) => {
-          parses++;
-          return inProcessParseClient.parse(...args);
-        },
+        parse: (request) =>
+          inProcessParseClient
+            .parse(request)
+            .pipe(Effect.tap(() => Effect.sync(() => parses++))),
       },
     },
   );

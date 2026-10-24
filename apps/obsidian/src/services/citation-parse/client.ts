@@ -1,9 +1,21 @@
 // The stateless parse boundary shared by the worker and its in-process twin.
+import { Schema } from "@/lib/effect";
+import type { Effect } from "@/lib/effect";
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 
-export class ParseWorkerDied extends Error {}
+export class ParseWorkerDied extends Schema.TaggedError<ParseWorkerDied>()(
+  "ParseWorkerDied",
+  {
+    message: Schema.String,
+  },
+) {}
 
-export class ParseFailed extends Error {}
+export class ParseFailed extends Schema.TaggedError<ParseFailed>()(
+  "ParseFailed",
+  {
+    message: Schema.String,
+  },
+) {}
 
 export interface ParseRequest {
   path: string;
@@ -18,7 +30,9 @@ export interface ParseReply {
 }
 
 export interface ParseClient {
-  parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply>;
+  parse(
+    request: ParseRequest,
+  ): Effect.Effect<ParseReply, ParseWorkerDied | ParseFailed>;
 }
 
 /** Decode the scanner-owned JSON once, after the RPC success envelope. */
