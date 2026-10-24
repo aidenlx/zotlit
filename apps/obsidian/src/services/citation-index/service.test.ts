@@ -18,11 +18,8 @@ import {
   groupTwin,
   bothLibraries,
 } from "./__fixtures__/ambiguous";
-import type {
-  CitedBySnapshot,
-  Citation,
-  DocumentCitationSyntax,
-} from "./service";
+import type { CitationSyntax } from "./scan";
+import type { CitedBySnapshot, Citation } from "./service";
 import {
   createCitationIndexHarness,
   DatabaseStub,
@@ -380,7 +377,7 @@ describe("CitationIndex", () => {
         await index.whenIndexed();
 
         const summary = (
-          syntaxes: DocumentCitationSyntax[] = ["citekey", "wikilink"],
+          syntaxes: CitationSyntax[] = ["citekey", "wikilink"],
         ) =>
           [...index.citationsByPath(syntaxes)].map(([path, occurrences]) => [
             path,

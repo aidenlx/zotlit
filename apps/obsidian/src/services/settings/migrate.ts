@@ -404,13 +404,12 @@ export function migrateV9ToV10(raw: unknown): Record<string, unknown> {
 /**
  * Make annotation links independent of citation settings. Hover is always
  * available; the reader choice moves to the Reader settings. Annotation
- * Citations stop contributing to the Document Citation Set.
+ * Citations stay a citation source, now off by default.
  */
 export function migrateV10ToV11(raw: unknown): Record<string, unknown> {
   if (!isPlainObject(raw)) return {};
   const {
     "citation.annotation-links": _annotationLinks,
-    "citation.annotation-citations": _annotationCitations,
     "citation.open-annotation-links": openAnnotationLinks,
     ...rest
   } = raw;

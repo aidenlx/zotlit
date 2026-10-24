@@ -20,11 +20,11 @@ import { getLogger } from "@/lib/log";
 import { heldResolution } from "@/services/citation-index/lookup";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
-import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type {
-  CitationLookupObservation,
-  DocumentCitationSyntax,
-} from "@/services/citation-index/service";
+  CitationOccurrence,
+  CitationSyntax,
+} from "@/services/citation-index/scan";
+import type { CitationLookupObservation } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
@@ -717,7 +717,7 @@ export class GraphCitations extends Service<void> {
     // are asked for only while the vault-wide setting admits the syntax — the
     // one state in which a wikilink is a Citation at all, so also the one in
     // which it names a citing source or the row can take its edges away.
-    const syntaxes: DocumentCitationSyntax[] = this.#wikilinkCitations
+    const syntaxes: CitationSyntax[] = this.#wikilinkCitations
       ? ["citekey", "wikilink"]
       : ["citekey"];
     this.#occurrences = this.#citationIndex.citationsByPath(syntaxes);

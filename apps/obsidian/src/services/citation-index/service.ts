@@ -111,9 +111,6 @@ export type CitationSyntaxes = Readonly<
   Record<CitationSyntax, CitationSyntaxAdmission>
 >;
 
-/** Citation Syntaxes that can join the Document Citation Set. */
-export type DocumentCitationSyntax = Exclude<CitationSyntax, "annotation">;
-
 /** Outcome of {@link CitationIndex.waitUntilSettled}. */
 export type CitationSettleOutcome = "settled" | "timeout";
 
@@ -162,7 +159,7 @@ export interface DocumentCitationSet extends ReferenceSourceJoin {
 /** One citation source error a document-aware surface can help correct. */
 export interface DocumentCitationError {
   outcome?: CitationOutcome;
-  kind: "malformed-wikilink";
+  kind: "malformed-wikilink" | "malformed-annotation";
   occurrence: CitationOccurrence;
 }
 
@@ -318,6 +315,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     const initial = yield* settings.current;
     let includePandocCitations = initial["citation.pandoc-citations"];
     let includeWikilinkCitations = initial["citation.wikilink-citations"];
+    let includeAnnotationCitations = initial["citation.annotation-citations"];
     let backfilled = false;
     let backfillBuild = -1;
     let backfillFailed = false;
@@ -416,7 +414,8 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         coverage: CitationCoverage;
       },
     ): Promise<DocumentCitationSet> {
-      const { citekeys, wikilinks } = admitted(scan, syntaxes);
+      const { citekeys, wikilinks, annotations, malformedAnnotations } =
+        admitted(scan, syntaxes);
       const omittedSyntaxes = omittedDocument(scan, file.path, syntaxes);
       const local = new Map<CitationOccurrence, ResolvedNote | null>(
         [
@@ -432,7 +431,10 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
             ...citekeys.map((occurrence) => occurrence.raw),
             ...(include?.citekeys ?? []),
           ],
-          annotationKeys: include?.annotationKeys ?? [],
+          annotationKeys: [
+            ...annotations.map((occurrence) => occurrence.raw),
+            ...(include?.annotationKeys ?? []),
+          ],
           indexedKeys: [
             ...wikilinks.occurrences.flatMap((occurrence) => {
               const key = local.get(occurrence)?.indexedKey;
@@ -444,7 +446,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         { signal: lifetime },
       );
       const citations = groupCitations(
-        [...citekeys, ...wikilinks.occurrences].sort(
+        [...citekeys, ...wikilinks.occurrences, ...annotations].sort(
           (a, b) => a.position.start.offset - b.position.start.offset,
         ),
         (occurrence) =>
@@ -461,6 +463,14 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           kind: "malformed-wikilink" as const,
           occurrence,
         }));
+      errors.push(
+        ...malformedAnnotations.map(
+          ({ destination, position }): DocumentCitationError => ({
+            kind: "malformed-annotation",
+            occurrence: { kind: "annotation", raw: destination, position },
+          }),
+        ),
+      );
       errors.sort((a, b) => compareOccurrences(a.occurrence, b.occurrence));
       const candidates = [
         ...new Set([
@@ -606,7 +616,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
           },
           {
             includeNote,
-            byPath: citationsByPath(["citekey", "wikilink"]),
+            byPath: citationsByPath(["citekey", "wikilink", "annotation"]),
           },
         );
         if (previous && citedBySnapshotsEqual(previous, next)) return;
@@ -653,7 +663,11 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       indexedKey: string,
       answer?: CitationLookupAnswer,
     ): Promise<CitedBySnapshot> {
-      const occurrences = citationsByPath(["citekey", "wikilink"]);
+      const occurrences = citationsByPath([
+        "citekey",
+        "wikilink",
+        "annotation",
+      ]);
       const lookup =
         answer ??
         (await lookupAdapter.read({
@@ -895,7 +909,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       return {
         citekey: includePandocCitations ? "included" : "excluded",
         wikilink: includeWikilinkCitations ? "included" : "excluded",
-        annotation: "excluded",
+        annotation: includeAnnotationCitations ? "included" : "excluded",
       };
     }
 
@@ -967,10 +981,11 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
      * @returns paths holding at least one admitted occurrence, in vault order.
      */
     function citationsByPath(
-      syntaxes: readonly DocumentCitationSyntax[],
+      syntaxes: readonly CitationSyntax[],
     ): ReadonlyMap<string, readonly CitationOccurrence[]> {
       const wantCitekeys = syntaxes.includes("citekey");
       const wantWikilinks = syntaxes.includes("wikilink");
+      const wantAnnotations = syntaxes.includes("annotation");
       const byPath = new Map<string, readonly CitationOccurrence[]>();
       for (const file of app.vault.getMarkdownFiles()) {
         const selected = admitted(covered(file));
@@ -978,6 +993,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         const occurrences = [
           ...citekeys,
           ...(wantWikilinks ? selected.wikilinks.occurrences : []),
+          ...(wantAnnotations ? selected.annotations : []),
         ];
         if (occurrences.length > 0) byPath.set(file.path, occurrences);
       }
@@ -1264,6 +1280,12 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
 
     function admitted(scan: CitationRecord | null, choices = syntaxes()) {
       return {
+        annotations:
+          choices.annotation === "included" ? annotationCitations(scan) : [],
+        malformedAnnotations:
+          choices.annotation === "included"
+            ? (scan?.malformedAnnotationCitations ?? [])
+            : [],
         citekeys: choices.citekey === "included" ? (scan?.citekeys ?? []) : [],
         wikilinks: {
           occurrences:
@@ -1420,6 +1442,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
         if (held) omitted.push("wikilink");
       }
       if (
+        !includeAnnotationCitations &&
         annotationCitationKeys().some(
           (key) => lookup.parentOfAnnotation(key)?.indexedKey === indexedKey,
         )
@@ -1492,15 +1515,19 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
     function applySettings(settings: Readonly<Settings>): void {
       const nextPandoc = settings["citation.pandoc-citations"];
       const nextWikilinks = settings["citation.wikilink-citations"];
+      const nextAnnotations = settings["citation.annotation-citations"];
       const membershipChanged =
         nextPandoc !== includePandocCitations ||
-        nextWikilinks !== includeWikilinkCitations;
+        nextWikilinks !== includeWikilinkCitations ||
+        nextAnnotations !== includeAnnotationCitations;
       if (!membershipChanged) return;
       includePandocCitations = nextPandoc;
       includeWikilinkCitations = nextWikilinks;
+      includeAnnotationCitations = nextAnnotations;
       log("debug", "Citation source membership changed", {
         pandocCitations: nextPandoc,
         wikilinkCitations: nextWikilinks,
+        annotationCitations: nextAnnotations,
       });
       emit("membership-changed");
     }

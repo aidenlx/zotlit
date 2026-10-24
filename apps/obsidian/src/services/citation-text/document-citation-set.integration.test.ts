@@ -239,12 +239,15 @@ async function addKeylessNote(
 
 describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   it.effect(
-    "#1693 excludes an Annotation Citation from the shared numeric context",
+    "#1693 counts an earlier Annotation Citation in the shared numeric context",
     () =>
       Effect.promise(async () => {
         await using harness = await makeHarness(
           { "draft.md": `[](${annotationUri}) then @roe2025.` },
-          { zoteroRows: annotationRows },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
         );
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
@@ -256,21 +259,41 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
             indexedKey,
             refNumber,
           ]),
-        ).toEqual([[KEY_B, 1]]);
-        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[1]");
+        ).toEqual([
+          [KEY_A, 1],
+          [KEY_B, 2],
+        ]);
+        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
         expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
           "[1]",
+          "[2]",
         ]);
+
+        harness.settings.update({ "citation.annotation-citations": false });
+        expect(
+          firstText(
+            (await readText(text, harness.draft)).formatted.get("@roe2025"),
+          ),
+        ).toBe("[1]");
+        harness.settings.update({ "citation.annotation-citations": true });
+        expect(
+          firstText(
+            (await readText(text, harness.draft)).formatted.get("@roe2025"),
+          ),
+        ).toBe("[2]");
       }),
   );
 
   it.effect(
-    "#1693 does not use an Annotation Citation as the preceding locator",
+    "#1693 preserves the Annotation Citation locator for a following ibid",
     () =>
       Effect.promise(async () => {
         await using harness = await makeHarness(
           { "draft.md": `[](${annotationUri}) then [@doe2024, p. 42]` },
-          { zoteroRows: annotationRows },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
         );
         await using engine = await openEngine();
         await using text = openText(harness, engine, IBID_STYLE);
@@ -279,7 +302,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         const rendered = await readText(text, harness.draft);
         const second = rendered.formatted.get("[@doe2024, p. 42]")?.[0];
         expect(second).toBeDefined();
-        expect(inlineText(noteContent(second!.text.content))).not.toBe("Ibid.");
+        expect(inlineText(noteContent(second!.text.content))).toBe("Ibid.");
       }),
   );
 

@@ -70,7 +70,7 @@ describe("hover settings", () => {
 });
 
 describe("citation source settings", () => {
-  it("offers only the citation syntaxes that remain enabled", () => {
+  it("offers each citation syntax as a source", () => {
     const ctx = {
       runtime: testRuntime(),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
@@ -100,6 +100,7 @@ describe("citation source settings", () => {
     expect(sourceGroup.items).toMatchObject([
       { id: "settings_citation_pandoc_citations" },
       { id: "settings_citation_wikilink_citations" },
+      { id: "settings_citation_annotation_citations" },
     ]);
   });
 });

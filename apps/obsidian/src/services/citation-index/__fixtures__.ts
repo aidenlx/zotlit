@@ -186,7 +186,7 @@ async function openLookup(
             ),
           ),
           layerPluginSettings({
-            loadData: async () => ({ __VERSION__: 11 }),
+            loadData: async () => ({ __VERSION__: 10 }),
             saveData: async () => {},
           }),
         ),

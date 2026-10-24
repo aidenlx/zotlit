@@ -962,6 +962,8 @@
   "settings_citation_pandoc_citations_desc": "Include Pandoc citations such as `@doe2024` in the references sidebar and ZotLit’s in-text features. This setting does not change citation insertion or export.",
   "settings_citation_wikilink_citations_name": "Wikilink citations",
   "settings_citation_wikilink_citations_desc": "Include unaliased links to literature notes in the references sidebar and ZotLit’s in-text features. Heading links, block links, and invalid citation fragments stay as links. This setting does not change export.",
+  "settings_citation_annotation_citations_name": "Annotation citations",
+  "settings_citation_annotation_citations_desc": "Count Zotero annotation links with no link text, such as `[](zotero://…)`, as citations of the annotation’s item in the references sidebar and ZotLit’s in-text features. This setting does not change export.",
   "settings_citation_graph_heading": "Graph view",
   "settings_citation_graph_name": "Show citations in graph view",
   "settings_citation_graph_desc": "Connect each note to the works it cites in the graph view: to the literature note, or to a node labeled with the citation key when no literature note exists. “Existing files only” hides those nodes.",

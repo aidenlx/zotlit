@@ -89,6 +89,12 @@ export function citationsPageItems(
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
         },
+        {
+          id: "settings_citation_annotation_citations",
+          name: m.settings_citation_annotation_citations_name(),
+          desc: m.settings_citation_annotation_citations_desc(),
+          control: { type: "toggle", key: "citation.annotation-citations" },
+        },
       ],
     },
     {

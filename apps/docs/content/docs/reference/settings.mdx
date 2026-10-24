@@ -226,10 +226,11 @@ Open this page from <SettingsPath page={m.settings_page_citations()} />.
 
 ### Citation sources
 
-| Label                                                            | Key                           | Control | Default | Dependency | Storage |
-| ---------------------------------------------------------------- | ----------------------------- | ------- | ------- | ---------- | ------- |
-| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | `citation.pandoc-citations`   | Toggle  | On      | None       | Synced  |
-| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | `citation.wikilink-citations` | Toggle  | Off     | None       | Synced  |
+| Label                                                              | Key                             | Control | Default | Dependency | Storage |
+| ------------------------------------------------------------------ | ------------------------------- | ------- | ------- | ---------- | ------- |
+| <UiLabel name={m.settings_citation_pandoc_citations_name()} />     | `citation.pandoc-citations`     | Toggle  | On      | None       | Synced  |
+| <UiLabel name={m.settings_citation_wikilink_citations_name()} />   | `citation.wikilink-citations`   | Toggle  | Off     | None       | Synced  |
+| <UiLabel name={m.settings_citation_annotation_citations_name()} /> | `citation.annotation-citations` | Toggle  | Off     | None       | Synced  |
 
 <UiLabel name={m.settings_citation_pandoc_citations_name()} />: Include Pandoc
 citations such as `@doe2024` in the references sidebar and ZotLit's in-text
@@ -240,7 +241,12 @@ unaliased links to literature notes in the references sidebar and ZotLit's
 in-text features. Heading links, block links, and invalid citation fragments
 stay as links. This setting does not change export.
 
-Both settings can be off. ZotLit's internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <SettingsPath page={m.settings_page_advanced()} />.
+<UiLabel name={m.settings_citation_annotation_citations_name()} />: Count Zotero
+annotation links with no link text, such as `[](zotero://…)`, as citations of
+the annotation's item in the references sidebar and ZotLit's in-text features.
+This setting does not change export.
+
+All three settings can be off. ZotLit's internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <SettingsPath page={m.settings_page_advanced()} />.
 
 ### Graph view
 

@@ -48,6 +48,7 @@ it.effect.each(["annotation-uses", "cited-by"])(
           { "draft.md": `[](${annotationUri})` },
           {
             zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
             parseClient: {
               parse: effectTestParse(async (request, signal) => {
                 if (held) {
@@ -81,30 +82,83 @@ it.effect.each(["annotation-uses", "cited-by"])(
       release.resolve();
       const answer = JSON.parse(yield* Fiber.join(fiber));
       expect(answer.coverage).toBe("complete");
-      expect(answer.groups).toHaveLength(command === "annotation-uses" ? 1 : 0);
-      if (command === "annotation-uses")
-        expect(answer.groups[0].occurrences).toHaveLength(2);
+      expect(answer.groups[0].occurrences).toHaveLength(2);
     }),
 );
 
-it.effect("#1683 reports Annotation Citations as an omitted source", () =>
-  Effect.gen(function* () {
-    const h = yield* acquireAsyncDisposable(() =>
-      createCitationIndexHarness(
-        { "draft.md": `[](${annotationUri})` },
-        { zoteroRows: annotationRows },
-      ),
-    );
-    h.workspace.layoutReady();
-    yield* Effect.promise(() => h.index.whenIndexed());
-    const cli = commands(h);
-    const answer = JSON.parse(
-      yield* cli("zotlit:references").handler({ file: "draft.md" }),
-    );
-    expect(answer.entries).toEqual([]);
-    expect(answer.omittedSyntaxes).toEqual(["annotation"]);
-    expect(answer.syntaxes.annotation).toBe("excluded");
-  }),
+it.effect(
+  "#1683 keeps the captured annotation keys when a note changes during lookup",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": `[](${annotationUri})` },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      const cli = commands(h);
+      const held = h.db.holdLookup();
+      const fiber = yield* cli("zotlit:cited-by")
+        .handler({ key: "ABCD2345" })
+        .pipe(Effect.forkChild);
+      yield* Effect.promise(() => held.entered);
+      h.metadataCache.change(
+        h.draft,
+        `[](${annotationUri}) [](zotero://open/library/items/PDFNCKEY?annotation=ANNNCKEY)`,
+      );
+      yield* Effect.promise(() => h.index.getFileScan(h.draft));
+      held.release();
+      const answer = JSON.parse(yield* Fiber.join(fiber));
+      expect(answer.ok).toBe(true);
+      expect(answer.groups[0].occurrences).toHaveLength(1);
+      const next = JSON.parse(
+        yield* cli("zotlit:cited-by").handler({ key: "NCKEY234" }),
+      );
+      expect(next.groups[0].occurrences[0].raw).toBe("ANNNCKEY");
+    }),
+);
+
+it.effect(
+  "#1683 captures References entries, omissions and source choices together",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* acquireAsyncDisposable(() =>
+        createCitationIndexHarness(
+          { "draft.md": `[](${annotationUri})` },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
+        ),
+      );
+      h.workspace.layoutReady();
+      yield* Effect.promise(() => h.index.whenIndexed());
+      const cli = commands(h);
+      const held = h.db.holdLookup();
+      const fiber = yield* cli("zotlit:references")
+        .handler({ file: "draft.md" })
+        .pipe(Effect.forkChild);
+      yield* Effect.promise(() => held.entered);
+      h.settings.update({ "citation.annotation-citations": false });
+      held.release();
+      const answer = JSON.parse(yield* Fiber.join(fiber));
+      expect(answer.entries).toMatchObject([
+        { kind: "resolved", key: "ABCD2345" },
+      ]);
+      expect(answer.omittedSyntaxes).toEqual([]);
+      expect(answer.syntaxes.annotation).toBe("included");
+      const next = JSON.parse(
+        yield* cli("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(next.entries).toEqual([]);
+      expect(next.omittedSyntaxes).toEqual(["annotation"]);
+      expect(next.syntaxes.annotation).toBe("excluded");
+    }),
 );
 
 it.effect(
@@ -158,7 +212,10 @@ it.effect.each(["references", "cited-by", "annotation-uses"])(
       const h = yield* acquireAsyncDisposable(() =>
         createCitationIndexHarness(
           { "draft.md": `[@doe2024] [](${annotationUri})` },
-          { zoteroRows: annotationRows },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
         ),
       );
       h.workspace.layoutReady();
@@ -188,7 +245,10 @@ it.effect.each(["references", "cited-by", "annotation-uses"])(
       const h = yield* acquireAsyncDisposable(() =>
         createCitationIndexHarness(
           { "draft.md": `[@doe2024] [](${annotationUri})` },
-          { zoteroRows: annotationRows },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
         ),
       );
       h.workspace.layoutReady();

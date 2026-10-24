@@ -50,7 +50,7 @@ it.effect(
               Layer.provideMerge(layerZoteroReads(client)),
               Layer.provide(
                 layerPluginSettings({
-                  loadData: async () => ({ __VERSION__: 11 }),
+                  loadData: async () => ({ __VERSION__: 10 }),
                   saveData: async () => {},
                 }),
               ),

@@ -33,9 +33,9 @@ The set keeps source order. This order matters because numeric styles assign num
 
 The Citation Index is ZotLit's internal, vault-wide record of Citation Occurrences. It stays active and tracks Pandoc Citations, Literature Note wikilinks, and Annotation Occurrences.
 
-The Document Citation Set includes Pandoc Citations and Literature Note wikilinks. ZotLit keeps Annotation Occurrences for annotation uses, but Annotation Citations stay outside the Document Citation Set.
+The Document Citation Set includes Pandoc Citations and Literature Note wikilinks. Annotation Citations, annotation links with no link text, join it only while <UiLabel name={m.settings_citation_annotation_citations_name()} /> is on, which is off by default. Either way ZotLit keeps Annotation Occurrences for annotation uses.
 
-The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing either setting recomputes the set without rescanning the vault.
+The Document Citation Set applies your source settings when a citation feature asks about the active note. Changing a source setting recomputes the set without rescanning the vault.
 
 Citation insertion and built-in export use their own membership rules. Turning a source off does not disable insertion or remove that source from export.
 
