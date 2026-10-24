@@ -4,7 +4,7 @@ import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import type { ZoteroTransport } from "@/lib/zotero-http";
+import { ZoteroHttp } from "@/lib/zotero-http";
 import { LocalServer } from "@/services/local-server/service";
 import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
 
@@ -200,16 +200,16 @@ export class ZoteroLocalApi extends Context.Service<
 >()("zotlit/zotero-local-api/ZoteroLocalApi") {}
 
 export function layerZoteroLocalApi(options: {
-  readonly fetch: ZoteroTransport;
   readonly credentials: WriteAuthorizationStore;
   readonly probeDeadline?: () => AbortSignal;
   readonly now?: () => Temporal.Instant;
-}): Layer.Layer<ZoteroLocalApi, never, ZoteroPref | LocalServer> {
+}): Layer.Layer<ZoteroLocalApi, never, ZoteroPref | LocalServer | ZoteroHttp> {
   return Layer.effect(
     ZoteroLocalApi,
     Effect.gen(function* () {
       const pref = yield* ZoteroPref;
       const server = yield* LocalServer;
+      const http = yield* ZoteroHttp;
       const now = options.now ?? instantClock(yield* Clock.Clock);
       const run = Effect.runSyncWith(yield* Effect.context<never>());
       const bus = yield* PubSub.unbounded<LocalApiEvent>();
@@ -220,7 +220,7 @@ export function layerZoteroLocalApi(options: {
       const session = yield* acquireAsyncDisposable(() =>
         Promise.resolve(
           new LocalApiSession({
-            fetch: options.fetch,
+            http,
             credentials: options.credentials,
             probeDeadline: options.probeDeadline,
             now,

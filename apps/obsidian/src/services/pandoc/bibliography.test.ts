@@ -1,9 +1,10 @@
 import { regex } from "arkregex";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
-import type { NodeFetchInit } from "@/lib/node-fetch";
+import { routeTableHttpClient } from "@/lib/http-client";
+import { withZoteroHeaders } from "@/lib/zotero-http";
 
 import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";
 import type {
@@ -51,7 +52,7 @@ interface Fixture {
   zoteroClosed?: boolean;
 }
 
-/** One call as the transport received it, in the shape `fetch` takes. */
+/** One call as it would go on the wire. */
 interface Call {
   url: string;
   method: string;
@@ -66,16 +67,20 @@ function ports(
 ): BibliographyPorts & { calls: Call[] } {
   const calls: Call[] = [];
   const rpcUrl = `http://127.0.0.1:${httpPort}/better-bibtex/json-rpc`;
-  const fetch = vi.fn(async (input: string | URL, init: NodeFetchInit = {}) => {
-    // A closed Zotero fails the connection, which is what `nodeFetch` rejects
-    // a TypeError for.
-    if (fixture.zoteroClosed) throw new TypeError("fetch failed");
-    const url = String(input);
+  const route = (request: {
+    url: URL;
+    method: string;
+    headers: Headers;
+    body: string | null;
+  }): Response => {
+    // A closed Zotero fails the connection.
+    if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
+    const url = request.url.href;
     const call: Call = {
       url,
-      method: init.method ?? "GET",
-      headers: new Headers(init.headers),
-      body: typeof init.body === "string" ? init.body : undefined,
+      method: request.method,
+      headers: request.headers,
+      body: request.body ?? undefined,
     };
     if (url === rpcUrl) {
       const { method, params } = JSON.parse(call.body ?? "{}") as {
@@ -119,10 +124,10 @@ function ports(
           csljson: JSON.stringify(entry.csljson),
         })),
     );
-  });
+  };
   return {
     calls,
-    fetch,
+    http: withZoteroHeaders(routeTableHttpClient(route)),
     httpPort,
     localApiEnabled: fixture.localApiEnabled ?? true,
   };

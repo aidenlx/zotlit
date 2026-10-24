@@ -1,7 +1,8 @@
-import { requestUrl } from "obsidian";
+import { HttpClient, HttpClientError } from "effect/http";
 import type { App } from "obsidian";
 
 import { Context, Effect, Layer } from "@/lib/effect";
+import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { createOpfsBinaryStore } from "./store";
@@ -41,17 +42,47 @@ export class ManagedBinaryPlatform extends Context.Service<
   ManagedBinaryPorts
 >()("zotlit/managed-binary/ManagedBinaryPlatform") {}
 
-export const layerManagedBinaryPlatform = Layer.effect(
+/** The platform over the remote `HttpClient` the caller provides. */
+export const layerManagedBinaryPlatformWith = Layer.effect(
   ManagedBinaryPlatform,
-  Effect.map(ObsidianApp, (app) =>
-    managedBinaryPorts({
-      openStore: createOpfsBinaryStore,
-      download: async (url) =>
-        new Uint8Array(await requestUrl({ url }).arrayBuffer),
-      consent: app,
-    }),
-  ),
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    const http = yield* HttpClient.HttpClient;
+    return {
+      ...devicePorts({ openStore: createOpfsBinaryStore, consent: app }),
+      download: (url) => downloadBytes(http, url),
+    } satisfies ManagedBinaryPorts;
+  }),
 );
+
+/** The platform, downloading over Obsidian's `requestUrl`. */
+export const layerManagedBinaryPlatform = layerManagedBinaryPlatformWith.pipe(
+  Layer.provide(layerRequestUrlHttpClient),
+);
+
+/**
+ * The asset at `url`, as `requestUrl` gave it before: a status of `400` or more
+ * fails with the message `requestUrl` throws, and a failed connection fails
+ * with the error the transport raised, so the failure detail stays the same.
+ */
+export const downloadBytes = (
+  http: HttpClient.HttpClient,
+  url: string,
+): Effect.Effect<Uint8Array<ArrayBuffer>, Error> =>
+  http.get(url).pipe(
+    Effect.flatMap((response) =>
+      response.status >= 400
+        ? Effect.fail(new Error(`Request failed, status ${response.status}`))
+        : response.arrayBuffer,
+    ),
+    Effect.map((buffer) => new Uint8Array(buffer)),
+    Effect.mapError((error) =>
+      HttpClientError.isHttpClientError(error) &&
+      error.reason.cause instanceof Error
+        ? error.reason.cause
+        : error,
+    ),
+  );
 
 const attempt = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
   Effect.tryPromise({
@@ -64,6 +95,15 @@ const attempt = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
 export function managedBinaryPorts(
   host: ManagedBinaryHostPorts,
 ): ManagedBinaryPorts {
+  return {
+    ...devicePorts(host),
+    download: (url) => attempt(() => host.download(url)),
+  };
+}
+
+function devicePorts(
+  host: Omit<ManagedBinaryHostPorts, "download">,
+): Omit<ManagedBinaryPorts, "download"> {
   return {
     openStore: Effect.fn("ManagedBinaryPlatform.openStore")(function* (
       directory: string,
@@ -78,7 +118,6 @@ export function managedBinaryPorts(
         clear: () => attempt(() => store.clear()),
       } satisfies EffectBinaryStore;
     }),
-    download: (url) => attempt(() => host.download(url)),
     consent: {
       loadLocalStorage: (key) =>
         Effect.sync(() => host.consent.loadLocalStorage(key)),

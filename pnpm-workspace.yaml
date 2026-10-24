@@ -37,6 +37,7 @@ catalog:
   happy-dom: ^20.9.0
   hono: ^4.13.0
   yaml: ^2.9.0
+  "@effect/platform-node": 4.0.0
   "@effect/tsgo": 0.56.0
   "@effect/vitest": 4.0.0
   "@logtape/logtape": ^2.0.7
@@ -95,6 +96,9 @@ overrides:
   "@codemirror/view": 6.43.13
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
+  # platform-node 4.0.0 takes platform-node-shared ^4.0.0, whose newer releases
+  # want a newer effect than the pinned 4.0.0.
+  "@effect/platform-node>@effect/platform-node-shared": 4.0.0
   # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).
   "ajv>fast-uri": "^3.1.5"
   # postcss (via docs' Tailwind/vite toolchain) pins nanoid to 3.3.16; force the

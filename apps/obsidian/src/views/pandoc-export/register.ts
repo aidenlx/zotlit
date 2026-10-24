@@ -12,9 +12,9 @@ import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
+import type { ZoteroClient } from "@/lib/zotero-http";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
@@ -56,6 +56,8 @@ export interface PandocExportDeps {
     "binary" | "runSync" | "runPromise"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
+  /** The `ZoteroHttp` loopback client the bibliography is fetched over. */
+  zoteroHttp: ZoteroClient;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync">;
   profile: ProfileReader;
@@ -258,7 +260,7 @@ function exportPorts(
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
-        fetch: nodeFetch,
+        http: deps.zoteroHttp,
         httpPort: zoteroPref.httpPort,
         localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
       }),

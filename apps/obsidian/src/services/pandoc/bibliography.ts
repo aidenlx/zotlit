@@ -9,13 +9,8 @@ import { formatIndexedKey } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import type { NodeFetchInit } from "@/lib/node-fetch";
-import {
-  parseJson,
-  ZOTERO_ALLOWED_REQUEST,
-  zoteroOrigin,
-} from "@/lib/zotero-http";
-import type { ZoteroTransport } from "@/lib/zotero-http";
+import { exchangeWithZotero, parseJson, zoteroOrigin } from "@/lib/zotero-http";
+import type { ZoteroClient, ZoteroRequest } from "@/lib/zotero-http";
 import { ZOTERO_HTTP_PORT_PREF } from "@/services/zotero-pref/prefs-file";
 
 const logger = getLogger(["pandoc", "bibliography"]);
@@ -49,7 +44,8 @@ interface ZoteroReply {
 }
 
 export interface BibliographyPorts {
-  fetch: ZoteroTransport;
+  /** The `ZoteroHttp` loopback client. */
+  http: ZoteroClient;
   /** HTTP port read from the active Zotero profile. */
   httpPort: number | null;
   /**
@@ -191,11 +187,11 @@ async function fromLocalApi(
       include: "csljson",
     });
     const library = groupID === null ? "users/0" : `groups/${groupID}`;
-    const response = await send(
-      ports,
-      `${zoteroOrigin(ports.httpPort)}/api/${library}/items?${query.toString()}`,
-      { method: "GET", headers: { ...ZOTERO_ALLOWED_REQUEST } },
-    );
+    const response = await send(ports, {
+      port: ports.httpPort,
+      path: `/api/${library}/items?${query.toString()}`,
+      method: "GET",
+    });
     if (!response) return { error: zoteroUnreachable(ports.httpPort) };
     if (response.status === 403) return { error: localApiDisabled() };
     if (response.status !== 200) {
@@ -260,18 +256,13 @@ async function callJsonRpc(
   method: string,
   params: readonly unknown[],
 ): Promise<RpcOutcome> {
-  const response = await send(
-    ports,
-    `${zoteroOrigin(ports.httpPort)}${JSON_RPC_PATH}`,
-    {
-      method: "POST",
-      headers: {
-        ...ZOTERO_ALLOWED_REQUEST,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
-    },
-  );
+  const response = await send(ports, {
+    port: ports.httpPort,
+    path: JSON_RPC_PATH,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+  });
   if (!response) return { ok: false, reason: "unreachable" };
   if (response.status !== 200) return { ok: false, reason: "absent" };
 
@@ -304,13 +295,13 @@ function rpcFailure(
 /** `null` when the configured Zotero HTTP server cannot be reached. */
 async function send(
   ports: BibliographyPorts,
-  url: string,
-  init: NodeFetchInit,
+  request: ZoteroRequest,
 ): Promise<ZoteroReply | null> {
   try {
-    const response = await ports.fetch(url, init);
-    return { status: response.status, text: await response.text() };
+    const { status, text } = await exchangeWithZotero(ports.http, request);
+    return { status, text };
   } catch (error) {
+    const url = `${zoteroOrigin(request.port)}${request.path}`;
     logger.debug("Zotero's HTTP server did not answer", { url, error });
     return null;
   }

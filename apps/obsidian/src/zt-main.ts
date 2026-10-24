@@ -719,6 +719,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       citationLookup: services.citationLookup,
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
+      zoteroHttp: services.zoteroHttp,
       settings: services.settings,
       bridge: services.bridge,
       openSettings: () => {
