@@ -5,16 +5,21 @@
 // producer of temp entries keeps that rule in its own `reap-temps.ts`, next to
 // the code that writes the entries the rule recognizes.
 //
+// The sweep is an Effect so the database reads worker, which carries no
+// LogTape, runs the same walk the renderer does.
+//
 // A sweep never throws: a directory that refuses to be listed or emptied is a
 // logged warning, never a failed launch.
 
-import { opendir, rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isErrno } from "./errno";
-import { getLogger } from "./log";
+// The worker build aliases the exact specifier `@/lib/effect`, so a relative
+// import here would pull the renderer's LogTape bridge into the worker.
+import { Cause, Effect } from "@/lib/effect";
 
-const logger = getLogger("temp-sweep");
+import { withLogCategory } from "./effect-log-category";
+import { isErrno } from "./errno";
 
 /** What every reap step accepts, so one startup passes the same thing to each. */
 export interface ReapTempsOptions {
@@ -37,39 +42,62 @@ export interface TempSweepOptions {
   signal?: AbortSignal;
 }
 
-export async function sweepTempDirectory({
+export const sweepTempDirectoryEffect = Effect.fnUntraced(function* ({
   directory,
   kind,
   isResidue,
   signal,
-}: TempSweepOptions): Promise<void> {
-  try {
-    signal?.throwIfAborted();
-    await using dir = await opendir(directory);
-    for await (const entry of dir) {
-      signal?.throwIfAborted();
-      const path = join(directory, entry.name);
-      if (await isResidue(entry.name, path)) await remove(path, kind);
-    }
-  } catch (error) {
-    if (signal?.aborted || isErrno(error, "ENOENT")) return;
-    logger.warn("Failed to sweep a ZotLit temp directory", {
-      error,
-      directory,
-      kind,
-    });
-  }
+}: TempSweepOptions) {
+  if (signal?.aborted) return;
+  const walked = yield* Effect.result(
+    Effect.gen(function* () {
+      const names = yield* fsCall(() => readdir(directory));
+      for (const name of names) {
+        if (signal?.aborted) return;
+        const path = join(directory, name);
+        if (yield* fsCall(async () => isResidue(name, path))) {
+          yield* remove(path, kind);
+        }
+      }
+    }),
+  );
+  if (walked._tag === "Success") return;
+  if (signal?.aborted || isErrno(walked.failure, "ENOENT")) return;
+  yield* Effect.logWarning(
+    "Failed to sweep a ZotLit temp directory",
+    Cause.fail(walked.failure),
+  ).pipe(
+    Effect.annotateLogs({ directory, kind }),
+    withLogCategory("temp-sweep"),
+  );
+});
+
+/** The Promise-shaped call for lifecycle code that is not an Effect. */
+export function sweepTempDirectory(options: TempSweepOptions): Promise<void> {
+  return Effect.runPromise(sweepTempDirectoryEffect(options));
 }
 
-async function remove(path: string, kind: string): Promise<void> {
-  try {
-    await rm(path, { recursive: true, force: true });
-    logger.debug("Reaped a stale ZotLit temp entry", { path, kind });
-  } catch (error) {
-    logger.warn("Failed to reap a stale ZotLit temp entry", {
-      error,
-      path,
-      kind,
-    });
-  }
+function remove(path: string, kind: string) {
+  return fsCall(() => rm(path, { recursive: true, force: true })).pipe(
+    Effect.matchEffect({
+      onSuccess: () =>
+        Effect.logDebug("Reaped a stale ZotLit temp entry").pipe(
+          Effect.annotateLogs({ path, kind }),
+          withLogCategory("temp-sweep"),
+        ),
+      onFailure: (error) =>
+        Effect.logWarning(
+          "Failed to reap a stale ZotLit temp entry",
+          Cause.fail(error),
+        ).pipe(
+          Effect.annotateLogs({ path, kind }),
+          withLogCategory("temp-sweep"),
+        ),
+    }),
+  );
+}
+
+function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+  // boundary: node:fs/promises and the residue rule are Promise-based.
+  return Effect.tryPromise({ try: run, catch: (error) => error });
 }
