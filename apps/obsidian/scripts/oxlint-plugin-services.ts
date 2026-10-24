@@ -314,12 +314,141 @@ export const workerRpc: Rule = {
   },
 };
 
+interface EventNode extends AstNode {
+  readonly key?: AstNode;
+  readonly source?: AstNode | null;
+}
+
+/**
+ * Events are Streams and state (policies/events.md); `nanoevents` stays in the
+ * legacy files oxlint.config.ts lists until each converts.
+ */
+export const noNanoevents: Rule = {
+  meta: {
+    type: "problem",
+    docs: { description: "Require Effect-native events over nanoevents." },
+    messages: {
+      nanoevents:
+        "Expose events as Streams and state: a SubscriptionRef for watched state, a PubSub Stream for occurrences (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node: unknown) => {
+      const { source } = node as EventNode;
+      if (
+        source?.type === "Literal" &&
+        typeof source.value === "string" &&
+        /(^|\/)nanoevents$/.test(source.value)
+      )
+        context.report({ node: source as never, messageId: "nanoevents" });
+    };
+    return {
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+      ImportExpression: check,
+    };
+  },
+};
+
+const EMITTER_KEYS = new Set(["on", "subscribe"]);
+
+/** The name of a non-computed property, method, or signature key. */
+function keyName(node: EventNode): string | undefined {
+  const key = node.computed ? undefined : node.key;
+  if (key?.type === "Identifier") return String(key.name);
+  if (key?.type === "Literal" && typeof key.value === "string")
+    return key.value;
+  return undefined;
+}
+
+/**
+ * A plain adapter exposes its service's Streams and state; plain code
+ * subscribes with `subscribe(runtime, stream, callback)` from
+ * `@/lib/effect-stream` (policies/events.md). oxlint.config.ts enables it for
+ * `plain.ts` files.
+ */
+export const plainAdapterStreams: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Forbid emitter-shaped on/subscribe members on plain adapters.",
+    },
+    messages: {
+      emitter:
+        "Expose the Stream or state instead of `{{name}}`; plain code subscribes with subscribe(runtime, stream, callback) from @/lib/effect-stream (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node: unknown) => {
+      const member = node as EventNode;
+      const name = keyName(member);
+      if (name && EMITTER_KEYS.has(name))
+        context.report({
+          node: member.key as never,
+          messageId: "emitter",
+          data: { name },
+        });
+    };
+    return {
+      Property: check,
+      MethodDefinition: check,
+      PropertyDefinition: check,
+      TSMethodSignature: check,
+      TSPropertySignature: check,
+    };
+  },
+};
+
+/**
+ * Inside a layer, Obsidian events enter through `obsidianEvents` from
+ * `@/lib/effect-obsidian-events`: one intake, a failure boundary per event.
+ * A function nested in an Effect generator counts too, such as the acquire
+ * callback of `acquireDisposable`.
+ */
+export const obsidianEventsIntake: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require obsidianEvents for Obsidian events in a layer.",
+    },
+    messages: {
+      intake:
+        "Register Obsidian events through obsidianEvents from @/lib/effect-obsidian-events: one ordered intake with a failure boundary per event (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const insideEffect = (node: AstNode) => {
+      for (let at = node.parent; at; at = at.parent)
+        if (isEffectGenerator(at)) return true;
+      return false;
+    };
+    return {
+      CallExpression(node) {
+        if (
+          node.callee.type === "Identifier" &&
+          node.callee.name === "registerEvent" &&
+          insideEffect(node as AstNode)
+        )
+          context.report({ node, messageId: "intake" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
     "cli-command-registration": cliCommandRegistration,
     "effect-native-resources": effectNativeResources,
     "no-legacy-service": noLegacyService,
+    "no-nanoevents": noNanoevents,
+    "obsidian-events-intake": obsidianEventsIntake,
+    "plain-adapter-streams": plainAdapterStreams,
     "service-tag-id": serviceTagId,
     "worker-rpc": workerRpc,
   },

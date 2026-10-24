@@ -161,7 +161,69 @@ export default defineConfig({
       rules: {
         "zotlit-services/effect-native-resources": "error",
         "zotlit-services/no-legacy-service": "error",
+        "zotlit-services/obsidian-events-intake": "error",
       },
+    },
+    {
+      files: ["src/**"],
+      rules: { "zotlit-services/no-nanoevents": "error" },
+    },
+    {
+      files: ["src/services/**/plain.ts"],
+      rules: { "zotlit-services/plain-adapter-streams": "error" },
+    },
+    {
+      // Legacy emitters, written before the rule. A file moves off this list
+      // when its service converts to Effect (policies/events.md).
+      files: [
+        "src/services/annotation-repository/__fixtures__.ts",
+        "src/services/annotation-repository/service.ts",
+        "src/services/attachment-import/service.ts",
+        "src/services/attachment-resolver/__fixtures__.ts",
+        "src/services/attachment-resolver/service.ts",
+        "src/services/citation-text/service.ts",
+        "src/services/citekey-editor/service.ts",
+        "src/services/graph-citations/service.test.ts",
+        "src/services/local-bridge/service.ts",
+        "src/services/local-server/service.ts",
+        "src/services/note-feature/operations.membership.test.ts",
+        "src/services/note-feature/operations.ts",
+        "src/services/pdf-annotation-editor/__fixtures__.ts",
+        "src/services/pdf-annotation-editor/service.ts",
+        "src/services/reader-session/session.ts",
+        "src/services/zotero-local-api/__fixtures__.ts",
+        "src/services/zotero-local-api/service.ts",
+        "src/views/library/item-drag.test.ts",
+        "src/views/library/view.test.ts",
+        "src/views/query-view/table-notes.ts",
+        "src/views/welcome/banner.test.ts",
+      ],
+      rules: { "zotlit-services/no-nanoevents": "off" },
+    },
+    {
+      // Adapters written before the rule; #1705 moves their callers to
+      // subscribe(runtime, stream, callback) and takes each file off this list.
+      files: [
+        "src/services/citation-index/plain.ts",
+        "src/services/library-scope/plain.ts",
+        "src/services/managed-binary/plain.ts",
+        "src/services/note-index/plain.ts",
+        "src/services/pandoc/render-cache/plain.ts",
+        "src/services/profile/plain.ts",
+        "src/services/query-client/plain.ts",
+        "src/services/settings/plain.ts",
+        "src/services/template/plain.ts",
+        "src/services/use-ledger/plain.ts",
+        "src/services/zotero-pref/plain.ts",
+        "src/services/zotero-reads/plain.ts",
+      ],
+      rules: { "zotlit-services/plain-adapter-streams": "off" },
+    },
+    {
+      // Registers its events before obsidianEvents existed; moves off this list
+      // when it adopts the helper.
+      files: ["src/services/use-ledger/service.ts"],
+      rules: { "zotlit-services/obsidian-events-intake": "off" },
     },
     {
       files: ["src/views/annot-view/*.{ts,tsx}"],

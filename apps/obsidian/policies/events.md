@@ -1,6 +1,11 @@
 # Events
 
-A service's events are Effect-native: Streams and state, read where they are consumed. The reviewer checks:
+A service's events are Effect-native: Streams and state, read where they are consumed. Three `zotlit-services` lint rules (`scripts/oxlint-plugin-services.ts`) cover the mechanical part, each with a backlog list in `oxlint.config.ts`:
+- `no-nanoevents` rejects a `nanoevents` import;
+- `plain-adapter-streams` rejects an `on` or `subscribe` member in a `plain.ts`;
+- `obsidian-events-intake` rejects `registerEvent` inside an Effect generator.
+
+The reviewer checks:
 
 - **State or event.** What consumers watch is a `SubscriptionRef`, exposed as a Stream with `changesUntil` from `src/lib/effect-stream.ts`. A discrete occurrence is a `PubSub` exposed as a Stream. A condition a late subscriber must still see (stopped, failed, backfilled) is state, since a PubSub event has passed by the time a late subscriber attaches.
 - **Obsidian events.** A layer registers `vault`, `metadataCache` and `workspace` events, and one-shots such as `onLayoutReady`, through `obsidianEvents` from `src/lib/effect-obsidian-events.ts`: one ordered intake, one consumer fiber forked on the layer's Scope, a failure boundary per event. A `registerEvent(app.….on(…))` inside a layer bypasses that boundary.

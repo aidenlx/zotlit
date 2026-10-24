@@ -5,6 +5,9 @@ import {
   cliCommandRegistration,
   effectNativeResources,
   noLegacyService,
+  noNanoevents,
+  obsidianEventsIntake,
+  plainAdapterStreams,
   serviceTagId,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
@@ -139,5 +142,87 @@ tester.run("worker-rpc", workerRpc, {
     },
     { code: "self.onmessage = receive", errors: [{ messageId: "rpc" }] },
     { code: 'worker["onmessage"] = receive', errors: [{ messageId: "rpc" }] },
+  ],
+});
+
+tester.run("no-nanoevents", noNanoevents, {
+  valid: [
+    'import { PubSub, SubscriptionRef } from "@/lib/effect";',
+    'import { subscribe } from "@/lib/effect-stream";',
+  ],
+  invalid: [
+    {
+      code: 'import { createNanoEvents } from "@zotlit/shared/nanoevents";',
+      errors: [{ messageId: "nanoevents" }],
+    },
+    {
+      code: 'import { createNanoEvents } from "nanoevents";',
+      errors: [{ messageId: "nanoevents" }],
+    },
+    {
+      code: 'export { createNanoEvents } from "@zotlit/shared/nanoevents";',
+      errors: [{ messageId: "nanoevents" }],
+    },
+    {
+      code: 'const events = await import("nanoevents");',
+      errors: [{ messageId: "nanoevents" }],
+    },
+  ],
+});
+
+tester.run("plain-adapter-streams", plainAdapterStreams, {
+  valid: [
+    // The adapter hands out the Stream; plain code subscribes through the helper.
+    `export function plainProfile(runtime) {
+      return { changes: Profile.changes, current: () => runtime.runSync(Profile.current) };
+    }`,
+    `const stop = subscribe(runtime, adapter.changes, refresh);`,
+    "interface PlainProfile { readonly changes: Stream.Stream<Snapshot>; }",
+  ],
+  invalid: [
+    {
+      code: "const adapter = { on(event, callback) { return () => {}; } };",
+      errors: [{ messageId: "emitter" }],
+    },
+    {
+      code: "const adapter = { subscribe: (callback) => () => {} };",
+      errors: [{ messageId: "emitter" }],
+    },
+    {
+      code: 'interface PlainIndex { on(event: "changed", callback: () => void): () => void; }',
+      errors: [{ messageId: "emitter" }],
+    },
+    {
+      code: "interface PlainSettings { subscribe: (callback: () => void) => () => void; }",
+      errors: [{ messageId: "emitter" }],
+    },
+    {
+      code: "class PlainLookup { on() {} }",
+      errors: [{ messageId: "emitter" }],
+    },
+  ],
+});
+
+tester.run("obsidian-events-intake", obsidianEventsIntake, {
+  valid: [
+    // Legacy services keep registerEvent on their stack until they convert.
+    `async function load() { stack.use(registerEvent(vault.on("rename", move))); }`,
+    `Effect.gen(function* () {
+      const events = yield* obsidianEvents<VaultEvents>();
+      yield* events.on("rename", vault, "rename");
+    })`,
+  ],
+  invalid: [
+    {
+      code: `Effect.gen(function* () { registerEvent(vault.on("rename", move)); })`,
+      errors: [{ messageId: "intake" }],
+    },
+    {
+      // The acquire callback is nested, but it still runs inside the layer.
+      code: `Effect.fnUntraced(function* () {
+        yield* acquireDisposable(() => registerEvent(workspace.on("file-open", open)));
+      })`,
+      errors: [{ messageId: "intake" }],
+    },
   ],
 });
