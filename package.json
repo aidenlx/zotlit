@@ -33,16 +33,18 @@
     "quality": "pnpm lint && pnpm format",
     "quality:fix": "pnpm lint:fix && pnpm format:fix",
     "verify": "node packages/scripts/scripts/verify.ts",
-    "prepare": "lefthook install || exit 0"
+    "prepare": "effect-tsgo patch --oxlint --typescript --typescript-package @typescript/native; lefthook install || exit 0"
   },
   "dependencies": {
     "agent-browser": "^0.33.1"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@electron/asar": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@eslint/json": "^2.0.1",
     "@types/node": "catalog:",
+    "@typescript/native": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/docs": "workspace:*",
     "@zotlit/e2e": "workspace:*",
@@ -55,7 +57,7 @@
     "obsidian": "workspace:*",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
-    "oxlint-tsgolint": "^7.0.2004",
+    "oxlint-tsgolint": "7.0.2004",
     "sharp": "^0.35.2",
     "turbo": "^2.11.7",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
