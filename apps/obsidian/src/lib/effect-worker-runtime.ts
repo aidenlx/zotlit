@@ -1,17 +1,21 @@
 import * as Context from "effect/Context";
 // oxlint-disable-next-line no-restricted-imports -- Worker Effect excludes the renderer LogTape bridge.
 import * as NativeEffect from "effect/Effect";
+import * as References from "effect/References";
 // oxlint-disable-next-line no-restricted-imports -- The worker uses the shared Chromium scheduler below.
 import { Scheduler } from "effect/Scheduler";
 
 import { browserScheduler } from "./browser-scheduler";
 
-/** Browser scheduling without the renderer's LogTape bridge. */
+/**
+ * Browser scheduling without the renderer's LogTape bridge. Every level
+ * reaches the port logger, so the host's configured level is the only filter.
+ */
 const runtimeServices = Context.add(
   Context.empty(),
   Scheduler,
   browserScheduler,
-);
+).pipe(Context.add(References.MinimumLogLevel, "All"));
 
 // oxlint-disable-next-line no-restricted-imports -- Re-export the worker-native Effect module.
 export * from "effect/Effect";

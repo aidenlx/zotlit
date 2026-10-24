@@ -42,6 +42,11 @@ const captureLogger = (captured: Queue.Queue<CapturedLog>) =>
     });
   });
 
+/** A time no wall clock reads, so only the Effect Clock can produce it. */
+const LIBRARY_LOG_TIME = Temporal.Instant.from(
+  "2001-02-03T04:05:06Z",
+).epochMilliseconds;
+
 const HOST_LOG_PORT = {
   malformedMessage: "Ignored a malformed Zotero reads worker log record",
   category: ["zotero-reads"],
@@ -162,7 +167,7 @@ describe("Effect log port", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Layer.build(layerHostLogPort(ports.host, HOST_LOG_PORT));
-          yield* TestClock.adjust("123 millis");
+          yield* TestClock.setTime(LIBRARY_LOG_TIME);
           yield* Effect.sync(() =>
             logLibrary({
               level: "debug",
@@ -177,7 +182,7 @@ describe("Effect log port", () => {
             message: ["Candidate plan selected"],
             category: ["zotlit", "item-query"],
             annotations: { plan: "candidates" },
-            timestamp: 123,
+            timestamp: LIBRARY_LOG_TIME,
           });
         }).pipe(
           Effect.provide(layerPortLogger(ports.worker, level)),
@@ -220,13 +225,16 @@ describe("Effect log port", () => {
 
   it.effect("reports a failed post once for each failure kind", () =>
     Effect.gen(function* () {
-      const errors = [
+      const failures = [
         new TypeError("port closed"),
         new RangeError("port detached"),
+        new TypeError("port closed"),
+        new RangeError("port detached"),
+        new TypeError("port closed"),
       ] as const;
       let attempt = 0;
       const postMessage = vi.fn(() => {
-        throw errors[attempt++];
+        throw failures[attempt++];
       });
       const consoleError = vi
         .spyOn(console, "error")
@@ -235,11 +243,11 @@ describe("Effect log port", () => {
       const workerLogger = makePortLogger({ postMessage }, level);
 
       yield* Effect.gen(function* () {
-        yield* Effect.logError("first failed post");
-        yield* Effect.logError("second failed post");
+        for (const index of failures.keys())
+          yield* Effect.logError(`failed post ${index}`);
       }).pipe(Effect.provide(Logger.layer([workerLogger])));
 
-      expect(postMessage).toHaveBeenCalledTimes(2);
+      expect(postMessage).toHaveBeenCalledTimes(failures.length);
       expect(consoleError).toHaveBeenCalledTimes(2);
       expect(consoleError.mock.calls.map(([, kind]) => kind)).toEqual([
         "TypeError: port closed",
@@ -312,7 +320,13 @@ describe("Effect log port", () => {
 
       expect(ports.host.onmessage).toBeNull();
       expect(ports.host.closed).toBe(true);
-      expect(Queue.sizeUnsafe(captured)).toBe(0);
+
+      yield* Effect.logInfo("after close").pipe(
+        Effect.provide(layerPortLogger(ports.worker, level)),
+      );
+      yield* Effect.yieldNow;
+      expect(ports.worker.posted).toHaveLength(2);
+      expect(yield* Queue.clear(captured)).toEqual([]);
     }),
   );
 });
