@@ -2,11 +2,13 @@
 import { getLogger as getLogTapeLogger } from "@logtape/logtape";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
 
 import { setLibraryLogSink } from "@zotlit/shared/logging";
 
+import type { EffectBridge } from "./effect-bridge";
 import {
   LogCategory,
   LogTimestamp,
@@ -138,3 +140,36 @@ export const logServices = Context.make(
   Logger.CurrentLoggers,
   new Set([logTapeLogger]),
 ).pipe(Context.add(References.MinimumLogLevel, "All"));
+
+/** One level's log call for plain code: the message and the fields it carries. */
+type BridgeLogMethod = (
+  message: string,
+  fields?: Readonly<Record<string, unknown>>,
+) => void;
+
+/**
+ * The log calls of plain code that holds a bridge, written under `category`
+ * through the bridge's runtime so they reach the plugin's loggers.
+ */
+export function bridgeLog(
+  bridge: Pick<EffectBridge, "runSync">,
+  category: string,
+): Record<"trace" | "debug" | "info" | "warn" | "error", BridgeLogMethod> {
+  const at =
+    (log: (message: string) => Effect.Effect<void>): BridgeLogMethod =>
+    (message, fields) => {
+      const record = log(message);
+      bridge.runSync(
+        (fields ? Effect.annotateLogs(record, fields) : record).pipe(
+          withLogCategory(category),
+        ),
+      );
+    };
+  return {
+    trace: at(Effect.logTrace),
+    debug: at(Effect.logDebug),
+    info: at(Effect.logInfo),
+    warn: at(Effect.logWarning),
+    error: at(Effect.logError),
+  };
+}

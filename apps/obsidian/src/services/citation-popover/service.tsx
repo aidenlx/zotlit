@@ -3,9 +3,9 @@ import type { App, HoverParent, TFile } from "obsidian";
 import type { ReactNode } from "react";
 
 import { registerEvent } from "@/lib/disposables";
-import { Cause, Context, Effect, Exit, Layer } from "@/lib/effect";
-import { scopedBridge } from "@/lib/effect-bridge";
-import { withLogCategory } from "@/lib/effect-log";
+import { Cause, Context, Effect, Layer } from "@/lib/effect";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
@@ -209,37 +209,29 @@ export const layerCitationPopover: Layer.Layer<
     const render = yield* BibliographyRender;
     const profiles = yield* Profile;
     const bridge = yield* scopedBridge;
-    let stopped = false;
     const visits = new HoverVisits<CitationVisitState>(() => ({
       reading: null,
       content: null,
     }));
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        stopped = true;
         visits.hideAll();
       }),
     );
 
-    // Keep each service's read contract after the plugin closes.
+    const logs = bridgeLog(bridge, "citation-popover");
     const log = (
       level: "debug" | "warn",
       message: string,
       fields: Record<string, unknown>,
-    ) => {
-      const write = level === "debug" ? Effect.logDebug : Effect.logWarning;
-      bridge.runSync(write(message).pipe(Effect.annotateLogs(fields)));
-    };
+    ) => logs[level](message, fields);
+    // Keep each service's read contract after the plugin closes.
     const held = async <A, E>(
       effect: Effect.Effect<A, E>,
-      closed: A,
+      released: A,
       options?: { signal?: AbortSignal },
-    ): Promise<A> => {
-      const exit = await bridge.runPromiseExit(effect, options);
-      if (Exit.isSuccess(exit)) return exit.value;
-      if (Cause.hasInterruptsOnly(exit.cause)) return closed;
-      throw Cause.squash(exit.cause);
-    };
+    ): Promise<A> =>
+      valueOr(await bridge.runPromiseExit(effect, options), released);
     const lookupReleased = () =>
       new DOMException("Citation Lookup released", "AbortError");
     const deps: PopoverReads = {
@@ -251,15 +243,11 @@ export const layerCitationPopover: Layer.Layer<
         get reads() {
           return reads.reads;
         },
-        acquireRead: () =>
-          acquireReadLease(reads, {
-            runPromiseExit: bridge.runPromiseExit,
-            closed: () => stopped,
-          }),
+        acquireRead: () => acquireReadLease(reads, bridge),
       },
       lookupStatus: () => bridge.runSync(lookup.current).status,
       async readLookup(request, { signal }) {
-        if (stopped) throw lookupReleased();
+        if (bridge.closed()) throw lookupReleased();
         const selected = {
           citekeys: [...(request.citekeys ?? [])],
           indexedKeys: [...(request.indexedKeys ?? [])],
@@ -269,7 +257,7 @@ export const layerCitationPopover: Layer.Layer<
           signal,
         }).catch((error: unknown) => {
           // A failure after unload is the release, like an interrupt.
-          throw stopped ? lookupReleased() : error;
+          throw bridge.closed() ? lookupReleased() : error;
         });
         if (answer === undefined) throw lookupReleased();
         return answer;
@@ -293,7 +281,7 @@ export const layerCitationPopover: Layer.Layer<
         },
       },
       async readText(path, { signal }) {
-        if (stopped) return null;
+        if (bridge.closed()) return null;
         return held(text.read(path, { signal }), null, { signal });
       },
       vaultPresentation: () => bridge.runSync(render.state).vaultPresentation,
@@ -317,7 +305,7 @@ export const layerCitationPopover: Layer.Layer<
       log,
     };
     function showVisit(request: PopoverRequest): Promise<void> {
-      if (stopped) return Promise.resolve();
+      if (bridge.closed()) return Promise.resolve();
       const currentVisit = visits.open(request.hoverParent, request.targetEl);
       const { popover, subscriptions, state } = currentVisit;
       subscriptions.defer(() => state.reading?.abort());

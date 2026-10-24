@@ -15,12 +15,12 @@ import {
   Context,
   Deferred,
   Effect,
-  Exit,
   Layer,
   PubSub,
   Stream,
   SubscriptionRef,
 } from "@/lib/effect";
+import { valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { NoteIndex } from "@/services/note-index/service";
@@ -375,9 +375,7 @@ export const layerLocalServer: Layer.Layer<
       getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys()),
       whenIndexed: async () => {
         if (stoppedFlag) return;
-        const exit = await runPromiseExit(noteIndex.whenIndexed());
-        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-          throw Cause.squash(exit.cause);
+        valueOr(await runPromiseExit(noteIndex.whenIndexed()), undefined);
       },
     };
 
