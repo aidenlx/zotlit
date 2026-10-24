@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 // gates use medians and the JSON retains every sample, CPU and Node version.
 // A 10x size increase permits at most 15x parse time (50% timing tolerance).
 // The other budgets are 100 ms worker parse and a Fixture
-// backfill median no greater than the legacy median. A failure exits nonzero
+// backfill worker/legacy ratio no greater than 1.0, evaluated as the median of
+// three in-process trials. Each trial repeats the warm-ups and measured samples;
+// its ratio is the worker median divided by the legacy median. A failure exits nonzero
 // after writing .scratch/scan-pipeline-bench/results.json.
 //
 // Dense/sparse paragraphs contain 2/30 repetitions of the same prose sentence,
@@ -153,8 +155,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
   const backfill = {
     files: 0,
     characters: 0,
-    legacyMs: [] as number[],
-    workerMs: [] as number[],
+    trials: [] as { legacyMs: number[]; workerMs: number[]; ratio: number }[],
   };
   try {
     // The Fixture uses Node-only .ts imports, outside the plugin's tsconfig.
@@ -180,56 +181,62 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
       0,
     );
     expect(backfill.files).toBeGreaterThan(0);
-    for (let run = -3; run < RUNS; run++) {
-      // Alternate order to avoid consistently giving either path the warmer host.
-      const modes = run % 2 === 0 ? ["legacy", "worker"] : ["worker", "legacy"];
-      for (const mode of modes) {
-        await using harness = await createCitationIndexHarness(documents, {
-          parseClient: worker,
-          notes: false,
-        });
-        // Both paths read the same files through the same host adapter. Setup and
-        // filesystem cache warming above are outside both measurements.
-        harness.vault.cachedRead = (file) =>
-          readFile(join(vaultDir, file.path), "utf8");
-        const start = performance.now();
-        if (mode === "legacy") {
-          // 14d461b93^: sequential cachedRead + scan + store, yielding every 20
-          // files. Wikilinks were read from metadata only when querying, and the
-          // old backfill had no reverse maps or Annotation records to build.
-          const scans = new Map();
-          const persisted = new Map();
-          let count = 0;
-          for (const file of harness.vault.getMarkdownFiles()) {
-            const body = await harness.vault.cachedRead(file);
-            const scan = {
-              mtime: file.stat.mtime,
-              size: file.stat.size,
-              occurrences: scanCitekeyOccurrences(body),
-            };
-            scans.set(file.path, scan);
-            persisted.set(
-              file.path,
-              structuredClone({ path: file.path, ...scan }),
-            );
-            if (++count % 20 === 0) await yieldToMain();
+    for (let comparison = 0; comparison < 3; comparison++) {
+      const trial = { legacyMs: [] as number[], workerMs: [] as number[] };
+      for (let run = -3; run < RUNS; run++) {
+        // Alternate order to avoid consistently giving either path the warmer host.
+        const modes =
+          run % 2 === 0 ? ["legacy", "worker"] : ["worker", "legacy"];
+        for (const mode of modes) {
+          await using harness = await createCitationIndexHarness(documents, {
+            parseClient: worker,
+            notes: false,
+          });
+          // Both paths read the same files through the same host adapter. Setup and
+          // filesystem cache warming above are outside both measurements.
+          harness.vault.cachedRead = (file) =>
+            readFile(join(vaultDir, file.path), "utf8");
+          const start = performance.now();
+          if (mode === "legacy") {
+            // 14d461b93^: sequential cachedRead + scan + store, yielding every 20
+            // files. Wikilinks were read from metadata only when querying, and the
+            // old backfill had no reverse maps or Annotation records to build.
+            const scans = new Map();
+            const persisted = new Map();
+            let count = 0;
+            for (const file of harness.vault.getMarkdownFiles()) {
+              const body = await harness.vault.cachedRead(file);
+              const scan = {
+                mtime: file.stat.mtime,
+                size: file.stat.size,
+                occurrences: scanCitekeyOccurrences(body),
+              };
+              scans.set(file.path, scan);
+              persisted.set(
+                file.path,
+                structuredClone({ path: file.path, ...scan }),
+              );
+              if (++count % 20 === 0) await yieldToMain();
+            }
+            assert.equal(scans.size, backfill.files);
+            assert.equal(persisted.size, backfill.files);
+          } else {
+            harness.workspace.layoutReady();
+            await harness.index.whenIndexed();
           }
-          assert.equal(scans.size, backfill.files);
-          assert.equal(persisted.size, backfill.files);
-        } else {
-          harness.workspace.layoutReady();
-          await harness.index.whenIndexed();
-        }
-        const elapsed = performance.now() - start;
-        if (run >= 0)
-          (mode === "legacy" ? backfill.legacyMs : backfill.workerMs).push(
-            elapsed,
-          );
-        if (mode === "worker") {
-          assert.equal(harness.index.coverage, "complete");
-          assert.equal(harness.store.records.size, backfill.files);
+          const elapsed = performance.now() - start;
+          if (run >= 0)
+            (mode === "legacy" ? trial.legacyMs : trial.workerMs).push(elapsed);
+          if (mode === "worker") {
+            assert.equal(harness.index.coverage, "complete");
+            assert.equal(harness.store.records.size, backfill.files);
+          }
         }
       }
+      backfill.trials.push({
+        ...trial,
+        ratio: median(trial.workerMs) / median(trial.legacyMs),
+      });
     }
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
@@ -263,11 +270,8 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
         100,
       );
   }
-  check(
-    "Fixture backfill worker/legacy",
-    median(backfill.workerMs) / median(backfill.legacyMs),
-    1,
-  );
+  const backfillRatio = median(backfill.trials.map((trial) => trial.ratio));
+  check("Fixture backfill worker/legacy median of three", backfillRatio, 1);
   await writeFile(
     join(output, "results.json"),
     JSON.stringify(
@@ -282,7 +286,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
         },
         runs: RUNS,
         cells,
-        backfill,
+        backfill: { ...backfill, medianRatio: backfillRatio },
         checks,
       },
       null,
@@ -300,6 +304,15 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
       hostPostApplyMs: cell.hostPostApplyMs.length
         ? median(cell.hostPostApplyMs)
         : null,
+    })),
+  );
+  // oxlint-disable-next-line no-console -- show the spread across all three backfill trials.
+  console.table(
+    backfill.trials.map((trial, index) => ({
+      trial: index + 1,
+      legacyMs: median(trial.legacyMs),
+      workerMs: median(trial.workerMs),
+      ratio: trial.ratio,
     })),
   );
   // oxlint-disable-next-line no-console -- report every gate before failing the run.
