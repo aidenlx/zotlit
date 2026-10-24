@@ -45,7 +45,8 @@ type BindResult = { server: ServerType; port: number } | "in-use" | "failed";
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
  * The service is the authoritative holder; views sync from {@link
- * LocalServer.readerTarget} on mount and the reader events thereafter.
+ * LocalServer.readerTarget} on mount and {@link LocalServer.readerTargetChanges}
+ * thereafter.
  */
 export interface ReaderTarget {
   /** Parent (regular) item the open attachment belongs to. */

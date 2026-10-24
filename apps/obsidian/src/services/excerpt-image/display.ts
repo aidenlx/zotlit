@@ -512,7 +512,7 @@ export class ExcerptDisplayService extends Service<void> {
 
   /**
    * One Held Read; a read the released query client interrupts answers
-   * `null`, as it did through the plain adapter.
+   * `null`: no image.
    */
   async #heldRead(
     read: Effect.Effect<AvailableExcerpt | null, unknown>,

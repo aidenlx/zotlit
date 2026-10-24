@@ -88,8 +88,9 @@ import { ZoteroReads } from "./zotero-reads/service";
  *
  * The runtime over {@link pluginLayer} finishes acquisition first, including
  * each layer's asynchronous first load. The container then
- * injects its services with `useValue`: a converted service through its plain
- * adapter, a bridged one as it is. The runtime's disposal sits under every
+ * injects its services with `useValue`: a graph service as the tag's service
+ * (`() => runtime.runSync(Tag)`), which legacy consumers run through the
+ * container's `bridge`, a bridged one as it is. The runtime's disposal sits under every
  * container registration on `stack`, so the whole graph closes after the last
  * container service has disposed: a container service never outlives a layer
  * it uses. A service leaves the container for the graph as it converts or is
