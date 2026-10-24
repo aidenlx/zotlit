@@ -13,7 +13,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
 import type { BatchProfileCount } from "@/services/batch-profile-summary";
-import { classifyStream, runBatchWrite } from "@/services/batch-run";
+import { classifyStream, runBatch, runBatchWrite } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
   BatchRunControls,
@@ -23,6 +23,7 @@ import {
   batchGroupKey,
   batchGroups,
   batchLibraries,
+  effectLibraryScope,
   planBatchScope,
   withUnavailableLibraries,
 } from "@/services/batch-scope";
@@ -73,7 +74,7 @@ export interface NoteImportDeps {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
   /** A note write's reads: one lease spans the write and what it imports. */
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "state">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "snapshot" | "state">;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
@@ -221,7 +222,16 @@ async function runBatchImportAll(
     return { outcome: "db-unavailable" };
   }
 
-  const plan = await planBatchScope(deps, "notes", target);
+  const plan = await runBatch(
+    planBatchScope(
+      {
+        zoteroReads: deps.zoteroReads,
+        libraryScope: effectLibraryScope(deps.libraryScope),
+      },
+      "notes",
+      target,
+    ),
+  );
   if (plan.outcome !== "resolved") {
     return { outcome: plan.outcome };
   }
@@ -536,22 +546,25 @@ async function classifyNoteImport(
   await using lease = await deps.zoteroReads.acquireRead();
   const actions: ImportAction[] = [];
   const notFound: NotFoundEntry[] = [];
-  await classifyStream(
-    { itemIDs, read: (ids) => lease.reads.NoteRefs({ itemIDs: ids }) },
-    controls,
-    (slice) => {
-      for (const { note } of slice)
-        if (note) actions.push(toAction(deps, note));
-      for (const { itemID: id, note, trashed } of slice) {
-        if (note) continue;
-        notFound.push({
-          itemID: id,
-          label: trashed
-            ? m.batch_import_item_trashed({ id })
-            : m.batch_import_item_not_note({ id }),
-        });
-      }
-    },
+  await runBatch(
+    classifyStream(
+      { itemIDs, read: (ids) => lease.reads.NoteRefs({ itemIDs: ids }) },
+      controls,
+      (slice) => {
+        for (const { note } of slice)
+          if (note) actions.push(toAction(deps, note));
+        for (const { itemID: id, note, trashed } of slice) {
+          if (note) continue;
+          notFound.push({
+            itemID: id,
+            label: trashed
+              ? m.batch_import_item_trashed({ id })
+              : m.batch_import_item_not_note({ id }),
+          });
+        }
+      },
+    ),
+    controls.signal,
   );
   const libraries = batchLibraries(
     await Effect.runPromise(lease.reads.Libraries({})),
@@ -655,23 +668,26 @@ async function classifyChildImport(
 ): Promise<ChildGroup[]> {
   await using lease = await deps.zoteroReads.acquireRead();
   const parents: ChildGroup[] = [];
-  await classifyStream(
-    {
-      itemIDs: parentItemIDs,
-      read: (ids) => lease.reads.ChildNoteRefs({ itemIDs: ids }),
-    },
-    controls,
-    (slice) => {
-      for (const { itemID: parentID, ref, notes } of slice) {
-        if (notes.length === 0) continue;
-        const label =
-          ref?.title?.trim() || m.batch_update_untitled({ id: parentID });
-        parents.push({
-          label,
-          actions: notes.map((child) => toAction(deps, child)),
-        });
-      }
-    },
+  await runBatch(
+    classifyStream(
+      {
+        itemIDs: parentItemIDs,
+        read: (ids) => lease.reads.ChildNoteRefs({ itemIDs: ids }),
+      },
+      controls,
+      (slice) => {
+        for (const { itemID: parentID, ref, notes } of slice) {
+          if (notes.length === 0) continue;
+          const label =
+            ref?.title?.trim() || m.batch_update_untitled({ id: parentID });
+          parents.push({
+            label,
+            actions: notes.map((child) => toAction(deps, child)),
+          });
+        }
+      },
+    ),
+    controls.signal,
   );
   const childActions = parents.flatMap((parent) => parent.actions);
   logClassified("child", childActions, {
@@ -768,55 +784,57 @@ async function executeImportRun(
 
   // The run's note loads and writes read one Snapshot, held until the run
   // settles.
-  const result = await runBatchWrite({
-    zoteroReads: deps.zoteroReads,
-    tasks: actions.map((a) => ({ ...a, id: a.note.itemID })),
-    controls,
-    concurrency: IMPORT_CONCURRENCY,
-    run: async (task, reads) => {
-      const [note] = await Effect.runPromise(
-        reads.NoteBodies({
-          libraryID: task.note.libraryID,
-          keys: [task.note.key],
-        }),
-      );
-      if (!note) {
-        logger.warn("Imported note vanished before import; skipped", {
-          noteKey: task.note.indexedKey,
-        });
-        return "skipped";
-      }
-      const options = {
-        reads,
-        settings,
-        attachmentFolderCache,
-        reportExcerpts: excerpts.add,
-        outcomes,
-        ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
-      };
-      const outcome = task.profilePlan
-        ? await task.profilePlan.import(note, options)
-        : await deps.noteImport.importNote(note, options);
-      if (profileCounts && task.profilePlan && outcome !== "skipped") {
-        const { profile } = task.profilePlan;
-        const count = profileCounts.get(profile.selector) ?? {
-          label: profile.label ?? m.settings_profile_default_name(),
-          created: 0,
-          updated: 0,
+  const result = await runBatch(
+    runBatchWrite({
+      zoteroReads: deps.zoteroReads,
+      tasks: actions.map((a) => ({ ...a, id: a.note.itemID })),
+      controls,
+      concurrency: IMPORT_CONCURRENCY,
+      run: async (task, reads) => {
+        const [note] = await Effect.runPromise(
+          reads.NoteBodies({
+            libraryID: task.note.libraryID,
+            keys: [task.note.key],
+          }),
+        );
+        if (!note) {
+          logger.warn("Imported note vanished before import; skipped", {
+            noteKey: task.note.indexedKey,
+          });
+          return "skipped";
+        }
+        const options = {
+          reads,
+          settings,
+          attachmentFolderCache,
+          reportExcerpts: excerpts.add,
+          outcomes,
+          ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
         };
-        count[outcome === "created" ? "created" : "updated"]++;
-        profileCounts.set(profile.selector, count);
-      }
-      if (outcome === "overwritten") return "updated";
-      return outcome;
-    },
-    onTaskFailed: (task, error) => {
-      logger.warn("Batch import item failed", {
-        noteKey: task.note.indexedKey,
-        error,
-      });
-    },
-  });
+        const outcome = task.profilePlan
+          ? await task.profilePlan.import(note, options)
+          : await deps.noteImport.importNote(note, options);
+        if (profileCounts && task.profilePlan && outcome !== "skipped") {
+          const { profile } = task.profilePlan;
+          const count = profileCounts.get(profile.selector) ?? {
+            label: profile.label ?? m.settings_profile_default_name(),
+            created: 0,
+            updated: 0,
+          };
+          count[outcome === "created" ? "created" : "updated"]++;
+          profileCounts.set(profile.selector, count);
+        }
+        if (outcome === "overwritten") return "updated";
+        return outcome;
+      },
+      onTaskFailed: (task, error) => {
+        logger.warn("Batch import item failed", {
+          noteKey: task.note.indexedKey,
+          error,
+        });
+      },
+    }),
+  );
 
   logger.info("Batch import finished", {
     ...result,
