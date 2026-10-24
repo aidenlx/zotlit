@@ -10,7 +10,10 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Stream, SubscriptionRef } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import { changesUntil } from "@/lib/effect-stream";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -22,6 +25,10 @@ import type {
   QueryViewRequest,
   QueryViewRow,
 } from "@/services/item-query/query-view";
+import type {
+  LocalServer,
+  ReaderTarget,
+} from "@/services/local-server/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { serializeQueryFile } from "@/views/query-view/query-file";
@@ -223,8 +230,24 @@ async function openSidebar(
     metadataCache: { on: () => ({}), getFileCache: () => null },
   });
   const repository = emitter();
+  const runtime = testRuntime();
+  const bridge = effectBridge(runtime);
+  const available = Effect.runSync(SubscriptionRef.make(false));
+  const readerTarget = Effect.runSync(
+    SubscriptionRef.make<ReaderTarget | null>(null),
+  );
+  const readerClosed = Effect.runSync(SubscriptionRef.make(false));
+  const liveUpdate = stubService<LocalServer["Service"]>("LocalServer", {
+    available: SubscriptionRef.get(available),
+    availableChanges: changesUntil(available, Effect.never),
+    readerTarget: SubscriptionRef.get(readerTarget),
+    readerTargetChanges: changesUntil(readerTarget, Effect.never),
+    readerClosed: SubscriptionRef.get(readerClosed),
+    readerClosedChanges: changesUntil(readerClosed, Effect.never),
+  });
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge,
     app,
     reads: {
       state: readsState,
@@ -241,12 +264,7 @@ async function openSidebar(
       "libraries-changed": Stream.empty,
       current: null,
     },
-    liveUpdate: {
-      available: false,
-      readerClosed: false,
-      readerTarget: null,
-      on: () => () => {},
-    },
+    liveUpdate,
     pdfReaders: { on: () => () => {}, sessionFor: () => null },
     query: { run, on: () => () => {} },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },

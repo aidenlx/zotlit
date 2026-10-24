@@ -5,7 +5,9 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { it } from "@/lib/effect-vitest";
+import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { plainSettingsOf } from "@/services/settings/__fixtures__";
 
@@ -48,11 +50,16 @@ it.effect(
         runSync: Effect.runSync,
         runPromise: Effect.runPromise,
       };
+      const runtime = testRuntime();
       const tab = new ZotLitSettingTab({
-        runtime: testRuntime(),
+        runtime,
+        bridge: effectBridge(runtime),
         plugin: { app: {}, register: (off: () => void) => cleanup.push(off) },
         settings,
-        localServer: events,
+        localServer: stubService<LocalServer["Service"]>("LocalServer", {
+          effectivePort: Effect.succeed(null),
+          effectivePortChanges: Stream.empty,
+        }),
         localBridge: events,
         libraryScope: events,
         profile: { ...events, ready: new Promise(() => {}) },

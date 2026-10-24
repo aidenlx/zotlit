@@ -13,7 +13,8 @@ import {
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { registerMigratingWindowEvent } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -31,7 +32,7 @@ import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
-  LocalServerService,
+  LocalServer,
   ReaderTarget,
 } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -126,6 +127,7 @@ const VIEW_MENU_SECTIONS = [
  */
 export interface AnnotViewDeps extends QueryViewDeps {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   reads: Pick<
     PlainZoteroReads,
     | "reads"
@@ -143,8 +145,13 @@ export interface AnnotViewDeps extends QueryViewDeps {
     "libraryRows" | "changed" | "libraries-changed" | "current"
   >;
   liveUpdate: Pick<
-    LocalServerService,
-    "available" | "readerTarget" | "readerClosed" | "on"
+    LocalServer["Service"],
+    | "available"
+    | "availableChanges"
+    | "readerTarget"
+    | "readerTargetChanges"
+    | "readerClosed"
+    | "readerClosedChanges"
   >;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
   pdfReaders: Pick<PdfAnnotationEditor, "sessionFor" | "on">;
@@ -437,6 +444,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   protected override async onOpen(): Promise<void> {
     this.#zoteroReader = new ZoteroReaderSession({
       liveUpdate: this.#deps.liveUpdate,
+      bridge: this.#deps.bridge,
       resolve: (target, signal) => this.#resolveZoteroReader(target, signal),
       navigate: (annotationKey) => this.#openInZotero(annotationKey),
     });
@@ -458,8 +466,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     this.#store.setState({
-      liveUpdatesOn: this.#deps.liveUpdate.available,
-      zoteroReaderClosed: this.#deps.liveUpdate.readerClosed,
+      liveUpdatesOn: this.#deps.bridge.runSync(this.#deps.liveUpdate.available),
+      zoteroReaderClosed: this.#deps.bridge.runSync(
+        this.#deps.liveUpdate.readerClosed,
+      ),
       capability: this.#deps.annotations.capability,
     });
 
@@ -531,18 +541,24 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     this.register(
-      this.#deps.liveUpdate.on("available", (available) => {
-        // The mode is the user's, so it stands: only the reason the view shows
-        // in place changes with the listener.
-        this.#store.setState({ liveUpdatesOn: available });
-        if (this.#followMode === "zotero-reader") this.#reload();
-      }),
+      this.#deps.bridge.subscribe(
+        Stream.drop(this.#deps.liveUpdate.availableChanges, 1),
+        (available) => {
+          // The mode is the user's, so it stands: only the reason the view
+          // shows in place changes with the listener.
+          this.#store.setState({ liveUpdatesOn: available });
+          if (this.#followMode === "zotero-reader") this.#reload();
+        },
+      ),
     );
 
     this.register(
-      this.#deps.liveUpdate.on("reader/closed", (closed) => {
-        this.#store.setState({ zoteroReaderClosed: closed });
-      }),
+      this.#deps.bridge.subscribe(
+        Stream.drop(this.#deps.liveUpdate.readerClosedChanges, 1),
+        (closed) => {
+          this.#store.setState({ zoteroReaderClosed: closed });
+        },
+      ),
     );
 
     this.register(

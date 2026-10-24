@@ -4,6 +4,7 @@
 import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
@@ -23,7 +24,7 @@ export function localServerItems(
   ctx: SettingTabContext,
 ): SettingGroupItem<SettingsKey>[] {
   const enabled = serverEnabled(ctx);
-  const port = ctx.localServer.effectivePort;
+  const port = ctx.bridge.runSync(ctx.localServer.effectivePort);
   return [
     {
       id: "settings_local_server_enabled",
@@ -120,7 +121,7 @@ export function liveUpdatesItems(
         // the setting and the listener while the row is on screen.
         const stack = new DisposableStack();
         const apply = (): void => {
-          const port = ctx.localServer.effectivePort;
+          const port = ctx.bridge.runSync(ctx.localServer.effectivePort);
           const listening = port !== null;
           setting.setDesc(
             listening
@@ -132,7 +133,13 @@ export function liveUpdatesItems(
           setting.descEl.toggleClass("mod-warning", !listening);
         };
         stack.defer(subscribe(ctx.runtime, ctx.settings.changes, apply));
-        stack.defer(ctx.localServer.on("listening", apply));
+        stack.defer(
+          subscribe(
+            ctx.runtime,
+            Stream.drop(ctx.localServer.effectivePortChanges, 1),
+            apply,
+          ),
+        );
         return () => stack.dispose();
       },
     },

@@ -1,14 +1,14 @@
 // The Zotero Reader as a Reader Session, translated from the companion's pushes.
-import { getLogger } from "@/lib/log";
+import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import type {
-  LocalServerService,
+  LocalServer,
   ReaderTarget,
 } from "@/services/local-server/service";
 
 import { ReaderSessionHost } from "./session";
 import type { ReaderSessionTarget } from "./session";
-
-const logger = getLogger("reader-session");
 
 /** What one companion reader push names, in Indexed Keys. */
 export interface ZoteroReaderResolution {
@@ -18,7 +18,11 @@ export interface ZoteroReaderResolution {
 }
 
 export interface ZoteroReaderSessionDeps {
-  liveUpdate: Pick<LocalServerService, "readerTarget" | "on">;
+  liveUpdate: Pick<
+    LocalServer["Service"],
+    "readerTarget" | "readerTargetChanges"
+  >;
+  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   /**
    * Names the Attachment, its parent Item, and the selected Annotations a
    * reader push points at; `null` while the Zotero database cannot answer.
@@ -47,25 +51,43 @@ export interface ZoteroReaderSessionDeps {
  */
 export class ZoteroReaderSession extends ReaderSessionHost {
   readonly #liveUpdate;
+  readonly #bridge;
   readonly #resolve;
   readonly #stopTracking: () => void;
   /** Aborts the resolution that runs; a later push supersedes it. */
   #resolving: AbortController | null = null;
 
-  constructor({ liveUpdate, resolve, navigate }: ZoteroReaderSessionDeps) {
+  constructor({
+    liveUpdate,
+    bridge,
+    resolve,
+    navigate,
+  }: ZoteroReaderSessionDeps) {
     super({
       source: "zotero",
       navigate,
       select: (annotationKeys) =>
-        logger.debug("Zotero owns its reader's selection", {
-          annotations: annotationKeys.length,
-        }),
+        bridge.runSync(
+          Effect.logDebug("Zotero owns its reader's selection").pipe(
+            Effect.annotateLogs({ annotations: annotationKeys.length }),
+            withLogCategory("reader-session"),
+          ),
+        ),
     });
     this.#liveUpdate = liveUpdate;
+    this.#bridge = bridge;
     this.#resolve = resolve;
     this.refresh();
-    this.#stopTracking = liveUpdate.on("reader/target", (pushed) =>
-      this.#track(pushed),
+    let first = true;
+    this.#stopTracking = bridge.subscribe(
+      liveUpdate.readerTargetChanges,
+      (pushed) => {
+        if (first) {
+          first = false;
+          return;
+        }
+        if (pushed) this.#track(pushed);
+      },
     );
   }
 
@@ -75,7 +97,7 @@ export class ZoteroReaderSession extends ReaderSessionHost {
    * being lost.
    */
   refresh(): void {
-    this.#track(this.#liveUpdate.readerTarget);
+    this.#track(this.#bridge.runSync(this.#liveUpdate.readerTarget));
   }
 
   override [Symbol.dispose](): void {

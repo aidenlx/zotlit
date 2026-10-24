@@ -7,12 +7,14 @@
 import type { App, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { LocalServerService } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -26,8 +28,6 @@ import type { ProfileCustomization } from "@/views/template-workbench/preference
 import type { LocalBridgeService } from "./service";
 import type { SelectedItemIdentity } from "./sessions";
 import { unsupportedProfileSourceReason } from "./unsupported";
-
-const logger = getLogger("local-bridge");
 
 /** How long a launch waits for the listener it just turned on. */
 const SERVER_START_TIMEOUT_MS = 10_000;
@@ -85,7 +85,11 @@ export interface CustomizeDeps {
   settings: Pick<PlainPluginSettings, "current" | "update">;
   profile: Pick<PlainProfile, "profiles" | "defaultDocumentPath" | "getSource">;
   template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
-  localServer: Pick<LocalServerService, "effectivePort" | "on">;
+  localServer: Pick<
+    LocalServer["Service"],
+    "effectivePort" | "effectivePortChanges"
+  >;
+  effect: Pick<EffectBridge, "runSync" | "subscribe">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
   /** This build's version, which a Profile's `minAppVersion` is read against. */
   pluginVersion: string;
@@ -113,7 +117,12 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       deps.pluginVersion,
     );
     if (reason !== null) {
-      logger.debug("Customize kept the Profile in Obsidian", { reason });
+      deps.effect.runSync(
+        Effect.logDebug("Customize kept the Profile in Obsidian").pipe(
+          Effect.annotateLogs({ reason }),
+          withLogCategory("local-bridge"),
+        ),
+      );
       await deps.openNative(nativeRequest);
       new BaseNotice(m.notice_workbench_unsupported_profile());
       return;
@@ -149,8 +158,15 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
           ...(turnServerOn ? { "server.enabled": true } : {}),
           ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
         });
-      if (turnServerOn && !(await whenListening(deps.localServer))) {
-        logger.warn("Customize gave up waiting for the local server");
+      if (
+        turnServerOn &&
+        !(await whenListening(deps.localServer, deps.effect))
+      ) {
+        deps.effect.runSync(
+          Effect.logWarning(
+            "Customize gave up waiting for the local server",
+          ).pipe(withLogCategory("local-bridge")),
+        );
         new BaseNotice(m.notice_workbench_server_failed());
         return;
       }
@@ -186,18 +202,29 @@ async function withDependencies(
 
 /** `true` once the listener binds, `false` once the wait runs out. */
 function whenListening(
-  localServer: Pick<LocalServerService, "effectivePort" | "on">,
+  localServer: Pick<
+    LocalServer["Service"],
+    "effectivePort" | "effectivePortChanges"
+  >,
+  effect: Pick<EffectBridge, "runSync" | "subscribe">,
 ): Promise<boolean> {
-  if (localServer.effectivePort !== null) return Promise.resolve(true);
+  if (effect.runSync(localServer.effectivePort) !== null)
+    return Promise.resolve(true);
   const { promise, resolve } = Promise.withResolvers<boolean>();
+  let off = () => {};
+  let first = true;
   const timer = window.setTimeout(() => {
-    unsubscribe();
+    off();
     resolve(false);
   }, SERVER_START_TIMEOUT_MS);
-  const unsubscribe = localServer.on("listening", (port) => {
+  off = effect.subscribe(localServer.effectivePortChanges, (port) => {
+    if (first) {
+      first = false;
+      return;
+    }
     if (port === null) return;
     window.clearTimeout(timer);
-    unsubscribe();
+    off();
     resolve(true);
   });
   return promise;

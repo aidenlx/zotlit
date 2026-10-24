@@ -10,7 +10,7 @@ import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { parseJson, zoteroOrigin } from "@/lib/zotero-http";
 import type { ZoteroTransport } from "@/lib/zotero-http";
-import type { LocalServerService } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 import { Service } from "@/services/service-base";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
@@ -163,7 +163,7 @@ export interface ZoteroLocalApiDeps {
     "httpPort" | "changed" | "data-dir-changed" | "resolved-changed"
   >;
   /** The Companion's Freshness Signal. */
-  localServer: Pick<LocalServerService, "on">;
+  localServer: Pick<LocalServer["Service"], "dbUpdated">;
   credentials: WriteAuthorizationStore;
   /**
    * The deadline one Capability Probe runs under, as the signal that ends it.
@@ -728,7 +728,7 @@ export class ZoteroLocalApiClient extends Service<void> {
       await Promise.allSettled(this.#readWrites.values());
     });
     stack.defer(
-      this.#localServer.on("db/updated", () => {
+      subscribe(this.#runtime, this.#localServer.dbUpdated, () => {
         void this.#reprobe("freshness signal", { moved: true });
       }),
     );

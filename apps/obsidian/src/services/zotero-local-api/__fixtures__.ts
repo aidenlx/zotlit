@@ -1,8 +1,9 @@
 import { vi } from "vitest";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import type { DbUpdated } from "@zotlit/protocol";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 // Zotero Local API answers, and the transport that replays them.
 //
 // PROVENANCE, in two halves.
@@ -27,10 +28,10 @@ import { testEvent } from "@/lib/__fixtures__/event-stream";
 //
 // @see docs/fixture.md — "Trial the Zotero Local API"
 // @see https://github.com/aidenlx/zotlit/issues/1143
-import { Layer, Stream } from "@/lib/effect";
+import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
-import type { LocalServerEvents } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 
 import { ZoteroLocalApiClient } from "./service";
 import type { WireTag } from "./wire";
@@ -734,7 +735,16 @@ export function localApiClient(
   const prefEvents = {
     emit: (_event: "resolved-changed") => resolvedChanged.emit(),
   };
-  const serverEvents = createNanoEvents<LocalServerEvents>();
+  const stack = new AsyncDisposableStack();
+  const dbUpdated = Effect.runSync(PubSub.unbounded<DbUpdated>());
+  stack.defer(() => {
+    Effect.runSync(PubSub.shutdown(dbUpdated));
+  });
+  const serverEvents = {
+    emit: () => {
+      PubSub.publishUnsafe(dbUpdated, { event: "db/updated" });
+    },
+  };
   const credentials = inMemoryCredentials(
     options.key === undefined
       ? null
@@ -747,18 +757,14 @@ export function localApiClient(
     "data-dir-changed": Stream.empty,
     "resolved-changed": resolvedChanged.stream,
   };
-  const stack = new AsyncDisposableStack();
   const runtime = buildRuntime(Layer.empty, stack);
   const client = new ZoteroLocalApiClient({
     runtime,
     fetch,
     zoteroPref,
-    localServer: {
-      on: <K extends keyof LocalServerEvents>(
-        event: K,
-        cb: LocalServerEvents[K],
-      ) => serverEvents.on(event, cb),
-    },
+    localServer: stubService<LocalServer["Service"]>("LocalServer", {
+      dbUpdated: Stream.fromPubSub(dbUpdated),
+    }),
     credentials,
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
@@ -785,7 +791,7 @@ export function localApiClient(
 export function freshnessSignal(
   serverEvents: ReturnType<typeof localApiClient>["serverEvents"],
 ): void {
-  serverEvents.emit("db/updated", { event: "db/updated" });
+  serverEvents.emit();
 }
 
 /**

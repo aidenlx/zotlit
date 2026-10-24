@@ -11,13 +11,15 @@ import {
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { LocalServerService } from "@/services/local-server/service";
+import { buildLocalServer } from "@/services/local-server/__fixtures__";
 import type { ProfileReader } from "@/services/profile/service";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import type { BridgeProfileWriter } from "./save";
 import { LocalBridgeService } from "./service";
@@ -78,16 +80,21 @@ const READ_DEPS = {
 >;
 
 /** Resolve the port once the listener binds one. */
-async function whenListening(service: LocalServerService): Promise<number> {
-  await service.ready;
-  const bound = service.effectivePort;
+async function whenListening(
+  service: Awaited<ReturnType<typeof buildLocalServer>>,
+): Promise<number> {
+  const bound = service.runtime.runSync(service.server.effectivePort);
   if (bound !== null) return bound;
   return await new Promise<number>((resolve) => {
-    const off = service.on("listening", (port) => {
-      if (port === null) return;
-      off();
-      resolve(port);
-    });
+    const off = subscribe(
+      service.runtime,
+      Stream.drop(service.server.effectivePortChanges, 1),
+      (port) => {
+        if (port === null) return;
+        off();
+        resolve(port);
+      },
+    );
   });
 }
 
@@ -127,25 +134,23 @@ async function harness(
   );
   const settingsUpdates = vi.spyOn(settings, "update");
   const device = makeDevice(options.device);
-  const localServer = stack.use(
-    new LocalServerService({
-      runtime: testRuntime(),
-      settings,
-      zoteroPref: { sourceId: "a1b2c3d4" } as unknown as PlainZoteroPref,
-      noteIndex: {
-        whenIndexed: () => Promise.resolve(),
-        getIndexedItemKeys: () => [],
-      },
-    } as never),
+  const localServer = await buildLocalServer(
+    {
+      "server.enabled": true,
+      "server.port": 0,
+      ...options.settings,
+    },
+    stack,
   );
   const bridge = stack.use(
     new LocalBridgeService({
       runtime: testRuntime(),
+      bridge: effectBridge(localServer.runtime),
       webWorkbenchEnabled: options.webWorkbenchEnabled ?? true,
       app: device.app,
       settings,
       profile: PROFILES,
-      localServer,
+      localServer: localServer.server,
       ...READ_DEPS,
       pluginVersion: "2.1.1",
     }),

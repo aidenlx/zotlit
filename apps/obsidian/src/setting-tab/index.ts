@@ -50,7 +50,7 @@ import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
   runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
@@ -102,7 +102,6 @@ export interface ZotLitSettingTabOptions {
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
-  readonly #bridge: Pick<EffectBridge, "runPromise">;
   readonly #webWorkbenchEnabled: boolean;
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
@@ -153,6 +152,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #languagePack: LanguagePackLifecycle;
 
   readonly #runtime;
+  readonly #bridge;
 
   constructor({
     runtime,
@@ -193,7 +193,11 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#localServer = localServer;
     // The Local server rows name the port the listener actually bound, so a
     // bind, a rebind, and a close each rebuild them.
-    plugin.register(localServer.on("listening", () => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, Stream.drop(localServer.effectivePortChanges, 1), () =>
+        this.#requestUpdate(),
+      ),
+    );
     this.#localBridge = localBridge;
     // The Workbench Connection row is included structurally, so a connection
     // opening, ending, or being taken over rebuilds the definitions.

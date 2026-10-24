@@ -6,6 +6,12 @@ import { CONTRACT_VERSION } from "@zotlit/db";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, SubscriptionRef } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import { changesUntil } from "@/lib/effect-stream";
+import type { LocalServer } from "@/services/local-server/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import {
@@ -97,6 +103,14 @@ function harness({
     Object.assign(settings, patch);
   });
   const file = activeNote && { basename: activeNote.basename };
+  const portRef = Effect.runSync(
+    SubscriptionRef.make<number | null>(effectivePort),
+  );
+  if (serverStarts) {
+    queueMicrotask(() => {
+      Effect.runSync(SubscriptionRef.set(portRef, 9095));
+    });
+  }
   const app = {
     vault: {
       getName: () => "Research",
@@ -147,15 +161,11 @@ function harness({
         options: Parameters<typeof exportLiteratureNotePack>[2],
       ) => Promise.resolve(exportLiteratureNotePack(draft, partials, options)),
     } as unknown as CustomizeDeps["template"],
-    localServer: {
-      get effectivePort() {
-        return effectivePort;
-      },
-      on: (_event: "listening", cb: (port: number | null) => void) => {
-        if (serverStarts) queueMicrotask(() => cb(9095));
-        return () => {};
-      },
-    } as unknown as CustomizeDeps["localServer"],
+    localServer: stubService<LocalServer["Service"]>("LocalServer", {
+      effectivePort: SubscriptionRef.get(portRef),
+      effectivePortChanges: changesUntil(portRef, Effect.never),
+    }),
+    effect: effectBridge(testRuntime()),
     pluginVersion: PLUGIN_VERSION,
     bridge: {
       launchUrl: (launch: unknown) => {

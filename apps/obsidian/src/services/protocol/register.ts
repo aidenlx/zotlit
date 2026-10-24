@@ -28,6 +28,7 @@ import type { ProtocolAction } from "@zotlit/protocol";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -43,7 +44,7 @@ import {
 } from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
-import type { LocalServerService } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
 import type { CompanionNoteDeps } from "@/services/note-feature";
 import {
@@ -76,7 +77,11 @@ export interface ProtocolDeps extends SingleUpdateDeps {
     PlainZoteroPref,
     "sourceId" | "dataDir" | "baseAttachmentPath"
   >;
-  liveUpdate: LocalServerService;
+  liveUpdate: Pick<
+    LocalServer["Service"],
+    "updateManyRequests" | "importNotesRequests"
+  >;
+  bridge: Pick<EffectBridge, "subscribe">;
   zoteroReads: Pick<
     PlainZoteroReads,
     "state" | "reads" | "acquireRead" | "snapshot"
@@ -145,7 +150,7 @@ export function registerProtocolHandlers(
   // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
   // runs the same interactive flow as the `update-many` protocol link.
   stack.defer(
-    deps.liveUpdate.on("update-many", (event) => {
+    deps.bridge.subscribe(deps.liveUpdate.updateManyRequests, (event) => {
       const requested = resolveRequestedProfile(event.profileId);
       if (!requested.ok) return;
       void toast.promise(
@@ -160,7 +165,7 @@ export function registerProtocolHandlers(
 
   // A batch import pushed over HTTP runs the same flow as the import-notes link.
   stack.defer(
-    deps.liveUpdate.on("import-notes", (event) => {
+    deps.bridge.subscribe(deps.liveUpdate.importNotesRequests, (event) => {
       void toast.promise(
         deps.batchImport.runBatchImport(event.mode, event.items),
         batchImportToast({ app: deps.app }),

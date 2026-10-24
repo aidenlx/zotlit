@@ -326,6 +326,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       profile: services.profile,
       template: services.template,
       localServer: services.localServer,
+      effect: services.bridge,
       bridge: services.localBridge,
       pluginVersion: this.manifest.version,
       confirmLaunch: createLaunchSheet(this.app),
@@ -495,6 +496,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         noteIndex: services.noteIndex,
         batchImport: services.batchImport,
         liveUpdate: services.localServer,
+        bridge: services.bridge,
         opener: services.targetOpener,
       }),
     );
@@ -535,6 +537,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       libraryScope: services.libraryScope,
       excerptDisplay: services.excerptDisplay,
       liveUpdate: services.localServer,
+      bridge: services.bridge,
       pdfReaders: services.pdfAnnotationEditor,
       noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
@@ -764,7 +767,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
     // lane as the filesystem watchers.
     stack.defer(
-      services.localServer.on("db/updated", () => {
+      services.bridge.subscribe(services.localServer.dbUpdated, () => {
         services.zoteroReads.notifyExternalChange();
       }),
     );

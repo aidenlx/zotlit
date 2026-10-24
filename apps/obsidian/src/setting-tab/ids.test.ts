@@ -12,8 +12,10 @@ import { expect, it, vi } from "vitest";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 
 import { advancedPageItems } from "./advanced";
@@ -32,9 +34,10 @@ vi.mock("@/views/template-workbench/register", () => ({
 }));
 
 function ctx(): SettingTabContext {
+  const runtime = testRuntime();
   return {
-    runtime: testRuntime(),
-    bridge: { runPromise: Effect.runPromise },
+    runtime,
+    bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
     app: {
       vault: { getFileByPath: () => null, adapter: {} },
@@ -57,7 +60,10 @@ function ctx(): SettingTabContext {
       invalid: false,
     },
     zoteroPref: { databasePath: "", dataDir: null },
-    localServer: { effectivePort: null },
+    localServer: stubService<LocalServer["Service"]>("LocalServer", {
+      effectivePort: Effect.succeed(null),
+      effectivePortChanges: Stream.empty,
+    }),
     localBridge: { connection: null, disconnect: () => {}, on: () => () => {} },
     customize: async () => {},
     attachmentImport: {

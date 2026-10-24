@@ -52,7 +52,7 @@ import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
-import { LocalServerService } from "./local-server/service";
+import { LocalServer } from "./local-server/service";
 import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
@@ -158,10 +158,7 @@ export async function buildServices(
     .useValue({
       zoteroPref: () => plainZoteroPref(runtime),
     })
-    .use({
-      localServer: ({ settings, zoteroPref, noteIndex }) =>
-        new LocalServerService({ runtime, settings, zoteroPref, noteIndex }),
-    })
+    .useValue({ localServer: () => runtime.runSync(LocalServer) })
     .useValue({
       chineseSegmenter: () =>
         bindManagedBinary(bridge, runtime.runSync(ChineseSegmenter)),
@@ -356,6 +353,7 @@ export async function buildServices(
       }) =>
         new LocalBridgeService({
           runtime,
+          bridge,
           webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
           app: plugin.app,
           settings,

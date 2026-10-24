@@ -23,6 +23,8 @@ import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
 import type { LibraryScope } from "./library-scope/service";
+import { layerLocalServer } from "./local-server/service";
+import type { LocalServer } from "./local-server/service";
 import { layerLogging, layerLogOutput } from "./log/service";
 import { layerManagedBinaryPlatform } from "./managed-binary/service";
 import { layerNoteIndex } from "./note-index/service";
@@ -91,6 +93,7 @@ export function pluginLayer(
   | ChineseSegmenter
   | PandocEngine
   | NoteIndex
+  | LocalServer
   | Template
   | TemplateMigration
 > {
@@ -112,6 +115,7 @@ export function pluginLayer(
     Layer.provideMerge(
       layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),
     ),
+    Layer.provideMerge(layerLocalServer.pipe(startingAs("LocalServer"))),
     Layer.provideMerge(
       Layer.mergeAll(
         layerUseLedger.pipe(startingAs("UseLedger")),

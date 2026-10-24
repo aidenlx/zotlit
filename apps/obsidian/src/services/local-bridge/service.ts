@@ -15,12 +15,13 @@ import {
 import type { ProfileBindingDefaults } from "@zotlit/workbench/bridge";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
-import type { LocalServerService } from "@/services/local-server/service";
+import type { LocalServer } from "@/services/local-server/service";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -71,12 +72,13 @@ export interface LocalBridgeEvents {
 
 export interface LocalBridgeServiceDeps {
   runtime: SubscriptionRuntime;
+  bridge: Pick<EffectBridge, "runSync">;
   webWorkbenchEnabled: boolean;
   app: App;
   settings: Pick<PlainPluginSettings, "current" | "changes">;
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
-  localServer: Pick<LocalServerService, "mount" | "effectivePort">;
+  localServer: Pick<LocalServer["Service"], "mount" | "effectivePort">;
   zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   noteIndex: Pick<
     PlainNoteIndex,
@@ -99,6 +101,7 @@ export interface LocalBridgeServiceDeps {
  */
 export class LocalBridgeService extends Service<void> {
   readonly #runtime;
+  readonly #bridge;
   readonly #app;
   readonly #webWorkbenchEnabled;
   readonly #settings;
@@ -120,6 +123,7 @@ export class LocalBridgeService extends Service<void> {
   constructor(deps: LocalBridgeServiceDeps) {
     super();
     this.#runtime = deps.runtime;
+    this.#bridge = deps.bridge;
     this.#app = deps.app;
     this.#webWorkbenchEnabled = deps.webWorkbenchEnabled;
     this.#settings = deps.settings;
@@ -167,7 +171,7 @@ export class LocalBridgeService extends Service<void> {
    * cue to offer the in-vault path instead.
    */
   launchUrl(launch: WorkbenchLaunch): string | null {
-    const port = this.#localServer.effectivePort;
+    const port = this.#bridge.runSync(this.#localServer.effectivePort);
     if (!this.#enabled || port === null) return null;
     const code = this.#sessions.mintCode({
       origin: DOCS_SITE_URL,
@@ -193,18 +197,20 @@ export class LocalBridgeService extends Service<void> {
     this.#enabled = this.#webWorkbenchEnabled && settings["server.workbench"];
     this.#installationId = loadInstallationId(this.#app);
 
-    this.#localServer.mount(
-      "/",
-      createLocalBridgeApp({
-        available: () => this.#webWorkbenchEnabled,
-        enabled: () => this.#enabled,
-        peerAddress: nodePeerAddress,
-        allowedOrigins: ALLOWED_DOCS_ORIGINS,
-        sessions: this.#sessions,
-        reads: this.#reads,
-        save: this.#save,
-        describeGrant: (connection) => this.#describeGrant(connection),
-      }),
+    this.#bridge.runSync(
+      this.#localServer.mount(
+        "/",
+        createLocalBridgeApp({
+          available: () => this.#webWorkbenchEnabled,
+          enabled: () => this.#enabled,
+          peerAddress: nodePeerAddress,
+          allowedOrigins: ALLOWED_DOCS_ORIGINS,
+          sessions: this.#sessions,
+          reads: this.#reads,
+          save: this.#save,
+          describeGrant: (connection) => this.#describeGrant(connection),
+        }),
+      ),
     );
 
     // The stack unwinds last-registered-first, so the subscription goes last:
