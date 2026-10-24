@@ -1,7 +1,8 @@
-import { Cause, Effect, Exit, Layer } from "@/lib/effect";
+import { Cause, Deferred, Effect, Exit, Layer } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { Notifier, reportProgress } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
-import * as toast from "@/lib/toast";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -16,32 +17,39 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 export const layerDatabaseActions: Layer.Layer<
   never,
   never,
-  PluginHost | ZoteroReads
+  PluginHost | Notifier | ZoteroReads
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
+    const notifier = yield* Notifier;
     const reads = yield* ZoteroReads;
+    const layerScope: Scope.Scope = yield* Effect.scope;
     const run = Effect.runPromiseExitWith(yield* Effect.context<never>());
-    const refresh = async () => {
-      const exit = await run(reads.refresh());
-      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-        throw Cause.squash(exit.cause);
-    };
-    host.addCommand({
+    // The toast outlives the command, as `toast.promise` did, until the
+    // layer closes.
+    const refresh = Effect.gen(function* () {
+      const outcome = yield* Deferred.make<Exit.Exit<void, unknown>>();
+      yield* Effect.forkIn(
+        reportProgress(Deferred.await(outcome), {
+          loading: m.notice_db_refreshing(),
+          success: m.notice_db_refreshed(),
+          error: m.notice_db_refresh_failed(),
+        }).pipe(Effect.provideService(Notifier, notifier)),
+        layerScope,
+      );
+      yield* reads
+        .refresh()
+        .pipe(Effect.onExit((exit) => Deferred.succeed(outcome, exit)));
+    });
+    yield* host.addCommand({
       id: "refresh-zotero-data",
       name: m.command_refresh_db_name(),
       callback: async () => {
-        try {
-          await toast.promise(refresh(), {
-            loading: m.notice_db_refreshing(),
-            success: m.notice_db_refreshed(),
-            error: m.notice_db_refresh_failed(),
-            swallowError: false,
-          });
-        } catch (err) {
-          if (err instanceof DbUnavailable) return;
-          throw err;
-        }
+        const exit = await run(refresh);
+        if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return;
+        const error = Cause.squash(exit.cause);
+        if (error instanceof DbUnavailable) return;
+        throw error;
       },
     });
   }),

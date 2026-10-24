@@ -14,7 +14,7 @@ export const layerReleaseActions: Layer.Layer<
     const host = yield* PluginHost;
     const release = yield* Release;
     const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-    host.addCommand({
+    yield* host.addCommand({
       id: "open-release-note",
       name: m.command_open_release_note_name(),
       callback: () => void runPromise(release.openReleaseNote()),

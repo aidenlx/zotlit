@@ -4,9 +4,11 @@ import type { Plugin } from "obsidian";
 import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
 import { nodeFetch } from "@/lib/node-fetch";
+import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerObsidianEnv } from "@/lib/obsidian-env";
 import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
-import { PluginHost } from "@/lib/plugin-host";
+import { layerPluginHost } from "@/lib/plugin-host";
 import { openLibraryView } from "@/views/library/register";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -125,6 +127,12 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
+  // What both halves read from Obsidian: the App, its environment, notices.
+  const obsidian = Layer.mergeAll(
+    layerNotifier,
+    layerObsidianEnv,
+    layerMetadataCache,
+  ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover().pipe(startingAs("AnnotationPopover")),
@@ -194,11 +202,7 @@ export function pluginLayer(
         layerQueryClients.pipe(startingAs("QueryClients")),
       ),
     ),
-    Layer.provide(
-      layerMetadataCache.pipe(
-        Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)),
-      ),
-    ),
+    Layer.provide(obsidian),
     Layer.provideMerge(
       layerLogging.pipe(
         Layer.provide(layerLogOutput(plugin)),
@@ -219,6 +223,6 @@ export function pluginLayer(
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
-  ).pipe(Layer.provide(Layer.succeed(PluginHost, plugin)));
+  ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   return registrations.pipe(Layer.provideMerge(services));
 }

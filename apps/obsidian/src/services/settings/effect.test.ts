@@ -1,6 +1,7 @@
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
+import { testPluginData } from "@/lib/__fixtures__/plugin-data";
 import {
   Cause,
   Context,
@@ -21,7 +22,11 @@ import {
   settingsRuntimeBridgeOf,
   settingsRuntimeOf,
 } from "./__fixtures__";
-import { layerPluginSettings, PluginSettings } from "./service";
+import {
+  layerPluginSettings,
+  layerPluginSettingsOf,
+  PluginSettings,
+} from "./service";
 
 // A pending edit must reach disk before the settings scope finishes closing.
 it.effect("scope close flushes a pending edit and waits for its write", () =>
@@ -401,5 +406,28 @@ it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
     );
     yield* Effect.promise(close);
     yield* Effect.promise(() => bridge.runPromise(settings.flush()));
+  }),
+);
+
+it.effect("reads and writes the settings through PluginData", () =>
+  Effect.gen(function* () {
+    const data = testPluginData({
+      __VERSION__: 11,
+      "server.hostname": "/saved",
+    });
+    const scope = yield* Scope.make();
+    const context = yield* Layer.buildWithScope(
+      layerPluginSettingsOf().pipe(Layer.provide(data.layer)),
+      scope,
+    );
+    const settings = Context.get(context, PluginSettings);
+
+    expect((yield* settings.loaded)["server.hostname"]).toBe("/saved");
+    yield* settings.update({ "server.hostname": "/edited" });
+    yield* Scope.close(scope, Exit.void);
+    expect(data.store.current).toEqual({
+      __VERSION__: 11,
+      "server.hostname": "/edited",
+    });
   }),
 );

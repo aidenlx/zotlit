@@ -3,6 +3,7 @@ import { TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { vi } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
@@ -127,6 +128,7 @@ function releaseLayer(options: ReleaseFixtureOptions) {
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(ObsidianApp, options.app),
+        testNotifier().layer,
         Layer.succeed(PluginSettings, settings),
       ),
     ),

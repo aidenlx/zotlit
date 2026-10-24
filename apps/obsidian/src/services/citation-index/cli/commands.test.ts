@@ -27,13 +27,11 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
   );
   h.workspace.layoutReady();
   yield* Effect.promise(() => h.index.whenIndexed());
-  Object.assign(h.app.vault, {
-    getName: () => "Test Vault",
-    adapter: { getBasePath: () => "/test" },
-  });
+  Object.assign(h.app.vault, { getName: () => "Test Vault" });
   const cli = fakeCliHost();
   registerCitationsCli(cli.host, {
     app: h.app,
+    basePath: "/test",
     citationIndex: h.index,
     zoteroPref: {
       current: Effect.succeed({
