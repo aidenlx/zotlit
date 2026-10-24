@@ -1,3 +1,7 @@
+// zotlit-build: keeps the Obsidian plugin's build honest about its inputs.
+// no-undeclared-env follows the modules vite.config.ts loads and requires
+// every process.env it reads to be declared for Turbo. Rule tests:
+// oxlint-plugin-build.test.ts.
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, matchesGlob, resolve } from "node:path";
@@ -119,11 +123,22 @@ function propertyName(node: Member): string | undefined {
   return undefined;
 }
 
-/** The factory lets RuleTester supply a small build graph and task declarations. */
+/**
+ * A `process.env` read in a module the Obsidian build loads must appear in the
+ * env list of each Turbo task that builds the plugin (`build:dev`, `dev`).
+ * Turbo hashes only declared variables, so an undeclared one lets a cached
+ * build replay with the wrong value. Writes, and the GitHub token variables,
+ * are exempt. The factory lets RuleTester supply a small build graph and task
+ * declarations.
+ */
 export function undeclaredEnvRule(policy: BuildPolicy): Rule {
   return {
     meta: {
       type: "problem",
+      docs: {
+        description:
+          "Declare each env variable the plugin build reads in its Turbo tasks.",
+      },
       schema: [],
       messages: {
         undeclared:

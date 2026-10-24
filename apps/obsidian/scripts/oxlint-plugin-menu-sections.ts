@@ -1,3 +1,5 @@
+// zotlit-menu: menu entries land in a registered section (the obsidian-actions
+// skill). no-literal-section reads section names from the menu's own list.
 // Rule tests: src/lint/menu-sections.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 

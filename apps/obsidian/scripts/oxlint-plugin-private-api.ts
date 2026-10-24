@@ -1,3 +1,5 @@
+// zotlit-private: Obsidian's private API is reached through one typed surface,
+// src/typings/obsidian-ex.d.ts. no-unknown-cast rejects casting around it.
 // Rule tests: src/lint/private-api.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 

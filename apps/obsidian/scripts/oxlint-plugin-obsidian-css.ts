@@ -1,4 +1,7 @@
-// Rule tests: src/lint/obsidian-css.test.ts.
+// zotlit-css: plugin UI draws with zt: utilities and the wrappers in
+// src/components/obsidian/ (policies/tailwind-first.md, the obsidian-css
+// skill). Rejects Obsidian's control classes in our markup and Setting in
+// React trees. Rule tests: src/lint/obsidian-css.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 type Rule = Parameters<RuleTester["run"]>[1];
@@ -55,6 +58,13 @@ function inClassList(node: Node): boolean {
   return false;
 }
 
+/**
+ * Obsidian's control classes (`clickable-icon`, `mod-cta`, `setting-item…`)
+ * and the Bases and Properties widget prefixes carry Obsidian's own styling
+ * and behavior assumptions, which change between releases. A component reaches
+ * a control through its wrapper in `src/components/obsidian/` and draws its own
+ * layout with `zt:` utilities over Obsidian's variables.
+ */
 export const noObsidianClass: Rule = {
   meta: {
     type: "suggestion",
