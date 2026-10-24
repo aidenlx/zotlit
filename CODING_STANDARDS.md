@@ -17,6 +17,7 @@ or a direct edit. State the expected behavior and what the reviewer must check.
 - [Host state](policies/host-state.md)
 - [IME input](policies/ime-input.md)
 - [Input validation](policies/input-validation.md)
+- [Lint plugins](policies/lint-plugins.md)
 - [Logging](policies/logging.md)
 - [Observability](policies/observability.md)
 - [Package and workspace roots](policies/package-roots.md)

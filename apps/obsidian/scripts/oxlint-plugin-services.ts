@@ -1,4 +1,7 @@
-// Rule tests: src/lint/services.test.ts.
+// zotlit-services: the mechanical part of the Obsidian service architecture
+// (policies/services.md, policies/events.md): Effect services over legacy
+// classes, tag ids, Scope-owned resources, CLI registration, workers on
+// effect/rpc, and Effect-native events. Rule tests: src/lint/services.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 
@@ -320,8 +323,11 @@ interface EventNode extends AstNode {
 }
 
 /**
- * Events are Streams and state (policies/events.md); `nanoevents` stays in the
- * legacy files oxlint.config.ts lists until each converts.
+ * Events are Streams and state: a `SubscriptionRef` for what consumers watch,
+ * a `PubSub` Stream for occurrences (policies/events.md). Tests are checked
+ * too, since a fake emitter keeps the legacy shape alive in its consumers.
+ * Legacy emitters stay on a backlog list in oxlint.config.ts until each
+ * service converts.
  */
 export const noNanoevents: Rule = {
   meta: {
@@ -364,10 +370,11 @@ function keyName(node: EventNode): string | undefined {
 }
 
 /**
- * A plain adapter exposes its service's Streams and state; plain code
- * subscribes with `subscribe(runtime, stream, callback)` from
- * `@/lib/effect-stream` (policies/events.md). oxlint.config.ts enables it for
- * `plain.ts` files.
+ * A plain adapter (`<service>/plain.ts`) hands out its service's Streams and
+ * state. Plain code subscribes with `subscribe(runtime, stream, callback)`
+ * from `@/lib/effect-stream`. The helper attaches before returning, isolates
+ * each callback's failures, and goes quiet after runtime disposal. An
+ * adapter's own `on`/`subscribe` would each have to re-earn those guarantees.
  */
 export const plainAdapterStreams: Rule = {
   meta: {
@@ -405,9 +412,10 @@ export const plainAdapterStreams: Rule = {
 
 /**
  * Inside a layer, Obsidian events enter through `obsidianEvents` from
- * `@/lib/effect-obsidian-events`: one intake, a failure boundary per event.
- * A function nested in an Effect generator counts too, such as the acquire
- * callback of `acquireDisposable`.
+ * `@/lib/effect-obsidian-events`, which gives one ordered intake and a failure
+ * boundary per event. A bare `registerEvent` gives neither. A function nested
+ * in an Effect generator counts too, such as the acquire callback of
+ * `acquireDisposable`.
  */
 export const obsidianEventsIntake: Rule = {
   meta: {

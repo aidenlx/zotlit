@@ -1,4 +1,7 @@
-// Rule tests: src/lint/effect-tests.test.ts.
+// zotlit-effect-tests: Effect tests run inside the test runtime
+// (policies/testing-strategy.md, policies/test-timing.md). Rejects running an
+// Effect by hand in a test and real timers in an Effect case. Rule tests:
+// src/lint/effect-tests.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 

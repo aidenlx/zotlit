@@ -1,3 +1,7 @@
+// zotlit-tests: tests that assert behavior, not implementation
+// (policies/testing-strategy.md, policies/tautological-tests.md). Rejects
+// class and markup assertions, reading source as text, and mocking repository
+// modules. Rule tests: oxlint-plugin-tests.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 type Rule = Parameters<RuleTester["run"]>[1];
@@ -289,9 +293,19 @@ function isSourceFile(path: string): boolean {
   );
 }
 
+/**
+ * A test that reads source text (`readFile` of a `.ts`, `.css`, config or doc
+ * file, or a `?raw` import) asserts how code is written, not what it does: a
+ * behavior-preserving edit breaks it (policies/testing-strategy.md). Static
+ * rules belong in lint or types. Files under a fixtures directory are test
+ * data and stay allowed.
+ */
 export const noSourceText: Rule = {
   meta: {
     type: "problem",
+    docs: {
+      description: "Test behavior instead of reading source files as text.",
+    },
     schema: [],
     messages: {
       sourceText:
@@ -346,9 +360,19 @@ function staticName(
   return undefined;
 }
 
+/**
+ * `vi.mock` of a repository module (relative, `#`, `@/` or `@zotlit/`) tests
+ * the mock instead of the code, and passes while the real wiring breaks
+ * (policies/testing-strategy.md). Mock only process, network and OS
+ * boundaries; third-party specifiers stay allowed.
+ */
 export const noInternalMock: Rule = {
   meta: {
     type: "problem",
+    docs: {
+      description:
+        "Run repository modules for real; mock only outer boundaries.",
+    },
     schema: [],
     messages: {
       internalMock:

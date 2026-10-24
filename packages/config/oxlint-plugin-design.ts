@@ -1,3 +1,7 @@
+// zotlit-design: the mechanical part of two UI designs. workbench-chrome keeps
+// the docs Workbench on its shared kit (apps/docs/WORKBENCH-DESIGN.md);
+// annotation-view keeps the Annotation View to logical direction, the text
+// scale and accessible tooltips. Rule tests: oxlint-plugin-design.test.ts.
 import { regex } from "arkregex";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -119,9 +123,22 @@ function literalAttribute(
     : undefined;
 }
 
+/**
+ * Workbench chrome is drawn by the shared kit (apps/docs/WORKBENCH-DESIGN.md),
+ * so every surface matches when the kit changes. The rule rejects:
+ * - the raw Base UI popover, and close controls in a popover's title row;
+ * - Button, text-control and menu sizes outside the kit's compact set, and
+ *   class overrides of a Button's size or spacing;
+ * - physical direction utilities, which break right-to-left layouts;
+ * - arbitrary text sizes and uppercase chrome (exempt in `reading-view.tsx`).
+ */
 export const workbenchChrome: Rule = {
   meta: {
     type: "problem",
+    docs: {
+      description:
+        "Draw Workbench chrome with the shared kit's sizes and logical direction.",
+    },
     schema: [],
     messages: { chrome: "{{reason}} (Workbench chrome design)." },
   },
@@ -222,9 +239,25 @@ export function annotationCssProblems(
   return problems;
 }
 
+/**
+ * The Annotation View's design, in its JSX classes and in the CSS files it
+ * imports (parsed, so selectors and comments cannot pass as rules). It
+ * rejects:
+ * - physical direction, which breaks right-to-left layouts;
+ * - text below the scale and uppercase chrome;
+ * - CSS columns for the card list, where grid keeps reading order;
+ * - `transition: all`, which animates layout it never meant to;
+ * - a line clamp with tight leading, which clips descenders;
+ * - a `title` attribute, which screen readers and touch skip (use aria-label
+ *   tooltips).
+ */
 export const annotationDesign: Rule = {
   meta: {
     type: "problem",
+    docs: {
+      description:
+        "Keep the Annotation View's layout, type and tooltips accessible.",
+    },
     schema: [],
     messages: { design: "{{reason}} (Annotation View design)." },
   },
