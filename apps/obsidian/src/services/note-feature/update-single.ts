@@ -36,7 +36,10 @@ export interface SingleUpdateDeps {
    * The database reads. A batch run opens its Snapshot here, and its note
    * updates read through it.
    */
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state">;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    "acquireRead" | "reads" | "snapshot" | "state"
+  >;
   settings: Pick<PlainPluginSettings, "current" | "update">;
   noteFeature: NoteFeature;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;

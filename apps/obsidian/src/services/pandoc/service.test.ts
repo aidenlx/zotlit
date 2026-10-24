@@ -125,42 +125,53 @@ async function harness(options: HarnessOptions = {}) {
   const createEngine = vi.fn(
     options.createEngine ?? (() => Promise.resolve(fakeEngine())),
   );
-  const service = await openManagedBinary(
+  const opened = await openManagedBinary(
     { ...PANDOC_ENGINE, pin: options.pin ?? PIN, createEngine },
     { openStore: () => store, consent, download },
   );
-  return { service, store, consent, download, createEngine };
+  return {
+    service: opened.service,
+    handle: opened.handle,
+    runtime: opened.runtime,
+    store,
+    consent,
+    download,
+    createEngine,
+    [Symbol.asyncDispose]: () => opened[Symbol.asyncDispose](),
+  };
 }
 
 describe("Pandoc Engine", () => {
   it.effect("caches a verified binary under its own hash", () =>
     Effect.promise(async () => {
-      const { service, store, download } = await harness();
+      const opened = await harness();
+      const { service, handle, store, download } = opened;
 
-      await service.install();
+      await handle.runPromise(service.install());
 
       expect(download).toHaveBeenCalledWith(PIN.url);
       expect(store.files.get(CACHED_NAME)).toEqual(BINARY);
       expect([...store.files.keys()]).toEqual([CACHED_NAME]);
-      expect(service.getStatus()).toEqual({
+      expect(handle.runSync(service.getStatus())).toEqual({
         kind: "installed",
         version: PIN.version,
         binary: { directory: "pandoc-engine", name: CACHED_NAME },
       });
-      await service[Symbol.asyncDispose]();
+      await opened[Symbol.asyncDispose]();
     }),
   );
 
   it.effect("reports a download that never arrived", () =>
     Effect.promise(async () => {
-      const { service, store } = await harness({
+      const opened = await harness({
         download: () =>
           Promise.reject(new Error("net::ERR_INTERNET_DISCONNECTED")),
       });
+      const { service, handle, store } = opened;
 
-      await expect(service.install()).rejects.toThrow();
+      await expect(handle.runPromise(service.install())).rejects.toThrow();
 
-      expect(service.getStatus()).toEqual({
+      expect(handle.runSync(service.getStatus())).toEqual({
         kind: "failed",
         failure: {
           code: "download-failed",
@@ -169,7 +180,7 @@ describe("Pandoc Engine", () => {
         },
       });
       expect([...store.files.keys()]).toEqual([]);
-      await service[Symbol.asyncDispose]();
+      await opened[Symbol.asyncDispose]();
     }),
   );
 
@@ -177,31 +188,36 @@ describe("Pandoc Engine", () => {
     "adopts the binary another vault already cached, without downloading",
     () =>
       Effect.promise(async () => {
-        const { service, download } = await harness({
+        const opened = await harness({
           files: { [CACHED_NAME]: BINARY },
         });
+        const { service, handle, download } = opened;
 
-        expect(service.getStatus()).toEqual({
+        expect(handle.runSync(service.getStatus())).toEqual({
           kind: "installed",
           version: PIN.version,
           binary: { directory: "pandoc-engine", name: CACHED_NAME },
         });
 
-        await service.install();
+        await handle.runPromise(service.install());
 
         expect(download).not.toHaveBeenCalled();
-        await service[Symbol.asyncDispose]();
+        await opened[Symbol.asyncDispose]();
       }),
   );
 
   it.effect("shares one download between concurrent installs", () =>
     Effect.promise(async () => {
-      const { service, download } = await harness();
+      const opened = await harness();
+      const { service, handle, download } = opened;
 
-      await Promise.all([service.install(), service.install()]);
+      await Promise.all([
+        handle.runPromise(service.install()),
+        handle.runPromise(service.install()),
+      ]);
 
       expect(download).toHaveBeenCalledTimes(1);
-      await service[Symbol.asyncDispose]();
+      await opened[Symbol.asyncDispose]();
     }),
   );
 
@@ -209,7 +225,7 @@ describe("Pandoc Engine", () => {
     "replaces the binary another vault cached while the download ran",
     () =>
       Effect.promise(async () => {
-        const { service, store } = await harness({
+        const opened = await harness({
           // The competing vault verifies the same bytes and renames onto the cache
           // first, so this install renames onto a name that already exists.
           download: (_url, store) => {
@@ -217,17 +233,18 @@ describe("Pandoc Engine", () => {
             return Promise.resolve(ARCHIVE.slice());
           },
         });
+        const { service, handle, store } = opened;
 
-        await service.install();
+        await handle.runPromise(service.install());
 
         expect(store.files.get(CACHED_NAME)).toEqual(BINARY);
         expect([...store.files.keys()]).toEqual([CACHED_NAME]);
-        expect(service.getStatus()).toEqual({
+        expect(handle.runSync(service.getStatus())).toEqual({
           kind: "installed",
           version: PIN.version,
           binary: { directory: "pandoc-engine", name: CACHED_NAME },
         });
-        await service[Symbol.asyncDispose]();
+        await opened[Symbol.asyncDispose]();
       }),
   );
 
@@ -239,43 +256,45 @@ describe("Pandoc Engine", () => {
         const arrived = new Promise<void>((resolve) => {
           arrive = resolve;
         });
-        const { service, store } = await harness({
+        const opened = await harness({
           download: async () => {
             await arrived;
             return ARCHIVE.slice();
           },
         });
+        const { service, handle, store } = opened;
 
-        const install = service.install();
-        const uninstall = service.uninstall();
+        const install = handle.runPromise(service.install());
+        const uninstall = handle.runPromise(service.uninstall());
         arrive();
         await install;
         await uninstall;
 
         expect([...store.files.keys()]).toEqual([]);
-        expect(service.getStatus()).toEqual({ kind: "absent" });
-        await service[Symbol.asyncDispose]();
+        expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
+        await opened[Symbol.asyncDispose]();
       }),
   );
 
   it.effect("notifies subscribers on every status change", () =>
     Effect.promise(async () => {
-      const { service } = await harness();
+      const opened = await harness();
+      const { service, handle, runtime } = opened;
       const listener = vi.fn();
       const unsubscribe = subscribe(
-        service.runtime,
+        runtime,
         Stream.drop(service.changes, 1),
         listener,
       );
 
-      await service.install();
+      await handle.runPromise(service.install());
       expect(listener.mock.calls.length).toBeGreaterThanOrEqual(2);
 
       unsubscribe();
-      await service.uninstall();
-      expect(service.getStatus()).toEqual({ kind: "absent" });
+      await handle.runPromise(service.uninstall());
+      expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
       expect(listener.mock.calls.length).toBeGreaterThanOrEqual(2);
-      await service[Symbol.asyncDispose]();
+      await opened[Symbol.asyncDispose]();
     }),
   );
 
@@ -283,13 +302,16 @@ describe("Pandoc Engine", () => {
     "refuses an engine while nothing is installed, and keeps the status",
     () =>
       Effect.promise(async () => {
-        const { service, createEngine } = await harness();
+        const opened = await harness();
+        const { service, handle, createEngine } = opened;
 
-        await expect(service.getEngine()).rejects.toThrow(/not installed/);
+        await expect(handle.runPromise(service.getEngine())).rejects.toThrow(
+          /not installed/,
+        );
 
-        expect(service.getStatus()).toEqual({ kind: "absent" });
+        expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
         expect(createEngine).not.toHaveBeenCalled();
-        await service[Symbol.asyncDispose]();
+        await opened[Symbol.asyncDispose]();
       }),
   );
 
@@ -301,20 +323,25 @@ describe("Pandoc Engine", () => {
           .fn<(binary: Blob) => Promise<CitationEngine>>()
           .mockRejectedValueOnce(new Error("CompileError: bad magic"))
           .mockResolvedValue(fakeEngine());
-        const { service } = await harness({ createEngine });
-        await service.install();
+        const opened = await harness({ createEngine });
+        const { service, handle } = opened;
+        await handle.runPromise(service.install());
 
-        await expect(service.getEngine()).rejects.toThrow(/bad magic/);
-        expect(service.getStatus()).toEqual({
+        await expect(handle.runPromise(service.getEngine())).rejects.toThrow(
+          /bad magic/,
+        );
+        expect(handle.runSync(service.getStatus())).toEqual({
           kind: "failed",
           failure: { code: "init-failed", detail: "CompileError: bad magic" },
         });
 
         // Re-installing finds the content-addressed binary still cached and moves
         // the status back to `installed`, so the engine can be tried again.
-        await service.install();
-        await expect(service.getEngine()).resolves.toBeDefined();
-        await service[Symbol.asyncDispose]();
+        await handle.runPromise(service.install());
+        await expect(
+          handle.runPromise(service.getEngine()),
+        ).resolves.toBeDefined();
+        await opened[Symbol.asyncDispose]();
       }),
   );
 
@@ -325,41 +352,47 @@ describe("Pandoc Engine", () => {
         .fn<(binary: Blob) => Promise<CitationEngine>>()
         .mockRejectedValueOnce(new Error("CompileError: bad magic"))
         .mockResolvedValue(fakeEngine());
-      const { service, store } = await harness({
+      const opened = await harness({
         files: { [CACHED_NAME]: corrupt },
         createEngine,
       });
+      const { service, handle, runtime, store } = opened;
       const listener = vi.fn();
-      subscribe(service.runtime, Stream.drop(service.changes, 1), listener);
+      subscribe(runtime, Stream.drop(service.changes, 1), listener);
 
-      await expect(service.getEngine()).rejects.toThrow(/bad magic/);
+      await expect(handle.runPromise(service.getEngine())).rejects.toThrow(
+        /bad magic/,
+      );
 
       expect(store.files.has(CACHED_NAME)).toBe(false);
-      expect(service.getStatus()).toEqual({ kind: "absent" });
+      expect(handle.runSync(service.getStatus())).toEqual({ kind: "absent" });
       expect(listener).toHaveBeenCalled();
 
-      await service.install();
-      await expect(service.getEngine()).resolves.toBeDefined();
-      await service[Symbol.asyncDispose]();
+      await handle.runPromise(service.install());
+      await expect(
+        handle.runPromise(service.getEngine()),
+      ).resolves.toBeDefined();
+      await opened[Symbol.asyncDispose]();
     }),
   );
 
   it.effect("hands out one engine and disposes it with the service", () =>
     Effect.promise(async () => {
       const dispose = vi.fn();
-      const { service, createEngine } = await harness({
+      const opened = await harness({
         createEngine: () => Promise.resolve(fakeEngine(dispose)),
       });
-      await service.install();
+      const { service, handle, createEngine } = opened;
+      await handle.runPromise(service.install());
 
-      const engine = await service.getEngine();
-      expect(await service.getEngine()).toBe(engine);
+      const engine = await handle.runPromise(service.getEngine());
+      expect(await handle.runPromise(service.getEngine())).toBe(engine);
       expect(createEngine).toHaveBeenCalledTimes(1);
       const [passed] = createEngine.mock.calls[0]!;
       expect(passed).toBeInstanceOf(Blob);
       expect(new Uint8Array(await passed.arrayBuffer())).toEqual(BINARY);
 
-      await service[Symbol.asyncDispose]();
+      await opened[Symbol.asyncDispose]();
       expect(dispose).toHaveBeenCalledOnce();
     }),
   );
@@ -367,16 +400,17 @@ describe("Pandoc Engine", () => {
   it.effect("disposes the engine on uninstall", () =>
     Effect.promise(async () => {
       const dispose = vi.fn();
-      const { service } = await harness({
+      const opened = await harness({
         createEngine: () => Promise.resolve(fakeEngine(dispose)),
       });
-      await service.install();
-      await service.getEngine();
+      const { service, handle } = opened;
+      await handle.runPromise(service.install());
+      await handle.runPromise(service.getEngine());
 
-      await service.uninstall();
+      await handle.runPromise(service.uninstall());
 
       expect(dispose).toHaveBeenCalledOnce();
-      await service[Symbol.asyncDispose]();
+      await opened[Symbol.asyncDispose]();
     }),
   );
 });

@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { Layer, Stream } from "@/lib/effect";
+import { Effect } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
@@ -191,9 +192,12 @@ async function makeHarness({
           facts: new ParsedNote(
             body,
             (
-              await inProcessParseClient.parse(
-                { path: "note.md", generation: 0, text: body },
-                new AbortController().signal,
+              await Effect.runPromise(
+                inProcessParseClient.parse({
+                  path: "note.md",
+                  generation: 0,
+                  text: body,
+                }),
               )
             ).record,
           ),

@@ -6,13 +6,12 @@
 // `src/item-query/database.ts`; `src/item-query/layout.ts` gives the typed
 // failure and the synchronous check `checkDatabaseLayout`.
 import { version } from "@drizzle/schema";
-import { getLogger } from "@logtape/logtape";
 import { inArray, sql } from "drizzle-orm";
+
+import { logLibrary } from "@zotlit/shared/logging";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { defineQuery } from "@/queries/_shared";
-
-const logger = getLogger(["zotlit", "db", "layout"]);
 
 /**
  * The layout manifest of the readers: every table and column that a reader
@@ -256,15 +255,21 @@ export function recordLayout(
   };
   layouts.set(client, layout);
   if (missing.length > 0) {
-    logger.warn(
-      "The readers cannot read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility}). Missing: {missing}",
-      { ...versions, missing: describeLayoutGaps(missing) },
-    );
+    logLibrary({
+      level: "warn",
+      category: ["zotlit", "db", "layout"],
+      message:
+        "The readers cannot read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility}). Missing: {missing}",
+      properties: { ...versions, missing: describeLayoutGaps(missing) },
+    });
   } else {
-    logger.debug(
-      "Read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility})",
-      { ...versions },
-    );
+    logLibrary({
+      level: "debug",
+      category: ["zotlit", "db", "layout"],
+      message:
+        "Read the layout of the Zotero database (userdata {userdata}, compatibility {compatibility})",
+      properties: { ...versions },
+    });
   }
   return layout;
 }

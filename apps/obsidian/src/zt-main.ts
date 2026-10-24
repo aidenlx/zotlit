@@ -31,8 +31,6 @@ import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
-import { addDatabaseActions } from "./services/database/actions";
-import { libraryTagNames } from "./services/database/library-tag-names";
 import { reapReadClones } from "./services/database/reap-temps";
 import { reapExcerptTemps } from "./services/excerpt-image/reap-temps";
 import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
@@ -391,7 +389,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     };
     addCustomizeActions(this, customizeDeps);
     addProfileActions(this, { importProfile: services.importProfile });
-    addDatabaseActions(this, { db: services.zoteroReads });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
@@ -516,8 +513,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       allowEditing: () => void services.capabilityNotices.allowEditing(),
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
-      libraryTagNames: (annotationKey) =>
-        libraryTagNames(services.zoteroReads, annotationKey),
+      libraryTagNames: services.libraryTagNames,
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({

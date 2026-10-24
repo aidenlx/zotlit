@@ -1,7 +1,5 @@
 // Web Worker adapter, renderer side: spawns the ZoteroReads worker and keeps one client across worker deaths.
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
-import { getLogger as getLogTapeLogger } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { RpcClient, RpcClientError, RpcSchema, RpcWorker } from "effect/rpc";
 import { tmpdir } from "node:os";
 
@@ -14,12 +12,14 @@ import {
   Fiber,
   Layer,
   Option,
+  Ref,
   Scope,
   Semaphore,
   Stream,
 } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { layerHostLogPort } from "@/lib/effect-log-port";
 import { isScopeClosed } from "@/lib/effect-scope";
-import { getLogger } from "@/lib/log";
 import { readParentBeside } from "@/services/database/read-parent";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 import { reapWorkerClones } from "@/services/database/reap-temps";
@@ -29,8 +29,6 @@ import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable, WorkerInitSchema, ZoteroReads } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
 import { WORKER_CLOSED } from "./worker-signal";
-
-const logger = getLogger("zotero-reads");
 
 /**
  * Requests one worker serves at once. A request holds its slot until it
@@ -74,13 +72,31 @@ export interface WorkerConnection {
   readonly abandon: Effect.Effect<void>;
 }
 
+interface LiveConnection {
+  readonly client: ZoteroReadsClient;
+  readonly scope: Scope.Closeable;
+  readonly abandon: Effect.Effect<void>;
+}
+
+interface ReadsRuntimeState {
+  readonly current: LiveConnection | null;
+  readonly state: "loading" | "ready" | "degraded";
+  readonly lastError: DbUnavailable | null;
+  readonly moved: boolean;
+  readonly missingSignalled: boolean;
+  readonly readMode: EffectiveReadMode | undefined;
+}
+
+type ForwardedRead = (payload: unknown, options?: unknown) => unknown;
+
 /**
  * Spawn one worker from the embedded bundle and connect a client to it. The
  * worker gets `config` with its spawn and lives for the caller's scope; the
  * scope's end terminates it, since the platform layer only sends the close
  * message. Its log records reach the plugin's logger under their own
  * categories. Its read snapshots carry an owner tag of this connection's own,
- * so the scope's end also removes the ones a crashed worker left behind.
+ * so the scope's end also starts removing the ones a crashed worker left
+ * behind.
  */
 export const connectWorker = Effect.fnUntraced(function* (
   source: string,
@@ -89,54 +105,56 @@ export const connectWorker = Effect.fnUntraced(function* (
     reapClones = reapWorkerClones,
   }: { reapClones?: typeof reapWorkerClones } = {},
 ): Effect.fn.Return<WorkerConnection, DbUnavailable, Scope.Scope> {
+  const hostScope = yield* Effect.scope;
   const url = URL.createObjectURL(
     new Blob([source], { type: "text/javascript" }),
   );
-  /** Live workers, each with a promise that settles once it shut down. */
-  const workers = new Map<Worker, Promise<void>>();
-  /** The port the live worker posts its log records to. */
-  let logs: MessagePort | undefined;
+  /** Live workers, each with a Deferred that settles once it shut down. */
+  const workers = new Map<Worker, Deferred.Deferred<void>>();
+  /** The Scope that owns the live worker's log port and consumer. */
+  const logScope = yield* Ref.make<Scope.Closeable | null>(null);
   const died = yield* Deferred.make<DbUnavailable>();
   const snapshotOwner = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
   /** Every database path a worker of this connection was given. */
-  const databasePaths = new Set<string>();
+  const databasePaths = yield* Ref.make<ReadonlySet<string>>(new Set());
   // Added first, so it runs last: once every worker here is terminated, no
-  // snapshot with this tag has a reader left. Detached, so neither a respawn
-  // nor unload waits on the file system; the sweep reports its own failures,
-  // and what it cannot remove the next launch reaps.
+  // snapshot with this tag has a reader left. The detached sweep neither
+  // holds a respawn nor unload open; the next launch reaps what it cannot.
   yield* Effect.addFinalizer(() =>
-    Effect.map(config, ({ databasePath }) => {
-      databasePaths.add(databasePath);
-      void reapClones({
-        owner: snapshotOwner,
-        parents: [tmpdir(), ...Array.from(databasePaths, readParentBeside)],
+    Effect.gen(function* () {
+      const { databasePath } = yield* config;
+      const paths = yield* Ref.updateAndGet(databasePaths, (before) => {
+        const next = new Set(before);
+        next.add(databasePath);
+        return next;
       });
+      yield* reapClones({
+        owner: snapshotOwner,
+        parents: [tmpdir(), ...Array.from(paths, readParentBeside)],
+      }).pipe(Effect.ignore, Effect.forkDetach);
     }),
   );
   // Added before the protocol, so it runs after the protocol's close message:
   // each worker gets to remove its snapshots before it is terminated.
   // A worker that never answers is terminated after a bounded wait.
   yield* Effect.addFinalizer(() =>
-    Effect.promise(() => Promise.all(workers.values())).pipe(
-      Effect.timeoutOption(WORKER_CLOSE_TIMEOUT),
-      Effect.tap((answered) =>
-        Effect.sync(() => {
-          if (Option.isNone(answered))
-            logger.warn(
-              "Database worker did not confirm its close in time; terminating it",
-              { timeout: Duration.format(WORKER_CLOSE_TIMEOUT) },
-            );
-        }),
-      ),
-      Effect.andThen(
-        Effect.sync(() => {
-          for (const worker of workers.keys()) worker.terminate();
-          workers.clear();
-          logs?.close();
-          URL.revokeObjectURL(url);
-        }),
-      ),
-    ),
+    Effect.gen(function* () {
+      const answered = yield* Effect.forEach(workers.values(), Deferred.await, {
+        concurrency: "unbounded",
+      }).pipe(Effect.timeoutOption(WORKER_CLOSE_TIMEOUT));
+      if (Option.isNone(answered))
+        yield* Effect.logWarning(
+          "Database worker did not confirm its close in time; terminating it",
+        ).pipe(
+          Effect.annotateLogs({
+            timeout: Duration.format(WORKER_CLOSE_TIMEOUT),
+          }),
+          withLogCategory("zotero-reads"),
+        );
+      for (const worker of workers.keys()) worker.terminate();
+      workers.clear();
+      URL.revokeObjectURL(url);
+    }),
   );
 
   const spawn = () => {
@@ -144,16 +162,21 @@ export const connectWorker = Effect.fnUntraced(function* (
     // is still running, so end it here.
     for (const worker of workers.keys()) worker.terminate();
     workers.clear();
+    // boundary: BrowserWorker.layer requires a synchronous Worker spawn.
     const worker = new Worker(url, {
       name: "zotlit-zotero-reads",
     });
-    const shutDown = Promise.withResolvers<void>();
+    const shutDown = Deferred.makeUnsafe<void>();
+    // boundary: the DOM Worker message event has no Effect listener API.
     worker.addEventListener("message", (event: MessageEvent<unknown>) => {
-      if (event.data === WORKER_CLOSED) shutDown.resolve();
+      if (event.data === WORKER_CLOSED)
+        Deferred.doneUnsafe(shutDown, Exit.void);
     });
+    // boundary: the DOM Worker error event has no Effect listener API.
     worker.addEventListener("error", (event) => {
       // A failed worker has nothing left to shut down.
-      shutDown.resolve();
+      Deferred.doneUnsafe(shutDown, Exit.void);
+      // boundary: the DOM Worker error event delivers its reason synchronously.
       Deferred.doneUnsafe(
         died,
         Exit.succeed(
@@ -163,7 +186,7 @@ export const connectWorker = Effect.fnUntraced(function* (
         ),
       );
     });
-    workers.set(worker, shutDown.promise);
+    workers.set(worker, shutDown);
     return worker;
   };
 
@@ -176,15 +199,29 @@ export const connectWorker = Effect.fnUntraced(function* (
       Layer.provide(
         RpcWorker.layerInitialMessage(
           WorkerInitSchema,
-          Effect.map(config, (current) => {
-            databasePaths.add(current.databasePath);
+          Effect.gen(function* () {
+            const current = yield* config;
+            yield* Ref.update(databasePaths, (before) => {
+              const next = new Set(before);
+              next.add(current.databasePath);
+              return next;
+            });
             // Each worker gets its own channel; the one it replaces is
             // terminated already.
-            logs?.close();
             const { port1, port2 } = new MessageChannel();
-            port1.onmessage = ({ data: record }: MessageEvent<LogRecord>) =>
-              getLogTapeLogger(record.category).emit(record);
-            logs = port1;
+            const nextScope = yield* Scope.fork(hostScope);
+            yield* Scope.provide(
+              Layer.build(
+                layerHostLogPort(port1, {
+                  malformedMessage:
+                    "Ignored a malformed Zotero reads worker log record",
+                  category: ["zotero-reads"],
+                }),
+              ),
+              nextScope,
+            );
+            const previous = yield* Ref.getAndSet(logScope, nextScope);
+            if (previous) yield* Scope.close(previous, Exit.void);
             return {
               ...current,
               snapshotOwner,
@@ -234,26 +271,24 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   connect: Effect.Effect<WorkerConnection, DbUnavailable, Scope.Scope>,
 ): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
   const hostScope = yield* Effect.scope;
-  let current: {
-    client: ZoteroReadsClient;
-    scope: Scope.Closeable;
-    abandon: Effect.Effect<void>;
-  } | null = null;
-  let state: "loading" | "ready" | "degraded" = "loading";
-  let lastError: DbUnavailable | null = null;
-  /** The last refresh failed for another database than the one serving. */
-  let moved = false;
-  /** `db-file-missing` is raised once per launch, whichever worker saw it. */
-  let missingSignalled = false;
-  /** The Read Mode of the live worker's connection, while it serves. */
-  let readMode: EffectiveReadMode | undefined;
-  const { publish, changes } = yield* makeStateFeed(() => ({
-    state,
-    error: lastError,
-    readMode,
-    moved,
-    missing: missingSignalled,
-  }));
+  const runtime = yield* Ref.make<ReadsRuntimeState>({
+    current: null,
+    state: "loading",
+    lastError: null,
+    moved: false,
+    missingSignalled: false,
+    readMode: undefined,
+  });
+  const { publish, changes } = yield* makeStateFeed(() => {
+    const current = Ref.getUnsafe(runtime);
+    return {
+      state: current.state,
+      error: current.lastError,
+      readMode: current.readMode,
+      moved: current.moved,
+      missing: current.missingSignalled,
+    };
+  });
   const connecting = yield* Semaphore.make(1);
 
   /**
@@ -262,66 +297,94 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
    * With `transportGone`, the worker is abandoned instead of closed.
    */
   const die = (
-    connection: NonNullable<typeof current>,
+    connection: LiveConnection,
     error: DbUnavailable,
     transportGone = false,
   ) =>
     connecting.withPermits(1)(
-      Effect.suspend(() => {
-        if (current !== connection) return Effect.void;
-        current = null;
-        state = "degraded";
-        lastError = error;
-        logger.error("Database worker stopped", { error });
-        return Effect.andThen(
-          transportGone ? connection.abandon : Effect.void,
-          Effect.andThen(
-            Scope.close(connection.scope, Exit.void),
-            publish({ _tag: "degraded", error }),
-          ),
+      Effect.gen(function* () {
+        const current = yield* Ref.modify(runtime, (before) =>
+          before.current !== connection
+            ? [false, before]
+            : [
+                true,
+                {
+                  ...before,
+                  current: null,
+                  state: "degraded" as const,
+                  lastError: error,
+                },
+              ],
         );
+        if (!current) return;
+        yield* Effect.logError("Database worker stopped").pipe(
+          Effect.annotateLogs({ error }),
+          withLogCategory("zotero-reads"),
+        );
+        yield* transportGone ? connection.abandon : Effect.void;
+        yield* Scope.close(connection.scope, Exit.void);
+        yield* publish({ _tag: "degraded", error });
       }),
     );
 
   /** Track the worker's state from its own feed and pass the feed on. */
   const relay = (event: ChangeEvent): Effect.Effect<void> => {
-    switch (event._tag) {
-      case "state": {
-        // The seed of a new worker's feed: a new client serves or fails.
-        state = event.state;
-        lastError = event.error;
-        readMode = event.readMode;
-        moved = event.moved ?? false;
-        if (event.state === "ready")
-          return publish({
-            _tag: "changed",
-            ...(event.readMode && { readMode: event.readMode }),
-          });
-        if (event.state === "degraded" && event.error)
-          return publish({ _tag: "degraded", error: event.error });
-        return Effect.void;
+    return Effect.gen(function* () {
+      switch (event._tag) {
+        case "state": {
+          // The seed of a new worker's feed: a new client serves or fails.
+          yield* Ref.update(runtime, (before) => ({
+            ...before,
+            state: event.state,
+            lastError: event.error,
+            readMode: event.readMode,
+            moved: event.moved ?? false,
+          }));
+          if (event.state === "ready")
+            return yield* publish({
+              _tag: "changed",
+              ...(event.readMode && { readMode: event.readMode }),
+            });
+          if (event.state === "degraded" && event.error)
+            return yield* publish({ _tag: "degraded", error: event.error });
+          return;
+        }
+        case "changed":
+          yield* Ref.update(runtime, (before) => ({
+            ...before,
+            state: "ready" as const,
+            lastError: null,
+            moved: false,
+            readMode: event.readMode,
+          }));
+          break;
+        case "degraded":
+          yield* Ref.update(runtime, (before) => ({
+            ...before,
+            state: "degraded" as const,
+            lastError: event.error,
+            readMode: undefined,
+          }));
+          break;
+        case "refresh-failed":
+          yield* Ref.update(runtime, (before) => ({
+            ...before,
+            lastError: event.error,
+            moved: event.moved,
+          }));
+          break;
+        case "db-file-missing": {
+          const first = yield* Ref.modify(runtime, (before) =>
+            before.missingSignalled
+              ? [false, before]
+              : [true, { ...before, missingSignalled: true }],
+          );
+          if (!first) return;
+          break;
+        }
       }
-      case "changed":
-        state = "ready";
-        lastError = null;
-        moved = false;
-        readMode = event.readMode;
-        break;
-      case "degraded":
-        state = "degraded";
-        lastError = event.error;
-        readMode = undefined;
-        break;
-      case "refresh-failed":
-        lastError = event.error;
-        moved = event.moved;
-        break;
-      case "db-file-missing":
-        if (missingSignalled) return Effect.void;
-        missingSignalled = true;
-        break;
-    }
-    return publish(event);
+      return yield* publish(event);
+    });
   };
 
   const connectNew = Effect.gen(function* () {
@@ -348,9 +411,15 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
         error._tag === "Some"
           ? error.value
           : new DbUnavailable({ message: Cause.pretty(result.cause) });
-      state = "degraded";
-      lastError = reason;
-      logger.error("Database worker did not start", { error: reason });
+      yield* Ref.update(runtime, (before) => ({
+        ...before,
+        state: "degraded" as const,
+        lastError: reason,
+      }));
+      yield* Effect.logError("Database worker did not start").pipe(
+        Effect.annotateLogs({ error: reason }),
+        withLogCategory("zotero-reads"),
+      );
       yield* publish({ _tag: "degraded", error: reason });
       return yield* reason;
     }
@@ -359,7 +428,10 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
       scope,
       abandon: result.value.abandon,
     };
-    current = connection;
+    yield* Ref.update(runtime, (before) => ({
+      ...before,
+      current: connection,
+    }));
     // Either signal ends the connection: the worker's error event, or its
     // feed ending, which only happens when the transport broke.
     const lost = (message: string, transportGone = false) =>
@@ -418,12 +490,13 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   /** The live worker's client, connecting a new worker when none serves. */
   const ensureConnected = connecting
     .withPermits(1)(
-      Effect.suspend(() => {
+      Effect.gen(function* () {
         if (isScopeClosed(hostScope))
-          return Effect.fail(
+          return yield* Effect.fail(
             new DbUnavailable({ message: "The database worker stopped" }),
           );
-        return current ? Effect.succeed(current.client) : connectNew;
+        const current = yield* Ref.get(runtime);
+        return current.current ? current.current.client : yield* connectNew;
       }),
     )
     .pipe(
@@ -438,17 +511,15 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
   yield* Effect.ignore(ensureConnected);
 
   /** The live client, or a client error while no worker serves. */
-  const live = Effect.suspend(() =>
-    current
-      ? Effect.succeed(current.client)
-      : Effect.fail(
-          noWorker(
-            lastError ?? new DbUnavailable({ message: "No database worker" }),
-          ),
-        ),
-  );
+  const live = Effect.gen(function* () {
+    const current = yield* Ref.get(runtime);
+    if (current.current) return current.current.client;
+    return yield* noWorker(
+      current.lastError ?? new DbUnavailable({ message: "No database worker" }),
+    );
+  });
 
-  const forwarded: Record<string, unknown> = {};
+  const forwarded = {} as Record<keyof ZoteroReadsClient, ForwardedRead>;
   for (const [tag, rpc] of ZoteroReads.requests) {
     const call = (
       client: ZoteroReadsClient,
@@ -461,9 +532,14 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
           (payload: unknown, options: unknown) => unknown
         >
       )[tag]!(payload, options);
-    forwarded[tag] = RpcSchema.isStreamSchema(rpc.successSchema)
-      ? (payload: unknown, options?: { asQueue?: boolean }) =>
-          options?.asQueue
+    forwarded[tag as keyof ZoteroReadsClient] = RpcSchema.isStreamSchema(
+      rpc.successSchema,
+    )
+      ? (payload: unknown, options?: unknown) => {
+          const streamOptions = options as
+            | { readonly asQueue?: boolean }
+            | undefined;
+          return streamOptions?.asQueue
             ? Effect.flatMap(
                 live,
                 (client) =>
@@ -475,7 +551,8 @@ export const makeWorkerReads = Effect.fnUntraced(function* (
                   (client) =>
                     call(client, payload, options) as Stream.Stream<unknown>,
                 ),
-              )
+              );
+        }
       : (payload: unknown, options: unknown) =>
           Effect.flatMap(
             live,

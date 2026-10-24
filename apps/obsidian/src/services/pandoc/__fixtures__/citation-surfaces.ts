@@ -1,6 +1,7 @@
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
 // Document Citation Text, the References Sidebar, the Citation Popover, the
@@ -26,6 +27,7 @@ import { vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { spliceFrontMatter } from "@/lib/live-text";
 import {
   createCitationIndexHarness,
@@ -41,6 +43,8 @@ import { CitationPopover } from "@/services/citation-popover/service";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import { createCitationEngine } from "@/services/pandoc/engine";
+import type { CitationEngine } from "@/services/pandoc/engine";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { applySettings, buildSeededSettings } from "@/services/settings/__fixtures__";
@@ -172,6 +176,24 @@ const WASM_PATH = join(
   dirname(createRequire(import.meta.url).resolve("pandoc-wasm")),
   "pandoc.wasm",
 );
+
+function pandocEngineHandle(engine: CitationEngine) {
+  return {
+    binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
+      getStatus: () =>
+        Effect.succeed({
+          kind: "installed",
+          version: "test",
+          binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+        }),
+      changes: Stream.empty,
+      getEngine: () => Effect.succeed(engine),
+      decline: () => Effect.void,
+    }),
+    runSync: Effect.runSync,
+    runPromise: Effect.runPromise,
+  };
+}
 
 export interface CitationVaultOptions {
   /** Every style Zotero has installed here, by the file name it carries. */
@@ -345,11 +367,7 @@ export async function openCitationVault({
     await bibliographyRenderFixture({
       profile: { changed: Stream.merge(settings.changes.pipe(Stream.drop(1), Stream.map(() => undefined)), profileChanged.stream) },
       db: harness.db,
-      pandocEngine: {
-        getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
-        changes: Stream.empty,
-        getEngine: () => Promise.resolve(engine),
-      },
+      pandocEngine: pandocEngineHandle(engine),
       zoteroPref: { dataDir, changed: Stream.empty, "data-dir-changed": Stream.empty, "resolved-changed": Stream.empty },
       settings,
       queryClient: harness.queryClient,
@@ -386,11 +404,7 @@ export async function openCitationVault({
       citationLookup: harness.lookup,
       citationText,
       citekeyEditor: { openCitekey: () => Promise.resolve() },
-      pandocEngine: {
-        getStatus: () => ({ kind: "installed", version: "test" }),
-        changes: Stream.empty,
-        decline: () => undefined,
-      },
+      pandocEngine: pandocEngineHandle(engine),
       bibliographyRender: cache,
       settings,
       openSettings: () => undefined,
@@ -619,7 +633,7 @@ function exportAdapter({
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
-    citationParse: inProcessParseClient,
+    citationParse: plainTestParseClient(inProcessParseClient),
     profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
@@ -630,10 +644,7 @@ function exportAdapter({
     } as unknown as App,
     db: harness.db,
     citationLookup: harness.lookup,
-    pandocEngine: {
-      getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
-      getEngine: () => Promise.resolve(engine),
-    },
+    pandocEngine: pandocEngineHandle(engine),
     zoteroPref: {
       ready: Promise.resolve(),
       dataDir,

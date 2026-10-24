@@ -5,10 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { Effect } from "@/lib/effect";
 
 import { planReadParents } from "./read-parent";
 import type { ReadParentPlan } from "./read-parent";
 import { prepareRead } from "./read-source";
+import type { PreparedRead } from "./read-source";
 
 vi.mock("./read-parent", () => ({ planReadParents: vi.fn() }));
 const mkdirFault = vi.hoisted(() => ({ path: "" }));
@@ -84,23 +86,36 @@ function plan(...parents: string[]): void {
   });
 }
 
+function inspectPrepared<A>(
+  preparation: ReturnType<typeof prepareRead>,
+  inspect: (prepared: PreparedRead) => A,
+): Promise<A> {
+  return Effect.runPromise(Effect.scoped(Effect.map(preparation, inspect)));
+}
+
+function runPrepared(preparation: ReturnType<typeof prepareRead>) {
+  return Effect.runPromise(Effect.scoped(preparation));
+}
+
 describe("prepareRead placement", () => {
   it("creates the snapshot inside the parent the plan prefers", async () => {
     const diverted = join(dir, ZOTERO_DB_READ_PARENT_DIRNAME);
     plan(diverted, tmpdir());
 
-    await using prepared = await prepareRead("copy", source);
-
-    expect(dirname(dirname(prepared.path))).toBe(diverted);
+    await inspectPrepared(prepareRead("copy", source), (prepared) =>
+      expect(dirname(dirname(prepared.path))).toBe(diverted),
+    );
   });
 
   it("names the snapshot dir with this process and the owner it is given", async () => {
     plan(tmpdir());
 
-    await using prepared = await prepareRead("copy", source, "0123456789ab");
-
-    expect(basename(dirname(prepared.path))).toMatch(
-      new RegExp(`^zotlit-db-${process.pid}-0123456789ab-[^-]+$`),
+    await inspectPrepared(
+      prepareRead("copy", source, "0123456789ab"),
+      (prepared) =>
+        expect(basename(dirname(prepared.path))).toMatch(
+          new RegExp(`^zotlit-db-${process.pid}-0123456789ab-[^-]+$`),
+        ),
     );
   });
 
@@ -109,8 +124,11 @@ describe("prepareRead placement", () => {
     plan(join(dir, ZOTERO_DB_READ_PARENT_DIRNAME), fallback);
     await rm(source);
 
-    await expect(prepareRead("copy", source)).rejects.toMatchObject({
-      code: "ENOENT",
+    await expect(
+      runPrepared(prepareRead("copy", source)),
+    ).rejects.toMatchObject({
+      _tag: "DbUnavailable",
+      message: expect.stringContaining("ENOENT"),
     });
     await expect(readdir(fallback)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -126,9 +144,9 @@ describe("prepareRead placement", () => {
       await real(from, to, mode);
     };
 
-    await using prepared = await prepareRead("copy", source);
-
-    expect(dirname(dirname(prepared.path))).toBe(tmpdir());
+    await inspectPrepared(prepareRead("copy", source), (prepared) =>
+      expect(dirname(dirname(prepared.path))).toBe(tmpdir()),
+    );
   });
 
   it("falls back to the next parent when the preferred one refuses writes", async () => {
@@ -136,9 +154,9 @@ describe("prepareRead placement", () => {
     plan(preferred, tmpdir());
     mkdirFault.path = preferred;
 
-    await using prepared = await prepareRead("copy", source);
-
-    expect(dirname(dirname(prepared.path))).toBe(tmpdir());
+    await inspectPrepared(prepareRead("copy", source), (prepared) =>
+      expect(dirname(dirname(prepared.path))).toBe(tmpdir()),
+    );
   });
 });
 
@@ -157,9 +175,12 @@ describe("prepareRead consistency guard", () => {
           WHERE name = 'checked';
       `);
     }
-    await expect(prepareRead("copy", source)).rejects.toThrow(
-      "SQLite rejected the database read snapshot",
-    );
+    await expect(
+      runPrepared(prepareRead("copy", source)),
+    ).rejects.toMatchObject({
+      _tag: "DbUnavailable",
+      message: "SQLite rejected the database read snapshot",
+    });
     expect(await readdir(parent)).toEqual([]);
   });
 
@@ -179,11 +200,11 @@ describe("prepareRead consistency guard", () => {
     expect(journal.subarray(0, journalMagic.byteLength)).not.toEqual(
       journalMagic,
     );
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "committed",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "committed",
+      });
     });
   });
 
@@ -199,12 +220,12 @@ describe("prepareRead consistency guard", () => {
       }
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(corrupted).toBe(true);
-    expect(clone.prepare("PRAGMA integrity_check").get()).toEqual({
-      integrity_check: "ok",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(corrupted).toBe(true);
+      expect(clone.prepare("PRAGMA integrity_check").get()).toEqual({
+        integrity_check: "ok",
+      });
     });
   });
 
@@ -231,12 +252,12 @@ describe("prepareRead consistency guard", () => {
       if (call === 2) sqlite.exec("ROLLBACK");
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(statSignal.calls).toBeGreaterThanOrEqual(2);
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "committed",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(statSignal.calls).toBeGreaterThanOrEqual(2);
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "committed",
+      });
     });
   });
 
@@ -260,12 +281,12 @@ describe("prepareRead consistency guard", () => {
       if (call === 4) sqlite.exec("ROLLBACK");
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(statSignal.calls).toBeGreaterThanOrEqual(4);
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "committed",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(statSignal.calls).toBeGreaterThanOrEqual(4);
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "committed",
+      });
     });
   });
 
@@ -288,11 +309,11 @@ describe("prepareRead consistency guard", () => {
       }
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "two",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "two",
+      });
     });
   });
 
@@ -320,11 +341,11 @@ describe("prepareRead consistency guard", () => {
       }
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "two",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "two",
+      });
     });
   });
 
@@ -344,16 +365,22 @@ describe("prepareRead consistency guard", () => {
       wal: await readFile(`${source}-wal`),
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-    const after = {
-      main: await readFile(source),
-      wal: await readFile(`${source}-wal`),
-    };
-
-    expect(after).toEqual(before);
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "committed in WAL",
-    });
+    const after = await inspectPrepared(
+      prepareRead("copy", source),
+      (prepared) => {
+        using clone = new DatabaseSync(prepared.path, { readOnly: true });
+        expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+          value: "committed in WAL",
+        });
+        return {
+          main: readFile(source),
+          wal: readFile(`${source}-wal`),
+        };
+      },
+    );
+    expect({
+      main: await after.main,
+      wal: await after.wal,
+    }).toEqual(before);
   });
 });

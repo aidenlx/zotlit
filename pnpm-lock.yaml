@@ -1105,6 +1105,9 @@ importers:
       '@zotlit/filter-expression':
         specifier: workspace:*
         version: link:../filter-expression
+      '@zotlit/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@zotlit/zotero-types':
         specifier: workspace:*
         version: link:../zotero-types
@@ -1343,6 +1346,9 @@ importers:
       '@logtape/logtape':
         specifier: '>=2.0.0'
         version: 2.1.0
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

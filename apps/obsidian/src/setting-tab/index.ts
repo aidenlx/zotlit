@@ -217,12 +217,12 @@ export class ZotLitSettingTab extends PluginSettingTab {
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
     plugin.register(
-      subscribe(runtime, Stream.drop(pandocEngine.changes, 1), () =>
+      subscribe(runtime, Stream.drop(pandocEngine.binary.changes, 1), () =>
         this.#requestUpdate(),
       ),
     );
     plugin.register(
-      subscribe(runtime, Stream.drop(chineseSegmenter.changes, 1), () =>
+      subscribe(runtime, Stream.drop(chineseSegmenter.binary.changes, 1), () =>
         this.#requestUpdate(),
       ),
     );

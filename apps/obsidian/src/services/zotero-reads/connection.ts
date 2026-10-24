@@ -1,10 +1,9 @@
+// The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
 import { getZoteroDatabaseIdentity } from "@zotlit/db";
-import type { ZoteroDatabaseIdentity } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { checkDatabaseLayout } from "@zotlit/db/item-query";
 
-// The Connection the ZoteroReads handlers borrow, and its RcRef-backed provider.
-import { Context, Duration, Effect, Layer, RcRef } from "@/lib/effect";
+import { Context, Duration, Effect, Layer, RcRef, Ref } from "@/lib/effect";
 import type { Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 
@@ -64,40 +63,43 @@ export function makeDatabaseGenerations() {
   const generations = new Map<string, number>();
   const clientGenerations = new WeakMap<NodeDatabaseClient, number>();
   const clientFiles = new WeakMap<NodeDatabaseClient, string | null>();
+  const record = Effect.fnUntraced(function* (
+    client: NodeDatabaseClient,
+    file: string | null,
+  ): Effect.fn.Return<void, DbUnavailable> {
+    const identity = yield* Effect.try({
+      try: () => getZoteroDatabaseIdentity(client),
+      catch: toDbUnavailable,
+    }).pipe(Effect.tapError(() => closeClient(client)));
+    const key = JSON.stringify([
+      file,
+      identity.userID,
+      identity.localUserKey,
+      identity.serverID,
+    ]);
+    let generation = generations.get(key);
+    if (generation === undefined) {
+      generation = generations.size + 1;
+      generations.set(key, generation);
+    }
+    clientGenerations.set(client, generation);
+    clientFiles.set(client, file);
+  });
   return {
     /**
      * Record the database a validated client reads: the file it opened from
      * and the Zotero identity inside it.
      *
-     * @throws The identity read's error, after the client closes.
+     * @returns Fails with the identity read's error after the client closes.
      * @see {@link validateClient}, which closes a client the same way.
      */
-    record: (client: NodeDatabaseClient, file: string | null): void => {
-      let identity: ZoteroDatabaseIdentity;
-      try {
-        identity = getZoteroDatabaseIdentity(client);
-      } catch (error) {
-        client.$client.close();
-        throw error;
-      }
-      const key = JSON.stringify([
-        file,
-        identity.userID,
-        identity.localUserKey,
-        identity.serverID,
-      ]);
-      let generation = generations.get(key);
-      if (generation === undefined) {
-        generation = generations.size + 1;
-        generations.set(key, generation);
-      }
-      clientGenerations.set(client, generation);
-      clientFiles.set(client, file);
-    },
+    record,
     databaseGeneration: (client: NodeDatabaseClient): number => {
       const generation = clientGenerations.get(client);
       if (generation === undefined)
-        throw new Error("The client was not opened by this connection");
+        throw new DbUnavailable({
+          message: "The client was not opened by this connection",
+        });
       return generation;
     },
     databaseFile: (client: NodeDatabaseClient): string | null =>
@@ -131,19 +133,19 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
  * Prove a client reads as a Zotero database before it serves: its layout has
  * every table and column the readers need, so a copy that validates is a copy
  * Item Query reads. The layout read stays with the client, so the readers and
- * `reportSchemaVersions` run no statement for it again. A client that fails is
- * closed before the throw; a layout the readers cannot read throws
- * `ItemQueryLayoutError`.
+ * `reportSchemaVersions` run no statement for it again. On failure, the Effect
+ * closes the client before it fails with the layout error.
  */
-export function validateClient(client: NodeDatabaseClient): NodeDatabaseClient {
-  try {
-    checkDatabaseLayout(client);
-  } catch (error) {
-    client.$client.close();
-    throw error;
-  }
+export const validateClient = Effect.fnUntraced(function* (
+  client: NodeDatabaseClient,
+): Effect.fn.Return<NodeDatabaseClient, Error> {
+  yield* Effect.try({
+    try: () => checkDatabaseLayout(client),
+    catch: (error) =>
+      error instanceof Error ? error : new Error(String(error)),
+  }).pipe(Effect.tapError(() => closeClient(client)));
   return client;
-}
+});
 
 /** Open a client and prove it reads as a Zotero database before it serves. */
 function openValidated(
@@ -151,9 +153,19 @@ function openValidated(
   config: ReadsConfig | null,
 ): Effect.Effect<NodeDatabaseClient, DbUnavailable> {
   return Effect.try({
-    try: () => validateClient(opener(config)),
+    try: () => opener(config),
     catch: toDbUnavailable,
-  });
+  }).pipe(
+    Effect.flatMap((client) =>
+      validateClient(client).pipe(Effect.mapError(toDbUnavailable)),
+    ),
+  );
+}
+
+function closeClient(client: NodeDatabaseClient): Effect.Effect<void> {
+  return Effect.sync(() => client.$client.close()).pipe(
+    Effect.catchDefect(() => Effect.void),
+  );
 }
 
 /** A client with the resources it holds open; `close` releases them all. */
@@ -177,24 +189,20 @@ export const makeClientRef = Effect.fnUntraced(function* (
   fallback: Effect.Effect<OpenClient, DbUnavailable>,
 ) {
   /** A client waiting for the next acquire. */
-  let staged: OpenClient | null = null;
+  const staged = yield* Ref.make<OpenClient | null>(null);
   const ref = yield* RcRef.make({
     acquire: Effect.acquireRelease(
-      Effect.suspend(() => {
-        const next = staged;
-        staged = null;
-        return next ? Effect.succeed(next) : fallback;
-      }),
+      Ref.getAndSet(staged, null).pipe(
+        Effect.flatMap((next) => (next ? Effect.succeed(next) : fallback)),
+      ),
       (open) => open.close,
     ),
     idleTimeToLive: Duration.infinity,
   });
   yield* Effect.addFinalizer(() =>
-    Effect.suspend(() => {
-      const left = staged;
-      staged = null;
-      return left ? left.close : Effect.void;
-    }),
+    Ref.getAndSet(staged, null).pipe(
+      Effect.flatMap((left) => (left ? left.close : Effect.void)),
+    ),
   );
   return {
     borrow: Effect.map(RcRef.get(ref), (open) => open.client),
@@ -205,14 +213,14 @@ export const makeClientRef = Effect.fnUntraced(function* (
      * and keeps it.
      */
     swap: (next: OpenClient) =>
-      Effect.suspend(() => {
-        const replaced = staged;
-        staged = next;
-        return Effect.andThen(
-          RcRef.invalidate(ref),
-          replaced ? replaced.close : Effect.void,
-        );
-      }),
+      Ref.getAndSet(staged, next).pipe(
+        Effect.flatMap((replaced) =>
+          Effect.andThen(
+            RcRef.invalidate(ref),
+            replaced ? replaced.close : Effect.void,
+          ),
+        ),
+      ),
   };
 });
 
@@ -224,79 +232,112 @@ export const makeClientRef = Effect.fnUntraced(function* (
 export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
   return Layer.effect(Connection)(
     Effect.gen(function* () {
-      let config: ReadsConfig | null = null;
-      let state: "loading" | "ready" | "degraded" = "loading";
-      let lastError: DbUnavailable | null = null;
-      /** The database file the serving client opened from. */
-      let serving: string | null = null;
-      /** The last refresh failed for another database than `serving`. */
-      let moved = false;
+      const config = yield* Ref.make<ReadsConfig | null>(null);
+      const status = yield* Ref.make<{
+        state: "loading" | "ready" | "degraded";
+        lastError: DbUnavailable | null;
+        serving: string | null;
+        moved: boolean;
+      }>({
+        state: "loading",
+        lastError: null as DbUnavailable | null,
+        /** The database file the serving client opened from. */
+        serving: null,
+        /** The last refresh failed for another database than `serving`. */
+        moved: false,
+      });
       const databaseGenerations = makeDatabaseGenerations();
       /** Open and validate a client, recording the database it reads. */
-      const openRecorded = Effect.suspend(() => {
-        const opened = config?.databasePath ?? null;
-        return Effect.tap(openValidated(opener, config), (client) =>
-          Effect.try({
-            try: () => databaseGenerations.record(client, opened),
-            catch: toDbUnavailable,
-          }),
-        );
+      const openRecorded = Ref.get(config).pipe(
+        Effect.flatMap((current) => {
+          const opened = current?.databasePath ?? null;
+          return Effect.tap(openValidated(opener, current), (client) =>
+            databaseGenerations.record(client, opened),
+          );
+        }),
+      );
+      const { publish, changes } = yield* makeChangeFeed(() => {
+        const current = Ref.getUnsafe(status);
+        return [
+          {
+            _tag: "state",
+            state: current.state,
+            error: current.lastError,
+            ...(current.lastError !== null &&
+              current.state !== "degraded" && { moved: current.moved }),
+          },
+        ];
       });
-      const { publish, changes } = yield* makeChangeFeed(() => [
-        {
-          _tag: "state",
-          state,
-          error: lastError,
-          ...(lastError !== null && state !== "degraded" && { moved }),
-        },
-      ]);
 
       /** A direct open (no refresh before it) reports the state it moves to. */
       const openDirect = openRecorded.pipe(
         Effect.tap((client) =>
-          Effect.sync(() => {
-            serving = databaseGenerations.databaseFile(client);
-          }),
+          Ref.update(status, (current) => ({
+            ...current,
+            serving: databaseGenerations.databaseFile(client),
+          })),
         ),
         Effect.map(bareClient),
-        Effect.tap(() => {
-          const wasReady = state === "ready";
-          state = "ready";
-          lastError = null;
-          moved = false;
-          return wasReady ? Effect.void : publish({ _tag: "changed" });
-        }),
-        Effect.tapError((error) => {
-          const wasDegraded = state === "degraded";
-          state = "degraded";
-          lastError = error;
-          return wasDegraded
-            ? Effect.void
-            : publish({ _tag: "degraded", error });
-        }),
+        Effect.tap(() =>
+          Effect.gen(function* () {
+            const wasReady = (yield* Ref.get(status)).state === "ready";
+            yield* Ref.update(status, (current) => ({
+              ...current,
+              state: "ready" as const,
+              lastError: null,
+              moved: false,
+            }));
+            if (!wasReady) yield* publish({ _tag: "changed" });
+          }),
+        ),
+        Effect.tapError((error) =>
+          Effect.gen(function* () {
+            const wasDegraded = (yield* Ref.get(status)).state === "degraded";
+            yield* Ref.update(status, (current) => ({
+              ...current,
+              state: "degraded" as const,
+              lastError: error,
+            }));
+            if (!wasDegraded) yield* publish({ _tag: "degraded", error });
+          }),
+        ),
       );
       const clients = yield* makeClientRef(openDirect);
 
       const swapIn = Effect.uninterruptible(
-        Effect.flatMap(openRecorded, (client) => {
-          state = "ready";
-          lastError = null;
-          moved = false;
-          serving = databaseGenerations.databaseFile(client);
-          return clients.swap(bareClient(client));
-        }),
+        Effect.flatMap(openRecorded, (client) =>
+          Effect.gen(function* () {
+            yield* Ref.update(status, (current) => ({
+              ...current,
+              state: "ready" as const,
+              lastError: null,
+              moved: false,
+              serving: databaseGenerations.databaseFile(client),
+            }));
+            yield* clients.swap(bareClient(client));
+          }),
+        ),
       );
 
       const refresh = Effect.gen(function* () {
         yield* publish({ _tag: "refreshing", active: true });
         const result = yield* Effect.result(swapIn);
         if (result._tag === "Failure") {
-          lastError = result.failure;
-          moved = (config?.databasePath ?? null) !== serving;
+          const currentConfig = yield* Ref.get(config);
+          const current = yield* Ref.modify(status, (before) => [
+            {
+              moved: (currentConfig?.databasePath ?? null) !== before.serving,
+            },
+            {
+              ...before,
+              lastError: result.failure,
+              moved: (currentConfig?.databasePath ?? null) !== before.serving,
+            },
+          ]);
           yield* publish({
             _tag: "refresh-failed",
             error: result.failure,
-            moved,
+            moved: current.moved,
           });
           yield* publish({ _tag: "refreshing", active: false });
           return yield* result.failure;
@@ -311,10 +352,7 @@ export function layerRcRef(opener: ConnectionOpener): Layer.Layer<Connection> {
         refresh,
         notifyExternalChange: Effect.ignore(refresh),
         configure: (next) =>
-          Effect.suspend(() => {
-            config = next;
-            return Effect.ignore(refresh);
-          }),
+          Ref.set(config, next).pipe(Effect.andThen(Effect.ignore(refresh))),
         databaseGeneration: databaseGenerations.databaseGeneration,
         databaseFile: databaseGenerations.databaseFile,
       });

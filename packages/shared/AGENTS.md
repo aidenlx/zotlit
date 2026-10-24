@@ -16,12 +16,16 @@ import { createNanoEvents } from "./nanoevents.ts";
 
 ## Logging
 
-Import `getLogger` directly from `@logtape/logtape` with a category rooted at `["zotlit", "shared", ...]`. Do **not** depend on the obsidian app's `@/lib/log` wrapper — libraries must stay app-agnostic.
+Log through Effect in files that import it, with `withLogCategory` from `src/logging.ts`; use `logLibrary` from that module only in Effect-free files. Categories start at `["zotlit", "shared", ...]`. The consuming app installs the log sink and configures the sinks.
 
 ```ts
-import { getLogger } from "@logtape/logtape";
+import { Effect } from "effect";
 
-const logger = getLogger(["zotlit", "shared", "nanoevents"]);
+import { withLogCategory } from "./logging";
+
+Effect.logDebug("Event emitted").pipe(
+  withLogCategory("zotlit", "shared", "nanoevents"),
+);
 ```
 
 Never call `configure()` here — that belongs to the consuming app.

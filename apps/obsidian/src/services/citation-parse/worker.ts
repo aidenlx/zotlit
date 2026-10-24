@@ -8,6 +8,7 @@ import { layerParseHandlers } from "./handlers";
 import { CitationParseRpc } from "./rpc";
 
 // CitationParse.parse traces the service call; transport spans add backfill cost.
+// boundary: Worker bootstrap launches the scoped server for the worker lifetime.
 RpcServer.layer(CitationParseRpc, { disableTracing: true }).pipe(
   Layer.provide(layerParseHandlers),
   Layer.provide(

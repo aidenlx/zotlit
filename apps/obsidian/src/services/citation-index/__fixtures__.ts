@@ -7,10 +7,7 @@ import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import type {
-  ParseClient,
-  ParseFailed,
-} from "@/services/citation-parse/client";
+import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import {
@@ -267,14 +264,12 @@ export function citationIndexFixture(
             }),
           ),
           Layer.succeed(CitationLookup, deps.lookup),
-          Layer.succeed(CitationParse, {
-            client: deps.parseClient,
-            parse: (request) =>
-              Effect.tryPromise({
-                try: (signal) => deps.parseClient.parse(request, signal),
-                catch: (error) => error as ParseFailed,
-              }),
-          }),
+          Layer.succeed(
+            CitationParse,
+            stubService<CitationParse["Service"]>("CitationParse", {
+              parse: (request) => deps.parseClient.parse(request),
+            }),
+          ),
         ),
       ),
       Layer.provideMerge(Layer.succeedContext(deps.context ?? Context.empty())),

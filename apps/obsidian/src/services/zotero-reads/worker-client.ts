@@ -4,7 +4,7 @@ import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
-import { Effect, Stream } from "@/lib/effect";
+import { Effect, Ref, Stream } from "@/lib/effect";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -39,17 +39,16 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
       logLevel: current["log.level"],
     } satisfies ReadsConfig;
   });
-  let config = yield* configuration;
+  const config = yield* Ref.make(yield* configuration);
   const reads = yield* makeWorkerReads(
-    connectWorker(
-      workerSource,
-      Effect.sync(() => config),
-    ),
+    connectWorker(workerSource, Ref.get(config)),
   );
   const push = Effect.fn("ZoteroReads.configure")(function* () {
     const next = yield* configuration;
-    if (sameConfig(next, config)) return;
-    config = next;
+    const changed = yield* Ref.modify(config, (current) =>
+      sameConfig(next, current) ? [false, current] : [true, next],
+    );
+    if (!changed) return;
     yield* Effect.ignore(reads.Configure(next));
   });
   yield* Stream.mergeAll(

@@ -10,6 +10,7 @@
   "exports": {
     "./delimited": "./dist/delimited.mjs",
     "./log-formatter": "./dist/log-formatter.mjs",
+    "./logging": "./dist/logging.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
     "./package.json": "./package.json"
   },
@@ -19,6 +20,9 @@
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

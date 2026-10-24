@@ -1,15 +1,19 @@
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
+import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { Stream } from "@/lib/effect";
 import { Effect, Layer, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
-import { ParseWorkerDied } from "@/services/citation-parse/client";
+import { ParseFailed, ParseWorkerDied } from "@/services/citation-parse/client";
+import type {
+  ParseReply,
+  ParseRequest,
+} from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { makeRecoveringParseClient } from "@/services/citation-parse/recovering-client";
-import type { ParseConnection } from "@/services/citation-parse/recovering-client";
 
 import type { CitedBySnapshot } from "./service";
 import { SCANNER_REVISION } from "./store";
@@ -33,12 +37,14 @@ it.effect(
         {
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               parseSignal = signal;
               entered.resolve();
               await release.promise;
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -84,12 +90,12 @@ it.effect.each(["changed event", "document read"])(
           store,
           notes: false,
           parseClient: {
-            async parse(_request, signal) {
+            parse: effectTestParse(async (_request, signal) => {
               parseSignal = signal;
               entered.resolve();
               await release.promise;
               throw new Error("Replacement parse failed");
-            },
+            }),
           },
         },
       );
@@ -133,13 +139,15 @@ it.effect.each(["before", "during"])(
           store,
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               if (request.path === "draft.md") {
                 await release.promise;
                 throw new Error("Edited note failed to parse");
               }
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -172,7 +180,7 @@ it.effect.each(["edited", "new"])(
         {
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               if (outcome === "failure") {
                 await failRelease.promise;
                 throw new Error("Incremental parse failed");
@@ -181,8 +189,10 @@ it.effect.each(["edited", "new"])(
                 retryEntered.resolve();
                 await retryRelease.promise;
               }
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -262,13 +272,15 @@ it.effect(
         {
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               if (request.text === "@doe2024") {
                 started.resolve();
                 await release.promise;
               }
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -318,11 +330,13 @@ it.effect(
           store,
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               entered.resolve();
               await release.promise;
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -367,9 +381,11 @@ it.effect(
             if (connections === 1) {
               started.resolve();
               await failed.promise;
-              throw new ParseWorkerDied("worker crashed");
+              throw new ParseWorkerDied({ message: "worker crashed" });
             }
-            return inProcessParseClient.parse(request, signal);
+            return Effect.runPromise(inProcessParseClient.parse(request), {
+              signal,
+            });
           },
           [Symbol.dispose]() {},
         };
@@ -425,16 +441,19 @@ it.effect(
           store,
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               active++;
               peak = Math.max(peak, active);
               try {
                 await release.promise;
-                return await inProcessParseClient.parse(request, signal);
+                return await Effect.runPromise(
+                  inProcessParseClient.parse(request),
+                  { signal },
+                );
               } finally {
                 active--;
               }
-            },
+            }),
           },
         },
       );
@@ -467,12 +486,14 @@ it.effect(
         {
           notes: false,
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               parses++;
               entered.resolve();
               await release.promise;
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -532,11 +553,13 @@ it.effect(
             [Symbol.dispose]() {},
           }),
           parseClient: {
-            async parse(request, signal) {
+            parse: effectTestParse(async (request, signal) => {
               entered.resolve();
               await release.promise;
-              return inProcessParseClient.parse(request, signal);
-            },
+              return Effect.runPromise(inProcessParseClient.parse(request), {
+                signal,
+              });
+            }),
           },
         },
       );
@@ -585,7 +608,9 @@ it.effect(
               attempts++;
               throw new Error("Scanner failed for this note");
             }
-            return inProcessParseClient.parse(request, signal);
+            return Effect.runPromise(inProcessParseClient.parse(request), {
+              signal,
+            });
           },
           [Symbol.dispose]() {},
         };
@@ -607,22 +632,56 @@ it.effect(
     }),
 );
 
-async function recoveringClient(connect: () => ParseConnection) {
+interface PromiseParseConnection {
+  readonly died: Promise<void>;
+  parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply>;
+  [Symbol.dispose](): void;
+}
+
+async function recoveringClient(connect: () => PromiseParseConnection) {
   const { scope, close } = openScope();
   const context = await Effect.runPromise(
     Layer.buildWithScope(TestClock.layer(), scope),
   );
   const client = await Effect.runPromiseWith(context)(
     makeRecoveringParseClient(
-      Effect.try({
-        try: connect,
-        catch: (error) => new ParseWorkerDied(String(error)),
+      Effect.gen(function* () {
+        const connection = yield* Effect.try({
+          try: connect,
+          catch: (error) => new ParseWorkerDied({ message: String(error) }),
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => connection[Symbol.dispose]()),
+        );
+        return {
+          died: Effect.tryPromise({
+            try: () => connection.died,
+            catch: (error) => new ParseWorkerDied({ message: String(error) }),
+          }).pipe(
+            Effect.match({
+              onFailure: (error) => error,
+              onSuccess: () =>
+                new ParseWorkerDied({ message: "Worker terminated" }),
+            }),
+          ),
+          parse: (request: ParseRequest) =>
+            Effect.tryPromise({
+              try: (signal) => connection.parse(request, signal),
+              catch: (error) =>
+                error instanceof ParseWorkerDied
+                  ? error
+                  : new ParseFailed({ message: String(error) }),
+            }),
+        };
       }),
     ).pipe(Scope.provide(scope)),
   );
-  client.start();
+  await Effect.runPromiseWith(context)(client.start());
   return {
-    client,
+    client: {
+      parse: (request: ParseRequest) =>
+        Effect.provideContext(client.parse(request), context),
+    },
     advance: (millis: number) =>
       Effect.runPromiseWith(context)(TestClock.adjust(millis)),
     async [Symbol.asyncDispose]() {
@@ -648,8 +707,11 @@ it.effect(
           async parse(request, signal) {
             entered.resolve();
             await Promise.race([release.promise, died.promise]);
-            if (stopped) throw new ParseWorkerDied("Worker terminated");
-            return inProcessParseClient.parse(request, signal);
+            if (stopped)
+              throw new ParseWorkerDied({ message: "Worker terminated" });
+            return Effect.runPromise(inProcessParseClient.parse(request), {
+              signal,
+            });
           },
           [Symbol.dispose]() {
             if (stopped) return;
@@ -723,9 +785,13 @@ it.effect.each([0, 10_000])(
             if (blocked) {
               if (request.path === "neighbour.md") queued.resolve();
               await died.promise;
-              throw new ParseWorkerDied("Blocked worker terminated");
+              throw new ParseWorkerDied({
+                message: "Blocked worker terminated",
+              });
             }
-            return inProcessParseClient.parse(request, signal);
+            return Effect.runPromise(inProcessParseClient.parse(request), {
+              signal,
+            });
           },
           [Symbol.dispose]() {
             if (stopped) return;
@@ -784,9 +850,13 @@ it.effect(
             }
             if (blocked) {
               await died.promise;
-              throw new ParseWorkerDied("Blocked worker terminated");
+              throw new ParseWorkerDied({
+                message: "Blocked worker terminated",
+              });
             }
-            return inProcessParseClient.parse(request, signal);
+            return Effect.runPromise(inProcessParseClient.parse(request), {
+              signal,
+            });
           },
           [Symbol.dispose]() {
             if (stopped) return;
@@ -814,9 +884,12 @@ it.effect(
       expect(connections).toBe(2);
       expect(harness.index.citationKeys()).toEqual([]);
       expect(
-        await recovery.client.parse(
-          { path: "new.md", generation: 1, text: "@roe2025" },
-          new AbortController().signal,
+        await Effect.runPromise(
+          recovery.client.parse({
+            path: "new.md",
+            generation: 1,
+            text: "@roe2025",
+          }),
         ),
       ).toMatchObject({ record: { citekeys: [{ raw: "roe2025" }] } });
     }),
@@ -873,9 +946,13 @@ it.effect.each([SCANNER_REVISION, 0])(
             if (request.path === "draft.md") {
               attempts[count++]?.resolve();
               died.resolve();
-              throw new ParseWorkerDied("This note crashed the worker");
+              throw new ParseWorkerDied({
+                message: "This note crashed the worker",
+              });
             }
-            return inProcessParseClient.parse(request, signal);
+            return Effect.runPromise(inProcessParseClient.parse(request), {
+              signal,
+            });
           },
           [Symbol.dispose]() {},
         };

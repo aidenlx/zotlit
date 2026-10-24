@@ -10,9 +10,11 @@ import type {
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 
 import { advancedPageItems } from "./advanced";
 import { attachmentPageItems } from "./attachments";
@@ -73,12 +75,26 @@ function ctx(): SettingTabContext {
     },
     release: {},
     pandocEngine: {
-      getStatus: () => ({ kind: "absent" }),
-      changes: Stream.empty,
+      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+        "PandocEngine",
+        {
+          getStatus: () => Effect.succeed({ kind: "absent" }),
+          changes: Stream.empty,
+        },
+      ),
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
     },
     chineseSegmenter: {
-      getStatus: () => ({ kind: "absent" }),
-      changes: Stream.empty,
+      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+        "ChineseSegmenter",
+        {
+          getStatus: () => Effect.succeed({ kind: "absent" }),
+          changes: Stream.empty,
+        },
+      ),
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
     },
     languagePack: {
       getSituation: () => ({ kind: "unavailable" }),

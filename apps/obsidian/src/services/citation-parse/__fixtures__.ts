@@ -1,22 +1,23 @@
 // The real parse layer over a controllable Obsidian layout boundary.
 import type { App } from "obsidian";
 
-import { Layer } from "@/lib/effect";
+import { Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { plainCitationParse } from "./plain";
 import { layerCitationParse } from "./service";
 
-async function createParseHarness(ready: boolean) {
-  await using stack = new AsyncDisposableStack();
-  let layoutReady = () => {};
+function openParseHarness(ready: boolean) {
+  const stack = new AsyncDisposableStack();
+  const deferred = {
+    callback: () => {},
+  };
   const app = {
     workspace: {
       onLayoutReady: (callback: () => void) => {
         if (ready) callback();
-        else layoutReady = callback;
+        else deferred.callback = callback;
       },
     },
   } as unknown as App;
@@ -24,15 +25,26 @@ async function createParseHarness(ready: boolean) {
     layerCitationParse.pipe(Layer.provide(Layer.succeed(ObsidianApp, app))),
     stack,
   );
-  await runtime.context();
-  const resources = stack.move();
   return {
     runtime,
     parser: plainCitationParse(runtime),
-    layoutReady: () => layoutReady(),
-    [Symbol.asyncDispose]: () => resources.disposeAsync(),
+    layoutReady: () => deferred.callback(),
+    context: () => runtime.context(),
+    resources: stack.move(),
   };
 }
 
-export const makeParseHarness = (ready = false) =>
-  acquireAsyncDisposable(() => createParseHarness(ready));
+export const makeParseHarness = Effect.fnUntraced(function* (ready = false) {
+  const harness = openParseHarness(ready);
+  // boundary: ManagedRuntime exposes layer acquisition as a Promise.
+  yield* Effect.tryPromise(() => harness.context());
+  return yield* Effect.acquireRelease(
+    Effect.succeed({
+      runtime: harness.runtime,
+      parser: harness.parser,
+      layoutReady: harness.layoutReady,
+    }),
+    // boundary: the test owns a runtime through AsyncDisposableStack.
+    () => Effect.promise(() => harness.resources.disposeAsync()),
+  );
+});

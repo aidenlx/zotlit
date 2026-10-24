@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
 
+import { Effect } from "@/lib/effect";
+
 const walReadFault = vi.hoisted(() => ({
   path: "",
   afterFirstHeaderRead: undefined as (() => void) | undefined,
@@ -51,15 +53,17 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 import { snapshotSource, sourceFingerprintsEqual } from "./read-source";
 
+const fingerprint = (path: string) => Effect.runPromise(snapshotSource(path));
+
 it("treats timestamp-only source changes as an exact-byte ABA signal", async () => {
   await using testDir = await createTestDir();
   const source = join(testDir.path, "zotero.sqlite");
   using _sqlite = createWalDatabase(source);
-  const before = await snapshotSource(source);
+  const before = await fingerprint(source);
 
   await utimes(source, 946_684_800, 946_684_800);
   await utimes(`${source}-wal`, 978_307_200, 978_307_200);
-  const after = await snapshotSource(source);
+  const after = await fingerprint(source);
 
   expect(sourceFingerprintsEqual(before, after)).toBe(false);
 });
@@ -73,12 +77,12 @@ it("detects a rollback-journal commit that keeps the main file size", async () =
     CREATE TABLE entries (value TEXT NOT NULL);
     INSERT INTO entries VALUES ('one');
   `);
-  const before = await snapshotSource(source);
+  const before = await fingerprint(source);
   const beforeSize = before.main.exists ? before.main.size : undefined;
 
   sqlite.exec("UPDATE entries SET value = 'two'");
   await utimes(source, 946_684_800, 946_684_800);
-  const after = await snapshotSource(source);
+  const after = await fingerprint(source);
 
   expect(after.main.exists && after.main.size).toBe(beforeSize);
   expect(sourceFingerprintsEqual(before, after)).toBe(false);
@@ -89,10 +93,10 @@ it("distinguishes an absent WAL from an empty WAL", async () => {
   const source = join(testDir.path, "zotero.sqlite");
   using sqlite = new DatabaseSync(source);
   sqlite.exec("CREATE TABLE entries (value TEXT NOT NULL)");
-  const absent = await snapshotSource(source);
+  const absent = await fingerprint(source);
 
   await writeFile(`${source}-wal`, "");
-  const empty = await snapshotSource(source);
+  const empty = await fingerprint(source);
 
   expect(absent.wal).toEqual({ state: "absent" });
   expect(empty.wal).toEqual({ state: "empty" });
@@ -105,13 +109,13 @@ it("detects a same-size main database inode swap", async () => {
   const before = await (async () => {
     using sqlite = new DatabaseSync(source);
     sqlite.exec("CREATE TABLE entries (value TEXT NOT NULL)");
-    return snapshotSource(source);
+    return fingerprint(source);
   })();
 
   const replaced = join(testDir.path, "replaced.sqlite");
   await rename(source, replaced);
   await copyFile(replaced, source);
-  const after = await snapshotSource(source);
+  const after = await fingerprint(source);
 
   expect(after.main.exists && after.main.size).toBe(
     before.main.exists ? before.main.size : undefined,
@@ -126,13 +130,13 @@ it("detects a same-size WAL generation reset", async () => {
   sqlite.exec(
     "PRAGMA wal_checkpoint(TRUNCATE); INSERT INTO entries VALUES ('two')",
   );
-  const before = await snapshotSource(source);
+  const before = await fingerprint(source);
   const beforeSize = (await stat(`${source}-wal`)).size;
 
   sqlite.exec(
     "PRAGMA wal_checkpoint(TRUNCATE); UPDATE entries SET value = 'six'",
   );
-  const after = await snapshotSource(source);
+  const after = await fingerprint(source);
 
   expect((await stat(`${source}-wal`)).size).toBe(beforeSize);
   expect(sourceFingerprintsEqual(before, after)).toBe(false);
@@ -157,12 +161,12 @@ it("detects a commit that reuses a rolled-back WAL tail", async () => {
     ROLLBACK;
   `);
   const walPath = `${source}-wal`;
-  const before = await snapshotSource(source);
+  const before = await fingerprint(source);
   const beforeSize = (await stat(walPath)).size;
   const beforeHeader = (await readFile(walPath)).subarray(0, 32);
 
   sqlite.exec("UPDATE entries SET value = zeroblob(4000) WHERE id < 80");
-  const after = await snapshotSource(source);
+  const after = await fingerprint(source);
   const afterHeader = (await readFile(walPath)).subarray(0, 32);
 
   expect((await stat(walPath)).size).toBe(beforeSize);
@@ -185,10 +189,10 @@ it("treats a WAL that grows between header reads as unstable and unequal", async
     },
   };
 
-  const fingerprint = await snapshotSource(source);
+  const observed = await fingerprint(source);
 
-  expect(fingerprint.wal).toEqual({ state: "unstable" });
-  expect(sourceFingerprintsEqual(fingerprint, fingerprint)).toBe(false);
+  expect(observed.wal).toEqual({ state: "unstable" });
+  expect(sourceFingerprintsEqual(observed, observed)).toBe(false);
 });
 
 function createWalDatabase(path: string): DatabaseSync {

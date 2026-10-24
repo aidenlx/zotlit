@@ -1,4 +1,12 @@
-import { Cause, Clock, Context, Effect, Exit } from "effect";
+import {
+  Cause,
+  Clock,
+  Context,
+  Effect,
+  Exit,
+  Logger,
+  References,
+} from "effect";
 import type { Scheduler } from "effect";
 import { expect } from "vitest";
 
@@ -10,6 +18,7 @@ import {
 } from "@zotlit/db/item-query";
 import type { StatementRun } from "@zotlit/db/item-query";
 import { SCENARIO_LIBRARIES } from "@zotlit/db/test-scenario";
+import { LogCategory } from "@zotlit/shared/logging";
 
 import type { QueryDataset } from "./dataset";
 import { collectQuery } from "./query";
@@ -18,6 +27,23 @@ import type { ItemQueryRequest } from "./request";
 import { ItemQueryScheduler, ItemQuerySliceObserver } from "./scheduler";
 import { ItemQueryTuning, PRODUCTION_TUNING } from "./tuning";
 import type { Tuning } from "./tuning";
+
+export interface CapturedLog {
+  readonly level: string;
+  readonly message: unknown;
+  readonly category: readonly string[];
+  readonly properties: Readonly<Record<string, unknown>>;
+}
+
+const captureLog = (logs: CapturedLog[]): Logger.Logger<unknown, void> =>
+  Logger.make(({ logLevel, message, fiber }) => {
+    logs.push({
+      level: logLevel,
+      message: Array.isArray(message) ? message[0] : message,
+      category: fiber.getRef(LogCategory),
+      properties: fiber.getRef(References.CurrentLogAnnotations),
+    });
+  });
 
 export interface RunOptions {
   /** The leased client the readers use. Omit it for an Effect that reads no database. */
@@ -46,6 +72,8 @@ export interface RunOptions {
    * the fiber has handed control back and waits.
    */
   onResume?: () => void;
+  /** Receives each Effect log record; enables debug records. */
+  logs?: CapturedLog[];
   /**
    * `false` keeps no statement in `Run.events`, so the run holds no row that
    * the engine has released.
@@ -113,10 +141,18 @@ export async function runEffect<A, E>(
         resumed: () => options.onResume?.(),
       }),
     );
-  const exit = await Effect.runPromiseExit(
-    Effect.provideContext(effect, services),
-    { scheduler: options.scheduler ?? testScheduler(), signal: options.signal },
-  );
+  const provided = Effect.provideContext(effect, services);
+  const runnable = options.logs
+    ? Effect.provideService(
+        Effect.provide(provided, Logger.layer([captureLog(options.logs)])),
+        References.MinimumLogLevel,
+        "All",
+      )
+    : provided;
+  const exit = await Effect.runPromiseExit(runnable, {
+    scheduler: options.scheduler ?? testScheduler(),
+    signal: options.signal,
+  });
   const pauses = events.filter((event) => event.type === "pause").length;
   return { exit, pauses, events };
 }

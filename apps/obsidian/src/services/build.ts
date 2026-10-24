@@ -6,7 +6,7 @@ import { DisposableAbortController } from "@/lib/disposables";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
-import { libraryTagNames } from "@/services/database/library-tag-names";
+import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
   createProfileCreator,
   createProfileImporter,
@@ -30,7 +30,7 @@ import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
-import { plainChineseSegmenter } from "./chinese-segmenter/plain";
+import { ChineseSegmenter } from "./chinese-segmenter/service";
 import {
   plainCitationIndex,
   plainCitationLookup,
@@ -53,6 +53,7 @@ import { QueryService } from "./item-query/service";
 import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
+import { bindManagedBinary } from "./managed-binary/handle";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
 import { createBatchImport } from "./note-import/batch-import";
@@ -61,8 +62,8 @@ import { createNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
 import { plainNoteIndex } from "./note-index/plain";
-import { plainPandocEngine } from "./pandoc/plain";
 import { plainBibliographyRender } from "./pandoc/render-cache/plain";
+import { PandocEngine } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
 import { plainProfile } from "./profile/plain";
@@ -172,10 +173,14 @@ export async function buildServices(
         new LocalServerService({ runtime, settings, zoteroPref, noteIndex }),
     })
     .useValue({
-      chineseSegmenter: () => plainChineseSegmenter(runtime),
+      chineseSegmenter: () =>
+        bindManagedBinary(runtime, runtime.runSync(ChineseSegmenter)),
     })
     .useValue({
       zoteroReads: () => plainZoteroReads(runtime),
+    })
+    .useValue({
+      libraryTagNames: () => libraryTagNamesOf(runtime),
     })
     .use({
       excerptImage: () =>
@@ -288,6 +293,7 @@ export async function buildServices(
         annotationRepository,
         capabilityNotices,
         zoteroReads,
+        libraryTagNames,
         noteIndex,
         settings,
       }) => {
@@ -303,8 +309,7 @@ export async function buildServices(
           attachments: attachmentResolver,
           annotations: annotationRepository,
           noteIndex,
-          libraryTagNames: (annotationKey) =>
-            libraryTagNames(zoteroReads, annotationKey),
+          libraryTagNames,
           settings,
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
@@ -559,7 +564,8 @@ export async function buildServices(
     })
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
     .useValue({
-      pandocEngine: () => plainPandocEngine(runtime),
+      pandocEngine: () =>
+        bindManagedBinary(runtime, runtime.runSync(PandocEngine)),
     })
     .useValue({
       bibliographyRender: () => plainBibliographyRender(runtime),

@@ -1,9 +1,10 @@
 import { relations } from "@drizzle/relations";
-import { configure, reset } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { drizzle } from "drizzle-orm/node-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { openScenarioDatabase } from "@/test-scenario";
 import type {
@@ -14,8 +15,8 @@ import { countStatements } from "@/test-utils";
 
 import { readDatabaseLayout } from ".";
 
-afterEach(async () => {
-  await reset();
+afterEach(() => {
+  setLibraryLogSink(undefined);
 });
 
 /** A scenario copy, changed by `alter` before the first read. */
@@ -150,15 +151,9 @@ describe("readDatabaseLayout", () => {
     expect(second.missing).toEqual([]);
   });
 
-  it("logs the userdata and compatibility versions once for each copy", async () => {
-    const records: LogRecord[] = [];
-    await configure({
-      sinks: { buffer: (record) => records.push(record) },
-      loggers: [
-        { category: ["zotlit", "db"], sinks: ["buffer"], lowestLevel: "debug" },
-        { category: ["logtape", "meta"], sinks: [] },
-      ],
-    });
+  it("logs the userdata and compatibility versions once for each copy", () => {
+    const records: LibraryLogRecord[] = [];
+    setLibraryLogSink((record) => records.push(record));
     using copy = openCopy((sqlite) => {
       stamp(sqlite, { userdata: 140, compatibility: 12 });
     });

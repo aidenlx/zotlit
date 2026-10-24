@@ -51,4 +51,4 @@ Every table and column a reader statement reads belongs in `ITEM_QUERY_LAYOUT` (
 
 ## Logging
 
-Logging uses `@logtape/logtape`; configuration belongs to the consuming app.
+Log through Effect in files that import it, with the category from `withLogCategory` in `@zotlit/shared/logging`. Effect-free files use `logLibrary` from the same entry point. The consuming app installs the library log sink and configures the sinks.

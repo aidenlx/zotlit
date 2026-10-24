@@ -44,7 +44,7 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
-import { classifyStream } from "@/services/batch-run";
+import { classifyStream, runBatch } from "@/services/batch-run";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
@@ -733,27 +733,30 @@ async function prepareCreationPreviews(
         options.create(item, { ...reporting, profile: selector, preparedPath }),
     };
   };
-  await classifyStream(
-    {
-      itemIDs: items.map(({ itemID }) => itemID),
-      read: (ids) =>
-        options.reads.ItemFacets({
-          items: ids.map((itemID) => ({
+  await runBatch(
+    classifyStream(
+      {
+        itemIDs: items.map(({ itemID }) => itemID),
+        read: (ids) =>
+          options.reads.ItemFacets({
+            items: ids.map((itemID) => ({
+              itemID,
+              libraryID: itemsByID.get(itemID)!.libraryID,
+            })),
+          }),
+      },
+      { signal: options.signal, onProgress: () => {} },
+      (slice) => {
+        for (const { itemID, facets } of slice) {
+          const item = itemsByID.get(itemID)!;
+          previews.set(
             itemID,
-            libraryID: itemsByID.get(itemID)!.libraryID,
-          })),
-        }),
-    },
-    { signal: options.signal, onProgress: () => {} },
-    (slice) => {
-      for (const { itemID, facets } of slice) {
-        const item = itemsByID.get(itemID)!;
-        previews.set(
-          itemID,
-          profiles.map((profile) => previewOf(item, facets, profile)),
-        );
-      }
-    },
+            profiles.map((profile) => previewOf(item, facets, profile)),
+          );
+        }
+      },
+    ),
+    options.signal,
   );
   logger.debug("Prepared creation previews for {count} Items", {
     count: items.length,

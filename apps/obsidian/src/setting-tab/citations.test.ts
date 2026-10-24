@@ -2,8 +2,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -29,7 +32,16 @@ describe("hover settings", () => {
       runtime: testRuntime(),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: settings },
-      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      pandocEngine: {
+        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+          "PandocEngine",
+          {
+            getStatus: () => Effect.succeed({ kind: "absent" }),
+          },
+        ),
+        runSync: Effect.runSync,
+        runPromise: Effect.runPromise,
+      },
       manifest: { version: "test" },
       template: { loaded: false },
     } as unknown as SettingTabContext;
@@ -63,7 +75,16 @@ describe("citation source settings", () => {
       runtime: testRuntime(),
       app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: defaults },
-      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      pandocEngine: {
+        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
+          "PandocEngine",
+          {
+            getStatus: () => Effect.succeed({ kind: "absent" }),
+          },
+        ),
+        runSync: Effect.runSync,
+        runPromise: Effect.runPromise,
+      },
       manifest: { version: "test" },
       template: { loaded: false },
     } as unknown as SettingTabContext;

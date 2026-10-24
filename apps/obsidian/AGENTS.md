@@ -34,7 +34,7 @@ Project-specific: settings live in `SettingsService` under flat dot-notation key
 
 ## Logging
 
-Log through Effect, filed under a category with `withLogCategory` from `src/lib/effect-log.ts`. Every `@/lib/effect` run entry point writes Effect's records to LogTape, where `layerLogging` (`src/services/log/service.ts`) owns the sinks and levels. `getLogger` from `src/lib/log.ts` is the legacy LogTape logger.
+Log through Effect, filed under a category with `withLogCategory` from `src/lib/effect-log.ts`. Every renderer `@/lib/effect` run entry point writes Effect's records to LogTape, where `layerLogging` (`src/services/log/service.ts`) owns the sinks and levels. `getLogger` from `src/lib/log.ts` is the legacy LogTape logger.
 
 ## UI text (JSON Language Packs)
 
@@ -58,7 +58,7 @@ When adding or changing a CLI schema or downloadable resource, inspect `src/serv
 
 ## Effect
 
-Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers, and log through LogTape. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
+Use `@/lib/effect` for Effect in Obsidian: its runtime entry points default to Chromium scheduling in the renderer and workers. Worker bundles resolve `@/lib/effect` to `src/lib/effect-worker.ts` through the Vite alias and carry no LogTape; renderer entry points log through LogTape. `no-restricted-imports` enforces the boundary; `pnpm e2e:worker` checks real worker responsiveness.
 
 ## Workers
 

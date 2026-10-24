@@ -21,7 +21,6 @@
  * - A locale or Segmenter change through `configure` rebuilds every held
  *   list.
  */
-import { getLogger } from "@logtape/logtape";
 import {
   Cause,
   Context,
@@ -44,6 +43,7 @@ import type {
   Item,
   LanguageNameLookup,
 } from "@zotlit/db";
+import { withLogCategory } from "@zotlit/shared/logging";
 
 import { makeEngineIndexBuilder, searchEngineIndex } from "./engine";
 import type { EngineIndex, SearchMatches, SearchOptions } from "./engine";
@@ -136,10 +136,14 @@ export class ItemIndex extends Context.Service<
   }
 >()("zotlit/item-lookup/ItemIndex") {}
 
-const logger = getLogger(["zotlit", "item-lookup", "item-index"]);
-
 /** Ids read per `items` call during a build. */
 const SLICE_SIZE = 500;
+
+const log = (message: string, properties?: Readonly<Record<string, unknown>>) =>
+  Effect.logDebug(message).pipe(
+    Effect.annotateLogs(properties ?? {}),
+    withLogCategory("zotlit", "item-lookup", "item-index"),
+  );
 
 interface BuiltIndex {
   readonly engine: EngineIndex;
@@ -283,11 +287,9 @@ function makeItemIndex(initial: IndexSettings) {
         Effect.tapError((error) =>
           Effect.andThen(
             drop(entry),
-            Effect.sync(() => {
-              logger.debug("Item index dropped; source unavailable", {
-                libraries: entry.libraries,
-                error,
-              });
+            log("Item index dropped; source unavailable", {
+              libraries: entry.libraries,
+              error,
             }),
           ),
         ),
@@ -318,7 +320,7 @@ function makeItemIndex(initial: IndexSettings) {
           held.config === version &&
           signaturesEqual(held.signatures, signatures)
         ) {
-          logger.debug("Item index up to date; skipping rebuild", {
+          yield* log("Item index up to date; skipping rebuild", {
             libraries: entry.libraries,
             generation: pinned.generation,
           });
@@ -326,7 +328,7 @@ function makeItemIndex(initial: IndexSettings) {
           yield* holdOnce({ ...held, binding });
           return;
         }
-        logger.debug("Item index build started", {
+        yield* log("Item index build started", {
           libraries: entry.libraries,
           generation: pinned.generation,
           reason:
@@ -358,7 +360,7 @@ function makeItemIndex(initial: IndexSettings) {
           config: version,
           binding,
         });
-        logger.debug("Item index built", {
+        yield* log("Item index built", {
           libraries: entry.libraries,
           count: engine.size,
           durationMs: performance.now() - startedAt,
@@ -411,15 +413,15 @@ function makeItemIndex(initial: IndexSettings) {
     const ensureLane = (entry: Entry): Lane => entry.lane ?? startLane(entry);
 
     /** Rebuild after the running build, or now when none runs. */
-    const requestRebuild = (entry: Entry): void => {
+    const requestRebuild = (entry: Entry): Effect.Effect<void> => {
       if (entry.lane) {
         entry.rerun = true;
-        logger.debug("Item index rebuild coalesced; trailing rerun scheduled", {
+        return log("Item index rebuild coalesced; trailing rerun scheduled", {
           libraries: entry.libraries,
         });
-      } else {
-        startLane(entry);
       }
+      startLane(entry);
+      return Effect.void;
     };
 
     const onGeneration = Effect.suspend(() => {
@@ -427,26 +429,30 @@ function makeItemIndex(initial: IndexSettings) {
       for (const [key, entry] of entries) {
         if (!entry.asked && entry.waiters === 0 && entry !== latest) {
           entries.delete(key);
-          logger.debug("Item index evicted; no search since the last change", {
-            libraries: entry.libraries,
-          });
+          work.push(
+            log("Item index evicted; no search since the last change", {
+              libraries: entry.libraries,
+            }),
+          );
           const fiber = entry.lane?.fiber;
           if (fiber) work.push(Fiber.interrupt(fiber));
           work.push(drop(entry));
           continue;
         }
         entry.asked = false;
-        requestRebuild(entry);
+        work.push(requestRebuild(entry));
       }
       return Effect.all(work, { discard: true });
     });
 
-    const onConfig = Effect.sync(() => {
+    const onConfig = Effect.gen(function* () {
       configVersion++;
-      logger.debug("Item index configuration changed; rebuilding", {
+      yield* log("Item index configuration changed; rebuilding", {
         lists: entries.size,
       });
-      for (const entry of entries.values()) requestRebuild(entry);
+      yield* Effect.forEach(entries.values(), requestRebuild, {
+        discard: true,
+      });
     });
 
     yield* Stream.runForEach(source.generation, () => onGeneration).pipe(

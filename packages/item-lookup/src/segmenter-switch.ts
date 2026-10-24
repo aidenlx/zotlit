@@ -1,7 +1,8 @@
 // The Item Index's Chinese Segmenter switch: the installed binary it cuts CJK text with, or `Intl.Segmenter`.
-import { getLogger } from "@logtape/logtape";
 import { Context, Effect } from "effect";
 import type { Layer } from "effect";
+
+import { withLogCategory } from "@zotlit/shared/logging";
 
 import {
   layerSegmenterJieba,
@@ -37,7 +38,18 @@ export class SegmenterBinaryReader extends Context.Service<
   }
 >()("zotlit/item-lookup/SegmenterBinaryReader") {}
 
-const logger = getLogger(["zotlit", "item-lookup", "segmenter"]);
+const log = (
+  level: "info" | "warn",
+  message: string,
+  properties?: Readonly<Record<string, unknown>>,
+) =>
+  (level === "warn"
+    ? Effect.logWarning(message)
+    : Effect.logInfo(message)
+  ).pipe(
+    Effect.annotateLogs(properties ?? {}),
+    withLogCategory("zotlit", "item-lookup", "segmenter"),
+  );
 
 type SegmenterService = (typeof Segmenter)["Service"];
 
@@ -78,26 +90,28 @@ export function makeSegmenterSwitch(
     reader.read(binary).pipe(
       Effect.flatMap((bytes) => segmenterOf(layerSegmenterJieba(bytes))),
       Effect.tap(() =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (loaded && !sameSegmenterBinary(loaded, binary)) {
-            logger.warn(
+            yield* log(
+              "warn",
               "The Chinese Segmenter keeps its first binary until the realm restarts",
               { loaded: loaded.name, requested: binary.name },
             );
           }
           loaded ??= binary;
           jieba = true;
-          logger.info("The Chinese Segmenter cuts CJK text", {
+          yield* log("info", "The Chinese Segmenter cuts CJK text", {
             binary: binary.name,
           });
         }),
       ),
       Effect.catchTag("SegmenterUnavailable", (error) =>
         Effect.andThen(
-          Effect.sync(() => {
+          Effect.gen(function* () {
             // The next `resolve` with the same binary tries it again.
             requested = null;
-            logger.warn(
+            yield* log(
+              "warn",
               "The Chinese Segmenter did not start; CJK text uses Intl.Segmenter",
               { binary: binary.name, error: error.message },
             );
@@ -114,10 +128,13 @@ export function makeSegmenterSwitch(
       if (sameSegmenterBinary(next, requested)) return Effect.undefined;
       requested = next;
       if (next) return install(next);
-      logger.info(
-        "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
+      return Effect.andThen(
+        log(
+          "info",
+          "The Chinese Segmenter is uninstalled; CJK text uses Intl.Segmenter",
+        ),
+        toNone,
       );
-      return toNone;
     });
 
   return { resolve };

@@ -1,7 +1,5 @@
 // The Query Context: a caller binds `this` to one Item (and one Attachment),
 // and a Filter Expression reads it as `this.item` / `this.attachment`.
-import { configureSync, resetSync } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { Cause, Exit } from "effect";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
@@ -15,6 +13,7 @@ import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryDataset } from ".";
 import { ItemQueryError } from "./error";
 import { runEffect } from "./test-helpers";
+import type { CapturedLog } from "./test-helpers";
 
 let scenario: ScenarioDatabase;
 beforeAll(() => {
@@ -22,24 +21,10 @@ beforeAll(() => {
 });
 afterAll(() => scenario.close());
 
-const logs: LogRecord[] = [];
+const logs: CapturedLog[] = [];
 beforeEach(() => {
   logs.length = 0;
 });
-beforeAll(() =>
-  configureSync({
-    sinks: { capture: (record) => logs.push(record) },
-    loggers: [
-      {
-        category: ["zotlit", "item-query"],
-        sinks: ["capture"],
-        lowestLevel: "debug",
-      },
-      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
-    ],
-  }),
-);
-afterAll(() => resetSync());
 
 async function run(
   dataset: QueryDataset<any>,
@@ -53,7 +38,7 @@ async function run(
       ...request,
     }),
     // A cap of the whole Library: a key selection plans a candidate set.
-    { client: scenario.db, tuning: { capRatio: 1 } },
+    { client: scenario.db, tuning: { capRatio: 1 }, logs },
   );
   return exit;
 }

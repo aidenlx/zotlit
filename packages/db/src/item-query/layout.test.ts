@@ -1,9 +1,10 @@
-import { configure, reset } from "@logtape/logtape";
-import type { LogRecord } from "@logtape/logtape";
 import { Cause, Effect, Exit } from "effect";
 import { constants } from "node:sqlite";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { setLibraryLogSink } from "@zotlit/shared/logging";
+import type { LibraryLogRecord } from "@zotlit/shared/logging";
 
 import { ITEM_QUERY_LAYOUT, OPTIONAL_LAYOUT_COLUMNS } from "@/layout";
 import { openScenarioDatabase, SCENARIO_LIBRARIES } from "@/test-scenario";
@@ -21,8 +22,8 @@ import {
 } from ".";
 import { checkLayout, readerStatementSQL } from "./database";
 
-afterEach(async () => {
-  await reset();
+afterEach(() => {
+  setLibraryLogSink(undefined);
 });
 
 /** A scenario copy, changed by `alter` before the first reader runs. */
@@ -196,15 +197,9 @@ describe("the layout check", () => {
     );
   });
 
-  it("logs the userdata and compatibility versions of the copy", async () => {
-    const records: LogRecord[] = [];
-    await configure({
-      sinks: { buffer: (record) => records.push(record) },
-      loggers: [
-        { category: ["zotlit", "db"], sinks: ["buffer"], lowestLevel: "debug" },
-        { category: ["logtape", "meta"], sinks: [] },
-      ],
-    });
+  it("logs the userdata and compatibility versions of the copy", () => {
+    const records: LibraryLogRecord[] = [];
+    setLibraryLogSink((record) => records.push(record));
     using copy = openCopy((sqlite) => {
       stamp(sqlite, { userdata: 140, compatibility: 12 });
     });

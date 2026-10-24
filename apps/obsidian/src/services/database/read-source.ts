@@ -27,7 +27,6 @@
  * @see https://github.com/zotero/zotero/blob/10.0.0/chrome/content/zotero/xpcom/db.js#L1551
  */
 
-import { delay } from "@std/async";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -36,16 +35,17 @@ import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
+import { Cause, Deferred, Duration, Effect, Ref, Schedule } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log-category";
 import { isErrno } from "@/lib/errno";
-import { getLogger } from "@/lib/log";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import type { ZoteroReadMode } from "@/services/settings/schema";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 import { planReadParents } from "./read-parent";
-import type { ReadParentPlan } from "./read-parent";
 import { verifySnapshot } from "./snapshot-integrity";
 
-const logger = getLogger(["database", "read-source"]);
 const CLONE_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = 25;
 const WAL_HEADER_BYTES = 32;
@@ -65,7 +65,7 @@ export interface SqliteUriOptions {
   immutable?: true;
 }
 
-export interface PreparedRead extends AsyncDisposable {
+export interface PreparedRead {
   path: string;
   uriOptions: SqliteUriOptions;
   effectiveMode: EffectiveReadMode;
@@ -118,6 +118,52 @@ export interface SourceFingerprint extends SourcePair {
 
 type TempReadMode = "reflink" | "copy";
 
+interface AcquiredRead {
+  readonly read: PreparedRead;
+  readonly release: Effect.Effect<void>;
+}
+
+const logDebug = (message: string, annotations: Record<string, unknown> = {}) =>
+  Effect.logDebug(message).pipe(
+    Effect.annotateLogs(annotations),
+    withLogCategory("database", "read-source"),
+  );
+
+const logWarning = (
+  message: string,
+  error: unknown,
+  annotations: Record<string, unknown> = {},
+) =>
+  Effect.logWarning(message, Cause.fail(error)).pipe(
+    Effect.annotateLogs(annotations),
+    withLogCategory("database", "read-source"),
+  );
+
+/** A failed read attempt whose destination is clean and safe to retry. */
+class UnstableSnapshotError extends Error {
+  constructor() {
+    super("Zotero database changed while preparing a read snapshot");
+    this.name = "UnstableSnapshotError";
+  }
+}
+
+/** The message callers see for a failed read-source operation. */
+function toDbUnavailable(cause: unknown): DbUnavailable {
+  let error = cause;
+  while (error instanceof Error && error.cause instanceof Error) {
+    error = error.cause;
+  }
+  return new DbUnavailable({
+    message: error instanceof Error ? error.message : String(error),
+  });
+}
+
+/** Run one Node filesystem operation at the database port. */
+function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, unknown> {
+  // boundary: node:fs/promises is Promise-based; wrap each call once.
+  return Effect.tryPromise({ try: run, catch: (error) => error });
+}
+
 export function buildSqliteUri(
   dbPath: string,
   options: SqliteUriOptions,
@@ -141,26 +187,99 @@ export function buildSqliteUri(
  *   residue can be reaped once that reader is gone while this process lives.
  * @see `reapWorkerClones` in `reap-temps.ts` for that reap.
  */
-export async function prepareRead(
+export const prepareRead = Effect.fnUntraced(function* (
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
   owner?: string,
-): Promise<PreparedRead> {
-  if (configuredMode === "immutable") {
-    const fallbackReason = await staleWalReason(sourcePath);
-    const read = await prepareImmutableRead(sourcePath, owner);
-    return fallbackReason ? { ...read, fallbackReason } : read;
-  }
-  if (configuredMode === "copy")
-    return prepareTempRead("copy", sourcePath, { owner });
+): Effect.fn.Return<PreparedRead, DbUnavailable, Scope.Scope> {
+  const pending = yield* makePendingRead();
+  yield* Effect.addFinalizer(() => pending.cancel);
+  yield* Effect.forkDetach(
+    acquireRead(configuredMode, sourcePath, owner).pipe(
+      Effect.matchEffect({
+        onFailure: (error) => pending.fail(error),
+        onSuccess: (acquired) => pending.complete(acquired),
+      }),
+    ),
+  );
+  return yield* pending.result;
+});
 
-  try {
-    return await prepareTempRead("reflink", sourcePath, { owner });
-  } catch (error) {
-    if (!(error instanceof ReflinkUnsupportedError)) throw error;
-    const read = await prepareTempRead("copy", sourcePath, { owner });
-    return { ...read, fallbackReason: "reflink-unsupported" };
-  }
+/**
+ * Owns the gap between starting a snapshot and its caller receiving it. An
+ * interrupted waiter marks the acquisition abandoned at once. A clone that
+ * lands later releases its directory without bringing the wait back.
+ */
+const makePendingRead = Effect.fnUntraced(function* () {
+  const deferred = yield* Deferred.make<PreparedRead, DbUnavailable>();
+  const state = yield* Ref.make({
+    canceled: false,
+    release: null as Effect.Effect<void> | null,
+  });
+  const complete = (acquired: AcquiredRead) =>
+    Effect.gen(function* () {
+      const abandoned = yield* Ref.modify(state, (current) =>
+        current.canceled
+          ? [true, current]
+          : [false, { ...current, release: acquired.release }],
+      );
+      if (abandoned) yield* acquired.release;
+      else yield* Deferred.succeed(deferred, acquired.read);
+    });
+  return {
+    result: Deferred.await(deferred),
+    complete,
+    fail: (error: unknown) =>
+      Effect.gen(function* () {
+        const current = yield* Ref.get(state);
+        if (!current.canceled)
+          yield* Deferred.fail(deferred, toDbUnavailable(error));
+      }),
+    cancel: Effect.gen(function* () {
+      const held = yield* Ref.modify(state, (current) => [
+        current.release,
+        { canceled: true, release: null },
+      ]);
+      if (held) yield* held;
+    }),
+  };
+});
+
+function acquireRead(
+  configuredMode: ConfiguredReadMode,
+  sourcePath: string,
+  owner?: string,
+): Effect.Effect<AcquiredRead, unknown> {
+  return Effect.gen(function* () {
+    if (configuredMode === "immutable") {
+      const fallbackReason = yield* staleWalReason(sourcePath);
+      const acquired = yield* prepareImmutableRead(sourcePath, owner);
+      return fallbackReason
+        ? {
+            ...acquired,
+            read: { ...acquired.read, fallbackReason },
+          }
+        : acquired;
+    }
+    if (configuredMode === "copy")
+      return yield* prepareTempRead("copy", sourcePath, { owner });
+
+    return yield* prepareTempRead("reflink", sourcePath, { owner }).pipe(
+      Effect.catch((error) =>
+        error instanceof ReflinkUnsupportedError
+          ? prepareTempRead("copy", sourcePath, { owner }).pipe(
+              Effect.map((acquired) => ({
+                ...acquired,
+                read: {
+                  ...acquired.read,
+                  fallbackReason: "reflink-unsupported" as const,
+                },
+              })),
+            )
+          : Effect.fail(error),
+      ),
+    );
+  });
 }
 
 /**
@@ -174,34 +293,33 @@ export async function prepareRead(
  * Zotero read back as five rows from a main+WAL clone and as zero rows from an
  * `immutable` read of the same source.
  */
-export async function staleWalReason(
-  sourcePath: string,
-): Promise<ReadFallbackReason | undefined> {
-  const wal = await walGeneration(`${sourcePath}-wal`);
+export const staleWalReason = Effect.fnUntraced(function* (sourcePath: string) {
+  const wal = yield* walGeneration(`${sourcePath}-wal`);
   return wal.state === "present" || wal.state === "unstable"
     ? "wal-not-replayed"
     : undefined;
-}
+}, Effect.mapError(toDbUnavailable));
 
-async function prepareImmutableRead(
+const prepareImmutableRead = Effect.fnUntraced(function* (
   sourcePath: string,
   owner: string | undefined,
-): Promise<PreparedRead> {
-  try {
-    return await prepareTempRead("reflink", sourcePath, {
-      includeWal: false,
-      immutable: true,
-      owner,
-    });
-  } catch (error) {
-    if (!(error instanceof ReflinkUnsupportedError)) throw error;
-    return prepareTempRead("copy", sourcePath, {
-      includeWal: false,
-      immutable: true,
-      owner,
-    });
-  }
-}
+) {
+  return yield* prepareTempRead("reflink", sourcePath, {
+    includeWal: false,
+    immutable: true,
+    owner,
+  }).pipe(
+    Effect.catch((error) =>
+      error instanceof ReflinkUnsupportedError
+        ? prepareTempRead("copy", sourcePath, {
+            includeWal: false,
+            immutable: true,
+            owner,
+          })
+        : Effect.fail(error),
+    ),
+  );
+});
 
 /**
  * Place the snapshot on the volume {@link planReadParents} prefers, and where
@@ -212,36 +330,40 @@ async function prepareImmutableRead(
  *
  * @see {@link SnapshotParentError} for which failures the fallback answers.
  */
-async function prepareTempRead(
+const prepareTempRead = Effect.fnUntraced(function* (
   mode: TempReadMode,
   sourcePath: string,
   options: { includeWal?: boolean; immutable?: boolean; owner?: string } = {},
-): Promise<PreparedRead> {
-  const plan = await planParents(sourcePath);
-  const lastIndex = plan.parents.length - 1;
-  for (const [index, parent] of plan.parents.entries()) {
-    try {
-      const read = await cloneInto(sourcePath, { parent, mode, ...options });
-      logger.debug("Prepared a database read snapshot", {
-        parent,
-        reason: plan.reason,
-        afterFallback: index > 0,
-        mode,
-      });
-      return read;
-    } catch (error) {
-      if (index === lastIndex || !(error instanceof SnapshotParentError))
-        throw error;
-      logger.debug("Database read snapshot parent unusable, falling back", {
-        error,
-        parent,
-        reason: plan.reason,
-      });
-    }
-  }
-  // Unreachable: the last candidate rethrows rather than falling through.
-  throw new Error("No database read snapshot parent was available");
-}
+) {
+  const plan = yield* planParents(sourcePath);
+  const tryParent = (index: number): Effect.Effect<AcquiredRead, unknown> => {
+    const parent = plan.parents[index];
+    if (parent === undefined)
+      return Effect.fail(
+        new Error("No database read snapshot parent was available"),
+      );
+    return cloneInto(sourcePath, { parent, mode, ...options }).pipe(
+      Effect.tap(() =>
+        logDebug("Prepared a database read snapshot", {
+          parent,
+          reason: plan.reason,
+          afterFallback: index > 0,
+          mode,
+        }),
+      ),
+      Effect.catch((error) =>
+        index < plan.parents.length - 1 && error instanceof SnapshotParentError
+          ? logDebug("Database read snapshot parent unusable, falling back", {
+              error,
+              parent,
+              reason: plan.reason,
+            }).pipe(Effect.andThen(tryParent(index + 1)))
+          : Effect.fail(error),
+      ),
+    );
+  };
+  return yield* tryParent(0);
+});
 
 /**
  * The parent would not take the snapshot — a read-only or full volume, a
@@ -258,8 +380,8 @@ class SnapshotParentError extends Error {
   }
 }
 
-async function planParents(sourcePath: string): Promise<ReadParentPlan> {
-  const [tempDevice, databaseDevice] = await Promise.all([
+const planParents = Effect.fnUntraced(function* (sourcePath: string) {
+  const [tempDevice, databaseDevice] = yield* Effect.all([
     deviceId(tmpdir()),
     deviceId(dirname(sourcePath)),
   ]);
@@ -268,17 +390,19 @@ async function planParents(sourcePath: string): Promise<ReadParentPlan> {
     tempDevice,
     databaseDevice,
   });
-}
+});
 
 /** `0n` — the plan's "unknown" — where the volume cannot be identified. */
-async function deviceId(path: string): Promise<bigint> {
-  try {
-    return (await stat(path, { bigint: true })).dev;
-  } catch (error) {
-    logger.debug("Failed to read a volume id", { error, path });
-    return 0n;
-  }
-}
+const deviceId = Effect.fnUntraced(function* (path: string) {
+  return yield* fsCall(() => stat(path, { bigint: true })).pipe(
+    Effect.map((stats) => stats.dev),
+    Effect.catch((error) =>
+      logDebug("Failed to read a volume id", { error, path }).pipe(
+        Effect.as(0n),
+      ),
+    ),
+  );
+});
 
 /**
  * Clone the source DB + WAL into a fresh dir under `parent`, guarding against a
@@ -290,7 +414,7 @@ async function deviceId(path: string): Promise<bigint> {
  * The clone opens with `mode=ro` (not `immutable`) so SQLite may build sidecar
  * files in the writable snapshot dir and replay the cloned WAL.
  */
-async function cloneInto(
+const cloneInto = Effect.fnUntraced(function* (
   sourcePath: string,
   {
     parent,
@@ -305,97 +429,128 @@ async function cloneInto(
     immutable?: boolean;
     owner?: string;
   },
-): Promise<PreparedRead> {
-  for (let attempt = 1; attempt <= CLONE_ATTEMPTS; attempt += 1) {
-    const dir = await createSnapshotDir(parent, owner);
-    try {
-      const path = join(dir, basename(sourcePath));
-      const walPath = `${sourcePath}-wal`;
-      const journalPath = `${sourcePath}-journal`;
-      const before = await snapshotPair(sourcePath, {
-        walPath,
-        journalPath,
-        includeWal,
-      });
-      let after: SourcePair | undefined;
-      let acquired: SourcePair | undefined;
-      if (journalIsSafe(before.journal)) {
-        await Promise.all([
-          copySource(mode, sourcePath, path),
-          includeWal && before.wal.state !== "absent"
-            ? copySource(mode, walPath, `${path}-wal`)
-            : undefined,
-        ]);
-        acquired = await snapshotPair(path, {
-          walPath: `${path}-wal`,
-          journalPath: `${path}-journal`,
-          includeWal,
-        });
-        after = await snapshotPair(sourcePath, {
-          walPath,
-          journalPath,
-          includeWal,
-        });
-      }
+) {
+  const attempt = Effect.gen(function* () {
+    const dir = yield* createSnapshotDir(parent, owner);
+    return yield* cloneAttempt(sourcePath, {
+      dir,
+      mode,
+      includeWal,
+      immutable,
+    }).pipe(
+      Effect.onError(() => removeAttemptDir(dir)),
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          const cloneUnsupported =
+            mode === "reflink" && isNativeCloneCapabilityError(error);
+          yield* logDebug("Database read snapshot attempt failed", {
+            error,
+            mode,
+            parent,
+            cloneUnsupported,
+          });
+          if (cloneUnsupported)
+            return yield* Effect.fail(new ReflinkUnsupportedError(error));
+          if (isParentWriteFailure(error))
+            return yield* Effect.fail(new SnapshotParentError(parent, error));
+          return yield* Effect.fail(error);
+        }),
+      ),
+    );
+  });
+  return yield* attempt.pipe(
+    Effect.retry({
+      schedule: Schedule.spaced(Duration.millis(RETRY_BACKOFF_MS)),
+      times: CLONE_ATTEMPTS - 1,
+      while: (error) => error instanceof UnstableSnapshotError,
+    }),
+    Effect.catch((error) =>
+      error instanceof UnstableSnapshotError
+        ? Effect.fail(
+            new Error(
+              "Zotero database changed while preparing a read snapshot",
+            ),
+          )
+        : Effect.fail(error),
+    ),
+  );
+});
 
-      const matches =
-        after !== undefined &&
-        acquired !== undefined &&
-        sourcePairsEqual(before, after) &&
-        sourcePairContentsEqual(before, acquired);
-      logger.debug("Database read snapshot fingerprint checked", {
-        verdict: matches ? "unchanged" : "changed",
-        beforeJournalState: before.journal.state,
-        beforeWalState: before.wal.state,
-        beforeWalSize: walGenerationSize(before.wal),
-        acquiredWalState: acquired?.wal.state,
-        acquiredWalSize: walGenerationSize(acquired?.wal),
-        afterJournalState: after?.journal.state,
-        afterWalState: after?.wal.state,
-        afterWalSize: walGenerationSize(after?.wal),
-      });
-      if (matches) {
-        await verifySnapshot(path);
-        return {
-          path,
-          uriOptions: immutable
-            ? { mode: "ro", immutable: true }
-            : { mode: "ro" },
-          effectiveMode: immutable ? "immutable" : mode,
-          async [Symbol.asyncDispose]() {
-            try {
-              await rm(dir, { recursive: true, force: true });
-            } catch (error) {
-              logger.warn("Failed to remove database read temp", {
-                error,
-                path: dir,
-              });
-            }
-          },
-        };
-      }
-    } catch (error) {
-      await removeAttemptDir(dir);
-      const cloneUnsupported =
-        mode === "reflink" && isNativeCloneCapabilityError(error);
-      logger.debug("Database read snapshot attempt failed", {
-        error,
-        mode,
-        parent,
-        cloneUnsupported,
-      });
-      if (cloneUnsupported) throw new ReflinkUnsupportedError(error);
-      if (isParentWriteFailure(error))
-        throw new SnapshotParentError(parent, error);
-      throw error;
-    }
-
-    await removeAttemptDir(dir);
-    if (attempt < CLONE_ATTEMPTS) await delay(RETRY_BACKOFF_MS);
-  }
-
-  throw new Error("Zotero database changed while preparing a read snapshot");
-}
+const cloneAttempt = Effect.fnUntraced(function* (
+  sourcePath: string,
+  {
+    dir,
+    mode,
+    includeWal,
+    immutable,
+  }: {
+    dir: string;
+    mode: TempReadMode;
+    includeWal: boolean;
+    immutable: boolean;
+  },
+) {
+  const path = join(dir, basename(sourcePath));
+  const walPath = `${sourcePath}-wal`;
+  const journalPath = `${sourcePath}-journal`;
+  const before = yield* snapshotPair(sourcePath, {
+    walPath,
+    journalPath,
+    includeWal,
+  });
+  const observed = yield* Effect.gen(function* () {
+    if (!journalIsSafe(before.journal)) return {};
+    yield* Effect.all(
+      [
+        copySource(mode, sourcePath, path),
+        includeWal && before.wal.state !== "absent"
+          ? copySource(mode, walPath, `${path}-wal`)
+          : Effect.void,
+      ],
+      { concurrency: "unbounded" },
+    );
+    const acquired = yield* snapshotPair(path, {
+      walPath: `${path}-wal`,
+      journalPath: `${path}-journal`,
+      includeWal,
+    });
+    const after = yield* snapshotPair(sourcePath, {
+      walPath,
+      journalPath,
+      includeWal,
+    });
+    return { acquired, after };
+  });
+  const matches =
+    observed.after !== undefined &&
+    observed.acquired !== undefined &&
+    sourcePairsEqual(before, observed.after) &&
+    sourcePairContentsEqual(before, observed.acquired);
+  yield* logDebug("Database read snapshot fingerprint checked", {
+    verdict: matches ? "unchanged" : "changed",
+    beforeJournalState: before.journal.state,
+    beforeWalState: before.wal.state,
+    beforeWalSize: walGenerationSize(before.wal),
+    acquiredWalState: observed.acquired?.wal.state,
+    acquiredWalSize: walGenerationSize(observed.acquired?.wal),
+    afterJournalState: observed.after?.journal.state,
+    afterWalState: observed.after?.wal.state,
+    afterWalSize: walGenerationSize(observed.after?.wal),
+  });
+  if (!matches) return yield* Effect.fail(new UnstableSnapshotError());
+  yield* verifySnapshot(path);
+  const uriOptions: SqliteUriOptions = immutable
+    ? { mode: "ro", immutable: true }
+    : { mode: "ro" };
+  return {
+    read: {
+      path,
+      uriOptions,
+      effectiveMode: (immutable ? "immutable" : mode) as EffectiveReadMode,
+    },
+    release: removeReadDir(dir),
+  };
+});
 
 /**
  * Both steps are destination-only, so a failure here is the parent's and no
@@ -405,22 +560,26 @@ async function cloneInto(
  *
  * @throws {@link SnapshotParentError} always, wrapping the underlying errno.
  */
-async function createSnapshotDir(
+const createSnapshotDir = Effect.fnUntraced(function* (
   parent: string,
   owner: string | undefined,
-): Promise<string> {
-  try {
-    await mkdir(parent, { recursive: true });
-    return await mkdtemp(
-      join(
-        parent,
-        `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-${owner ? `${owner}-` : ""}`,
+) {
+  return yield* fsCall(() => mkdir(parent, { recursive: true })).pipe(
+    Effect.andThen(
+      fsCall(() =>
+        mkdtemp(
+          join(
+            parent,
+            `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-${owner ? `${owner}-` : ""}`,
+          ),
+        ),
       ),
-    );
-  } catch (cause) {
-    throw new SnapshotParentError(parent, cause);
-  }
-}
+    ),
+    Effect.catch((cause) =>
+      Effect.fail(new SnapshotParentError(parent, cause)),
+    ),
+  );
+});
 
 /**
  * Codes only a destination raises: reading a source never runs out of space,
@@ -435,17 +594,17 @@ function isParentWriteFailure(error: unknown): boolean {
   return PARENT_WRITE_ERRNOS.some((code) => isErrno(error, code));
 }
 
-async function copySource(
+const copySource = Effect.fnUntraced(function* (
   mode: TempReadMode,
   sourcePath: string,
   targetPath: string,
-): Promise<void> {
-  if (mode === "copy") {
-    await copyFile(sourcePath, targetPath);
-    return;
-  }
-  await reflink(sourcePath, targetPath);
-}
+) {
+  if (mode === "copy")
+    return yield* fsCall(() => copyFile(sourcePath, targetPath)).pipe(
+      Effect.asVoid,
+    );
+  return yield* fsCall(() => reflink(sourcePath, targetPath));
+});
 
 /**
  * Fingerprint the complete live source pair. Equal fingerprints identify the
@@ -454,15 +613,13 @@ async function copySource(
  *
  * @see `sourceMoved` in `layerSource` (zotero-reads/source.ts) for the gate this feeds.
  */
-export async function snapshotSource(
-  sourcePath: string,
-): Promise<SourceFingerprint> {
-  const pair = await snapshotPair(sourcePath, {
+export const snapshotSource = Effect.fnUntraced(function* (sourcePath: string) {
+  const pair = yield* snapshotPair(sourcePath, {
     walPath: `${sourcePath}-wal`,
     journalPath: `${sourcePath}-journal`,
   });
   return { path: sourcePath, ...pair };
-}
+}, Effect.mapError(toDbUnavailable));
 
 export function sourceFingerprintsEqual(
   a: SourceFingerprint,
@@ -471,25 +628,25 @@ export function sourceFingerprintsEqual(
   return a.path === b.path && sourcePairsEqual(a, b);
 }
 
-async function snapshotPair(
+const snapshotPair = Effect.fnUntraced(function* (
   sourcePath: string,
   {
     walPath,
     journalPath,
     includeWal = true,
   }: { walPath: string; journalPath: string; includeWal?: boolean },
-): Promise<SourcePair> {
-  const journalBefore = await journalGeneration(journalPath);
-  const [main, wal] = await Promise.all([
+) {
+  const journalBefore = yield* journalGeneration(journalPath);
+  const [main, wal] = yield* Effect.all([
     mainIdentity(sourcePath),
     includeWal
       ? walGeneration(walPath)
-      : Promise.resolve({ state: "absent" } as const),
+      : Effect.succeed({ state: "absent" } as const),
   ]);
-  const journalAfter = await journalGeneration(journalPath);
+  const journalAfter = yield* journalGeneration(journalPath);
   const journal = bracketedJournal(journalBefore, journalAfter);
   return { main, wal, journal };
-}
+});
 
 function bracketedJournal(
   before: JournalGeneration,
@@ -520,28 +677,35 @@ function sourcePairContentsEqual(a: SourcePair, b: SourcePair): boolean {
   );
 }
 
-async function mainIdentity(path: string): Promise<MainIdentity> {
-  try {
-    await using file = await open(path, "r");
-    const before = await file.stat({ bigint: true });
-    const digest = await fileDigest(file);
-    const stats = await file.stat({ bigint: true });
-    if (!sameFileState(before, stats))
-      throw new Error("SQLite database changed while it was fingerprinted");
-    return {
-      exists: true,
-      dev: stats.dev,
-      ino: stats.ino,
-      size: stats.size,
-      mtimeNs: stats.mtimeNs,
-      ctimeNs: stats.ctimeNs,
-      digest,
-    };
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return { exists: false };
-    throw error;
-  }
-}
+const mainIdentity = Effect.fnUntraced(function* (path: string) {
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const file = yield* openFile(path);
+      const before = yield* fileStat(file);
+      const digest = yield* fileDigest(file);
+      const stats = yield* fileStat(file);
+      if (!sameFileState(before, stats))
+        return yield* Effect.fail(
+          new Error("SQLite database changed while it was fingerprinted"),
+        );
+      return {
+        exists: true,
+        dev: stats.dev,
+        ino: stats.ino,
+        size: stats.size,
+        mtimeNs: stats.mtimeNs,
+        ctimeNs: stats.ctimeNs,
+        digest,
+      };
+    }),
+  ).pipe(
+    Effect.catch((error) =>
+      isErrno(error, "ENOENT")
+        ? Effect.succeed({ exists: false as const })
+        : Effect.fail(error),
+    ),
+  );
+});
 
 function mainIdentitiesEqual(a: MainIdentity, b: MainIdentity): boolean {
   if (!a.exists || !b.exists) return a.exists === b.exists;
@@ -569,36 +733,49 @@ function mainContentsEqual(a: MainIdentity, b: MainIdentity): boolean {
  *
  * @see https://github.com/sqlite/sqlite/blob/version-3.50.4/src/wal.c#L34-L45
  */
-async function walGeneration(path: string): Promise<WalGeneration> {
-  try {
-    await using file = await open(path, "r");
-    const before = await file.stat({ bigint: true });
-    if (before.size === 0n) {
-      const after = await file.stat({ bigint: true });
-      return after.size === 0n ? { state: "empty" } : { state: "unstable" };
-    }
+const walGeneration = Effect.fnUntraced(function* (path: string) {
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const file = yield* openFile(path);
+      const before = yield* fileStat(file);
+      if (before.size === 0n) {
+        const after = yield* fileStat(file);
+        return after.size === 0n
+          ? { state: "empty" as const }
+          : { state: "unstable" as const };
+      }
 
-    const header = Buffer.alloc(WAL_HEADER_BYTES);
-    const verification = Buffer.alloc(WAL_HEADER_BYTES);
-    const firstRead = await file.read(header, 0, WAL_HEADER_BYTES, 0);
-    const digest = await fileDigest(file);
-    const secondRead = await file.read(verification, 0, WAL_HEADER_BYTES, 0);
-    const after = await file.stat({ bigint: true });
-    if (
-      firstRead.bytesRead === WAL_HEADER_BYTES &&
-      secondRead.bytesRead === WAL_HEADER_BYTES &&
-      sameFileState(before, after) &&
-      header.equals(verification)
-    ) {
-      return { state: "present", digest, header, size: after.size };
-    }
-    return { state: "unstable" };
-  } catch (error) {
-    return isErrno(error, "ENOENT")
-      ? { state: "absent" }
-      : { state: "unstable" };
-  }
-}
+      const header = Buffer.alloc(WAL_HEADER_BYTES);
+      const verification = Buffer.alloc(WAL_HEADER_BYTES);
+      const firstRead = yield* fileRead(file, header, 0);
+      const digest = yield* fileDigest(file);
+      const secondRead = yield* fileRead(file, verification, 0);
+      const after = yield* fileStat(file);
+      if (
+        firstRead.bytesRead === WAL_HEADER_BYTES &&
+        secondRead.bytesRead === WAL_HEADER_BYTES &&
+        sameFileState(before, after) &&
+        header.equals(verification)
+      ) {
+        return {
+          state: "present" as const,
+          digest,
+          header,
+          size: after.size,
+        };
+      }
+      return { state: "unstable" as const };
+    }),
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        isErrno(error, "ENOENT")
+          ? { state: "absent" as const }
+          : { state: "unstable" as const },
+      ),
+    ),
+  );
+});
 
 function walGenerationsEqual(a: WalGeneration, b: WalGeneration): boolean {
   if (a.state !== b.state || a.state === "unstable") return false;
@@ -608,51 +785,52 @@ function walGenerationsEqual(a: WalGeneration, b: WalGeneration): boolean {
   );
 }
 
-async function journalGeneration(path: string): Promise<JournalGeneration> {
-  try {
-    const pathBefore = await stat(path, { bigint: true });
-    await using file = await open(path, "r");
-    const before = await file.stat({ bigint: true });
-    const header = Buffer.alloc(JOURNAL_HEADER_BYTES);
-    const verification = Buffer.alloc(JOURNAL_HEADER_BYTES);
-    const firstRead = await file.read(header, 0, JOURNAL_HEADER_BYTES, 0);
-    const secondRead = await file.read(
-      verification,
-      0,
-      JOURNAL_HEADER_BYTES,
-      0,
-    );
-    const after = await file.stat({ bigint: true });
-    const pathAfter = await stat(path, { bigint: true });
-    if (
-      !sameFileState(pathBefore, before) ||
-      !sameFileState(before, after) ||
-      !sameFileState(after, pathAfter) ||
-      firstRead.bytesRead !== secondRead.bytesRead ||
-      !header.equals(verification)
-    ) {
-      return { state: "unstable" };
-    }
-    const observedHeader = header.subarray(0, firstRead.bytesRead);
-    return {
-      state:
-        after.size > HOT_JOURNAL_MIN_BYTES &&
-        observedHeader.equals(JOURNAL_MAGIC)
-          ? "active"
-          : "inactive",
-      dev: after.dev,
-      ino: after.ino,
-      size: after.size,
-      mtimeNs: after.mtimeNs,
-      ctimeNs: after.ctimeNs,
-      header: observedHeader,
-    };
-  } catch (error) {
-    return isErrno(error, "ENOENT")
-      ? { state: "absent" }
-      : { state: "unstable" };
-  }
-}
+const journalGeneration = Effect.fnUntraced(function* (path: string) {
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const pathBefore = yield* fsCall(() => stat(path, { bigint: true }));
+      const file = yield* openFile(path);
+      const before = yield* fileStat(file);
+      const header = Buffer.alloc(JOURNAL_HEADER_BYTES);
+      const verification = Buffer.alloc(JOURNAL_HEADER_BYTES);
+      const firstRead = yield* fileRead(file, header, 0);
+      const secondRead = yield* fileRead(file, verification, 0);
+      const after = yield* fileStat(file);
+      const pathAfter = yield* fsCall(() => stat(path, { bigint: true }));
+      if (
+        !sameFileState(pathBefore, before) ||
+        !sameFileState(before, after) ||
+        !sameFileState(after, pathAfter) ||
+        firstRead.bytesRead !== secondRead.bytesRead ||
+        !header.equals(verification)
+      ) {
+        return { state: "unstable" as const };
+      }
+      const observedHeader = header.subarray(0, firstRead.bytesRead);
+      return {
+        state:
+          after.size > HOT_JOURNAL_MIN_BYTES &&
+          observedHeader.equals(JOURNAL_MAGIC)
+            ? ("active" as const)
+            : ("inactive" as const),
+        dev: after.dev,
+        ino: after.ino,
+        size: after.size,
+        mtimeNs: after.mtimeNs,
+        ctimeNs: after.ctimeNs,
+        header: observedHeader,
+      };
+    }),
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        isErrno(error, "ENOENT")
+          ? { state: "absent" as const }
+          : { state: "unstable" as const },
+      ),
+    ),
+  );
+});
 
 function journalIsSafe(journal: JournalGeneration): boolean {
   return journal.state === "absent" || journal.state === "inactive";
@@ -700,23 +878,38 @@ function sameFileState(
   );
 }
 
-async function fileDigest(file: FileHandle): Promise<string> {
+function openFile(path: string) {
+  return Effect.acquireRelease(
+    fsCall(() => open(path, "r")),
+    (file) =>
+      fsCall(() => file.close()).pipe(
+        Effect.catch((error) =>
+          logWarning("Failed to close a read source file", error, { path }),
+        ),
+      ),
+  );
+}
+
+function fileStat(file: FileHandle) {
+  return fsCall(() => file.stat({ bigint: true }));
+}
+
+function fileRead(file: FileHandle, buffer: Buffer, position: number) {
+  return fsCall(() => file.read(buffer, 0, buffer.byteLength, position));
+}
+
+const fileDigest = Effect.fnUntraced(function* (file: FileHandle) {
   const hash = createHash("sha256");
   const buffer = Buffer.allocUnsafe(HASH_BUFFER_BYTES);
   let position = 0;
   while (true) {
-    const { bytesRead } = await file.read(
-      buffer,
-      0,
-      HASH_BUFFER_BYTES,
-      position,
-    );
+    const { bytesRead } = yield* fileRead(file, buffer, position);
     if (bytesRead === 0) break;
     hash.update(buffer.subarray(0, bytesRead));
     position += bytesRead;
   }
   return hash.digest("hex");
-}
+});
 
 export function walGenerationSize(
   wal: WalGeneration | undefined,
@@ -742,10 +935,18 @@ function isNativeCloneCapabilityError(error: unknown): boolean {
   );
 }
 
-async function removeAttemptDir(path: string): Promise<void> {
-  try {
-    await rm(path, { recursive: true, force: true });
-  } catch (error) {
-    logger.warn("Failed to remove failed database read temp", { error, path });
-  }
-}
+const removeReadDir = Effect.fnUntraced(function* (path: string) {
+  yield* fsCall(() => rm(path, { recursive: true, force: true })).pipe(
+    Effect.catch((error) =>
+      logWarning("Failed to remove database read temp", error, { path }),
+    ),
+  );
+});
+
+const removeAttemptDir = Effect.fnUntraced(function* (path: string) {
+  yield* fsCall(() => rm(path, { recursive: true, force: true })).pipe(
+    Effect.catch((error) =>
+      logWarning("Failed to remove failed database read temp", error, { path }),
+    ),
+  );
+});

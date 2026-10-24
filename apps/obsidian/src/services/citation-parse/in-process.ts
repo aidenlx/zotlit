@@ -7,7 +7,7 @@ import { Effect } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { makeInMemoryRpcProtocols } from "@/lib/effect-rpc-in-process";
 
-import { decodeParseReply } from "./client";
+import { decodeParseReply, ParseFailed } from "./client";
 import type { ParseClient } from "./client";
 import { layerParseHandlers } from "./handlers";
 import { CitationParseRpc } from "./rpc";
@@ -37,13 +37,18 @@ export const makeInProcessClient = Effect.fnUntraced(
   },
 );
 
-/** Plain fixture adapter; each call closes its server and client together. */
+/** Effect fixture adapter; each call closes its server and client together. */
 export const inProcessParseClient: ParseClient = {
-  parse: (request, signal) =>
-    Effect.runPromise(
-      Effect.flatMap(makeInProcessClient(), (client) =>
-        client.Parse(request).pipe(Effect.map(decodeParseReply)),
-      ).pipe(Effect.scoped),
-      { signal },
-    ),
+  parse: (request) =>
+    Effect.flatMap(makeInProcessClient(), (client) =>
+      client.Parse(request).pipe(
+        Effect.mapError((error) => new ParseFailed({ message: String(error) })),
+        Effect.flatMap((json) =>
+          Effect.try({
+            try: () => decodeParseReply(json),
+            catch: (error) => new ParseFailed({ message: String(error) }),
+          }),
+        ),
+      ),
+    ).pipe(Effect.scoped),
 };

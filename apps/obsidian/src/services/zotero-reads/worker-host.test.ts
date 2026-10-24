@@ -14,16 +14,18 @@ import {
   Exit,
   Fiber,
   Layer,
+  Logger,
   Option,
   Queue,
+  References,
   Scope,
   Stream,
 } from "@/lib/effect";
 import type { Duration } from "@/lib/effect";
+import { LogCategory } from "@/lib/effect-log";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
-import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
 
 import { readsFixture } from "./__fixtures__";
@@ -788,12 +790,24 @@ const openConnection = Effect.fnUntraced(function* (
 });
 
 describe("connectWorker close", () => {
-  const warn = vi.spyOn(getLogger("zotero-reads"), "warn");
+  const warnings: Array<{
+    readonly message: unknown;
+    readonly category: readonly string[];
+    readonly annotations: Readonly<Record<string, unknown>>;
+  }> = [];
+  const captureWarnings = Logger.make(({ logLevel, message, fiber }) => {
+    if (logLevel !== "Warn") return;
+    warnings.push({
+      message,
+      category: fiber.getRef(LogCategory),
+      annotations: fiber.getRef(References.CurrentLogAnnotations),
+    });
+  });
   beforeEach(() => {
     StandInWorker.spawned = [];
     StandInWorker.answersClose = true;
     vi.stubGlobal("Worker", StandInWorker);
-    warn.mockClear();
+    warnings.length = 0;
   });
   afterEach(() => {
     StandInWorker.answersClose = true;
@@ -804,7 +818,7 @@ describe("connectWorker close", () => {
   const closeOnStillClock = Effect.fnUntraced(function* () {
     const { scope, worker } = yield* openConnection(
       Effect.succeed(readsConfig("zotero.sqlite")),
-      async () => {},
+      () => Effect.void,
     );
     const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
     for (let turn = 0; turn < 100 && !closing.pollUnsafe(); turn++)
@@ -819,10 +833,10 @@ describe("connectWorker close", () => {
         const result = yield* Effect.gen(function* () {
           const { closing, worker } = yield* closeOnStillClock();
           return { closed: closing.pollUnsafe() !== undefined, worker };
-        });
+        }).pipe(Effect.provide(Logger.layer([captureWarnings])));
         expect(result.closed).toBe(true);
         expect(result.worker.terminated).toBe(true);
-        expect(warn).not.toHaveBeenCalled();
+        expect(warnings).toEqual([]);
       }),
   );
 
@@ -837,9 +851,17 @@ describe("connectWorker close", () => {
           yield* TestClock.adjust("5 seconds");
           yield* Fiber.join(closing);
           return { terminatedBefore, terminated: worker.terminated };
-        });
+        }).pipe(Effect.provide(Logger.layer([captureWarnings])));
         expect(result).toEqual({ terminatedBefore: false, terminated: true });
-        expect(warn).toHaveBeenCalledOnce();
+        expect(warnings).toEqual([
+          expect.objectContaining({
+            message: [
+              "Database worker did not confirm its close in time; terminating it",
+            ],
+            category: ["zotero-reads"],
+            annotations: { timeout: "5s" },
+          }),
+        ]);
       }),
   );
 });
@@ -858,9 +880,17 @@ describe("connectWorker read snapshot cleanup", () => {
     () =>
       Effect.gen(function* () {
         let terminatedAtReap: boolean | undefined;
-        const reap = vi.fn(async () => {
-          terminatedAtReap = StandInWorker.spawned[0]!.terminated;
-        });
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const completed = yield* Deferred.make<void>();
+        const reap = vi.fn(() =>
+          Effect.gen(function* () {
+            terminatedAtReap = StandInWorker.spawned[0]!.terminated;
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(release);
+            yield* Deferred.succeed(completed, undefined);
+          }),
+        );
         let databasePath = join("zotero", "zotero.sqlite");
         const config = Effect.sync(() => readsConfig(databasePath));
 
@@ -874,6 +904,7 @@ describe("connectWorker read snapshot cleanup", () => {
           yield* connection.died;
           expect(reap).not.toHaveBeenCalled();
           yield* Scope.close(scope, Exit.void);
+          yield* Deferred.await(started);
           return owner;
         });
 
@@ -887,6 +918,13 @@ describe("connectWorker read snapshot cleanup", () => {
             join("moved", ZOTERO_DB_READ_PARENT_DIRNAME),
           ],
         });
+        expect(Deferred.isDoneUnsafe(completed)).toBe(false);
+        const settling = yield* Effect.forkChild(
+          Deferred.await(completed).pipe(Effect.timeoutOption("1 second")),
+        );
+        yield* Deferred.succeed(release, undefined);
+        yield* TestClock.adjust("1 second");
+        expect(Option.isSome(yield* Fiber.join(settling))).toBe(true);
       }),
   );
 
@@ -894,7 +932,7 @@ describe("connectWorker read snapshot cleanup", () => {
     "tags each connection apart, so a dead worker's reap spares the live one's snapshots",
     () =>
       Effect.gen(function* () {
-        const reap = vi.fn(async (_options: { owner: string }) => {});
+        const reap = vi.fn((_options: { owner: string }) => Effect.void);
         const config = Effect.succeed(readsConfig("zotero.sqlite"));
 
         const [dead, live] = yield* Effect.gen(function* () {
@@ -916,7 +954,7 @@ describe("connectWorker read snapshot cleanup", () => {
 
   it.effect("closes without waiting on a reap that never settles", () =>
     Effect.gen(function* () {
-      const reap = vi.fn(() => new Promise<void>(() => {}));
+      const reap = vi.fn(() => Effect.never);
       const config = Effect.succeed(readsConfig("zotero.sqlite"));
 
       yield* Effect.gen(function* () {
