@@ -1,4 +1,7 @@
-// Rule tests: src/lint/services.test.ts.
+// zotlit-services: the mechanical part of the Obsidian service architecture
+// (policies/services.md, policies/events.md): Effect services over legacy
+// classes, tag ids, Scope-owned resources, CLI registration, workers on
+// effect/rpc, and Effect-native events. Rule tests: src/lint/services.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 
