@@ -57,7 +57,8 @@ export default defineConfig({
       // helpers, and the Date the feed library takes (AGENTS.md → Dates).
       files: ["src/lib/shared.ts", "src/routes/changelog/rss\\[.\\]xml.ts"],
       rules: {
-        "no-restricted-globals": "off",
+        "effecttsgo/global-date": "off",
+        "effecttsgo/global-date-in-effect": "off",
       },
     },
     {

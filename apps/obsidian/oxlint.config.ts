@@ -105,7 +105,8 @@ export default defineConfig({
       .pathname,
   ],
   rules: {
-    "no-console": "error",
+    "effecttsgo/global-console": "error",
+    "effecttsgo/global-console-in-effect": "error",
     "zotlit-obsidian/no-cross-window-instanceof": "error",
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
@@ -346,7 +347,8 @@ export default defineConfig({
         "src/services/log/**",
       ],
       rules: {
-        "no-console": "off",
+        "effecttsgo/global-console": "off",
+        "effecttsgo/global-console-in-effect": "off",
       },
     },
     {

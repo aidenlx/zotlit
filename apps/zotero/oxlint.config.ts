@@ -7,7 +7,8 @@ export default defineConfig({
   extends: [baseConfig],
   rules: {
     // Zotero's Firefox 140 ESR ships no Temporal (apps/zotero/policies/dates.md).
-    "no-restricted-globals": "off",
+    "effecttsgo/global-date": "off",
+    "effecttsgo/global-date-in-effect": "off",
     "no-restricted-properties": [
       "error",
       {

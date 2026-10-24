@@ -1,3 +1,4 @@
+import { recommended } from "@effect/tsgo/oxlint-presets";
 import { join } from "node:path";
 import { defineConfig } from "oxlint";
 
@@ -60,7 +61,38 @@ export function testBaselineOverrides(directory?: string) {
   }));
 }
 
+/**
+ * `@effect/tsgo` rules the tree already satisfies: errors, so no change adds
+ * the first finding. The rest of the `recommended` preset stays at warn until
+ * its findings are fixed; then the rule moves here.
+ */
+const effectErrorRules = [
+  "catch-unfailable-effect",
+  "class-self-mismatch",
+  "effect-fn-iife",
+  "effect-fn-opportunity",
+  "effect-in-failure",
+  "effect-in-void-success",
+  "floating-effect",
+  "generic-effect-services",
+  "global-date",
+  "global-date-in-effect",
+  "global-fetch-in-effect",
+  "global-timers-in-effect",
+  "layer-merge-all-with-dependencies",
+  "leaking-requirements",
+  "missing-return-yield-star",
+  "missing-star-in-yield-effect-gen",
+  "multiple-effect-provide",
+  "process-env-in-effect",
+  "return-effect-in-gen",
+  "run-effect-inside-effect",
+  "schema-sync-in-effect",
+  "scope-in-layer-effect",
+].map((rule) => [`effecttsgo/${rule}`, "error"] as const);
+
 export default defineConfig({
+  extends: [recommended],
   options: {
     typeAware: true,
     typeCheck: true,
@@ -79,6 +111,7 @@ export default defineConfig({
   jsPlugins: [join(import.meta.dirname, "oxlint-plugin-build.ts")],
   rules: {
     "zotlit-build/no-undeclared-env": "error",
+    ...Object.fromEntries(effectErrorRules),
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
@@ -115,14 +148,6 @@ export default defineConfig({
     "prefer-template": "warn",
     "no-useless-concat": "error",
 
-    "no-restricted-globals": [
-      "error",
-      {
-        name: "Date",
-        message:
-          "Use Temporal (policies/temporal-dates.md); apps/zotero and the named apps/docs date helpers are the exceptions.",
-      },
-    ],
     "unicorn/prefer-number-properties": "error",
     "unicorn/prefer-string-replace-all": "error",
     "no-restricted-imports": [

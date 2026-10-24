@@ -20,6 +20,7 @@
     "test": "node --test"
   },
   "devDependencies": {
+    "@effect/tsgo": "catalog:",
     "@types/node": "catalog:",
     "arkregex": "catalog:",
     "oxc-parser": "catalog:",

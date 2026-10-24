@@ -26,7 +26,7 @@ Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane
 
 ## Effect
 
-Review Effect code against the docs of the installed `effect` package, the version the code runs: `node_modules/effect/AGENTS.md`, and the topic folders of `node_modules/effect/ai-docs/src/` — `01_effect` (basics, Schema, services, errors, resources, running), `03_stream`, `04_integration/10_managed-runtime.ts`, `08_observability`, `09_testing`. Cite the doc for each finding. A departure from a documented pattern carries a comment that names its reason.
+Review Effect code against the docs of the installed `effect` package, the version the code runs: `node_modules/effect/AGENTS.md`, and the topic folders of `node_modules/effect/ai-docs/src/` — `01_effect` (basics, Schema, services, errors, resources, running), `03_stream`, `04_integration/10_managed-runtime.ts`, `08_observability`, `09_testing`. Cite the doc for each finding. A departure from a documented pattern carries a comment that names its reason. The `effecttsgo/*` rules (`@effect/tsgo`, enabled in `packages/config/oxlint.base.ts`) cover the mechanical Effect patterns; review the rest.
 
 Check in particular:
 

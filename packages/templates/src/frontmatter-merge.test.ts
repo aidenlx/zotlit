@@ -251,7 +251,7 @@ describe("mergeFrontmatterFields", () => {
       mergeFrontmatterFields(
         [{ key: "date", merge: "keep" }],
         { date: "new" },
-        // oxlint-disable-next-line no-restricted-globals -- YAML frontmatter gives a Date.
+        // oxlint-disable-next-line effecttsgo/global-date -- YAML frontmatter gives a Date.
         { current: { date: new Date(0) } },
       ),
     ).toEqual({});
