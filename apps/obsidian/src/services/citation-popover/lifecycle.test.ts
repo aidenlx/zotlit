@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { HoverParent, TFile } from "obsidian";
+import type { HoverParent } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,7 +55,6 @@ function harness() {
     "invalidated",
   ]);
 
-  const metadata = new Map<string, Set<(file: TFile) => void>>();
   const render = vi.fn<() => Promise<BibliographyRenderOutcome>>(async () => ({
     kind: "unavailable",
     reason: "engine-absent",
@@ -70,15 +69,6 @@ function harness() {
   const popover = citationPopoverFixture({
     app: {
       vault: { getFileByPath: (path: string) => ({ path }) },
-      metadataCache: {
-        getFileCache: () => null,
-        on(event: string, listener: (file: TFile) => void) {
-          const group = metadata.get(event) ?? new Set();
-          metadata.set(event, group);
-          group.add(listener);
-          return { e: { offref: () => group.delete(listener) } };
-        },
-      },
     },
     db,
     citationLookup: {
@@ -136,7 +126,6 @@ function harness() {
     readBibliography,
     open,
     events,
-    metadata,
     textReads,
     async show(
       work: string | WorkHoverRequest["work"],
@@ -283,13 +272,9 @@ describe("Citation Popover visits", () => {
     });
     await run.show("beta", run.second);
     await vi.advanceTimersByTimeAsync(300);
-    for (const listener of run.metadata.get("deleted") ?? [])
-      listener({ path: "Draft.md" } as TFile);
     expect(run.parent.hoverPopover!.hoverEl.textContent).toBe(
       m.references_citekey_unresolved({ citekey: "beta" }),
     );
-    expect(run.metadata.get("deleted")?.size).toBe(0);
-    expect(run.metadata.get("changed")?.size).toBe(0);
     expect(run.events.subscribers("invalidated")).toBe(1);
     await run.show({ kind: "item", indexedKey: "ABCD2345" });
     expect(run.events.subscribers("changed")).toBe(0);

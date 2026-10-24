@@ -1,8 +1,8 @@
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { Effect, Layer } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerNoteIndex } from "@/services/note-index/service";
 import {
   layerPluginSettings,
@@ -20,7 +20,7 @@ export function profileOver(host: ReturnType<typeof createTemplateHost>) {
   return layerProfile.pipe(
     Layer.provideMerge(Layer.mergeAll(layerTemplate, layerNoteIndex)),
     Layer.provideMerge(layerPluginSettings(host.plugin)),
-    Layer.provide(Layer.succeed(ObsidianApp, host.app)),
+    Layer.provide(layerHostApp(host.app)),
   );
 }
 

@@ -1,11 +1,12 @@
 // A Citation Popover built from its real layer over test-owned service reads.
 import type { App, TFile } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Layer, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
@@ -104,7 +105,11 @@ export function citationPopoverFixture(
   deps: PopoverFixtureDeps,
 ): CitationPopoverFixture {
   const stack = new AsyncDisposableStack();
-  const app = deps.app as App;
+  // A host without a metadata cache gets an empty in-memory one.
+  const app = {
+    metadataCache: new MemoryMetadataCache(),
+    ...deps.app,
+  } as unknown as App;
   let revision = 0;
   const lookupState = () => ({
     status: deps.citationLookup.status,
@@ -114,7 +119,7 @@ export function citationPopoverFixture(
   const layer = layerCitationPopover.pipe(
     Layer.provide(
       Layer.mergeAll(
-        Layer.succeed(ObsidianApp, app),
+        layerHostApp(app),
         Layer.succeed(
           ZoteroReads,
           stubService<ZoteroReads["Service"]>("ZoteroReads", {

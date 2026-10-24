@@ -7,7 +7,7 @@
 // selector text arriving from outside the plugin.
 
 import { regex } from "arkregex";
-import type { MetadataCache, TFile } from "obsidian";
+import type { CachedMetadata, MetadataCache, TFile } from "obsidian";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "./constants";
 
@@ -107,11 +107,14 @@ export function readProfileStamp(
   metadataCache: Pick<MetadataCache, "getFileCache">,
   file: TFile,
 ): ProfileStamp | undefined {
-  return parseProfileStamp(
-    metadataCache.getFileCache(file)?.frontmatter?.[
-      FIELD_LITERATURE_NOTE_PROFILE
-    ],
-  );
+  return profileStampOf(metadataCache.getFileCache(file));
+}
+
+/** The Profile stamp a note's cache entry holds; `undefined` selects the default Profile. */
+export function profileStampOf(
+  cache: CachedMetadata | null,
+): ProfileStamp | undefined {
+  return parseProfileStamp(cache?.frontmatter?.[FIELD_LITERATURE_NOTE_PROFILE]);
 }
 
 /**

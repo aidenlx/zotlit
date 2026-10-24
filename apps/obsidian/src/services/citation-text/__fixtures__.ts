@@ -1,9 +1,9 @@
 import type { App } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import type { OpenDocuments } from "@/lib/open-documents";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationLookupState } from "@/services/citation-index/lookup-service";
@@ -175,7 +175,7 @@ export function citationTextFixture(
     layerCitationText(deps.openDocuments).pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.succeed(ObsidianApp, deps.app),
+          layerHostApp(deps.app),
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {

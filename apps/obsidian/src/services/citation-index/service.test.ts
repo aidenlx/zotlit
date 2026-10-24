@@ -621,6 +621,31 @@ describe("CitationIndex", () => {
     }),
   );
 
+  // Obsidian fires a metadata cache event and a vault event in one tick; the
+  // index takes them in that order, though they come from two sources.
+  it.effect(
+    "indexes a change and a rename made in one tick under the new path",
+    () =>
+      Effect.promise(async () => {
+        const { draft, index, metadataCache, vault } = await makeHarness({
+          "draft.md": "As @doe2024 wrote.",
+        });
+        await citationsOf(index, draft);
+
+        metadataCache.change(draft, "As @roe2025 wrote.");
+        vault.rename(draft, "Notes/paper.md");
+
+        await expect
+          .poll(() =>
+            [...index.citationsByPath(["citekey"])].map(([path, found]) => [
+              path,
+              found.map(({ raw }) => raw),
+            ]),
+          )
+          .toEqual([["Notes/paper.md", ["roe2025"]]]);
+      }),
+  );
+
   it.effect("drops a deleted document", () =>
     Effect.promise(async () => {
       const { draft, index, vault, workspace } = await makeHarness({

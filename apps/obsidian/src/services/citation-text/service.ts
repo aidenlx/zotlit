@@ -27,6 +27,7 @@ import { acquireDisposable } from "@/lib/effect-scope";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { mapsEqual } from "@/lib/maps-equal";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { workspaceOpenDocuments } from "@/lib/open-documents";
 import type { OpenDocuments } from "@/lib/open-documents";
 import {
@@ -145,6 +146,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
     CitationText,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
+      const metadata = yield* MetadataCache;
       const index = yield* CitationIndex;
       const lookup = yield* CitationLookup;
       const notes = yield* NoteIndex;
@@ -677,24 +679,16 @@ export const layerCitationText = (open?: OpenDocuments) =>
             pins.clear();
           }),
         );
-        const intake = yield* obsidianEvents<{
-          changed: [TFile];
-          deleted: [TFile];
-          open: [];
-        }>();
+        const intake = yield* obsidianEvents<{ open: [] }>();
         yield* intake
-          .consume((event) =>
-            Effect.sync(() => {
-              if (event.type === "changed") invalidate(event.args[0].path);
-              else if (event.type === "deleted") drop(event.args[0].path);
-              else pinOpenDocuments();
-            }),
-          )
+          .consume(() => Effect.sync(pinOpenDocuments))
           .pipe(Effect.forkScoped({ startImmediately: true }));
         // A locator or prefix can change without moving the indexed citekeys.
         // Metadata changes therefore invalidate this document's render too.
-        yield* intake.on("changed", app.metadataCache, "changed");
-        yield* intake.on("deleted", app.metadataCache, "deleted");
+        yield* forkEach(metadata.changes, (event) => {
+          if (event._tag === "changed") invalidate(event.file.path);
+          else if (event._tag === "deleted") drop(event.file.path);
+        });
         yield* acquireDisposable(() =>
           openDocuments.subscribe(intake.callback("open")),
         );

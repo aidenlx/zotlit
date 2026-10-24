@@ -6,6 +6,7 @@ import { Layer } from "@/lib/effect";
 import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerObsidianEnv } from "@/lib/obsidian-env";
+import { layerMetadataCache } from "@/lib/obsidian-metadata-cache";
 import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
@@ -129,9 +130,11 @@ export function pluginLayer(
   | TemplateMigration
 > {
   // What both halves read from Obsidian: the App, its environment, notices.
-  const obsidian = Layer.mergeAll(layerNotifier, layerObsidianEnv).pipe(
-    Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)),
-  );
+  const obsidian = Layer.mergeAll(
+    layerNotifier,
+    layerObsidianEnv,
+    layerMetadataCache,
+  ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover().pipe(startingAs("AnnotationPopover")),
