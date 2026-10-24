@@ -7,6 +7,7 @@ import type { App } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
+import { modalAnswer } from "@/lib/modal-answer";
 import type { PluginSettings } from "@/services/settings/service";
 
 import { CurrentAnswer, takeEnter } from "./current-answer";
@@ -117,7 +118,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
  * `null` when dismissed without a selection.
  */
 class ItemPickerModal extends ItemSearchModal {
-  readonly #resolvers = Promise.withResolvers<SearchHit | null>();
+  #settle: (hit: SearchHit | null) => void = () => undefined;
   /** Set by a choice, which closes the modal before it reports the Item. */
   #choosing = false;
 
@@ -140,17 +141,20 @@ class ItemPickerModal extends ItemSearchModal {
   }
 
   override onChooseSuggestion(hit: SearchHit): void {
-    this.#resolvers.resolve(hit);
+    this.#settle(hit);
   }
 
   override onClose(): void {
     super.onClose();
-    if (!this.#choosing) this.#resolvers.resolve(null);
+    if (!this.#choosing) this.#settle(null);
   }
 
   requestInput(): Promise<SearchHit | null> {
-    this.open();
-    return this.#resolvers.promise;
+    return modalAnswer<SearchHit | null>((settle) => {
+      this.#settle = settle;
+      this.open();
+      return this;
+    });
   }
 }
 

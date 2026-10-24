@@ -1,8 +1,9 @@
-import { expect } from "vitest";
+import { expect, test } from "vitest";
 
 import { Effect, Fiber } from "@/lib/effect";
 import { awaitModal } from "@/lib/effect-modal";
 import { it } from "@/lib/effect-vitest";
+import { modalAnswer } from "@/lib/modal-answer";
 
 /** A modal that, as Obsidian's, calls its close callback once it closes. */
 function fakeModal<A>(dismissed: A) {
@@ -68,3 +69,12 @@ it.effect("awaitModal closes the modal once on interrupt", () =>
     expect(modal.closes).toBe(1);
   }),
 );
+
+test("modalAnswer opens the modal before it returns, and answers once", async () => {
+  const { modal, opener } = fakeModal<boolean>(false);
+  const answer = modalAnswer(opener);
+  expect(modal.isOpen).toBe(true);
+  modal.choose(true);
+  await expect(answer).resolves.toBe(true);
+  expect(modal.closes).toBe(1);
+});
