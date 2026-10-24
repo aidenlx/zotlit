@@ -65,7 +65,7 @@ it.live("measures metadata event dispatch (#1705)", () =>
         ),
       );
     });
-    // oxlint-disable-next-line no-console -- report the benchmark's measured medians.
+    // oxlint-disable-next-line effecttsgo/global-console -- report the benchmark's measured medians.
     console.table(cases.map(({ type, medianMs }) => ({ type, medianMs })));
   }).pipe(Effect.scoped),
 );

@@ -293,7 +293,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
       2,
     ),
   );
-  // oxlint-disable-next-line no-console -- the benchmark reports its measured medians.
+  // oxlint-disable-next-line effecttsgo/global-console -- the benchmark reports its measured medians.
   console.table(
     cells.map((cell) => ({
       size: cell.size,
@@ -306,7 +306,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
         : null,
     })),
   );
-  // oxlint-disable-next-line no-console -- show the spread across all three backfill trials.
+  // oxlint-disable-next-line effecttsgo/global-console -- show the spread across all three backfill trials.
   console.table(
     backfill.trials.map((trial, index) => ({
       trial: index + 1,
@@ -315,7 +315,7 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
       ratio: trial.ratio,
     })),
   );
-  // oxlint-disable-next-line no-console -- report every gate before failing the run.
+  // oxlint-disable-next-line effecttsgo/global-console -- report every gate before failing the run.
   console.table(checks);
   expect(checks.filter((check) => !check.passed)).toEqual([]);
 }, 180_000);
