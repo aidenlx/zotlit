@@ -30,7 +30,9 @@ codex exec -m <model> -c model_reasoning_effort='"high"' --approve-for-me \
 
 Run it in the background; the harness notifies on exit.
 
-- **Model:** `gpt-6.1-sol` by default; the model the user names otherwise (`gpt-6-astra`).
+- **Provider:** `~/.codex/config.toml` decides it. Read it with `rg -n '^model|^base_url' ~/.codex/config.toml`: the file holds an API key, so print only those lines.
+  - **Subscription** (no `model_provider` line): `gpt-6.1-sol` by default; the model the user names otherwise (`gpt-6-astra`). `~/.codex/models_cache.json` lists the models.
+  - **DeepSeek** (`model_provider = "custom"`, `base_url` at `api.deepseek.com`): `-m deepseek-flash`, with the command above unchanged. A read-only audit ran clean this way on `codex-cli 0.164.0`. `models_cache.json` has no DeepSeek model, so the name comes from the config's `model` line. Edits, `codex exec review` and fast mode are untried there: probe with a read-only spec before handing over real work.
 - **Approvals:** `--approve-for-me` grants Codex's own approval requests. Use it alone: without `-s`, and never with `approval_policy="never"`, which the auto-mode classifier denies as an unsafe agent.
 - **Fast mode:** add `-c service_tier='"priority"'` when the user asks for fast mode (2x speed, more usage). `~/.codex/models_cache.json` lists each model's tiers under `service_tiers`.
 - **Prompt:** the prompt is always the one sentence that points at the spec file. Prompt text that quotes a `git` command makes a worktree-isolated session refuse the launch.
