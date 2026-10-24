@@ -3,10 +3,11 @@
 // Command, flag, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
+import type { App, CliFlag, CliFlags } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 import { Effect, Layer } from "@/lib/effect";
+import { ObsidianEnv } from "@/lib/obsidian-env";
 import { PluginHost } from "@/lib/plugin-host";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -27,6 +28,8 @@ import type {
 
 interface CitationsCliRegistrationDeps {
   app: App;
+  /** The vault's folder on disk. */
+  basePath: string;
   citationIndex: Pick<
     CitationIndex["Service"],
     "readCitedBy" | "readReferences" | "readAnnotationUses"
@@ -42,12 +45,13 @@ interface CitationsCliRegistrationDeps {
 export const layerCitationsCli: Layer.Layer<
   never,
   never,
-  PluginHost | CitationIndex | ZoteroPref
+  PluginHost | ObsidianEnv | CitationIndex | ZoteroPref
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
     registerCitationsCli(host, {
       app: host.app,
+      basePath: (yield* ObsidianEnv).basePath,
       citationIndex: yield* CitationIndex,
       zoteroPref: yield* ZoteroPref,
     });
@@ -95,8 +99,7 @@ export function registerCitationsCli(
       Effect.map(deps.zoteroPref.current, ({ sourceId, databasePath }) => ({
         vault: {
           name: deps.app.vault.getName(),
-          // Desktop-only plugin: the adapter is always a FileSystemAdapter.
-          path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
+          path: deps.basePath,
         },
         source: { id: sourceId, databasePath },
       })),

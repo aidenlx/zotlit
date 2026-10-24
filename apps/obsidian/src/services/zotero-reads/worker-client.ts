@@ -1,10 +1,10 @@
 // Worker configuration follows the native dependency streams on the layer Scope.
-import { getLanguage } from "obsidian";
 import workerSource from "virtual:zotero-reads-worker";
 
 import { sameSegmenterBinary } from "@zotlit/item-lookup";
 
 import { Effect, Ref, Stream } from "@/lib/effect";
+import { ObsidianEnv } from "@/lib/obsidian-env";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -24,6 +24,7 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
   const settings = yield* PluginSettings;
   const pref = yield* ZoteroPref;
   const segmenter = yield* ChineseSegmenter;
+  const { language } = yield* ObsidianEnv;
   const configuration = Effect.gen(function* () {
     const current = yield* settings.current;
     const status = yield* segmenter.getStatus();
@@ -31,7 +32,7 @@ export const workerClient = Effect.fn("ZoteroReads.workerClient")(function* () {
       databasePath: (yield* pref.current).databasePath,
       readMode: current["zotero.read-mode"],
       autoRefresh: current["zotero.auto-refresh"],
-      locale: getLanguage(),
+      locale: language,
       chineseSegmenter:
         status.kind === "installed" || status.kind === "installing"
           ? status.binary

@@ -3,8 +3,10 @@ import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
+import { layerNotifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { PluginHost } from "@/lib/plugin-host";
+import { layerObsidianEnv } from "@/lib/obsidian-env";
+import { layerPluginHost } from "@/lib/plugin-host";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { openLibraryView } from "@/views/library/register";
@@ -126,6 +128,10 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
+  // What both halves read from Obsidian: the App, its environment, notices.
+  const obsidian = Layer.mergeAll(layerNotifier, layerObsidianEnv).pipe(
+    Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)),
+  );
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
     layerAnnotationPopover().pipe(startingAs("AnnotationPopover")),
@@ -195,7 +201,7 @@ export function pluginLayer(
         layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
-    Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
+    Layer.provide(obsidian),
     Layer.provideMerge(
       layerLogging.pipe(
         Layer.provide(layerLogOutput(plugin)),
@@ -216,6 +222,6 @@ export function pluginLayer(
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
-  ).pipe(Layer.provide(Layer.succeed(PluginHost, plugin)));
+  ).pipe(Layer.provide(Layer.mergeAll(layerPluginHost(plugin), obsidian)));
   return registrations.pipe(Layer.provideMerge(services));
 }
