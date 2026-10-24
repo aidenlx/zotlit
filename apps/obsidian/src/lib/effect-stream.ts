@@ -1,5 +1,5 @@
 // State Streams and callback subscriptions shared by Effect services and adapters.
-import type { ManagedRuntime, SubscriptionRef } from "@/lib/effect";
+import type { ManagedRuntime, Scope, SubscriptionRef } from "@/lib/effect";
 import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
@@ -74,7 +74,9 @@ export function forkEach<A, R, R2 = never>(
  * returns a no-op unsubscribe.
  */
 export function subscribe<A, R>(
-  runtime: Pick<ManagedRuntime.ManagedRuntime<R, never>, "runFork" | "scope">,
+  runtime: Pick<ManagedRuntime.ManagedRuntime<R, never>, "runFork"> & {
+    readonly scope: Scope.Scope;
+  },
   stream: Stream.Stream<A, never, R>,
   callback: (value: A) => void,
 ): () => void {

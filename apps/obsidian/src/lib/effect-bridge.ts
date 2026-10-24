@@ -1,5 +1,5 @@
 // Runners for entering Effect services from legacy classes and Promise code.
-import { Effect, Fiber } from "@/lib/effect";
+import { Context, Effect, Fiber, Scope } from "@/lib/effect";
 import type { Exit, ManagedRuntime, Stream } from "@/lib/effect";
 
 import { isScopeClosed } from "./effect-scope";
@@ -51,3 +51,25 @@ export function effectBridge<R>(
     closed: () => isScopeClosed(runtime.scope),
   };
 }
+
+/**
+ * The bridge a layer hands to the plain code it owns, such as a state machine
+ * kept as a class: the layer's own services, with pending Exit runs and
+ * subscriptions ended when the layer's Scope closes.
+ */
+export const scopedBridge: Effect.Effect<EffectBridge, never, Scope.Scope> =
+  Effect.gen(function* () {
+    const context = yield* Effect.context<Scope.Scope>();
+    const scope = Context.get(context, Scope.Scope);
+    const runPromiseExit = Effect.runPromiseExitWith(context);
+    const onFiberStart = Fiber.runIn(scope);
+    const host = { runFork: Effect.runForkWith(context), scope };
+    return {
+      runSync: Effect.runSyncWith(context),
+      runPromise: Effect.runPromiseWith(context),
+      runPromiseExit: (effect, options) =>
+        runPromiseExit(effect, { ...options, onFiberStart }),
+      subscribe: (stream, callback) => subscribe(host, stream, callback),
+      closed: () => isScopeClosed(scope),
+    };
+  });
