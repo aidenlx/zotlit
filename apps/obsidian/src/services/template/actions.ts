@@ -3,13 +3,15 @@
 // built-in citation text when the vault holds none, so a first edit starts
 // from the text ZotLit actually renders.
 
-import type { App, Plugin } from "obsidian";
+import type { App } from "obsidian";
 
 import { Effect, Layer } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { PluginHost } from "@/lib/plugin-host";
+import type { PluginHostShape } from "@/lib/plugin-host";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { Template } from "./service";
@@ -37,7 +39,7 @@ export const layerCitationTemplateActions: Layer.Layer<
     const host = yield* PluginHost;
     const template = yield* Template;
     const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-    addCitationTemplateActions(host, {
+    yield* addCitationTemplateActions(host, {
       template: {
         materializeCitationTemplate: () =>
           runPromise(template.materializeCitationTemplate()),
@@ -47,14 +49,16 @@ export const layerCitationTemplateActions: Layer.Layer<
 );
 
 export function addCitationTemplateActions(
-  plugin: Pick<Plugin, "addCommand" | "app">,
+  host: Pick<PluginHostShape, "addCommand" | "app">,
   deps: { template: CitationTemplateActions },
-): void {
-  plugin.addCommand({
-    id: "customize-citation-text",
-    name: m.command_customize_citation_text_name(),
-    callback: () => void openCitationTemplate(plugin.app, deps.template),
-  });
+): Effect.Effect<void, never, Scope.Scope> {
+  return Effect.asVoid(
+    host.addCommand({
+      id: "customize-citation-text",
+      name: m.command_customize_citation_text_name(),
+      callback: () => void openCitationTemplate(host.app, deps.template),
+    }),
+  );
 }
 
 /**
