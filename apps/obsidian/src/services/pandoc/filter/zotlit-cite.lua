@@ -491,7 +491,7 @@ local function classify_target(target)
     add_error("citation-fragment-invalid", reason, context)
     return nil
   end
-  return { key = key, details = details, context = context }
+  return { key = key, details = details, context = context, intent = true }
 end
 
 --- Classifies one Link against the resolution map. Cached by target, because a
@@ -550,6 +550,85 @@ local function process_inlines(inlines)
     end
   end
   return result
+end
+
+--- The works a Citation names inside another Citation's prefix or suffix, by the
+--- id the bibliography knows them by. citeproc renders a nested Cite in place of
+--- the one that holds it, so a nested Citation exports as its text, and its work
+--- reaches the bibliography through `nocite` (ADR-0081).
+local nested_ids = {}
+
+--- A nested literal Citation as its source spells it, from the ids it names:
+--- the sandbox reads each key behind an injected id of its own.
+local function literal_text(cite)
+  local keys = {}
+  for position, citation in ipairs(cite.citations) do
+    local key = citation.id
+--@variant sandbox
+    key = selected_literals and selected_literals[key] or key
+--@end
+    local sign = citation.mode == "SuppressAuthor" and "-@" or "@"
+    keys[position] = sign .. key
+  end
+  return table.concat(keys, "; ")
+end
+
+local NESTED = {
+  Link = function(link)
+    local item = classify(link)
+    if not item then
+      return nil
+    end
+    if item.intent then
+      add_error(
+        "nested-citation-intent",
+        'The "#cite:" fragment declares a Citation inside another Citation\'s prefix or suffix, where a Citation exports as its text. Move the link outside the brackets, or drop the fragment.',
+        item.context
+      )
+    end
+    nested_ids[#nested_ids + 1] = item.key
+    return link.content
+  end,
+  Cite = function(cite)
+    for _, citation in ipairs(cite.citations) do
+      nested_ids[#nested_ids + 1] = citation.id
+    end
+    return to_inlines(literal_text(cite))
+  end,
+}
+
+--- Turns every Citation inside one Cite's prefixes and suffixes into text.
+local function flatten_nested(cite)
+  local citations = pandoc.List({})
+  for _, citation in ipairs(cite.citations) do
+    citation.prefix = citation.prefix:walk(NESTED)
+    citation.suffix = citation.suffix:walk(NESTED)
+    citations:insert(citation)
+  end
+  cite.citations = citations
+  return cite
+end
+
+--- Adds the nested Citations' works to `nocite`, after any the document names.
+local function add_nocite(meta)
+  if #nested_ids == 0 then
+    return meta
+  end
+  local citations = {}
+  for position, id in ipairs(nested_ids) do
+    citations[position] = pandoc.Citation(id, "NormalCitation")
+  end
+  local cite = pandoc.Cite({ pandoc.Str("") }, citations)
+  local existing = meta.nocite
+  if existing == nil then
+    meta.nocite = pandoc.MetaInlines({ cite })
+  elseif pandoc.utils.type(existing) == "Inlines" then
+    existing:extend({ pandoc.Space(), cite })
+    meta.nocite = existing
+  else
+    meta.nocite = pandoc.MetaList({ existing, pandoc.MetaInlines({ cite }) })
+  end
+  return meta
 end
 
 --- An Obsidian callout type, `[!note]`, with the fold sign a foldable one adds.
@@ -633,6 +712,8 @@ function Pandoc(doc)
     doc.blocks = body.blocks
   end
 --@end
+  doc.blocks = pandoc.Pandoc(doc.blocks):walk({ Cite = flatten_nested }).blocks
+  doc.meta = add_nocite(doc.meta)
   local converted = doc:walk({ Inlines = process_inlines, BlockQuote = convert_callout })
   if #errors > 0 then
     report_errors()
