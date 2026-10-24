@@ -15,12 +15,12 @@ import {
   Context,
   Deferred,
   Effect,
-  Exit,
   Layer,
   PubSub,
   Stream,
   SubscriptionRef,
 } from "@/lib/effect";
+import { valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { NoteIndex } from "@/services/note-index/service";
@@ -45,7 +45,8 @@ type BindResult = { server: ServerType; port: number } | "in-use" | "failed";
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
  * The service is the authoritative holder; views sync from {@link
- * LocalServer.readerTarget} on mount and the reader events thereafter.
+ * LocalServer.readerTarget} on mount and {@link LocalServer.readerTargetChanges}
+ * thereafter.
  */
 export interface ReaderTarget {
   /** Parent (regular) item the open attachment belongs to. */
@@ -375,9 +376,7 @@ export const layerLocalServer: Layer.Layer<
       getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys()),
       whenIndexed: async () => {
         if (stoppedFlag) return;
-        const exit = await runPromiseExit(noteIndex.whenIndexed());
-        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-          throw Cause.squash(exit.cause);
+        valueOr(await runPromiseExit(noteIndex.whenIndexed()), undefined);
       },
     };
 

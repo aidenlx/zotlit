@@ -291,7 +291,7 @@ function renderReadModeRow(
       .addOption("reflink", modeLabel("reflink"))
       .addOption("copy", modeLabel("copy"))
       .addOption("immutable", modeLabel("immutable"))
-      .setValue(ctx.bridge.runSync(ctx.settings.current)!["zotero.read-mode"])
+      .setValue(ctx.bridge.runSync(ctx.settings.current)["zotero.read-mode"])
       .onChange((value) => {
         ctx.bridge.runSync(
           ctx.settings.update({

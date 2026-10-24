@@ -4,10 +4,10 @@
 import { hashKey } from "@tanstack/query-core";
 import type { QueryFunctionContext, QueryKey } from "@tanstack/query-core";
 
-import { Cause, Context, Effect, Exit } from "@/lib/effect";
+import { Context, Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { scopedBridge } from "@/lib/effect-bridge";
-import { withLogCategory } from "@/lib/effect-log";
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { bridgeLog } from "@/lib/effect-log";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
@@ -500,12 +500,7 @@ export class ExcerptDisplayService extends Service<void> {
   }
 
   #logDebug(message: string, fields: Record<string, unknown>): void {
-    this.#deps.bridge.runSync(
-      Effect.logDebug(message).pipe(
-        Effect.annotateLogs(fields),
-        withLogCategory("excerpt-image"),
-      ),
-    );
+    bridgeLog(this.#deps.bridge, "excerpt-image").debug(message, fields);
   }
 
   /** What the slot's Held Read answers now, `null` where it holds nothing. */
@@ -517,15 +512,12 @@ export class ExcerptDisplayService extends Service<void> {
 
   /**
    * One Held Read; a read the released query client interrupts answers
-   * `null`, as it did through the plain adapter.
+   * `null`: no image.
    */
   async #heldRead(
     read: Effect.Effect<AvailableExcerpt | null, unknown>,
   ): Promise<AvailableExcerpt | null> {
-    const exit = await this.#deps.bridge.runPromiseExit(read);
-    if (Exit.isSuccess(exit)) return exit.value;
-    if (Cause.hasInterruptsOnly(exit.cause)) return null;
-    throw Cause.squash(exit.cause);
+    return valueOr(await this.#deps.bridge.runPromiseExit(read), null);
   }
 }
 

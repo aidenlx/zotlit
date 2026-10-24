@@ -965,7 +965,7 @@ export class AnnotationRepositoryCore implements AsyncDisposable {
 
   readonly #publish;
 
-  // The read helpers keep the plain adapter's contract after the plugin closes.
+  // After the plugin closes, a read helper answers as the bridge's `closed` says.
   #refreshDatabase(): Promise<void> {
     return refreshDatabase(this.#bridge, this.#db);
   }

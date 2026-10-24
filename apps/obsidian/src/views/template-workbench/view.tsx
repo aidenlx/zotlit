@@ -596,7 +596,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     this.register(
       subscribe(this.#deps.runtime, deps.settings.changes, (settings) => {
-        if (!settings) return;
         const bindings = settings["note.default-profile"].bindings;
         this.#bindingDefaults = {
           folder: bindings["note.literature-folder"],

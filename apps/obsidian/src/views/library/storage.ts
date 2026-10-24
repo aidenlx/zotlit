@@ -49,7 +49,7 @@ export class LibraryViewStorage {
   /** Read the document plugin data holds. Call it once plugin data has loaded. */
   load(): void {
     this.#held = parseLibraryViewDocument(
-      this.#bridge.runSync(this.#settings.current)?.[KEY],
+      this.#bridge.runSync(this.#settings.current)[KEY],
     );
     this.#taken = this.#toolbar();
   }

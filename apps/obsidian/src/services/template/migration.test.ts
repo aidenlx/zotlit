@@ -7,7 +7,7 @@ import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer, Stream } from "@/lib/effect";
+import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -16,6 +16,7 @@ import { buildSettings } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
+import type { SettingsPatch } from "@/services/settings/service";
 
 import { buildTemplate, templateSettings } from "./__fixtures__";
 import { layerTemplateMigration } from "./migration";
@@ -77,32 +78,24 @@ async function makeHarness(
   const trashFile = vi.fn(async (file: { path: string }) => {
     files.delete(file.path);
   });
+  const snapshot = () => ({ ...defaults, ...state }) as Settings;
   const update = vi.fn(
-    (
-      patch:
-        | Partial<typeof state>
-        | ((current: Readonly<typeof state>) => Partial<typeof state>),
-    ) =>
+    (patch: SettingsPatch | ((current: Readonly<Settings>) => SettingsPatch)) =>
       Effect.sync(() => {
         Object.assign(
           state,
-          typeof patch === "function" ? patch(state) : patch,
+          typeof patch === "function" ? patch(snapshot()) : patch,
         );
-        return { ...defaults, ...state } as Settings;
+        return snapshot();
       }),
   );
-  const settings = {
-    current: Effect.sync(() => ({ ...defaults, ...state }) as Settings),
-    update,
-    reset: () => Effect.sync(() => ({ ...defaults, ...state }) as Settings),
-    updateDefaultLiteratureNoteProfileBindings: () => Effect.void,
-    loaded: Effect.succeed({ ...defaults, ...state } as Settings),
-    diagnostics: Effect.succeed([]),
-    hydrationOrigin: Effect.succeed(null),
-    changes: Stream.empty,
-    flush: vi.fn(() => Effect.void),
-    release: () => Effect.void,
-  };
+  const flush = vi.fn(() => Effect.void);
+  const settings = Object.assign(
+    stubService<PluginSettings["Service"]>("PluginSettings", {
+      current: Effect.sync(snapshot),
+    }),
+    { update, flush },
+  );
   const bridge = { runSync: Effect.runSync, runPromise: Effect.runPromise };
   const template = {
     refresh: vi.fn(async () => {}),

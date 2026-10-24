@@ -13,7 +13,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
-import { defaults } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
@@ -73,10 +72,9 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     editor: Editor,
     _file: TFile | null,
   ): EditorSuggestTriggerInfo | null {
-    const trigger =
-      this.#deps.bridge.runSync(this.#deps.settings.current)?.[
-        "citation.annotation-trigger"
-      ] ?? defaults["citation.annotation-trigger"];
+    const trigger = this.#deps.bridge.runSync(this.#deps.settings.current)[
+      "citation.annotation-trigger"
+    ];
     const found = resolveAnnotationTrigger(
       editor.getLine(cursor.line),
       cursor.ch,

@@ -120,6 +120,10 @@ async function fixture(serverID: string | null = SERVER_ID): Promise<
 const fixtureDb = (serverID?: string | null) =>
   acquireAsyncDisposable(() => fixture(serverID));
 
+/** A bridge over an empty runtime, held for the case's scope. */
+const testBridge = () =>
+  acquireAsyncDisposable(() => Promise.resolve(openTestBridge()));
+
 /** An Excerpt Image service over `render` and an in-memory cache. */
 const serviceOf = (
   options: ConstructorParameters<typeof ExcerptImageService>[0],
@@ -159,6 +163,7 @@ describe("Saved excerpt request", () => {
           sourceScope: paths.dataDir,
           zoteroReads: db.zoteroReads,
           paths,
+          bridge,
         }),
       );
 
@@ -178,6 +183,7 @@ describe("Saved excerpt request", () => {
       const zoteroReads = yield* acquireAsyncDisposable(() =>
         Promise.resolve(inProcessReadsService(sharedClientOpener(closed))),
       );
+      const bridge = yield* testBridge();
 
       expect(
         yield* Effect.promise(() =>
@@ -187,6 +193,7 @@ describe("Saved excerpt request", () => {
             sourceScope: paths.dataDir,
             zoteroReads,
             paths,
+            bridge,
           }),
         ),
       ).toBeNull();
@@ -199,6 +206,7 @@ describe("Saved excerpt request", () => {
       Effect.gen(function* () {
         const db = yield* fixtureDb();
         const moving = { ...paths };
+        const bridge = yield* testBridge();
 
         const request = yield* Effect.promise(() =>
           savedExcerptRequest({
@@ -213,6 +221,7 @@ describe("Saved excerpt request", () => {
               },
             },
             paths: moving,
+            bridge,
           }),
         );
 

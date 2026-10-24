@@ -1,7 +1,8 @@
 // Effect exit handling for the repository's plain read seams.
 import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 
-import { Cause, Effect, Exit } from "@/lib/effect";
+import { Effect } from "@/lib/effect";
+import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import type { QueryClients } from "@/services/query-client/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
@@ -11,9 +12,7 @@ export async function refreshDatabase(
   db: Pick<ZoteroReads["Service"], "refresh">,
 ): Promise<void> {
   if (bridge.closed()) return;
-  const exit = await bridge.runPromiseExit(db.refresh());
-  if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-    throw Cause.squash(exit.cause);
+  valueOr(await bridge.runPromiseExit(db.refresh()), undefined);
 }
 
 export async function readHeld<T>(
@@ -22,10 +21,7 @@ export async function readHeld<T>(
   { key, read }: { key: QueryKey; read: QueryFunction<T> },
 ): Promise<T | null> {
   if (bridge.closed()) return null;
-  const exit = await bridge.runPromiseExit(queries.read(key, read));
-  if (Exit.isSuccess(exit)) return exit.value;
-  if (Cause.hasInterruptsOnly(exit.cause)) return null;
-  throw Cause.squash(exit.cause);
+  return valueOr(await bridge.runPromiseExit(queries.read(key, read)), null);
 }
 
 export function readAll<A, B, C, E>(

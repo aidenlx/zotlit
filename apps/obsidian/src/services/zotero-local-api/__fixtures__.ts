@@ -2,6 +2,8 @@ import { vi } from "vitest";
 
 import type { DbUpdated } from "@zotlit/protocol";
 
+import { manualClock } from "@/lib/__fixtures__/manual-clock";
+import type { ManualClock } from "@/lib/__fixtures__/manual-clock";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 // Zotero Local API answers, and the transport that replays them.
 //
@@ -717,8 +719,8 @@ export interface ClientOptions {
   key?: string;
   /** The deadline a Capability Probe runs under. @default one that never fires */
   probeDeadline?: () => AbortSignal;
-  /** The clock the dialog cooldown is read against. @default {@link NOW} */
-  now?: () => Temporal.Instant;
+  /** The Clock the dialog cooldown is read against. @default a Clock standing at {@link NOW} */
+  clock?: ManualClock;
 }
 
 /** The instant a test's clock stands at unless it says otherwise. */
@@ -795,8 +797,8 @@ export async function localApiClient(
     credentials,
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
-    now: options.now ?? (() => NOW),
   }).pipe(
+    Layer.provide(options.clock?.layer ?? manualClock(NOW).layer),
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(ZoteroPref, pref),

@@ -1,6 +1,7 @@
 // The Annotation Popover as an Effect service.
 import { Context, Effect, Layer } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import { acquireDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
@@ -29,7 +30,7 @@ export class AnnotationPopover extends Context.Service<
   }
 >()("zotlit/annotation-popover/AnnotationPopover") {}
 
-export function layerAnnotationPopover(): Layer.Layer<
+export const layerAnnotationPopover: Layer.Layer<
   AnnotationPopover,
   never,
   | AnnotationRepository
@@ -37,35 +38,33 @@ export function layerAnnotationPopover(): Layer.Layer<
   | ZoteroReads
   | ZoteroPref
   | ObsidianApp
-> {
-  return Layer.effect(
-    AnnotationPopover,
-    Effect.gen(function* () {
-      const repository = yield* AnnotationRepository;
-      const excerptDisplay = yield* ExcerptDisplays;
-      const reads = yield* ZoteroReads;
-      const pref = yield* ZoteroPref;
-      const app = yield* ObsidianApp;
-      const bridge = yield* scopedBridge;
-      const core = yield* acquireDisposable(
-        () =>
-          new AnnotationPopoverCore({
-            annotations: repository,
-            bridge,
-            excerptDisplay,
-            excerptRequest: savedExcerptRequestOver({ reads, pref, bridge }),
-            commentRenderer: (owner, sourcePath) =>
-              createCommentRenderer({
-                app,
-                component: owner,
-                getSourcePath: () => sourcePath,
-              }),
-          }),
-      );
-      return AnnotationPopover.of({
-        // The core catches read failures, and this starts its first read now.
-        show: (request) => Effect.promise(() => core.show(request)),
-      });
-    }),
-  );
-}
+> = Layer.effect(
+  AnnotationPopover,
+  Effect.gen(function* () {
+    const repository = yield* AnnotationRepository;
+    const excerptDisplay = yield* ExcerptDisplays;
+    const reads = yield* ZoteroReads;
+    const pref = yield* ZoteroPref;
+    const app = yield* ObsidianApp;
+    const bridge = yield* scopedBridge;
+    const core = yield* acquireDisposable(
+      () =>
+        new AnnotationPopoverCore({
+          annotations: repository,
+          bridge,
+          excerptDisplay,
+          excerptRequest: savedExcerptRequestOver({ reads, pref, bridge }),
+          commentRenderer: (owner, sourcePath) =>
+            createCommentRenderer({
+              app,
+              component: owner,
+              getSourcePath: () => sourcePath,
+            }),
+        }),
+    );
+    return AnnotationPopover.of({
+      // The core catches read failures, and this starts its first read now.
+      show: (request) => Effect.promise(() => core.show(request)),
+    });
+  }).pipe(withLogCategory("annotation-popover")),
+);

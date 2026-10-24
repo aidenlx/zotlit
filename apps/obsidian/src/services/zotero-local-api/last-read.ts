@@ -1,8 +1,7 @@
 import { parseIndexedKey } from "@zotlit/db";
 
-import { Effect } from "@/lib/effect";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import { withLogCategory } from "@/lib/effect-log";
+import { bridgeLog } from "@/lib/effect-log";
 import { acquireReadLease } from "@/services/zotero-reads/lease";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -32,19 +31,7 @@ export async function writeReadUse(
     serverID: string | null;
   },
 ): Promise<void> {
-  const log = (
-    level: "debug" | "trace",
-    message: string,
-    fields: Record<string, unknown>,
-  ): void => {
-    const write = level === "trace" ? Effect.logTrace : Effect.logDebug;
-    bridge.runSync(
-      write(message).pipe(
-        Effect.annotateLogs(fields),
-        withLogCategory("last-read"),
-      ),
-    );
-  };
+  const log = bridgeLog(bridge, "last-read");
   const parsed = parseIndexedKey(attachmentKey);
   const state = bridge.runSync(api.state);
   if (
@@ -53,7 +40,7 @@ export async function writeReadUse(
     state.kind !== "available" ||
     !state.authorized
   ) {
-    log("trace", "Read write-back skipped", {
+    log.trace("Read write-back skipped", {
       attachmentKey,
       reason: !parsed
         ? "invalid attachment"
@@ -66,7 +53,7 @@ export async function writeReadUse(
     return;
   }
   if (resolvedServerID === null || resolvedServerID !== state.source.serverID) {
-    log("trace", "Read write-back skipped", {
+    log.trace("Read write-back skipped", {
       attachmentKey,
       reason: "resolved source differs",
     });
@@ -82,7 +69,7 @@ export async function writeReadUse(
       serverID = database.serverID;
     }
     if (serverID !== resolvedServerID) {
-      log("trace", "Read write-back skipped", {
+      log.trace("Read write-back skipped", {
         attachmentKey,
         reason: "current database differs",
       });
@@ -92,7 +79,7 @@ export async function writeReadUse(
       api.writeLastRead(attachmentKey, serverID, instant),
     );
   } catch (error) {
-    log("debug", "Could not write this read Use to Zotero", {
+    log.debug("Could not write this read Use to Zotero", {
       attachmentKey,
       error,
     });

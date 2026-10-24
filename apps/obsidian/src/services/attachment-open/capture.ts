@@ -85,11 +85,9 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           if (
             target === EXTERNAL_TARGET ||
             url === undefined ||
-            !(
-              deps.bridge.runSync(deps.settings.current)?.[
-                "reader.open-file-links"
-              ] ?? true
-            )
+            !deps.bridge.runSync(deps.settings.current)[
+              "reader.open-file-links"
+            ]
           ) {
             return native(url, target, features);
           }

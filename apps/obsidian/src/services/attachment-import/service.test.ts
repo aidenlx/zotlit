@@ -102,7 +102,6 @@ async function makeService(options?: {
 }): Promise<AttachmentImportService> {
   const runtime = testRuntime();
   const service = new AttachmentImportService({
-    runtime,
     bridge: effectBridge(runtime),
     app: options?.app ?? makeApp(),
     settings: makeSettings({
@@ -259,7 +258,6 @@ describe("AttachmentImportService", () => {
     });
     const runtime = testRuntime();
     const service = new AttachmentImportService({
-      runtime,
       bridge: effectBridge(runtime),
       app: makeApp(),
       settings: makeSettings({
@@ -290,7 +288,6 @@ describe("AttachmentImportService", () => {
     const zoteroPref = makeZoteroPref({ dataDir, baseAttachmentPath: null });
     const runtime = testRuntime();
     const service = new AttachmentImportService({
-      runtime,
       bridge: effectBridge(runtime),
       app: makeApp(),
       settings: makeSettings({
@@ -383,7 +380,6 @@ describe("AttachmentImportService", () => {
 
     const runtime = testRuntime();
     const service = new AttachmentImportService({
-      runtime,
       bridge: effectBridge(runtime),
       app: makeApp(),
       settings: makeSettings({

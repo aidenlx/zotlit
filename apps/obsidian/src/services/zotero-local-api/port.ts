@@ -1,4 +1,4 @@
-// The Local API as the Annotation Repository reads it: synchronous reads, Promises, and events.
+// The Local API as the Annotation Repository and CapabilityNotices read it: synchronous reads, Promises, and events.
 import type { EffectBridge } from "@/lib/effect-bridge";
 
 import type { AuthorizedSendOptions, ZoteroLocalApi } from "./service";

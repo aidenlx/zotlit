@@ -151,7 +151,7 @@ describe("AnnotationPopover", () => {
       } as ZoteroPrefSnapshot),
     });
     const runtime = buildRuntime(
-      layerAnnotationPopover().pipe(
+      layerAnnotationPopover.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(AnnotationRepository, repository),
@@ -243,7 +243,7 @@ describe("AnnotationPopover", () => {
       } as ZoteroPrefSnapshot),
     });
     const runtime = buildRuntime(
-      layerAnnotationPopover().pipe(
+      layerAnnotationPopover.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(AnnotationRepository, repository),
@@ -451,6 +451,7 @@ describe("AnnotationPopover with an Excerpt Image", () => {
             sourceScope: DATA_DIR,
             zoteroReads: db,
             paths: { dataDir: DATA_DIR, baseAttachmentPath: null },
+            bridge,
           }),
         commentRenderer: () => () => () => {},
       }),

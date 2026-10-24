@@ -10,7 +10,6 @@ import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 import { createStore } from "zustand/vanilla";
 
 import { Effect } from "@/lib/effect";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -84,7 +83,6 @@ export const LIBRARY_VIEW_TYPE = "zotlit-library";
 export interface LibraryViewDeps extends QueryViewDeps {
   useLedger: Pick<PlainUseLedger, "get">;
   settings: Pick<PluginSettings["Service"], "update" | "flush" | "current">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   libraryScope: QueryViewDeps["libraryScope"] &
     LibraryTreeDeps["libraryScope"] &
     Pick<PlainLibraryScope, "effective">;

@@ -135,7 +135,7 @@ export function pluginLayer(
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
-    layerAnnotationPopover().pipe(startingAs("AnnotationPopover")),
+    layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
   ).pipe(
     Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),

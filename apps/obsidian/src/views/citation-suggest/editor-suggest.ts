@@ -67,7 +67,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     _file: TFile | null,
   ): EditorSuggestTriggerInfo | null {
     if (
-      this.#deps.bridge.runSync(this.#deps.settings.current)?.[
+      this.#deps.bridge.runSync(this.#deps.settings.current)[
         "citation.editor-suggester"
       ] === false
     ) {
@@ -75,10 +75,9 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     }
 
     const line = editor.getLine(cursor.line);
-    const atTrigger =
-      this.#deps.bridge.runSync(this.#deps.settings.current)?.[
-        "citation.at-trigger"
-      ] ?? false;
+    const atTrigger = this.#deps.bridge.runSync(this.#deps.settings.current)[
+      "citation.at-trigger"
+    ];
     const trigger = resolveCitationTrigger(line, cursor.ch, {
       atTrigger,
     });
