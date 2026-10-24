@@ -6,6 +6,7 @@ import type { App, TFile } from "obsidian";
 import { normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { modalAnswer } from "@/lib/modal-answer";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import {
@@ -137,48 +138,49 @@ export function confirmProfileSwitch(
     imported?: boolean;
   },
 ): Promise<ProfileSwitchConsent> {
-  const { promise, resolve } = Promise.withResolvers<ProfileSwitchConsent>();
-  const modal = new ConfirmationModal(app);
-  modal.contentEl.addClass("zt-root");
-  let move = false;
-  let importedNotes = false;
-  modal.setTitle(m.modal_profile_switch_title({ label: options.requested }));
-  const content = `${m.modal_profile_switch_desc(options)} ${options.imported ? m.modal_profile_switch_imported_effects() : m.modal_profile_switch_effects()}`;
-  modal.setContent(
-    !options.imported && options.importedCount === null
-      ? `${content}\n\n${m.modal_profile_switch_imported_unavailable()}`
-      : content,
-  );
-  if (options.moveFolder !== undefined) {
-    const folder = normalizeFolderPath(options.moveFolder);
-    modal.addCheckbox(
-      m.modal_profile_switch_move({
-        folder: folder === "/" ? "/" : `${folder}/`,
-      }),
-      (checked) => {
-        move = checked;
-      },
+  return modalAnswer<ProfileSwitchConsent>((resolve) => {
+    const modal = new ConfirmationModal(app);
+    modal.contentEl.addClass("zt-root");
+    let move = false;
+    let importedNotes = false;
+    modal.setTitle(m.modal_profile_switch_title({ label: options.requested }));
+    const content = `${m.modal_profile_switch_desc(options)} ${options.imported ? m.modal_profile_switch_imported_effects() : m.modal_profile_switch_effects()}`;
+    modal.setContent(
+      !options.imported && options.importedCount === null
+        ? `${content}\n\n${m.modal_profile_switch_imported_unavailable()}`
+        : content,
     );
-  }
-  if (!options.imported && options.importedCount !== null)
-    modal.addCheckbox(
-      m.modal_profile_switch_imported_notes({ count: options.importedCount }),
-      (checked) => {
-        importedNotes = checked;
-      },
+    if (options.moveFolder !== undefined) {
+      const folder = normalizeFolderPath(options.moveFolder);
+      modal.addCheckbox(
+        m.modal_profile_switch_move({
+          folder: folder === "/" ? "/" : `${folder}/`,
+        }),
+        (checked) => {
+          move = checked;
+        },
+      );
+    }
+    if (!options.imported && options.importedCount !== null)
+      modal.addCheckbox(
+        m.modal_profile_switch_imported_notes({ count: options.importedCount }),
+        (checked) => {
+          importedNotes = checked;
+        },
+      );
+    modal.addButton((button) => {
+      button
+        .setButtonText(
+          m.modal_profile_switch_confirm({ label: options.requested }),
+        )
+        .setCta()
+        .onClick(() => resolve({ confirmed: true, move, importedNotes }));
+    });
+    modal.addCancelButton(m.modal_cancel());
+    modal.setCloseCallback(() =>
+      resolve({ confirmed: false, move: false, importedNotes: false }),
     );
-  modal.addButton((button) => {
-    button
-      .setButtonText(
-        m.modal_profile_switch_confirm({ label: options.requested }),
-      )
-      .setCta()
-      .onClick(() => resolve({ confirmed: true, move, importedNotes }));
+    modal.open();
+    return modal;
   });
-  modal.addCancelButton(m.modal_cancel());
-  modal.setCloseCallback(() =>
-    resolve({ confirmed: false, move: false, importedNotes: false }),
-  );
-  modal.open();
-  return promise;
 }
