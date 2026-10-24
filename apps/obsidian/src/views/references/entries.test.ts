@@ -1,13 +1,35 @@
 import { describe, expect, it } from "vitest";
 
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
+import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
+import { citationOutcome } from "@/services/citation-index/outcome";
 import type {
   Citation,
   CitationOccurrence,
   ReferenceSource,
 } from "@/services/citation-index/service";
 
-import { buildReferenceEntries } from "./entries";
+import { buildReferenceEntries as presentReferenceEntries } from "./entries";
+import type { ReferenceBuildOptions } from "./entries";
+
+function buildReferenceEntries(
+  citations: readonly Citation[],
+  sources: ReadonlyMap<string, ReferenceSource>,
+  options: ReferenceBuildOptions & { ambiguous?: AmbiguousCandidatesOf } = {},
+) {
+  return presentReferenceEntries(
+    citations.map((c) => ({
+      ...c,
+      outcome: citationOutcome(c, {
+        sources,
+        presentKeys: new Set(sources.keys()),
+        database: "ready",
+        candidates: options.ambiguous?.(c.occurrences[0]!.raw) ?? [],
+      }),
+    })),
+    options,
+  );
+}
 import type { ReferenceBibliography, RenderedReference } from "./entries";
 
 function citation(
@@ -71,6 +93,7 @@ function source(indexedKey: string, id: string): ReferenceSource {
   return {
     csl: { id, type: "book", title: `Title of ${indexedKey}` },
     summary: `Rivers (2020): Title of ${indexedKey}`,
+    citationSummary: "Rivers (2020)",
     itemKey: indexedKey,
     itemID: 1,
     groupID: null,

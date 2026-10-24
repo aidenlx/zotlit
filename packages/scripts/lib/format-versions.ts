@@ -15,6 +15,11 @@ export const formatVersions: readonly FormatVersion[] = [
     constant: "SCHEMA_VERSION",
   },
   {
+    name: "Citation scanner",
+    file: "apps/obsidian/src/services/citation-index/store.ts",
+    constant: "SCANNER_REVISION",
+  },
+  {
     name: "Excerpt store",
     file: "apps/obsidian/src/services/excerpt-image/store.ts",
     constant: "SCHEMA_VERSION",
@@ -54,8 +59,7 @@ export const formatVersions: readonly FormatVersion[] = [
 // MIN_SCHEMA_VERSION in note-marks.ts is a minimum-compatible Zotero version,
 // not a format ZotLit writes. Upstream Zotero schema pins and Fixture settings
 // copies likewise follow their owners. CLI, bridge and wire protocol versions
-// describe exchanges rather than persisted formats. Register SCANNER_REVISION
-// here when the scan pipeline introduces its persisted cache identity.
+// describe exchanges rather than persisted formats.
 
 export function latestReleaseTag(tags: readonly string[]): string {
   const tag = tags.filter((tag) => valid(tag) !== null).sort(rcompare)[0];

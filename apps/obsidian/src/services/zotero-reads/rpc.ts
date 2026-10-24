@@ -527,6 +527,15 @@ const CitationLookupAnswerSchema = Schema.Struct({
   revision: Schema.String,
   citekeys: Schema.ReadonlyMap(Schema.String, CitationResolutionSchema),
   indexedKeys: Schema.ReadonlyMap(Schema.String, Schema.NullOr(Schema.String)),
+  annotationKeys: Schema.ReadonlyMap(
+    Schema.String,
+    Schema.NullOr(
+      Schema.Struct({
+        indexedKey: Schema.String,
+        citekey: Schema.NullOr(Schema.String),
+      }),
+    ),
+  ),
 });
 type _CitationLookupAnswer = Expect<
   Equals<typeof CitationLookupAnswerSchema.Type, CitationLookupWireAnswer>
@@ -547,6 +556,7 @@ export class ZoteroReads extends RpcGroup.make(
       scope: CitationScopeSchema,
       citekeys: Schema.optionalKey(Schema.Array(Schema.String)),
       indexedKeys: Schema.optionalKey(Schema.Array(Schema.String)),
+      annotationKeys: Schema.optionalKey(Schema.Array(Schema.String)),
     },
     success: CitationLookupAnswerSchema,
     error: DbUnavailable,

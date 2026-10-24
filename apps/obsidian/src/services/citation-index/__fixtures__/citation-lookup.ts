@@ -123,6 +123,7 @@ export class CitationLookupStub implements Pick<
         const selected = {
           citekeys: [...new Set(next.citekeys ?? [])].sort(),
           indexedKeys: [...new Set(next.indexedKeys ?? [])].sort(),
+          annotationKeys: [...new Set(next.annotationKeys ?? [])].sort(),
         };
         const key = JSON.stringify(selected);
         if (disposed || identity === key) return;

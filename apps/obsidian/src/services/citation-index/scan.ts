@@ -1,15 +1,8 @@
-// One document's Citation Occurrences: the shared grammar over a masked body, merged with the link cache.
-
-import { parseLinktext } from "obsidian";
-import type { LinkCache, Loc, Pos } from "obsidian";
-
-import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
-
-import { parseCitationFragment } from "@/lib/citation-fragment";
-import type { ScannedCitation } from "@/lib/citation-source";
+// Citation occurrence types, equality, and the editor's synchronous wikilink mask.
+import type { Pos } from "obsidian";
 
 /** Which syntax wrote a Citation Occurrence. */
-export type CitationSyntax = "citekey" | "wikilink";
+export type CitationSyntax = "citekey" | "wikilink" | "annotation";
 
 /**
  * One appearance of a Citation in one document. Raw and unresolved by design:
@@ -17,108 +10,18 @@ export type CitationSyntax = "citekey" | "wikilink";
  */
 export interface CitationOccurrence {
   kind: CitationSyntax;
-  /** The literal citekey, or the wikilink's linkpath with its subpath stripped. */
+  /** The literal citekey, stripped wikilink linkpath, or Annotation Indexed Key. */
   raw: string;
+  /** The validated text after a Wikilink Citation’s #cite: marker. */
+  fragment?: string;
   position: Pos;
+  /** The Annotation Citation's page locator, when supplied by its link. */
+  pageLabel?: string | null;
 }
 
 /** A Citation Fragment that declares citation intent but cannot be parsed. */
 export interface MalformedWikilinkCitation {
   occurrence: CitationOccurrence;
-}
-
-/**
- * Exclusion is masking plus the grammar's own rules: the body is blanked
- * wherever Markdown puts text out of reach — frontmatter, fenced and indented
- * code, inline code, math, `%%` comments, and wikilinks — and the grammar reads
- * what remains. Blanking keeps every offset, so positions stay those of the source.
- *
- * @returns the literal `@citekey` occurrences of `text`, in document order.
- */
-export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
-  const lineStarts = lineStartsOf(text);
-  const occurrences: CitationOccurrence[] = [];
-  for (const citation of scanPandocCitations(citationBody(text))) {
-    for (const { citationKey, start, end } of citation.items) {
-      occurrences.push({
-        kind: "citekey",
-        raw: citationKey,
-        position: {
-          start: locAt(lineStarts, start),
-          end: locAt(lineStarts, end),
-        },
-      });
-    }
-  }
-  return occurrences;
-}
-
-/**
- * Reads the same masked body {@link scanCitekeyOccurrences} does, so a citation
- * written inside code, math, a `%%` comment, a wikilink, or frontmatter is no
- * citation here either. Masking keeps every offset, so a span still addresses `text` itself.
- *
- * @returns the citations of `text`, in document order.
- */
-export function scanDocumentCitations(text: string): ScannedCitation[] {
-  return scanPandocCitations(citationBody(text)).map(
-    ({ start, end, items }) => ({
-      start,
-      end,
-      keys: items.map((item) => ({
-        citekey: item.citationKey,
-        start: item.start,
-        end: item.end,
-      })),
-    }),
-  );
-}
-
-/**
- * Wikilink occurrences derive from Obsidian's own link cache, which already
- * omits links inside code, so they need no masking and are never stored.
- *
- * @returns eligible and malformed wikilink citation intent.
- */
-export function documentWikilinks(links: readonly LinkCache[]): {
-  occurrences: CitationOccurrence[];
-  malformed: MalformedWikilinkCitation[];
-} {
-  const occurrences: CitationOccurrence[] = [];
-  const malformed: MalformedWikilinkCitation[] = [];
-  for (const link of links) {
-    const classified = classifyWikilinkCitation(link);
-    if (classified === null) continue;
-    const occurrence = {
-      kind: "wikilink" as const,
-      raw: classified.path,
-      position: link.position,
-    };
-    if (classified.kind === "eligible") {
-      occurrences.push(occurrence);
-    } else {
-      malformed.push({ occurrence });
-    }
-  }
-  return { occurrences, malformed };
-}
-
-function classifyWikilinkCitation(
-  link: LinkCache,
-):
-  | { kind: "eligible"; path: string }
-  | { kind: "malformed"; path: string }
-  | null {
-  if (!link.original.startsWith("[[") || link.original.includes("|")) {
-    return null;
-  }
-  const { path, subpath } = parseLinktext(link.link);
-  if (path === "") return null;
-  if (subpath === "") return { kind: "eligible", path };
-  const prefix = "#cite:";
-  if (!subpath.startsWith(prefix)) return null;
-  const parsed = parseCitationFragment(subpath.slice(prefix.length));
-  return parsed.ok ? { kind: "eligible", path } : { kind: "malformed", path };
 }
 
 /**
@@ -135,98 +38,12 @@ export function occurrencesEqual(
     return (
       occurrence.kind === other.kind &&
       occurrence.raw === other.raw &&
+      occurrence.fragment === other.fragment &&
+      occurrence.pageLabel === other.pageLabel &&
       occurrence.position.start.offset === other.position.start.offset &&
       occurrence.position.end.offset === other.position.end.offset
     );
   });
-}
-
-/** A list item opens a list; its indented content is no code block. */
-const LIST_MARKER = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/u;
-
-/** Columns a tab advances, as CommonMark counts indentation. */
-const TAB_WIDTH = 4;
-
-/** The indentation an indented code block needs. */
-const CODE_INDENT = 4;
-
-/** The text the Pandoc grammar reads: exclusions and wikilinks blanked. */
-function citationBody(text: string): string {
-  return maskWikilinks(maskExclusions(text));
-}
-
-/**
- * Blank every region the Citation Index must not read, keeping each character's
- * offset and every line break so the grammar still sees the document's shape.
- */
-export function maskExclusions(text: string): string {
-  const body = text.split("");
-  maskBlocks(text, body);
-  maskInline(body);
-  return body.join("");
-}
-
-function mask(body: string[], from: number, to: number): void {
-  for (let at = from; at < to; at += 1) {
-    if (body[at] !== "\n") body[at] = " ";
-  }
-}
-
-/**
- * Frontmatter, fenced code, and indented code, all of which a line reading
- * decides. An unterminated frontmatter block or fence is no block at all to
- * Obsidian, so it stays readable here too.
- */
-function maskBlocks(text: string, body: string[]): void {
-  const lines = text.split("\n");
-  const starts = lineStartsOf(text);
-  const maskLine = (index: number): void => {
-    mask(body, starts[index]!, starts[index]! + lines[index]!.length);
-  };
-
-  let from = 0;
-  const frontmatterEnd = frontmatterLine(lines);
-  if (frontmatterEnd !== null) {
-    for (let line = 0; line <= frontmatterEnd; line += 1) maskLine(line);
-    from = frontmatterEnd + 1;
-  }
-
-  let fence: string | null = null;
-  let inCode = false;
-  let afterBlank = true;
-  let inList = false;
-  for (let index = from; index < lines.length; index += 1) {
-    const line = lines[index]!;
-    if (fence !== null) {
-      maskLine(index);
-      if (closesFence(line, fence)) fence = null;
-      continue;
-    }
-    if (isBlank(line)) {
-      afterBlank = true;
-      continue;
-    }
-    const indent = indentWidth(line);
-    if (inCode && indent >= CODE_INDENT) {
-      maskLine(index);
-      continue;
-    }
-    inCode = false;
-
-    const opening = openingFence(line);
-    if (opening !== null) {
-      maskLine(index);
-      fence = opening;
-    } else if (indent >= CODE_INDENT && afterBlank && !inList) {
-      maskLine(index);
-      inCode = true;
-    } else if (LIST_MARKER.test(line)) {
-      inList = true;
-    } else if (indent === 0) {
-      inList = false;
-    }
-    afterBlank = false;
-  }
 }
 
 /**
@@ -247,26 +64,16 @@ export function maskWikilinks(text: string): string {
   return body.join("");
 }
 
-/** Inline code, math, and `%%` comments, over the body the block pass left. */
-function maskInline(body: string[]): void {
-  for (let at = 0; at < body.length; at += 1) {
-    const char = body[at];
-    if (char === "\\") {
-      at += 1;
-    } else if (char === "`") {
-      at = maskCodeSpan(body, at);
-    } else if (char === "%" && body[at + 1] === "%") {
-      at = maskComment(body, at);
-    } else if (char === "$") {
-      at = maskMath(body, at);
-    }
+function mask(body: string[], from: number, to: number): void {
+  for (let at = from; at < to; at += 1) {
+    if (body[at] !== "\n") body[at] = " ";
   }
 }
 
 /**
  * A wikilink stays on one line; an unclosed `[[` is text.
  *
- * @returns the offset the inline scan continues from, as {@link maskCodeSpan} does.
+ * @returns the offset the inline scan continues from, after the masked link.
  */
 function maskWikilink(body: string[], open: number): number {
   for (let at = open + 2; at < body.length - 1 && body[at] !== "\n"; at += 1) {
@@ -275,139 +82,4 @@ function maskWikilink(body: string[], open: number): number {
     return at + 1;
   }
   return open + 1;
-}
-
-/**
- * @returns the offset the inline scan continues from: the last masked character
- *   when the span closes, or the last of the opening run when it does not.
- */
-function maskCodeSpan(body: string[], open: number): number {
-  let content = open;
-  while (body[content] === "`") content += 1;
-  const ticks = content - open;
-  for (let at = content; at < body.length && body[at] !== "\n"; at += 1) {
-    if (body[at] !== "`") continue;
-    let end = at;
-    while (body[end] === "`") end += 1;
-    if (end - at === ticks) {
-      mask(body, open, end);
-      return end - 1;
-    }
-    at = end - 1;
-  }
-  return content - 1;
-}
-
-/** @returns the offset the inline scan continues from, as {@link maskCodeSpan} does. */
-function maskComment(body: string[], open: number): number {
-  for (let at = open + 2; at < body.length - 1; at += 1) {
-    if (body[at] !== "%" || body[at + 1] !== "%") continue;
-    mask(body, open, at + 2);
-    return at + 1;
-  }
-  return open + 1;
-}
-
-/**
- * `$$` spans lines; `$` stays on one and needs its content to touch both
- * delimiters, so a price pair such as `$5 and $6` is prose.
- *
- * @returns the offset the inline scan continues from, as {@link maskCodeSpan} does.
- */
-function maskMath(body: string[], open: number): number {
-  const display = body[open + 1] === "$";
-  const content = open + (display ? 2 : 1);
-  for (let at = content; at < body.length; at += 1) {
-    if (body[at] === "\n" && !display) break;
-    if (body[at] !== "$") continue;
-    if (display) {
-      if (body[at + 1] !== "$") continue;
-      mask(body, open, at + 2);
-      return at + 1;
-    }
-    if (at === content || isSpace(body[at - 1]!) || isDigit(body[at + 1])) {
-      continue;
-    }
-    mask(body, open, at + 1);
-    return at;
-  }
-  return content - 1;
-}
-
-/** @returns the index of the line closing the frontmatter block, or `null` when there is none. */
-function frontmatterLine(lines: readonly string[]): number | null {
-  if (lines[0]?.trim() !== "---") return null;
-  for (let line = 1; line < lines.length; line += 1) {
-    if (lines[line]!.trim() === "---") return line;
-  }
-  return null;
-}
-
-/** @returns the backtick or tilde run opening a fenced block, or `null` for any other line. */
-function openingFence(line: string): string | null {
-  const indent = leadingSpaces(line);
-  if (indent > 3) return null;
-  const char = line[indent];
-  if (char !== "`" && char !== "~") return null;
-  let end = indent;
-  while (line[end] === char) end += 1;
-  if (end - indent < 3) return null;
-  // A backtick fence's info string may hold no backtick of its own.
-  if (char === "`" && line.includes("`", end)) return null;
-  return line.slice(indent, end);
-}
-
-function closesFence(line: string, fence: string): boolean {
-  const indent = leadingSpaces(line);
-  if (indent > 3) return false;
-  let end = indent;
-  while (line[end] === fence[0]) end += 1;
-  return end - indent >= fence.length && line.slice(end).trim() === "";
-}
-
-function isBlank(line: string): boolean {
-  return line.trim() === "";
-}
-
-function leadingSpaces(line: string): number {
-  let at = 0;
-  while (line[at] === " ") at += 1;
-  return at;
-}
-
-function indentWidth(line: string): number {
-  let width = 0;
-  for (const char of line) {
-    if (char === " ") width += 1;
-    else if (char === "\t") width += TAB_WIDTH;
-    else break;
-  }
-  return width;
-}
-
-function isSpace(char: string): boolean {
-  return /\s/u.test(char);
-}
-
-function isDigit(char: string | undefined): boolean {
-  return char !== undefined && char >= "0" && char <= "9";
-}
-
-function lineStartsOf(text: string): number[] {
-  const starts = [0];
-  for (let at = text.indexOf("\n"); at >= 0; at = text.indexOf("\n", at + 1)) {
-    starts.push(at + 1);
-  }
-  return starts;
-}
-
-function locAt(lineStarts: readonly number[], offset: number): Loc {
-  let low = 0;
-  let high = lineStarts.length - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (lineStarts[middle]! > offset) high = middle - 1;
-    else low = middle;
-  }
-  return { line: low, col: offset - lineStarts[low]!, offset };
 }

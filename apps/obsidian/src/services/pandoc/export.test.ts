@@ -9,6 +9,7 @@ import type { CslItemData } from "@zotlit/db";
 
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
 import { createCitationEngine } from "./engine";
@@ -127,6 +128,7 @@ function ports(fixture: Fixture): ExportPorts & {
     return Promise.resolve({ source: "local-api" as const, items });
   });
   return {
+    citationParse: inProcessParseClient,
     prepareDocument,
     renderPrepared,
     fetchBibliography,
@@ -174,7 +176,7 @@ function run(
   const promise = exportCitedDocument(
     {
       document: { sourcePath: SOURCE, links: fixture.links ?? [] },
-      markdown: "Cited [[Zeta 2020]].\n",
+      markdown: (fixture.links ?? []).map((link) => link.original).join(" "),
       format: "docx",
       ...request,
     },
@@ -195,6 +197,25 @@ const CITED: Fixture = {
 };
 
 describe("exportCitedDocument", () => {
+  it.each([
+    "[](zotero://open/library/items/ABCD2345?page=12&annotation=EFGH6789)",
+    "[](<zotero://open/groups/7/items/ABCD2345?page=12&annotation=EFGH6789>)",
+  ])(
+    "keeps Annotation Citation source byte for byte: %s (#1694)",
+    async (markdown) => {
+      const running = run({}, { markdown });
+      await expect(running).resolves.toHaveProperty("output");
+      const [request] = running.ports.prepareDocument.mock.calls[0] as [
+        PrepareRequest,
+      ];
+      expect(request.markdown).toBe(markdown);
+      const [render] = running.ports.renderPrepared.mock.calls[0] as [
+        RenderRequest,
+      ];
+      expect(render.document.citedIds).toEqual([]);
+    },
+  );
+
   it.each([false, true])(
     "cites each Item by the CSL id its source gave it (snapshot unavailable: %s)",
     async (snapshotUnavailable) => {
@@ -331,7 +352,7 @@ describe("exportCitedDocument", () => {
       ];
       expect(
         JSON.parse(String(request.files?.[PANDOC_RESOLVE_MAP_FILENAME])),
-      ).toEqual({ citations: {} });
+      ).toMatchObject({ citations: {}, selectedLiterals: {} });
     },
   );
 
@@ -534,6 +555,303 @@ describe(
   "exportCitedDocument over the real engine",
   { timeout: 60_000 },
   () => {
+    it.each([
+      {
+        name: "a valid citation link only inside a comment",
+        markdown: "%% [paper](./Note#cite:locator=2) %%",
+        contains: [],
+        absent: ["paper", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "paragraphs separated by a block comment containing HTML and math",
+        markdown:
+          'Before.\n%% <a href="https://example.com/@a"> $@a$ %%\nAfter.',
+        contains: ["<p>Before.</p> <p>After.</p>"],
+        absent: ["example.com/@a", "$@a$", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "paragraphs separated by a multiline block comment",
+        markdown: "Before.\n%%\nHidden paragraph [@a].\n%%\nAfter.",
+        contains: ["<p>Before.</p> <p>After.</p>"],
+        absent: ["Hidden paragraph", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "text joined around an inline comment",
+        markdown: "Before%% hidden [@a] %%after.",
+        contains: ["<p>Beforeafter.</p>"],
+        absent: ["hidden", "%%", "data-cites=", 'id="ref-'],
+      },
+      {
+        name: "comment markers inside inline and fenced code",
+        markdown: "`%% [@a] %%`\n\n~~~\n%% [@a] %%\n~~~",
+        contains: [
+          "<code>%% [@a] %%</code>",
+          "<pre><code>%% [@a] %%</code></pre>",
+        ],
+        absent: ["data-cites=", 'id="ref-'],
+      },
+      {
+        name: "#1683 preserves explicit identifiers that resemble internal citation markers",
+        markdown: "# Title {#zotlitparsedcitation0}\n\n[@a]",
+        contains: ['id="zotlitparsedcitation0"', 'id="ref-a"'],
+        absent: ['id="title"'],
+      },
+      {
+        name: "#1683 inline comment preserves the worker citation key boundary",
+        markdown: "[@a%% hidden %%b]",
+        contains: ['data-cites="a"', 'id="ref-a"'],
+        absent: ['data-cites="ab"', 'id="ref-ab"', "hidden", "%%"],
+      },
+      {
+        name: "#1683 worker-excluded math citation stays source text in Pandoc",
+        markdown: "$$\n[@hidden]\n\n[@a]",
+        contains: ["[@hidden]"],
+        absent: ['data-cites="hidden"', 'id="ref-hidden"'],
+      },
+      {
+        name: "only the selected key in a comment-bearing citation",
+        markdown: "[@a and %% @hidden %%]",
+        contains: ['data-cites="a"', 'id="ref-a"'],
+        absent: ['id="ref-hidden"', "hidden", "%%"],
+      },
+      {
+        name: "document-wide note numbers and ibid",
+        markdown: "[@a].\n\n[@a].\n\n[@b].\n\n[@b].\n\n[@a].\n\n[@b].",
+        styleXml: `<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+          <info><title>Note positions</title><id>https://example.com/notes</id>
+            <updated>2020-01-01T00:00:00+00:00</updated></info>
+          <citation><layout><choose>
+            <if position="ibid"><text value="Ibid."/></if>
+            <else-if position="subsequent"><text variable="title"/>
+              <text variable="first-reference-note-number" prefix=" first note "/></else-if>
+            <else><text variable="title"/></else>
+          </choose></layout></citation>
+        </style>`,
+        contains: [
+          "A study of nothing first note 1",
+          "Beta and beyond first note 3",
+        ],
+        absent: ["Beta and beyond first note 1"],
+        ibids: 2,
+      },
+      {
+        name: "the citation after an opening comment",
+        markdown: "%% [@hidden] %%\n\n[@a]",
+        contains: ['id="ref-a"'],
+        absent: [
+          'id="ref-hidden"',
+          '<header id="title-block-header">',
+          "hidden",
+          "%%",
+        ],
+      },
+      {
+        name: "a selected vault link inside a citation suffix",
+        markdown: "[@a with [[Note]]]",
+        // #1699 owns nested-Cite rendering. Keep d72571525's visible output
+        // and both bibliography entries for this #1694 regression.
+        contains: [
+          '<p><span class="citation" data-cites="a">(Adams 2018)</span></p>',
+          'id="ref-a"',
+          `id="ref-${ADAMS.id}"`,
+        ],
+        absent: [],
+      },
+      {
+        name: "footnote and link definitions in citation suffixes",
+        markdown:
+          "[@a with [^1]] and [@a with [reference][target]].\n\n[^1]: Footnote definition survives.\n\n[target]: https://example.com/reference",
+        contains: [
+          "Footnote definition survives.",
+          'href="https://example.com/reference"',
+        ],
+        absent: ["[^1]"],
+      },
+      {
+        name: "generated heading identifiers",
+        markdown: "# Results by @a",
+        contains: ['id="results-by-a"'],
+        absent: [],
+      },
+      {
+        name: "#1683 duplicate citation headings and links",
+        markdown: "# @a\n\n# @a\n\n[First](#a) [Second](#a-1)",
+        contains: ['id="a"', 'id="a-1"', 'href="#a"', 'href="#a-1"'],
+        absent: [],
+      },
+      {
+        name: "#1683 citation headings colliding with ordinary and explicit IDs",
+        markdown:
+          "# @a\n\n# A\n\n# @a {#explicit}\n\n# @a\n\n[First](#a) [Ordinary](#a-1) [Explicit](#explicit) [Last](#a-2)",
+        contains: [
+          'id="a"',
+          'id="a-1"',
+          'id="explicit"',
+          'id="a-2"',
+          'href="#a-2"',
+        ],
+        absent: [],
+      },
+      {
+        name: "attributes on ordinary links",
+        markdown: "[label](ordinary){#custom .tag}",
+        contains: ['id="custom"', 'class="tag"', 'href="ordinary"'],
+        absent: ["{#custom .tag}"],
+      },
+      {
+        name: "a multiline parenthetical citation and locator",
+        markdown: "[@a, p. 3\nand more]",
+        contains: ["(Zeta 2020, 3 and more)"],
+        absent: ["Zeta (2020)"],
+      },
+    ])(
+      "preserves $name (#1694 review)",
+      async ({ markdown, styleXml, contains, absent, ibids = 0 }) => {
+        await using engine = await createCitationEngine(
+          new Blob([await readFile(WASM_PATH)]),
+        );
+        const result = await exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: [] },
+            markdown,
+            format: "html",
+            styleXml,
+          },
+          {
+            ...ports({
+              citekeys: { a: "ZETA1234", b: "ADAM5678g5" },
+              notes: { Note: "ADAM5678g5", "./Note": "ADAM5678g5" },
+              placed: CITED.placed,
+              items: CITED.items,
+            }),
+            engine,
+          },
+        );
+        expect(result).toHaveProperty("output");
+        if (!("output" in result)) return;
+        const html = new TextDecoder()
+          .decode(result.output)
+          .replaceAll(/\s+/g, " ");
+        for (const text of contains) expect(html).toContain(text);
+        for (const text of absent) expect(html).not.toContain(text);
+        expect(html.split("Ibid.").length - 1).toBe(ibids);
+      },
+    );
+
+    it("leaves a commented wikilink uncited beside the same visible link (#1694)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [link("Zeta 2020")] },
+          markdown: "%% [[Zeta 2020]] %%\n\nVisible [[Zeta 2020]].",
+          format: "html",
+        },
+        { ...ports({ ...CITED, links: [link("Zeta 2020")] }), engine },
+      );
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder().decode(
+        (result as { output: Uint8Array }).output,
+      );
+      expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+      expect(html).not.toContain("[[Zeta 2020]]");
+      expect(html).not.toContain("%%");
+    });
+
+    it("exports a citation after a currency opener (#1694)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [] },
+          markdown: "$5 [@zeta2020] x$",
+          format: "html",
+        },
+        {
+          ...ports({
+            citekeys: { zeta2020: "ZETA1234" },
+            placed: { ZETA1234: ref("ZETA1234") },
+            items: { ZETA1234: ZETA },
+          }),
+          engine,
+        },
+      );
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder().decode(
+        (result as { output: Uint8Array }).output,
+      );
+      expect(html).toContain('data-cites="zeta2020"');
+      expect(html).toContain("$5");
+      expect(html).toContain("x$");
+    });
+
+    it.each([
+      {
+        name: "a fence on a numbered list marker, retaining three items",
+        markdown:
+          "1. First\n2. ~~~\n   [@hidden] [[Missing#cite:locator=2]]\n   ~~~\n3. Third\n\n[@zeta2020]",
+        contains: [
+          '<ol type="1">\n<li><p>First</p></li>\n<li><pre><code>[@hidden] [[Missing#cite:locator=2]]</code></pre></li>\n<li><p>Third</p></li>\n</ol>',
+        ],
+      },
+      {
+        name: "fenced code in a quote nested in a list",
+        markdown:
+          "- > Example\n  > ~~~\n  > [@hidden] [[Missing#cite:locator=2]]\n  > ~~~\n- Next\n\n[@zeta2020]",
+        contains: [
+          "<ul>\n<li><blockquote>\n<p>Example</p>\n<pre><code>[@hidden] [[Missing#cite:locator=2]]</code></pre>\n</blockquote></li>\n<li>Next</li>\n</ul>",
+        ],
+      },
+      {
+        name: "fenced code nested in a callout",
+        markdown:
+          "> [!note] Example\n> ~~~\n> [@hidden] [[Missing#cite:locator=2]]\n> ~~~\n\n[@zeta2020]",
+      },
+      {
+        name: "fenced code in a list, with loose spacing after separation",
+        markdown:
+          "- Example\n  ~~~\n  [@hidden] [[Missing#cite:locator=2]]\n  ~~~\n- Next\n\n[@zeta2020]",
+        contains: [
+          "<ul>\n<li><p>Example</p>\n<pre><code>[@hidden] [[Missing#cite:locator=2]]</code></pre></li>\n<li><p>Next</p></li>\n</ul>",
+        ],
+      },
+      {
+        name: "math with an escaped closing dollar",
+        markdown: "$x\\$ [@hidden]$\n\n[@zeta2020]",
+      },
+    ])(
+      "excludes $name from exported citations (#1694)",
+      async ({ markdown, contains }) => {
+        await using engine = await createCitationEngine(
+          new Blob([await readFile(WASM_PATH)]),
+        );
+        const result = await exportCitedDocument(
+          {
+            document: { sourcePath: SOURCE, links: [] },
+            markdown,
+            format: "html",
+          },
+          {
+            ...ports({
+              citekeys: { zeta2020: "ZETA1234" },
+              placed: { ZETA1234: ref("ZETA1234") },
+              items: { ZETA1234: ZETA },
+            }),
+            engine,
+          },
+        );
+        expect(result).toHaveProperty("output");
+        const html = new TextDecoder().decode(
+          (result as { output: Uint8Array }).output,
+        );
+        expect(html.split('data-cites="zeta2020"').length - 1).toBe(1);
+        expect(html).not.toContain('id="ref-hidden"');
+        for (const text of contains ?? []) expect(html).toContain(text);
+      },
+    );
+
     it("cites the demo note through the bundled sandbox filter", async () => {
       await using engine = await createCitationEngine(
         new Blob([await readFile(WASM_PATH)]),
@@ -562,6 +880,32 @@ describe(
       // One entry for Zeta, under the key the note writes rather than under the
       // item URI its source answered with.
       expect(html).not.toContain(ZETA_URI.id);
+    });
+
+    it("keeps export's explicit nocite membership (#1694)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [] },
+          markdown: '---\nnocite: "[@zeta2020]"\n---\n\nNo body citations.',
+          format: "html",
+        },
+        {
+          ...ports({
+            citekeys: { zeta2020: "ZETA1234" },
+            placed: { ZETA1234: ref("ZETA1234") },
+            items: { ZETA1234: ZETA },
+          }),
+          engine,
+        },
+      );
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder().decode(
+        (result as { output: Uint8Array }).output,
+      );
+      expect(html).toContain('id="ref-zeta2020"');
     });
 
     it("keeps Pandoc's nocite wildcard whole", async () => {

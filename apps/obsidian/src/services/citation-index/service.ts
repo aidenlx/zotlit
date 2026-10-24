@@ -1,14 +1,14 @@
-// The vault-wide Citation Index: literal-citekey occurrences per file, wikilinks derived at query time.
+// The renderer owns persisted note scans and citation membership; the parse client owns Markdown.
 
 import { abortable } from "@std/async/abortable";
 import { TFile } from "obsidian";
-import type { App, LinkCache, TAbstractFile } from "obsidian";
+import type { App, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import { Clock, Effect, Option } from "@/lib/effect";
 import { getLogger } from "@/lib/log";
-import { yieldToMain } from "@/lib/yield-to-main";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
@@ -21,16 +21,24 @@ import type { CitationLookup, CitationLookupStatus } from "./lookup-service";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
 
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+
+import { describeJoinedCandidates } from "./ambiguity";
+import { citationOutcome } from "./outcome";
+import type { CitationOutcome } from "./outcome";
+import { annotationCitations, readParsedNote } from "./parsed-note";
+import type { ParsedNote } from "./parsed-note";
 import { groupCitations } from "./query";
 import type { Citation, ResolvedNote } from "./query";
-import {
-  documentWikilinks,
-  occurrencesEqual,
-  scanCitekeyOccurrences,
-} from "./scan";
+import { occurrencesEqual } from "./scan";
 import type { CitationOccurrence, CitationSyntax } from "./scan";
+import type { AnnotationOccurrence } from "./scan-note";
 import type { CitekeyResolution } from "./snapshot";
-import { openCitekeyStore } from "./store";
+import { readReferenceSources } from "./sources";
+import type { ReferenceSourceJoin } from "./sources";
+import { openCitekeyStore, SCANNER_REVISION } from "./store";
 import type { CitekeyRecord, CitekeyStore, FileScan } from "./store";
 
 export {
@@ -40,7 +48,6 @@ export {
   type ResolveOccurrence,
 } from "./query";
 export {
-  scanDocumentCitations,
   type CitationOccurrence,
   type CitationSyntax,
   type MalformedWikilinkCitation,
@@ -55,6 +62,21 @@ export {
   type ReferenceSourceJoin,
 } from "./sources";
 export { type CitekeyRecord, type CitekeyStore, type FileScan } from "./store";
+export type { AnnotationOccurrence } from "./scan-note";
+
+type CitationRecord = Pick<
+  FileScan,
+  | "citekeys"
+  | "wikilinks"
+  | "malformedWikilinks"
+  | "annotations"
+  | "malformedAnnotationCitations"
+>;
+
+export interface AnnotationUse {
+  readonly path: string;
+  readonly occurrence: AnnotationOccurrence;
+}
 
 /** The Citation Occurrences in one citing Markdown note. */
 export interface CitedByGroup {
@@ -107,20 +129,24 @@ export function citedBySnapshotsEqual(
 }
 
 /** One document's active Citation Occurrences and its distinct cited works. */
-export interface DocumentCitationSet {
+export interface DocumentCitationSet extends ReferenceSourceJoin {
+  syntaxes: CitationSyntaxes;
+  omittedSyntaxes: CitationSyntax[];
+  coverage: CitationCoverage;
   /** Eligible occurrences in document order, including repeated works. */
   occurrences: CitationOccurrence[];
   /** The same occurrences grouped for reference-list consumers. */
   citations: Citation[];
   /** Invalid explicit citation intent, excluded from CSL membership. */
   errors: DocumentCitationError[];
-  /** Both lookup directions used to compose this document, at one revision. */
+  /** The citation lookup used to compose this document, at one revision. */
   lookup: CitationLookupAnswer;
 }
 
 /** One citation source error a document-aware surface can help correct. */
 export interface DocumentCitationError {
-  kind: "malformed-wikilink";
+  outcome?: CitationOutcome;
+  kind: "malformed-wikilink" | "malformed-annotation";
   occurrence: CitationOccurrence;
 }
 
@@ -141,10 +167,10 @@ export function documentCitationErrorsEqual(
 
 const logger = getLogger("citation-index");
 
-/** Files the backfill scans between two yields to the host. */
-const BACKFILL_CHUNK = 20;
+/** Bounds retained note bodies and worker requests during the vault walk. */
+const BACKFILL_CONCURRENCY = 4;
 interface CitationIndexEvents {
-  /** One document's literal-citekey occurrences changed. */
+  /** One document's stored parse facts changed. */
   changed: (path: string) => void;
   /** The vault-wide backfill finished; the index covers every Markdown file. */
   backfilled: () => void;
@@ -155,6 +181,10 @@ interface CitationIndexEvents {
 }
 
 export interface CitationIndexOptions {
+  runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;
+  db: Pick<ZoteroReadsService, "state" | "acquireRead">;
+  libraryScope: Pick<LibraryScopeService, "current">;
+  parseClient: Pick<PlainCitationParse, "parse">;
   app: App;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
@@ -171,29 +201,38 @@ export interface CitationIndexOptions {
   openStore?: (app: App) => Promise<CitekeyStore>;
 }
 
-/**
- * Answers which Citations a document contains, for both syntaxes.
- *
- * Literal-citekey occurrences are scanned from file bodies and held per path;
- * wikilink occurrences derive from Obsidian's metadata cache at query time, and
- * resolution to Zotero Items is lazy — a cross-file change therefore never
- * dirties a file's record. The incremental path scans the body the metadata
- * cache hands to its `changed` event, so it reads no file of its own; only the
- * backfill and an on-demand query do.
- *
- * Scans persist per file, and a record describes its file for as long as the
- * file's mtime and size are the ones the scan ran against. A restart therefore
- * costs only the files that changed while the app was closed.
- */
+/** Stores raw parse results; resolves citations against current vault and Zotero facts. */
 export class CitationIndex extends Service<void> {
   readonly #app;
+  readonly #db;
+  readonly #libraryScope;
   readonly #noteIndex;
   readonly #settings;
   readonly #lookup;
   readonly #openStore;
+  readonly #parseClient;
+  readonly #runPromise;
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
+  readonly #filesByCitekey = new Map<string, Set<string>>();
+  readonly #annotationsByKey = new Map<
+    string,
+    Map<string, AnnotationOccurrence[]>
+  >();
+  readonly #failed = new Set<string>();
+  readonly #generations = new Map<string, number>();
+  #restoreInvalidated: Set<string> | null = new Set();
+  readonly #pending = new Map<
+    string,
+    {
+      path: string;
+      generation: number;
+      stop: AbortController;
+      promise: Promise<FileScan | null>;
+    }
+  >();
+  #generation = 0;
   /** Callers parked on a one-shot readiness signal; disposal flushes them. */
   readonly #waiters = new Set<() => void>();
   #store?: CitekeyStore;
@@ -205,8 +244,10 @@ export class CitationIndex extends Service<void> {
   #build = 0;
   #includePandocCitations = true;
   #includeWikilinkCitations = false;
+  #includeAnnotationCitations = true;
   #backfilled = false;
-  #coverage: CitationCoverage = "indexing";
+  #backfillBuild = -1;
+  #backfillFailed = false;
   #stopped = false;
   readonly #stop = new AbortController();
 
@@ -214,12 +255,27 @@ export class CitationIndex extends Service<void> {
 
   constructor(options: CitationIndexOptions) {
     super();
+    this.#parseClient = options.parseClient;
+    this.#runPromise = options.runPromise;
+    this.#db = options.db;
+    this.#libraryScope = options.libraryScope;
     this.#app = options.app;
     this.#noteIndex = options.noteIndex;
     this.#settings = options.settings;
     this.#lookup = options.lookup;
     this.#openStore = options.openStore ?? openCitekeyStore;
     this.ready = this.#load();
+  }
+
+  /** Wait for the file's pending parse; stale retained scans cannot validate navigation. */
+  async getFileScan(file: TFile): Promise<Readonly<FileScan> | null> {
+    await this.ready;
+    const scan = await this.#coverFile(file);
+    return scan &&
+      scan.mtime === file.stat.mtime &&
+      scan.size === file.stat.size
+      ? scan
+      : null;
   }
 
   /**
@@ -233,19 +289,47 @@ export class CitationIndex extends Service<void> {
     {
       signal,
       include,
-    }: { signal?: AbortSignal; include?: CitationLookupRequest } = {},
+      parsed,
+    }: {
+      signal?: AbortSignal;
+      include?: CitationLookupRequest;
+      parsed?: ParsedNote;
+    } = {},
   ): Promise<DocumentCitationSet> {
     const lifetime = signal
       ? AbortSignal.any([signal, this.#stop.signal])
       : this.#stop.signal;
     lifetime.throwIfAborted();
     await abortable(this.ready, lifetime);
-    const { citekeys, links } = this.#admitted(
-      file,
-      await this.#coverFile(file),
-    );
-    const wikilinks = documentWikilinks(links);
-    const local = new Map(
+    const scan =
+      parsed?.record ?? (await abortable(this.#coverFile(file), lifetime));
+    return this.#composeDocument(file, scan, {
+      lifetime,
+      include,
+      syntaxes: this.syntaxes(),
+      coverage: this.#coverage,
+    });
+  }
+
+  async #composeDocument(
+    file: TFile,
+    scan: CitationRecord | null,
+    {
+      lifetime,
+      include,
+      syntaxes,
+      coverage,
+    }: {
+      lifetime: AbortSignal;
+      include?: CitationLookupRequest;
+      syntaxes: CitationSyntaxes;
+      coverage: CitationCoverage;
+    },
+  ): Promise<DocumentCitationSet> {
+    const { citekeys, wikilinks, annotations, malformedAnnotations } =
+      this.#admitted(scan, syntaxes);
+    const omittedSyntaxes = this.#omittedDocument(scan, file.path, syntaxes);
+    const local = new Map<CitationOccurrence, ResolvedNote | null>(
       [
         ...wikilinks.occurrences,
         ...wikilinks.malformed.map(({ occurrence }) => occurrence),
@@ -260,6 +344,10 @@ export class CitationIndex extends Service<void> {
           ...citekeys.map((occurrence) => occurrence.raw),
           ...(include?.citekeys ?? []),
         ],
+        annotationKeys: [
+          ...annotations.map((occurrence) => occurrence.raw),
+          ...(include?.annotationKeys ?? []),
+        ],
         indexedKeys: [
           ...wikilinks.occurrences.flatMap((occurrence) => {
             const key = local.get(occurrence)?.indexedKey;
@@ -271,7 +359,7 @@ export class CitationIndex extends Service<void> {
       { signal: lifetime },
     );
     const citations = groupCitations(
-      [...citekeys, ...wikilinks.occurrences].sort(
+      [...citekeys, ...wikilinks.occurrences, ...annotations].sort(
         (a, b) => a.position.start.offset - b.position.start.offset,
       ),
       (occurrence) =>
@@ -282,13 +370,99 @@ export class CitationIndex extends Service<void> {
     const occurrences = citations
       .flatMap((citation) => citation.occurrences)
       .sort((a, b) => a.position.start.offset - b.position.start.offset);
-    const errors = wikilinks.malformed
+    const errors: DocumentCitationError[] = wikilinks.malformed
       .filter(({ occurrence }) => local.get(occurrence) != null)
       .map(({ occurrence }) => ({
         kind: "malformed-wikilink" as const,
         occurrence,
       }));
-    return { occurrences, citations, errors, lookup };
+    errors.push(
+      ...malformedAnnotations.map(
+        ({ destination, position }): DocumentCitationError => ({
+          kind: "malformed-annotation",
+          occurrence: { kind: "annotation", raw: destination, position },
+        }),
+      ),
+    );
+    errors.sort((a, b) => compareOccurrences(a.occurrence, b.occurrence));
+    const candidates = [
+      ...new Set([
+        ...citekeys.map((occurrence) => occurrence.raw),
+        ...(include?.citekeys ?? []),
+      ]),
+    ].flatMap((citekey) => {
+      const resolved = lookup.resolve(citekey);
+      return resolved.kind === "ambiguous" ? [...resolved.candidates] : [];
+    });
+    const libraries = new Map(
+      (this.#libraryScope.current?.available ?? []).map((library) => [
+        library.libraryID,
+        library,
+      ]),
+    );
+    const citedKeys = new Set(citations.map(({ indexedKey }) => indexedKey));
+    const joined = await readReferenceSources(this.#db, [
+      ...citations,
+      ...candidates
+        .filter(({ indexedKey }) => !citedKeys.has(indexedKey))
+        .map(({ indexedKey }) => ({ indexedKey, linkpath: null })),
+    ]);
+    for (const citation of citations) {
+      const first = citation.occurrences[0]!;
+      const resolved =
+        first.kind === "citekey" ? lookup.resolve(first.raw) : null;
+      citation.outcome = citationOutcome(citation, {
+        sources: joined.sources,
+        presentKeys: joined.presentKeys,
+        database: joined.database,
+        resolution: resolved,
+        candidates:
+          resolved?.kind === "ambiguous"
+            ? describeJoinedCandidates(
+                resolved.candidates,
+                joined.sources,
+                libraries,
+              )
+            : [],
+      });
+    }
+    for (const error of errors) error.outcome = { kind: "malformed" };
+    return {
+      occurrences,
+      citations,
+      errors,
+      lookup,
+      ...joined,
+      syntaxes,
+      omittedSyntaxes,
+      coverage,
+    };
+  }
+
+  getParsedNote(file: TFile, signal = this.#stop.signal): Promise<ParsedNote> {
+    return readParsedNote(file, {
+      vault: this.#app.vault,
+      parser: this.#parseClient,
+      signal,
+    });
+  }
+
+  async getParsedDocument(file: TFile, signal = this.#stop.signal) {
+    for (;;) {
+      const generation = this.#generations.get(file.path);
+      const { mtime, size } = file.stat;
+      const facts = await this.getParsedNote(file, signal);
+      const set = await this.getDocumentCitationSet(file, {
+        signal,
+        parsed: facts,
+      });
+      if (
+        generation === this.#generations.get(file.path) &&
+        mtime === file.stat.mtime &&
+        size === file.stat.size
+      )
+        return { facts, set };
+    }
   }
 
   on<K extends keyof CitationIndexEvents>(
@@ -308,7 +482,7 @@ export class CitationIndex extends Service<void> {
   /**
    * Resolves once the index covers every Markdown file. Stronger than
    * {@link ready}, which only marks listener registration: the backfill starts
-   * at layout-ready and runs in chunks well past it. A vault-wide consumer
+   * at layout-ready and runs asynchronously past it. A vault-wide consumer
    * awaits this; an active-document consumer queries straight away.
    */
   async whenIndexed(): Promise<void> {
@@ -336,11 +510,26 @@ export class CitationIndex extends Service<void> {
 
     const publish = (): void => {
       if (disposed || this.#stopped || !published) return;
-      lookup.set({ citekeys: this.citationKeys() });
+      lookup.set({
+        citekeys: this.citationKeys(),
+        annotationKeys: this.annotationCitationKeys(),
+      });
       const next = this.#citedBy(
         indexedKey,
-        (citekey) => heldResolution(lookup.current?.value ?? null, citekey),
-        { includeNote, byPath: this.citationsByPath(["citekey", "wikilink"]) },
+        {
+          resolve: (citekey) =>
+            heldResolution(lookup.current?.value ?? null, citekey),
+          parentOfAnnotation: (key) => {
+            const answer = lookup.current?.value;
+            return answer?.coversAnnotationKey(key)
+              ? (answer.parentOfAnnotation(key)?.indexedKey ?? null)
+              : null;
+          },
+        },
+        {
+          includeNote,
+          byPath: this.citationsByPath(["citekey", "wikilink", "annotation"]),
+        },
       );
       if (previous && citedBySnapshotsEqual(previous, next)) return;
       previous = next;
@@ -387,20 +576,33 @@ export class CitationIndex extends Service<void> {
     indexedKey: string,
     answer?: CitationLookupAnswer,
   ): Promise<CitedBySnapshot> {
-    const occurrences = this.citationsByPath(["citekey", "wikilink"]);
+    const occurrences = this.citationsByPath([
+      "citekey",
+      "wikilink",
+      "annotation",
+    ]);
     const lookup =
       answer ??
       (await this.#lookup.read({
+        annotationKeys: this.annotationCitationKeys(),
         citekeys: [...occurrences.values()].flatMap((citations) =>
           citations.flatMap((occurrence) =>
             occurrence.kind === "citekey" ? [occurrence.raw] : [],
           ),
         ),
       }));
-    return this.#citedBy(indexedKey, (citekey) => lookup.resolve(citekey), {
-      includeNote: () => true,
-      byPath: occurrences,
-    });
+    return this.#citedBy(
+      indexedKey,
+      {
+        resolve: (citekey) => lookup.resolve(citekey),
+        parentOfAnnotation: (key) =>
+          lookup.parentOfAnnotation(key)?.indexedKey ?? null,
+      },
+      {
+        includeNote: () => true,
+        byPath: occurrences,
+      },
+    );
   }
 
   /**
@@ -412,27 +614,218 @@ export class CitationIndex extends Service<void> {
    */
   async waitUntilSettled(timeoutMs: number): Promise<CitationSettleOutcome> {
     if (timeoutMs <= 0) return "timeout";
-    return await new Promise<CitationSettleOutcome>((resolve) => {
-      const timer = window.setTimeout(() => resolve("timeout"), timeoutMs);
-      void Promise.all([this.whenIndexed(), this.#lookup.whenResolved()]).then(
-        () => {
-          window.clearTimeout(timer);
-          resolve("settled");
-        },
-      );
-    });
+    return this.#runPromise(this.#settle(timeoutMs));
   }
+
+  readonly #settle = Effect.fn("CitationIndex.settle")(
+    function* (this: CitationIndex, timeoutMs: number) {
+      if (timeoutMs <= 0) return "timeout" as const;
+      yield* Effect.all(
+        [
+          Effect.promise(() => this.whenIndexed()),
+          Effect.promise(() => this.#lookup.whenResolved()),
+        ],
+        { concurrency: "unbounded" },
+      );
+      while (this.#pending.size > 0) {
+        yield* Effect.promise(() =>
+          Promise.allSettled(
+            [...this.#pending.values()].map((pending) => pending.promise),
+          ),
+        );
+      }
+      return "settled" as const;
+    },
+    (effect, timeoutMs) =>
+      effect.pipe(
+        Effect.timeoutOrElse({
+          duration: Math.max(0, timeoutMs),
+          orElse: () => Effect.succeed("timeout" as const),
+        }),
+      ),
+  ).bind(this);
+
+  readonly #capture = Effect.fn("CitationIndex.capture")(function* (
+    this: CitationIndex,
+    timeoutMs: number,
+  ) {
+    const deadline = (yield* Clock.currentTimeMillis) + timeoutMs;
+    for (;;) {
+      const remaining = deadline - (yield* Clock.currentTimeMillis);
+      if ((yield* this.#settle(remaining)) === "timeout") return null;
+      const files = this.#app.vault.getMarkdownFiles();
+      const stale = files.filter(
+        (file) => !this.#covered(file) && !this.#failed.has(file.path),
+      );
+      if (stale.length === 0) {
+        return {
+          scans: new Map(
+            files.flatMap((file) => {
+              const scan = this.#covered(file);
+              return scan ? [[file.path, scan] as const] : [];
+            }),
+          ),
+          syntaxes: this.syntaxes(),
+          coverage: this.#coverage,
+        };
+      }
+      const refreshed = yield* Effect.forEach(
+        stale,
+        (file) => Effect.tryPromise(() => this.#coverFile(file)),
+        { concurrency: BACKFILL_CONCURRENCY },
+      ).pipe(Effect.timeoutOption(deadline - (yield* Clock.currentTimeMillis)));
+      if (Option.isNone(refreshed)) return null;
+    }
+  }).bind(this);
+
+  readAnnotationUses = Effect.fn("CitationIndex.readAnnotationUses")(function* (
+    this: CitationIndex,
+    key: string,
+    timeoutMs: number,
+  ) {
+    const captured = yield* this.#capture(timeoutMs);
+    if (!captured) return { kind: "timeout", coverage: "indexing" } as const;
+    return {
+      kind: "ready",
+      uses: [...captured.scans]
+        .sort(([left], [right]) => comparePaths(left, right))
+        .flatMap(([path, scan]) =>
+          scan.annotations
+            .filter((occurrence) => occurrence.indexedKey === key)
+            .map((occurrence) => ({ path, occurrence })),
+        ),
+      coverage: captured.coverage,
+    } as const;
+  }).bind(this);
+
+  readReferences = Effect.fn("CitationIndex.readReferences")(function* (
+    this: CitationIndex,
+    path: string,
+    timeoutMs: number,
+  ) {
+    const captured = yield* this.#capture(timeoutMs);
+    if (!captured) return { kind: "timeout", coverage: "indexing" } as const;
+    const file = this.#app.vault.getFileByPath(path);
+    const scan = captured.scans.get(path) ?? null;
+    const document =
+      file?.extension === "md"
+        ? yield* Effect.tryPromise(() =>
+            this.#composeDocument(file, scan, {
+              ...captured,
+              lifetime: this.#stop.signal,
+            }),
+          )
+        : null;
+    return { kind: "ready", document } as const;
+  }).bind(this);
+
+  readCitedBy = Effect.fn("CitationIndex.readCitedBy")(function* (
+    this: CitationIndex,
+    selector: { key: string } | { citekey: string },
+    timeoutMs: number,
+  ) {
+    const snapshot = yield* this.#capture(timeoutMs);
+    if (!snapshot) return { kind: "timeout", coverage: "indexing" } as const;
+    const { syntaxes, coverage } = snapshot;
+    const captured = [...snapshot.scans]
+      .sort(([left], [right]) => comparePaths(left, right))
+      .map(([path, scan]) => ({
+        path,
+        occurrences: [
+          ...scan.citekeys,
+          ...scan.wikilinks,
+          ...annotationCitations(scan),
+        ].sort(compareOccurrences),
+      }));
+    const local = new Map(
+      captured.flatMap(({ path, occurrences }) =>
+        occurrences
+          .filter((o) => o.kind === "wikilink")
+          .map((o) => [o, this.#resolve(o, path)?.indexedKey ?? null] as const),
+      ),
+    );
+    const lookup = yield* Effect.tryPromise(() =>
+      this.#lookup.read({
+        citekeys: [
+          ...captured.flatMap(({ occurrences }) =>
+            occurrences.filter((o) => o.kind === "citekey").map((o) => o.raw),
+          ),
+          ...("citekey" in selector ? [selector.citekey] : []),
+        ],
+        annotationKeys: captured.flatMap(({ occurrences }) =>
+          occurrences.filter((o) => o.kind === "annotation").map((o) => o.raw),
+        ),
+        indexedKeys: "key" in selector ? [selector.key] : [],
+      }),
+    );
+    let key: string;
+    let citekey: string | null;
+    if ("key" in selector) {
+      key = selector.key;
+      citekey = lookup.citekeyOf(key);
+    } else {
+      citekey = selector.citekey;
+      const resolved = lookup.resolve(citekey);
+      if (resolved.kind === "missing")
+        return { kind: "unresolved", citekey } as const;
+      if (resolved.kind === "ambiguous")
+        return {
+          kind: "ambiguous",
+          citekey,
+          candidates: resolved.candidates,
+        } as const;
+      key = resolved.item.indexedKey;
+    }
+    const joined = yield* Effect.promise(() =>
+      readReferenceSources(this.#db, [{ indexedKey: key, linkpath: null }]),
+    );
+    if (joined.database === "ready" && !joined.presentKeys.has(key))
+      return { kind: "missing", key } as const;
+    const groups: CitedByGroup[] = [];
+    const omitted = new Set<CitationSyntax>();
+    for (const { path, occurrences } of captured) {
+      const included: CitationOccurrence[] = [];
+      for (const occurrence of occurrences) {
+        const cites =
+          occurrence.kind === "citekey"
+            ? this.#citekeyOccurrenceCites(lookup.resolve(occurrence.raw), key)
+            : occurrence.kind === "annotation"
+              ? lookup.parentOfAnnotation(occurrence.raw)?.indexedKey === key
+              : local.get(occurrence) === key;
+        if (!cites) continue;
+        if (syntaxes[occurrence.kind] === "included") included.push(occurrence);
+        else omitted.add(occurrence.kind);
+      }
+      if (included.length) groups.push({ path, occurrences: included });
+    }
+    return {
+      kind: "ready",
+      groups,
+      syntaxes,
+      coverage,
+      resolution: "fresh" as const,
+      omittedSyntaxes: (["citekey", "wikilink", "annotation"] as const).filter(
+        (syntax) => omitted.has(syntax),
+      ),
+      item: {
+        key,
+        citekey,
+        summary: joined.sources.get(key)?.summary ?? null,
+      },
+    } as const;
+  }).bind(this);
 
   /**
    * Which Citation Syntaxes admit their occurrences into an answer, for a
    * caller that declares the constraint beside its facts — the agent-facing
-   * CLI. Follows `citation.pandoc-citations` and `citation.wikilink-citations`,
-   * the same source choices {@link #admitted} gates both membership surfaces on.
+   * CLI. Follows the same source choices {@link #admitted} applies to the
+   * document set and Cited By.
    */
   syntaxes(): CitationSyntaxes {
     return {
       citekey: this.#includePandocCitations ? "included" : "excluded",
       wikilink: this.#includeWikilinkCitations ? "included" : "excluded",
+      annotation: this.#includeAnnotationCitations ? "included" : "excluded",
     };
   }
 
@@ -451,23 +844,39 @@ export class CitationIndex extends Service<void> {
    */
   async documentOmittedSyntaxes(file: TFile): Promise<CitationSyntax[]> {
     await this.ready;
+    const scan = await this.#coverFile(file);
+    return this.#omittedDocument(scan, file.path, this.syntaxes());
+  }
+
+  #omittedDocument(
+    scan: Pick<
+      FileScan,
+      | "citekeys"
+      | "wikilinks"
+      | "malformedWikilinks"
+      | "annotations"
+      | "malformedAnnotationCitations"
+    > | null,
+    path: string,
+    syntaxes: CitationSyntaxes,
+  ): CitationSyntax[] {
     const omitted: CitationSyntax[] = [];
-    if (!this.#includePandocCitations) {
-      const scanned = await this.#coverFile(file);
-      if (scanned.length > 0) omitted.push("citekey");
-    }
-    if (!this.#includeWikilinkCitations) {
-      const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
-      const { occurrences, malformed } = documentWikilinks(links);
-      const held =
-        occurrences.some(
-          (occurrence) => this.#resolve(occurrence, file.path) !== null,
-        ) ||
-        malformed.some(
-          ({ occurrence }) => this.#resolve(occurrence, file.path) !== null,
-        );
-      if (held) omitted.push("wikilink");
-    }
+    if (syntaxes.citekey === "excluded" && scan?.citekeys.length)
+      omitted.push("citekey");
+    if (
+      syntaxes.wikilink === "excluded" &&
+      [
+        ...(scan?.wikilinks ?? []),
+        ...(scan?.malformedWikilinks.map(({ occurrence }) => occurrence) ?? []),
+      ].some((occurrence) => this.#resolve(occurrence, path) !== null)
+    )
+      omitted.push("wikilink");
+    if (
+      syntaxes.annotation === "excluded" &&
+      (scan?.annotations.some(({ form }) => form === "citation") ||
+        scan?.malformedAnnotationCitations.length)
+    )
+      omitted.push("annotation");
     return omitted;
   }
 
@@ -482,9 +891,7 @@ export class CitationIndex extends Service<void> {
    * `backfilled` event marks the pass complete. Occurrences are raw: what
    * each cites is the caller's question.
    *
-   * @param syntaxes the Citation Syntaxes to answer with. Wikilink
-   *   occurrences are derived from the link cache on every call, so a caller
-   *   that draws citekeys alone asks for those alone and pays for no more.
+   * @param syntaxes the Citation Syntaxes to answer with.
    * @returns paths holding at least one admitted occurrence, in vault order.
    */
   citationsByPath(
@@ -492,15 +899,16 @@ export class CitationIndex extends Service<void> {
   ): ReadonlyMap<string, readonly CitationOccurrence[]> {
     const wantCitekeys = syntaxes.includes("citekey");
     const wantWikilinks = syntaxes.includes("wikilink");
+    const wantAnnotations = syntaxes.includes("annotation");
     const byPath = new Map<string, readonly CitationOccurrence[]>();
     for (const file of this.#app.vault.getMarkdownFiles()) {
-      const { citekeys, links } = this.#admitted(
-        file,
-        wantCitekeys ? (this.#covered(file) ?? []) : [],
-      );
-      const occurrences = wantWikilinks
-        ? [...citekeys, ...documentWikilinks(links).occurrences]
-        : citekeys;
+      const admitted = this.#admitted(this.#covered(file));
+      const citekeys = wantCitekeys ? admitted.citekeys : [];
+      const occurrences = [
+        ...citekeys,
+        ...(wantWikilinks ? admitted.wikilinks.occurrences : []),
+        ...(wantAnnotations ? admitted.annotations : []),
+      ];
       if (occurrences.length > 0) byPath.set(file.path, occurrences);
     }
     return byPath;
@@ -536,8 +944,14 @@ export class CitationIndex extends Service<void> {
     const covered = [...this.#scans.keys()];
     logger.debug("Citation index reset", { covered: covered.length });
     this.#scans.clear();
+    this.#filesByCitekey.clear();
+    this.#annotationsByKey.clear();
+    for (const pending of this.#pending.values()) pending.stop.abort();
+    this.#pending.clear();
+    this.#generations.clear();
+    this.#failed.clear();
     this.#backfilled = false;
-    this.#coverage = "indexing";
+    this.#backfillFailed = false;
     this.#emitter.emit("cited-by-invalidated");
     try {
       await this.#store?.clear();
@@ -567,7 +981,10 @@ export class CitationIndex extends Service<void> {
       registerEvent(
         metadataCache.on("changed", (file, data) => {
           if (!isMarkdownFile(file)) return;
-          this.#scan(file, data);
+          void this.#scan(file, data).catch((error: unknown) => {
+            if (!this.#stopped)
+              logger.error("Citation parse failed", { error });
+          });
           this.#emitter.emit("cited-by-invalidated");
         }),
       ),
@@ -610,9 +1027,9 @@ export class CitationIndex extends Service<void> {
       const loaded = await this.#store.load();
       let restored = 0;
       for (const { path, ...scan } of loaded) {
-        // An event that already scanned the file during startup is fresher.
-        if (!this.#scans.has(path)) {
-          this.#scans.set(path, scan);
+        // Pending replacements keep the saved scan available until they land.
+        if (!this.#scans.has(path) && !this.#restoreInvalidated?.has(path)) {
+          this.#setScan(path, scan);
           restored += 1;
         }
       }
@@ -622,6 +1039,8 @@ export class CitationIndex extends Service<void> {
       });
     } catch (error) {
       logger.error("Citation index store unavailable", { error });
+    } finally {
+      this.#restoreInvalidated = null;
     }
 
     // The vault holds no files before layout-ready, and `onLayoutReady` is a
@@ -643,65 +1062,55 @@ export class CitationIndex extends Service<void> {
   /** Readiness settles even on a failed pass, so no consumer waits forever. */
   async #runBackfill(): Promise<void> {
     const build = this.#build;
+    if (this.#backfillBuild === build) return;
+    this.#backfillBuild = build;
     logger.debug("Citation index backfill started", { build });
-    let failed = false;
     try {
-      failed = await this.#backfill(build);
+      await this.#backfill(build);
     } catch (error) {
       logger.error("Citation index backfill failed", { error });
-      failed = true;
+      if (this.#stale(build)) return;
+      this.#backfillFailed = true;
     }
     if (this.#stopped || build !== this.#build) return;
     logger.debug("Citation index backfilled", { count: this.#scans.size });
     this.#backfilled = true;
-    this.#coverage = failed ? "degraded" : "complete";
     this.#emitter.emit("backfilled");
   }
 
-  /**
-   * The vault pass that covers the files neither an event nor the store reached.
-   * It streams one body at a time rather than holding the vault in memory, and
-   * yields to the host between chunks so a large vault never freezes the app.
-   *
-   * @returns Whether at least one note could not be read.
-   */
-  async #backfill(build: number): Promise<boolean> {
-    let scanned = 0;
-    let failed = false;
-    const present = new Set<string>();
-    for (const file of this.#app.vault.getMarkdownFiles()) {
-      if (this.#stale(build)) return failed;
-      present.add(file.path);
-      if (this.#covered(file)) continue;
-      while (!this.#covered(file)) {
-        const { mtime, size } = file.stat;
-        let body: string;
-        try {
-          body = await this.#app.vault.cachedRead(file);
-        } catch (error) {
-          failed = true;
-          logger.warn("Citation backfill could not read note", {
-            path: file.path,
-            error,
-          });
-          break;
-        }
-        // The read yields, so a new build or a fresher metadata event may have
-        // taken over. A file edited without an event is read again at its new
-        // state rather than pairing the old body with the new file stats.
-        if (this.#stale(build)) return failed;
-        if (this.#covered(file)) break;
-        if (file.stat.mtime !== mtime || file.stat.size !== size) continue;
-        this.#scan(file, body);
-      }
-      if ((scanned += 1) % BACKFILL_CHUNK === 0) await yieldToMain();
-    }
-    // A file deleted while the app was closed fires no event of its own, so the
-    // pass is also what prunes the scans the vault no longer has a file for.
+  async #backfill(build: number): Promise<void> {
+    await Effect.runPromise(
+      Effect.forEach(
+        this.#app.vault.getMarkdownFiles(),
+        (file) =>
+          Effect.suspend(() => {
+            if (this.#stale(build)) return Effect.void;
+            return Effect.tryPromise(() =>
+              this.#coverFile(file, true, build),
+            ).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  if (this.#stale(build)) return;
+                  this.#setFailed(file.path, true);
+                  logger.warn("Citation backfill could not parse note", {
+                    path: file.path,
+                    error,
+                  });
+                }),
+              ),
+            );
+          }),
+        { concurrency: BACKFILL_CONCURRENCY, discard: true },
+      ).pipe(Effect.scoped),
+      { signal: this.#stop.signal },
+    );
+    if (this.#stale(build)) return;
+    const present = new Set(
+      this.#app.vault.getMarkdownFiles().map((file) => file.path),
+    );
     for (const path of this.#scans.keys().toArray()) {
       if (!present.has(path)) this.#drop(path);
     }
-    return failed;
   }
 
   /** Whether a build other than `build` has taken over. */
@@ -709,61 +1118,177 @@ export class CitationIndex extends Service<void> {
     return this.#stopped || build !== this.#build;
   }
 
-  /** Idempotent: a content-identical touch stores the same list and wakes nobody. */
-  #scan(file: TFile, body: string): CitationOccurrence[] {
-    const occurrences = scanCitekeyOccurrences(body);
-    const prev = this.#scans.get(file.path);
+  #scan(file: TFile, body: string): Promise<FileScan | null> {
+    const { path } = file;
     const { mtime, size } = file.stat;
-    this.#scans.set(file.path, { mtime, size, occurrences });
-    this.#persist({ path: file.path, mtime, size, occurrences });
-    const quiet = prev
-      ? occurrencesEqual(prev.occurrences, occurrences)
-      : occurrences.length === 0;
-    if (!quiet) {
-      logger.trace("Citation scan changed", {
-        path: file.path,
-        count: occurrences.length,
-      });
-      this.#emitter.emit("changed", file.path);
-    }
-    return occurrences;
+    const generation = ++this.#generation;
+    const build = this.#build;
+    this.#pending.get(path)?.stop.abort();
+    this.#generations.set(path, generation);
+    const stop = new AbortController();
+    const signal = AbortSignal.any([stop.signal, this.#stop.signal]);
+    const pending = {
+      path,
+      generation,
+      stop,
+      promise: abortable(
+        this.#parseClient.parse({ path, generation, text: body }, signal),
+        signal,
+      )
+        .then(({ record, path: replyPath, generation: replyGeneration }) => {
+          const currentPath = pending.path;
+          if (
+            this.#stale(build) ||
+            this.#generations.get(currentPath) !== generation ||
+            replyPath !== path ||
+            replyGeneration !== generation
+          )
+            return null;
+          const scan: FileScan = {
+            mtime,
+            size,
+            scannerRevision: SCANNER_REVISION,
+            citekeys: record.citekeys,
+            wikilinks: record.wikilinks,
+            malformedWikilinks: record.malformedWikilinks,
+            annotations: record.annotations,
+            malformedAnnotationCitations: record.malformedAnnotationCitations,
+          };
+          const prev = this.#scans.get(currentPath);
+          const same = scanContentEqual(prev, scan);
+          if (
+            same &&
+            prev?.mtime === mtime &&
+            prev.size === size &&
+            prev.scannerRevision === SCANNER_REVISION
+          ) {
+            this.#setFailed(currentPath, false);
+            return prev;
+          }
+          this.#setScan(currentPath, scan);
+          this.#persist({ path: currentPath, ...scan });
+          this.#setFailed(currentPath, false);
+          if (!same) this.#emitter.emit("changed", currentPath);
+          return scan;
+        })
+        .catch((error: unknown) => {
+          if (signal.aborted) return null;
+          this.#setFailed(pending.path, true);
+          const retained = this.#scans.get(pending.path);
+          if (retained) {
+            logger.warn("Citation parse failed; retaining saved scan", {
+              path: pending.path,
+              error,
+            });
+            return retained;
+          }
+          throw error;
+        })
+        .finally(() => {
+          if (this.#pending.get(pending.path) === pending)
+            this.#pending.delete(pending.path);
+        }),
+    };
+    this.#pending.set(path, pending);
+    return pending.promise;
   }
 
-  /**
-   * @returns the scan that still describes `file`, or `null` when the file's
-   *   mtime or size has moved past the one it ran against.
-   */
-  #covered(file: TFile): CitationOccurrence[] | null {
+  get #coverage(): CitationCoverage {
+    if (!this.#backfilled) return "indexing";
+    return this.#backfillFailed || this.#failed.size > 0
+      ? "degraded"
+      : "complete";
+  }
+
+  #setFailed(path: string, failed: boolean): void {
+    const coverage = this.#coverage;
+    if (failed) this.#failed.add(path);
+    else this.#failed.delete(path);
+    if (this.#coverage !== coverage) this.#emitter.emit("cited-by-invalidated");
+  }
+
+  #covered(file: TFile): FileScan | null {
     const scan = this.#scans.get(file.path);
     if (!scan) return null;
     const { mtime, size } = file.stat;
-    return scan.mtime === mtime && scan.size === size ? scan.occurrences : null;
+    return (scan.mtime === mtime && scan.size === size) ||
+      this.#pending.has(file.path) ||
+      this.#failed.has(file.path)
+      ? scan
+      : null;
   }
 
-  async #coverFile(file: TFile): Promise<CitationOccurrence[]> {
-    const known = this.#covered(file);
-    if (known) return known;
-    const body = await this.#app.vault.cachedRead(file);
-    // The read yields, so an event may have covered the file meanwhile.
-    return this.#covered(file) ?? this.#scan(file, body);
+  async #coverFile(
+    file: TFile,
+    fresh = false,
+    build = this.#build,
+  ): Promise<FileScan | null> {
+    while (!this.#stale(build)) {
+      if (!this.#app.vault.getFileByPath(file.path)) return null;
+      const known = this.#covered(file);
+      // A grammar update keeps the last scan available while its replacement runs.
+      if (!fresh && known && known.scannerRevision !== SCANNER_REVISION)
+        return known;
+      const pending = this.#pending.get(file.path);
+      if (pending) {
+        await pending.promise;
+        continue;
+      }
+      if (this.#failed.has(file.path)) return known;
+      if (known && (!fresh || known.scannerRevision === SCANNER_REVISION))
+        return known;
+      if (!this.#app.vault.getFileByPath(file.path)) return null;
+      const path = file.path;
+      const generation = this.#generations.get(path);
+      const { mtime, size } = file.stat;
+      const body = await this.#app.vault.cachedRead(file);
+      if (this.#stale(build)) return null;
+      if (
+        file.path !== path ||
+        this.#generations.get(path) !== generation ||
+        file.stat.mtime !== mtime ||
+        file.stat.size !== size
+      )
+        continue;
+      if (!this.#app.vault.getFileByPath(path)) return null;
+      await this.#scan(file, body);
+    }
+    return null;
   }
 
   #drop(path: string): void {
+    this.#restoreInvalidated?.add(path);
+    this.#setFailed(path, false);
+    this.#generations.set(path, ++this.#generation);
+    this.#pending.get(path)?.stop.abort();
+    this.#pending.delete(path);
     const scan = this.#scans.get(path);
     if (!scan) return;
-    this.#scans.delete(path);
+    this.#removeScan(path);
     this.#forget(path);
-    if (scan.occurrences.length > 0) this.#emitter.emit("changed", path);
+    if (!scanContentEqual(undefined, scan)) this.#emitter.emit("changed", path);
   }
 
   #move(oldPath: string, path: string): void {
+    if (this.#failed.delete(oldPath)) this.#failed.add(path);
+    this.#restoreInvalidated?.add(oldPath);
+    this.#restoreInvalidated?.add(path);
+    this.#generations.set(oldPath, ++this.#generation);
+    const pending = this.#pending.get(oldPath);
+    if (pending) {
+      this.#pending.delete(oldPath);
+      this.#pending.get(path)?.stop.abort();
+      pending.path = path;
+      this.#pending.set(path, pending);
+      this.#generations.set(path, pending.generation);
+    }
     const scan = this.#scans.get(oldPath);
     if (!scan) return;
-    this.#scans.delete(oldPath);
-    this.#scans.set(path, scan);
+    this.#removeScan(oldPath);
+    this.#setScan(path, scan);
     this.#forget(oldPath);
     this.#persist({ path, ...scan });
-    if (scan.occurrences.length > 0) this.#emitter.emit("changed", path);
+    if (!scanContentEqual(undefined, scan)) this.#emitter.emit("changed", path);
   }
 
   /**
@@ -788,36 +1313,99 @@ export class CitationIndex extends Service<void> {
     });
   }
 
-  /**
-   * The scanned occurrences and cache links the source choices admit, the one
-   * gate both membership surfaces pass through: the active document's
-   * {@link getDocumentCitationSet} and the vault-wide reverse observation.
-   *
-   * @param scanned the file's literal-citekey scan, already acquired: the
-   * document surface awaits a scan on demand, the reverse one takes what the
-   * backfill has covered so far.
-   */
-  #admitted(
-    file: TFile,
-    scanned: readonly CitationOccurrence[],
-  ): { citekeys: readonly CitationOccurrence[]; links: readonly LinkCache[] } {
+  #admitted(scan: CitationRecord | null, syntaxes = this.syntaxes()) {
     return {
-      citekeys: this.#includePandocCitations ? scanned : [],
-      links: this.#includeWikilinkCitations
-        ? (this.#app.metadataCache.getFileCache(file)?.links ?? [])
-        : [],
+      annotations:
+        syntaxes.annotation === "included" ? annotationCitations(scan) : [],
+      malformedAnnotations:
+        syntaxes.annotation === "included"
+          ? (scan?.malformedAnnotationCitations ?? [])
+          : [],
+      citekeys: syntaxes.citekey === "included" ? (scan?.citekeys ?? []) : [],
+      wikilinks: {
+        occurrences:
+          syntaxes.wikilink === "included" ? (scan?.wikilinks ?? []) : [],
+        malformed:
+          syntaxes.wikilink === "included"
+            ? (scan?.malformedWikilinks ?? [])
+            : [],
+      },
     };
   }
 
   citationKeys(): string[] {
-    return [...this.#scans.values()].flatMap((scan) =>
-      scan.occurrences.map((occurrence) => occurrence.raw),
+    return [...this.#filesByCitekey.keys()];
+  }
+
+  annotationCitationKeys(): string[] {
+    return [...this.#annotationsByKey].flatMap(([key, paths]) =>
+      [...paths.values()].some((occurrences) =>
+        occurrences.some(({ form }) => form === "citation"),
+      )
+        ? [key]
+        : [],
     );
+  }
+
+  get coverage(): CitationCoverage {
+    return this.#coverage;
+  }
+
+  /** Synchronous stored facts, in path order and then document order. */
+  getAnnotationUses(indexedKey: string): readonly AnnotationUse[] {
+    const paths = this.#annotationsByKey.get(indexedKey);
+    if (!paths) return [];
+    return [...paths]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([path, occurrences]) =>
+        occurrences.map((occurrence) => ({ path, occurrence })),
+      );
+  }
+
+  #setScan(path: string, scan: FileScan): void {
+    this.#removeScan(path);
+    this.#scans.set(path, scan);
+    for (const { raw } of scan.citekeys) {
+      const paths = this.#filesByCitekey.get(raw) ?? new Set<string>();
+      paths.add(path);
+      this.#filesByCitekey.set(raw, paths);
+    }
+    for (const occurrence of scan.annotations) {
+      const paths =
+        this.#annotationsByKey.get(occurrence.indexedKey) ??
+        new Map<string, AnnotationOccurrence[]>();
+      const occurrences = paths.get(path) ?? [];
+      occurrences.push(occurrence);
+      paths.set(path, occurrences);
+      this.#annotationsByKey.set(occurrence.indexedKey, paths);
+    }
+  }
+
+  #removeScan(path: string): void {
+    const scan = this.#scans.get(path);
+    if (!scan) return;
+    this.#scans.delete(path);
+    for (const { raw } of scan.citekeys) {
+      const paths = this.#filesByCitekey.get(raw);
+      paths?.delete(path);
+      if (paths?.size === 0) this.#filesByCitekey.delete(raw);
+    }
+    for (const { indexedKey } of scan.annotations) {
+      const paths = this.#annotationsByKey.get(indexedKey);
+      paths?.delete(path);
+      if (paths?.size === 0) this.#annotationsByKey.delete(indexedKey);
+    }
   }
 
   #citedBy(
     indexedKey: string,
-    resolve: (citekey: string) => CitekeyResolution | null,
+    {
+      resolve,
+      parentOfAnnotation,
+    }: {
+      resolve: (citekey: string) => CitekeyResolution | null;
+      parentOfAnnotation: (key: string) => string | null;
+    },
     {
       includeNote,
       byPath,
@@ -836,7 +1424,13 @@ export class CitationIndex extends Service<void> {
         .filter((occurrence) =>
           occurrence.kind === "citekey"
             ? this.#citekeyOccurrenceCites(resolve(occurrence.raw), indexedKey)
-            : this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
+            : occurrence.kind === "annotation"
+              ? parentOfAnnotation(occurrence.raw) === indexedKey
+              : this.#wikilinkOccurrenceCites(
+                  occurrence,
+                  file.path,
+                  indexedKey,
+                ),
         )
         .sort(compareOccurrences);
       if (occurrences.length > 0) {
@@ -870,11 +1464,14 @@ export class CitationIndex extends Service<void> {
     await this.ready;
     const files = this.#app.vault.getMarkdownFiles();
     const omitted: CitationSyntax[] = [];
-    const citekeys = files.flatMap((file) => this.#covered(file) ?? []);
+    const citekeys = files.flatMap(
+      (file) => this.#covered(file)?.citekeys ?? [],
+    );
     const lookup =
       answer ??
       (await this.#lookup.read({
         citekeys: citekeys.map((occurrence) => occurrence.raw),
+        annotationKeys: this.annotationCitationKeys(),
       }));
     if (!this.#includePandocCitations) {
       const held = citekeys.some((occurrence) =>
@@ -887,13 +1484,19 @@ export class CitationIndex extends Service<void> {
     }
     if (!this.#includeWikilinkCitations) {
       const held = files.some((file) => {
-        const links = this.#app.metadataCache.getFileCache(file)?.links ?? [];
-        return documentWikilinks(links).occurrences.some((occurrence) =>
+        return (this.#covered(file)?.wikilinks ?? []).some((occurrence) =>
           this.#wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
         );
       });
       if (held) omitted.push("wikilink");
     }
+    if (
+      !this.#includeAnnotationCitations &&
+      this.annotationCitationKeys().some(
+        (key) => lookup.parentOfAnnotation(key)?.indexedKey === indexedKey,
+      )
+    )
+      omitted.push("annotation");
     return omitted;
   }
 
@@ -947,6 +1550,12 @@ export class CitationIndex extends Service<void> {
       );
       return indexedKey ? { indexedKey, linkpath: occurrence.raw } : null;
     }
+    if (occurrence.kind === "annotation") {
+      const parent = lookup!.parentOfAnnotation(occurrence.raw);
+      if (!parent) return null;
+      const [note] = this.#noteIndex.getNotesByItemKey(parent.indexedKey);
+      return { indexedKey: parent.indexedKey, linkpath: note?.path ?? null };
+    }
     // An Ambiguous Citation Key keeps its own identity here: it adopts no
     // candidate's Indexed Key, so it stays a Citation of the key itself and
     // contributes no CSL work.
@@ -961,15 +1570,19 @@ export class CitationIndex extends Service<void> {
   #applySettings(settings: Readonly<Settings>): void {
     const nextPandoc = settings["citation.pandoc-citations"];
     const nextWikilinks = settings["citation.wikilink-citations"];
+    const nextAnnotations = settings["citation.annotation-citations"];
     const membershipChanged =
       nextPandoc !== this.#includePandocCitations ||
-      nextWikilinks !== this.#includeWikilinkCitations;
+      nextWikilinks !== this.#includeWikilinkCitations ||
+      nextAnnotations !== this.#includeAnnotationCitations;
     if (!membershipChanged) return;
     this.#includePandocCitations = nextPandoc;
     this.#includeWikilinkCitations = nextWikilinks;
+    this.#includeAnnotationCitations = nextAnnotations;
     logger.debug("Citation source membership changed", {
       pandocCitations: nextPandoc,
       wikilinkCitations: nextWikilinks,
+      annotationCitations: nextAnnotations,
     });
     this.#emitter.emit("membership-changed");
   }
@@ -991,5 +1604,23 @@ function compareOccurrences(
     a.position.start.offset - b.position.start.offset ||
     a.position.end.offset - b.position.end.offset ||
     comparePaths(a.raw, b.raw)
+  );
+}
+
+function scanContentEqual(
+  previous: FileScan | undefined,
+  next: FileScan,
+): boolean {
+  return (
+    occurrencesEqual(previous?.citekeys ?? [], next.citekeys) &&
+    occurrencesEqual(previous?.wikilinks ?? [], next.wikilinks) &&
+    occurrencesEqual(
+      (previous?.malformedWikilinks ?? []).map(({ occurrence }) => occurrence),
+      next.malformedWikilinks.map(({ occurrence }) => occurrence),
+    ) &&
+    JSON.stringify(previous?.annotations ?? []) ===
+      JSON.stringify(next.annotations) &&
+    JSON.stringify(previous?.malformedAnnotationCitations ?? []) ===
+      JSON.stringify(next.malformedAnnotationCitations)
   );
 }

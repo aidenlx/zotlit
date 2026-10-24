@@ -328,7 +328,8 @@ class PandocCitationEngine implements CitationEngine {
     );
     const { stdout } = await this.#convert({
       options: {
-        from: MARKDOWN_READER,
+        // Obsidian's opening %% comment is body text, while YAML stays metadata.
+        from: `${MARKDOWN_READER}-pandoc_title_block`,
         to: "json",
         standalone: false,
         filters: Object.keys(filterFiles),

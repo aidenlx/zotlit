@@ -110,6 +110,50 @@ const legacyAnnotationsByKeysQuery = defineKeyedQuery<
 
 type AnnotationRow = QueryRow<typeof annotationsByParentQuery>;
 
+const annotationParentsQuery = defineKeyedQuery<
+  string,
+  { libraryID: number }
+>()(
+  (db, { placeholder, contains }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        item: {
+          RAW: (item) => contains(item.key),
+          libraryID: placeholder("libraryID"),
+          deletedItem: false,
+        },
+      },
+      columns: {},
+      with: {
+        item: { columns: { key: true } },
+        parentAttachment: {
+          columns: {},
+          with: {
+            item_itemID: { columns: { key: true } },
+            item_parentItemID: { columns: { key: true } },
+          },
+        },
+      },
+    }),
+  { keyOf: (row) => row.item.key },
+);
+
+/** @returns Top-level parent keys, or standalone Attachment keys, for live Annotations in request order. */
+export function getAnnotationParentKeys(
+  db: NodeDatabaseClient,
+  keys: readonly string[],
+  libraryID: number,
+): { key: string; parentKey: string }[] {
+  return annotationParentsQuery(db, keys, { params: { libraryID } }).map(
+    ({ item, parentAttachment }) => ({
+      key: item.key,
+      parentKey:
+        parentAttachment.item_parentItemID?.key ??
+        parentAttachment.item_itemID.key,
+    }),
+  );
+}
+
 export function getAnnotationsByParent(
   db: NodeDatabaseClient,
   parentItemID: number,

@@ -8,10 +8,29 @@ export function lookupAnswer(
   revision = "fixture:1",
 ): CitationLookupAnswer {
   return new CitationLookupAnswer({
+    annotationKeys: new Map(),
     revision,
     citekeys: new Map(Object.entries(citekeys)),
     indexedKeys: new Map(Object.entries(indexedKeys)),
   });
+}
+
+/** An answer to a request for `requested` Citekeys: each resolves as `resolutions` says, else it is missing. */
+export function lookupAnswerFor(
+  requested: readonly string[],
+  resolutions: Readonly<Record<string, CitekeyResolution>> = {},
+  revision = "fixture:1",
+): CitationLookupAnswer {
+  return lookupAnswer(
+    Object.fromEntries(
+      requested.map((citekey) => [
+        citekey,
+        resolutions[citekey] ?? { kind: "missing" as const },
+      ]),
+    ),
+    {},
+    revision,
+  );
 }
 
 export function lookupForWorks(

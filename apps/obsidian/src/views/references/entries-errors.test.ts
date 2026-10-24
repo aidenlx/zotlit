@@ -23,7 +23,7 @@ describe("buildReferenceEntries citation source errors", () => {
     };
 
     expect(
-      buildReferenceEntries([], new Map(), {
+      buildReferenceEntries([], {
         bibliography: { entries: new Map(), complete: true },
         errors: [error],
       }),

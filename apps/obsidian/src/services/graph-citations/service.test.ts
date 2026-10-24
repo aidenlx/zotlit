@@ -26,7 +26,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
@@ -511,18 +512,7 @@ class CitationIndexStub {
 
   #answer(citekeys: readonly string[]): CitationLookupAnswer | null {
     if (this.cold) return null;
-    const requested = new Set(citekeys);
-    const value = new CitationLookupAnswer({
-      revision: `test-${this.#revision}`,
-      citekeys: new Map(
-        [...requested].map((citekey) => [
-          citekey,
-          RESOLUTIONS[citekey] ?? { kind: "missing" },
-        ]),
-      ),
-      indexedKeys: new Map(),
-    });
-    return value;
+    return lookupAnswerFor(citekeys, RESOLUTIONS, `test-${this.#revision}`);
   }
 }
 

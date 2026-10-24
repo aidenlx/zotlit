@@ -1,1302 +1,423 @@
-import { describe, expect, vi } from "vitest";
+// Contract 4 selectors, diagnostics and output over the real Citation Index.
+import { expect } from "vitest";
 
-import type { CslItemData } from "@zotlit/db";
-
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
 import { Effect } from "@/lib/effect";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
-import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
-import type {
-  Citation,
-  CitationKeyResolution,
-  CitationOccurrence,
-  CitationSettleOutcome,
-  CitationSyntax,
-  CitationSyntaxes,
-  CitedBySnapshot,
-  CitekeyResolution,
-  ReferenceSource,
-  SnapshotItem,
-} from "@/services/citation-index/service";
-
 import {
-  CITATIONS_GUIDE_COMMAND,
-  CITED_BY_COMMAND,
-  createCitationsCliHandlers,
-  REFERENCES_COMMAND,
-} from "./commands";
-import type { DocumentReferences, ItemLookup } from "./commands";
-import { DIAGNOSTIC_HINTS } from "./envelope";
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
+import type { CitationIndexHarnessOptions } from "@/services/citation-index/test-harness";
+import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
+import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 
-const IDENTITY = {
-  vault: { name: "Test Vault", path: "/vaults/test" },
-  source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
-} as const;
+import { registerCitationsCli } from "./register";
 
-const ITEM_KEY = "ABCD2345";
-const ITEM_CITEKEY = "doe2024";
-const ITEM_SUMMARY = "Doe (2024): A study of citations";
-const SNAPSHOT_ITEM: SnapshotItem = {
-  itemID: 7,
-  libraryID: 1,
-  key: ITEM_KEY,
-  indexedKey: ITEM_KEY,
-};
-const PRESENT: ItemLookup = { presence: "present", summary: ITEM_SUMMARY };
-
-const OCCURRENCE = {
-  kind: "citekey",
-  raw: ITEM_CITEKEY,
-  position: {
-    start: { line: 2, col: 0, offset: 40 },
-    end: { line: 2, col: 8, offset: 48 },
-  },
-} as const;
-
-/** {@link OCCURRENCE} as an answer reports it: line and col count from 1,
- *  offset stays as the index holds it. */
-const REPORTED_OCCURRENCE = {
-  kind: "citekey",
-  raw: ITEM_CITEKEY,
-  position: {
-    start: { line: 3, col: 1, offset: 40 },
-    end: { line: 3, col: 9, offset: 48 },
-  },
-} as const;
-
-const CITED: CitedBySnapshot = {
-  groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
-  coverage: "complete",
-  resolution: "fresh",
-};
-
-const EMPTY: CitedBySnapshot = {
-  groups: [],
-  coverage: "complete",
-  resolution: "fresh",
-};
-
-const DOCUMENT_PATH = "notes/review.md";
-const MISSING_ITEM_KEY = "EFGH6789";
-
-const SYNTAXES: CitationSyntaxes = {
-  citekey: "included",
-  wikilink: "excluded",
-};
-
-function occurrence(
-  raw: string,
-  offset: number,
-  kind: CitationSyntax = "citekey",
-): CitationOccurrence {
-  return {
-    kind,
-    raw,
-    position: {
-      start: { line: 0, col: offset, offset },
-      end: { line: 0, col: offset + raw.length, offset: offset + raw.length },
-    },
-  };
-}
-
-const FIRST_OCCURRENCE = occurrence(ITEM_CITEKEY, 10);
-const REPEAT_OCCURRENCE = occurrence(ITEM_CITEKEY, 120);
-const UNRESOLVED_OCCURRENCE = occurrence("roe2099", 30);
-const MALFORMED_OCCURRENCE = occurrence("Doe 2024|p. 3|extra", 50, "wikilink");
-const MISSING_OCCURRENCE = occurrence(MISSING_ITEM_KEY, 90, "wikilink");
-
-/**
- * Each of the fixtures above as an answer reports it, written out rather than
- * derived, so the expectations pin the base the contract documents.
- */
-const FIRST_REPORTED = {
-  kind: "citekey",
-  raw: ITEM_CITEKEY,
-  position: {
-    start: { line: 1, col: 11, offset: 10 },
-    end: { line: 1, col: 18, offset: 17 },
-  },
-} as const;
-
-const REPEAT_REPORTED = {
-  kind: "citekey",
-  raw: ITEM_CITEKEY,
-  position: {
-    start: { line: 1, col: 121, offset: 120 },
-    end: { line: 1, col: 128, offset: 127 },
-  },
-} as const;
-
-const UNRESOLVED_REPORTED = {
-  kind: "citekey",
-  raw: "roe2099",
-  position: {
-    start: { line: 1, col: 31, offset: 30 },
-    end: { line: 1, col: 38, offset: 37 },
-  },
-} as const;
-
-const MALFORMED_REPORTED = {
-  kind: "wikilink",
-  raw: "Doe 2024|p. 3|extra",
-  position: {
-    start: { line: 1, col: 51, offset: 50 },
-    end: { line: 1, col: 70, offset: 69 },
-  },
-} as const;
-
-const MISSING_REPORTED = {
-  kind: "wikilink",
-  raw: MISSING_ITEM_KEY,
-  position: {
-    start: { line: 1, col: 91, offset: 90 },
-    end: { line: 1, col: 99, offset: 98 },
-  },
-} as const;
-
-const SOURCE: ReferenceSource = {
-  csl: { id: "item-7" } as CslItemData,
-  summary: ITEM_SUMMARY,
-  itemKey: ITEM_KEY,
-  itemID: 7,
-  groupID: null,
-  citekey: ITEM_CITEKEY,
-  linkpath: "Literature/@doe2024.md",
-  attachments: [],
-};
-
-const CITATIONS: Citation[] = [
-  {
-    indexedKey: ITEM_KEY,
-    linkpath: SOURCE.linkpath,
-    refNumber: 1,
-    occurrences: [FIRST_OCCURRENCE, REPEAT_OCCURRENCE],
-  },
-  {
-    indexedKey: null,
-    linkpath: null,
-    refNumber: 2,
-    occurrences: [UNRESOLVED_OCCURRENCE],
-  },
-  {
-    indexedKey: MISSING_ITEM_KEY,
-    linkpath: null,
-    refNumber: 3,
-    occurrences: [MISSING_OCCURRENCE],
-  },
-];
-
-const DOCUMENT: Omit<DocumentReferences, "lookup"> = {
-  citations: CITATIONS,
-  errors: [{ kind: "malformed-wikilink", occurrence: MALFORMED_OCCURRENCE }],
-  sources: new Map([[ITEM_KEY, SOURCE]]),
-  database: "ready",
-};
-
-interface SetupOptions {
-  settle?: CitationSettleOutcome;
-  settleTimeoutMs?: number;
-  snapshot?: CitedBySnapshot;
-  lookup?: ItemLookup;
-  citekeyResolution?: CitekeyResolution;
-  document?: Omit<DocumentReferences, "lookup"> | null;
-  resolution?: CitationKeyResolution;
-  syntaxes?: CitationSyntaxes;
-  documentOmittedSyntaxes?: readonly CitationSyntax[];
-  citedByOmittedSyntaxes?: readonly CitationSyntax[];
-}
-
-function setup(options: SetupOptions = {}) {
-  const settle = options.settle ?? "settled";
-  const lookup = options.lookup ?? PRESENT;
-  const citekeyResolution = options.citekeyResolution ?? { kind: "missing" };
-  const documentReferences =
-    options.document === undefined ? DOCUMENT : options.document;
-  const getIdentity = vi.fn(() => IDENTITY);
-  const waitUntilSettled = vi.fn(() => Promise.resolve(settle));
-  const readLookup = vi.fn(
-    async (request: {
-      citekeys?: readonly string[];
-      indexedKeys?: readonly string[];
-    }) =>
-      lookupAnswer(
-        Object.fromEntries(
-          (request.citekeys ?? []).map((key) => [key, citekeyResolution]),
-        ),
-        Object.fromEntries(
-          (request.indexedKeys ?? []).map((key) => [key, ITEM_CITEKEY]),
-        ),
-      ),
+const setup = Effect.fn("CitationsCliTest.setup")(function* (
+  body = `[@doe2024] [](${annotationUri})`,
+  options: CitationIndexHarnessOptions = { zoteroRows: annotationRows },
+) {
+  const h = yield* acquireAsyncDisposable(() =>
+    createCitationIndexHarness({ "draft.md": body }, options),
   );
-  const getCitedBy = vi.fn(async () => options.snapshot ?? CITED);
-  const lookupItem = vi.fn(() => Effect.succeed(lookup));
-  const readDocument = vi.fn(
-    async () =>
-      documentReferences && {
-        ...documentReferences,
-        lookup: lookupAnswer(
-          Object.fromEntries(
-            documentReferences.citations.flatMap((citation) =>
-              citation.occurrences
-                .filter((occurrence) => occurrence.kind === "citekey")
-                .map((occurrence) => [occurrence.raw, citekeyResolution]),
-            ),
-          ),
-        ),
-      },
-  );
-  const resolution = vi.fn(() => options.resolution ?? "fresh");
-  const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
-  const documentOmittedSyntaxes = vi.fn(() =>
-    Promise.resolve(options.documentOmittedSyntaxes ?? []),
-  );
-  const citedByOmittedSyntaxes = vi.fn(() =>
-    Promise.resolve(options.citedByOmittedSyntaxes ?? []),
-  );
-  const handlers = createCitationsCliHandlers({
-    getIdentity,
-    settleTimeoutMs: options.settleTimeoutMs,
-    index: {
-      citationKeys: () => [],
-      waitUntilSettled,
-      readLookup,
-      getCitedBy,
-      resolution,
-      syntaxes,
-      documentOmittedSyntaxes,
-      citedByOmittedSyntaxes,
-    },
-    lookupItem,
-    readDocument,
+  h.workspace.layoutReady();
+  yield* Effect.promise(() => h.index.whenIndexed());
+  Object.assign(h.app.vault, {
+    getName: () => "Test Vault",
+    adapter: { getBasePath: () => "/test" },
   });
-  return {
-    citedBy: handlers[CITED_BY_COMMAND],
-    references: handlers[REFERENCES_COMMAND],
-    guide: handlers[CITATIONS_GUIDE_COMMAND],
-    getIdentity,
-    waitUntilSettled,
-    readLookup,
-    getCitedBy,
-    lookupItem,
-    readDocument,
-    syntaxes,
-    documentOmittedSyntaxes,
-    citedByOmittedSyntaxes,
-  };
-}
-
-describe("zotlit:cited-by", () => {
-  it.effect(
-    "reports citing notes with occurrences, positions, and index states",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy, getCitedBy } = setup();
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(getCitedBy).toHaveBeenCalledWith(
-          ITEM_KEY,
-          expect.any(CitationLookupAnswer),
-        );
-        expect(JSON.parse(output)).toEqual({
-          contractVersion: 3,
-          command: CITED_BY_COMMAND,
-          ok: true,
-          request: { key: ITEM_KEY },
-          identity: IDENTITY,
-          item: {
-            key: ITEM_KEY,
-            citekey: ITEM_CITEKEY,
-            summary: ITEM_SUMMARY,
-          },
-          groups: [
-            { path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] },
-          ],
-          omittedSyntaxes: [],
-          coverage: "complete",
-          resolution: "fresh",
-          syntaxes: SYNTAXES,
-        });
-      }),
-  );
-
-  it.effect(
-    "counts line and col from 1, and keeps offset counting from 0",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({
-          snapshot: {
-            groups: [
-              {
-                path: "notes/review.md",
-                occurrences: [occurrence(ITEM_CITEKEY, 0)],
-              },
-            ],
-            coverage: "complete",
-            resolution: "fresh",
-          },
-        });
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        const [first] = JSON.parse(output).groups[0].occurrences;
-        expect(first.position).toEqual({
-          start: { line: 1, col: 1, offset: 0 },
-          end: { line: 1, col: 8, offset: 7 },
-        });
-        expect(first.position.end.offset - first.position.start.offset).toBe(
-          ITEM_CITEKEY.length,
-        );
-      }),
-  );
-
-  it.effect("reports citekey as excluded when the index says so", () =>
-    Effect.gen(function* () {
-      const { citedBy } = setup({
-        syntaxes: { citekey: "excluded", wikilink: "included" },
-      });
-
-      const output = yield* citedBy({ key: ITEM_KEY });
-
-      expect(JSON.parse(output)).toMatchObject({
-        ok: true,
-        syntaxes: { citekey: "excluded", wikilink: "included" },
-      });
-    }),
-  );
-
-  it.effect(
-    "answers an item nobody cites with empty groups and no omitted syntax",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({ snapshot: EMPTY });
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          groups: [],
-          omittedSyntaxes: [],
-        });
-      }),
-  );
-
-  it.effect(
-    "reports the excluded syntax that held the item's occurrences",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({
-          snapshot: {
-            groups: [],
-            coverage: "complete",
-            resolution: "fresh",
-          },
-          citedByOmittedSyntaxes: ["wikilink"],
-        });
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          groups: [],
-          omittedSyntaxes: ["wikilink"],
-        });
-      }),
-  );
-
-  it.effect(
-    "reports omittedSyntaxes as an empty list when groups is non-empty and holds no excluded occurrence",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup();
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(JSON.parse(output)).toMatchObject({ omittedSyntaxes: [] });
-      }),
-  );
-
-  it.effect(
-    "reports the excluded syntax when a non-empty answer's item also has occurrences of it",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({
-          snapshot: {
-            groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
-            coverage: "complete",
-            resolution: "fresh",
-          },
-          citedByOmittedSyntaxes: ["wikilink"],
-        });
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          groups: [
-            { path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] },
-          ],
-          omittedSyntaxes: ["wikilink"],
-        });
-      }),
-  );
-
-  it.effect("resolves a citation key through the resolution snapshot", () =>
-    Effect.gen(function* () {
-      const { citedBy, readLookup, getCitedBy, lookupItem } = setup({
-        citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
-      });
-
-      const output = yield* citedBy({ citekey: ITEM_CITEKEY });
-
-      expect(readLookup).toHaveBeenCalledWith({
-        citekeys: [ITEM_CITEKEY],
-        indexedKeys: [],
-      });
-      expect(lookupItem).toHaveBeenCalledWith(ITEM_KEY);
-      expect(getCitedBy).toHaveBeenCalledWith(
-        ITEM_KEY,
-        expect.any(CitationLookupAnswer),
-      );
-      expect(JSON.parse(output)).toMatchObject({
-        ok: true,
-        request: { citekey: ITEM_CITEKEY },
-        item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: ITEM_SUMMARY },
-      });
-    }),
-  );
-
-  it.effect(
-    "keeps the snapshot's verdict when a citation key names an item the source read leaves out",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({
-          citekeyResolution: { kind: "unique", item: SNAPSHOT_ITEM },
-          lookup: { presence: "absent", summary: null },
-        });
-
-        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          item: { key: ITEM_KEY, citekey: ITEM_CITEKEY, summary: null },
-        });
-      }),
-  );
-
-  it.effect(
-    "answers ok with a null summary when the item fields cannot be read",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({
-          lookup: { presence: "present", summary: null },
-        });
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          item: { key: ITEM_KEY, summary: null },
-        });
-      }),
-  );
-
-  it.effect("reports degraded coverage and resolution as payload data", () =>
-    Effect.gen(function* () {
-      const { citedBy } = setup({
-        snapshot: {
-          groups: [],
-          coverage: "degraded",
-          resolution: "failed",
-        },
-      });
-
-      expect(JSON.parse(yield* citedBy({ key: ITEM_KEY }))).toMatchObject({
-        ok: true,
-        coverage: "degraded",
-        resolution: "failed",
-      });
-    }),
-  );
-
-  it.effect(
-    "answers from the index when the Zotero database cannot be read",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy } = setup({
-          lookup: { presence: "unreadable", summary: null },
-          snapshot: {
-            groups: [],
-            coverage: "complete",
-            resolution: "failed",
-          },
-        });
-
-        expect(JSON.parse(yield* citedBy({ key: ITEM_KEY }))).toMatchObject({
-          ok: true,
-          item: { key: ITEM_KEY, summary: null },
-          resolution: "failed",
-        });
-      }),
-  );
-
-  describe("selector", () => {
-    it.effect.each<[string, Record<string, string>, string]>([
-      ["both selectors", { key: ITEM_KEY, citekey: ITEM_CITEKEY }, "citekey"],
-      ["neither selector", {}, "key"],
-      ["an empty key", { key: "" }, "key"],
-      ["an empty citekey", { citekey: "" }, "citekey"],
-      ["a bare citekey", { citekey: "true" }, "citekey"],
-      ["a malformed key", { key: "not-a-key" }, "key"],
-      [
-        "a bare expect-source",
-        { key: ITEM_KEY, "expect-source": "true" },
-        "expect-source",
-      ],
-      ["an unknown parameter", { key: ITEM_KEY, radius: "3" }, "radius"],
-      ["a trailing vault", { key: ITEM_KEY, vault: "Other" }, "vault"],
-    ])("rejects %s", ([_label, params, parameter]) =>
-      Effect.gen(function* () {
-        const { citedBy, getIdentity, waitUntilSettled } = setup();
-
-        const response = JSON.parse(yield* citedBy(params)) as {
-          ok: boolean;
-          diagnostic: { code: string; hint: string; details: object };
-        };
-
-        expect(response.ok).toBe(false);
-        expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
-        expect(response.diagnostic.hint).toBe(
-          DIAGNOSTIC_HINTS.INVALID_SELECTOR,
-        );
-        expect(response.diagnostic.details).toEqual({ parameter });
-        expect(getIdentity).not.toHaveBeenCalled();
-        expect(waitUntilSettled).not.toHaveBeenCalled();
-      }),
-    );
+  const cli = fakeCliHost();
+  registerCitationsCli(cli.host, {
+    app: h.app,
+    citationIndex: h.index,
+    zoteroPref: {
+      ready: Promise.resolve(),
+      sourceId: "test-source",
+      databasePath: "/test/zotero.sqlite",
+    },
   });
-
-  it.effect("reports a key the connected source does not hold", () =>
-    Effect.gen(function* () {
-      const { citedBy, getCitedBy } = setup({
-        lookup: { presence: "absent", summary: null },
-      });
-
-      const output = yield* citedBy({ key: ITEM_KEY });
-
-      expect(getCitedBy).not.toHaveBeenCalled();
-      expect(JSON.parse(output)).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "KEY_NOT_FOUND",
-          hint: DIAGNOSTIC_HINTS.KEY_NOT_FOUND,
-          details: { key: ITEM_KEY },
-        },
-      });
-    }),
-  );
-
-  it.effect(
-    "uses one answer for the complete cited-by command when the source changes",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy, readLookup, getCitedBy } = setup();
-        const nextItem = {
-          ...SNAPSHOT_ITEM,
-          itemID: 2,
-          key: "NEXT2345",
-          indexedKey: "NEXT2345",
-        };
-        const first = lookupAnswer({
-          [ITEM_CITEKEY]: { kind: "unique", item: SNAPSHOT_ITEM },
-        });
-        const next = lookupAnswer(
-          { [ITEM_CITEKEY]: { kind: "unique", item: nextItem } },
-          {},
-          "fixture:2",
-        );
-        readLookup.mockResolvedValueOnce(first).mockResolvedValue(next);
-        getCitedBy
-          .mockResolvedValueOnce(CITED)
-          .mockResolvedValue({ ...CITED, groups: [] });
-
-        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          item: { key: ITEM_KEY },
-          groups: CITED.groups.map((group) => ({ path: group.path })),
-        });
-        expect(readLookup).toHaveBeenCalledOnce();
-        expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY, first);
-      }),
-  );
-
-  it.effect(
-    "reports an unavailable fresh lookup instead of a missing citation key",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy, readLookup, getCitedBy } = setup();
-        readLookup.mockRejectedValue(new Error("Citation worker unavailable"));
-
-        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: false,
-          diagnostic: { code: "INDEX_NOT_READY" },
-        });
-        expect(getCitedBy).not.toHaveBeenCalled();
-      }),
-  );
-
-  it.effect("reports a citation key that resolves to no item", () =>
-    Effect.gen(function* () {
-      const { citedBy, getCitedBy } = setup({
-        citekeyResolution: { kind: "missing" },
-      });
-
-      const output = yield* citedBy({ citekey: "roe2099" });
-
-      expect(getCitedBy).not.toHaveBeenCalled();
-      expect(JSON.parse(output)).toMatchObject({
-        ok: false,
-        diagnostic: {
-          code: "KEY_NOT_FOUND",
-          details: { citekey: "roe2099" },
-        },
-      });
-    }),
-  );
-
-  it.effect(
-    "reports a citation key that names several items, with the key of each",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy, getCitedBy } = setup({
-          citekeyResolution: {
-            kind: "ambiguous",
-            candidates: [
-              SNAPSHOT_ITEM,
-              {
-                itemID: 11,
-                libraryID: 4,
-                key: "ROEF6789",
-                indexedKey: "ROEF6789g7",
-              },
-            ],
-          },
-        });
-
-        const output = yield* citedBy({ citekey: ITEM_CITEKEY });
-
-        // An Ambiguous Citation Key selects no Item, so the answer names the
-        // candidates instead of reading the citations of a chosen one.
-        expect(getCitedBy).not.toHaveBeenCalled();
-        expect(JSON.parse(output)).toMatchObject({
-          ok: false,
-          diagnostic: {
-            code: "AMBIGUOUS_CITEKEY",
-            hint: DIAGNOSTIC_HINTS.AMBIGUOUS_CITEKEY,
-            details: {
-              citekey: ITEM_CITEKEY,
-              candidates: [
-                { key: ITEM_KEY, libraryID: 1 },
-                { key: "ROEF6789g7", libraryID: 4 },
-              ],
-            },
-          },
-        });
-      }),
-  );
-
-  it.effect("rejects a source mismatch before any data load", () =>
-    Effect.gen(function* () {
-      const { citedBy, waitUntilSettled, lookupItem, getCitedBy } = setup();
-
-      const output = yield* citedBy({
-        key: ITEM_KEY,
-        "expect-source": "other",
-      });
-
-      expect(waitUntilSettled).not.toHaveBeenCalled();
-      expect(lookupItem).not.toHaveBeenCalled();
-      expect(getCitedBy).not.toHaveBeenCalled();
-      expect(JSON.parse(output)).toEqual({
-        contractVersion: 3,
-        command: CITED_BY_COMMAND,
-        ok: false,
-        request: { key: ITEM_KEY },
-        identity: IDENTITY,
-        diagnostic: {
-          code: "TARGET_MISMATCH",
-          message: `Expected Zotero source 'other', connected to 'a1b2c3d4'.`,
-          hint: DIAGNOSTIC_HINTS.TARGET_MISMATCH,
-          details: { target: "source", expected: "other", actual: "a1b2c3d4" },
-        },
-      });
-    }),
-  );
-
-  it.effect("passes a matching source through to the index", () =>
-    Effect.gen(function* () {
-      const { citedBy, getCitedBy } = setup();
-
-      const output = yield* citedBy({
-        key: ITEM_KEY,
-        "expect-source": IDENTITY.source.id,
-      });
-
-      expect(getCitedBy).toHaveBeenCalledWith(
-        ITEM_KEY,
-        expect.any(CitationLookupAnswer),
-      );
-      expect(JSON.parse(output)).toMatchObject({ ok: true });
-    }),
-  );
-
-  it.effect(
-    "returns a retryable diagnostic when the index stays transitional",
-    () =>
-      Effect.gen(function* () {
-        const { citedBy, lookupItem, getCitedBy } = setup({
-          settle: "timeout",
-          settleTimeoutMs: 25,
-        });
-
-        const output = yield* citedBy({ key: ITEM_KEY });
-
-        expect(lookupItem).not.toHaveBeenCalled();
-        expect(getCitedBy).not.toHaveBeenCalled();
-        expect(JSON.parse(output)).toMatchObject({
-          ok: false,
-          request: { key: ITEM_KEY },
-          identity: IDENTITY,
-          diagnostic: {
-            code: "INDEX_NOT_READY",
-            message: "The Citation Index did not settle within 25 ms.",
-            hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
-          },
-        });
-      }),
-  );
-
-  it.effect("waits for the index before reading it", () =>
-    Effect.gen(function* () {
-      const order: string[] = [];
-      const handlers = createCitationsCliHandlers({
-        getIdentity: () => {
-          order.push("identity");
-          return IDENTITY;
-        },
-        index: {
-          citationKeys: () => [],
-          waitUntilSettled: () => {
-            order.push("settle");
-            return Promise.resolve("settled");
-          },
-          readLookup: async () =>
-            lookupAnswer({}, { [ITEM_KEY]: ITEM_CITEKEY }),
-          getCitedBy: async () => {
-            order.push("cited-by");
-            return CITED;
-          },
-          resolution: () => "fresh",
-          syntaxes: () => SYNTAXES,
-          documentOmittedSyntaxes: () => Promise.resolve([]),
-          citedByOmittedSyntaxes: () => Promise.resolve([]),
-        },
-        lookupItem: () =>
-          Effect.sync(() => {
-            order.push("lookup");
-            return PRESENT;
-          }),
-        readDocument: async () => ({ ...DOCUMENT, lookup: lookupAnswer() }),
-      });
-
-      yield* handlers[CITED_BY_COMMAND]({ key: ITEM_KEY });
-
-      expect(order).toEqual(["identity", "settle", "lookup", "cited-by"]);
-    }),
-  );
+  return { ...h, command: cli.command };
 });
 
-describe("zotlit:references", () => {
-  it.effect(
-    "reports the document's entries in first-occurrence order, with identity and positions",
-    () =>
-      Effect.gen(function* () {
-        const { references, readDocument } = setup();
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
-        expect(JSON.parse(output)).toEqual({
-          contractVersion: 3,
-          command: REFERENCES_COMMAND,
-          ok: true,
-          request: { file: DOCUMENT_PATH },
-          identity: IDENTITY,
-          entries: [
-            {
-              refNumber: 1,
-              kind: "resolved",
-              key: ITEM_KEY,
-              citekey: ITEM_CITEKEY,
-              summary: SOURCE.summary,
-              linkpath: SOURCE.linkpath,
-              occurrences: [FIRST_REPORTED, REPEAT_REPORTED],
-            },
-            {
-              refNumber: 2,
-              kind: "unresolved",
-              citekey: "roe2099",
-              occurrences: [UNRESOLVED_REPORTED],
-            },
-            {
-              kind: "malformed",
-              occurrences: [MALFORMED_REPORTED],
-            },
-            {
-              refNumber: 3,
-              kind: "missing",
-              key: MISSING_ITEM_KEY,
-              occurrences: [MISSING_REPORTED],
-            },
-          ],
-          omittedSyntaxes: [],
-          database: "ready",
-          resolution: "fresh",
-          syntaxes: SYNTAXES,
-        });
-      }),
-  );
-
-  it.effect(
-    "counts line and col from 1, and keeps offset counting from 0",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup({
-          document: {
-            citations: [
-              {
-                indexedKey: null,
-                linkpath: null,
-                refNumber: 1,
-                occurrences: [occurrence("roe2099", 0)],
-              },
-            ],
-            errors: [],
-            sources: new Map(),
-            database: "ready",
-          },
-        });
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        const [first] = JSON.parse(output).entries[0].occurrences;
-        expect(first.position).toEqual({
-          start: { line: 1, col: 1, offset: 0 },
-          end: { line: 1, col: 8, offset: 7 },
-        });
-        expect(first.position.end.offset - first.position.start.offset).toBe(
-          "roe2099".length,
-        );
-      }),
-  );
-
-  it.effect(
-    "reports an unreadable Zotero database as payload state, not as missing items",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup({
-          document: {
-            citations: CITATIONS,
-            errors: [],
-            sources: new Map(),
-            database: "unreadable",
-          },
-          resolution: "failed",
-        });
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          database: "unreadable",
-          resolution: "failed",
-        });
-      }),
-  );
-
-  it.effect("reports citekey as excluded when the index says so", () =>
+it.effect.each<[string, Record<string, string>, string, string]>([
+  [
+    "cited-by",
+    {},
+    "key",
+    "cited-by takes exactly one of key=<zotero-key> or citekey=<citation-key>. Neither was set.",
+  ],
+  [
+    "cited-by",
+    { key: "ABCD2345", citekey: "doe2024" },
+    "citekey",
+    "cited-by takes exactly one of key=<zotero-key> or citekey=<citation-key>. Both were set.",
+  ],
+  [
+    "cited-by",
+    { key: "bad" },
+    "key",
+    "'bad' is not a Zotero key. A Zotero key is an 8-character item key, with a 'g<group-id>' suffix for an item in a group library. To select by citation key instead, use citekey=<citation-key>.",
+  ],
+  ["cited-by", { citekey: "" }, "citekey", "citekey requires a value."],
+  ["cited-by", { citekey: "true" }, "citekey", "citekey requires a value."],
+  [
+    "cited-by",
+    { key: "ABCD2345", extra: "x" },
+    "extra",
+    "Unknown parameter 'extra' for cited-by. Accepted parameters: citekey, key, expect-source.",
+  ],
+  [
+    "cited-by",
+    { key: "ABCD2345", "expect-source": "true" },
+    "expect-source",
+    "expect-source requires a value.",
+  ],
+  [
+    "references",
+    {},
+    "file",
+    "references takes the vault-relative path of one Markdown note, as file=folder/note.md.",
+  ],
+  ["references", { file: "true" }, "file", "file requires a value."],
+  [
+    "references",
+    { file: "draft.md", extra: "x" },
+    "extra",
+    "Unknown parameter 'extra' for references. Accepted parameters: file, expect-source.",
+  ],
+  ["annotation-uses", {}, "key", "key is required."],
+  ["annotation-uses", { key: "" }, "key", "key requires a value."],
+  ["annotation-uses", { key: "true" }, "key", "key requires a value."],
+  [
+    "annotation-uses",
+    { key: "bad" },
+    "key",
+    "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+  ],
+  [
+    "annotation-uses",
+    { key: "ANN23456gwrong" },
+    "key",
+    "Use key=<annotation-key>: an 8-character Annotation key, with a 'g<group-id>' suffix for a group library.",
+  ],
+  [
+    "annotation-uses",
+    { key: "ANN23456", citekey: "doe2024" },
+    "citekey",
+    "Unknown parameter 'citekey' for annotation-uses. Accepted parameters: key, expect-source.",
+  ],
+  [
+    "annotation-uses",
+    { key: "ANN23456", "expect-source": "true" },
+    "expect-source",
+    "expect-source requires a value.",
+  ],
+  [
+    "citations-guide",
+    { topic: "positions" },
+    "topic",
+    "Unknown parameter 'topic': citations-guide takes no parameters.",
+  ],
+])(
+  "rejects invalid %s parameters with the exact parameter and an actionable message",
+  ([name, params, parameter, message]) =>
     Effect.gen(function* () {
-      const { references } = setup({
-        syntaxes: { citekey: "excluded", wikilink: "included" },
-      });
-
-      const output = yield* references({ file: DOCUMENT_PATH });
-
-      expect(JSON.parse(output)).toMatchObject({
-        ok: true,
-        syntaxes: { citekey: "excluded", wikilink: "included" },
-      });
-    }),
-  );
-
-  it.effect(
-    "reports an ambiguous citation key with the exact key of every candidate",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup({
-          document: {
-            citations: [
-              {
-                indexedKey: null,
-                linkpath: null,
-                refNumber: 1,
-                occurrences: [UNRESOLVED_OCCURRENCE],
-              },
-            ],
-            errors: [],
-            sources: new Map(),
-            database: "ready",
-          },
-          citekeyResolution: {
-            kind: "ambiguous",
-            candidates: [
-              SNAPSHOT_ITEM,
-              {
-                itemID: 11,
-                libraryID: 4,
-                key: "ROEF6789",
-                indexedKey: "ROEF6789g7",
-              },
-            ],
-          },
-        });
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          entries: [
-            {
-              refNumber: 1,
-              kind: "ambiguous",
-              citekey: "roe2099",
-              candidates: [
-                { key: ITEM_KEY, libraryID: 1 },
-                { key: "ROEF6789g7", libraryID: 4 },
-              ],
-              occurrences: [UNRESOLVED_REPORTED],
-            },
-          ],
-        });
-      }),
-  );
-
-  // A candidate is one work's exact identity, which zotlit:template-data reads
-  // in full and the sidebar presents; the index fact alone travels here.
-  it.effect("names a candidate's library by its local id alone", () =>
-    Effect.gen(function* () {
-      const { references } = setup({
-        document: {
-          citations: [
-            {
-              indexedKey: null,
-              linkpath: null,
-              refNumber: 1,
-              occurrences: [UNRESOLVED_OCCURRENCE],
-            },
-          ],
-          errors: [],
-          sources: new Map(),
-          database: "ready",
-        },
-        citekeyResolution: {
-          kind: "ambiguous",
-          candidates: [SNAPSHOT_ITEM, { ...SNAPSHOT_ITEM, itemID: 11 }],
-        },
-      });
-
-      const [candidate] = JSON.parse(yield* references({ file: DOCUMENT_PATH }))
-        .entries[0].candidates;
-
-      expect(Object.keys(candidate)).toStrictEqual(["key", "libraryID"]);
-    }),
-  );
-
-  it.effect("keeps a citekey that names no item unresolved", () =>
-    Effect.gen(function* () {
-      const { references } = setup({ citekeyResolution: { kind: "missing" } });
-
-      const output = yield* references({ file: DOCUMENT_PATH });
-
-      expect(JSON.parse(output)).toMatchObject({
-        entries: [
-          { kind: "resolved" },
-          { kind: "unresolved", citekey: "roe2099" },
-          { kind: "malformed" },
-          { kind: "missing" },
-        ],
-      });
-    }),
-  );
-
-  it.effect(
-    "carries no CSL detail or attachment data in a resolved entry",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup();
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(output).not.toContain("csl");
-        expect(output).not.toContain("attachments");
-      }),
-  );
-
-  it.effect(
-    "answers a document that cites nothing with no entries and no omitted syntax",
-    () =>
-      Effect.gen(function* () {
-        const { references, documentOmittedSyntaxes } = setup({
-          document: {
-            citations: [],
-            errors: [],
-            sources: new Map(),
-            database: "ready",
-          },
-          documentOmittedSyntaxes: [],
-        });
-
-        const output = yield* references({ file: "notes/plain.md" });
-
-        expect(documentOmittedSyntaxes).toHaveBeenCalledWith("notes/plain.md");
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          entries: [],
-          omittedSyntaxes: [],
-        });
-      }),
-  );
-
-  it.effect(
-    "reports wikilink as the excluded syntax that held the document's occurrences",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup({
-          document: {
-            citations: [],
-            errors: [],
-            sources: new Map(),
-            database: "ready",
-          },
-          syntaxes: { citekey: "included", wikilink: "excluded" },
-          documentOmittedSyntaxes: ["wikilink"],
-        });
-
-        const output = yield* references({ file: "notes/wikilinks-only.md" });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          entries: [],
-          omittedSyntaxes: ["wikilink"],
-        });
-      }),
-  );
-
-  it.effect(
-    "reports citekey as the excluded syntax that held the document's occurrences",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup({
-          document: {
-            citations: [],
-            errors: [],
-            sources: new Map(),
-            database: "ready",
-          },
-          syntaxes: { citekey: "excluded", wikilink: "included" },
-          documentOmittedSyntaxes: ["citekey"],
-        });
-
-        const output = yield* references({ file: "notes/citekeys-only.md" });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          entries: [],
-          omittedSyntaxes: ["citekey"],
-        });
-      }),
-  );
-
-  it.effect(
-    "reports omittedSyntaxes as an empty list when entries is non-empty and the document holds no excluded occurrence",
-    () =>
-      Effect.gen(function* () {
-        const { references, documentOmittedSyntaxes } = setup();
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(documentOmittedSyntaxes).toHaveBeenCalledWith(DOCUMENT_PATH);
-        expect(JSON.parse(output)).toMatchObject({ omittedSyntaxes: [] });
-      }),
-  );
-
-  it.effect(
-    "reports the excluded syntax when a non-empty answer's document also holds occurrences of it",
-    () =>
-      Effect.gen(function* () {
-        const { references } = setup({
-          syntaxes: { citekey: "included", wikilink: "excluded" },
-          documentOmittedSyntaxes: ["wikilink"],
-        });
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(JSON.parse(output)).toMatchObject({
-          ok: true,
-          omittedSyntaxes: ["wikilink"],
-        });
-      }),
-  );
-
-  describe("selector", () => {
-    it.effect.each<[string, Record<string, string>, string]>([
-      ["no file", {}, "file"],
-      ["an empty file", { file: "" }, "file"],
-      ["a bare file", { file: "true" }, "file"],
-      [
-        "a bare expect-source",
-        { file: DOCUMENT_PATH, "expect-source": "true" },
-        "expect-source",
-      ],
-      ["an unknown parameter", { file: DOCUMENT_PATH, key: ITEM_KEY }, "key"],
-      ["a trailing vault", { file: DOCUMENT_PATH, vault: "Other" }, "vault"],
-    ])("rejects %s", ([_label, params, parameter]) =>
-      Effect.gen(function* () {
-        const { references, getIdentity, waitUntilSettled, readDocument } =
-          setup();
-
-        const response = JSON.parse(yield* references(params)) as {
-          ok: boolean;
-          diagnostic: { code: string; hint: string; details: object };
-        };
-
-        expect(response.ok).toBe(false);
-        expect(response.diagnostic.code).toBe("INVALID_SELECTOR");
-        expect(response.diagnostic.hint).toBe(
-          DIAGNOSTIC_HINTS.INVALID_SELECTOR,
-        );
-        expect(response.diagnostic.details).toEqual({ parameter });
-        expect(getIdentity).not.toHaveBeenCalled();
-        expect(waitUntilSettled).not.toHaveBeenCalled();
-        expect(readDocument).not.toHaveBeenCalled();
-      }),
-    );
-  });
-
-  it.effect("reports a path the vault holds no note at", () =>
-    Effect.gen(function* () {
-      const { references } = setup({ document: null });
-
-      const output = yield* references({ file: "notes/gone.md" });
-
-      expect(JSON.parse(output)).toMatchObject({
-        ok: false,
-        request: { file: "notes/gone.md" },
-        identity: IDENTITY,
-        diagnostic: {
-          code: "FILE_NOT_FOUND",
-          message: "The vault holds no Markdown note at 'notes/gone.md'.",
-          hint: DIAGNOSTIC_HINTS.FILE_NOT_FOUND,
-          details: { file: "notes/gone.md" },
-        },
-      });
-    }),
-  );
-
-  it.effect("rejects a source mismatch before any data load", () =>
-    Effect.gen(function* () {
-      const { references, waitUntilSettled, readDocument } = setup();
-
-      const output = yield* references({
-        file: DOCUMENT_PATH,
-        "expect-source": "other",
-      });
-
-      expect(waitUntilSettled).not.toHaveBeenCalled();
-      expect(readDocument).not.toHaveBeenCalled();
-      expect(JSON.parse(output)).toMatchObject({
-        ok: false,
-        request: { file: DOCUMENT_PATH },
-        identity: IDENTITY,
-        diagnostic: {
-          code: "TARGET_MISMATCH",
-          details: { target: "source", expected: "other", actual: "a1b2c3d4" },
-        },
-      });
-    }),
-  );
-
-  it.effect(
-    "returns a retryable diagnostic when the index stays transitional",
-    () =>
-      Effect.gen(function* () {
-        const { references, readDocument } = setup({
-          settle: "timeout",
-          settleTimeoutMs: 25,
-        });
-
-        const output = yield* references({ file: DOCUMENT_PATH });
-
-        expect(readDocument).not.toHaveBeenCalled();
-        expect(JSON.parse(output)).toMatchObject({
-          ok: false,
-          diagnostic: {
-            code: "INDEX_NOT_READY",
-            message: "The Citation Index did not settle within 25 ms.",
-            hint: DIAGNOSTIC_HINTS.INDEX_NOT_READY,
-          },
-        });
-      }),
-  );
-});
-
-describe("zotlit:citations-guide", () => {
-  it.effect("serves the page as literal prose, without an envelope", () =>
-    Effect.gen(function* () {
-      const { guide, getIdentity, waitUntilSettled } = setup();
-
-      const output = yield* guide({});
-
-      expect(() => JSON.parse(output)).toThrow();
-      expect(output).toContain("ZOTLIT-CITATIONS(1)");
-      expect(output).toContain(CITED_BY_COMMAND);
-      expect(output).toContain(REFERENCES_COMMAND);
-      expect(output).toContain(CITATIONS_GUIDE_COMMAND);
-      expect(getIdentity).not.toHaveBeenCalled();
-      expect(waitUntilSettled).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("rejects a parameter, since the guide serves one page", () =>
-    Effect.gen(function* () {
-      const { guide } = setup();
-
-      const output = yield* guide({ topic: "positions" });
-
-      expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 3,
-        command: CITATIONS_GUIDE_COMMAND,
+      const h = yield* setup();
+      const result = JSON.parse(
+        yield* h.command(`zotlit:${name}`).handler(params),
+      );
+      expect(result).toMatchObject({
+        contractVersion: 4,
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
-          hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
-          details: { parameter: "topic" },
+          message,
+          details: { parameter },
+        },
+      });
+      expect(result.identity).toBeUndefined();
+    }),
+);
+
+it.effect.each(["cited-by", "references", "annotation-uses"])(
+  "rejects a wrong source for %s",
+  (name) =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      const params: Record<string, string> =
+        name === "references" ? { file: "draft.md" } : { key: "ABCD2345" };
+      const result = JSON.parse(
+        yield* h
+          .command(`zotlit:${name}`)
+          .handler({ ...params, "expect-source": "other" }),
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "TARGET_MISMATCH",
+          message:
+            "Expected Zotero source 'other', connected to 'test-source'.",
         },
       });
     }),
-  );
-});
+);
+
+it.effect(
+  "reports References, Cited By and Annotation uses in source order with one-based positions",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* setup(`[@doe2024]\n[](${annotationUri})`);
+      const references = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(references).toMatchObject({
+        contractVersion: 4,
+        ok: true,
+        entries: [
+          {
+            kind: "resolved",
+            key: "ABCD2345",
+            refNumber: 1,
+            occurrences: [
+              {
+                kind: "citekey",
+                raw: "doe2024",
+                position: { start: { line: 1, col: 2, offset: 1 } },
+              },
+              {
+                kind: "annotation",
+                raw: "ANN23456",
+                position: { start: { line: 2, col: 1, offset: 11 } },
+              },
+            ],
+          },
+        ],
+        omittedSyntaxes: [],
+        database: "ready",
+      });
+      const cited = JSON.parse(
+        yield* h.command("zotlit:cited-by").handler({ citekey: "doe2024" }),
+      );
+      expect(cited).toMatchObject({
+        ok: true,
+        item: { key: "ABCD2345", citekey: "doe2024" },
+        groups: [
+          { path: "draft.md", occurrences: references.entries[0].occurrences },
+        ],
+        coverage: "complete",
+      });
+      const used = JSON.parse(
+        yield* h.command("zotlit:annotation-uses").handler({ key: "ANN23456" }),
+      );
+      expect(used).toMatchObject({
+        ok: true,
+        groups: [
+          {
+            path: "draft.md",
+            occurrences: [
+              {
+                form: "citation",
+                text: "",
+                position: { start: { line: 2, col: 1, offset: 11 } },
+              },
+            ],
+          },
+        ],
+      });
+    }),
+);
+
+it.effect(
+  "presents grouped unresolved, missing Annotation and malformed outcomes",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* setup(
+        "[@unknown] [](zotero://open/library/items/PDF23456?annotation=ZZZZZZZZ) [](zotero://open/library/items/PDF23456)",
+      );
+      const result = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(result.entries).toMatchObject([
+        { kind: "unresolved", citekey: "unknown" },
+        { kind: "unresolved", annotationKey: "ZZZZZZZZ" },
+        { kind: "malformed" },
+      ]);
+      const set = yield* Effect.promise(() =>
+        h.index.getDocumentCitationSet(h.draft),
+      );
+      expect(set.citations.map((c) => c.outcome)).toMatchObject([
+        { kind: "unresolved-key" },
+        { kind: "missing-annotation" },
+      ]);
+      expect(set.errors[0]?.outcome).toEqual({ kind: "malformed" });
+    }),
+);
+
+it.effect(
+  "keeps a failed source read distinct from a missing Item (#1704)",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* setup();
+      h.db.acquireRead = () =>
+        Promise.reject(new Error("test database unreadable"));
+      const result = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        database: "unreadable",
+        entries: [{ kind: "unreadable" }],
+      });
+    }),
+);
+
+it.effect("reports selector misses and empty Annotation uses", () =>
+  Effect.gen(function* () {
+    const h = yield* setup();
+    expect(
+      JSON.parse(
+        yield* h.command("zotlit:cited-by").handler({ key: "ZZZZZZZZ" }),
+      ),
+    ).toMatchObject({ ok: false, diagnostic: { code: "KEY_NOT_FOUND" } });
+    expect(
+      JSON.parse(
+        yield* h.command("zotlit:cited-by").handler({ citekey: "unknown" }),
+      ),
+    ).toMatchObject({ ok: false, diagnostic: { code: "KEY_NOT_FOUND" } });
+    expect(
+      JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "absent.md" }),
+      ),
+    ).toMatchObject({ ok: false, diagnostic: { code: "FILE_NOT_FOUND" } });
+    expect(
+      JSON.parse(
+        yield* h.command("zotlit:annotation-uses").handler({ key: "ZZZZZZZZ" }),
+      ),
+    ).toMatchObject({ ok: true, groups: [] });
+  }),
+);
+
+it.effect("prints the guide as prose with all four commands", () =>
+  Effect.gen(function* () {
+    const h = yield* setup();
+    const guide = yield* h.command("zotlit:citations-guide").handler({});
+    expect(guide).toContain("ZOTLIT-CITATIONS(1)");
+    for (const command of [
+      "cited-by",
+      "references",
+      "annotation-uses",
+      "citations-guide",
+    ])
+      expect(guide).toContain(`zotlit:${command}`);
+  }),
+);
+
+it.effect(
+  "#1704 presents one Ambiguous Citation Key outcome in References and selector diagnostics",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* setup("[@same] [[Doe 2024]]", {
+        settings: { "citation.wikilink-citations": true },
+        zoteroRows: seedWorksSql([
+          { itemID: 1, key: "ABCD2345", citationKey: "same" },
+          { itemID: 2, key: "EFGH6789", citationKey: "same" },
+        ]),
+      });
+      const set = yield* Effect.promise(() =>
+        h.index.getDocumentCitationSet(h.draft),
+      );
+      expect(set.citations[0]?.outcome).toMatchObject({
+        kind: "ambiguous-key",
+        citekey: "same",
+        candidates: [{ indexedKey: "ABCD2345" }, { indexedKey: "EFGH6789" }],
+      });
+      const reference = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(reference.entries[0]).toMatchObject({
+        kind: "ambiguous",
+        citekey: "same",
+        candidates: [
+          { key: "ABCD2345", libraryID: 1 },
+          { key: "EFGH6789", libraryID: 1 },
+        ],
+      });
+      expect(reference.entries[1]).toMatchObject({
+        kind: "resolved",
+        key: "ABCD2345",
+        linkpath: "Doe 2024",
+      });
+      const cited = JSON.parse(
+        yield* h.command("zotlit:cited-by").handler({ citekey: "same" }),
+      );
+      expect(cited.diagnostic).toMatchObject({
+        code: "AMBIGUOUS_CITEKEY",
+        details: { candidates: reference.entries[0].candidates },
+      });
+    }),
+);
+
+it.effect(
+  "#1704 reports a missing Item separately from an unresolved key",
+  () =>
+    Effect.gen(function* () {
+      const h = yield* setup("[[Doe 2024]]", {
+        citekeys: [],
+        settings: { "citation.wikilink-citations": true },
+      });
+      const set = yield* Effect.promise(() =>
+        h.index.getDocumentCitationSet(h.draft),
+      );
+      expect(set.citations[0]?.outcome).toEqual({
+        kind: "missing-item",
+        key: "ABCD2345",
+      });
+      const result = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(result.entries[0]).toMatchObject({
+        kind: "missing",
+        key: "ABCD2345",
+      });
+    }),
+);
+
+it.effect.each(["PDF23456", "NTEE2345"])(
+  "#1683 keeps existing child Item %s present with a null summary",
+  (key) =>
+    Effect.gen(function* () {
+      const h = yield* setup("[[Doe 2024]]", {
+        zoteroRows: `${annotationRows}
+        insert into itemTypes (itemTypeID, typeName) values (101, 'note');
+        insert into items (itemID, itemTypeID, libraryID, key) values (40, 101, 1, 'NTEE2345');
+        insert into itemNotes (itemID, parentItemID, note, title) values (40, 1, 'Note body', 'Note');
+      `,
+        settings: { "citation.wikilink-citations": true },
+      });
+      h.metadataCache.setFrontmatter(h.noteIndex.notes.get("ABCD2345")!, {
+        "zotero-key": key,
+      });
+      const answer = JSON.parse(
+        yield* h.command("zotlit:cited-by").handler({ key }),
+      );
+      expect(answer).toMatchObject({
+        ok: true,
+        item: { key, citekey: null, summary: null },
+      });
+      const set = yield* Effect.promise(() =>
+        h.index.getDocumentCitationSet(h.draft),
+      );
+      expect(set.citations[0]?.outcome).toEqual({
+        kind: "ineligible-item",
+        key,
+      });
+      const references = JSON.parse(
+        yield* h.command("zotlit:references").handler({ file: "draft.md" }),
+      );
+      expect(references.entries).toMatchObject([
+        { kind: "resolved", key, summary: null },
+      ]);
+    }),
+);

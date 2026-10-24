@@ -35,6 +35,7 @@ const citations: readonly Citation[] = [
 const source: ReferenceSource = {
   csl: { id: "ref-book", type: "book", title: "Book" },
   summary: "Rivers (2020): Book",
+  citationSummary: "Rivers (2020)",
   itemKey: "BOOK0001",
   itemID: 1,
   groupID: null,
@@ -77,8 +78,10 @@ describe("minimalReferencesState", () => {
 
     store.setState(
       minimalReferencesState({
-        citations,
-        sources: new Map([["BOOK0001", source]]),
+        citations: citations.map((c) => ({
+          ...c,
+          outcome: { kind: "resolved", source },
+        })),
         errors: [],
         formattingFailed: true,
       }),

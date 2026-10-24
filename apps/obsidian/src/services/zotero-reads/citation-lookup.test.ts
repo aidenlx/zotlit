@@ -8,6 +8,8 @@ import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
 import { makeCitationLookup } from "./citation-lookup";
 import { Connection, layerRcRef } from "./connection";
+import type { HandlersOptions } from "./handlers";
+import type { ZoteroReadsClient } from "./in-process";
 import {
   inProcessClient,
   memoryOpener,
@@ -22,14 +24,172 @@ insert into groups (groupID, libraryID, name) values (7, 2, 'Group');
 ${worksSql([{ itemID: 2, libraryID: 2, key: "GROUPKEY", citationKey: "shared" }])}
 `;
 
-it("answers one requested batch with scope-limited forward and all-library reverse lookups", async () => {
-  await Effect.runPromise(
+const annotationSeed = () => `${seed()}
+${worksSql([{ itemID: 3, key: "NOCITEKY" }])}
+insert into itemTypes (itemTypeID, typeName) values (100, 'annotation');
+insert into items (itemID, itemTypeID, libraryID, key) values
+  (10, 99, 1, 'PDF23456'), (11, 100, 1, 'ANN23456'),
+  (20, 99, 2, 'PDF23456'), (21, 100, 2, 'ANN23456'),
+  (30, 99, 1, 'PDFSTAND'), (31, 100, 1, 'ANNSTAND'),
+  (40, 99, 1, 'PDFNCKEY'), (41, 100, 1, 'ANNNCKEY');
+insert into itemAttachments (itemID, parentItemID, linkMode) values
+  (10, 1, 0), (20, 2, 0), (30, null, 0), (40, 3, 0);
+insert into itemAnnotations (itemID, parentItemID, type) values
+  (11, 10, 1), (21, 20, 1), (31, 30, 1), (41, 40, 1);
+`;
+
+/**
+ * Runs `body` against an in-process client over fixture databases seeded by
+ * `seedSql` (open #N runs `seedSql(N)`; `null` fails that open).
+ */
+function withClient<A, E>(
+  body: (client: ZoteroReadsClient) => Effect.Effect<A, E>,
+  {
+    seedSql = seed,
+    options,
+  }: {
+    seedSql?: (open: number) => string | null;
+    options?: HandlersOptions;
+  } = {},
+) {
+  return Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const client = yield* inProcessClient(
-          layerRcRef(memoryOpener(seed).open),
-          { citationWindowSize: 1 },
+          layerRcRef(memoryOpener(seedSql).open),
+          options,
         );
+        return yield* body(client);
+      }),
+    ),
+  );
+}
+
+it("resolves Annotations to their parent Item and Citation Key across Libraries, distinguishing missing from unkeyed parents (#1690)", async () => {
+  await withClient(
+    (client) =>
+      Effect.gen(function* () {
+        const answer = new CitationLookupAnswer(
+          yield* client.CitationLookup({
+            scope: MY_LIBRARY_SCOPE,
+            annotationKeys: [
+              "ANN23456",
+              "ANN23456g7",
+              "ANNSTAND",
+              "ANNNCKEY",
+              "ZZZZZZZZ",
+              "ANN23456g8",
+              "PDF23456",
+            ],
+          }),
+        );
+        expect(answer.parentOfAnnotation("ANN23456")).toEqual({
+          indexedKey: "PERSONAL",
+          citekey: "shared",
+        });
+        expect(answer.parentOfAnnotation("ANN23456g7")).toEqual({
+          indexedKey: "GROUPKEYg7",
+          citekey: "shared",
+        });
+        expect(answer.parentOfAnnotation("ANNSTAND")).toEqual({
+          indexedKey: "PDFSTAND",
+          citekey: null,
+        });
+        expect(answer.parentOfAnnotation("ANNNCKEY")).toEqual({
+          indexedKey: "NOCITEKY",
+          citekey: null,
+        });
+        expect(answer.parentOfAnnotation("ZZZZZZZZ")).toBeNull();
+        expect(answer.parentOfAnnotation("ANN23456g8")).toBeNull();
+        expect(answer.parentOfAnnotation("PDF23456")).toBeNull();
+      }),
+    { seedSql: annotationSeed },
+  );
+});
+
+it("rejects an unrequested Annotation key even when it exists (#1690)", async () => {
+  await withClient(
+    (client) =>
+      Effect.gen(function* () {
+        const answer = new CitationLookupAnswer(
+          yield* client.CitationLookup({
+            scope: MY_LIBRARY_SCOPE,
+            annotationKeys: ["ZZZZZZZZ"],
+          }),
+        );
+        expect(answer.coversAnnotationKey("ZZZZZZZZ")).toBe(true);
+        expect(answer.coversAnnotationKey("ANN23456")).toBe(false);
+        expect(() => answer.parentOfAnnotation("ANN23456")).toThrow(
+          'Annotation Indexed Key "ANN23456" was not requested',
+        );
+      }),
+    { seedSql: annotationSeed },
+  );
+});
+
+it("keeps DbUnavailable distinct from a missing Annotation (#1690)", async () => {
+  let available = false;
+  await withClient(
+    (client) =>
+      Effect.gen(function* () {
+        const request = {
+          scope: MY_LIBRARY_SCOPE,
+          annotationKeys: ["ZZZZZZZZ"],
+        };
+        expect(
+          yield* Effect.flip(client.CitationLookup(request)),
+        ).toMatchObject({ _tag: "DbUnavailable" });
+        available = true;
+        yield* client.Refresh();
+        const answer = new CitationLookupAnswer(
+          yield* client.CitationLookup(request),
+        );
+        expect(answer.parentOfAnnotation("ZZZZZZZZ")).toBeNull();
+      }),
+    { seedSql: () => (available ? annotationSeed() : null) },
+  );
+});
+
+it("reads moved Annotations and reparented Attachments from the refreshed copy, keeping the revision because no Citation Key changed (#1690)", async () => {
+  let changes = "";
+  await withClient(
+    (client) =>
+      Effect.gen(function* () {
+        const request = {
+          scope: MY_LIBRARY_SCOPE,
+          annotationKeys: ["ANN23456", "ANNNCKEY"],
+        };
+        const first = new CitationLookupAnswer(
+          yield* client.CitationLookup(request),
+        );
+        changes =
+          "update itemAnnotations set parentItemID = 30 where itemID = 11; update itemAttachments set parentItemID = 1 where itemID = 40;";
+        yield* client.Refresh();
+        const next = new CitationLookupAnswer(
+          yield* client.CitationLookup(request),
+        );
+        expect(next.parentOfAnnotation("ANN23456")).toEqual({
+          indexedKey: "PDFSTAND",
+          citekey: null,
+        });
+        expect(next.parentOfAnnotation("ANNNCKEY")).toEqual({
+          indexedKey: "PERSONAL",
+          citekey: "shared",
+        });
+        expect(first.parentOfAnnotation("ANN23456")).toEqual({
+          indexedKey: "PERSONAL",
+          citekey: "shared",
+        });
+        expect(next.revision).toBe(first.revision);
+      }),
+    { seedSql: () => annotationSeed() + changes },
+  );
+});
+
+it("answers one requested batch with scope-limited forward and all-library reverse lookups", async () => {
+  await withClient(
+    (client) =>
+      Effect.gen(function* () {
         const wire = yield* client.CitationLookup({
           scope: MY_LIBRARY_SCOPE,
           citekeys: ["shared", "missing"],
@@ -48,35 +208,27 @@ it("answers one requested batch with scope-limited forward and all-library rever
         expect(wire.citekeys.size).toBe(2);
         expect(wire.indexedKeys.size).toBe(2);
       }),
-    ),
+    { options: { citationWindowSize: 1 } },
   );
 });
 
 it("changes scope membership without a refresh", async () => {
-  await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const client = yield* inProcessClient(
-          layerRcRef(memoryOpener(seed).open),
-        );
-        yield* client.CitationLookup({
-          scope: MY_LIBRARY_SCOPE,
-          citekeys: ["shared"],
-        });
-        const all = yield* client.CitationLookup({
-          scope: { mode: "all" },
-          citekeys: ["shared"],
-          indexedKeys: [],
-        });
-        expect(all.citekeys.get("shared")).toMatchObject({
-          kind: "ambiguous",
-          candidates: [
-            { indexedKey: "PERSONAL" },
-            { indexedKey: "GROUPKEYg7" },
-          ],
-        });
-      }),
-    ),
+  await withClient((client) =>
+    Effect.gen(function* () {
+      yield* client.CitationLookup({
+        scope: MY_LIBRARY_SCOPE,
+        citekeys: ["shared"],
+      });
+      const all = yield* client.CitationLookup({
+        scope: { mode: "all" },
+        citekeys: ["shared"],
+        indexedKeys: [],
+      });
+      expect(all.citekeys.get("shared")).toMatchObject({
+        kind: "ambiguous",
+        candidates: [{ indexedKey: "PERSONAL" }, { indexedKey: "GROUPKEYg7" }],
+      });
+    }),
   );
 });
 
@@ -84,13 +236,9 @@ it.each([false, true])(
   "refreshes citation answers (changed: %s)",
   async (changed) => {
     let key = "shared";
-    const opener = memoryOpener(() =>
-      seed().replaceAll("'shared'", `'${key}'`),
-    );
-    await Effect.runPromise(
-      Effect.scoped(
+    await withClient(
+      (client) =>
         Effect.gen(function* () {
-          const client = yield* inProcessClient(layerRcRef(opener.open));
           const request = {
             scope: MY_LIBRARY_SCOPE,
             citekeys: ["shared", "renamed"],
@@ -111,7 +259,7 @@ it.each([false, true])(
           expect(next.indexedKeys.get("PERSONAL")).toBe(key);
           expect(first.indexedKeys.get("PERSONAL")).toBe("shared");
         }),
-      ),
+      { seedSql: () => seed().replaceAll("'shared'", `'${key}'`) },
     );
   },
 );
@@ -168,26 +316,21 @@ it("retries a failed old-client build after refresh", async () => {
 });
 
 it("returns DbUnavailable for a failed build and retries the next lookup", async () => {
-  await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const client = yield* inProcessClient(
-          layerRcRef(memoryOpener(seed).open),
-        );
-        const request = { scope: MY_LIBRARY_SCOPE, citekeys: ["shared"] };
-        using _read = vi
-          .spyOn(db, "getCitekeyWindow")
-          .mockImplementationOnce(() => {
-            throw new Error("read failed");
-          });
-        expect(
-          yield* Effect.flip(client.CitationLookup(request)),
-        ).toMatchObject({ _tag: "DbUnavailable" });
-        expect(
-          (yield* client.CitationLookup(request)).citekeys.get("shared"),
-        ).toMatchObject({ kind: "unique", item: { indexedKey: "PERSONAL" } });
-      }),
-    ),
+  await withClient((client) =>
+    Effect.gen(function* () {
+      const request = { scope: MY_LIBRARY_SCOPE, citekeys: ["shared"] };
+      using _read = vi
+        .spyOn(db, "getCitekeyWindow")
+        .mockImplementationOnce(() => {
+          throw new Error("read failed");
+        });
+      expect(yield* Effect.flip(client.CitationLookup(request))).toMatchObject({
+        _tag: "DbUnavailable",
+      });
+      expect(
+        (yield* client.CitationLookup(request)).citekeys.get("shared"),
+      ).toMatchObject({ kind: "unique", item: { indexedKey: "PERSONAL" } });
+    }),
   );
 });
 
@@ -197,13 +340,9 @@ it("continues a shared worker build after one caller cancels", async () => {
     key: `K${String(index).padStart(7, "0")}`,
     citationKey: `key${index}`,
   }));
-  await Effect.runPromise(
-    Effect.scoped(
+  await withClient(
+    (client) =>
       Effect.gen(function* () {
-        const client = yield* inProcessClient(
-          layerRcRef(memoryOpener(() => seedWorksSql(works)).open),
-          { citationWindowSize: 1 },
-        );
         const request = {
           scope: MY_LIBRARY_SCOPE,
           citekeys: ["key999"],
@@ -227,7 +366,10 @@ it("continues a shared worker build after one caller cancels", async () => {
           answer.revision,
         );
       }),
-    ),
+    {
+      seedSql: () => seedWorksSql(works),
+      options: { citationWindowSize: 1 },
+    },
   );
 });
 
@@ -338,19 +480,12 @@ it.each(["construction", "comparison"] as const)(
 
 it("gives identical databases distinct revisions after a worker restart", async () => {
   const read = () =>
-    Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const client = yield* inProcessClient(
-            layerRcRef(memoryOpener(seed).open),
-          );
-          return yield* client.CitationLookup({
-            scope: MY_LIBRARY_SCOPE,
-            citekeys: [],
-            indexedKeys: [],
-          });
-        }),
-      ),
+    withClient((client) =>
+      client.CitationLookup({
+        scope: MY_LIBRARY_SCOPE,
+        citekeys: [],
+        indexedKeys: [],
+      }),
     );
   expect((await read()).revision).not.toBe((await read()).revision);
 });

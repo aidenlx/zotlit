@@ -592,6 +592,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       templates: services.template,
       profile: services.profile,
       nativePreview: {
+        citationParse: services.citationParse,
         app: this.app,
         zoteroReads: services.zoteroReads,
         noteIndex: services.noteIndex,
@@ -616,6 +617,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerNotePreview(this, {
+      citationParse: services.citationParse,
       app: this.app,
       itemLookup: services.itemLookup,
       profile: services.profile,
@@ -658,8 +660,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerCitationsCli(this, {
       app: this.app,
       citationIndex: services.citationIndex,
-      citationLookup: services.citationLookup,
-      db: services.zoteroReads,
       zoteroPref: services.zoteroPref,
     });
 
@@ -700,6 +700,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerPandocExport(this, {
+      citationParse: services.citationParse,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,

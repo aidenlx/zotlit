@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Effect } from "effect";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -8,19 +7,24 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+// @vitest-environment happy-dom
+import { ParsedNote } from "@/services/citation-index/parsed-note";
+import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   Citation,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
 import {
   createCitationIndexHarness,
   DatabaseStub,
   GROUP_LIBRARY_ID,
-  KEY_A,
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import type {
   BibliographyRequest,
   RenderedCitation,
@@ -123,7 +127,10 @@ async function makeHarness({
   /** The document properties read by its Citation Presentation. */
   frontmatter?: Record<string, unknown>;
   settings?: Partial<Settings>;
-  documentCitationSet?: Omit<DocumentCitationSet, "lookup">;
+  documentCitationSet?: Pick<
+    DocumentCitationSet,
+    "occurrences" | "citations" | "errors"
+  >;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
   queryClient?: QueryClientService;
   openDocuments?: OpenDocumentsStub;
@@ -142,11 +149,7 @@ async function makeHarness({
   };
   const wikilinkOccurrences: CitationOccurrence[] =
     settings["citation.wikilink-citations"] === true
-      ? links.map((entry) => ({
-          kind: "wikilink",
-          raw: entry.link.split("#", 1)[0]!,
-          position: entry.position,
-        }))
+      ? scanNote(body).wikilinks
       : [];
   const set = documentCitationSet ?? {
     occurrences: [...literalOccurrences(body), ...wikilinkOccurrences].sort(
@@ -225,8 +228,33 @@ async function makeHarness({
           Object.hasOwn(notes, linkpath) ? { path: `${linkpath}.md` } : null,
       },
     },
-    db: reads,
     citationIndex: {
+      getParsedDocument: async () => ({
+        facts: new ParsedNote(
+          body,
+          (
+            await inProcessParseClient.parse(
+              { path: NOTE.path, generation: 0, text: body },
+              new AbortController().signal,
+            )
+          ).record,
+        ),
+        set: {
+          ...set,
+          ...(await readReferenceSources(reads, set.citations)),
+          syntaxes: {
+            citekey: "included" as const,
+            wikilink: "excluded" as const,
+            annotation: "included" as const,
+          },
+          omittedSyntaxes: [],
+          coverage: "complete" as const,
+          lookup: lookupAnswer(
+            {},
+            { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
+          ),
+        },
+      }),
       getDocumentCitationSet: () =>
         Promise.resolve({
           ...set,
@@ -324,6 +352,31 @@ async function readText(service: CitationText): Promise<DocumentCitations> {
 }
 
 describe("CitationText", () => {
+  it("renders a citation after a currency opener (#1694)", async () => {
+    const occurrence: CitationOccurrence = {
+      kind: "citekey",
+      raw: "alpha",
+      position: {
+        start: { line: 0, col: 4, offset: 4 },
+        end: { line: 0, col: 10, offset: 10 },
+      },
+    };
+    const h = await makeHarness({
+      body: "$5 [@alpha] x$",
+      documentCitationSet: {
+        occurrences: [occurrence],
+        citations: [{ ...citation("alpha"), occurrences: [occurrence] }],
+        errors: [],
+      },
+    });
+    try {
+      const held = await h.service.read(NOTE.path);
+      expect(firstText(held?.formatted.get("[@alpha]"))).toBe("«[@ALPHA234]»");
+    } finally {
+      await h.dispose();
+    }
+  });
+
   it("retries a failed resolution snapshot through a document read after the cooldown", async () => {
     await using cleanup = new AsyncDisposableStack();
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -351,15 +404,10 @@ describe("CitationText", () => {
     await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
       "snapshot database locked",
     );
-    // The work the citekey resolves to, read from its own database.
-    const items = cleanup.use(
-      inProcessReadsService(memoryOpener(() => citedWorkSeed([KEY_A])).open),
-    );
     const service = cleanup.use(
       new CitationText({
         openDocuments: new OpenDocumentsStub(),
         app: h.app,
-        db: items,
         citationIndex: h.index,
         citationLookup: h.lookup,
         noteIndex: h.noteIndex,
@@ -1424,4 +1472,31 @@ describe("CitationText Entry Serials", () => {
     expect(bibliographyRequests).toEqual([]);
     await dispose();
   });
+});
+
+it("#1683 renders a document with one source read", async () => {
+  await using h = await createCitationIndexHarness(
+    { "draft.md": "[@doe2024]" },
+    { zoteroRows: annotationRows },
+  );
+  await using service = new CitationText({
+    app: h.app,
+    citationIndex: h.index,
+    citationLookup: h.lookup,
+    noteIndex: h.noteIndex,
+    profile: profileReader(),
+    queryClient: h.queryClient,
+    openDocuments: new OpenDocumentsStub(),
+    bibliographyRender: {
+      vaultPresentation: { styleId: null, locale: null },
+      readCitations: async (sources) =>
+        sources.map((source) => rendered(source)),
+      readBibliography: async () => ({ entries: [], hasEntryMarkers: false }),
+      on: () => () => {},
+    } as CitationTextDeps["bibliographyRender"],
+  });
+  await service.ready;
+  const result = await service.read(h.draft.path);
+  expect(result?.formatted.size).toBe(1);
+  expect(h.db.itemReads).toBe(1);
 });

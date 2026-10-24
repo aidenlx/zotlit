@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Keymap, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
@@ -12,8 +11,13 @@ import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
+// @vitest-environment happy-dom
+import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { Citation } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import {
   ALPHA_KEY,
   citation,
@@ -141,18 +145,16 @@ async function makeHarness({
   let resolutionReady = !resolutionPending;
   const resolutionListeners = new Set<() => void>();
   const answer = (requested: readonly string[]): CitationLookupAnswer =>
-    new CitationLookupAnswer({
-      revision: JSON.stringify(ambiguous),
-      citekeys: new Map(
-        requested.map((citekey) => [
+    lookupAnswerFor(
+      requested,
+      Object.fromEntries(
+        ambiguous.map((citekey) => [
           citekey,
-          ambiguous.includes(citekey)
-            ? { kind: "ambiguous" as const, candidates: [] }
-            : { kind: "missing" as const },
+          { kind: "ambiguous" as const, candidates: [] },
         ]),
       ),
-      indexedKeys: new Map(),
-    });
+      JSON.stringify(ambiguous),
+    );
 
   const citationLookup = new CitationLookupStub(({ citekeys = [] }) =>
     resolutionReady ? answer(citekeys) : null,
@@ -181,8 +183,32 @@ async function makeHarness({
           getFileCache: () => ({ frontmatter }),
         },
       },
-      db: reads,
       citationIndex: {
+        getParsedDocument: async () => ({
+          facts: new ParsedNote(
+            body,
+            (
+              await inProcessParseClient.parse(
+                { path: "note.md", generation: 0, text: body },
+                new AbortController().signal,
+              )
+            ).record,
+          ),
+          set: {
+            occurrences,
+            citations: cited,
+            errors: [],
+            lookup: answer(occurrences.map((o) => o.raw)),
+            ...(await readReferenceSources(reads, cited)),
+            syntaxes: {
+              citekey: "included",
+              wikilink: "excluded",
+              annotation: "included",
+            },
+            omittedSyntaxes: [],
+            coverage: "complete",
+          },
+        }),
         getDocumentCitationSet: () =>
           Promise.resolve({
             occurrences,

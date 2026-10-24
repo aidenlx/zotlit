@@ -83,6 +83,7 @@ export {
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
+  getAnnotationParentKeys,
   getAnnotationsByParent,
 } from "./queries/annotations";
 export {

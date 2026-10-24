@@ -35,6 +35,7 @@ import { AttachmentResolver } from "./attachment-resolver/service";
 import { createChineseSegmenterService } from "./chinese-segmenter/service";
 import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
+import { plainCitationParse } from "./citation-parse/plain";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
@@ -552,13 +553,27 @@ export function buildServices(
       citationLookup: ({ zoteroReads, libraryScope, queryClient }) =>
         new CitationLookup({ reads: zoteroReads, libraryScope, queryClient }),
     })
+    .useValue({
+      citationParse: () => plainCitationParse(runtime),
+    })
     .use({
-      citationIndex: ({ noteIndex, settings, citationLookup }) =>
+      citationIndex: ({
+        noteIndex,
+        settings,
+        citationLookup,
+        citationParse,
+        zoteroReads,
+        libraryScope,
+      }) =>
         new CitationIndex({
+          runPromise: (effect) => runtime.runPromise(effect),
+          db: zoteroReads,
+          libraryScope,
           app: plugin.app,
           noteIndex,
           settings,
           lookup: citationLookup,
+          parseClient: citationParse,
         }),
     })
     .use({
@@ -585,7 +600,6 @@ export function buildServices(
     .use({
       citationText: ({
         profile,
-        zoteroReads,
         citationIndex,
         citationLookup,
         noteIndex,
@@ -595,7 +609,6 @@ export function buildServices(
         new CitationText({
           profile,
           app: plugin.app,
-          db: zoteroReads,
           citationIndex,
           citationLookup,
           noteIndex,

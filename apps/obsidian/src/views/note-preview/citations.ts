@@ -16,10 +16,7 @@ import {
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import {
-  maskExclusions,
-  scanDocumentCitations,
-} from "@/services/citation-index/scan";
+import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
@@ -28,6 +25,7 @@ import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 export interface NativeCitationDeps {
   app: App;
+  citationParse: Pick<PlainCitationParse, "parse">;
   zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -64,8 +62,21 @@ export async function renderDraftCitations(
   citations: readonly PreviewCitation[];
   diagnostics: RenderDiagnostic[];
 }> {
-  const scanned = scanDocumentCitations(input.markdown);
-  const links = input.wikilinks ? draftLinks(input.markdown) : [];
+  const { record } = await deps.citationParse.parse(
+    { path: input.sourcePath, generation: 0, text: input.markdown },
+    new AbortController().signal,
+  );
+  const scanned = record.citations;
+  const links = input.wikilinks
+    ? record.wikilinks.map(({ position }) => ({
+        start: position.start.offset,
+        end: position.end.offset,
+        target: input.markdown.slice(
+          position.start.offset + 2,
+          position.end.offset - 2,
+        ),
+      }))
+    : [];
   const notes = new Map(
     links.flatMap((link) => {
       const target = citationTarget(link.target);
@@ -220,29 +231,4 @@ function namedSource(citation: DraftCitation): string {
     source = `${source.slice(0, key.start)}${marker}${citation.works[index]}${source.slice(key.end)}`;
   }
   return source;
-}
-/** Mask the same non-prose zones as the Citation Index before reading native wikilinks. */
-function draftLinks(
-  markdown: string,
-): { start: number; end: number; target: string }[] {
-  const masked = maskExclusions(markdown);
-  const links: { start: number; end: number; target: string }[] = [];
-  let cursor = 0;
-  while (cursor < masked.length) {
-    const start = masked.indexOf("[[", cursor);
-    if (start < 0) break;
-    const close = masked.indexOf("]]", start + 2);
-    if (close < 0) break;
-    cursor = close + 2;
-    const target = masked.slice(start + 2, close);
-    if (
-      masked[start - 1] === "!" ||
-      masked[start - 1] === "\\" ||
-      target.includes("|") ||
-      target.includes("\n")
-    )
-      continue;
-    links.push({ start, end: cursor, target });
-  }
-  return links;
 }

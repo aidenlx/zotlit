@@ -12,6 +12,8 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { ParsedNote } from "@/services/citation-index/parsed-note";
+import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   CitedByGroup,
   CitedBySnapshot,
@@ -107,7 +109,10 @@ describe("CitedByView", () => {
     );
     view = new TestCitedByView({} as WorkspaceLeaf, {
       app,
-      citationIndex: { observeCitedBy },
+      citationIndex: {
+        observeCitedBy,
+        getParsedNote: async () => new ParsedNote("", scanNote("")),
+      },
     });
     expect(view.getIcon()).toBe("file-input");
     expect(view.contentEl.classList).toContain("zt-cited-by-view");
@@ -233,7 +238,10 @@ describe("CitedByView", () => {
     );
     view = new TestCitedByView({} as WorkspaceLeaf, {
       app,
-      citationIndex: { observeCitedBy },
+      citationIndex: {
+        observeCitedBy,
+        getParsedNote: async () => new ParsedNote(source, scanNote(source)),
+      },
     });
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -597,7 +605,14 @@ function makeHarness() {
   );
 
   return {
-    deps: { app, citationIndex: { observeCitedBy } },
+    deps: {
+      app,
+      citationIndex: {
+        observeCitedBy,
+        getParsedNote: async () =>
+          new ParsedNote(CITING_BODY, scanNote(CITING_BODY)),
+      },
+    },
     note,
     plain,
     duplicate,

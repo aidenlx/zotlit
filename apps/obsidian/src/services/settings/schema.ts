@@ -146,6 +146,7 @@ export const schema = v.object({
   "citation.pandoc-citations": v.boolean(),
   /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
   "citation.wikilink-citations": v.boolean(),
+  "citation.annotation-citations": v.boolean(),
   /** Add Graph Citations — citation edges and Cited Work Nodes — to Obsidian's graph views. */
   "citation.graph-citations": v.boolean(),
   /** Show recognized Citations with the selected CSL style. */
@@ -280,6 +281,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.show-citekey-in-suggester": false,
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
+  "citation.annotation-citations": true,
   "citation.graph-citations": true,
   "citation.show-formatted": true,
   "citation.open-as-links": false,

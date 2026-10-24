@@ -5,35 +5,29 @@
 // apps/obsidian/policies/cli-text.md.
 import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
-import { isChildItemFields } from "@zotlit/db";
-
 import type { CliHost } from "@/lib/cli-command";
-import { Effect } from "@/lib/effect";
-import { withLogCategory } from "@/lib/effect-log";
-import { itemSummary } from "@/lib/item-summary";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
-import { readReferenceSources } from "@/services/citation-index/service";
-import type {
-  CitationIndex,
-  CitationSyntax,
-} from "@/services/citation-index/service";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import {
+  ANNOTATION_USES_COMMAND,
   CITATIONS_GUIDE_COMMAND,
   CITED_BY_COMMAND,
   createCitationsCliHandlers,
   REFERENCES_COMMAND,
 } from "./commands";
-import type { DocumentReferences, ItemLookup } from "./commands";
-import type { CitedByParam, ReferencesParam } from "./request";
+import type {
+  AnnotationUsesParam,
+  CitedByParam,
+  ReferencesParam,
+} from "./request";
 
 interface CitationsCliRegistrationDeps {
   app: App;
-  citationIndex: CitationIndex;
-  citationLookup: Pick<CitationLookup, "read" | "status">;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
+  citationIndex: Pick<
+    CitationIndex,
+    "readCitedBy" | "readReferences" | "readAnnotationUses"
+  >;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "sourceId" | "databasePath">;
 }
 
@@ -88,26 +82,26 @@ export function registerCitationsCli(
         },
       };
     },
-    index: {
-      waitUntilSettled: (timeoutMs) =>
-        deps.citationIndex.waitUntilSettled(timeoutMs),
-      readLookup: (request) => deps.citationLookup.read(request),
-      citationKeys: () => deps.citationIndex.citationKeys(),
-      getCitedBy: (indexedKey, lookup) =>
-        deps.citationIndex.getCitedBy(indexedKey, lookup),
-      resolution: () =>
-        deps.citationLookup.status === "pending"
-          ? null
-          : deps.citationLookup.status,
-      syntaxes: () => deps.citationIndex.syntaxes(),
-      documentOmittedSyntaxes: (path) => documentOmittedSyntaxes(deps, path),
-      citedByOmittedSyntaxes: (indexedKey, lookup) =>
-        deps.citationIndex.citedByOmittedSyntaxes(indexedKey, lookup),
-    },
-    lookupItem: (indexedKey) => lookupItem(deps.db, indexedKey),
-    readDocument: (path) => readDocument(deps, path),
+    index: deps.citationIndex,
   });
 
+  host.registerCliCommand(ANNOTATION_USES_COMMAND, {
+    description:
+      "List the notes that use one Zotero annotation, with every occurrence",
+    flags: {
+      key: {
+        value: "<annotation-key>",
+        description:
+          "Annotation key, with a g<group-id> suffix for a group library",
+        required: true,
+      },
+      "expect-source": {
+        value: "<source-id>",
+        description: "Zotero source ID the call must match",
+      },
+    } satisfies Record<AnnotationUsesParam, CliFlag>,
+    handler: handlers[ANNOTATION_USES_COMMAND],
+  });
   host.registerCliCommand(CITED_BY_COMMAND, {
     description:
       "List the notes that cite one Zotero item, with the position of every citation",
@@ -126,64 +120,3 @@ export function registerCitationsCli(
     handler: handlers[CITATIONS_GUIDE_COMMAND],
   });
 }
-
-/** Any Markdown note answers: a document need not be a Literature Note to cite
- *  works. A path the vault holds no note at names no document to read. */
-async function readDocument(
-  deps: CitationsCliRegistrationDeps,
-  path: string,
-): Promise<DocumentReferences | null> {
-  const file = deps.app.vault.getFileByPath(path);
-  if (!file || file.extension !== "md") return null;
-  const { citations, errors, lookup } =
-    await deps.citationIndex.getDocumentCitationSet(file);
-  const { sources, database } = await readReferenceSources(deps.db, citations);
-  return { citations, errors, sources, database, lookup };
-}
-
-/** Any Markdown note answers, as {@link readDocument} does; a path the vault
- *  holds no note at holds no occurrence to omit. */
-async function documentOmittedSyntaxes(
-  deps: CitationsCliRegistrationDeps,
-  path: string,
-): Promise<CitationSyntax[]> {
-  const file = deps.app.vault.getFileByPath(path);
-  if (!file || file.extension !== "md") return [];
-  return deps.citationIndex.documentOmittedSyntaxes(file);
-}
-
-/** A well-formed Zotero key names an Item only when the connected library
- *  holds one; a read that fails leaves the verdict `"unreadable"` rather than
- *  reporting every Item as missing. The same read renders the Item's summary,
- *  so one answer carries both. */
-const lookupItem = Effect.fn("CitationsCli.lookupItem")(
-  function* (db: CitationsCliRegistrationDeps["db"], indexedKey: string) {
-    if (db.state === "degraded") return UNREADABLE;
-    const { reads } = yield* Effect.tryPromise(() => db.ready);
-    const item = (yield* reads.ItemsByIndexedKeys({
-      indexedKeys: [indexedKey],
-    })).get(indexedKey);
-    if (!item) return { presence: "absent", summary: null } as const;
-    // A note or an attachment carries no work fields, so the source holds it
-    // and renders no summary for it, as the reference list reads it too.
-    const { fields } = item;
-    const summary = isChildItemFields(fields)
-      ? null
-      : itemSummary(item, fields).formatted;
-    return { presence: "present", summary } as const;
-  },
-  (effect, _db, indexedKey): Effect.Effect<ItemLookup> => {
-    const unreadable = (error: unknown) =>
-      Effect.logWarning("Cannot look up the selected item").pipe(
-        Effect.annotateLogs({ indexedKey, error }),
-        withLogCategory("citation-index", "cli"),
-        Effect.as(UNREADABLE),
-      );
-    return effect.pipe(
-      Effect.catch(unreadable),
-      Effect.catchDefect(unreadable),
-    );
-  },
-);
-
-const UNREADABLE: ItemLookup = { presence: "unreadable", summary: null };

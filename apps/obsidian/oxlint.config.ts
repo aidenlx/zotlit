@@ -34,8 +34,59 @@ const effectTestPaths = [
 ];
 
 const commonImports = {
-  patterns: [parentImportPattern],
+  patterns: [
+    parentImportPattern,
+    {
+      group: ["**/citation-index/scan", "./scan"],
+      importNames: [
+        "scanDocumentCitations",
+        "scanCitekeyOccurrences",
+        "documentWikilinks",
+        "maskExclusions",
+        "maskWikilinks",
+      ],
+      message: "Read document citations through the citation parse worker.",
+    },
+  ],
   paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
+};
+
+const runtimeImports = {
+  ...commonImports,
+  paths: [
+    {
+      name: "@/lib/effect",
+      importNames: ["ManagedRuntime", "Scheduler"],
+      allowTypeImports: true,
+      message:
+        "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
+    },
+    {
+      name: "effect",
+      allowTypeImports: true,
+      message:
+        "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
+    },
+    {
+      name: "effect/Effect",
+      allowTypeImports: true,
+      message: "Use Effect from @/lib/effect for Chromium scheduling.",
+    },
+    {
+      name: "effect/ManagedRuntime",
+      allowTypeImports: true,
+      message:
+        "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
+    },
+    {
+      name: "effect/Scheduler",
+      allowTypeImports: true,
+      message:
+        "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
+    },
+    ...effectTestPaths,
+    ...commonImports.paths,
+  ],
 };
 
 export default defineConfig({
@@ -60,48 +111,18 @@ export default defineConfig({
     "zotlit-services/service-tag-id": "error",
     "zotlit-services/cli-command-registration": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
-    "no-restricted-imports": [
-      "error",
-      {
-        ...commonImports,
-        paths: [
-          {
-            name: "@/lib/effect",
-            importNames: ["ManagedRuntime", "Scheduler"],
-            allowTypeImports: true,
-            message:
-              "Start Effects through Effect in @/lib/effect; its entry points supply the browser scheduler.",
-          },
-          {
-            name: "effect",
-            allowTypeImports: true,
-            message:
-              "Use @/lib/effect: Obsidian's renderer and workers default to Chromium MessageChannel scheduling. Node setImmediate can starve browser tasks.",
-          },
-          {
-            name: "effect/Effect",
-            allowTypeImports: true,
-            message: "Use Effect from @/lib/effect for Chromium scheduling.",
-          },
-          {
-            name: "effect/ManagedRuntime",
-            allowTypeImports: true,
-            message:
-              "Use the Effect entry points in @/lib/effect for Chromium scheduling.",
-          },
-          {
-            name: "effect/Scheduler",
-            allowTypeImports: true,
-            message:
-              "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
-          },
-          ...effectTestPaths,
-          ...commonImports.paths,
-        ],
-      },
-    ],
+    "no-restricted-imports": ["error", runtimeImports],
   },
   overrides: [
+    {
+      files: ["src/services/citekey-editor/decorate.ts"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          { ...runtimeImports, patterns: [parentImportPattern] },
+        ],
+      },
+    },
     {
       files: ["src/**"],
       rules: { "zotlit-services/worker-rpc": "error" },
@@ -118,7 +139,12 @@ export default defineConfig({
     {
       // Worker migration backlog: move snapshot integrity checks to effect/rpc,
       // then remove this file from the list.
-      files: ["src/services/database/snapshot-integrity.ts"],
+      files: [
+        "src/services/database/snapshot-integrity.ts",
+        // #1705 moves the citation parse worker to effect/rpc.
+        "src/services/citation-parse/worker-host.ts",
+        "src/services/citation-parse/worker.ts",
+      ],
       rules: { "zotlit-services/worker-rpc": "off" },
     },
     {
@@ -362,6 +388,7 @@ export default defineConfig({
             patterns: [
               {
                 group: ["../src/**", "!../src/services/managed-binary/pin.ts"],
+                allowTypeImports: true,
                 message:
                   "Scripts stay independent of plugin code; a check of plugin code is a Vitest test under src/.",
               },

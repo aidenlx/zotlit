@@ -60,6 +60,7 @@ const occurrence: CitationOccurrence = {
 const source: ReferenceSource = {
   csl: { id: "ref-book", type: "book", title: "Book" },
   summary: "Rivers (2020): Book",
+  citationSummary: "Rivers (2020)",
   itemKey: "BOOK0001",
   itemID: 1,
   groupID: null,

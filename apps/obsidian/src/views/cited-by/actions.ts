@@ -7,12 +7,14 @@ import type { MouseEvent } from "react";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { yieldToMain } from "@/lib/yield-to-main";
+import type { ParsedNote } from "@/services/citation-index/parsed-note";
 import type {
+  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
 
-import { currentOccurrence, openCitedByOccurrence } from "./navigation";
+import { openCitedByOccurrence } from "./navigation";
 import {
   citationContext,
   CITED_BY_SORT_GROUPS,
@@ -82,9 +84,10 @@ export interface CitedByActions {
 
 export function createCitedByActions(options: {
   app: App;
+  citationIndex: Pick<CitationIndex, "getParsedNote">;
   store: CitedByStore;
 }): CitedByActions {
-  const { app, store } = options;
+  const { app, citationIndex, store } = options;
   const generations = new Map<string, number>();
   let queued: CitedByGroup[] = [];
   let draining = false;
@@ -110,14 +113,16 @@ export function createCitedByActions(options: {
         (occurrence) => !(occurrenceID(occurrence) in current.contexts),
       );
       if (missing.length === 0) return;
+      const facts = current.facts;
       setPreview(group.path, {
         ...current,
         contexts: {
           ...current.contexts,
           ...contextsFrom({
+            facts,
             app,
             file,
-            source: current.source,
+            source: facts.source,
             occurrences: missing,
           }),
         },
@@ -129,8 +134,10 @@ export function createCitedByActions(options: {
     generations.set(group.path, generation);
     setPreview(group.path, { status: "loading", mtime });
     let source: string;
+    let facts: ParsedNote;
     try {
-      source = await app.vault.cachedRead(file);
+      facts = await citationIndex.getParsedNote(file);
+      source = facts.source;
     } catch {
       if (generations.get(group.path) === generation) {
         setPreview(group.path, { status: "unavailable", mtime });
@@ -141,10 +148,12 @@ export function createCitedByActions(options: {
       return;
     setPreview(group.path, {
       status: "ready",
+      facts,
       mtime,
       source,
       outline: sourceOutline(app.metadataCache.getFileCache(file)),
       contexts: contextsFrom({
+        facts,
         app,
         file,
         source,
@@ -276,7 +285,12 @@ export function createCitedByActions(options: {
       );
     },
     openOccurrence(group, occurrence, event) {
-      void openCitedByOccurrence(app, { group, occurrence, event });
+      void openCitedByOccurrence(app, {
+        citationIndex,
+        group,
+        occurrence,
+        event,
+      });
     },
   };
 }
@@ -310,20 +324,17 @@ function openSortMenu(
 
 function contextsFrom(options: {
   app: App;
+  facts: ParsedNote;
   file: TFile;
   source: string;
   occurrences: readonly CitationOccurrence[];
 }): Record<string, OccurrenceContext> {
-  const { app, file, source, occurrences } = options;
+  const { app, facts, file, source, occurrences } = options;
   const cache = app.metadataCache.getFileCache(file);
   return Object.fromEntries(
     occurrences.map((occurrence) => [
       occurrenceID(occurrence),
-      citationContext(
-        source,
-        currentOccurrence({ app, file, source, occurrence }),
-        cache,
-      ),
+      citationContext(source, facts.currentOccurrence(occurrence), cache),
     ]),
   );
 }

@@ -401,6 +401,22 @@ function referencePresentation(
         noteDisabled: false,
         source: entry.source,
       };
+    case "unreadable":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_db_unavailable(),
+        noteDisabled: true,
+        source: undefined,
+      };
+    case "ineligible":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_item_ineligible({ key: entry.key }),
+        noteDisabled: true,
+        source: undefined,
+      };
     case "missing":
       return {
         gutter: "⚠",
@@ -423,7 +439,12 @@ function referencePresentation(
       return {
         gutter: "⚠",
         warning: true,
-        noteLabel: m.references_open_note_unresolved(),
+        noteLabel:
+          "annotationKey" in entry
+            ? m.references_annotation_unresolved({
+                annotationKey: entry.annotationKey,
+              })
+            : m.references_open_note_unresolved(),
         noteDisabled: true,
         source: undefined,
       };
@@ -441,7 +462,10 @@ function referencePresentation(
       return {
         gutter: "⚠",
         warning: true,
-        noteLabel: m.references_open_note_invalid_fragment(),
+        noteLabel:
+          entry.occurrences[0]!.kind === "annotation"
+            ? m.references_annotation_link_invalid()
+            : m.references_open_note_invalid_fragment(),
         noteDisabled: true,
         source: undefined,
       };
@@ -470,6 +494,10 @@ function ReferenceBody({
           {entry.source.summary}
         </span>
       );
+    case "unreadable":
+      return <span>{m.references_db_unavailable()}</span>;
+    case "ineligible":
+      return <span>{m.references_item_ineligible({ key: entry.key })}</span>;
     case "missing":
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
@@ -483,13 +511,21 @@ function ReferenceBody({
       if (pending) {
         return (
           <span className={cn(textClass, "zt:text-muted-foreground")}>
-            {m.references_citekey_pending({ citekey: entry.citekey })}
+            {"annotationKey" in entry
+              ? m.references_annotation_pending({
+                  annotationKey: entry.annotationKey,
+                })
+              : m.references_citekey_pending({ citekey: entry.citekey })}
           </span>
         );
       }
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
-          {m.references_citekey_unresolved({ citekey: entry.citekey })}
+          {"annotationKey" in entry
+            ? m.references_annotation_unresolved({
+                annotationKey: entry.annotationKey,
+              })
+            : m.references_citekey_unresolved({ citekey: entry.citekey })}
         </span>
       );
     // The candidates stand in place of the entry the key names none of, so the
@@ -509,7 +545,9 @@ function ReferenceBody({
     case "malformed":
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
-          {m.references_citation_fragment_invalid()}
+          {entry.occurrences[0]!.kind === "annotation"
+            ? m.references_annotation_link_invalid()
+            : m.references_citation_fragment_invalid()}
         </span>
       );
   }

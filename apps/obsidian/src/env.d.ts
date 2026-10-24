@@ -17,6 +17,11 @@ declare module "*.yaml?raw" {
 }
 
 /** Built by the `pandoc-filter-variants` Vite plugin, one variant per query. */
+declare module "*.lua?raw" {
+  const source: string;
+  export default source;
+}
+
 declare module "*.lua?variant=cli" {
   const source: string;
   export default source;
@@ -29,6 +34,11 @@ declare module "*.lua?variant=sandbox" {
 
 /** The ZoteroReads worker bundle, built and embedded by the `embedded-worker` Vite plugin. */
 declare module "virtual:zotero-reads-worker" {
+  const source: string;
+  export default source;
+}
+
+declare module "virtual:citation-parse-worker" {
   const source: string;
   export default source;
 }

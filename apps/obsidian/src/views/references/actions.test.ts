@@ -55,7 +55,7 @@ function build(): ReferenceActions {
   return createReferenceActions({
     app: {} as App,
     getSourcePath: () => "notes/tidal.md",
-    openCitekey: () => undefined,
+    openIndexedKey: () => undefined,
     onOpenEngineSettings: () => undefined,
     onChangeStyle: () => undefined,
     onDismissEngineHint: () => undefined,
@@ -85,12 +85,12 @@ describe("onOpenNote", () => {
   };
 
   function openNote(entry: ReferenceEntry) {
-    const openCitekey = vi.fn();
+    const openIndexedKey = vi.fn();
     const openLinkText = vi.fn();
     createReferenceActions({
       app: { workspace: { openLinkText } } as unknown as App,
       getSourcePath: () => "notes/tidal.md",
-      openCitekey,
+      openIndexedKey,
       onOpenEngineSettings: () => undefined,
       onChangeStyle: () => undefined,
       onDismissEngineHint: () => undefined,
@@ -98,13 +98,13 @@ describe("onOpenNote", () => {
       writeClipboard,
       notify,
     }).onOpenNote(entry);
-    return { openCitekey, openLinkText };
+    return { openIndexedKey, openLinkText };
   }
 
   // The key names several Items, so no one note is this row's to open — and
   // creating one would put the wrong Item's note in the vault.
   it("reaches no note for an Ambiguous Citation Key", () => {
-    const { openCitekey, openLinkText } = openNote({
+    const { openIndexedKey, openLinkText } = openNote({
       id: "@doe2024",
       refNumber: 1,
       occurrences: [occurrence],
@@ -113,12 +113,12 @@ describe("onOpenNote", () => {
       candidates: ambiguousCandidates,
     });
 
-    expect(openCitekey).not.toHaveBeenCalled();
+    expect(openIndexedKey).not.toHaveBeenCalled();
     expect(openLinkText).not.toHaveBeenCalled();
   });
 
   it("creates and opens the note of a cited Item that has none yet", () => {
-    const { openCitekey } = openNote({
+    const { openIndexedKey } = openNote({
       id: "BOOK0001",
       refNumber: 1,
       occurrences: [occurrence],
@@ -127,7 +127,19 @@ describe("onOpenNote", () => {
       linkpath: null,
     });
 
-    expect(openCitekey).toHaveBeenCalledExactlyOnceWith("doe2024");
+    expect(openIndexedKey).toHaveBeenCalledExactlyOnceWith("BOOK0001");
+  });
+
+  it("#1693 opens an annotation-only parent's note by Indexed Key without a Citation Key", () => {
+    const { openIndexedKey } = openNote({
+      id: "NCKEY234",
+      refNumber: 1,
+      occurrences: [{ ...occurrence, kind: "annotation", raw: "ANNNCKEY" }],
+      kind: "summary",
+      source: { citekey: null } as ReferenceSource,
+      linkpath: null,
+    });
+    expect(openIndexedKey).toHaveBeenCalledExactlyOnceWith("NCKEY234");
   });
 });
 

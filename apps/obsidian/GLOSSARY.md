@@ -802,7 +802,7 @@ The set of Libraries used for discovery and unqualified batch operations. It is 
 A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. One Full Scan populates it when the metadata cache is complete; per-file metadata-cache changes and vault renames keep the mappings current after that, and the Literature Note key set answers the Companion's `GET /literature-notes` note-status query once the Full Scan settles.
 
 **Citation Index**:
-The plugin-owned, internal vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citations and Literature Note wikilinks. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
+The plugin-owned, internal vault-wide index of Citation Occurrences across every Citation Syntax, and of every Annotation Occurrence in the vault. It records only what the rendered document references: nothing inside code, math, `%%` comments, or frontmatter. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
 _Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
 
 **Item Index** _(ZoteroReads)_:
@@ -822,7 +822,7 @@ The point-in-time mapping of Citation Keys to Items that Citation Lookup answers
 _Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
 
 **Citation Lookup**:
-Answers for requested Citation Keys and Indexed Keys from one published resolution revision. A document or command takes a one-shot read; a view holds an observation for as long as it is open, keeping its earlier answer while a new answer is read.
+Answers for requested Citation Keys, Indexed Keys, and Annotation Indexed Keys (each answered with the Annotation's parent Item) from one published resolution revision. A document or command takes a one-shot read; a view holds an observation for as long as it is open, keeping its earlier answer while a new answer is read.
 _Avoid_: CitationReads (the retired owner), citation resolver (omits held observations), lookup cache (names retention, not the answers)
 
 **Ambiguous Citation Key**:
@@ -830,19 +830,27 @@ A Citation Key that names more than one Item in Library Scope, whether the candi
 _Avoid_: duplicate citation key, citation key conflict
 
 **Citation Occurrence**:
-One appearance of a Citation in one file — its syntax kind (literal citekey or wikilink), its raw citekey or linkpath, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
+One appearance of a Citation in one file — its Citation Syntax, its raw citekey, linkpath, or Annotation Indexed Key, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
 _Avoid_: citation instance, match, hit
 
 **Citation Syntax**:
-One of the two written forms a citation takes in a note body — a literal Pandoc citation key, or a wikilink to a Literature Note. Every Citation Occurrence has exactly one syntax.
+One of the three written forms a citation takes in a note body — a literal Pandoc citation key, a wikilink to a Literature Note, or an Annotation Citation. Every Citation Occurrence has exactly one syntax.
 _Avoid_: citation format; citation style (collides with CSL citation styles)
 
+**Annotation Citation**:
+A Durable Annotation Link with exactly empty text, `[](zotero://…?annotation=…)`: a Citation of the Annotation's parent Item, located by the Annotation's page label. Any other text, including whitespace alone, makes it a labelled link, not a Citation. One whose URL names no valid Annotation is a malformed Annotation Citation and shows as a Reference Error.
+_Avoid_: annotation link citation, citation with position (describes it; not its name)
+
+**Annotation Occurrence**:
+One appearance of a Durable Annotation Link in one file — its form (Annotation Citation, labelled link, or embed `![](…)`), the Annotation's Indexed Key, and its position. Every form is one, so the Citation Index can answer where an Annotation is used. Only an Annotation Citation is also a Citation Occurrence. An Attachment File Link carrying an Annotation Anchor is not one.
+_Avoid_: annotation reference, annotation backlink (the Backlink is the link ZotLit writes, not its appearance), annotation usage
+
 **Omitted Occurrence**:
-A Citation Occurrence that stays outside an answer because the Pandoc Citations or Wikilink Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
+A Citation Occurrence that stays outside an answer because the Pandoc Citations, Wikilink Citations, or Annotation Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
 _Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
 
 **Document Citation Set**:
-The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations and Wikilink Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, and malformed Citation Fragments stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
+The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations, Wikilink Citations, and Annotation Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, malformed Citation Fragments, and malformed Annotation Citations stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
 _Avoid_: citation universe, rendered citations (presentation, not membership)
 
 **Citation Cluster**:
@@ -860,6 +868,10 @@ _Avoid_: citekey indexing (names an internal mechanism), literal citations (omit
 **Wikilink Citations**:
 The default-off choice to include eligible Literature Note wikilinks in the Document Citation Set. Turning it off leaves them as native Obsidian links and excludes them from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing built-in Pandoc export.
 _Avoid_: wikilink as citekey (the working name), link citations
+
+**Annotation Citations**:
+The default-on choice to include Annotation Citations in the Document Citation Set. Turning it off leaves them as links and excludes them from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index.
+_Avoid_: annotation link citations, position citations
 
 ### Zotero connection
 

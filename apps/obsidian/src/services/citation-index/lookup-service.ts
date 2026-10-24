@@ -78,6 +78,7 @@ export class CitationLookup extends Service {
   ): Promise<CitationLookupAnswer> {
     const citekeys = [...new Set(request.citekeys ?? [])];
     const indexedKeys = [...new Set(request.indexedKeys ?? [])];
+    const annotationKeys = [...new Set(request.annotationKeys ?? [])];
     return Effect.runPromise(
       Effect.gen({ self: this }, function* () {
         yield* Effect.tryPromise(() => this.ready);
@@ -98,6 +99,7 @@ export class CitationLookup extends Service {
               scope,
               citekeys,
               indexedKeys,
+              annotationKeys,
             }),
           );
           if (
@@ -135,16 +137,33 @@ export class CitationLookup extends Service {
         this.#deps.libraryScope.effective,
         request?.citekeys ?? [],
         request?.indexedKeys ?? [],
+        request?.annotationKeys ?? [],
       ],
       queryFn: ({ signal }) => this.read(request!, { signal }),
       enabled: request !== null,
       gcTime: GC_TIME,
       placeholderData: (answer) => answer ?? previous,
-      structuralSharing: (old, answer) =>
-        old instanceof CitationLookupAnswer &&
-        old.revision === (answer as CitationLookupAnswer).revision
+      structuralSharing: (old, value) => {
+        const answer = value as CitationLookupAnswer;
+        // Parent links can change while the Citekey Resolution Snapshot stays equal.
+        return old instanceof CitationLookupAnswer &&
+          old.revision === answer.revision &&
+          (request?.annotationKeys ?? []).every((key) => {
+            if (
+              !old.coversAnnotationKey(key) ||
+              !answer.coversAnnotationKey(key)
+            )
+              return false;
+            const before = old.parentOfAnnotation(key);
+            const after = answer.parentOfAnnotation(key);
+            return (
+              before?.indexedKey === after?.indexedKey &&
+              before?.citekey === after?.citekey
+            );
+          })
           ? old
-          : answer,
+          : answer;
+      },
     });
     const observer = new QueryObserver(client, options());
     const publish = (): void => {
@@ -204,6 +223,7 @@ export class CitationLookup extends Service {
         const selected = {
           citekeys: [...new Set(next.citekeys ?? [])].sort(),
           indexedKeys: [...new Set(next.indexedKeys ?? [])].sort(),
+          annotationKeys: [...new Set(next.annotationKeys ?? [])].sort(),
         };
         const nextIdentity = JSON.stringify(selected);
         if (identity === nextIdentity) return;
