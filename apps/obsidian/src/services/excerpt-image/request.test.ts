@@ -6,6 +6,8 @@ import { createClient } from "@zotlit/db/client/node";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -13,9 +15,13 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type {
+  ZoteroReads,
+  ZoteroReadsApi,
+} from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -28,6 +34,7 @@ import {
   ExcerptSourceUnavailable,
   excerptRequestForKey,
   savedExcerptRequest,
+  savedExcerptRequestOver,
 } from "./request";
 import { ExcerptImageService, excerptKey, excerptRequest } from "./service";
 import type { ExcerptEntry } from "./service";
@@ -122,6 +129,48 @@ const serviceOf = (
   );
 
 describe("Saved excerpt request", () => {
+  it.effect("builds the same request over the Effect services", () =>
+    Effect.gen(function* () {
+      const db = yield* fixtureDb();
+      const bridge = yield* acquireAsyncDisposable(() =>
+        Promise.resolve(openTestBridge()),
+      );
+      const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+        snapshot: Effect.succeed(db.reads),
+      });
+      const requestOver = savedExcerptRequestOver({
+        reads,
+        pref: {
+          current: Effect.succeed({
+            dataDir: paths.dataDir,
+            baseAttachmentPath: paths.baseAttachmentPath,
+          } as ZoteroPrefSnapshot),
+        },
+        bridge,
+      });
+
+      const over = yield* Effect.promise(() =>
+        requestOver({ annotation, source: apiSource }),
+      );
+      const direct = yield* Effect.promise(() =>
+        savedExcerptRequest({
+          annotation,
+          source: apiSource,
+          sourceScope: paths.dataDir,
+          zoteroReads: db.zoteroReads,
+          paths,
+        }),
+      );
+
+      expect(over).toEqual(direct);
+      expect(over).toMatchObject({
+        annotation: { key: ANNOTATION },
+        source: apiSource,
+        attachmentKey: ATTACHMENT,
+      });
+    }),
+  );
+
   it.effect("resolves to nothing where the database cannot answer", () =>
     Effect.gen(function* () {
       const closed = createClient(":memory:");

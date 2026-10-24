@@ -64,9 +64,9 @@ export interface CitekeyEditorDeps {
   citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** What a hovered citation shows. */
   citationPopover: Pick<CitationPopover["Service"], "show">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** What a hovered Durable Annotation Link shows. */
-  annotationPopover: Pick<AnnotationPopover, "show">;
+  annotationPopover: Pick<AnnotationPopover["Service"], "show">;
   settings: Pick<PlainPluginSettings, "current" | "changes">;
   citationLookup: Pick<PlainCitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
@@ -169,7 +169,8 @@ export class CitekeyEditor extends Service<void> {
     });
     // A Durable Annotation Link shows its Annotation on every hover.
     this.#annotationLinkHover = annotationLinkHoverExtension({
-      showAnnotation: (request) => this.#annotationPopover.show(request),
+      showAnnotation: (request) =>
+        this.#bridge.runPromise(this.#annotationPopover.show(request)),
     });
     this.ready = this.#load();
   }

@@ -415,8 +415,6 @@ export default defineConfig({
       // Legacy services, written before the rule. A file moves off this list
       // when its service converts to Effect (/obsidian-services).
       files: [
-        "src/services/annotation-popover/reading.ts",
-        "src/services/annotation-popover/service.tsx",
         "src/services/annotation-repository/notices.ts",
         "src/services/attachment-import/service.ts",
         "src/services/attachment-resolver/service.ts",

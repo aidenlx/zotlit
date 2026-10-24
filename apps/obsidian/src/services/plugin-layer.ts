@@ -8,6 +8,9 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginHost } from "@/lib/plugin-host";
 import { openLibraryView } from "@/views/library/register";
 
+import { layerAnnotationLinkReading } from "./annotation-popover/reading";
+import { layerAnnotationPopover } from "./annotation-popover/service";
+import type { AnnotationPopover } from "./annotation-popover/service";
 import { layerAnnotationRepository } from "./annotation-repository/service";
 import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
@@ -24,6 +27,7 @@ import type { CitationPopover } from "./citation-popover/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
 import { layerDatabaseActions } from "./database/actions";
+import type { ExcerptDisplayService } from "./excerpt-image/display";
 import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
@@ -88,9 +92,11 @@ export function pluginLayer(
     readonly persistedExcerpt?: Parameters<
       typeof layerAnnotationRepository
     >[0]["persistedExcerpt"];
+    readonly excerptDisplay: () => Pick<ExcerptDisplayService, "open"> | null;
   },
 ): Layer.Layer<
   | AnnotationRepository
+  | AnnotationPopover
   | CitationText
   | CitationPopover
   | CitationIndex
@@ -113,8 +119,12 @@ export function pluginLayer(
   | Template
   | TemplateMigration
 > {
-  const services = layerCitationPopover.pipe(
-    startingAs("CitationPopover"),
+  const services = Layer.mergeAll(
+    layerCitationPopover.pipe(startingAs("CitationPopover")),
+    layerAnnotationPopover({
+      excerptDisplay: annotations.excerptDisplay,
+    }).pipe(startingAs("AnnotationPopover")),
+  ).pipe(
     Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
     Layer.provideMerge(
@@ -188,6 +198,7 @@ export function pluginLayer(
     ),
   );
   const registrations = Layer.mergeAll(
+    layerAnnotationLinkReading.pipe(startingAs("AnnotationLinkReading")),
     layerCitationsCli.pipe(startingAs("CitationsCli")),
     layerCitationStyleNotice.pipe(startingAs("CitationStyleNotice")),
     layerCitationTemplateActions.pipe(startingAs("CitationTemplateActions")),

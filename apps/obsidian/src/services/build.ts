@@ -12,7 +12,6 @@ import {
   createProfileImporter,
 } from "@/setting-tab/profiles";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
-import { createCommentRenderer } from "@/views/annot-view/comment-render";
 import {
   annotationCardShown,
   revealAnnotationInView,
@@ -20,7 +19,6 @@ import {
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
-import { AnnotationLinkReading } from "./annotation-popover/reading";
 import { AnnotationPopover } from "./annotation-popover/service";
 import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
@@ -109,6 +107,7 @@ export async function buildServices(
     bindMigration = resolve;
   });
   let excerptImages: ExcerptImageService | undefined;
+  let excerptDisplays: ExcerptDisplayService | undefined;
   const runtime = buildRuntime(
     pluginLayer(
       plugin,
@@ -139,6 +138,7 @@ export async function buildServices(
             (await excerptImages.stored(request))?.identity.fingerprint ?? null
           );
         },
+        excerptDisplay: () => excerptDisplays ?? null,
       },
     ),
     stack,
@@ -208,11 +208,11 @@ export async function buildServices(
     })
     .use({
       excerptDisplay: ({ queryClient, excerptImage }) =>
-        new ExcerptDisplayService({
+        (excerptDisplays = new ExcerptDisplayService({
           queries: queryClient,
           resolve: (request, signal) => excerptImage.resolve(request, signal),
           stored: (request) => excerptImage.stored(request),
-        }),
+        })),
     })
     .use({
       attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
@@ -552,33 +552,7 @@ export async function buildServices(
     })
     .useValue({ citationText: () => plainCitationText(runtime) })
     .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
-    .use({
-      annotationPopover: ({
-        annotationRepository,
-        excerptDisplay,
-        zoteroReads,
-        zoteroPref,
-      }) =>
-        new AnnotationPopover({
-          annotations: annotationRepository,
-          bridge,
-          excerptDisplay,
-          excerptRequest: ({ annotation, source }) =>
-            savedExcerptRequest({
-              annotation,
-              source,
-              sourceScope: zoteroPref.dataDir,
-              zoteroReads,
-              paths: zoteroPref,
-            }),
-          commentRenderer: (owner, sourcePath) =>
-            createCommentRenderer({
-              app: plugin.app,
-              component: owner,
-              getSourcePath: () => sourcePath,
-            }),
-        }),
-    })
+    .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
     .use({
       citekeyEditor: ({
         noteIndex,
@@ -612,14 +586,6 @@ export async function buildServices(
           citationLookup,
           libraryScope,
           bridge,
-        }),
-    })
-    .use({
-      annotationLinkReading: ({ annotationPopover }) =>
-        new AnnotationLinkReading({
-          app: plugin.app,
-          plugin,
-          annotationPopover,
         }),
     })
     .use({
