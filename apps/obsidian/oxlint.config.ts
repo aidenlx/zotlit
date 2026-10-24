@@ -164,9 +164,11 @@ export default defineConfig({
       excludeFiles: ["**/*.test.{ts,tsx}"],
       rules: {
         "zotlit-services/effect-native-resources": "error",
+        "zotlit-services/interrupt-predicate": "error",
         "zotlit-services/layer-stream-consumer": "error",
         "zotlit-services/no-legacy-service": "error",
         "zotlit-services/obsidian-events-intake": "error",
+        "zotlit-services/state-stream": "error",
       },
     },
     {

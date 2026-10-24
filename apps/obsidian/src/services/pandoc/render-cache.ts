@@ -220,9 +220,8 @@ export const layerBibliographyRender = Layer.effect(
         yield* invalidate();
       }),
     );
-    const initialSettlement = yield* queries.current;
     yield* listen(
-      Stream.dropWhile(queries.changes, (next) => next === initialSettlement),
+      queries.changes,
       Effect.fn("BibliographyRender.settled")(function* (change) {
         if (
           change.key[0] !== BIBLIOGRAPHY_RENDER &&

@@ -20,7 +20,7 @@ import {
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { acquireDisposable } from "@/lib/effect-scope";
-import { forkEach } from "@/lib/effect-stream";
+import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
@@ -328,9 +328,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       syntaxes: syntaxes(),
     });
     const current = SubscriptionRef.get(state);
-    const changes = SubscriptionRef.changes(state).pipe(
-      Stream.takeUntil((value) => value.stopped),
-    );
+    const changes = changesUntil(state, (value) => value.stopped);
     const bus = yield* PubSub.unbounded<CitationIndexEvent>();
     yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
     const events = Stream.fromPubSub(bus);

@@ -707,37 +707,26 @@ export const layerCitationText = (open?: OpenDocuments) =>
         yield* acquireDisposable(() =>
           openDocuments.subscribe(intake.callback("open")),
         );
-        const initialSettlement = yield* queries.current;
-        yield* forkEach(
-          Stream.dropWhile(
-            queries.changes,
-            (next) => next === initialSettlement,
-          ),
-          (change) => {
-            if (change.key[0] !== CITATION_TEXT) return;
-            const path = pathOf(change.key);
-            if (change.changed) emit({ type: "changed", path });
-            emit({
-              type: "settled",
-              path,
-              held: change.held as Held<DocumentCitations> | null,
-            });
-          },
-        );
+        yield* forkEach(queries.changes, (change) => {
+          if (change.key[0] !== CITATION_TEXT) return;
+          const path = pathOf(change.key);
+          if (change.changed) emit({ type: "changed", path });
+          emit({
+            type: "settled",
+            path,
+            held: change.held as Held<DocumentCitations> | null,
+          });
+        });
         yield* forkEach(index.events, (event) => {
           if (event.type === "membership-changed") invalidate();
           else if (event.type === "changed") invalidate(event.path);
         });
         // A moved Literature Note or the first Full Scan can change the Item
         // a wikilink resolves to across every document.
-        const initialNotes = yield* notes.current;
-        yield* forkEach(
-          Stream.dropWhile(notes.changes, (next) => next === initialNotes),
-          (event) => {
-            if (event.type === "changed" || event.type === "indexed")
-              invalidate();
-          },
-        );
+        yield* forkEach(notes.changes, (event) => {
+          if (event.type === "changed" || event.type === "indexed")
+            invalidate();
+        });
         // A rebuilt lookup snapshot can change literal keys and the native
         // citation key carried by a wikilink's Literature Note.
         let revision = (yield* lookup.current).revision;
@@ -755,7 +744,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
       }).pipe(
         Scope.provide(scope),
         Effect.catchCause((cause) =>
-          Cause.hasInterrupts(cause)
+          Cause.hasInterruptsOnly(cause)
             ? Effect.interrupt
             : Effect.gen(function* () {
                 yield* SubscriptionRef.set(state, {
@@ -771,11 +760,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
       );
       return {
         current: SubscriptionRef.get(state),
-        // Terminal state ends the stream itself, so a late subscriber still
-        // receives that snapshot after scope close.
-        changes: changesUntil(state, Effect.never).pipe(
-          Stream.takeUntil((value) => value.stopped),
-        ),
+        changes: changesUntil(state, (value) => value.stopped),
         events: Stream.fromPubSub(bus),
         peek: Effect.fn("CitationText.peek")(function* (path: string) {
           return yield* Effect.sync(() => peek(path));

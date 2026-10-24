@@ -4,12 +4,14 @@ import { describe, it } from "vitest";
 import {
   cliCommandRegistration,
   effectNativeResources,
+  interruptPredicate,
   noLegacyService,
   noNanoevents,
   layerStreamConsumer,
   obsidianEventsIntake,
   plainAdapterStreams,
   serviceTagId,
+  stateStream,
   workerRpc,
 } from "../../scripts/oxlint-plugin-services";
 
@@ -224,6 +226,42 @@ tester.run("layer-stream-consumer", layerStreamConsumer, {
         const off = subscribe(runner, changes, apply);
       })`,
       errors: [{ messageId: "forkEach" }],
+    },
+  ],
+});
+
+tester.run("interrupt-predicate", interruptPredicate, {
+  valid: [
+    "const quiet = Cause.hasInterruptsOnly(cause);",
+    "if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) return;",
+  ],
+  invalid: [
+    {
+      code: "Effect.catchCause((cause) => Cause.hasInterrupts(cause) ? Effect.interrupt : log(cause));",
+      errors: [{ messageId: "only" }],
+    },
+    {
+      code: "if (Exit.hasInterrupts(exit)) return;",
+      errors: [{ messageId: "only" }],
+    },
+  ],
+});
+
+tester.run("state-stream", stateStream, {
+  valid: [
+    "const changes = changesUntil(state, Deferred.await(stopped));",
+    "const changes = changesUntil(state, (value) => value.stopped);",
+    // A Stream's own changes operator is not the SubscriptionRef one.
+    "const next = Stream.changes(values);",
+  ],
+  invalid: [
+    {
+      code: "const changes = SubscriptionRef.changes(state);",
+      errors: [{ messageId: "changesUntil" }],
+    },
+    {
+      code: "return { changes: SubscriptionRef.changes(state).pipe(Stream.map(clone)) };",
+      errors: [{ messageId: "changesUntil" }],
     },
   ],
 });

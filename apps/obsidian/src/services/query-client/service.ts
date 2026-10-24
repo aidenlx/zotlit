@@ -9,18 +9,9 @@ import {
 } from "@tanstack/query-core";
 import type { Query, QueryFunction, QueryKey } from "@tanstack/query-core";
 
-import {
-  Clock,
-  Context,
-  Deferred,
-  Effect,
-  Layer,
-  Stream,
-  SubscriptionRef,
-} from "@/lib/effect";
+import { Clock, Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
-import { changesUntil } from "@/lib/effect-stream";
 
 /**
  * The answer one key holds, as one immutable snapshot: a surface reads a whole
@@ -86,8 +77,8 @@ export class QueryClients extends Context.Service<
   QueryClients,
   {
     readonly client: QueryClient;
+    /** Each settlement, in order, from when the consumer attaches. */
     readonly changes: Stream.Stream<HeldReadChange>;
-    readonly current: Effect.Effect<HeldReadChange | null>;
     invalidate(key: QueryKey): Effect.Effect<void>;
     update<T>(key: QueryKey, next: (held: T) => T): Effect.Effect<void>;
     keysUnder(prefix: QueryKey): Effect.Effect<QueryKey[]>;
@@ -117,8 +108,7 @@ const makeQueryClients = Effect.gen(function* () {
   const now = instantClock(yield* Clock.Clock);
   const run = Effect.runSyncWith(yield* Effect.context<never>());
   let closed = false;
-  const stopped = yield* Deferred.make<void>();
-  const latest = yield* SubscriptionRef.make<HeldReadChange | null>(null);
+  const settlements = yield* PubSub.unbounded<HeldReadChange>();
   // Query Core's errorUpdatedAt uses wall time. Keep both ends of this
   // cooldown on the layer's Clock, including when that Clock starts at zero.
   const failures = new Map<string, number>();
@@ -484,7 +474,7 @@ const makeQueryClients = Effect.gen(function* () {
     settled: (key, held) => {
       const next = { key, held, changed };
       changed = false;
-      run(SubscriptionRef.set(latest, next));
+      run(PubSub.publish(settlements, next));
     },
   });
   yield* Effect.addFinalizer(() =>
@@ -493,8 +483,7 @@ const makeQueryClients = Effect.gen(function* () {
       stopChanges();
       for (const stop of watchers) stop();
       failures.clear();
-      yield* Deferred.succeed(stopped, undefined);
-      yield* SubscriptionRef.set(latest, null);
+      yield* PubSub.shutdown(settlements);
     }),
   );
 
@@ -505,10 +494,7 @@ const makeQueryClients = Effect.gen(function* () {
   );
   return QueryClients.of({
     client,
-    current: SubscriptionRef.get(latest),
-    changes: changesUntil(latest, Deferred.await(stopped)).pipe(
-      Stream.filter((change): change is HeldReadChange => change !== null),
-    ),
+    changes: Stream.fromPubSub(settlements),
     invalidate,
     update,
     keysUnder,

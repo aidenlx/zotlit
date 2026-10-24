@@ -57,7 +57,7 @@ export const obsidianEvents = Effect.fnUntraced(function* <
       (effect, event) =>
         effect.pipe(
           Effect.catchCause((cause) =>
-            Cause.hasInterrupts(cause)
+            Cause.hasInterruptsOnly(cause)
               ? Effect.interrupt
               : Effect.logError("Obsidian event handler failed", cause).pipe(
                   Effect.annotateLogs({ event: event.type }),

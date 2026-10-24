@@ -60,7 +60,6 @@ export function plainNoteIndex(
     whenIndexed: () => wait(index.whenIndexed()),
     changes: index.changes,
     changed: index.changes.pipe(
-      Stream.drop(1),
       Stream.filter(
         (change): change is Extract<NoteIndexChange, { file: TFile }> =>
           change.type === "changed",
@@ -68,7 +67,6 @@ export function plainNoteIndex(
       Stream.map((change) => change.file),
     ),
     "frontmatter-changed": index.changes.pipe(
-      Stream.drop(1),
       Stream.filter(
         (change): change is Extract<NoteIndexChange, { file: TFile }> =>
           change.type === "frontmatter-changed",
@@ -76,7 +74,6 @@ export function plainNoteIndex(
       Stream.map((change) => change.file),
     ),
     indexed: index.changes.pipe(
-      Stream.drop(1),
       Stream.filter((change) => change.type === "indexed"),
       Stream.map(() => undefined),
     ),

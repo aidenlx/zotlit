@@ -17,7 +17,7 @@ import {
   SubscriptionRef,
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import { forkEach } from "@/lib/effect-stream";
+import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { LibraryScope } from "@/services/library-scope/service";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
@@ -83,9 +83,7 @@ export const layerCitationLookup = Layer.effect(
     });
     const current = SubscriptionRef.get(state);
     // Including the terminal state lets even a subscriber after close see it.
-    const changes = SubscriptionRef.changes(state).pipe(
-      Stream.takeUntil((state) => state.stopped),
-    );
+    const changes = changesUntil(state, (state) => state.stopped);
     const events = yield* PubSub.unbounded<void>();
     const invalidated = Stream.fromPubSub(events);
     const stop = yield* Deferred.make<never>();

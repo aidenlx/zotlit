@@ -83,7 +83,6 @@ export async function bibliographyRenderFixture(
     ? Layer.succeed(
         QueryClients,
         stubService<QueryClients["Service"]>("QueryClients", {
-          current: Effect.succeed(null),
           changes: callbacks<HeldReadChange>((emit) => {
             let changed = false;
             return query.watch([], {

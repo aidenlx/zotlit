@@ -1,6 +1,5 @@
 import { expect } from "vitest";
 
-import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
@@ -92,7 +91,7 @@ it.effect(
         queries.update(["held"], read);
         expect(queries.keysUnder([])).toEqual([]);
         queries.watch([], { settled: read })();
-        subscribe(queries.runtime, Stream.drop(queries.changes, 1), read)();
+        subscribe(queries.runtime, queries.changes, read)();
       });
     }),
 );
@@ -108,7 +107,7 @@ it.effect(
         const delivered = Promise.withResolvers<void>();
         const unsubscribe = subscribe(
           queries.runtime,
-          Stream.drop(queries.changes, 1),
+          queries.changes,
           (change) => {
             seen.push(change);
             delivered.resolve();

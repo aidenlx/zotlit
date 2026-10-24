@@ -10,19 +10,35 @@ export type SubscriptionRuntime = Pick<
 >;
 
 /**
- * Replay state and retain every update until the service stops. Acquire the
- * subscription before interruptWhen forks upstream, so a consumer started
- * immediately during layer acquisition attaches before the layer returns.
- * Each consumer owns its subscription through the Stream's Scope.
+ * Replay state and retain every update until the service stops: the one way a
+ * service exposes a `SubscriptionRef`. The subscription is acquired when the
+ * Stream starts and each update reaches it on the publisher's fiber, so a
+ * consumer started immediately during layer acquisition attaches before the
+ * layer returns and sees every update in the same tick it is made. Each
+ * consumer owns its subscription through the Stream's Scope.
+ *
+ * @param until The service's stop signal, or a terminal-state predicate. The
+ *   signal shuts the state's PubSub down, which ends every subscriber. A
+ *   predicate's matching value is the last one emitted, so a subscriber after
+ *   close still receives that snapshot.
  */
 export function changesUntil<A>(
   state: SubscriptionRef.SubscriptionRef<A>,
-  stopped: Effect.Effect<void>,
+  until: Effect.Effect<void> | ((value: A) => boolean),
 ): Stream.Stream<A> {
   return Stream.unwrap(
-    Effect.map(PubSub.subscribe(state.pubsub), (subscription) =>
-      Stream.fromSubscription(subscription).pipe(Stream.interruptWhen(stopped)),
-    ),
+    Effect.gen(function* () {
+      const changes = Stream.fromSubscription(
+        yield* PubSub.subscribe(state.pubsub),
+      );
+      if (typeof until === "function")
+        return changes.pipe(Stream.takeUntil(until));
+      yield* Effect.forkScoped(
+        Effect.andThen(until, PubSub.shutdown(state.pubsub)),
+        { startImmediately: true },
+      );
+      return changes;
+    }),
   );
 }
 
@@ -39,7 +55,7 @@ export function forkEach<A, R, R2 = never>(
   return Stream.runForEach(stream, (value) =>
     Effect.suspend(() => handle(value) ?? Effect.void).pipe(
       Effect.catchCause((cause) =>
-        Cause.hasInterrupts(cause)
+        Cause.hasInterruptsOnly(cause)
           ? Effect.interrupt
           : Effect.logError("Stream consumer failed", cause).pipe(
               withLogCategory("effect-stream"),
@@ -69,7 +85,7 @@ export function subscribe<A, R>(
         if (active) callback(value);
       }).pipe(
         Effect.catchCause((cause) =>
-          Cause.hasInterrupts(cause)
+          Cause.hasInterruptsOnly(cause)
             ? Effect.interrupt
             : Effect.logError("Stream subscriber failed", cause).pipe(
                 withLogCategory("effect-stream"),

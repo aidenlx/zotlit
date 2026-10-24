@@ -1,6 +1,5 @@
 import { expect } from "vitest";
 
-import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
@@ -8,7 +7,7 @@ import { it } from "@/lib/effect-vitest";
 import { cache, makeHarness } from "./__fixtures__";
 import type { NoteIndexChange } from "./service";
 
-// #1705: attaching late loses the first invalidations to SubscriptionRef replay.
+// #1705: attaching late must not lose the first invalidations.
 it.effect("a throwing subscriber receives both immediate edits (#1705)", () =>
   Effect.gen(function* () {
     const { metadataCache, vault, service } = yield* makeHarness(
@@ -19,16 +18,12 @@ it.effect("a throwing subscriber receives both immediate edits (#1705)", () =>
     const second = vault.files.get("second.md")!;
     const received: NoteIndexChange[] = [];
     const delivered = Promise.withResolvers<void>();
-    const stop = subscribe(
-      service.runtime,
-      Stream.drop(service.changes, 1),
-      (change) => {
-        received.push(change);
-        if (received.length === 1) throw new Error("listener failed");
-        if (change.type === "frontmatter-changed" && change.file === second)
-          delivered.resolve();
-      },
-    );
+    const stop = subscribe(service.runtime, service.changes, (change) => {
+      received.push(change);
+      if (received.length === 1) throw new Error("listener failed");
+      if (change.type === "frontmatter-changed" && change.file === second)
+        delivered.resolve();
+    });
     metadataCache.change(first, cache({ itemKey: "ABCD2345" }));
     metadataCache.change(second, cache({ itemKey: "ZZZ99999" }));
     yield* Effect.promise(() => delivered.promise);
@@ -60,7 +55,7 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
     const received: NoteIndexChange[] = [];
     const stopBeforeClose = subscribe(
       service.runtime,
-      Stream.drop(service.changes, 1),
+      service.changes,
       (change) => received.push(change),
     );
     yield* Effect.promise(close);
@@ -74,10 +69,8 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
     expect(service.getIndexedItemKeys()).toEqual(["ABCD2345"]);
     yield* Effect.promise(() => service.whenIndexed());
     yield* Effect.promise(() => service.whenSettled());
-    const stop = subscribe(
-      service.runtime,
-      Stream.drop(service.changes, 1),
-      (change) => received.push(change),
+    const stop = subscribe(service.runtime, service.changes, (change) =>
+      received.push(change),
     );
     const events: string[] = [];
     const stopEvent = subscribe(service.runtime, service["changed"], () =>
@@ -94,7 +87,7 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
   }),
 );
 
-// Failure modes: replay of the initial state, loss of consecutive events,
+// Failure modes: a stale event replayed on attach, loss of consecutive events,
 // or a callback after unsubscribe.
 it.effect(
   "the adapter resolves indexing and subscribes to future changes until unsubscribe",
@@ -111,14 +104,10 @@ it.effect(
       yield* Effect.promise(() => index.whenIndexed());
       const received: NoteIndexChange[] = [];
       const delivered = Promise.withResolvers<void>();
-      const stop = subscribe(
-        index.runtime,
-        Stream.drop(index.changes, 1),
-        (change) => {
-          received.push(change);
-          if (change.type === "frontmatter-changed") delivered.resolve();
-        },
-      );
+      const stop = subscribe(index.runtime, index.changes, (change) => {
+        received.push(change);
+        if (change.type === "frontmatter-changed") delivered.resolve();
+      });
       metadataCache.change(
         vault.files.get("paper.md")!,
         cache({ itemKey: "ABCD2345" }),
@@ -131,13 +120,9 @@ it.effect(
       expect(index.getIndexedItemKeys()).toEqual(["ABCD2345"]);
       stop();
       const removed = Promise.withResolvers<void>();
-      const stopObserver = subscribe(
-        index.runtime,
-        Stream.drop(index.changes, 1),
-        (change) => {
-          if (change.type === "changed") removed.resolve();
-        },
-      );
+      const stopObserver = subscribe(index.runtime, index.changes, (change) => {
+        if (change.type === "changed") removed.resolve();
+      });
       vault.deleteFile("paper.md");
       yield* Effect.promise(() => removed.promise);
       stopObserver();

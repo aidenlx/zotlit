@@ -1,7 +1,8 @@
 // zotlit-services: the mechanical part of the Obsidian service architecture
 // (policies/services.md, policies/events.md): Effect services over legacy
 // classes, tag ids, Scope-owned resources, CLI registration, workers on
-// effect/rpc, and Effect-native events. Rule tests: src/lint/services.test.ts.
+// effect/rpc, Effect-native events and state, and failure boundaries. Rule
+// tests: src/lint/services.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 
@@ -505,17 +506,90 @@ export const layerStreamConsumer: Rule = {
   },
 };
 
+const SUBSCRIPTION_REF = new Set(["SubscriptionRef"]);
+
+/**
+ * A service exposes its `SubscriptionRef` through `changesUntil` from
+ * `@/lib/effect-stream` (policies/events.md → State or event), which attaches
+ * a consumer before layer acquisition returns and ends every subscriber when
+ * the service stops. A bare `SubscriptionRef.changes` does neither, so its
+ * subscribers outlive the layer.
+ */
+export const stateStream: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require changesUntil to expose a SubscriptionRef.",
+    },
+    messages: {
+      changesUntil:
+        "Expose the state with `changesUntil(state, until)` from @/lib/effect-stream: `until` is the service's stop signal or a terminal-state predicate.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (
+          isMemberOf(
+            node.callee as AstNode,
+            SUBSCRIPTION_REF,
+            (name) => name === "changes",
+          )
+        )
+          context.report({ node, messageId: "changesUntil" });
+      },
+    };
+  },
+};
+
+const CAUSE_OR_EXIT = new Set(["Cause", "Exit"]);
+
+/**
+ * A failure boundary tells shutdown from failure with `hasInterruptsOnly`. A
+ * cause holding both an interrupt and a failure carries a real failure, which
+ * `hasInterrupts` would swallow as shutdown while a sibling boundary logs it.
+ */
+export const interruptPredicate: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require hasInterruptsOnly to tell shutdown from failure.",
+    },
+    messages: {
+      only: "Use `hasInterruptsOnly`: a cause with an interrupt and a failure is a failure.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (
+          isMemberOf(
+            node.callee as AstNode,
+            CAUSE_OR_EXIT,
+            (name) => name === "hasInterrupts",
+          )
+        )
+          context.report({ node, messageId: "only" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
     "cli-command-registration": cliCommandRegistration,
     "effect-native-resources": effectNativeResources,
+    "interrupt-predicate": interruptPredicate,
     "layer-stream-consumer": layerStreamConsumer,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
     "obsidian-events-intake": obsidianEventsIntake,
     "plain-adapter-streams": plainAdapterStreams,
     "service-tag-id": serviceTagId,
+    "state-stream": stateStream,
     "worker-rpc": workerRpc,
   },
 };

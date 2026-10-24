@@ -166,7 +166,7 @@ export const layerZoteroPref = Layer.effect(
           Effect.annotateLogs({ profileDir, count: loaded.value.size }),
         );
       } else {
-        if (Cause.hasInterrupts(loaded.cause)) return;
+        if (Cause.hasInterruptsOnly(loaded.cause)) return;
         yield* SubscriptionRef.update(state, (before) =>
           snapshot({
             ...before,

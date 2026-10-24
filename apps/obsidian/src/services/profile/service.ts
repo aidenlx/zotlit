@@ -1534,7 +1534,7 @@ export const layerProfile = Layer.effect(
         yield* attempt(() => engine.scan());
       },
       Effect.catchCause((cause) =>
-        Cause.hasInterrupts(cause)
+        Cause.hasInterruptsOnly(cause)
           ? Effect.interrupt
           : Effect.gen(function* () {
               yield* SubscriptionRef.set(

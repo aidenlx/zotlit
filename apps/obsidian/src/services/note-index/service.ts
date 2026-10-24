@@ -2,14 +2,7 @@ import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef, TAbstractFile } from "obsidian";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
-import {
-  Context,
-  Deferred,
-  Effect,
-  Layer,
-  SubscriptionRef,
-} from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
+import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -42,7 +35,6 @@ const NONE: Read = { contributions: EMPTY_CONTRIBUTIONS, frontmatter: null };
 type Reading = Read | typeof UNREAD;
 
 export type NoteIndexChange =
-  | { readonly type: "initial" }
   | { readonly type: "indexed" }
   | { readonly type: "changed" | "frontmatter-changed"; readonly file: TFile };
 
@@ -99,9 +91,7 @@ export function resolveIndexedKey(
 export class NoteIndex extends Context.Service<
   NoteIndex,
   {
-    /** The latest index invalidation; `initial` precedes the first update. */
-    readonly current: Effect.Effect<NoteIndexChange>;
-    /** The latest invalidation, followed by every later one in order. */
+    /** Each index invalidation, in order, from when the consumer attaches. */
     readonly changes: Stream.Stream<NoteIndexChange>;
     getNotesByItemKey(indexedKey: string): Effect.Effect<TFile[]>;
     getImportedNoteByNoteKey(noteKey: string): Effect.Effect<TFile[]>;
@@ -123,9 +113,8 @@ export class NoteIndex extends Context.Service<
 
 const makeNoteIndex = Effect.gen(function* () {
   const app = yield* ObsidianApp;
-  const changes = yield* SubscriptionRef.make<NoteIndexChange>({
-    type: "initial",
-  });
+  const changes = yield* PubSub.unbounded<NoteIndexChange>();
+  yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
   const indexed = yield* Deferred.make<void>();
   const pendingRenames = new Set<Deferred.Deferred<void>>();
   const pendingBarriers = new Set<Deferred.Deferred<void>>();
@@ -150,8 +139,7 @@ const makeNoteIndex = Effect.gen(function* () {
   /** The fallback `resolved` listener, held so disposal can drop it. */
   let fallbackRef: EventRef | null = null;
 
-  const publish = (change: NoteIndexChange) =>
-    SubscriptionRef.set(changes, change);
+  const publish = (change: NoteIndexChange) => PubSub.publish(changes, change);
 
   const getNotesByItemKey = Effect.fn("NoteIndex.getNotesByItemKey")(function* (
     indexedKey: string,
@@ -495,8 +483,7 @@ const makeNoteIndex = Effect.gen(function* () {
   }
   yield* listen();
   return NoteIndex.of({
-    current: SubscriptionRef.get(changes),
-    changes: SubscriptionRef.changes(changes),
+    changes: Stream.fromPubSub(changes),
     getNotesByItemKey,
     getImportedNoteByNoteKey,
     getNotesByProfile,

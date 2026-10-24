@@ -107,8 +107,7 @@ it.effect(
       const changes = yield* Queue.unbounded<NoteIndexChange>();
       yield* Stream.runForEach(index.changes, (change) =>
         Queue.offer(changes, change),
-      ).pipe(Effect.forkScoped);
-      yield* Queue.take(changes);
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
       const file = host.vault.files.get("paper.md")!;
       host.metadataCache.change(file, cache({ itemKey: "ABCD2345" }));
       host.vault.deleteFile("paper.md");
@@ -246,7 +245,7 @@ it.effect("scope close stops metadata and vault updates", () =>
 );
 
 it.effect(
-  "changes reports the current index and each later edit in order",
+  "changes reports each edit after the consumer attaches, in order",
   () =>
     Effect.gen(function* () {
       const host = createNoteHost(
@@ -254,11 +253,11 @@ it.effect(
         { enabledAtRuntime: true },
       );
       const index = yield* noteIndexOf(host.app);
+      yield* index.whenIndexed();
       const changes = yield* Queue.unbounded<NoteIndexChange>();
       yield* Stream.runForEach(index.changes, (change) =>
         Queue.offer(changes, change),
-      ).pipe(Effect.forkScoped);
-      expect((yield* Queue.take(changes)).type).toBe("indexed");
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
       const file = host.vault.files.get("paper.md")!;
       host.metadataCache.change(file, cache({ itemKey: "ABCD2345" }));
       expect(yield* Queue.take(changes)).toEqual({ type: "changed", file });

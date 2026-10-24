@@ -36,7 +36,6 @@ it.effect("releases held values and pending reads when its scope closes", () =>
     yield* Scope.close(scope, Exit.void);
     gate.resolve("late");
     expect(yield* queries.peek(["held"])).toBeNull();
-    expect(yield* queries.current).toBeNull();
     expect(
       yield* queries.read(["closed"], () => Promise.resolve("new")),
     ).toBeNull();
@@ -84,7 +83,7 @@ it.effect(
       const changes = yield* Queue.unbounded<HeldReadChange>();
       const listening = yield* Stream.runForEach(queries.changes, (change) =>
         Queue.offer(changes, change),
-      ).pipe(Effect.forkScoped);
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
       yield* queries.read(["held"], () => Promise.resolve("first"));
       expect(yield* Queue.take(changes)).toMatchObject({
         key: ["held"],

@@ -170,7 +170,6 @@ export function citationTextFixture(
   };
   let revision = 0;
   const initialLookup = { revision: "0" } as CitationLookupState;
-  const initialNote = { type: "initial" } as const;
   const queries = deps.queryClient;
   const runtime = buildRuntime(
     layerCitationText(deps.openDocuments).pipe(
@@ -215,7 +214,6 @@ export function citationTextFixture(
           Layer.succeed(
             NoteIndex,
             stubService<NoteIndex["Service"]>("NoteIndex", {
-              current: Effect.succeed(initialNote),
               whenIndexed: () =>
                 Effect.promise(() => deps.noteIndex.whenIndexed()),
               changes: Stream.merge(
@@ -273,7 +271,6 @@ export function citationTextFixture(
             QueryClients,
             stubService<QueryClients["Service"]>("QueryClients", {
               client: queries.client,
-              current: Effect.succeed(null),
               changes: callbacks<HeldReadChange>((emit) => {
                 let changed = false;
                 return [
