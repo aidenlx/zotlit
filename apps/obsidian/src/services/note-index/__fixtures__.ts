@@ -3,18 +3,19 @@ import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef } from "obsidian";
 
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
-import { ObsidianApp } from "@/lib/obsidian-app";
 
 import type { PlainNoteIndex } from "./plain";
 import { plainNoteIndex } from "./plain";
 import { layerNoteIndex, NoteIndex } from "./service";
 
 export const noteIndexOver = (app: App) =>
-  layerNoteIndex.pipe(Layer.provide(Layer.succeed(ObsidianApp, app)));
+  layerNoteIndex.pipe(Layer.provide(layerHostApp(app)));
 
 export const noteIndexOf = Effect.fn("fixture.noteIndexOf")(function* (
   app: App,
@@ -68,32 +69,10 @@ export async function openNoteVault(
 }
 
 type Callback = (...args: unknown[]) => void;
-type MetadataEvent = "changed" | "deleted" | "resolved";
 type VaultEvent = "rename" | "delete";
 
-class MockMetadataCache {
-  readonly fileCache = new Map<string, CachedMetadata>();
-  /** Mirrors Obsidian's `isCacheClean()`: no parse pending, resolver idle. */
-  clean = false;
-  readonly #cleanCallbacks: Callback[] = [];
-
-  readonly #listeners: Record<MetadataEvent, Set<Callback>> = {
-    changed: new Set(),
-    deleted: new Set(),
-    resolved: new Set(),
-  };
-
-  getFileCache(file: TFile): CachedMetadata | null {
-    return this.getCache(file.path);
-  }
-
-  /** As Obsidian: `null` for a path it holds nothing for, `{}` for a non-Markdown file. */
-  getCache(path: string): CachedMetadata | null {
-    const cache = this.fileCache.get(path);
-    if (!cache) return null;
-    return path.endsWith(".md") ? cache : {};
-  }
-
+/** The in-memory metadata cache, following the vault as Obsidian's does. */
+class MockMetadataCache extends MemoryMetadataCache {
   /**
    * Obsidian's `watchVaultChanges()`: the cache follows a rename or delete as
    * one more vault listener, in registration order. It subscribes once its
@@ -103,56 +82,14 @@ class MockMetadataCache {
   watchVault(vault: MockVault): void {
     vault.on("rename", (...args) => {
       const [file, oldPath] = args as [TFile, string];
-      const cache = this.fileCache.get(oldPath);
+      const cache = this.entries.get(oldPath);
       if (!cache) return;
-      this.fileCache.delete(oldPath);
-      this.fileCache.set(file.path, cache);
+      this.entries.delete(oldPath);
+      this.entries.set(file.path, cache);
     });
     vault.on("delete", (file) => {
-      this.fileCache.delete((file as TFile).path);
+      this.entries.delete((file as TFile).path);
     });
-  }
-
-  on(name: MetadataEvent, callback: Callback): EventRef {
-    this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
-  }
-
-  offref(ref: EventRef): void {
-    const { name, callback } = ref as unknown as {
-      name: MetadataEvent;
-      callback: Callback;
-    };
-    this.#listeners[name].delete(callback);
-  }
-
-  setCache(path: string, cache: CachedMetadata): void {
-    this.fileCache.set(path, cache);
-  }
-
-  change(file: TFile, cache: CachedMetadata): void {
-    this.fileCache.set(file.path, cache);
-    this.#emit("changed", file, "", cache);
-  }
-
-  /**
-   * Obsidian's undocumented one-shot: at once when the cache is clean, else
-   * after the next `resolved` drains the queue.
-   */
-  onCleanCache(callback: () => void): void {
-    if (this.clean) callback();
-    else this.#cleanCallbacks.push(callback);
-  }
-
-  /** The resolver queue drains: `resolved` fires and queued clean-cache callbacks run. */
-  resolve(): void {
-    this.clean = true;
-    this.#emit("resolved");
-    for (const callback of this.#cleanCallbacks.splice(0)) callback();
-  }
-
-  #emit(name: MetadataEvent, ...args: unknown[]): void {
-    for (const callback of this.#listeners[name]) callback(...args);
   }
 }
 

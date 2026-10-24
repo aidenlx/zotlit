@@ -59,6 +59,63 @@ it.effect(
 );
 
 describe("NoteIndex", () => {
+  // Obsidian fires a metadata cache event and a vault event in one tick; the
+  // index takes them in that order, though they come from two sources.
+  it.effect(
+    "keeps Obsidian's order of a metadata change and a vault rename in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache } = yield* makeHarness(
+          { "draft.md": {} },
+          { enabledAtRuntime: true },
+        );
+        const changes: string[] = [];
+        subscribe(service.runtime, service["changed"], (file) =>
+          changes.push(`changed ${file.path}`),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
+          changes.push(`frontmatter ${file.path}`),
+        );
+
+        const file = vault.files.get("draft.md")!;
+        metadataCache.change(file, cache({ itemKey: ITEM_A }));
+        vault.renameFile("draft.md", "paper.md");
+        yield* Effect.promise(() => service.whenSettled());
+
+        // The change lands first, while the note is still at its old path;
+        // the rename then moves a note that is already a Literature Note.
+        expect(changes).toEqual([
+          "changed draft.md",
+          "frontmatter draft.md",
+          "changed paper.md",
+        ]);
+        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      }),
+  );
+
+  it.effect(
+    "drops a note once for a vault delete and the cache's deleted in one tick",
+    () =>
+      Effect.gen(function* () {
+        const { service, vault, metadataCache } = yield* makeHarness(
+          { "paper.md": cache({ itemKey: ITEM_A }) },
+          { enabledAtRuntime: true },
+        );
+        const changes: string[] = [];
+        subscribe(service.runtime, service["changed"], (file) =>
+          changes.push(file.path),
+        );
+
+        const file = vault.files.get("paper.md")!;
+        vault.deleteFile("paper.md");
+        metadataCache.delete(file);
+        yield* Effect.promise(() => service.whenSettled());
+
+        expect(changes).toEqual(["paper.md"]);
+        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+      }),
+  );
+
   it.effect("runs the Full Scan at once when enabled at runtime", () =>
     Effect.gen(function* () {
       const { service } = yield* makeHarness(

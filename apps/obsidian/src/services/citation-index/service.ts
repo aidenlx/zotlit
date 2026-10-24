@@ -23,6 +23,8 @@ import { acquireDisposable, isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
 import { changesUntil, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -201,6 +203,7 @@ export const layerCitationIndex = (openStore = openCitekeyStore) =>
 function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
   return Effect.gen(function* () {
     const app = yield* ObsidianApp;
+    const metadata = yield* MetadataCache;
     const db = yield* ZoteroReads;
     const libraryScope = yield* LibraryScope;
     const noteIndex = yield* NoteIndex;
@@ -1545,10 +1548,7 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       }),
     );
     const intake = yield* obsidianEvents<{
-      changed: [TFile, string];
-      deleted: [TFile];
-      resolve: [];
-      resolved: [];
+      metadata: [MetadataEvent];
       rename: [TAbstractFile, string];
       layoutReady: [];
     }>().pipe(Scope.provide(scope));
@@ -1556,19 +1556,17 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
       .consume((event) =>
         Effect.sync(() => {
           switch (event.type) {
-            case "changed": {
-              const [file, data] = event.args;
-              if (!isMarkdownFile(file)) return;
-              // Start synchronously so a following rename/delete supersedes this generation.
-              const parsed = scan(file, data);
-              runner.runFork(recover(Effect.tryPromise(() => parsed)));
+            case "metadata": {
+              const [change] = event.args;
+              if (change._tag === "changed") {
+                if (!isMarkdownFile(change.file)) return;
+                // Start synchronously so a following rename/delete supersedes this generation.
+                const parsed = scan(change.file, change.data);
+                runner.runFork(recover(Effect.tryPromise(() => parsed)));
+              } else if (change._tag === "deleted") drop(change.file.path);
               emit("cited-by-invalidated");
               break;
             }
-            case "deleted":
-              drop(event.args[0].path);
-              emit("cited-by-invalidated");
-              break;
             case "rename":
               move(event.args[1], event.args[0].path);
               emit("cited-by-invalidated");
@@ -1576,16 +1574,15 @@ function makeCitationIndex(openStore: (app: App) => Promise<CitekeyStore>) {
             case "layoutReady":
               startBackfill();
               break;
-            default:
-              emit("cited-by-invalidated");
           }
         }),
       )
       .pipe(Effect.forkIn(scope, { startImmediately: true }));
-    for (const event of ["changed", "deleted", "resolve", "resolved"] as const)
-      yield* intake
-        .on(event, app.metadataCache, event)
-        .pipe(Scope.provide(scope));
+    // The metadata cache's events join the vault's in one ordered intake:
+    // forkEach hands each over inside Obsidian's callback.
+    yield* forkEach(metadata.changes, intake.callback("metadata")).pipe(
+      Scope.provide(scope),
+    );
     yield* intake.on("rename", app.vault, "rename").pipe(Scope.provide(scope));
     yield* forkEach(settings.changes, applySettings).pipe(Scope.provide(scope));
     // IndexedDB can stall; startup waits the shared bound and the open goes on.

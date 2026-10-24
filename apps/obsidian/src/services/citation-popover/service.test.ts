@@ -9,6 +9,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -118,7 +119,7 @@ const emptyText = (): DocumentCitations => ({
 
 function harness(read: () => Promise<DocumentCitations | null>) {
   let file: TFile | null = NOTE;
-  const deleted = new Set<(file: TFile) => void>();
+  const metadataCache = new MemoryMetadataCache();
   const citationText = { read: vi.fn(read) };
   const readLookup = vi.fn(
     async ({ citekeys }: { citekeys: readonly string[] }) =>
@@ -133,13 +134,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
       vault: {
         getFileByPath: () => file,
       },
-      metadataCache: {
-        getFileCache: () => null,
-        on: (event: string, cb: (file: TFile) => void) => {
-          if (event === "deleted") deleted.add(cb);
-          return { e: { offref: () => deleted.delete(cb) } };
-        },
-      },
+      metadataCache,
     },
     db: reads(),
     citationLookup: {
@@ -207,7 +202,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     readLookup,
     removeSource() {
       file = null;
-      for (const cb of deleted) cb(NOTE);
+      metadataCache.delete(NOTE);
     },
     show,
     [Symbol.asyncDispose]: () => popover[Symbol.asyncDispose](),

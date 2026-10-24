@@ -8,6 +8,7 @@ import type { EditorView } from "@codemirror/view";
 import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import type { NoteFeature } from "@/services/note-feature";
 import { buildUseLedger } from "@/services/use-ledger/__fixtures__";
@@ -43,7 +44,7 @@ function host(): App {
       offref: () => {},
       onLayoutReady: () => {},
     },
-    metadataCache: { on: () => ({ e: { offref: () => {} } }) },
+    metadataCache: new MemoryMetadataCache(),
   } as unknown as App;
 }
 
