@@ -185,9 +185,6 @@ catalogs:
     '@types/yargs':
       specifier: ^17.0.35
       version: 17.0.35
-    '@typescript/native':
-      specifier: npm:typescript@7.0.2
-      version: 7.0.2
     ajv:
       specifier: ^8.20.0
       version: 8.20.0
@@ -322,9 +319,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
-      '@typescript/native':
-        specifier: 'catalog:'
-        version: typescript@7.0.2
       '@zotlit/config':
         specifier: workspace:*
         version: link:packages/config
