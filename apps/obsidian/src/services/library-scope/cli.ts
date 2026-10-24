@@ -11,7 +11,7 @@ import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import { catchRejection, decodeCliParams, noCliParams } from "@/lib/cli-params";
 import type { CliRejection } from "@/lib/cli-params";
 import { Effect } from "@/lib/effect";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 
 /**
  * The wire format of the `zotlit:library-scope` commands, versioned on its
@@ -63,7 +63,7 @@ function envelope(command: LibraryScopeCommand, tail: object): string {
 }
 
 interface LibraryScopeCliDeps {
-  libraryScope: Pick<PlainLibraryScope, "current">;
+  libraryScope: { readonly current: ResolvedLibraryScope | null };
 }
 
 export function registerLibraryScopeCli(

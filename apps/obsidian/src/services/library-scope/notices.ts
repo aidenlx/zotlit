@@ -1,10 +1,16 @@
+import type { Stream } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 // UI seam for Library Scope: the warn-once notice for a broken saved value.
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
-import type { PlainLibraryScope } from "./plain";
+/** What the notice watches of the Library Scope. */
+interface LibraryScopeSignals {
+  readonly invalid: boolean;
+  readonly changed: Stream.Stream<unknown>;
+  readonly "libraries-changed": Stream.Stream<void>;
+}
 
 interface LibraryScopeNoticeCopy {
   title: string;
@@ -26,7 +32,7 @@ interface LibraryScopeNoticeHandle {
  */
 export function registerLibraryScopeNotices(
   runtime: SubscriptionRuntime,
-  service: Pick<PlainLibraryScope, "invalid" | "changed" | "libraries-changed">,
+  service: LibraryScopeSignals,
   openSettings: () => void,
 ): () => void {
   return subscribeLibraryScopeInvalid(runtime, service, () =>
@@ -41,7 +47,7 @@ export function registerLibraryScopeNotices(
  */
 export function subscribeLibraryScopeInvalid(
   runtime: SubscriptionRuntime,
-  service: Pick<PlainLibraryScope, "invalid" | "changed" | "libraries-changed">,
+  service: LibraryScopeSignals,
   showNotice: () => LibraryScopeNoticeHandle,
 ): () => void {
   let notice: LibraryScopeNoticeHandle | null = null;

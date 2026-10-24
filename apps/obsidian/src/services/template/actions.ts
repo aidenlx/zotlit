@@ -10,13 +10,13 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import type { PlainTemplate } from "./plain";
+import type { TemplateOperations } from "./service";
 
 const logger = getLogger(["template", "actions"]);
 
 /** The template surface the Citation text entry points read. */
 export type CitationTemplateActions = Pick<
-  PlainTemplate,
+  TemplateOperations,
   "materializeCitationTemplate"
 >;
 

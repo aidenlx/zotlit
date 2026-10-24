@@ -1,10 +1,9 @@
+import type { Stream } from "@/lib/effect";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 // Lifecycle notices for citation formatting prerequisites.
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-
-import type { PlainBibliographyRender } from "./render-cache/plain";
 
 interface CitationStyleNoticeCopy {
   title: string;
@@ -19,7 +18,7 @@ interface CitationStyleNoticeHandle {
 /** Show one recovery notice when the render cache first finds its selected style unavailable. */
 export function registerCitationStyleNotice(
   runtime: SubscriptionRuntime,
-  renderCache: Pick<PlainBibliographyRender, "missingStyle">,
+  renderCache: { readonly missingStyle: Stream.Stream<string> },
   openSettings: () => void,
 ): () => void {
   return subscribeCitationStyleMissing(runtime, renderCache, () =>
@@ -30,7 +29,7 @@ export function registerCitationStyleNotice(
 /** Subscribe the notice lifecycle without coupling its trigger to rendering. */
 export function subscribeCitationStyleMissing(
   runtime: SubscriptionRuntime,
-  renderCache: Pick<PlainBibliographyRender, "missingStyle">,
+  renderCache: { readonly missingStyle: Stream.Stream<string> },
   showNotice: () => CitationStyleNoticeHandle,
 ): () => void {
   let notice: CitationStyleNoticeHandle | null = null;

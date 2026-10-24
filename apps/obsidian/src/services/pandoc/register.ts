@@ -30,9 +30,12 @@ import { Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { Settings } from "@/services/settings/schema";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsState,
+} from "@/services/zotero-reads/service";
 
 import {
   CSL_COMMAND,
@@ -62,9 +65,11 @@ export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
   app: App;
-  reads: Pick<PlainZoteroReads, "reads" | "activeReadMode">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  settings: Pick<PlainPluginSettings, "current">;
+  reads: Pick<ZoteroReadsState, "activeReadMode"> & {
+    readonly reads: ZoteroReadsApi;
+  };
+  zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir">;
+  settings: { readonly current: Readonly<Settings> };
   profile: ProfileReader;
 }
 

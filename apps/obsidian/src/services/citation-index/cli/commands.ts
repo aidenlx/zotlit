@@ -5,8 +5,10 @@ import type { CliCommandHandler } from "@/lib/cli-command";
 import { catchRejection } from "@/lib/cli-params";
 import { Cause, Effect } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type { DocumentCitationSet } from "@/services/citation-index/service";
+import type {
+  CitationIndex,
+  DocumentCitationSet,
+} from "@/services/citation-index/service";
 
 import {
   ambiguousCitekeyDiagnostic,
@@ -49,7 +51,7 @@ interface CitationsCliDeps {
   getIdentity(): CitationsIdentity | Promise<CitationsIdentity>;
   settleTimeoutMs?: number;
   index: Pick<
-    PlainCitationIndex,
+    CitationIndex["Service"],
     "readCitedBy" | "readReferences" | "readAnnotationUses"
   >;
 }

@@ -4,7 +4,7 @@ import type { TFile, Vault } from "obsidian";
 import { rewriteScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
-import type { PlainCitationParse } from "@/services/citation-parse/plain";
+import type { ParseClient } from "@/services/citation-parse/client";
 
 import { occurrencesEqual } from "./scan";
 import type { CitationOccurrence } from "./scan";
@@ -82,7 +82,7 @@ export async function readParsedNote(
     signal,
   }: {
     vault: Pick<Vault, "cachedRead">;
-    parser: Pick<PlainCitationParse, "parse">;
+    parser: Pick<ParseClient, "parse">;
     signal: AbortSignal;
   },
 ): Promise<ParsedNote> {

@@ -6,9 +6,8 @@
 import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { CitationIndex } from "@/services/citation-index/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 import {
   ANNOTATION_USES_COMMAND,
@@ -26,10 +25,10 @@ import type {
 interface CitationsCliRegistrationDeps {
   app: App;
   citationIndex: Pick<
-    PlainCitationIndex,
+    CitationIndex["Service"],
     "readCitedBy" | "readReferences" | "readAnnotationUses"
   >;
-  zoteroPref: Pick<PlainZoteroPref, "sourceId" | "databasePath">;
+  zoteroPref: Pick<ZoteroPrefSnapshot, "sourceId" | "databasePath">;
 }
 
 /** Neither selector is `required`: the command takes exactly one. */
