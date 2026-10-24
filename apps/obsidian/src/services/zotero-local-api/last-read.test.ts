@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 
@@ -227,6 +228,7 @@ it.each([null, "BBBBBBBBBBBB"])(
     await client.ready;
     await client.probe();
     const reads = {
+      runtime: testRuntime(),
       acquireRead: async () => ({
         reads: { DatabaseIdentity: () => Effect.succeed({ serverID }) },
         [Symbol.asyncDispose]: async () => {},
@@ -246,6 +248,7 @@ it("contains a database failure without delaying local reading", async () => {
   await client.ready;
   await client.probe();
   const reads = {
+    runtime: testRuntime(),
     acquireRead: async () => {
       throw new Error("closed database");
     },

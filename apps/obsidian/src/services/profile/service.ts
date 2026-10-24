@@ -266,7 +266,7 @@ interface ProfileEngineDeps {
 
 export type ProfileReader = Pick<
   PlainProfile,
-  "loaded" | "profiles" | "resolveProfile" | "profileOf" | "on"
+  "loaded" | "profiles" | "resolveProfile" | "profileOf" | "changed"
 >;
 
 class ProfileEngine {

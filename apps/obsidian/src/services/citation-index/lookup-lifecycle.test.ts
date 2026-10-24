@@ -2,6 +2,7 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { Context, Deferred, Effect, Fiber, Layer, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { layerLibraryScope } from "@/services/library-scope/service";
 import { layerQueryClients } from "@/services/query-client/service";
@@ -108,10 +109,10 @@ it.effect(
       });
       inert.set({ citekeys: ["first"] });
       expect(inert.current).toBeNull();
-      f.plain.subscribe(() => {
+      subscribe(f.runtime, f.plain.changes, () => {
         throw new Error("released subscriber");
       })();
-      f.plain.on("changed", () => {
+      subscribe(f.runtime, f.plain["changed"], () => {
         throw new Error("released event");
       })();
       inert[Symbol.dispose]();

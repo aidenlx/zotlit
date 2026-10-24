@@ -8,6 +8,7 @@ import {
 } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import { Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -293,19 +294,22 @@ beforeEach(async () => {
           return reads!.reads;
         },
         acquireRead: () => reads!.acquireRead(),
-        on: (event: string, callback: () => void) => {
-          if (event === "changed") onDbChanged = callback;
-          return () => undefined;
-        },
+        changed: (() => {
+          const source = testEvent<void>();
+          onDbChanged = () => source.emit();
+          return source.stream;
+        })(),
       },
       citationLookup: {
         get status() {
           return citekeyResolution ?? "pending";
         },
-        on: (event: string, callback: () => void) => {
-          if (event === "status-changed") onCitedByInvalidated = callback;
-          return () => undefined;
-        },
+        "status-changed": (() => {
+          const source = testEvent<void>();
+          onCitedByInvalidated = () => source.emit();
+          return source.stream;
+        })(),
+        changed: Stream.empty,
       },
       citationIndex: {
         getDocumentCitationSet: () => {
@@ -313,7 +317,10 @@ beforeEach(async () => {
           scans.push(deferred);
           return deferred.promise;
         },
-        on: () => () => undefined,
+        changed: Stream.empty,
+        "membership-changed": Stream.empty,
+        "cited-by-invalidated": Stream.empty,
+        backfilled: Stream.empty,
       },
       runtime: streamRuntime,
       citationText: {
@@ -330,7 +337,7 @@ beforeEach(async () => {
       citekeyEditor: { openIndexedKey: () => Promise.resolve() },
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
-        subscribe: () => () => undefined,
+        changes: Stream.empty,
         decline: () => undefined,
       },
       bibliographyRender: {
@@ -340,10 +347,13 @@ beforeEach(async () => {
           renders.push(deferred);
           return deferred.promise;
         },
-        on: (event: string, callback: () => void) => {
-          if (event === "invalidated") onInvalidated = callback;
-          return () => undefined;
-        },
+        invalidated: (() => {
+          const source = testEvent<void>();
+          onInvalidated = () => source.emit();
+          return source.stream;
+        })(),
+        changed: Stream.empty,
+        settled: Stream.empty,
       },
       profile,
       openSettings: () => undefined,

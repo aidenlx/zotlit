@@ -3,13 +3,16 @@ import type { TFile } from "obsidian";
 
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
 import { NoteIndex } from "./service";
-import type { NoteIndexChange, NoteIndexEvents } from "./service";
+import type { NoteIndexChange } from "./service";
 
 export interface PlainNoteIndex {
+  readonly changes: Stream.Stream<NoteIndexChange>;
+  readonly changed: Stream.Stream<TFile>;
+  readonly "frontmatter-changed": Stream.Stream<TFile>;
+  readonly indexed: Stream.Stream<void>;
   getNotesByItemKey(indexedKey: string): TFile[];
   getImportedNoteByNoteKey(noteKey: string): TFile[];
   getNotesByProfile(selector: ProfileSelector): {
@@ -21,13 +24,6 @@ export interface PlainNoteIndex {
   whenIndexed(): Promise<void>;
   /** Waits for queued rename reads, including those that change no keys. */
   whenSettled(): Promise<void>;
-  /** Future index changes until the returned function stops the subscription. */
-  subscribe(callback: (change: NoteIndexChange) => void): () => void;
-  /** Compatibility surface for existing event consumers. */
-  on<K extends keyof NoteIndexEvents>(
-    event: K,
-    callback: NoteIndexEvents[K],
-  ): () => void;
 }
 
 export function plainNoteIndex(
@@ -53,15 +49,6 @@ export function plainNoteIndex(
     if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
       throw Cause.squash(exit.cause);
   };
-  const subscribeChanges = (callback: (change: NoteIndexChange) => void) => {
-    if (closed()) return () => {};
-    const seen = runtime.runSync(index.current);
-    return subscribe(
-      runtime,
-      Stream.dropWhile(index.changes, (next) => next === seen),
-      callback,
-    );
-  };
   return {
     getNotesByItemKey: (key) => read(index.getNotesByItemKey(key)),
     getImportedNoteByNoteKey: (key) =>
@@ -71,13 +58,27 @@ export function plainNoteIndex(
     getIndexedItemKeys: () => read(index.getIndexedItemKeys()),
     whenSettled: () => wait(index.whenSettled()),
     whenIndexed: () => wait(index.whenIndexed()),
-    subscribe: subscribeChanges,
-    on: (event, callback) =>
-      subscribeChanges((change) => {
-        if (change.type !== event) return;
-        if (change.type === "indexed")
-          (callback as NoteIndexEvents["indexed"])();
-        else (callback as NoteIndexEvents["changed"])(change.file);
-      }),
+    changes: index.changes,
+    changed: index.changes.pipe(
+      Stream.drop(1),
+      Stream.filter(
+        (change): change is Extract<NoteIndexChange, { file: TFile }> =>
+          change.type === "changed",
+      ),
+      Stream.map((change) => change.file),
+    ),
+    "frontmatter-changed": index.changes.pipe(
+      Stream.drop(1),
+      Stream.filter(
+        (change): change is Extract<NoteIndexChange, { file: TFile }> =>
+          change.type === "frontmatter-changed",
+      ),
+      Stream.map((change) => change.file),
+    ),
+    indexed: index.changes.pipe(
+      Stream.drop(1),
+      Stream.filter((change) => change.type === "indexed"),
+      Stream.map(() => undefined),
+    ),
   };
 }

@@ -14,6 +14,7 @@ import {
   Scope,
   Stream,
 } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { settingsOf, plainSettingsOf, settingsRuntimeOf } from "./__fixtures__";
@@ -136,7 +137,7 @@ it.effect(
       });
       const seen: (string | null)[] = [];
       const changed = Promise.withResolvers<void>();
-      const stop = settings.subscribe((value) => {
+      const stop = subscribe(settings.runtime, settings.changes, (value) => {
         seen.push(value?.["server.hostname"] ?? null);
         if (value?.["server.hostname"] === "/edited") changed.resolve();
       });
@@ -324,7 +325,7 @@ it.effect("#1705 a throwing subscriber receives both immediate edits", () =>
     });
     const seen: string[] = [];
     const delivered = Promise.withResolvers<void>();
-    const stop = settings.subscribe((value) => {
+    const stop = subscribe(settings.runtime, settings.changes, (value) => {
       seen.push(value["server.hostname"]);
       if (value["server.hostname"] === "/a") throw new Error("listener failed");
       if (value["server.hostname"] === "/b") delivered.resolve();
@@ -364,7 +365,7 @@ it.effect("#1705 adapter calls are safe after whole-runtime disposal", () =>
     settings.updateDefaultLiteratureNoteProfileBindings({
       "note.import-colored-highlights": true,
     });
-    const stop = settings.subscribe(() => {});
+    const stop = subscribe(settings.runtime, settings.changes, () => {});
     stop();
     stop();
     settings.release();

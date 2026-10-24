@@ -41,21 +41,6 @@ interface Read {
 const NONE: Read = { contributions: EMPTY_CONTRIBUTIONS, frontmatter: null };
 type Reading = Read | typeof UNREAD;
 
-export interface NoteIndexEvents {
-  /** A note's Indexed Key contribution changed: it was added, moved or removed. */
-  changed: (file: TFile) => void;
-  /**
-   * The frontmatter of a note the index tracks changed, in any key; also
-   * when the note joins or leaves the index by a frontmatter edit.
-   */
-  "frontmatter-changed": (file: TFile) => void;
-  /**
-   * The Full Scan has indexed the notes: what the index answered before it
-   * may have changed in any way, with no `changed` for each note.
-   */
-  indexed: () => void;
-}
-
 export type NoteIndexChange =
   | { readonly type: "initial" }
   | { readonly type: "indexed" }

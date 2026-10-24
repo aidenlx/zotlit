@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { expect, it } from "@/lib/effect-vitest";
 
 import { openManagedBinary } from "./__fixtures__";
@@ -47,9 +49,13 @@ it.effect(
       await binary.getEngine();
       const snapshot = binary.getStatus();
       let changes = 0;
-      const unsubscribe = binary.subscribe(() => {
-        changes++;
-      });
+      const unsubscribe = subscribe(
+        binary.runtime,
+        Stream.drop(binary.changes, 1),
+        () => {
+          changes++;
+        },
+      );
       await binary[Symbol.asyncDispose]();
       expect(releases).toBe(1);
       expect(binary.getStatus()).toBe(snapshot);
@@ -57,9 +63,13 @@ it.effect(
       await expect(binary.install()).resolves.toBeUndefined();
       await expect(binary.uninstall()).resolves.toBeUndefined();
       expect(() => binary.decline()).not.toThrow();
-      const afterClose = binary.subscribe(() => {
-        changes++;
-      });
+      const afterClose = subscribe(
+        binary.runtime,
+        Stream.drop(binary.changes, 1),
+        () => {
+          changes++;
+        },
+      );
       afterClose();
       unsubscribe();
       expect(changes).toBe(0);
@@ -96,11 +106,15 @@ it.effect("keeps a throwing listener subscribed for immediate changes", () =>
     );
     let changes = 0;
     const installed = Promise.withResolvers<void>();
-    const unsubscribe = binary.subscribe(() => {
-      changes++;
-      if (changes === 1) throw new Error("listener failed");
-      if (binary.getStatus().kind === "installed") installed.resolve();
-    });
+    const unsubscribe = subscribe(
+      binary.runtime,
+      Stream.drop(binary.changes, 1),
+      () => {
+        changes++;
+        if (changes === 1) throw new Error("listener failed");
+        if (binary.getStatus().kind === "installed") installed.resolve();
+      },
+    );
     expect(changes).toBe(0);
     binary.decline();
     const installing = binary.install();
@@ -135,10 +149,14 @@ it.effect(
       );
       const seen: string[] = [];
       const changed = Promise.withResolvers<void>();
-      const unsubscribe = binary.subscribe(() => {
-        seen.push(binary.getStatus().kind);
-        if (binary.getStatus().kind === "installing") changed.resolve();
-      });
+      const unsubscribe = subscribe(
+        binary.runtime,
+        Stream.drop(binary.changes, 1),
+        () => {
+          seen.push(binary.getStatus().kind);
+          if (binary.getStatus().kind === "installing") changed.resolve();
+        },
+      );
       const first = binary.install();
       expect(binary.install()).toBe(first);
       expect(binary.getStatus()).toEqual({

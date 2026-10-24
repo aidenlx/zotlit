@@ -118,10 +118,6 @@ const EMBEDDED_DEFAULT_WINNER = {
   source: { kind: "embedded-default" },
 } as const satisfies TemplateWinner;
 
-export interface TemplateServiceEvents {
-  "compile-status-changed": () => void;
-}
-
 interface TemplateEngineOptions {
   app: App;
   settings: Pick<PlainPluginSettings, "current">;

@@ -4,6 +4,7 @@ import { describe, expect, vi } from "vitest";
 import type { Library } from "@zotlit/db";
 
 import { Deferred, Effect, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -102,7 +103,7 @@ describe("LibraryScope", () => {
         });
         const before = f.plain.current;
         const changed = vi.fn();
-        f.plain.on("libraries-changed", changed);
+        subscribe(f.runtime, f.plain["libraries-changed"], changed);
         yield* f.refresh([
           MY_LIBRARY,
           GROUP_200,
@@ -336,7 +337,7 @@ const makeService = Effect.fnUntraced(function* (
     expect.poll(() => f.reads.state).not.toBe("loading"),
   );
   const changed = vi.fn<(scope: ResolvedLibraryScope | null) => void>();
-  f.plain.on("changed", changed);
+  subscribe(f.runtime, f.plain["changed"], changed);
   const refreshSource = Effect.fnUntraced(function* (
     libraries: readonly Library[] | null,
   ) {

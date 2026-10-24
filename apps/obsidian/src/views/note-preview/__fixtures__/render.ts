@@ -1,3 +1,4 @@
+import { Stream } from "@/lib/effect";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -113,7 +114,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   // first `changed` lands before a view subscribes.
   await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
   await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
-  const deps: NativeRenderDeps = {
+  const deps: NativeRenderDeps = { runtime: settings.runtime,
     citationParse: inProcessParseClient,
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
@@ -126,7 +127,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
         Object.fromEntries(indexedKeys.map((key) => [key, key === "MAIN2345" ? "figures2014" : null])),
       ),
     },
-    bibliographyRender: { on: () => () => {}, renderCitations, readCitations, readBibliography: async () => null, vaultPresentation: { styleId: null, locale: null } },
+    bibliographyRender: { changed: Stream.empty, settled: Stream.empty, invalidated: Stream.empty, "style-missing": Stream.empty, renderCitations, readCitations, readBibliography: async () => null, vaultPresentation: { styleId: null, locale: null } },
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });

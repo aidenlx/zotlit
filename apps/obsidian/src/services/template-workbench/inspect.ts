@@ -24,6 +24,8 @@ import type { CliOutput, CliParamName } from "@/lib/cli-params";
 import { Clock, Duration, Effect, Schema } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { isErrno } from "@/lib/errno";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
@@ -170,6 +172,7 @@ export const verifySavedSources = Effect.fn(
 );
 
 export interface InspectDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   profile: Pick<
     PlainProfile,
@@ -193,7 +196,7 @@ export interface InspectDeps {
     | "getPartialDocuments"
     | "getReservedPartialFiles"
     | "getLoadedDocumentSource"
-    | "on"
+    | "compile-status-changed"
   >;
   folder: () => string;
   identity: () => Promise<WorkbenchIdentity>;
@@ -556,7 +559,11 @@ export function createInspectHandler(
           read: (path) => deps.app.vault.adapter.read(path),
           loaded: (path) => deps.templates.getLoadedDocumentSource(path),
           onChange: (callback) =>
-            deps.templates.on("compile-status-changed", callback),
+            subscribe(
+              deps.runtime,
+              deps.templates["compile-status-changed"],
+              callback,
+            ),
           absent: new Set(builtinPaths),
         },
         paths,

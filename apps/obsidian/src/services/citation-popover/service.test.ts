@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import {
@@ -123,6 +126,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
       ),
   );
   const service = new CitationPopover({
+    runtime: testRuntime(),
     app: {
       vault: {
         getFileByPath: () => file,
@@ -141,7 +145,8 @@ function harness(read: () => Promise<DocumentCitations | null>) {
         throw new Error("Document fills use their one document answer");
       },
       status: "fresh",
-      on: () => () => undefined,
+      changed: Stream.empty,
+      "status-changed": Stream.empty,
     },
     citationIndex: {
       getDocumentCitationSet: async (
@@ -160,7 +165,10 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     profile: profileReader(),
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      on: () => () => undefined,
+      changed: Stream.empty,
+      settled: Stream.empty,
+      invalidated: Stream.empty,
+      "style-missing": Stream.empty,
       render: () =>
         Promise.resolve({
           kind: "held" as const,
@@ -274,12 +282,23 @@ describe("source-less Citation Popover", () => {
       hasEntryMarkers: true,
     }));
     await using service = new CitationPopover({
+      runtime: testRuntime(),
       app: {},
       db: reads([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]),
-      citationLookup: { status: "pending", on: () => () => undefined },
+      citationLookup: {
+        status: "pending",
+        changed: Stream.empty,
+        "status-changed": Stream.empty,
+      },
       libraryScope: { current: [] },
       profile: profileReader(),
-      bibliographyRender: { readBibliography, on: () => () => undefined },
+      bibliographyRender: {
+        readBibliography,
+        changed: Stream.empty,
+        settled: Stream.empty,
+        invalidated: Stream.empty,
+        "style-missing": Stream.empty,
+      },
     } as never);
 
     void service.showWork({
@@ -313,15 +332,12 @@ describe("source-less Citation Popover", () => {
 });
 
 function workHarness() {
-  const listeners = new Map<string, Set<() => void>>();
-  const on = (event: string, listener: () => void) => {
-    const group = listeners.get(event) ?? new Set<() => void>();
-    group.add(listener);
-    listeners.set(event, group);
-    return () => {
-      group.delete(listener);
-    };
-  };
+  const events = testEvents<Record<string, () => void>>([
+    "changed",
+    "status-changed",
+    "invalidated",
+  ]);
+
   const db = reads();
   const citationLookup = {
     status: "fresh" as "pending" | "fresh" | "failed",
@@ -335,19 +351,20 @@ function workHarness() {
         ),
       ),
     ),
-    on,
+    ...events.streams,
   };
   const readBibliography = vi.fn<
     () => Promise<BibliographyRenderResult | null>
   >(async () => null);
   const open = vi.fn();
   const service = new CitationPopover({
+    runtime: testRuntime(),
     app: {},
     db,
     citationLookup,
     libraryScope: { current: [] },
     profile: profileReader(),
-    bibliographyRender: { readBibliography, on },
+    bibliographyRender: { readBibliography, ...events.streams },
   } as never);
   const element = document.createElement("div");
   const root = createRoot(element);
@@ -358,7 +375,7 @@ function workHarness() {
     readBibliography,
     open,
     emit(event: string) {
-      for (const listener of listeners.get(event) ?? []) listener();
+      events.emit(event);
     },
     show(
       work: WorkHoverRequest["work"] = { kind: "item", indexedKey: "ABCD2345" },
@@ -748,6 +765,7 @@ it.each([false, true])(
       },
     );
     await using service = new CitationPopover({
+      runtime: testRuntime(),
       app: h.app,
       db: h.db,
       citationIndex: h.index,
@@ -757,7 +775,10 @@ it.each([false, true])(
       profile: profileReader(),
       bibliographyRender: {
         vaultPresentation: { styleId: null, locale: null },
-        on: () => () => {},
+        changed: Stream.empty,
+        settled: Stream.empty,
+        invalidated: Stream.empty,
+        "style-missing": Stream.empty,
         render: () => Promise.resolve({ kind: "unavailable" }),
       } as never,
     });

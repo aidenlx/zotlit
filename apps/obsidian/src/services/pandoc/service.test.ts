@@ -2,7 +2,9 @@ import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, vi } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { openManagedBinary } from "@/services/managed-binary/__fixtures__";
 import type {
@@ -260,7 +262,11 @@ describe("Pandoc Engine", () => {
     Effect.promise(async () => {
       const { service } = await harness();
       const listener = vi.fn();
-      const unsubscribe = service.subscribe(listener);
+      const unsubscribe = subscribe(
+        service.runtime,
+        Stream.drop(service.changes, 1),
+        listener,
+      );
 
       await service.install();
       expect(listener.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -324,7 +330,7 @@ describe("Pandoc Engine", () => {
         createEngine,
       });
       const listener = vi.fn();
-      service.subscribe(listener);
+      subscribe(service.runtime, Stream.drop(service.changes, 1), listener);
 
       await expect(service.getEngine()).rejects.toThrow(/bad magic/);
 

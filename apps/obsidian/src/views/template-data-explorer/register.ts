@@ -1,5 +1,6 @@
 import type { App, PaneType, Plugin } from "obsidian";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
@@ -24,15 +25,27 @@ type ExplorerPlugin = Pick<
 >;
 
 export interface ExplorerRegistrationDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   itemLookup: ItemLookup;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   templates: Pick<
     PlainTemplate,
     "javascriptTemplatesEnabled" | "render" | "renderCitation"

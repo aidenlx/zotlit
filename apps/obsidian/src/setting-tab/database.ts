@@ -7,6 +7,7 @@ import type {
 } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
 import type {
@@ -207,29 +208,29 @@ function renderDatabaseFileRow(
 
   applyStatus();
 
-  stack.defer(ctx.zoteroPref.on("changed", applyPath));
+  stack.defer(subscribe(ctx.runtime, ctx.zoteroPref["changed"], applyPath));
   stack.defer(
-    ctx.db.on("changed", () => {
+    subscribe(ctx.runtime, ctx.db["changed"], () => {
       lastRefreshFailed = false;
       lastErrorMessage = null;
       applyStatus();
     }),
   );
   stack.defer(
-    ctx.db.on("degraded", (err) => {
+    subscribe(ctx.runtime, ctx.db["degraded"], (err) => {
       lastErrorMessage = extractErrorMessage(err);
       applyStatus();
     }),
   );
   stack.defer(
-    ctx.db.on("refresh-failed", (err) => {
+    subscribe(ctx.runtime, ctx.db["refresh-failed"], (err) => {
       lastRefreshFailed = true;
       lastErrorMessage = extractErrorMessage(err);
       applyStatus();
     }),
   );
   stack.defer(
-    ctx.db.on("refreshing", (active) => {
+    subscribe(ctx.runtime, ctx.db["refreshing"], (active) => {
       refreshing = active;
       applyStatus();
     }),
@@ -299,9 +300,11 @@ function renderReadModeRow(
   });
 
   applyActiveMode();
-  stack.defer(ctx.db.on("changed", applyActiveMode));
-  stack.defer(ctx.db.on("degraded", applyActiveMode));
-  stack.defer(ctx.db.on("refresh-failed", applyActiveMode));
+  stack.defer(subscribe(ctx.runtime, ctx.db["changed"], applyActiveMode));
+  stack.defer(subscribe(ctx.runtime, ctx.db["degraded"], applyActiveMode));
+  stack.defer(
+    subscribe(ctx.runtime, ctx.db["refresh-failed"], applyActiveMode),
+  );
 
   return () => stack.dispose();
 }
@@ -401,7 +404,7 @@ function renderProfileDirRow(
   });
 
   stack.defer(
-    pref.on("changed", () => {
+    subscribe(ctx.runtime, pref["changed"], () => {
       applyStatus();
       if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
@@ -479,9 +482,9 @@ function renderDataDirRow(
 
   applyPath();
 
-  stack.defer(pref.on("changed", applyPath));
+  stack.defer(subscribe(ctx.runtime, pref["changed"], applyPath));
   stack.defer(
-    pref.on("data-dir-changed", () => {
+    subscribe(ctx.runtime, pref["data-dir-changed"], () => {
       applyPath();
       if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
@@ -521,9 +524,9 @@ function renderSourceIdRow(
   setting.setDesc(desc);
   refresh();
 
-  stack.defer(ctx.settings.subscribe(() => refresh()));
-  stack.defer(pref.on("changed", refresh));
-  stack.defer(pref.on("data-dir-changed", refresh));
+  stack.defer(subscribe(ctx.runtime, ctx.settings.changes, () => refresh()));
+  stack.defer(subscribe(ctx.runtime, pref["changed"], refresh));
+  stack.defer(subscribe(ctx.runtime, pref["data-dir-changed"], refresh));
 
   return () => stack.dispose();
 }

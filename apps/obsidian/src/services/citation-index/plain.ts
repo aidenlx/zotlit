@@ -1,7 +1,6 @@
 /** Citation services for views and legacy services, on the plugin runtime. */
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { CitationLookup, inertObservation } from "./lookup-service";
@@ -11,7 +10,6 @@ import type {
   CitationLookupStatus,
 } from "./lookup-service";
 import { CitationIndex } from "./service";
-import type { CitationIndexState } from "./service";
 
 export interface PlainCitationLookup {
   readonly status: CitationLookupStatus;
@@ -22,8 +20,8 @@ export interface PlainCitationLookup {
   ): Promise<CitationLookupAnswer>;
   observe(changed: () => void): CitationLookupObservation;
   whenResolved(): Promise<void>;
-  subscribe(callback: (state: CitationLookupState) => void): () => void;
-  on(event: "changed" | "status-changed", callback: () => void): () => void;
+  readonly changed: Stream.Stream<void>;
+  readonly "status-changed": Stream.Stream<void>;
 }
 
 export function plainCitationLookup(
@@ -41,14 +39,6 @@ export function plainCitationLookup(
   const closed = () => runtime.scope.state._tag === "Closed";
   const released = () =>
     new DOMException("Citation Lookup released", "AbortError");
-  const subscribeChanges = (callback: (state: CitationLookupState) => void) => {
-    const seen = run(service.current);
-    return subscribe(
-      runtime,
-      Stream.dropWhile(service.changes, (next) => next === seen),
-      callback,
-    );
-  };
   return {
     get status() {
       return run(service.current).status;
@@ -74,31 +64,20 @@ export function plainCitationLookup(
     async whenResolved() {
       if (!closed()) await runtime.runPromiseExit(service.whenResolved());
     },
-    subscribe: subscribeChanges,
-    on(event, callback) {
-      let before = run(service.current);
-      return subscribeChanges((next) => {
-        const previous = before;
-        before = next;
-        if (
-          event === "changed"
-            ? previous.revision !== next.revision
-            : previous.status !== next.status
-        )
-          callback();
-      });
-    },
+    changed: service.changes.pipe(
+      Stream.changesWith((a, b) => a.revision === b.revision),
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
+    "status-changed": service.changes.pipe(
+      Stream.changesWith((a, b) => a.status === b.status),
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
   };
 }
 
 /** Citation Index for views and legacy services, on the plugin runtime. */
-
-interface IndexCallbacks {
-  changed: (path: string) => void;
-  backfilled: () => void;
-  "membership-changed": () => void;
-  "cited-by-invalidated": () => void;
-}
 
 export type PlainCitationIndex = ReturnType<typeof plainCitationIndex>;
 
@@ -130,42 +109,6 @@ export function plainCitationIndex(
     const error = Cause.squash(exit.cause);
     throw Cause.isUnknownError(error) ? error.cause : error;
   }
-  function listen<K extends keyof IndexCallbacks>(
-    event: K,
-    callback: IndexCallbacks[K],
-  ): () => void {
-    if (event === "backfilled")
-      return subscribe(
-        runtime,
-        service.changes.pipe(
-          Stream.map((state) => state.backfilled),
-          Stream.changes,
-          Stream.filter(Boolean),
-        ),
-        () => (callback as () => void)(),
-      );
-    return subscribe(runtime, service.events, (value) => {
-      if (value.type !== event) return;
-      if (value.type === "changed")
-        (callback as IndexCallbacks["changed"])(value.path);
-      else (callback as () => void)();
-    });
-  }
-  function subscribeIndex(
-    callback: (state: CitationIndexState) => void,
-  ): () => void;
-  function subscribeIndex<K extends keyof IndexCallbacks>(
-    event: K,
-    callback: IndexCallbacks[K],
-  ): () => void;
-  function subscribeIndex<K extends keyof IndexCallbacks>(
-    event: K | ((state: CitationIndexState) => void),
-    callback?: IndexCallbacks[K],
-  ): () => void {
-    return typeof event === "function"
-      ? subscribe(runtime, service.changes, event)
-      : listen(event, callback!);
-  }
   return {
     get coverage() {
       return run(service.current).coverage;
@@ -173,26 +116,25 @@ export function plainCitationIndex(
     get current() {
       return run(service.current);
     },
-    subscribe: subscribeIndex,
-    on: <K extends keyof IndexCallbacks>(
-      event: K,
-      callback: IndexCallbacks[K],
-    ) => subscribeIndex(event, callback),
-    once<K extends keyof IndexCallbacks>(
-      event: K,
-      callback: IndexCallbacks[K],
-    ) {
-      let seen = false;
-      let off = () => {};
-      off = listen(event, ((...args: unknown[]) => {
-        if (seen) return;
-        seen = true;
-        off();
-        (callback as (...args: unknown[]) => void)(...args);
-      }) as IndexCallbacks[K]);
-      if (seen) off();
-      return off;
-    },
+    changes: service.changes,
+    changed: service.events.pipe(
+      Stream.filter((event) => event.type === "changed"),
+      Stream.map((event) => event.path),
+    ),
+    backfilled: service.changes.pipe(
+      Stream.map((state) => state.backfilled),
+      Stream.changes,
+      Stream.filter(Boolean),
+      Stream.map(() => undefined),
+    ),
+    "membership-changed": service.events.pipe(
+      Stream.filter((event) => event.type === "membership-changed"),
+      Stream.map(() => undefined),
+    ),
+    "cited-by-invalidated": service.events.pipe(
+      Stream.filter((event) => event.type === "cited-by-invalidated"),
+      Stream.map(() => undefined),
+    ),
     observeCitedBy: (...args: Parameters<typeof service.observeCitedBy>) =>
       closed() ? () => {} : runtime.runSync(service.observeCitedBy(...args)),
     syntaxes: (...args: Parameters<typeof service.syntaxes>) =>

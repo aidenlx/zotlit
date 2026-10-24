@@ -8,6 +8,7 @@ import type { VersionedCliHost } from "@/lib/cli-command";
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -69,8 +70,20 @@ import { CONTRACT_ROOT_NAMES } from "./schema";
 import { choices } from "./vocabulary";
 
 interface TemplateWorkbenchRegistrationDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   noteIndex: Pick<
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
@@ -109,7 +122,7 @@ interface TemplateWorkbenchRegistrationDeps {
     | "getPartialDocuments"
     | "getReservedPartialFiles"
     | "getLoadedDocumentSource"
-    | "on"
+    | "compile-status-changed"
     | "render"
     | "renderCitation"
   >;
@@ -361,6 +374,7 @@ export function registerTemplateWorkbench(
       "Inspect a Template Document and verify saved source freshness",
     flags: inspectFlags,
     handler: createInspectHandler({
+      runtime: deps.runtime,
       app: deps.app,
       profile: deps.profile,
       templates: deps.templates,
@@ -373,6 +387,7 @@ export function registerTemplateWorkbench(
       "Check every saved Profile create or update component with verified source freshness",
     flags: checkFlags,
     handler: createCheckHandler({
+      runtime: deps.runtime,
       pluginVersion: host.manifest.version,
       hostVersion: `Obsidian ${apiVersion}`,
       app: deps.app,

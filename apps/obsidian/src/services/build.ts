@@ -169,7 +169,7 @@ export async function buildServices(
     })
     .use({
       localServer: ({ settings, zoteroPref, noteIndex }) =>
-        new LocalServerService({ settings, zoteroPref, noteIndex }),
+        new LocalServerService({ runtime, settings, zoteroPref, noteIndex }),
     })
     .useValue({
       chineseSegmenter: () => plainChineseSegmenter(runtime),
@@ -195,6 +195,7 @@ export async function buildServices(
     .use({
       attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
         new AttachmentResolver({
+          runtime,
           reads: zoteroReads,
           queries: queryClient,
           zoteroPref,
@@ -218,6 +219,7 @@ export async function buildServices(
     .use({
       zoteroLocalApi: ({ zoteroPref, localServer }) =>
         new ZoteroLocalApiClient({
+          runtime,
           fetch: nodeFetch,
           zoteroPref,
           localServer,
@@ -237,6 +239,7 @@ export async function buildServices(
         excerptImage,
       }) =>
         new AnnotationRepository({
+          runtime,
           db: zoteroReads,
           queryClient,
           localApi: zoteroLocalApi,
@@ -325,12 +328,18 @@ export async function buildServices(
     })
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
-        new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
+        new AttachmentImportService({
+          runtime,
+          app: plugin.app,
+          settings,
+          zoteroPref,
+        }),
     })
     .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .use({
       query: ({ zoteroReads, libraryScope, zoteroPref, useLedger }) =>
         new QueryService({
+          runtime,
           pluginVersion: plugin.manifest.version,
           reads: zoteroReads,
           libraryScope,
@@ -351,6 +360,7 @@ export async function buildServices(
         zoteroPref,
       }) =>
         new LocalBridgeService({
+          runtime,
           webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
           app: plugin.app,
           settings,
@@ -420,7 +430,12 @@ export async function buildServices(
     })
     .use({
       itemLookup: ({ zoteroReads, libraryScope, useLedger }) =>
-        new ItemLookup({ reads: zoteroReads, libraryScope, useLedger }),
+        new ItemLookup({
+          runtime,
+          reads: zoteroReads,
+          libraryScope,
+          useLedger,
+        }),
     })
     .useValue({
       noteFeature: ({
@@ -561,6 +576,7 @@ export async function buildServices(
         libraryScope,
       }): CitationPopover =>
         new CitationPopover({
+          runtime,
           profile,
           app: plugin.app,
           db: zoteroReads,
@@ -633,6 +649,7 @@ export async function buildServices(
     .use({
       annotationLinkReading: ({ annotationPopover, settings }) =>
         new AnnotationLinkReading({
+          runtime,
           app: plugin.app,
           plugin,
           settings,
@@ -710,6 +727,7 @@ export async function buildServices(
         settings,
       }) =>
         new GraphCitations({
+          runtime,
           app: plugin.app,
           reads: zoteroReads,
           libraryScope,

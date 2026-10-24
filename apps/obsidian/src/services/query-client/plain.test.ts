@@ -1,7 +1,9 @@
 import { expect } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { queryClientsFixture, queryClientsOf } from "./__fixtures__";
@@ -13,17 +15,22 @@ it.effect(
     Effect.gen(function* () {
       const queries = yield* queryClientsOf();
       yield* Effect.promise(async () => {
-        await queries.read(["first"], () => Promise.resolve("old first"));
-        await queries.read(["second"], () => Promise.resolve("old second"));
         const seen: HeldReadChange[] = [];
         const delivered = Promise.withResolvers<void>();
-        const unsubscribe = queries.subscribe((change) => {
-          seen.push(change);
-          if (seen.length === 1) throw new Error("listener failed");
-          if (change.key[0] === "second") delivered.resolve();
-        });
-        queries.update<string>(["first"], () => "new first");
-        queries.update<string>(["second"], () => "new second");
+        const unsubscribe = subscribe(
+          queries.runtime,
+          queries.changes,
+          (change) => {
+            seen.push(change);
+            if (seen.length === 1) throw new Error("listener failed");
+            if (change.key[0] === "second") delivered.resolve();
+          },
+        );
+        const reads = Promise.all([
+          queries.read(["first"], () => Promise.resolve("new first")),
+          queries.read(["second"], () => Promise.resolve("new second")),
+        ]);
+        await reads;
         await delivered.promise;
         unsubscribe();
         expect(seen.map((change) => [change.key, change.held?.value])).toEqual([
@@ -85,7 +92,7 @@ it.effect(
         queries.update(["held"], read);
         expect(queries.keysUnder([])).toEqual([]);
         queries.watch([], { settled: read })();
-        queries.subscribe(read)();
+        subscribe(queries.runtime, Stream.drop(queries.changes, 1), read)();
       });
     }),
 );
@@ -99,10 +106,14 @@ it.effect(
         await queries.read(["held"], () => Promise.resolve("old"));
         const seen: HeldReadChange[] = [];
         const delivered = Promise.withResolvers<void>();
-        const unsubscribe = queries.subscribe((change) => {
-          seen.push(change);
-          delivered.resolve();
-        });
+        const unsubscribe = subscribe(
+          queries.runtime,
+          Stream.drop(queries.changes, 1),
+          (change) => {
+            seen.push(change);
+            delivered.resolve();
+          },
+        );
         const inline: unknown[] = [];
         const stopWatch = queries.watch(["held"], {
           settled: (_key, held) => inline.push(held?.value),

@@ -20,6 +20,8 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -111,12 +113,13 @@ async function fixture(mode = "normal") {
   const paths = { dataDir, baseAttachmentPath: null };
   const attachments = stack.use(
     new AttachmentImportService({
+      runtime: testRuntime(),
       app,
       settings: {
         current: settings,
-        subscribe: () => () => {},
+        changes: Stream.empty,
       } as unknown as PlainPluginSettings,
-      zoteroPref: { ...paths, on: () => () => {} },
+      zoteroPref: { ...paths, "resolved-changed": Stream.empty },
     }),
   );
   await attachments.ready;

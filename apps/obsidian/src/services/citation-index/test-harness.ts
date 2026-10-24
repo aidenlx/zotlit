@@ -10,9 +10,10 @@ import type {
 
 import type { Library, LibraryCitekey } from "@zotlit/db";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
 import type { Context } from "@/lib/effect";
-import { Effect, SubscriptionRef } from "@/lib/effect";
+import { Effect, SubscriptionRef, Stream } from "@/lib/effect";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -32,10 +33,7 @@ import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsEvents,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -254,9 +252,9 @@ export class NoteIndexStub {
     return Promise.resolve();
   }
 
-  on(): () => void {
-    return () => undefined;
-  }
+  readonly changed = Stream.empty;
+  readonly indexed = Stream.empty;
+  readonly "frontmatter-changed" = Stream.empty;
 }
 
 /**
@@ -273,10 +271,14 @@ export class DatabaseStub implements AsyncDisposable {
   itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
   readonly #service: TestReads;
-  readonly #listeners = new Map<
-    keyof ZoteroReadsEvents,
-    Set<ZoteroReadsEvents[keyof ZoteroReadsEvents]>
-  >();
+  readonly #changed = testEvent<void>();
+  readonly #degraded = testEvent<DbUnavailable>();
+  readonly changed = this.#changed.stream;
+  readonly degraded = this.#degraded.stream;
+  readonly "refresh-failed" = Stream.empty;
+  readonly refreshing = Stream.empty;
+  readonly "db-file-missing" = Stream.empty;
+  readonly "refresh-requested" = Stream.empty;
   readonly #ready = Promise.withResolvers<void>();
 
   constructor({
@@ -431,32 +433,21 @@ export class DatabaseStub implements AsyncDisposable {
     this.#ready.resolve();
   }
 
-  on<K extends keyof ZoteroReadsEvents>(
-    event: K,
-    cb: ZoteroReadsEvents[K],
-  ): () => void {
-    const listeners = this.#listeners.get(event) ?? new Set();
-    this.#listeners.set(event, listeners.add(cb));
-    return () => listeners.delete(cb);
-  }
-
-  changed(): void {
-    for (const listener of this.#listeners.get("changed") ?? [])
-      (listener as ZoteroReadsEvents["changed"])();
+  notifyChanged(): void {
+    this.#changed.emit();
   }
 
   async replaceRows(seed: string): Promise<void> {
     this.#seed = seed;
     this.#lastSql = seed;
     await this.#service.refresh();
-    this.changed();
+    this.notifyChanged();
   }
 
   degrade(): void {
     this.state = "degraded";
     const error = new DbUnavailable({ message: "Database unavailable" });
-    for (const listener of this.#listeners.get("degraded") ?? [])
-      (listener as ZoteroReadsEvents["degraded"])(error);
+    this.#degraded.emit(error);
   }
 
   [Symbol.asyncDispose](): Promise<void> {
@@ -482,7 +473,10 @@ export class CitekeysStub {
 export class LibraryScopeStub {
   libraries: AvailableLibrary[];
   ready = Promise.resolve();
-  readonly #listeners = new Map<keyof LibraryScopeEvents, Set<() => void>>();
+  readonly #changed = testEvent<ResolvedLibraryScope | null>();
+  readonly #libraries = testEvent<void>();
+  readonly changed = this.#changed.stream;
+  readonly "libraries-changed" = this.#libraries.stream;
   #current: ResolvedLibraryScope | null;
 
   constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
@@ -523,16 +517,6 @@ export class LibraryScopeStub {
     return this.#current;
   }
 
-  on(
-    event: keyof LibraryScopeEvents,
-    cb: LibraryScopeEvents[keyof LibraryScopeEvents],
-  ): () => void {
-    const notify = () => cb(this.#current);
-    const listeners = this.#listeners.get(event) ?? new Set();
-    this.#listeners.set(event, listeners.add(notify));
-    return () => listeners.delete(notify);
-  }
-
   /**
    * The database now holds `libraries`, and the saved scope resolves as it
    * did: only `libraries-changed` reports it.
@@ -561,7 +545,8 @@ export class LibraryScopeStub {
   }
 
   #emit(event: keyof LibraryScopeEvents = "changed"): void {
-    for (const listener of this.#listeners.get(event) ?? []) listener();
+    if (event === "changed") this.#changed.emit(this.#current);
+    else this.#libraries.emit();
   }
 }
 
@@ -616,7 +601,6 @@ export class MemoryStore implements CitekeyStore {
 }
 
 export class SettingsStub {
-  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
   readonly #state;
   readonly changes;
   constructor(overrides: SettingsOverrides = {}) {
@@ -637,14 +621,6 @@ export class SettingsStub {
         applySettingsOverrides(this.current, overrides),
       ),
     );
-    for (const listener of this.#listeners) listener(this.current);
-  }
-  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => {
-      this.#listeners.delete(listener);
-    };
   }
 }
 
@@ -699,7 +675,9 @@ function applySettingsOverrides(
 export interface CitationIndexHarness extends AsyncDisposable {
   app: App;
   draft: TFile;
-  index: PlainCitationIndex;
+  index: PlainCitationIndex & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  };
   ready: Promise<void>;
   runtime: ReturnType<typeof citationIndexFixture>["runtime"];
   closeIndex: () => Promise<void>;
@@ -813,7 +791,9 @@ export async function createCitationIndexHarness(
     },
     stack,
   );
-  let index: PlainCitationIndex;
+  let index: PlainCitationIndex & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  };
   const ready = fixture.ready.then((value) => {
     index = value;
   });

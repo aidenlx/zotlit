@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { expect } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 import { plainSettingsOf } from "@/services/settings/__fixtures__";
@@ -29,9 +31,14 @@ it.effect(
         }),
       );
       // Other tab services only register callbacks in this control-only host.
-      const events = { on: () => () => {} };
-      const changes = { subscribe: () => () => {} };
+      const events = {
+        on: () => () => {},
+        changed: Stream.empty,
+        "compile-status-changed": Stream.empty,
+      };
+      const changes = { changes: Stream.empty };
       const tab = new ZotLitSettingTab({
+        runtime: testRuntime(),
         plugin: { app: {}, register: (off: () => void) => cleanup.push(off) },
         settings,
         localServer: events,
@@ -39,7 +46,7 @@ it.effect(
         libraryScope: events,
         profile: { ...events, ready: new Promise(() => {}) },
         template: events,
-        languagePack: changes,
+        languagePack: { subscribe: () => () => {} },
         pandocEngine: changes,
         chineseSegmenter: changes,
       } as unknown as ZotLitSettingTabOptions);

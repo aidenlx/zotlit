@@ -8,6 +8,7 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -27,6 +28,7 @@ function setup() {
     };
   };
   const ctx = {
+    runtime: testRuntime(),
     settings: {
       get current() {
         return current;

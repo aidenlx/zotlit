@@ -25,6 +25,8 @@ import {
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
@@ -106,7 +108,10 @@ const localStorageStub = {
   },
 };
 
-function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
+function setup(
+  deps: Partial<TemplateWorkbenchDeps> = { runtime: testRuntime() },
+  sharedApp?: App,
+) {
   const setActiveLeaf = vi.fn();
   const modify = vi.fn<(file: TFile, source: string) => Promise<void>>(
     async () => {},
@@ -134,13 +139,13 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
   } as unknown as WorkspaceLeaf;
   const view = new TestTemplateWorkbenchView(leaf, {
     app,
-    settings: { subscribe: () => () => {} },
+    settings: { changes: Stream.empty },
     pluginVersion: "2.1.3",
     zoteroReads: { state: "ready" },
     zoteroPref: { dataDir: null },
     templates: {
       loaded: true,
-      on: () => () => {},
+      "compile-status-changed": Stream.empty,
       getPartialNames: () => [],
       getPartialDocuments: () => [],
     },
@@ -167,9 +172,14 @@ describe("TemplateWorkbenchView", () => {
       profile: { selector: "default" },
     }));
     const h = setup({
+      runtime: testRuntime(),
       noteFeature: { updateNote },
       profile: { profileOf },
-      templates: { waitUntilSettled, loaded: true, on: () => () => {} },
+      templates: {
+        waitUntilSettled,
+        loaded: true,
+        "compile-status-changed": Stream.empty,
+      },
     } as unknown as Partial<TemplateWorkbenchDeps>);
     const file = Object.assign(new TFile(), {
       path: "Literature/Original.md",
@@ -412,6 +422,7 @@ describe("TemplateWorkbenchView", () => {
         .mockResolvedValue();
       cleanup.defer(() => copy.mockRestore());
       const { view } = setup({
+        runtime: testRuntime(),
         render: async (request) => ({
           ...emptyRender(renderIdentity(request)),
           creationBody: "Repaired note",
@@ -506,6 +517,7 @@ describe("TemplateWorkbenchView", () => {
   it("clears a repaired Annotation arrival while a Property failure remains", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
+      runtime: testRuntime(),
       render: async (request) => ({
         ...emptyRender(renderIdentity(request)),
         annotation: "Repaired annotation",
@@ -557,6 +569,7 @@ describe("TemplateWorkbenchView", () => {
   it("keeps a Note arrival when its render_annotation call still prevents note output", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
+      runtime: testRuntime(),
       render: async (request) => ({
         ...emptyRender(renderIdentity(request)),
         diagnostics: [{ code: "render-error", part: "annotation" }],
@@ -879,6 +892,7 @@ An annotation.
     await using cleanup = new AsyncDisposableStack();
     const path = "templates/zotlit-profile.default.md";
     const { view } = setup({
+      runtime: testRuntime(),
       profile: {
         defaultDocumentPath: path,
       } as TemplateWorkbenchDeps["profile"],
@@ -943,6 +957,7 @@ An annotation.
     const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
     const materializeDefault = vi.fn(() => pending.promise);
     const { view, requestSave } = setup({
+      runtime: testRuntime(),
       profile: {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
@@ -992,6 +1007,7 @@ An annotation.
       .mockRejectedValueOnce(new Error("Disk full"))
       .mockResolvedValue({ file, created: true });
     const { view, requestSave } = setup({
+      runtime: testRuntime(),
       profile: {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
@@ -1015,6 +1031,7 @@ An annotation.
   it("opens competing Default bytes without adding built-in source to Undo", async () => {
     const file = new TFile();
     const { view, leaf, requestSave, modify } = setup({
+      runtime: testRuntime(),
       profile: {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
@@ -1038,6 +1055,7 @@ An annotation.
       .fn()
       .mockRejectedValue(new Error("Disk full"));
     const { view } = setup({
+      runtime: testRuntime(),
       profile: {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
@@ -1076,6 +1094,7 @@ An annotation.
     const file = new TFile();
     const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
     const { view, modify } = setup({
+      runtime: testRuntime(),
       profile: {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
@@ -1112,6 +1131,7 @@ An annotation.
 
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({
+      runtime: testRuntime(),
       zoteroReads: {
         state: "degraded",
       } as unknown as TemplateWorkbenchDeps["zoteroReads"],
@@ -1132,6 +1152,7 @@ An annotation.
   it("clears the unavailable citation styles status after recovery", async () => {
     let failed = true;
     const { view } = setup({
+      runtime: testRuntime(),
       zoteroPref: {
         get dataDir() {
           if (failed) throw new Error("Unavailable");
@@ -1520,7 +1541,7 @@ function sharedWorkspace() {
   const file = new TFile();
   file.path = "profiles/paper.md";
   function editor() {
-    const result = setup({}, app);
+    const result = setup({ runtime: testRuntime() }, app);
     result.view.file = file;
     result.view.lastSavedData = SOURCE;
     leaves.push(result.leaf);
@@ -1804,6 +1825,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     "Built-in note.",
   );
   const { view, app } = setup({
+    runtime: testRuntime(),
     profile: {
       getBuiltInSource: () => builtin,
     } as TemplateWorkbenchDeps["profile"],
@@ -1855,8 +1877,9 @@ language: liquid
 
   function openKind(path: string, source: string) {
     const harness = setup({
+      runtime: testRuntime(),
       templates: {
-        on: () => () => {},
+        "compile-status-changed": Stream.empty,
         materializeCitationTemplate: vi.fn(),
       } as unknown as TemplateWorkbenchDeps["templates"],
     });
@@ -2131,8 +2154,9 @@ language: liquid
 
   it("lists the vault's partials in the pane menu and ends with New partial", () => {
     const { view } = setup({
+      runtime: testRuntime(),
       templates: {
-        on: () => () => {},
+        "compile-status-changed": Stream.empty,
         loaded: true,
         getPartialNames: () => ["authors", "venue-line"],
         getPartialDocuments: () => [
@@ -2178,8 +2202,9 @@ language: liquid
     );
     const unpacked: string[] = [];
     const { view } = setup({
+      runtime: testRuntime(),
       templates: {
-        on: () => () => {},
+        "compile-status-changed": Stream.empty,
         loaded: true,
         getPartialNames: () => [],
         getPartialDocuments: () => [],
@@ -2247,8 +2272,9 @@ language: liquid
 
   it("names no partial while the template service is still scanning the folder", () => {
     const { view } = setup({
+      runtime: testRuntime(),
       templates: {
-        on: () => () => {},
+        "compile-status-changed": Stream.empty,
         loaded: false,
         getPartialNames: () => {
           throw new Error(
@@ -2776,14 +2802,29 @@ language: liquid
 
   function openCitation() {
     const harness = setup({
+      runtime: testRuntime(),
       nativePreview: {
+        runtime: testRuntime(),
         app: { vault: { on: () => ({}), offref: () => {} } },
-        zoteroReads: { on: () => () => {}, acquireRead: vi.fn() },
-        templates: { on: () => () => {} },
-        bibliographyRender: { on: () => () => {} },
+        zoteroReads: {
+          changed: Stream.empty,
+          degraded: Stream.empty,
+          "refresh-failed": Stream.empty,
+          refreshing: Stream.empty,
+          "db-file-missing": Stream.empty,
+          "refresh-requested": Stream.empty,
+          acquireRead: vi.fn(),
+        },
+        templates: { "compile-status-changed": Stream.empty },
+        bibliographyRender: {
+          changed: Stream.empty,
+          settled: Stream.empty,
+          invalidated: Stream.empty,
+          "style-missing": Stream.empty,
+        },
       } as unknown as TemplateWorkbenchDeps["nativePreview"],
       templates: {
-        on: () => () => {},
+        "compile-status-changed": Stream.empty,
         loaded: true,
         getPartialNames: () => [],
         getPartialDocuments: () => [],
@@ -2868,6 +2909,7 @@ describe("Template Workbench Item choice", () => {
     const first = items.get(FIRST)!;
     gated = true;
     const { view, app } = setup({
+      runtime: testRuntime(),
       zoteroReads,
       itemLookup: {
         // The chooser lists the first paper among the recently updated Items.

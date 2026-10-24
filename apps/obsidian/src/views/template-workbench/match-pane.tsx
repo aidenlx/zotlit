@@ -7,6 +7,8 @@ import { MatchPane, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
 
 import { Select } from "@/components/select";
 import { useObsidianApp } from "@/lib/app-context";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { onKeymap, templateWorkbenchTheme } from "./theme";
@@ -30,20 +32,33 @@ export const matchTheme = {
 };
 
 export function NativeMatchPane({
+  runtime,
   controller,
   db,
   onChooseItem,
 }: {
+  runtime: SubscriptionRuntime;
   controller: WorkbenchDocumentController;
-  db: Pick<PlainZoteroReads, "on">;
+  db: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   onChooseItem?: () => void;
 }) {
   const app = useObsidianApp();
   // A database change can bring new Tags and Collections, and a new answer.
   const [vocabularyRevision, setVocabularyRevision] = useState(0);
   useEffect(
-    () => db.on("changed", () => setVocabularyRevision((value) => value + 1)),
-    [db],
+    () =>
+      subscribe(runtime, db["changed"], () =>
+        setVocabularyRevision((value) => value + 1),
+      ),
+    [runtime, db],
   );
   return (
     <WorkbenchThemeProvider theme={onKeymap(matchTheme, app)}>

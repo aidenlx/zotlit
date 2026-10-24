@@ -135,13 +135,16 @@ export function firstText(
 /** The real CitationText layer over already-owned consumer fixture dependencies. */
 export interface CitationTextFixtureDeps {
   app: App;
-  citationIndex: Pick<PlainCitationIndex, "getParsedDocument" | "on">;
-  citationLookup: Pick<PlainCitationLookup, "on">;
-  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "on">;
+  citationIndex: Pick<
+    PlainCitationIndex,
+    "getParsedDocument" | "changed" | "membership-changed"
+  >;
+  citationLookup: Pick<PlainCitationLookup, "changed">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "changed" | "indexed">;
   profile: ProfileReader;
   bibliographyRender: Pick<
     PlainBibliographyRender,
-    "readCitations" | "readBibliography" | "vaultPresentation" | "on"
+    "readCitations" | "readBibliography" | "vaultPresentation" | "invalidated"
   >;
   queryClient: Pick<
     PlainQueryClients,
@@ -175,37 +178,50 @@ export function citationTextFixture(
           Layer.succeed(ObsidianApp, deps.app),
           Layer.succeed(CitationIndex, {
             getParsedDocument: (file, signal) =>
-              Effect.tryPromise({
-                try: () => deps.citationIndex.getParsedDocument(file, signal),
-                catch: (error) => error,
-              }),
-            events: callbacks<CitationIndexEvent>((emit) => [
-              deps.citationIndex.on("changed", (path) =>
-                emit({ type: "changed", path }),
+              Effect.tryPromise(() =>
+                deps.citationIndex.getParsedDocument(file, signal),
               ),
-              deps.citationIndex.on("membership-changed", () =>
-                emit({ type: "membership-changed" }),
+            changes: Stream.empty,
+            events: Stream.merge(
+              deps.citationIndex.changed.pipe(
+                Stream.map((path): CitationIndexEvent => ({
+                  type: "changed",
+                  path,
+                })),
               ),
-            ]),
-          } as CitationIndex["Service"]),
+              deps.citationIndex["membership-changed"].pipe(
+                Stream.map((): CitationIndexEvent => ({
+                  type: "membership-changed",
+                })),
+              ),
+            ),
+          } satisfies Partial<
+            CitationIndex["Service"]
+          > as unknown as CitationIndex["Service"]),
           Layer.succeed(CitationLookup, {
             current: Effect.succeed(initialLookup),
-            changes: callbacks<CitationLookupState>((emit) => [
-              deps.citationLookup.on("changed", () =>
-                emit({ ...initialLookup, revision: String(++revision) }),
-              ),
-            ]),
+            changes: deps.citationLookup.changed.pipe(
+              Stream.map((): CitationLookupState => ({
+                ...initialLookup,
+                revision: String(++revision),
+              })),
+            ),
           } as CitationLookup["Service"]),
           Layer.succeed(NoteIndex, {
             current: Effect.succeed(initialNote),
             whenIndexed: () =>
               Effect.promise(() => deps.noteIndex.whenIndexed()),
-            changes: callbacks<NoteIndexChange>((emit) => [
-              deps.noteIndex.on("changed", (file) =>
-                emit({ type: "changed", file }),
+            changes: Stream.merge(
+              deps.noteIndex.changed.pipe(
+                Stream.map((file): NoteIndexChange => ({
+                  type: "changed",
+                  file,
+                })),
               ),
-              deps.noteIndex.on("indexed", () => emit({ type: "indexed" })),
-            ]),
+              deps.noteIndex.indexed.pipe(
+                Stream.map((): NoteIndexChange => ({ type: "indexed" })),
+              ),
+            ),
           } as NoteIndex["Service"]),
           Layer.succeed(Profile, {
             loaded: Effect.sync(() => deps.profile.loaded),
@@ -215,6 +231,7 @@ export function citationTextFixture(
             ) => Effect.sync(() => deps.profile.resolveProfile(...args)),
             profileOf: (...args: Parameters<ProfileReader["profileOf"]>) =>
               Effect.sync(() => deps.profile.profileOf(...args)),
+            changes: Stream.empty,
           } as unknown as Profile["Service"]),
           Layer.succeed(BibliographyRender, {
             state: Effect.sync(() => ({
@@ -231,12 +248,15 @@ export function citationTextFixture(
                 try: () => deps.bibliographyRender.readBibliography(...args),
                 catch: (error) => error,
               }),
-            events: callbacks<BibliographyRenderEvent>((emit) => [
-              deps.bibliographyRender.on("invalidated", () =>
-                emit({ _tag: "invalidated" }),
-              ),
-            ]),
-          } as BibliographyRender["Service"]),
+            changes: Stream.empty,
+            events: deps.bibliographyRender.invalidated.pipe(
+              Stream.map((): BibliographyRenderEvent => ({
+                _tag: "invalidated",
+              })),
+            ),
+          } satisfies Partial<
+            BibliographyRender["Service"]
+          > as unknown as BibliographyRender["Service"]),
           Layer.succeed(QueryClients, {
             client: queries.client,
             current: Effect.succeed(null),

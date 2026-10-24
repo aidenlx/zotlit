@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { QueryService } from "@/services/item-query/service";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
@@ -48,6 +49,7 @@ function setup(uses: Record<string, number> = {}) {
   addOlderPaper(scenario.sqlite);
   const reads = inProcessReadsService(sharedClientOpener(scenario.db));
   const service = new QueryService({
+    runtime: testRuntime(),
     pluginVersion: "2.2.0-beta.2",
     useLedger: { ...inertUseLedger, uses },
     reads,

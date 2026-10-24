@@ -4,7 +4,7 @@ import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
-import { Context, Effect, Layer, Queue, Stream } from "@/lib/effect";
+import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -65,16 +65,7 @@ export function templateSettings(settings: PlainPluginSettings) {
         ),
       flush: () => Effect.promise(() => settings.flush()),
       release: () => Effect.sync(() => settings.release()),
-      changes: Stream.callback<
-        Readonly<import("@/services/settings/schema").Settings>
-      >((queue) =>
-        Effect.acquireRelease(
-          Effect.sync(() =>
-            settings.subscribe((value) => Queue.offerUnsafe(queue, value)),
-          ),
-          (unsubscribe) => Effect.sync(unsubscribe),
-        ),
-      ),
+      changes: settings.changes,
     }),
   );
 }
@@ -93,7 +84,7 @@ export async function buildTemplate(
     stack,
   );
   await runtime.context();
-  const service = plainTemplate(runtime);
+  const service = Object.assign(plainTemplate(runtime), { runtime });
   const lifetime = stack.move();
   return Object.assign(service, {
     [Symbol.asyncDispose]: () => lifetime.disposeAsync(),

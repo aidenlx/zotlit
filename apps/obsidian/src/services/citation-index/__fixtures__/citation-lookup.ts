@@ -1,5 +1,6 @@
-import type { Cause } from "@/lib/effect";
-import { Effect, Queue, Stream } from "@/lib/effect";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+
+import { Stream } from "@/lib/effect";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 
 import type {
@@ -15,33 +16,14 @@ import type {
 /** The consumer seam: async delivery, strict requested answers, and a held placeholder. */
 export class CitationLookupStub implements Pick<
   PlainCitationLookup,
-  "read" | "observe" | "on" | "status" | "whenResolved" | "changes"
+  "read" | "observe" | "changed" | "status-changed" | "status" | "whenResolved" | "changes"
 > {
   status: CitationLookupStatus = "fresh";
   #revision = 0;
-  readonly changes = Stream.callback<CitationLookupState>(
-    Effect.fnUntraced(function* (
-      this: CitationLookupStub,
-      queue: Queue.Queue<CitationLookupState, Cause.Done>,
-    ) {
-      const publish = () => {
-        Queue.offerUnsafe(queue, {
-          status: this.status,
-          revision: String(this.#revision),
-          stopped: false,
-        });
-      };
-      publish();
-      yield* Effect.acquireRelease(
-        Effect.sync(() => this.on("changed", publish)),
-        (off) => Effect.sync(off),
-      );
-      yield* Effect.acquireRelease(
-        Effect.sync(() => this.on("status-changed", publish)),
-        (off) => Effect.sync(off),
-      );
-    }.bind(this)),
-  );
+  readonly #events = testEvent<CitationLookupState>();
+  readonly changes = Stream.suspend(() => this.#events.stream.pipe(Stream.prepend([{status: this.status, revision: String(this.#revision), stopped: false}])));
+  readonly changed = this.#events.stream.pipe(Stream.map(() => undefined));
+  readonly "status-changed" = this.changed;
   readonly #answer;
   readonly #deliveries = new Set<Promise<void>>();
 
@@ -52,7 +34,7 @@ export class CitationLookupStub implements Pick<
     await Promise.all(this.#deliveries);
   }
   readonly #refresh = new Set<() => void>();
-  readonly #listeners = new Map<"changed" | "status-changed", Set<() => void>>();
+
 
   constructor(
     answer: (
@@ -64,12 +46,6 @@ export class CitationLookupStub implements Pick<
 
   get activeObservations(): number {
     return this.#refresh.size;
-  }
-
-  on(event: "changed" | "status-changed", callback: () => void): () => void {
-    const listeners = this.#listeners.get(event) ?? new Set();
-    this.#listeners.set(event, listeners.add(callback));
-    return () => listeners.delete(callback);
   }
 
   async whenResolved(): Promise<void> {}
@@ -88,8 +64,7 @@ export class CitationLookupStub implements Pick<
   refresh(): void {
     this.#revision++;
     for (const refresh of this.#refresh) refresh();
-    for (const listeners of this.#listeners.values())
-      for (const listener of listeners) listener();
+    this.#events.emit({status: this.status, revision: String(this.#revision), stopped: false});
   }
 
   observe(changed: () => void): CitationLookupObservation {

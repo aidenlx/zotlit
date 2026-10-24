@@ -22,14 +22,22 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 import { plainBibliographyRender } from "./plain";
 
 export interface BibliographyRenderFixtureOptions {
-  profile: Pick<PlainProfile, "on">;
-  db: Pick<PlainZoteroReads, "on">;
-  pandocEngine: Pick<
-    PlainPandocEngine,
-    "getStatus" | "subscribe" | "getEngine"
+  profile: Pick<PlainProfile, "changed">;
+  db: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
   >;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "on">;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "getEngine">;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "dataDir" | "changed" | "data-dir-changed" | "resolved-changed"
+  >;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   queryClient?: Pick<
     PlainQueryClients,
     "ask" | "readFresh" | "peek" | "invalidate" | "watch"
@@ -105,13 +113,13 @@ export async function bibliographyRenderFixture(
         queryLayer,
         Layer.succeed(Profile, {
           state: Effect.succeed(profileState),
-          changes: callbacks((emit) =>
-            options.profile.on("changed", () => emit({ ...profileState })),
+          changes: options.profile.changed.pipe(
+            Stream.map(() => ({ ...profileState })),
           ),
         } as unknown as Profile["Service"]),
         Layer.succeed(ZoteroReads, {
-          events: callbacks((emit) =>
-            options.db.on("changed", () => emit({ _tag: "changed" })),
+          events: options.db.changed.pipe(
+            Stream.map(() => ({ _tag: "changed" as const })),
           ),
         } as ZoteroReads["Service"]),
         Layer.succeed(PandocEngine, {
@@ -121,23 +129,17 @@ export async function bibliographyRenderFixture(
               try: () => options.pandocEngine.getEngine(),
               catch: (error) => error as Error,
             }),
-          changes: callbacks((emit) =>
-            options.pandocEngine.subscribe(() =>
-              emit(options.pandocEngine.getStatus()),
-            ),
-          ),
+          changes: options.pandocEngine.changes,
         } as PandocEngine["Service"]),
         Layer.succeed(ZoteroPref, {
           current: Effect.sync(prefSnapshot),
-          changes: callbacks((emit) =>
-            options.zoteroPref.on("resolved-changed", () =>
-              emit({ ...prefSnapshot(), prefs: new Map() }),
-            ),
+          changes: options.zoteroPref["resolved-changed"].pipe(
+            Stream.map(() => ({ ...prefSnapshot(), prefs: new Map() })),
           ),
         } as unknown as ZoteroPref["Service"]),
         Layer.succeed(PluginSettings, {
           current: Effect.sync(() => options.settings.current),
-          changes: callbacks((emit) => options.settings.subscribe(emit)),
+          changes: options.settings.changes,
         } as PluginSettings["Service"]),
       ),
     ),

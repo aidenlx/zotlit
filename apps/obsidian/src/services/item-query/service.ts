@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import type { CliData, FileSystemAdapter, Vault } from "obsidian";
 
 import type { CliRejection } from "@/lib/cli-params";
+import { Stream } from "@/lib/effect";
 import {
   Cause,
   Effect,
@@ -14,6 +15,8 @@ import {
   Scope,
 } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { Service } from "@/services/service-base";
@@ -43,8 +46,9 @@ import type {
 } from "./worker-protocol";
 
 interface QueryServiceDeps {
+  runtime: SubscriptionRuntime;
   pluginVersion: string;
-  useLedger: Pick<PlainUseLedger, "uses" | "subscribe">;
+  useLedger: Pick<PlainUseLedger, "uses" | "changes">;
   reads: Pick<PlainZoteroReads, "reads">;
   zoteroPref: Pick<
     PlainZoteroPref,
@@ -75,6 +79,7 @@ const unnamedKey = (): string => `:${randomUUID()}`;
  * and waits for it.
  */
 export class QueryService extends Service {
+  readonly #runtime;
   readonly #deps;
   #jobs!: FiberMap.FiberMap<string, unknown>;
   #run!: JobRunner;
@@ -83,6 +88,7 @@ export class QueryService extends Service {
 
   constructor(deps: QueryServiceDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#deps = deps;
     this.ready = this.#load();
   }
@@ -92,7 +98,11 @@ export class QueryService extends Service {
    * each Use recorded after this call.
    */
   on(_event: "changed", callback: () => void): () => void {
-    return this.#deps.useLedger.subscribe(() => callback());
+    return subscribe(
+      this.#runtime,
+      Stream.drop(this.#deps.useLedger.changes, 1),
+      () => callback(),
+    );
   }
 
   async #load(): Promise<void> {

@@ -15,6 +15,7 @@ import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
 import { delimited } from "@zotlit/shared/delimited";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 import {
   buildUseLedger,
@@ -56,6 +57,7 @@ function setup(
     }),
   });
   const service = new QueryService({
+    runtime: testRuntime(),
     pluginVersion: "2.2.0-beta.2",
     useLedger: inertUseLedger,
     reads,
@@ -1348,6 +1350,7 @@ it("tells a Query View of a Use recorded after it subscribes", async () => {
   const useLedger = buildUseLedger(fakeApp({ load: () => undefined }), stack);
   const service = stack.use(
     new QueryService({
+      runtime: testRuntime(),
       pluginVersion: "2.2.0-beta.2",
       useLedger,
       reads: { ready: Promise.resolve() },

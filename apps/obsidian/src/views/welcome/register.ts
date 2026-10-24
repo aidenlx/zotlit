@@ -5,6 +5,9 @@
 // @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
 import type { App, Plugin } from "obsidian";
 
+import { Stream } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { PlainQueryClients } from "@/services/query-client/plain";
@@ -18,7 +21,18 @@ import { notFoundNoticeChange } from "./not-found-notice";
 import type { NotFoundSignal } from "./not-found-notice";
 
 export interface WelcomeRegistrationDeps {
-  reads: Pick<PlainZoteroReads, "on" | "subscribe" | "dbFileMissing">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "changes"
+    | "dbFileMissing"
+  >;
   queries: Pick<PlainQueryClients, "invalidate">;
   settings: Pick<PlainPluginSettings, "update">;
 }
@@ -28,7 +42,11 @@ export function registerWelcomeView(
   deps: WelcomeRegistrationDeps,
 ): void {
   plugin.register(
-    holdConnectionReadout({ reads: deps.reads, queries: deps.queries }),
+    holdConnectionReadout({
+      runtime: deps.runtime,
+      reads: deps.reads,
+      queries: deps.queries,
+    }),
   );
 
   plugin.addCommand({
@@ -59,7 +77,7 @@ export function registerWelcomeView(
   };
   let missing = deps.reads.dbFileMissing;
   plugin.register(
-    deps.reads.subscribe((state) => {
+    subscribe(deps.runtime, Stream.drop(deps.reads.changes, 1), (state) => {
       if (state.dbFileMissing === missing) return;
       missing = state.dbFileMissing;
       apply(missing ? "db-file-missing" : "changed");

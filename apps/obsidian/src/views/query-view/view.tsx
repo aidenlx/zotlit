@@ -18,6 +18,8 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { PaneState } from "@/components/pane-state";
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
@@ -106,10 +108,23 @@ const logger = getLogger(["views", "query-view"]);
 
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
+  runtime: SubscriptionRuntime;
   query: Pick<QueryService, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
-    Pick<PlainZoteroReads, "on" | "acquireRead">;
-  libraryScope: Pick<PlainLibraryScope, "on" | "current">;
+    Pick<
+      PlainZoteroReads,
+      | "changed"
+      | "degraded"
+      | "refresh-failed"
+      | "refreshing"
+      | "db-file-missing"
+      | "refresh-requested"
+      | "acquireRead"
+    >;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "changed" | "libraries-changed" | "current"
+  >;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** What the Table's Literature Note Property reads and does. */
@@ -680,10 +695,16 @@ export class QueryView extends Component implements HistorySurface {
         if (this.state.getState().view?.from === "items") rerun();
       }),
     );
-    subscriptions.defer(reads.on("changed", rerun));
-    subscriptions.defer(reads.on("degraded", rerun));
-    subscriptions.defer(reads.on("db-file-missing", rerun));
-    subscriptions.defer(libraryScope.on("libraries-changed", rerun));
+    subscriptions.defer(subscribe(this.#deps.runtime, reads["changed"], rerun));
+    subscriptions.defer(
+      subscribe(this.#deps.runtime, reads["degraded"], rerun),
+    );
+    subscriptions.defer(
+      subscribe(this.#deps.runtime, reads["db-file-missing"], rerun),
+    );
+    subscriptions.defer(
+      subscribe(this.#deps.runtime, libraryScope["libraries-changed"], rerun),
+    );
     // A Literature Note's frontmatter changes which Items a vault condition
     // keeps; the view runs again where that changes its request.
     const replan = () => {

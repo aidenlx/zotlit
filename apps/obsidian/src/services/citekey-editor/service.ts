@@ -7,6 +7,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -50,7 +51,7 @@ import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
-  runtime: Parameters<typeof subscribe<unknown, never>>[0];
+  runtime: SubscriptionRuntime;
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
@@ -65,7 +66,7 @@ export interface CitekeyEditorDeps {
   citationPopover: CitationPopover;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   citationLookup: Pick<PlainCitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -102,6 +103,7 @@ interface CitekeyEditorEvents {
  * reconfigure — the mechanism `registerEditorExtension` documents.
  */
 export class CitekeyEditor extends Service<void> {
+  readonly #runtime;
   readonly #createProfile;
   readonly #importProfile;
   readonly #app;
@@ -111,7 +113,6 @@ export class CitekeyEditor extends Service<void> {
   readonly #zoteroPref;
   readonly #db;
   readonly #citationText;
-  readonly #runtime;
   readonly #citationPopover;
   readonly #annotationPopover;
   readonly #settings;
@@ -138,6 +139,7 @@ export class CitekeyEditor extends Service<void> {
 
   constructor(deps: CitekeyEditorDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#createProfile = deps.createProfile;
     this.#importProfile = deps.importProfile;
@@ -147,7 +149,6 @@ export class CitekeyEditor extends Service<void> {
     this.#zoteroPref = deps.zoteroPref;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
-    this.#runtime = deps.runtime;
     this.#citationPopover = deps.citationPopover;
     this.#annotationPopover = deps.annotationPopover;
     this.#settings = deps.settings;
@@ -207,7 +208,7 @@ export class CitekeyEditor extends Service<void> {
       this.#app.workspace.updateOptions();
     });
     stack.defer(
-      this.#settings.subscribe((settings) => {
+      subscribe(this.#runtime, this.#settings.changes, (settings) => {
         if (settings) this.#applySettings(settings);
       }),
     );

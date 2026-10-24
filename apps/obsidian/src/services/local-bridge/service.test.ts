@@ -8,7 +8,10 @@ import {
   LOCAL_BRIDGE_PATHS,
 } from "@zotlit/workbench/bridge";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { LocalServerService } from "@/services/local-server/service";
 import type { ProfileReader } from "@/services/profile/service";
@@ -35,7 +38,7 @@ interface SettingsStub {
 
 function makeSettings(overrides: Partial<Settings>): SettingsStub {
   let current: Readonly<Settings> = { ...defaults, ...overrides };
-  const subscribers = new Set<(value: Readonly<Settings>) => void>();
+  const updates = testEvent<Readonly<Settings>>();
   const update = vi.fn();
   return {
     update,
@@ -46,15 +49,14 @@ function makeSettings(overrides: Partial<Settings>): SettingsStub {
       get loaded() {
         return Promise.resolve(current);
       },
-      subscribe: (cb: (value: Readonly<Settings>) => void) => {
-        subscribers.add(cb);
-        return () => subscribers.delete(cb);
-      },
+      changes: Stream.suspend(() =>
+        updates.stream.pipe(Stream.prepend([current])),
+      ),
       update,
     } as unknown as PlainPluginSettings,
     push(patch) {
       current = { ...current, ...patch };
-      for (const cb of subscribers) cb(current);
+      updates.emit(current);
     },
   };
 }
@@ -154,6 +156,7 @@ async function harness(
   await using stack = new AsyncDisposableStack();
   const localServer = stack.use(
     new LocalServerService({
+      runtime: testRuntime(),
       settings: settings.service,
       zoteroPref: { sourceId: "a1b2c3d4" } as unknown as PlainZoteroPref,
       noteIndex: {
@@ -164,6 +167,7 @@ async function harness(
   );
   const bridge = stack.use(
     new LocalBridgeService({
+      runtime: testRuntime(),
       webWorkbenchEnabled: options.webWorkbenchEnabled ?? true,
       app: device.app,
       settings: settings.service,

@@ -1,7 +1,6 @@
 // Settings for the declarative setting tab, legacy services, and views.
 import { Effect } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
+import type { ManagedRuntime, Stream } from "@/lib/effect";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
 import type { HydrationOrigin } from "./classify";
@@ -9,6 +8,7 @@ import { PluginSettings } from "./service";
 import type { Settings, SettingsDiagnostic, SettingsPatch } from "./service";
 
 export interface PlainPluginSettings {
+  readonly changes: Stream.Stream<Readonly<Settings>>;
   readonly current: Readonly<Settings>;
   readonly loaded: Promise<Readonly<Settings>>;
   readonly diagnostics: readonly SettingsDiagnostic[];
@@ -22,7 +22,6 @@ export interface PlainPluginSettings {
   ): void;
   flush(): Promise<void>;
   release(): void;
-  subscribe(callback: (value: Readonly<Settings>) => void): () => void;
 }
 
 export function plainPluginSettings(
@@ -58,6 +57,6 @@ export function plainPluginSettings(
       run.runSync(settings.updateDefaultLiteratureNoteProfileBindings(patch)),
     flush: () => run.runPromise(settings.flush()),
     release: () => run.runSync(settings.release()),
-    subscribe: (callback) => subscribe(runtime, settings.changes, callback),
+    changes: settings.changes,
   };
 }

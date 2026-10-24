@@ -7,12 +7,12 @@ import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { testEvents } from "@/lib/__fixtures__/event-stream";
 import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
@@ -86,14 +86,21 @@ function bannerDeps(
   app: App,
   settings: PlainPluginSettings,
 ): WelcomeBannerDeps {
-  const events = createNanoEvents<Record<string, () => void>>();
+  const events = testEvents<Record<string, () => void>>([
+    "changed",
+    "degraded",
+    "refresh-failed",
+    "db-file-missing",
+    "refreshing",
+  ]);
   const deps: WelcomeBannerDeps = {
+    runtime: testRuntime(),
     app,
     reads: {
       state: "ready",
       error: null,
       reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 3 }) },
-      on: events.on.bind(events),
+      ...events.streams,
     } as unknown as WelcomeBannerDeps["reads"],
     queries: queryClientsFixture(),
     zoteroPref: { dataDir: "/Zotero" },

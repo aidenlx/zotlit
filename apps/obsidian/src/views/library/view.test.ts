@@ -17,11 +17,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { keymapApp, pressTop } from "@/lib/__fixtures__/keymap";
 import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
@@ -450,7 +452,13 @@ async function pluginData(stored?: unknown) {
   const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(answer(database.items, request)),
   );
-  const reads = createNanoEvents<Record<string, () => void>>();
+  const reads = testEvents<Record<string, () => void>>([
+    "changed",
+    "degraded",
+    "refresh-failed",
+    "db-file-missing",
+    "refreshing",
+  ]);
   /** What the database service says of Zotero's database. */
   const database_ = {
     state: "ready" as "ready" | "degraded",
@@ -458,7 +466,7 @@ async function pluginData(stored?: unknown) {
     moved: false,
   };
   const readsDeps = {
-    on: reads.on.bind(reads),
+    ...reads.streams,
     get state() {
       return database_.state;
     },
@@ -493,11 +501,14 @@ async function pluginData(stored?: unknown) {
     copyCitationKey: vi.fn(() => Promise.resolve()),
     showInZotero: vi.fn(),
   };
-  const scopeEvents = createNanoEvents<{ changed: () => void }>();
+  const scopeEvents = testEvents<{
+    changed: () => void;
+    "libraries-changed": () => void;
+  }>(["changed", "libraries-changed"]);
   const off = () => () => {};
   // The saved scope also names a group the database no longer holds.
   const libraryScope = {
-    on: scopeEvents.on.bind(scopeEvents),
+    ...scopeEvents.streams,
     effective: {
       mode: "selected",
       libraries: [
@@ -542,6 +553,7 @@ async function pluginData(stored?: unknown) {
     );
   };
   const deps = {
+    runtime: testRuntime(),
     useLedger: { get: () => undefined },
     app: {
       ...host.app,
@@ -577,6 +589,7 @@ async function pluginData(stored?: unknown) {
     items,
     settings,
     welcome: {
+      runtime: testRuntime(),
       app: host.app,
       reads: readsDeps,
       queries: queryClientsFixture(),

@@ -3,6 +3,7 @@ import { TestClock } from "effect/testing";
 import type { LinkCache, TFile } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
@@ -153,14 +154,15 @@ async function makeHarness({
   const citationRequests: { citations: readonly string[] }[] = [];
   const bibliographyRequests: string[][] = [];
   const listeners = new Map<string, (payload?: never) => void>();
-  const listen =
-    (event: string) =>
-    (name: string, cb: (payload?: never) => void): (() => void) => {
-      listeners.set(`${event}:${name}`, cb);
-      return () => listeners.delete(`${event}:${name}`);
-    };
+  const native = new Map<string, ReturnType<typeof testEvent<unknown>>>();
+  const stream = <A>(key: string): Stream.Stream<A> => {
+    const source = native.get(key) ?? testEvent<unknown>();
+    native.set(key, source);
+    return source.stream as Stream.Stream<A>;
+  };
   const fire = (key: string, payload?: unknown): void => {
     listeners.get(key)?.(payload as never);
+    native.get(key)?.emit(payload);
   };
   const wikilinkOccurrences: CitationOccurrence[] =
     settings["citation.wikilink-citations"] === true
@@ -221,7 +223,7 @@ async function makeHarness({
     {
       openDocuments,
       citationLookup: {
-        on: listen("lookup"),
+        changed: stream("lookup:changed"),
       },
       app: {
         vault: {
@@ -277,10 +279,12 @@ async function makeHarness({
               { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
             ),
           }),
-        on: listen("index"),
+        changed: stream("index:changed"),
+        "membership-changed": stream("index:membership-changed"),
       },
       noteIndex: {
-        on: listen("notes"),
+        changed: stream("notes:changed"),
+        indexed: stream("notes:indexed"),
         whenIndexed: () => Promise.resolve(),
       },
       bibliographyRender: bibliographyRender ?? {
@@ -314,7 +318,7 @@ async function makeHarness({
                 },
           );
         },
-        on: listen("render"),
+        invalidated: stream("render:invalidated"),
       },
       profile: profileReader(
         { ...defaults, ...settings },
@@ -457,7 +461,7 @@ describe("CitationText", () => {
                 entries: [],
                 hasEntryMarkers: false,
               }),
-              on: () => () => {},
+              invalidated: Stream.empty,
             } as never,
           }),
         );
@@ -551,12 +555,24 @@ describe("CitationText", () => {
             await bibliographyRenderFixture(
               {
                 queryClient,
-                profile: { on: () => () => {} },
-                db: { on: () => () => {} },
-                zoteroPref: { dataDir: "/unused", on: () => () => {} },
+                profile: { changed: Stream.empty },
+                db: {
+                  changed: Stream.empty,
+                  degraded: Stream.empty,
+                  "refresh-failed": Stream.empty,
+                  refreshing: Stream.empty,
+                  "db-file-missing": Stream.empty,
+                  "refresh-requested": Stream.empty,
+                },
+                zoteroPref: {
+                  dataDir: "/unused",
+                  changed: Stream.empty,
+                  "data-dir-changed": Stream.empty,
+                  "resolved-changed": Stream.empty,
+                },
                 settings: {
                   current: defaults,
-                  subscribe: () => () => {},
+                  changes: Stream.empty,
                 },
                 pandocEngine: {
                   getStatus: () => ({
@@ -564,7 +580,7 @@ describe("CitationText", () => {
                     version: "3.10",
                     binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
                   }),
-                  subscribe: () => () => {},
+                  changes: Stream.empty,
                   getEngine: async () =>
                     ({ renderCitations, renderBibliography }) as never,
                 },
@@ -1686,7 +1702,7 @@ it.effect("#1683 renders a document with one source read", () =>
         readCitations: async (sources) =>
           sources.map((source) => rendered(source)),
         readBibliography: async () => ({ entries: [], hasEntryMarkers: false }),
-        on: () => () => {},
+        invalidated: Stream.empty,
       } as CitationTextDeps["bibliographyRender"],
     });
     const result = await service.read(h.draft.path);

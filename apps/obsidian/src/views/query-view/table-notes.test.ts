@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import type {
   CreationPlan,
@@ -76,6 +79,7 @@ function setup(
     path in frontmatter ? { frontmatter: frontmatter[path] } : null,
   );
   const deps = {
+    runtime: testRuntime(),
     app: {
       metadataCache: { getCache },
       ...(types && {
@@ -90,8 +94,8 @@ function setup(
       }),
     },
     noteIndex,
-    profile: { on: () => () => {} },
-    template: { on: () => () => {} },
+    profile: { changed: Stream.empty },
+    template: { "compile-status-changed": Stream.empty },
     noteFeature: { replacedKeys: async () => new Set() },
   } as unknown as LiteratureNotesDeps;
   /** Assign `widget` to `name`, as the Properties panel does. */
@@ -342,16 +346,7 @@ describe("literatureNotes vault property writes", () => {
     const replacedKeys = vi.fn(
       async (file: TFile) => new Set(replaced[file.path] ?? []),
     );
-    const sources = {
-      profile: new Set<() => void>(),
-      template: new Set<() => void>(),
-    };
-    const source = (listeners: Set<() => void>) => ({
-      on: (_event: string, cb: () => void) => {
-        listeners.add(cb);
-        return () => listeners.delete(cb);
-      },
-    });
+    const sources = { profile: testEvent<void>(), template: testEvent<void>() };
     /** The usual creation: a note at `<key>.md`, as the Profile's template writes it. */
     const createNote = vi.fn(async (item: { indexedKey: string }) => ({
       outcome: "created" as const,
@@ -361,6 +356,7 @@ describe("literatureNotes vault property writes", () => {
       ),
     }));
     const deps = {
+      runtime: testRuntime(),
       app: {
         ...host.app,
         metadataCache: {
@@ -370,8 +366,8 @@ describe("literatureNotes vault property writes", () => {
         },
       },
       noteIndex,
-      profile: source(sources.profile),
-      template: source(sources.template),
+      profile: { changed: sources.profile.stream },
+      template: { "compile-status-changed": sources.template.stream },
       zoteroReads: {
         reads: {
           ItemsByIndexedKeys: ({ indexedKeys }: { indexedKeys: string[] }) =>
@@ -397,7 +393,7 @@ describe("literatureNotes vault property writes", () => {
       replacedKeys,
       /** Fire a change of the Profiles, or of the templates. */
       changed: (of: "profile" | "template") => {
-        for (const cb of sources[of]) cb();
+        sources[of].emit();
       },
       notes: literatureNotes(deps),
       createNote,

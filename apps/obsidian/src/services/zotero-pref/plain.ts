@@ -1,17 +1,10 @@
 /** Zotero preferences for settings, views, and legacy services. */
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 
 import type { PrefValue } from "./prefs-file";
 import { ZoteroPref } from "./service";
 import type { ZoteroPrefSnapshot, ZoteroProfileInfo } from "./service";
-
-export interface ZoteroPrefEvents {
-  changed: () => void;
-  "data-dir-changed": () => void;
-  "resolved-changed": () => void;
-}
 
 export interface PlainZoteroPref extends Omit<ZoteroPrefSnapshot, "prefs"> {
   get(name: string): PrefValue | undefined;
@@ -19,13 +12,10 @@ export interface PlainZoteroPref extends Omit<ZoteroPrefSnapshot, "prefs"> {
   setDataDir(dir: string | null): void;
   companionInstalled(): Promise<boolean>;
   listProfiles(): Promise<ZoteroProfileInfo[]>;
-  /** Subsequent state changes; the returned function stops delivery. */
-  subscribe(callback: (snapshot: ZoteroPrefSnapshot) => void): () => void;
-  /** Compatibility events for callers that have not moved to the state Stream. */
-  on<K extends keyof ZoteroPrefEvents>(
-    event: K,
-    callback: ZoteroPrefEvents[K],
-  ): () => void;
+  readonly changes: Stream.Stream<ZoteroPrefSnapshot>;
+  readonly changed: Stream.Stream<void>;
+  readonly "data-dir-changed": Stream.Stream<void>;
+  readonly "resolved-changed": Stream.Stream<void>;
 }
 
 export function plainZoteroPref(
@@ -44,17 +34,6 @@ export function plainZoteroPref(
   const runPromise = <A>(effect: Effect.Effect<A>): Promise<A> =>
     closed() ? runReleasedPromise(effect) : runtime.runPromise(effect);
   const current = () => runSync(pref.current);
-  const subscribeChanges = (
-    callback: (snapshot: ZoteroPrefSnapshot) => void,
-  ) => {
-    if (closed()) return () => {};
-    const seen = current();
-    return subscribe(
-      runtime,
-      Stream.dropWhile(pref.changes, (next) => next === seen),
-      callback,
-    );
-  };
   return {
     get state() {
       return current().state;
@@ -88,23 +67,24 @@ export function plainZoteroPref(
     setDataDir: (dir) => runSync(pref.setDataDir(dir)),
     companionInstalled: () => runPromise(pref.companionInstalled()),
     listProfiles: () => runPromise(pref.listProfiles()),
-    subscribe: subscribeChanges,
-    on: (event, callback) => {
-      let previous = current();
-      return subscribeChanges((next) => {
-        const prefsChanged = next.prefs !== previous.prefs;
-        const dataDirChanged =
-          next.dataDirOverride !== previous.dataDirOverride;
-        previous = next;
-        if (
-          event === "changed"
-            ? prefsChanged
-            : event === "data-dir-changed"
-              ? dataDirChanged
-              : prefsChanged || dataDirChanged
-        )
-          callback();
-      });
-    },
+    changes: pref.changes,
+    changed: pref.changes.pipe(
+      Stream.changesWith((a, b) => a.prefs === b.prefs),
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
+    "data-dir-changed": pref.changes.pipe(
+      Stream.changesWith((a, b) => a.dataDirOverride === b.dataDirOverride),
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
+    "resolved-changed": pref.changes.pipe(
+      Stream.changesWith(
+        (a, b) =>
+          a.prefs === b.prefs && a.dataDirOverride === b.dataDirOverride,
+      ),
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
   };
 }

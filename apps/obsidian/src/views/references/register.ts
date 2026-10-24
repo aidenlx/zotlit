@@ -1,5 +1,6 @@
 import type { App, Plugin } from "obsidian";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
@@ -22,19 +23,35 @@ type ReferencesPlugin = Pick<
 >;
 
 export interface ReferencesRegistrationDeps {
+  runtime: SubscriptionRuntime;
   profile: ProfileReader;
   app: App;
-  db: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
+  db: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   citationIndex: PlainCitationIndex;
   citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: Pick<PlainLibraryScope, "current">;
   citationText: ReferencesViewDeps["citationText"];
-  runtime: ReferencesViewDeps["runtime"];
   citekeyEditor: CitekeyEditor;
-  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "decline">;
   bibliographyRender: Pick<
     PlainBibliographyRender,
-    "render" | "on" | "vaultPresentation"
+    | "render"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
+    | "vaultPresentation"
   >;
 }
 

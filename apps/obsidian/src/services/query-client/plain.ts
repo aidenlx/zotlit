@@ -5,14 +5,14 @@ import type {
   QueryKey,
 } from "@tanstack/query-core";
 
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
+import { Cause, Effect, Exit } from "@/lib/effect";
+import type { ManagedRuntime, Stream } from "@/lib/effect";
 
 import { QueryClients } from "./service";
 import type { Held, HeldReadChange, HeldReadEvents } from "./service";
 
 export interface PlainQueryClients {
+  readonly changes: Stream.Stream<HeldReadChange>;
   readonly client: QueryClient;
   invalidate(key: QueryKey): void;
   update<T>(key: QueryKey, next: (held: T) => T): void;
@@ -30,8 +30,6 @@ export interface PlainQueryClients {
     signal?: AbortSignal,
   ): Promise<T>;
   watch<T>(prefix: QueryKey, on: HeldReadEvents<T>): () => void;
-  /** Settlements after this call, until the returned unsubscribe is called. */
-  subscribe(callback: (change: HeldReadChange) => void): () => void;
 }
 
 export function plainQueryClients(
@@ -72,14 +70,6 @@ export function plainQueryClients(
         throw new DOMException("Held read released", "AbortError");
       }),
     watch: (prefix, on) => runSync(queries.watch(prefix, on), () => () => {}),
-    subscribe: (callback) => {
-      if (closed()) return () => {};
-      const seen = runtime.runSync(queries.current);
-      return subscribe(
-        runtime,
-        Stream.dropWhile(queries.changes, (next) => next === seen),
-        callback,
-      );
-    },
+    changes: queries.changes,
   };
 }

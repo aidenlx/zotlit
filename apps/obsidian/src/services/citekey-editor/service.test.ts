@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
@@ -614,20 +615,17 @@ class LookupStub extends CitationLookupStub {
 class SettingsStub {
   current: Readonly<Settings>;
   readonly ready = Promise.resolve();
-  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
+  readonly #events = testEvent<Readonly<Settings>>();
+  readonly changes = Stream.suspend(() =>
+    this.#events.stream.pipe(Stream.prepend([this.current])),
+  );
 
   constructor(overrides: Partial<Settings> = {}) {
     this.current = { ...defaults, ...overrides };
   }
 
-  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
   update(overrides: Partial<Settings>): void {
     this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
+    this.#events.emit(this.current);
   }
 }

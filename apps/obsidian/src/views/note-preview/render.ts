@@ -36,6 +36,7 @@ import type {
 
 import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation-render";
 import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
 import { readLiveText } from "@/lib/live-text";
@@ -65,7 +66,17 @@ import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "on">;
+  runtime: SubscriptionRuntime;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   templates: Pick<
     PlainTemplate,
     | "render"
@@ -75,7 +86,7 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     | "prepareLiteratureNoteTemplateSource"
     | "frontmatterFields"
     | "javascriptTemplatesEnabled"
-    | "on"
+    | "compile-status-changed"
   >;
   /** Reads the Profile a Shared Partial preview renders its bindings under. */
   profile: Pick<PlainProfile, "resolveProfile">;

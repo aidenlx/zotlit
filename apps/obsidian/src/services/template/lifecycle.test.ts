@@ -12,6 +12,7 @@ import {
 } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginSettings } from "@/services/settings/service";
@@ -54,17 +55,23 @@ it.effect(
       const template = plainTemplate(runtime);
       const received = yield* Queue.unbounded<void>();
       let changes = 0;
-      const unsubscribe = template.subscribe(() => {
+      const unsubscribe = subscribe(runtime, template.changes, () => {
         Queue.offerUnsafe(received, undefined);
         if (++changes === 1) throw new Error("status listener failed");
       });
       const compiled = yield* Queue.unbounded<void>();
       let compilations = 0;
-      const stopCompile = template.on("compile-status-changed", () => {
-        Queue.offerUnsafe(compiled, undefined);
-        if (++compilations === 1) throw new Error("compile listener failed");
-      });
+      const stopCompile = subscribe(
+        runtime,
+        template["compile-status-changed"],
+        () => {
+          Queue.offerUnsafe(compiled, undefined);
+          if (++compilations === 1) throw new Error("compile listener failed");
+        },
+      );
       yield* Queue.take(received);
+      // Concurrent folder rebuilds coalesce. Chain the second reconciliation
+      // as soon as the first completes so both actual changes are observable.
       const both = template.refresh().then(() => template.refresh());
       yield* Effect.promise(() => both);
       yield* Queue.take(received);
@@ -78,7 +85,7 @@ it.effect(
       expect(yield* Effect.promise(() => template.waitUntilSettled(500))).toBe(
         "settled",
       );
-      const afterClose = template.subscribe(() => {
+      const afterClose = subscribe(runtime, template.changes, () => {
         throw new Error("closed subscriber");
       });
       host.vault.modifyFile("templates/zotlit-note.liquid.md", "After close");

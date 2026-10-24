@@ -1,7 +1,6 @@
 // The shared plain interface of a Managed Binary, run by the plugin runtime.
-import { Effect, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
+import { Effect } from "@/lib/effect";
+import type { ManagedRuntime, Stream } from "@/lib/effect";
 
 import type { ManagedBinaryApi, ManagedBinaryStatus } from "./service";
 
@@ -14,7 +13,7 @@ export interface PlainManagedBinary<
   install(): Promise<void>;
   uninstall(): Promise<void>;
   decline(): void;
-  subscribe(listener: () => void): () => void;
+  readonly changes: Stream.Stream<ManagedBinaryStatus>;
 }
 
 export function plainManagedBinary<
@@ -60,13 +59,6 @@ export function plainManagedBinary<
     },
     uninstall: () => runPromise(binary.uninstall()),
     decline: () => runSync(binary.decline()),
-    subscribe: (listener) => {
-      const seen = runSync(binary.getStatus());
-      return subscribe(
-        runtime,
-        Stream.dropWhile(binary.changes, (next) => next === seen),
-        listener,
-      );
-    },
+    changes: binary.changes,
   };
 }

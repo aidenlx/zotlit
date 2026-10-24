@@ -1,8 +1,9 @@
-// Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
-
 import { homedir } from "node:os";
 
 import { Effect } from "@/lib/effect";
+// Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -41,10 +42,19 @@ export type ReadConnectionSyncDeps = ConnectionQueryDeps;
  * @returns the unsubscribe.
  */
 export function holdConnectionReadout(deps: {
-  reads: Pick<PlainZoteroReads, "on">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   queries: Pick<PlainQueryClients, "invalidate">;
 }): () => void {
-  return deps.reads.on("changed", () =>
+  return subscribe(deps.runtime, deps.reads["changed"], () =>
     deps.queries.invalidate(ITEM_COUNT_KEY),
   );
 }

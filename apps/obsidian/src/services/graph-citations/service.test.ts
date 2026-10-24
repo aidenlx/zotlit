@@ -21,8 +21,10 @@ import type {
 } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeProperty } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -473,8 +475,19 @@ function fakeLeaf(
 
 class CitationIndexStub {
   readonly ready = Promise.resolve();
-  readonly #emitter =
-    createNanoEvents<Record<string, (...args: never[]) => void>>();
+  readonly #events = testEvent<string>();
+  readonly changed = this.#events.stream.pipe(
+    Stream.filter((event) => event === "changed"),
+  );
+  readonly backfilled = Stream.empty;
+  readonly "membership-changed" = this.#events.stream.pipe(
+    Stream.filter((event) => event === "membership-changed"),
+    Stream.map(() => undefined),
+  );
+  readonly "cited-by-invalidated" = this.#events.stream.pipe(
+    Stream.filter((event) => event === "cited-by-invalidated"),
+    Stream.map(() => undefined),
+  );
   /** What the wikilink syntax adds to {@link OCCURRENCES}, per path. */
   wikilinks = new Map<string, readonly CitationOccurrence[]>();
   citationsByPath = vi.fn((syntaxes: readonly string[]) => {
@@ -494,16 +507,12 @@ class CitationIndexStub {
     return this.#answer(citekeys);
   });
 
-  on(event: string, cb: (path: string) => void): () => void {
-    return this.#emitter.on(event, cb);
-  }
-
   emit(event: string): void {
     if (event === "resolution-changed") {
       this.#revision += 1;
       this.lookup.refresh();
     }
-    this.#emitter.emit(event);
+    this.#events.emit(event);
   }
 
   get lookupCount(): number {
@@ -603,7 +612,7 @@ function makeFixture(options: FixtureOptions = {}) {
   const openCitekey = vi.fn(() => Promise.resolve());
   const openIndexedKey = vi.fn(() => Promise.resolve());
   const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
-  const readsEvents = createNanoEvents<ZoteroReadsEvents>();
+  const readsEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   const reads = {
     reads: {
       WorkLabels: ({ indexedKeys }: { indexedKeys: readonly string[] }) =>
@@ -628,10 +637,11 @@ function makeFixture(options: FixtureOptions = {}) {
             )
           : Effect.fail(new DbUnavailable({ message: "disconnected" })),
     },
-    on: readsEvents.on.bind(readsEvents),
+    ...readsEvents.streams,
     emit: readsEvents.emit.bind(readsEvents),
   };
   const service = new GraphCitations({
+    runtime: testRuntime(),
     app,
     reads: reads as unknown as import("./service").GraphCitationsDeps["reads"],
     libraryScope: {
@@ -651,7 +661,11 @@ function makeFixture(options: FixtureOptions = {}) {
     // The stub answers plain `{ path }` records where the index answers files.
     noteIndex: noteIndex as unknown as Pick<
       PlainNoteIndex,
-      "getIndexedItemKeys" | "getNotesByItemKey" | "on"
+      | "getIndexedItemKeys"
+      | "getNotesByItemKey"
+      | "changed"
+      | "indexed"
+      | "frontmatter-changed"
     >,
     citekeyEditor: { openCitekey, openIndexedKey },
     citationPopover,

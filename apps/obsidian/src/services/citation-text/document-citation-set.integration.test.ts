@@ -7,7 +7,7 @@ import { describe, expect } from "vitest";
 
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { themeHook } from "@/lib/theme-hooks";
@@ -698,7 +698,7 @@ function openText(
           hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
         };
       },
-      on: () => () => undefined,
+      invalidated: Stream.empty,
     },
     queryClient,
   });

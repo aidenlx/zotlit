@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -206,7 +209,7 @@ describe("WikilinkDisplaySettings", () => {
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
 
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
 
     expect(display.enabled).toBe(true);
     expect(redraws).toBe(0);
@@ -218,7 +221,7 @@ describe("WikilinkDisplaySettings", () => {
       "citation.show-formatted": true,
     });
     const display = new WikilinkDisplaySettings();
-    display.watch(settings, () => undefined);
+    display.watch(testRuntime(), settings, () => undefined);
 
     settings.update({ "citation.show-formatted": false });
     expect(display.enabled).toBe(false);
@@ -236,7 +239,7 @@ describe("WikilinkDisplaySettings", () => {
     });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
 
     settings.update({ "citation.wikilink-citations": true });
     expect(redraws).toBe(1);
@@ -249,7 +252,7 @@ describe("WikilinkDisplaySettings", () => {
     const settings = new SettingsStub();
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
 
     settings.update({ "citation.pandoc-citations": false });
     expect(redraws).toBe(0);
@@ -259,7 +262,7 @@ describe("WikilinkDisplaySettings", () => {
     const settings = new SettingsStub({ "citation.open-as-links": true });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
     expect(display.clickIntercepted).toBe(false);
 
     settings.update({ "citation.open-as-links": false });
@@ -271,7 +274,7 @@ describe("WikilinkDisplaySettings", () => {
   it("reads the click apart from the Hover Action", () => {
     const settings = new SettingsStub({ "citation.hover-action": "off" });
     const display = new WikilinkDisplaySettings();
-    display.watch(settings, () => undefined);
+    display.watch(testRuntime(), settings, () => undefined);
 
     expect(display.popoverHover).toBe(false);
     expect(display.clickIntercepted).toBe(true);
@@ -282,7 +285,7 @@ describe("WikilinkDisplaySettings", () => {
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
 
-    display.watch(settings, () => redraws++)();
+    display.watch(testRuntime(), settings, () => redraws++)();
     settings.update({ "citation.wikilink-citations": true });
 
     expect(display.enabled).toBe(false);
@@ -292,20 +295,17 @@ describe("WikilinkDisplaySettings", () => {
 
 class SettingsStub {
   current: Readonly<Settings>;
-  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
+  readonly #events = testEvent<Readonly<Settings>>();
+  readonly changes = Stream.suspend(() =>
+    this.#events.stream.pipe(Stream.prepend([this.current])),
+  );
 
   constructor(overrides: Partial<Settings> = {}) {
     this.current = { ...defaults, ...overrides };
   }
 
-  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
   update(overrides: Partial<Settings>): void {
     this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
+    this.#events.emit(this.current);
   }
 }

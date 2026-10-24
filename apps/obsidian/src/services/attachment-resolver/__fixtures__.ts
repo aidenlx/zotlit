@@ -1,15 +1,12 @@
+import { expect } from "vitest";
 // The Attachment resolver for real, over an in-process Zotero database seeded
 // with the rows a suite names. The resolver's own suite and the opener suites
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
 
-import { expect } from "vitest";
-
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { Effect, Stream } from "@/lib/effect";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,
@@ -87,15 +84,20 @@ export async function resolverHarness(
   let now = Temporal.Now.instant();
   const queries = stack.use(queryClientsFixture(() => now));
 
-  const prefEvents = createNanoEvents<ZoteroPrefEvents>();
+  const resolvedChanged = testEvent<void>();
+  const prefEvents = {
+    emit: (_event: "resolved-changed") => resolvedChanged.emit(),
+  };
   const zoteroPref = {
     dataDir: DATA_DIR,
     baseAttachmentPath: options.baseAttachmentPath ?? null,
-    on: <K extends keyof ZoteroPrefEvents>(event: K, cb: ZoteroPrefEvents[K]) =>
-      prefEvents.on(event, cb),
+    changed: Stream.empty,
+    "data-dir-changed": Stream.empty,
+    "resolved-changed": resolvedChanged.stream,
   };
 
   const resolver = new AttachmentResolver({
+    runtime: queries.runtime,
     reads,
     queries,
     zoteroPref,

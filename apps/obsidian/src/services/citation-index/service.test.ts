@@ -4,6 +4,7 @@ import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -91,7 +92,7 @@ describe("CitationIndex", () => {
         );
         await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
         citekeys.error = new Error("unavailable");
-        db.changed();
+        db.notifyChanged();
         await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
         metadataCache.change(draft, "@doe2024 @newKey");
         await index.getFileScan(draft);
@@ -267,7 +268,7 @@ describe("CitationIndex", () => {
           links: [link("Doe 2024", body.indexOf("[["))],
         } as CachedMetadata);
         let changed = 0;
-        index.on("membership-changed", () => changed++);
+        subscribe(index.runtime, index["membership-changed"], () => changed++);
 
         expect(
           (await index.getDocumentCitationSet(draft)).occurrences.map(
@@ -565,7 +566,7 @@ describe("CitationIndex", () => {
       });
       await citationsOf(index, draft);
       let notified = 0;
-      index.on("changed", () => notified++);
+      subscribe(index.runtime, index["changed"], () => notified++);
 
       metadataCache.change(draft, "As @doe2024 wrote.");
       await citationsOf(index, draft);
@@ -581,7 +582,7 @@ describe("CitationIndex", () => {
       });
       await citationsOf(index, draft);
       const changed: string[] = [];
-      index.on("changed", (path) => changed.push(path));
+      subscribe(index.runtime, index["changed"], (path) => changed.push(path));
 
       metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
 
@@ -613,7 +614,7 @@ describe("CitationIndex", () => {
       workspace.layoutReady();
       await index.whenIndexed();
       const changed: string[] = [];
-      index.on("changed", (path) => changed.push(path));
+      subscribe(index.runtime, index["changed"], (path) => changed.push(path));
 
       vault.deleteFile(draft);
 
@@ -730,7 +731,7 @@ describe("CitationIndex", () => {
       await citationsOf(index, draft);
       store.writes.length = 0;
       const changed: string[] = [];
-      index.on("changed", (path) => changed.push(path));
+      subscribe(index.runtime, index["changed"], (path) => changed.push(path));
 
       await closeIndex();
       metadataCache.change(draft, "As @roe2025 wrote.");
@@ -1161,7 +1162,7 @@ describe("CitationIndex resolution", () => {
           .poll(() => snapshots.at(-1)?.groups)
           .toMatchObject([{ path: "draft.md" }]);
         citekeys.error = new Error("database read failed");
-        db.changed();
+        db.notifyChanged();
 
         await expect
           .poll(() => snapshots.at(-1))
@@ -1523,7 +1524,7 @@ describe("CitationIndex resolution", () => {
             citekey: "doe2024",
           },
         ];
-        db.changed();
+        db.notifyChanged();
 
         await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
       }),
@@ -1683,14 +1684,14 @@ describe("CitationIndex resolution", () => {
           await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
 
           h.citekeys.error = new Error("database read failed");
-          h.db.changed();
+          h.db.notifyChanged();
           await h.lookup.whenResolved();
           await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
 
           stop();
           const before = snapshots.length;
           h.citekeys.error = null;
-          h.db.changed();
+          h.db.notifyChanged();
           await h.lookup.whenResolved();
           expect(h.lookup.status).toBe("fresh");
           expect(snapshots).toHaveLength(before);

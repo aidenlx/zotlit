@@ -1,6 +1,9 @@
 import { PluginSettingTab } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
+import { Stream } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -45,6 +48,7 @@ import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
 import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
+  runtime: SubscriptionRuntime;
   webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
@@ -53,16 +57,30 @@ export interface ZotLitSettingTabOptions {
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
-    | "subscribe"
+    | "changes"
   >;
   profile: SettingTabContext["profile"];
   db: Pick<
     PlainZoteroReads,
-    "refresh" | "state" | "error" | "on" | "activeReadMode"
+    | "refresh"
+    | "state"
+    | "error"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "activeReadMode"
   >;
   libraryScope: Pick<
     PlainLibraryScope,
-    "current" | "effective" | "invalid" | "libraries" | "on"
+    | "current"
+    | "effective"
+    | "invalid"
+    | "libraries"
+    | "changed"
+    | "libraries-changed"
   >;
   zoteroPref: SettingTabContext["zoteroPref"];
   localServer: LocalServerActions;
@@ -90,15 +108,29 @@ export class ZotLitSettingTab extends PluginSettingTab {
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
-    | "subscribe"
+    | "changes"
   >;
   readonly #db: Pick<
     PlainZoteroReads,
-    "refresh" | "state" | "error" | "on" | "activeReadMode"
+    | "refresh"
+    | "state"
+    | "error"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "activeReadMode"
   >;
   readonly #libraryScope: Pick<
     PlainLibraryScope,
-    "current" | "effective" | "invalid" | "libraries" | "on"
+    | "current"
+    | "effective"
+    | "invalid"
+    | "libraries"
+    | "changed"
+    | "libraries-changed"
   >;
   readonly #zoteroPref: SettingTabContext["zoteroPref"];
   readonly #localServer: LocalServerActions;
@@ -117,7 +149,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #chineseSegmenter: ManagedBinaryActions;
   readonly #languagePack: LanguagePackLifecycle;
 
+  readonly #runtime;
+
   constructor({
+    runtime,
     webWorkbenchEnabled,
     importProfile,
     plugin,
@@ -142,6 +177,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
+    this.#runtime = runtime;
     this.#webWorkbenchEnabled = webWorkbenchEnabled;
     this.#plugin = plugin;
     this.#importProfile = importProfile;
@@ -166,21 +202,35 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#writeAuthorization = writeAuthorization;
     this.#template = template;
     this.#profile = profile;
-    plugin.register(profile.on("changed", () => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, profile["changed"], () => this.#requestUpdate()),
+    );
     this.#release = release;
     this.#pandocEngine = pandocEngine;
     this.#chineseSegmenter = chineseSegmenter;
     this.#languagePack = languagePack;
 
     plugin.register(
-      template.on("compile-status-changed", () => this.#requestUpdate()),
+      subscribe(runtime, template["compile-status-changed"], () =>
+        this.#requestUpdate(),
+      ),
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
-    plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
-    plugin.register(chineseSegmenter.subscribe(() => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, Stream.drop(pandocEngine.changes, 1), () =>
+        this.#requestUpdate(),
+      ),
+    );
+    plugin.register(
+      subscribe(runtime, Stream.drop(chineseSegmenter.changes, 1), () =>
+        this.#requestUpdate(),
+      ),
+    );
     // Library scope rows are built from the resolved scope, so a database
     // refresh, a group rename, and a repair each rebuild them.
-    plugin.register(libraryScope.on("changed", () => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, libraryScope["changed"], () => this.#requestUpdate()),
+    );
 
     // Settings: the two pending flags are structural — the reminder rows are
     // included or left out, not toggled via `visible` — so the tab re-renders
@@ -191,7 +241,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     let lastTemplateConversionPending =
       settings.current?.["note.template-conversion-pending"];
     plugin.register(
-      settings.subscribe((value) => {
+      subscribe(runtime, settings.changes, (value) => {
         const pending = value?.["release.migration-pending"];
         const templateConversionPending =
           value?.["note.template-conversion-pending"];
@@ -244,6 +294,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
+      runtime: this.#runtime,
       webWorkbenchEnabled: this.#webWorkbenchEnabled,
       app: this.#plugin.app,
       importProfile: this.#importProfile,

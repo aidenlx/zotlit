@@ -1,11 +1,12 @@
-// Reads Zotero's data live, from the local API a running Zotero serves on loopback.
-
 import * as v from "valibot";
 
 import { parseIndexedKey } from "@zotlit/db";
+// Reads Zotero's data live, from the local API a running Zotero serves on loopback.
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { AbortError } from "@/lib/abort-error";
+import { subscribe } from "@/lib/effect-stream";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { parseJson, zoteroOrigin } from "@/lib/zotero-http";
 import type { ZoteroTransport } from "@/lib/zotero-http";
@@ -154,9 +155,13 @@ export interface ZoteroLocalApiEvents {
 }
 
 export interface ZoteroLocalApiDeps {
+  runtime: SubscriptionRuntime;
   fetch: ZoteroTransport;
   /** Zotero's HTTP port, and the signal that the resolved paths moved. */
-  zoteroPref: Pick<PlainZoteroPref, "httpPort" | "on">;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "httpPort" | "changed" | "data-dir-changed" | "resolved-changed"
+  >;
   /** The Companion's Freshness Signal. */
   localServer: Pick<LocalServerService, "on">;
   credentials: WriteAuthorizationStore;
@@ -190,6 +195,7 @@ type ProbeState = LocalApiState | { kind: "unprobed" };
  * @see apps/obsidian/docs/adr/0036-local-api-enablement-is-a-guided-manual-step-in-zotero.md
  */
 export class ZoteroLocalApiClient extends Service<void> {
+  readonly #runtime;
   readonly #fetch;
   readonly #zoteroPref;
   readonly #localServer;
@@ -231,6 +237,7 @@ export class ZoteroLocalApiClient extends Service<void> {
   ready: Promise<void>;
 
   constructor({
+    runtime,
     fetch,
     zoteroPref,
     localServer,
@@ -240,6 +247,7 @@ export class ZoteroLocalApiClient extends Service<void> {
     now = () => Temporal.Now.instant(),
   }: ZoteroLocalApiDeps) {
     super();
+    this.#runtime = runtime;
     this.#fetch = fetch;
     this.#zoteroPref = zoteroPref;
     this.#localServer = localServer;
@@ -725,7 +733,7 @@ export class ZoteroLocalApiClient extends Service<void> {
       }),
     );
     stack.defer(
-      this.#zoteroPref.on("resolved-changed", () => {
+      subscribe(this.#runtime, this.#zoteroPref["resolved-changed"], () => {
         void this.#reprobe("resolved paths changed", {
           moved: true,
           stale: true,

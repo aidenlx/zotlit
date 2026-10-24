@@ -2,6 +2,8 @@ import type { App, HoverParent } from "obsidian";
 import type { ReactNode } from "react";
 
 import { registerEvent } from "@/lib/disposables";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -43,9 +45,13 @@ import type { HoverVisit } from "./visits";
 const logger = getLogger("citation-popover");
 
 export interface CitationPopoverDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
-  citationLookup: Pick<PlainCitationLookup, "read" | "status" | "on">;
+  citationLookup: Pick<
+    PlainCitationLookup,
+    "read" | "status" | "changed" | "status-changed"
+  >;
   citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;
@@ -55,7 +61,13 @@ export interface CitationPopoverDeps {
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
     PlainBibliographyRender,
-    "render" | "readBibliography" | "on" | "vaultPresentation"
+    | "render"
+    | "readBibliography"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
+    | "vaultPresentation"
   >;
 }
 
@@ -163,12 +175,16 @@ export class CitationPopover extends Service {
     const draw = (): void => {
       void read();
     };
-    subscriptions.defer(deps.bibliographyRender.on("invalidated", draw));
+    subscriptions.defer(
+      subscribe(deps.runtime, deps.bibliographyRender["invalidated"], draw),
+    );
     if (!("work" in request) || request.work.kind === "citekey") {
-      subscriptions.defer(deps.citationLookup.on("changed", draw));
+      subscriptions.defer(
+        subscribe(deps.runtime, deps.citationLookup["changed"], draw),
+      );
       let freshness = deps.citationLookup.status;
       subscriptions.defer(
-        deps.citationLookup.on("status-changed", () => {
+        subscribe(deps.runtime, deps.citationLookup["status-changed"], () => {
           const previous = freshness;
           freshness = deps.citationLookup.status;
           if (freshness === "failed") showFailure(currentVisit);

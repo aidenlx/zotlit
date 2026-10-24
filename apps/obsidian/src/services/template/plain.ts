@@ -1,24 +1,16 @@
 import { Cause, Effect, Exit } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
+import type { ManagedRuntime, Stream } from "@/lib/effect";
 
 import { plainTemplateError } from "./errors";
 import { TemplateMigration } from "./migration";
 import type { LiteratureNoteTemplateMigrationResult } from "./migration";
 import { Template } from "./service";
-import type {
-  TemplateOperations,
-  TemplateServiceEvents,
-  TemplateStatus,
-} from "./service";
+import type { TemplateOperations, TemplateStatus } from "./service";
 
 export type PlainTemplate = TemplateOperations & {
+  readonly changes: Stream.Stream<TemplateStatus>;
+  readonly "compile-status-changed": Stream.Stream<void>;
   readonly status: TemplateStatus;
-  subscribe(callback: (status: TemplateStatus) => void): () => void;
-  on<K extends keyof TemplateServiceEvents>(
-    event: K,
-    callback: TemplateServiceEvents[K],
-  ): () => void;
 };
 
 export function plainTemplate(
@@ -43,8 +35,6 @@ export function plainTemplate(
       throw plainTemplateError(Cause.squash(exit.cause));
     return exit.value;
   };
-  const subscribeChanges = (callback: (status: TemplateStatus) => void) =>
-    subscribe(runtime, service.changes, callback);
   return {
     get status() {
       return read(service.status);
@@ -128,9 +118,8 @@ export function plainTemplate(
       read(service.validateFrontmatterExpr(expr, language)),
     setJavascriptTemplatesEnabled: (enabled) =>
       run(service.setJavascriptTemplatesEnabled(enabled)),
-    subscribe: subscribeChanges,
-    on: (_event, callback) =>
-      subscribe(runtime, service.compileEvents, callback),
+    changes: service.changes,
+    "compile-status-changed": service.compileEvents,
   };
 }
 

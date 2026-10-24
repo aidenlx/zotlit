@@ -3,6 +3,8 @@ import { ButtonComponent, Setting } from "@mock/obsidian";
 import type { Setting as ObsidianSetting, SettingDefinition } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ManagedBinaryStatus } from "@/services/managed-binary/service";
 
@@ -42,7 +44,7 @@ const COPY: ManagedBinaryCopy = {
 function binary(status: ManagedBinaryStatus) {
   return {
     getStatus: () => status,
-    subscribe: () => () => undefined,
+    changes: Stream.empty,
     install: vi.fn(() => Promise.resolve()),
     uninstall: vi.fn(() => Promise.resolve()),
   };
@@ -119,6 +121,7 @@ describe("managedBinaryDefinition", () => {
 describe("pandocEngineDefinition", () => {
   it("renders the Pandoc engine row from its own messages", () => {
     const ctx = {
+      runtime: testRuntime(),
       pandocEngine: binary({
         kind: "installed",
         version: "3.10",
@@ -141,6 +144,7 @@ describe("pandocEngineDefinition", () => {
 describe("chineseSegmenterDefinition", () => {
   it("renders the Chinese segmenter row from its own messages", () => {
     const ctx = {
+      runtime: testRuntime(),
       chineseSegmenter: binary({ kind: "absent" }),
     } as unknown as SettingTabContext;
     const row = chineseSegmenterDefinition(ctx);

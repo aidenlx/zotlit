@@ -12,6 +12,8 @@ import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
@@ -108,9 +110,17 @@ async function openLibrary() {
   const saveData = vi.spyOn(plugin, "saveData");
   const off = () => () => {};
   const deps = {
+    runtime: testRuntime(),
     app: { ...host.app, scope: undefined },
-    reads: { on: off },
-    libraryScope: { on: off },
+    reads: {
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "refresh-failed": Stream.empty,
+      refreshing: Stream.empty,
+      "db-file-missing": Stream.empty,
+      "refresh-requested": Stream.empty,
+    },
+    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },

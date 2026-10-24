@@ -3,6 +3,12 @@ import type { ManagedRuntime, SubscriptionRef } from "@/lib/effect";
 import { Cause, Effect, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 
+/** The plugin runtime surface used by plain Stream consumers. */
+export type SubscriptionRuntime = Pick<
+  ManagedRuntime.ManagedRuntime<never, never>,
+  "runFork" | "scope"
+>;
+
 /**
  * Replay state and retain every update until the service stops. Acquire the
  * subscription before interruptWhen forks upstream, so a consumer started

@@ -18,6 +18,8 @@
  */
 import { Effect, Exit, FiberHandle, FiberSet, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { selectorKey } from "@/services/library-scope/scope";
@@ -52,9 +54,13 @@ export interface SearchHit extends ReadsSearchHit {
 }
 
 export interface ItemLookupDeps {
+  runtime: SubscriptionRuntime;
   useLedger: Pick<PlainUseLedger, "uses">;
   reads: Pick<PlainZoteroReads, "reads">;
-  libraryScope: Pick<PlainLibraryScope, "on" | "current">;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "changed" | "libraries-changed" | "current"
+  >;
 }
 
 /**
@@ -77,6 +83,7 @@ interface ItemLookupReady {
 }
 
 export class ItemLookup extends Service<ItemLookupReady> {
+  readonly #runtime;
   readonly #reads;
   readonly #useLedger;
   readonly #libraryScope;
@@ -84,6 +91,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
   constructor(deps: ItemLookupDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#reads = deps.reads;
     this.#useLedger = deps.useLedger;
     this.#libraryScope = deps.libraryScope;
@@ -194,7 +202,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
     };
     let scopeKey = scopeKeyOf(this.#libraryScope.current);
     stack.defer(
-      this.#libraryScope.on("changed", (resolved) => {
+      subscribe(this.#runtime, this.#libraryScope["changed"], (resolved) => {
         // A pending answer covers the Libraries it asked with; once those
         // change, it must not reach a picker. A rename keeps it.
         const next = scopeKeyOf(resolved);

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, vi } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { testReads } from "@/services/zotero-reads/__fixtures__";
@@ -68,9 +70,8 @@ async function fixture(
     queryClient,
     libraryScope,
     reads: {
-      reads: shared.reads,
+      ...shared,
       state: "ready",
-      on: (event, callback) => shared.on(event, callback),
     },
   });
   return {
@@ -101,7 +102,12 @@ it.effect("builds once at startup with ready dependencies and no events", () =>
       reads: {
         reads: ready.client,
         state: "ready",
-        on: () => () => undefined,
+        changed: Stream.empty,
+        degraded: Stream.empty,
+        "refresh-failed": Stream.empty,
+        refreshing: Stream.empty,
+        "db-file-missing": Stream.empty,
+        "refresh-requested": Stream.empty,
       },
     });
 
@@ -230,7 +236,7 @@ describe("Citation Lookup held reads", () => {
         await expect.poll(() => view.current?.status).toBe("fresh");
         const previous = view.current!.value;
         citekeys.error = new Error("unavailable");
-        db.changed();
+        db.notifyChanged();
         await expect.poll(() => view.current?.status).toBe("failed");
         view.set({ citekeys: ["doe2024", "newKey"] });
         expect(view.current?.value).toBe(previous);
@@ -350,7 +356,7 @@ describe("Citation Lookup held reads", () => {
             citekey: "newGroup",
           },
         ];
-        db.changed();
+        db.notifyChanged();
         await lookup.whenResolved();
         expect(
           (await lookup.read({ citekeys: ["shared"] })).resolve("shared"),
@@ -416,9 +422,9 @@ describe("Citation Lookup held reads", () => {
           row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
         );
         let notified = 0;
-        lookup.on("changed", () => notified++);
+        subscribe(lookup.runtime, lookup["changed"], () => notified++);
 
-        db.changed();
+        db.notifyChanged();
         await lookup.whenResolved();
 
         expect(notified).toBeGreaterThan(0);
@@ -525,7 +531,7 @@ describe("Citation Lookup held reads", () => {
         await expect.poll(() => view.current?.status).toBe("fresh");
         const held = view.current!.value;
         citekeys.error = new Error("torn read");
-        db.changed();
+        db.notifyChanged();
         await expect.poll(() => view.current?.status).toBe("failed");
         expect(view.current!.value).toBe(held);
         await expect(lookup.read({ citekeys: ["doe2024"] })).rejects.toThrow();
@@ -678,9 +684,9 @@ describe("Citation Lookup held reads", () => {
         );
         let notified = 0;
         const original = await lookup.read({ citekeys: ["doe2024"] });
-        lookup.on("changed", () => notified++);
+        subscribe(lookup.runtime, lookup["changed"], () => notified++);
 
-        db.changed();
+        db.notifyChanged();
         await lookup.whenResolved();
         expect(notified).toBe(0);
         expect((await lookup.read({ citekeys: ["doe2024"] })).revision).toBe(
@@ -691,7 +697,7 @@ describe("Citation Lookup held reads", () => {
           { ...sameLibraryTwin, itemID: 1 },
           { ...myLibraryRow, itemID: 2 },
         ];
-        db.changed();
+        db.notifyChanged();
         await lookup.whenResolved();
 
         expect(notified).toBe(1);

@@ -36,7 +36,7 @@ async function openReads(
   );
   await runtime.context();
   const service = runtime.runSync(ZoteroReads);
-  const plain = plainZoteroReads(runtime);
+  const plain = Object.assign(plainZoteroReads(runtime), { runtime });
   const owned = stack.move();
   return { runtime, service, plain, close: () => owned.disposeAsync() };
 }
@@ -44,6 +44,7 @@ async function openReads(
 /** Legacy consumer fixtures can construct synchronously; only the test owner awaits ready. */
 export type TestReads = PlainZoteroReads &
   AsyncDisposable & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
     ready: Promise<{ reads: ZoteroReadsApi; client: ZoteroReadsApi }>;
   };
 
@@ -55,7 +56,9 @@ export function testReads(
   let plain: PlainZoteroReads | undefined;
   const loaded = runtime
     .context()
-    .then(() => (plain = plainZoteroReads(runtime)));
+    .then(
+      () => (plain = Object.assign(plainZoteroReads(runtime), { runtime })),
+    );
   // Calls made by a consumer during fixture startup wait for the real layer.
   const reads: Record<string, unknown> = {};
   for (const [tag, rpc] of ZoteroReadsRpc.requests) {
@@ -118,25 +121,52 @@ export function testReads(
     notifyExternalChange: () => {
       void loaded.then((adapter) => adapter.notifyExternalChange());
     },
-    subscribe: (callback) =>
-      delayedSubscribe((adapter) => adapter.subscribe(callback)),
-    on: (event, callback) =>
-      delayedSubscribe((adapter) => adapter.on(event, callback)),
+    runtime,
+    changes: Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["changes"],
+      ),
+    ),
+    changed: Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["changed"],
+      ),
+    ),
+    degraded: Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["degraded"],
+      ),
+    ),
+    "refresh-failed": Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["refresh-failed"],
+      ),
+    ),
+    refreshing: Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["refreshing"],
+      ),
+    ),
+    "db-file-missing": Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["db-file-missing"],
+      ),
+    ),
+    "refresh-requested": Stream.unwrap(
+      Effect.map(
+        Effect.promise(() => loaded),
+        (adapter) => adapter["refresh-requested"],
+      ),
+    ),
     [Symbol.asyncDispose]: async () => {
       await loaded;
       await stack.disposeAsync();
     },
   };
-  function delayedSubscribe(attach: (adapter: PlainZoteroReads) => () => void) {
-    if (plain) return attach(plain);
-    let active = true;
-    let stop: (() => void) | undefined;
-    void loaded.then((adapter) => {
-      if (active) stop = attach(adapter);
-    });
-    return () => {
-      active = false;
-      stop?.();
-    };
-  }
 }

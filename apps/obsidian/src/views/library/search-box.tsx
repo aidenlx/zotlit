@@ -17,6 +17,8 @@ import type { StoreApi } from "zustand/vanilla";
 import { useUniqueId } from "@zotlit/ui";
 
 import { SearchInput } from "@/components/obsidian/search-input";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ItemLookup, SearchSession } from "@/services/item-lookup/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
@@ -41,9 +43,21 @@ import { sameLibrary } from "./tree";
 export const LIBRARY_SEARCH_LIMIT = 500;
 
 export interface LibrarySearchDeps {
+  runtime: SubscriptionRuntime;
   lookup: Pick<ItemLookup, "openSession">;
-  reads: Pick<PlainZoteroReads, "on">;
-  libraryScope: Pick<PlainLibraryScope, "on" | "current" | "libraries">;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "changed" | "libraries-changed" | "current" | "libraries"
+  >;
 }
 
 /** What a search found, as the derivation reads it. */
@@ -108,13 +122,13 @@ export class LibrarySearch extends Component {
     // The Libraries of the Library Scope are what a search of all libraries
     // reads, and what Recent lists.
     this.register(
-      this.#deps.libraryScope.on("changed", () => {
+      subscribe(this.#deps.runtime, this.#deps.libraryScope["changed"], () => {
         if (this.store.getState().everywhere || this.onRecent) void this.run();
       }),
     );
     // A changed database may rank other Items for the same words (ADR 0073).
     this.register(
-      this.#deps.reads.on("changed", () => {
+      subscribe(this.#deps.runtime, this.#deps.reads["changed"], () => {
         if (searchTerms(this.store.getState().text).words !== "")
           void this.run();
       }),

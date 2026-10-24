@@ -2,6 +2,7 @@ import type { CliFlags } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
@@ -16,6 +17,7 @@ import { registerTemplateWorkbench } from "./register";
 function declaredFlags(): Map<string, CliFlags | null> {
   const { host, commands } = fakeCliHost();
   registerTemplateWorkbench({ ...host, manifest: { version: "1.2.3" } }, {
+    runtime: testRuntime(),
     app: { vault: { getName: () => "Test Vault" } },
     settings: {},
     profile: {},
@@ -60,6 +62,7 @@ describe("Template Workbench CLI registration", () => {
       const { host, command } = fakeCliHost();
       const update = vi.fn();
       registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
+        runtime: testRuntime(),
         app: {},
         settings: { update },
         templates: {},

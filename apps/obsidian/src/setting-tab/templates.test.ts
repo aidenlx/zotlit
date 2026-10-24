@@ -12,6 +12,7 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitationTemplateStatus } from "@/services/template/service";
@@ -51,6 +52,7 @@ const DEFAULT_STATUS: CitationTemplateStatus = {
 /** The Citation text row as it renders for one Citation Template state. */
 function citationRow(status: CitationTemplateStatus): Setting {
   const [row] = citationTextItems({
+    runtime: testRuntime(),
     app: {},
     requestUpdate: () => {},
     template: {
@@ -127,6 +129,7 @@ function partialRows(
   reserved: readonly { name: string; path: string }[] = [],
 ) {
   return partialItems({
+    runtime: testRuntime(),
     app: { setting: { close: vi.fn() }, vault: { getFileByPath: () => null } },
     requestUpdate: () => {},
     template: {
@@ -185,6 +188,7 @@ it("closes settings only once Add partial has created a document", async () => {
   const close = vi.fn();
   const requestUpdate = vi.fn();
   const ctx = {
+    runtime: testRuntime(),
     app: {
       setting: { close },
       vault: { getFileByPath: (path: string) => ({ path }) },
