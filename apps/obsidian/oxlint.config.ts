@@ -161,20 +161,31 @@ export default defineConfig({
       rules: {
         "zotlit-services/effect-native-resources": "error",
         "zotlit-services/no-legacy-service": "error",
+        // A layer takes Obsidian events through obsidianEvents
+        // (@/lib/effect-obsidian-events), which gives one ordered intake and a
+        // failure boundary per event; a bare registerEvent has neither.
         "zotlit-services/obsidian-events-intake": "error",
       },
     },
     {
+      // Events are Streams and state: a SubscriptionRef for what consumers
+      // watch, a PubSub Stream for occurrences (policies/events.md). Tests too,
+      // since a fake emitter keeps the legacy shape alive in its consumers.
       files: ["src/**"],
       rules: { "zotlit-services/no-nanoevents": "error" },
     },
     {
+      // A plain adapter hands out its service's Streams and state. Plain code
+      // subscribes with subscribe(runtime, stream, callback) from
+      // @/lib/effect-stream, which attaches before returning, isolates each
+      // callback's failures and goes quiet after runtime disposal; an
+      // adapter's own on/subscribe would each have to re-earn that.
       files: ["src/services/**/plain.ts"],
       rules: { "zotlit-services/plain-adapter-streams": "error" },
     },
     {
-      // Legacy emitters, written before the rule. A file moves off this list
-      // when its service converts to Effect (policies/events.md).
+      // Legacy emitters, written before no-nanoevents. A file moves off this
+      // list when its service converts to Effect.
       files: [
         "src/services/annotation-repository/__fixtures__.ts",
         "src/services/annotation-repository/service.ts",
@@ -201,8 +212,8 @@ export default defineConfig({
       rules: { "zotlit-services/no-nanoevents": "off" },
     },
     {
-      // Adapters written before the rule; #1705 moves their callers to
-      // subscribe(runtime, stream, callback) and takes each file off this list.
+      // Adapters written before plain-adapter-streams. A file moves off this
+      // list when its callers subscribe through the helper (#1705).
       files: [
         "src/services/citation-index/plain.ts",
         "src/services/library-scope/plain.ts",
@@ -220,8 +231,8 @@ export default defineConfig({
       rules: { "zotlit-services/plain-adapter-streams": "off" },
     },
     {
-      // Registers its events before obsidianEvents existed; moves off this list
-      // when it adopts the helper.
+      // Registered its events before obsidianEvents existed. It moves off this
+      // list when it adopts the helper.
       files: ["src/services/use-ledger/service.ts"],
       rules: { "zotlit-services/obsidian-events-intake": "off" },
     },

@@ -52,13 +52,13 @@ Use the source as the canonical reference. Do not copy service/container/plugin-
 New services are Effect services: a `Context.Service` tag and a scoped `Layer`, composed in `pluginLayer`. `buildServices` builds that graph first, as a `ManagedRuntime` from `buildRuntime` (`@/lib/effect-layer`), then the legacy container; disposing the runtime closes the graph after the last container service, so a container service never outlives a layer it uses. Settings and logging build below every other layer, so a service logs from its first line. `UseLedger` (`apps/obsidian/src/services/use-ledger/`) is the converted example; its `__fixtures__.ts` builds its layer over a fake App for tests.
 
 - Import Effect from `@/lib/effect`. Its run entry points carry the browser scheduler and the logger, and no graph service.
-- The tag shape is Effect-native: each method is an `Effect.fn("<Tag>.<method>")` generator returning an `Effect`. Events are Streams and state, never an emitter:
+- The tag shape is Effect-native: each method is an `Effect.fn("<Tag>.<method>")` generator returning an `Effect`. Events are Streams and state:
   - What others watch is a `SubscriptionRef`, exposed as a `changes` Stream through `changesUntil` (`@/lib/effect-stream`).
   - A discrete occurrence is a `PubSub` exposed as a Stream.
   - A condition a late subscriber must still see (stopped, failed, finished) is state.
 - Export the layer beside the tag as `layer<Name>` (a function when it takes plain inputs).
-- Callers outside Effect use a plain adapter, `<service>/plain.ts` (`plainUseLedger`), that runs each method on the plugin's runtime. It returns values and Promises, and exposes the service's Streams and state themselves; it has no `on(event, callback)` or `subscribe(callback)`. Plain code subscribes with `subscribe(runtime, stream, callback)` from `@/lib/effect-stream`. The helper attaches before it returns, isolates each callback's failures, and is a no-op after runtime disposal. `build.ts` makes the adapter once and injects it with `useValue`; consumers `Pick` from the adapter's interface.
-- A layer registers Obsidian events (`vault`, `metadataCache`, `workspace`, and one-shots such as `onLayoutReady`) through `obsidianEvents` (`@/lib/effect-obsidian-events`). That gives one ordered intake, one consumer fiber on the layer's Scope, and a failure boundary per event. Any other Obsidian callback a layer registers runs its Effect through a runner made from the layer's context: `const run = Effect.runSyncWith(yield* Effect.context<never>())`. It keeps the layer's services and Clock, which the bare entry points lack.
+- Callers outside Effect use a plain adapter, `<service>/plain.ts` (`plainUseLedger`), that runs each method on the plugin's runtime. It returns values and Promises, and exposes the service's Streams and state. Plain code subscribes with `subscribe(runtime, stream, callback)` from `@/lib/effect-stream`. `build.ts` makes the adapter once and injects it with `useValue`; consumers `Pick` from the adapter's interface.
+- A layer registers Obsidian events (`vault`, `metadataCache`, `workspace`, and one-shots such as `onLayoutReady`) through `obsidianEvents` (`@/lib/effect-obsidian-events`). Any other Obsidian callback a layer registers runs its Effect through a runner made from the layer's context: `const run = Effect.runSyncWith(yield* Effect.context<never>())`. It keeps the layer's services and Clock, which the bare entry points lack.
 - Obsidian's `App` is the `ObsidianApp` tag (`@/lib/obsidian-app`). Time is the Effect `Clock`; `instantClock` (`@/lib/effect-clock`) reads it as a `Temporal.Instant`.
 - Resources live on the layer's Scope: `Effect.acquireRelease`, `Effect.addFinalizer`, and `acquireDisposable` / `acquireAsyncDisposable` for a value from outside Effect (root `policies/resource-disposal.md` → Effect code).
 - Put a side effect behind a tag of its own when a test must replace it. `LogOutput` is the pattern: `layerLogging` drives LogTape through it, and its test supplies a fake whose work takes `TestClock` time.
@@ -66,15 +66,7 @@ New services are Effect services: a `Context.Service` tag and a scoped `Layer`, 
 - `buildServices` awaits the layer graph (`runtime.context()`) before it builds the container, so a service anyone holds has finished acquiring. A layer's acquisition replaces the legacy `ready`: it waits for exactly what `#load` waited for, and no more. A wait on outside I/O (the Zotero database, a worker) is bounded with `startupBarrier` (`@/lib/effect-startup`), which keeps the read running on the Scope past the bound. Acquisition settles and never fails the layer. A failed read becomes held state, logged with its fallback (`UseLedger`'s saved Uses), because a layer that fails stops the plugin.
 - A legacy service joins the graph through `serviceLayer` (`apps/obsidian/src/services/service-layer.ts`), as `QueryClients` and `PluginSettings` do. The layer constructs it and disposes it on scope close, without waiting for `ready`: an Effect service that uses a bridged one awaits its `ready` before the first call, or calls only what the service allows before it (`layerLogging` subscribes to `PluginSettings`).
 - An existing legacy service keeps its shape until a change whose purpose is converting it. Convert leaves first, so the services it depends on are already in the graph, and take the file off the legacy list in `apps/obsidian/oxlint.config.ts`.
-- The `zotlit-services` lint rules (`apps/obsidian/scripts/oxlint-plugin-services.ts`) reject:
-  - a new legacy class;
-  - a tag id outside `zotlit/<module>/<Name>`;
-  - a stack, `using`, or manual dispose inside an Effect generator;
-  - a `nanoevents` import;
-  - an `on` or `subscribe` member on a plain adapter;
-  - `registerEvent` inside an Effect generator.
-
-  A file on one of their backlog lists in `oxlint.config.ts` comes off the list in the change that converts it.
+- The `zotlit-services` lint rules (`apps/obsidian/scripts/oxlint-plugin-services.ts`) enforce the mechanical rules; `oxlint.config.ts` lists them with their backlogs.
 
 ## Container Notes
 
