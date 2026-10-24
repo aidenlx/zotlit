@@ -18,13 +18,11 @@ import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { registerCitationsCli } from "./register";
 
 function commands(h: CitationIndexHarness) {
-  Object.assign(h.app.vault, {
-    getName: () => "Test",
-    adapter: { getBasePath: () => "/test" },
-  });
+  Object.assign(h.app.vault, { getName: () => "Test" });
   const cli = fakeCliHost();
   registerCitationsCli(cli.host, {
     app: h.app,
+    basePath: "/test",
     citationIndex: h.index,
     zoteroPref: {
       current: Effect.succeed({

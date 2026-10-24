@@ -81,11 +81,11 @@ async function cslVault({
   registerPandocResolve({ ...host, manifest: { version: "2.0.1-test" } }, {
     app: {
       vault: {
-        adapter: { getBasePath: () => "/vault" },
         getFileByPath: (path: string) => (path === file.path ? file : null),
       },
       metadataCache,
     },
+    basePath: "/vault",
     zoteroPref: { current: Effect.succeed({ dataDir }) },
     settings: { current: Effect.succeed(settings) },
     profile: effectProfile(profileReader(settings, metadataCache)),

@@ -92,6 +92,7 @@ import {
 } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { changesUntil } from "@/lib/effect-stream";
+import { layerPluginData, PluginData } from "@/lib/plugin-data";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
 import {
@@ -249,13 +250,23 @@ export function layerPluginSettings(
   plugin: Pick<Plugin, "loadData" | "saveData"> & Partial<Pick<Plugin, "app">>,
   options: Partial<PluginSettingsOptions> = {},
 ): Layer.Layer<PluginSettings> {
-  return Layer.effect(PluginSettings, makePluginSettings(plugin, options));
+  return layerPluginSettingsOf({
+    ...options,
+    handoff: options.handoff ?? plugin.app,
+  }).pipe(Layer.provide(layerPluginData(plugin)));
+}
+
+/** The settings layer over the plugin data a caller provides. */
+export function layerPluginSettingsOf(
+  options: Partial<PluginSettingsOptions> = {},
+): Layer.Layer<PluginSettings, never, PluginData> {
+  return Layer.effect(PluginSettings, makePluginSettings(options));
 }
 
 const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
-  plugin: Pick<Plugin, "loadData" | "saveData"> & Partial<Pick<Plugin, "app">>,
   options: Partial<PluginSettingsOptions>,
 ) {
+  const data = yield* PluginData;
   const {
     migrateLegacy,
     migrateV1,
@@ -269,7 +280,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     migrateV9,
     migrateV10,
   } = { ...settingsMigrations, ...options };
-  const handoff = (options.handoff ?? plugin.app) as Handoff | undefined;
+  const handoff = options.handoff as Handoff | undefined;
   const stopped = yield* Deferred.make<void>();
   const state = yield* Effect.acquireRelease(
     SubscriptionRef.make<Readonly<Settings>>(defaults),
@@ -309,10 +320,9 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     const earlier = pendingWrite;
     const write = Effect.gen(function* () {
       if (earlier) yield* Fiber.await(earlier);
-      yield* Effect.tryPromise({
-        try: () => plugin.saveData(payload),
-        catch: persistenceFailure,
-      });
+      yield* data
+        .save(payload)
+        .pipe(Effect.mapError((error) => persistenceFailure(error.cause)));
     }).pipe(
       Effect.uninterruptible,
       Effect.tapCause((cause) =>
@@ -742,7 +752,8 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   /** Errors are logged but never bubble up — load continues with the already-chosen in-memory state. */
   const writeBestEffort = Effect.fn("PluginSettings.writeBestEffort")(
     function* (payload: Record<string, unknown>) {
-      yield* Effect.tryPromise(() => plugin.saveData(payload)).pipe(
+      yield* data.save(payload).pipe(
+        Effect.mapError((error) => new Cause.UnknownError(error.cause)),
         Effect.uninterruptible,
         Effect.catchCause((cause) =>
           reportFailure("settings migration write failed", cause),
@@ -754,10 +765,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
   const load = Effect.gen(function* () {
     const last = handoff?.[LAST_WRITE];
     if (last) yield* Effect.promise(() => last);
-    const raw = yield* Effect.tryPromise({
-      try: () => plugin.loadData(),
-      catch: (error) => error,
-    });
+    const raw = yield* data.load.pipe(Effect.mapError((error) => error.cause));
     yield* hydrateFrom(raw);
   }).pipe(
     Effect.catchCause((cause) => {

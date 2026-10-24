@@ -8,6 +8,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -60,12 +61,13 @@ export function layerRelease(options: {
   /** The plugin's current version, from the manifest. */
   readonly version: string;
   readonly openFirstScreen?: () => void | Promise<void>;
-}): Layer.Layer<Release, never, ObsidianApp | PluginSettings> {
+}): Layer.Layer<Release, never, ObsidianApp | Notifier | PluginSettings> {
   return Layer.effect(
     Release,
     Effect.gen(function* () {
       const app = yield* ObsidianApp;
       const settings = yield* PluginSettings;
+      const notifier = yield* Notifier;
       const checked = yield* Deferred.make<void>();
       const events = yield* obsidianEvents<{ layoutReady: [] }>();
       const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
@@ -161,8 +163,8 @@ export function layerRelease(options: {
         if (Object.keys(patch).length > 0) yield* settings.update(patch);
       });
 
-      const showCompanionNotice = (): void => {
-        new BaseNotice(
+      const showCompanionNotice = Effect.suspend(() =>
+        notifier.show(
           BaseNotice.render((renderer) => {
             renderer.setTitle(m.companion_zotero_10_guidance());
             renderer.addAction((button) => {
@@ -176,9 +178,9 @@ export function layerRelease(options: {
                 .onClick(() => window.open(DOCS_COMPANION));
             });
           }),
-          0,
-        );
-      };
+          { duration: 0 },
+        ),
+      );
 
       const runCheck = Effect.fn("Release.runCheck")(function* () {
         const current = yield* settings.current;
@@ -215,7 +217,7 @@ export function layerRelease(options: {
         );
         switch (decision.branch) {
           case "companion-notice":
-            showCompanionNotice();
+            yield* showCompanionNotice;
             break;
           // An update opens the first screen too: its banner announces the update
           // while `release.update-pending` holds.

@@ -1,6 +1,7 @@
 import { describe, expect, it as plainIt, vi } from "vitest";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { Effect, Exit, Scope, Stream } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
@@ -56,16 +57,18 @@ describe("watchCitationStyleMissing", () => {
     () =>
       Effect.gen(function* () {
         const events = styleEvents(true);
-        const hide = vi.fn();
-        const showNotice = vi.fn(() => ({ hide }));
+        const notifier = testNotifier();
+        const showNotice = notifier.service.show("Style missing", {
+          duration: 0,
+        });
         const watched = yield* Scope.make();
         yield* watchCitationStyleMissing(events.cache, showNotice).pipe(
           Scope.provide(watched),
         );
 
-        expect(showNotice).toHaveBeenCalledOnce();
+        expect(notifier.notices).toMatchObject([{ hidden: false }]);
         yield* Scope.close(watched, Exit.void);
-        expect(hide).toHaveBeenCalledOnce();
+        expect(notifier.notices).toMatchObject([{ hidden: true }]);
         expect(events.hasListener()).toBe(false);
       }),
   );
@@ -75,18 +78,20 @@ describe("watchCitationStyleMissing", () => {
     () =>
       Effect.gen(function* () {
         const events = styleEvents();
-        const hide = vi.fn();
-        const showNotice = vi.fn(() => ({ hide }));
+        const notifier = testNotifier();
+        const showNotice = notifier.service.show("Style missing", {
+          duration: 0,
+        });
         const watched = yield* Scope.make();
         yield* watchCitationStyleMissing(events.cache, showNotice).pipe(
           Scope.provide(watched),
         );
 
         events.emit();
-        expect(showNotice).toHaveBeenCalledOnce();
+        expect(notifier.notices).toMatchObject([{ hidden: false }]);
 
         yield* Scope.close(watched, Exit.void);
-        expect(hide).toHaveBeenCalledOnce();
+        expect(notifier.notices).toMatchObject([{ hidden: true }]);
         expect(events.hasListener()).toBe(false);
       }),
   );
