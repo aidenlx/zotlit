@@ -23,6 +23,10 @@ tester.run("no-logtape-in-effect-file", noLogTapeInEffectFile, {
       code: 'import { Effect } from "@/lib/effect";',
       filename,
     },
+    {
+      code: 'import type { EffectBridge } from "@/lib/effect-bridge";\nimport { getLogger } from "@/lib/log";',
+      filename,
+    },
   ],
   invalid: [
     {
@@ -42,6 +46,11 @@ tester.run("no-logtape-in-effect-file", noLogTapeInEffectFile, {
     },
     {
       code: 'import type { Effect } from "@/lib/effect";\nimport { getLogger } from "@/lib/log";',
+      filename,
+      errors: logtape,
+    },
+    {
+      code: 'import { effectBridge } from "@/lib/effect-bridge";\nimport { getLogger } from "@/lib/log";',
       filename,
       errors: logtape,
     },

@@ -19,6 +19,7 @@ const LOG_FILE_SUFFIXES = [
 ];
 
 interface ModuleStatement extends AstNode {
+  readonly importKind?: string;
   readonly source?: {
     readonly value?: unknown;
   };
@@ -34,6 +35,18 @@ function isEffectModule(source: string): boolean {
     source.startsWith("effect/") ||
     source === "@/lib/effect" ||
     source.startsWith("@/lib/effect-")
+  );
+}
+
+/**
+ * A type-only import of the Effect bridge names the seam a legacy file holds,
+ * not Effect code in the file (policies/services.md → Bridge).
+ */
+function isBridgeType(statement: ModuleStatement, source: string): boolean {
+  return (
+    statement.type === "ImportDeclaration" &&
+    statement.importKind === "type" &&
+    source === "@/lib/effect-bridge"
   );
 }
 
@@ -59,7 +72,7 @@ function hasSource(node: ModuleStatement): boolean {
 
 /**
  * Rejects a LogTape logger import in a module that imports Effect, including
- * a type-only import or a re-export. Effect's logger carries the category,
+ * a type-only import or a re-export, but not a type-only import of the bridge. Effect's logger carries the category,
  * annotations and spans through the host's configured sinks; a direct LogTape
  * import bypasses that contract (policies/logging.md).
  */
@@ -85,7 +98,8 @@ export const noLogTapeInEffectFile: Rule = {
           if (!hasSource(statement)) continue;
           const source = statement.source?.value;
           if (typeof source !== "string") continue;
-          if (isEffectModule(source)) effectNative = true;
+          if (isEffectModule(source) && !isBridgeType(statement, source))
+            effectNative = true;
           if (isLogModule(source, context.filename)) logImports.push(statement);
         }
         if (!effectNative) return;
