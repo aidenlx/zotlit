@@ -4,6 +4,8 @@ import type { Setting as ObsidianSetting } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import { openWelcomeView } from "@/views/welcome/register";
@@ -43,15 +45,15 @@ function reviewButton(settings: Setting[]): ButtonComponent | undefined {
 
 it("opens conversion review from the pending reminder and removes it after acceptance", () => {
   let current = { ...defaults, "note.template-conversion-pending": true };
+  const runtime = testRuntime();
   const ctx = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app: {},
     languagePack: { getSituation: () => ({ kind: "active" }) },
     manifest: { version: "2.3.0" },
     settings: {
-      get current() {
-        return current;
-      },
+      current: Effect.sync(() => current),
     },
   } as unknown as SettingTabContext;
   const rendered = renderResources(ctx);
@@ -62,7 +64,11 @@ it("opens conversion review from the pending reminder and removes it after accep
   const review = reviewButton(rendered);
   expect(review).toBeDefined();
   review!.click();
-  expect(openWelcomeView).toHaveBeenCalledWith(ctx.app, ctx.settings);
+  expect(openWelcomeView).toHaveBeenCalledWith(
+    ctx.app,
+    ctx.settings,
+    ctx.bridge,
+  );
 
   current = {
     ...defaults,

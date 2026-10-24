@@ -188,7 +188,8 @@ function openVault({
       citationLookup: {
         read: async () => lookupAnswer(),
       },
-      settings: { current: resolvedSettings },
+      settings: { current: Effect.succeed(resolvedSettings) },
+      bridge: { runSync: Effect.runSync },
       profile: profileReader(resolvedSettings, {
         getFileCache: () => ({ frontmatter }),
       }),

@@ -16,7 +16,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveProfile } from "@/services/profile/__fixtures__/reader";
 import { buildSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 
 import { buildTemplate } from "./__fixtures__";
@@ -34,7 +34,7 @@ interface Harness {
   };
   plugin: PluginStub;
   service: PlainTemplate & AsyncDisposable;
-  settings: PlainPluginSettings & AsyncDisposable;
+  settings: SettingsFixture;
   vault: MockVault;
   localStorage: Map<string, unknown>;
 }
@@ -1157,7 +1157,9 @@ partials:
         ),
       );
 
-      settings.update({ "template.folder": "OtherTemplates" });
+      settings.bridge.runSync(
+        settings.update({ "template.folder": "OtherTemplates" }),
+      );
       yield* TestClock.adjust(0);
 
       expect(service.render("note", { title: "Paper" })).toBe("other Paper");
@@ -1199,7 +1201,9 @@ partials:
         );
         yield* TestClock.adjust(500);
 
-        settings.update({ "template.folder": "OtherTemplates" });
+        settings.bridge.runSync(
+          settings.update({ "template.folder": "OtherTemplates" }),
+        );
         yield* TestClock.adjust(0);
 
         expect(service.render("note", { title: "A" })).toBe("other A");
@@ -1246,7 +1250,9 @@ partials:
         );
         yield* TestClock.adjust(500);
 
-        settings.update({ "template.folder": "OtherTemplates" });
+        settings.bridge.runSync(
+          settings.update({ "template.folder": "OtherTemplates" }),
+        );
         yield* TestClock.adjust(0);
 
         expect(service.render("note", { title: "A" })).toBe("other A");
@@ -1278,7 +1284,9 @@ partials:
 
       expect(service.render("custom", { title: "Paper" })).toBe("custom Paper");
 
-      settings.update({ "template.folder": "OtherTemplates" });
+      settings.bridge.runSync(
+        settings.update({ "template.folder": "OtherTemplates" }),
+      );
       yield* TestClock.adjust(0);
 
       expect(() => service.render("custom", { title: "Paper" })).toThrow();
@@ -1621,7 +1629,9 @@ partials:
         ["filename", "note", "annotation", "content"],
       );
 
-      settings.update({ "note.template-conversion-pending": false });
+      settings.bridge.runSync(
+        settings.update({ "note.template-conversion-pending": false }),
+      );
 
       // Nothing remains: Profile documents own the note sources and the Citation
       // Template owns the citation text.
@@ -2249,9 +2259,9 @@ describe("javascript templates gate", () => {
       yield* Effect.promise(() => service.setJavascriptTemplatesEnabled(true));
 
       expect(JSON.stringify(plugin.data)).not.toContain("javascript-templates");
-      expect(JSON.stringify(settings.current)).not.toContain(
-        "javascript-templates",
-      );
+      expect(
+        JSON.stringify(settings.bridge.runSync(settings.current)),
+      ).not.toContain("javascript-templates");
     }),
   );
 });
@@ -2422,16 +2432,18 @@ describe("frontmatter fields", () => {
           "citekey",
         ]);
 
-        settings.update({
-          "note.frontmatter-fields": [
-            {
-              key: "custom",
-              expr: "zt.title",
-              merge: "replace",
-              language: "liquid",
-            },
-          ],
-        });
+        settings.bridge.runSync(
+          settings.update({
+            "note.frontmatter-fields": [
+              {
+                key: "custom",
+                expr: "zt.title",
+                merge: "replace",
+                language: "liquid",
+              },
+            ],
+          }),
+        );
 
         yield* TestClock.adjust(0);
         expect(service.frontmatterFields.map((field) => field.key)).toEqual([
@@ -2463,22 +2475,24 @@ describe("frontmatter fields", () => {
 
       expect(() => service.frontmatterFields).toThrow(InertTemplateError);
 
-      settings.update({
-        "note.frontmatter-fields": [
-          {
-            key: "js1",
-            expr: "zt.title",
-            merge: "replace",
-            language: "javascript",
-          },
-          {
-            key: "js2",
-            expr: "zt.title",
-            merge: "replace",
-            language: "javascript",
-          },
-        ],
-      });
+      settings.bridge.runSync(
+        settings.update({
+          "note.frontmatter-fields": [
+            {
+              key: "js1",
+              expr: "zt.title",
+              merge: "replace",
+              language: "javascript",
+            },
+            {
+              key: "js2",
+              expr: "zt.title",
+              merge: "replace",
+              language: "javascript",
+            },
+          ],
+        }),
+      );
       expect(() => service.frontmatterFields).toThrow(InertTemplateError);
 
       yield* TestClock.adjust(0);
@@ -3310,7 +3324,7 @@ async function makeHarness(
     migrateV8: (raw) => raw,
     migrateV9: (raw) => raw,
   });
-  await settings.loaded;
+  await settings.bridge.runPromise(settings.loaded);
 
   const service = await buildTemplate({ app, settings }, context);
 

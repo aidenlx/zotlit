@@ -142,7 +142,7 @@ it("#1693 reports an attachment-only empty link as a Reference Error", async () 
     },
     { settings: { "citation.annotation-citations": true } },
   );
-  const { index, draft, settings } = harness;
+  const { index, draft, settings, settingsBridge } = harness;
   const set = await index.getDocumentCitationSet(draft);
   expect(set.citations).toEqual([]);
   expect(set.errors).toMatchObject([
@@ -158,7 +158,9 @@ it("#1693 reports an attachment-only empty link as a Reference Error", async () 
   expect(
     buildReferenceEntries(set.citations, { errors: set.errors }),
   ).toMatchObject([{ kind: "malformed" }]);
-  settings.update({ "citation.annotation-citations": false });
+  settingsBridge.runSync(
+    settings.update({ "citation.annotation-citations": false }),
+  );
   expect((await index.getDocumentCitationSet(draft)).errors).toEqual([]);
   expect(await index.documentOmittedSyntaxes(draft)).toEqual(["annotation"]);
 });
@@ -182,7 +184,7 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
       },
     },
   );
-  const { index, draft, workspace, settings } = harness;
+  const { index, draft, workspace, settings, settingsBridge } = harness;
   workspace.layoutReady();
   await index.whenIndexed();
   expect((await index.getDocumentCitationSet(draft)).citations).toHaveLength(1);
@@ -192,7 +194,9 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
   );
   try {
     await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
-    settings.update({ "citation.annotation-citations": false });
+    settingsBridge.runSync(
+      settings.update({ "citation.annotation-citations": false }),
+    );
     expect((await index.getDocumentCitationSet(draft)).citations).toEqual([]);
     expect(await index.documentOmittedSyntaxes(draft)).toEqual(["annotation"]);
     expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["annotation"]);
@@ -202,7 +206,9 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
       ),
     ).toEqual([]);
     await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
-    settings.update({ "citation.annotation-citations": true });
+    settingsBridge.runSync(
+      settings.update({ "citation.annotation-citations": true }),
+    );
     expect((await index.getDocumentCitationSet(draft)).citations).toMatchObject(
       [{ indexedKey: KEY_A }],
     );

@@ -48,16 +48,7 @@ export async function buildLocalServer(
   );
   await runtime.context();
   const settings = runtime.runSync(PluginSettings);
-  applySettings(
-    {
-      update: (patch) => runtime.runSync(settings.update(patch)),
-      updateDefaultLiteratureNoteProfileBindings: (patch) =>
-        runtime.runSync(
-          settings.updateDefaultLiteratureNoteProfileBindings(patch),
-        ),
-    },
-    overrides,
-  );
+  applySettings(settings, runtime, overrides);
   return {
     runtime,
     server: runtime.runSync(LocalServer),

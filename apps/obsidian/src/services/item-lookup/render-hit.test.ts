@@ -8,21 +8,26 @@ import type {
 } from "@zotlit/item-lookup/fixtures";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { renderSuggestion } from "./render-hit";
 import type { SearchHit } from "./service";
 
-const settings = { current: {} } as unknown as PlainPluginSettings;
+const settings = {
+  current: Effect.succeed({} as Settings),
+} as unknown as Pick<PluginSettings["Service"], "current">;
+const bridge = { runSync: Effect.runSync };
 
 describe("renderSuggestion library label", () => {
   it.each([null, group(100, "Shared A")])(
     "shows cited and Library flairs together for %j",
     (library) => {
       const el = document.createElement("div");
-      renderSuggestion(settings, { ...hit(library), cited: true }, el);
+      renderSuggestion(settings, bridge, { ...hit(library), cited: true }, el);
       const expected = [
         m.citation_suggester_cited_in_note(),
         ...(library ? ["Shared A"] : []),
@@ -62,7 +67,7 @@ describe("renderSuggestion library label", () => {
 /** The trailing library label's text, or `null` when no label was rendered. */
 function libraryText(library: AvailableLibrary | null): string | null {
   const el = document.createElement("div");
-  renderSuggestion(settings, hit(library), el);
+  renderSuggestion(settings, bridge, hit(library), el);
   return (
     el.querySelector(".zt-suggestion-flair .zt-suggestion-flair-text")
       ?.textContent ?? null
@@ -171,6 +176,7 @@ function metaParts<TType extends ItemFields["itemType"]>(
   const el = document.createElement("div");
   renderSuggestion(
     settings,
+    bridge,
     { item: makeItem(options), matches: [], library: null, cited: false },
     el,
   );

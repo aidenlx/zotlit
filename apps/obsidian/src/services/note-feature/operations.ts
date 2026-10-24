@@ -907,7 +907,7 @@ async function createNote(
   options: CreateNoteInternalOptions = {},
 ): Promise<CreateNoteResult> {
   await ctx.noteIndex.whenIndexed();
-  const settings = ctx.settings.current;
+  const settings = ctx.bridge.runSync(ctx.settings.current);
   const requestedProfile = options.profile ?? DEFAULT_PROFILE;
   const profile = ctx.profile.resolveProfile(requestedProfile);
   if (!profile) {
@@ -1106,7 +1106,7 @@ async function updateNote(
   // Snapshot, so the lease spans only the DB reads and the vault writes — not
   // the warm-up awaits.
   await ctx.noteIndex.whenIndexed();
-  const settings = ctx.settings.current;
+  const settings = ctx.bridge.runSync(ctx.settings.current);
   const existing = ctx.profile.profileOf(file);
   const existingSelector = noteProfileSelector(existing);
   if (options.profile !== undefined && existingSelector !== undefined) {
@@ -1234,7 +1234,7 @@ async function replacedKeys(
   file: TFile,
 ): Promise<ReadonlySet<string>> {
   try {
-    const settings = ctx.settings.current;
+    const settings = ctx.bridge.runSync(ctx.settings.current);
     const cache = await parsedCache(ctx, file);
     const resolved = ctx.profile.profileOf(file);
     if (!resolved.ok) return NO_KEYS;
@@ -1364,7 +1364,7 @@ async function switchNoteProfile(
     move?: boolean;
   },
 ): Promise<UpdateResult> {
-  const settings = ctx.settings.current;
+  const settings = ctx.bridge.runSync(ctx.settings.current);
   const selector = options.profile;
   const profile = ctx.profile.resolveProfile(selector);
   if (!profile) return refusedUpdateProfile(selector, file.path);
@@ -1663,7 +1663,7 @@ async function overwriteNote(
   // Snapshot, so the lease spans only the DB reads and the vault writes — not
   // the warm-up awaits.
   await ctx.noteIndex.whenIndexed();
-  const settings = ctx.settings.current;
+  const settings = ctx.bridge.runSync(ctx.settings.current);
   const result = ctx.profile.profileOf(file);
   if (!result.ok) return refusedUpdateProfile(result.stamped.stamp, file.path);
   const profile = result.profile;

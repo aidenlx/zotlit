@@ -37,7 +37,7 @@ function setup({
     runtime,
     bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
-    settings: { current },
+    settings: { current: Effect.succeed(current) },
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),
       effectivePortChanges: Stream.empty,

@@ -66,13 +66,19 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     editor: Editor,
     _file: TFile | null,
   ): EditorSuggestTriggerInfo | null {
-    if (this.#deps.settings.current?.["citation.editor-suggester"] === false) {
+    if (
+      this.#deps.bridge.runSync(this.#deps.settings.current)?.[
+        "citation.editor-suggester"
+      ] === false
+    ) {
       return null;
     }
 
     const line = editor.getLine(cursor.line);
     const atTrigger =
-      this.#deps.settings.current?.["citation.at-trigger"] ?? false;
+      this.#deps.bridge.runSync(this.#deps.settings.current)?.[
+        "citation.at-trigger"
+      ] ?? false;
     const trigger = resolveCitationTrigger(line, cursor.ch, {
       atTrigger,
     });
@@ -141,7 +147,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#deps.settings, hit, el);
+    renderSearchHit(this.#deps.settings, this.#deps.bridge, hit, el);
   }
 
   override selectSuggestion(

@@ -7,7 +7,6 @@ import {
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -48,30 +47,13 @@ export const templateOf = Effect.fnUntraced(function* (
   return Context.get(yield* Layer.build(templateOver(host)), Template);
 });
 
-/** Reuse a consumer fixture's real Settings runtime through its plain boundary. */
-export function templateSettings(settings: PlainPluginSettings) {
-  return Layer.succeed(
-    PluginSettings,
-    PluginSettings.of({
-      current: Effect.sync(() => settings.current),
-      loaded: Effect.promise(() => settings.loaded),
-      diagnostics: Effect.sync(() => settings.diagnostics),
-      hydrationOrigin: Effect.sync(() => settings.hydrationOrigin),
-      update: (patch) => Effect.sync(() => settings.update(patch)),
-      reset: (keys) => Effect.sync(() => settings.reset(keys)),
-      updateDefaultLiteratureNoteProfileBindings: (patch) =>
-        Effect.sync(() =>
-          settings.updateDefaultLiteratureNoteProfileBindings(patch),
-        ),
-      flush: () => Effect.promise(() => settings.flush()),
-      release: () => Effect.sync(() => settings.release()),
-      changes: settings.changes,
-    }),
-  );
+/** Reuse a consumer fixture's Settings service. */
+export function templateSettings(settings: PluginSettings["Service"]) {
+  return Layer.succeed(PluginSettings, settings);
 }
 
 export async function buildTemplate(
-  options: { app: App; settings: PlainPluginSettings },
+  options: { app: App; settings: PluginSettings["Service"] },
   context = Context.empty(),
 ) {
   await using stack = new AsyncDisposableStack();

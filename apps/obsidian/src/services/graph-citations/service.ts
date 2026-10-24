@@ -33,8 +33,8 @@ import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
 
@@ -118,7 +118,7 @@ export interface GraphCitationsDeps {
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
   bridge: Pick<EffectBridge, "runPromise" | "runSync">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
 /** What one installed leaf holds. */

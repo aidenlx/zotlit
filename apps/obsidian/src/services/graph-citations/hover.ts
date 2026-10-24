@@ -4,6 +4,7 @@ import { around } from "monkey-around";
 import { Keymap, PopoverState } from "obsidian";
 import type { App, GraphData } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
   CitationPopover,
@@ -15,7 +16,7 @@ import {
 } from "@/services/citekey-navigation";
 import type { NavigationPane } from "@/services/citekey-navigation";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import type { GraphCitationAdditions } from "./adapter";
 import { CITATION_POPOVER } from "./display";
@@ -30,13 +31,13 @@ interface PopoverBridge {
   runPromise(
     effect: ReturnType<CitationPopover["Service"]["showWork"]>,
   ): PromiseLike<void>;
-  runSync(effect: ReturnType<CitationPopover["Service"]["hide"]>): void;
+  runSync: EffectBridge["runSync"];
 }
 
 /** What one graph leaf's hover wrap reads the world through. */
 export interface NodeHoverDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
   citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
   bridge: PopoverBridge;
   /** Opens the exact Item displayed in the popover. */
@@ -112,7 +113,7 @@ function hoverNode(
   id: string,
 ): boolean {
   if (!rowFlag(members.engine, CITATION_POPOVER, false)) return false;
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   if (!settings) return false;
   const drawn = additions();
   const node = hoveredNode(id, drawn, deps);

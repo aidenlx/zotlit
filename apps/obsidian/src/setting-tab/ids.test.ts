@@ -46,7 +46,11 @@ function ctx(): SettingTabContext {
       saveLocalStorage: () => {},
     },
     manifest: { version: "0.0.0", dir: "plugins/zotlit" },
-    settings: { current: {}, update: () => {}, changes: Stream.empty },
+    settings: {
+      current: Effect.succeed({}),
+      update: () => Effect.void,
+      changes: Stream.empty,
+    },
     profile: {
       loaded: true,
       profiles: [],

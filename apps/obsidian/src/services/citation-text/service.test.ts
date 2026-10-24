@@ -577,7 +577,7 @@ describe("CitationText", () => {
                   "resolved-changed": Stream.empty,
                 },
                 settings: {
-                  current: defaults,
+                  current: Effect.succeed(defaults),
                   changes: Stream.empty,
                 },
                 pandocEngine: {

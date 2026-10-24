@@ -22,7 +22,6 @@ import {
   layerQueryClients,
   QueryClients,
 } from "@/services/query-client/service";
-import type { Settings } from "@/services/settings/schema";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -210,8 +209,8 @@ export function citationIndexFixture(
     libraryScope: Pick<PlainLibraryScope, "current">;
     noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
     settings: {
-      readonly current: Readonly<Settings>;
-      readonly changes: Stream.Stream<Readonly<Settings>>;
+      readonly current: PluginSettings["Service"]["current"];
+      readonly changes: PluginSettings["Service"]["changes"];
     };
     lookup: CitationLookup["Service"];
     parseClient: ParseClient;
@@ -259,7 +258,7 @@ export function citationIndexFixture(
           Layer.succeed(
             PluginSettings,
             stubService<PluginSettings["Service"]>("PluginSettings", {
-              current: Effect.sync(() => deps.settings.current),
+              current: deps.settings.current,
               changes: deps.settings.changes,
             }),
           ),

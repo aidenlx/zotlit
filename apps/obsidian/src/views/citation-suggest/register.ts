@@ -1,5 +1,6 @@
 import type { App, Plugin } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
@@ -8,7 +9,7 @@ import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 
 import { AnnotationEditorSuggest } from "./annotation-suggest";
@@ -20,7 +21,8 @@ export interface CitationSuggestDeps {
   app: App;
   lookup: ItemLookup;
   noteFeature: Pick<NoteFeature, "renderCitation">;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
   citationLookup: Pick<PlainCitationLookup, "read" | "status">;

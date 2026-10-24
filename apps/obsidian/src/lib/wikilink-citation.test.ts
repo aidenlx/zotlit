@@ -220,13 +220,17 @@ describe("WikilinkDisplaySettings", () => {
     const display = new WikilinkDisplaySettings();
     display.watch(testRuntime(), settings, () => undefined);
 
-    settings.update({ "citation.show-formatted": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.show-formatted": false }),
+    );
     expect(display.enabled).toBe(false);
 
-    settings.update({
-      "citation.show-formatted": true,
-      "citation.wikilink-citations": false,
-    });
+    settings.bridge.runSync(
+      settings.update({
+        "citation.show-formatted": true,
+        "citation.wikilink-citations": false,
+      }),
+    );
     expect(display.enabled).toBe(false);
   });
 
@@ -238,10 +242,14 @@ describe("WikilinkDisplaySettings", () => {
     let redraws = 0;
     display.watch(testRuntime(), settings, () => redraws++);
 
-    settings.update({ "citation.wikilink-citations": true });
+    settings.bridge.runSync(
+      settings.update({ "citation.wikilink-citations": true }),
+    );
     expect(redraws).toBe(1);
 
-    settings.update({ "citation.show-formatted": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.show-formatted": false }),
+    );
     expect(redraws).toBe(2);
   });
 
@@ -251,7 +259,9 @@ describe("WikilinkDisplaySettings", () => {
     let redraws = 0;
     display.watch(testRuntime(), settings, () => redraws++);
 
-    settings.update({ "citation.pandoc-citations": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.pandoc-citations": false }),
+    );
     expect(redraws).toBe(0);
   });
 
@@ -264,7 +274,9 @@ describe("WikilinkDisplaySettings", () => {
     display.watch(testRuntime(), settings, () => redraws++);
     expect(display.clickIntercepted).toBe(false);
 
-    settings.update({ "citation.open-as-links": false });
+    settings.bridge.runSync(
+      settings.update({ "citation.open-as-links": false }),
+    );
 
     expect(display.clickIntercepted).toBe(true);
     expect(redraws).toBe(1);
@@ -287,7 +299,9 @@ describe("WikilinkDisplaySettings", () => {
     let redraws = 0;
 
     display.watch(testRuntime(), settings, () => redraws++)();
-    settings.update({ "citation.wikilink-citations": true });
+    settings.bridge.runSync(
+      settings.update({ "citation.wikilink-citations": true }),
+    );
 
     expect(display.enabled).toBe(false);
     expect(redraws).toBe(0);

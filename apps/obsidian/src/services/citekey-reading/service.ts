@@ -60,9 +60,9 @@ import type {
 } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { replaceCitations, sectionCitations } from "./render";
 import type { SectionCitation } from "./render";
@@ -118,7 +118,7 @@ export interface CitekeyReadingDeps {
   /** What a hovered citation shows. */
   citationPopover: Pick<CitationPopover["Service"], "show">;
   bridge: Pick<EffectBridge, "runSync">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
 /**

@@ -21,6 +21,7 @@ import type {
 import { hasSuffixMarker, joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { creatorSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
@@ -39,8 +40,8 @@ import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -103,7 +104,8 @@ export interface NoteFeatureDeps {
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  bridge: Pick<EffectBridge, "runSync">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (

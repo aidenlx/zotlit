@@ -44,7 +44,7 @@ import type { CitationHover } from "@/services/citekey-navigation";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import {
   hasInternalLink,
@@ -71,7 +71,7 @@ export interface WikilinkReadingDeps {
   /** What a hovered citation shows. */
   citationPopover: Pick<CitationPopover["Service"], "show">;
   bridge: Pick<EffectBridge, "runSync">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
 }
 
 /**

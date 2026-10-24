@@ -38,9 +38,9 @@ import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
@@ -67,7 +67,7 @@ export interface CitekeyEditorDeps {
   bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover["Service"], "show">;
-  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  settings: Pick<PluginSettings["Service"], "current" | "changes">;
   citationLookup: Pick<PlainCitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };

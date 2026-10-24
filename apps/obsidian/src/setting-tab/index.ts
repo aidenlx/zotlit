@@ -9,8 +9,10 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { SettingsPatch } from "@/services/settings/service";
+import type {
+  PluginSettings,
+  SettingsPatch,
+} from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -55,7 +57,7 @@ export interface ZotLitSettingTabOptions {
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
   settings: Pick<
-    PlainPluginSettings,
+    PluginSettings["Service"],
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
@@ -106,7 +108,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
   readonly #settings: Pick<
-    PlainPluginSettings,
+    PluginSettings["Service"],
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
@@ -246,9 +248,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // when either flips. Scalar `control` edits (read on the framework's own
     // render cycle) never trigger a rebuild and never steal focus from inline
     // inputs.
-    let lastPending = settings.current?.["release.migration-pending"];
+    const current = this.#bridge.runSync(settings.current);
+    let lastPending = current?.["release.migration-pending"];
     let lastTemplateConversionPending =
-      settings.current?.["note.template-conversion-pending"];
+      current?.["note.template-conversion-pending"];
     plugin.register(
       subscribe(runtime, settings.changes, (value) => {
         const pending = value?.["release.migration-pending"];
@@ -272,12 +275,14 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.update();
   }
 
-  /** Bridge declarative `control` reads to {@link PlainPluginSettings}. */
+  /** Bridge declarative `control` reads to {@link PluginSettings}. */
   override getControlValue(key: string): unknown {
     if (isProfileControlKey(key)) {
-      return getProfileControlValue(this.#settings, key);
+      return getProfileControlValue(this.#settings, this.#bridge, key);
     }
-    const value = this.#settings.current?.[key as SettingsKey];
+    const value = this.#bridge.runSync(this.#settings.current)?.[
+      key as SettingsKey
+    ];
     // Auto-trim stores `false | "nl" | "slurp"`; its dropdown reads a string.
     if (AUTO_TRIM_KEYS.has(key as SettingsKey)) return encodeAutoTrim(value);
     // Log level stores `LogLevel | null`; its dropdown reads a string.
@@ -285,10 +290,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     return value;
   }
 
-  /** Bridge declarative `control` writes to {@link PlainPluginSettings}. */
+  /** Bridge declarative `control` writes to {@link PluginSettings}. */
   override setControlValue(key: string, value: unknown): void {
     if (isProfileControlKey(key)) {
-      setProfileControlValue(this.#settings, key, value);
+      setProfileControlValue(this.#settings, this.#bridge, key, value);
       return;
     }
     const next = AUTO_TRIM_KEYS.has(key as SettingsKey)
@@ -298,7 +303,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
         : value;
     // `key` is constrained to schema keys by every `control` definition below,
     // and `value` matches that key's control type, so the patch always validates.
-    this.#settings.update({ [key]: next } as SettingsPatch);
+    this.#bridge.runSync(
+      this.#settings.update({ [key]: next } as SettingsPatch),
+    );
   }
 
   override getSettingDefinitions(): SettingDefinitionItem[] {

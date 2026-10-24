@@ -7,6 +7,7 @@ import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
 import { Effect, Stream } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -39,7 +40,7 @@ import type {
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileReader } from "@/services/profile/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
@@ -75,7 +76,8 @@ export interface NoteImportDeps {
   view: NoteImportView;
   /** A note write's reads: one lease spans the write and what it imports. */
   zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "snapshot" | "state">;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  bridge: Pick<EffectBridge, "runSync">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
@@ -740,7 +742,7 @@ async function importOne(
   ref: ChildNote,
   targetFile: TFile | undefined,
 ): Promise<WriteOutcome> {
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   // One Snapshot for the read and the write it feeds.
   await using lease = await deps.zoteroReads.acquireRead();
   const [note] = await Effect.runPromise(
@@ -778,7 +780,7 @@ async function executeImportRun(
     profileCounts?: Map<ProfileSelector, BatchProfileCount>;
   },
 ): Promise<BatchRunResult> {
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   // One run is one initiating batch: every note it writes reuses one retention,
@@ -915,7 +917,7 @@ async function reimportNoteByKey(
   const note = await readNoteByIndexedKey(lease.reads, noteKey);
   if (!note) return { outcome: "not-found" };
 
-  const settings = deps.settings.current;
+  const settings = deps.bridge.runSync(deps.settings.current);
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   const writeOutcome = await deps.noteImport.importNote(note, {
     reads: lease.reads,

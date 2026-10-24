@@ -2,6 +2,7 @@
 import type { App, Editor, Modifier, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { Effect } from "@/lib/effect";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { SearchHit } from "@/services/item-lookup/service";
@@ -18,7 +19,8 @@ function makeModal(
     app: {} as App,
     lookup: { openSession: vi.fn() },
     noteFeature: { renderCitation: vi.fn() },
-    settings: { current: {} },
+    settings: { current: Effect.succeed({}) },
+    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     citationLookup: {
       read: async () =>
         lookupAnswer({

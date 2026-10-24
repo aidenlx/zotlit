@@ -63,7 +63,8 @@ const LOG_LEVEL_OPTIONS: Record<string, string> = (() => {
 export function advancedPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
-  const fileDisabled = (): boolean => !ctx.settings.current?.["log.to-file"];
+  const fileDisabled = (): boolean =>
+    !ctx.bridge.runSync(ctx.settings.current)?.["log.to-file"];
   return [
     ...(ctx.webWorkbenchEnabled
       ? [

@@ -7,11 +7,12 @@ import { around } from "monkey-around";
 import type { PaneType } from "obsidian";
 
 import { disposable } from "@/lib/disposables";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 
 import type { TargetOpener } from "./open-target";
 
@@ -50,7 +51,8 @@ export interface FileLinkCaptureDeps {
   /** Decides which links ZotLit takes, and opens them. */
   opener: Pick<TargetOpener, "follow">;
   attachments: Pick<AttachmentResolver, "warm">;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
   window?: Window;
 }
@@ -83,7 +85,11 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           if (
             target === EXTERNAL_TARGET ||
             url === undefined ||
-            !(deps.settings.current?.["reader.open-file-links"] ?? true)
+            !(
+              deps.bridge.runSync(deps.settings.current)?.[
+                "reader.open-file-links"
+              ] ?? true
+            )
           ) {
             return native(url, target, features);
           }

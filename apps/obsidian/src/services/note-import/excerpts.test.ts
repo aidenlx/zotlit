@@ -21,7 +21,8 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -33,7 +34,6 @@ import type {
   ExcerptRequest,
 } from "@/services/excerpt-image/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import {
   inProcessReadsService,
@@ -111,14 +111,16 @@ async function fixture(mode = "normal") {
     },
   };
   const paths = { dataDir, baseAttachmentPath: null };
+  const runtime = testRuntime();
   const attachments = stack.use(
     new AttachmentImportService({
-      runtime: testRuntime(),
+      runtime,
+      bridge: effectBridge(runtime),
       app,
       settings: {
-        current: settings,
+        current: Effect.succeed(settings),
         changes: Stream.empty,
-      } as unknown as PlainPluginSettings,
+      },
       zoteroPref: { ...paths, "resolved-changed": Stream.empty },
     }),
   );

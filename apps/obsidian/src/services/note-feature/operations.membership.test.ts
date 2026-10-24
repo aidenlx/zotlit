@@ -278,6 +278,7 @@ async function harness(
   );
   const deps: NoteFeatureDeps = {
     app,
+    bridge: { runSync: Effect.runSync },
     zoteroReads,
     query,
     profile,

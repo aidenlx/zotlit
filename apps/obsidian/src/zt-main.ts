@@ -387,6 +387,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       settings: services.settings,
       profile: services.profile,
       customize,
+      effect: services.bridge,
     };
     addCustomizeActions(this, customizeDeps);
     addProfileActions(this, { importProfile: services.importProfile });
@@ -401,6 +402,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       reads: services.zoteroReads,
       zoteroPref: services.zoteroPref,
       opener: services.targetOpener,
+      bridge: services.bridge,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
@@ -408,6 +410,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         opener: services.targetOpener,
         attachments: services.attachmentResolver,
         settings: services.settings,
+        bridge: services.bridge,
       }),
     );
     const updateAll = () =>
@@ -419,6 +422,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         app: this.app,
         zoteroReads: services.zoteroReads,
         settings: services.settings,
+        bridge: services.bridge,
         libraryScope: services.libraryScope,
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
@@ -444,6 +448,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       lookup: services.itemLookup,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      bridge: services.bridge,
       citationLookup: services.citationLookup,
       citationIndex: services.citationIndex,
       useLedger: services.useLedger,
@@ -476,6 +481,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      bridge: services.bridge,
       zoteroPref: services.zoteroPref,
       opener: services.targetOpener,
       showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
@@ -563,6 +569,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         setupActions: createSetupActions({
           app: this.app,
           settings: services.settings,
+          bridge: services.bridge,
           zoteroPref: services.zoteroPref,
           pluginId: this.manifest.id,
         }),
@@ -605,6 +612,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const templateWorkbenchDeps = {
       runtime: services.runtime,
+      bridge: services.bridge,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
@@ -619,6 +627,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       profile: services.profile,
       nativePreview: {
         runtime: services.runtime,
+        bridge: services.bridge,
         citationParse: services.citationParse,
         app: this.app,
         zoteroReads: services.zoteroReads,
@@ -635,6 +644,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerTemplateDataExplorer(this, {
       runtime: services.runtime,
+      bridge: services.bridge,
       app: this.app,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
@@ -646,6 +656,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerNotePreview(this, {
       runtime: services.runtime,
+      bridge: services.bridge,
       citationParse: services.citationParse,
       app: this.app,
       itemLookup: services.itemLookup,
@@ -685,6 +696,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
       settings: services.settings,
+      bridge: services.bridge,
       templates: services.template,
       zoteroPref: services.zoteroPref,
     });
@@ -708,6 +720,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
+      bridge: services.bridge,
       openSettings: () => {
         this.app.setting.open();
         this.app.setting.openTabById(this.manifest.id);
@@ -718,6 +731,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
+      bridge: services.bridge,
     };
     registerCitationPresentation(this, citationPresentationDeps);
 
@@ -749,6 +763,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       reads: services.zoteroReads,
       queries: services.queryClient,
       settings: services.settings,
+      bridge: services.bridge,
     });
 
     stack.defer(
@@ -812,7 +827,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Start the last settings write now rather than at the end of disposal, so
     // an instance enabled straight after reads it; a view that saves as it
     // closes after this hands its write on the same way.
-    this.#services?.settings.release();
+    if (this.#services)
+      this.#services.bridge.runSync(this.#services.settings.release());
     // Drop the service bag before async disposal so late callers fail clearly.
     this.#services = undefined;
 

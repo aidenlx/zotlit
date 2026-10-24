@@ -1,7 +1,8 @@
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { buildLibraryScope } from "@/services/library-scope/__fixtures__";
-import { plainPluginSettings } from "@/services/settings/plain";
+import { PluginSettings } from "@/services/settings/service";
 import { createTemplateHost } from "@/services/template/__fixtures__";
 import { plainTemplate } from "@/services/template/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -18,7 +19,8 @@ export async function profileServiceFixture(
   const host = createTemplateHost(files);
   const runtime = buildRuntime(profileOver(host).pipe(Layer.provideMerge(Layer.succeedContext(context))), stack);
   await runtime.context();
-  const settings = plainPluginSettings(runtime);
+  const settings = runtime.runSync(PluginSettings);
+  const bridge = effectBridge(runtime);
   const template = plainTemplate(runtime);
   const profile = plainProfile(runtime);
   const libraryScope = await buildLibraryScope({ settings,
@@ -29,7 +31,7 @@ export async function profileServiceFixture(
   }, stack);
   const cleanup = stack.move();
   return {
-    runtime, app: host.app, vault: host.vault, settings, template, profile, libraryScope, host,
+    runtime, bridge, app: host.app, vault: host.vault, settings, template, profile, libraryScope, host,
     indexNotes: () => host.metadataCache.announceAll(),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };

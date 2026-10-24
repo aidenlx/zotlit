@@ -18,10 +18,13 @@ import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature
 import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -202,13 +205,14 @@ async function harness(
   } as unknown as App;
 
   const settings = {
-    current: { ...defaults, "attachment.import": true },
-  } as unknown as Pick<PlainPluginSettings, "current">;
+    current: Effect.sync(() => ({ ...defaults, "attachment.import": true })),
+  } as unknown as Pick<PluginSettings["Service"], "current">;
 
   const partials = options.partials ?? [CITATION_TEMPLATE];
   const reads = createLocalBridgeReads({
     app,
     settings,
+    bridge: effectBridge(testRuntime()),
     zoteroReads: inProcessReadsService(sharedClientOpener(sqlite)),
     noteIndex: {
       whenIndexed: () => Promise.resolve(),

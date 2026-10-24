@@ -41,6 +41,7 @@ function noteLessDeps(): SingleUpdateDeps {
       snapshot: Effect.die(new Error("the snapshot must not be opened")),
     },
     settings: {} as SingleUpdateDeps["settings"],
+    bridge: { runSync: Effect.runSync },
     libraryScope: {
       resolveLibraries: () => {
         throw new Error("create path reached: library scope resolved");

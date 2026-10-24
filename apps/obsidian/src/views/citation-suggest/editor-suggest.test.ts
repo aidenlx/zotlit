@@ -3,7 +3,7 @@ import type { App, Editor, EditorSuggestContext, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -477,7 +477,8 @@ describe("Citation Suggester document citations", () => {
       app: {} as App,
       lookup: { openSession: () => ({ search, close }) },
       citationIndex: { getDocumentCitationSet: read },
-      settings: { current: {} },
+      settings: { current: Effect.succeed({}) },
+      bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     } as unknown as CitationSuggestDeps);
     return { suggest, search, [Symbol.dispose]: () => suggest.close() };
   }
@@ -564,7 +565,8 @@ describe("Citation Suggester document citations", () => {
       app: {} as App,
       lookup,
       citationIndex: { getDocumentCitationSet: () => document.promise },
-      settings: { current: {} },
+      settings: { current: Effect.succeed({}) },
+      bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
     } as unknown as CitationSuggestDeps);
     using _close = { [Symbol.dispose]: () => suggest.close() };
     const close = vi.spyOn(suggest, "close");
@@ -687,7 +689,8 @@ describe("Citation Suggester choices while the typed query's answer is pending",
       citationIndex: {
         getDocumentCitationSet: async () => ({ citations: [] }),
       },
-      settings: { current: {} },
+      settings: { current: Effect.succeed({}) },
+      bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
       useLedger: { record },
       ...insertDeps((cites: { citationKey: string }[]) =>
         cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),

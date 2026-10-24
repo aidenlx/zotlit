@@ -53,7 +53,7 @@ import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import {
   templateFolderOf,
   templatePartialName,
@@ -96,7 +96,7 @@ import { createNativePreviewStore, NativePreviewSession } from "./session";
 import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
   profile: Pick<
     PlainProfile,
@@ -759,7 +759,10 @@ export class NotePreviewView extends ItemView {
       const partialName =
         path === null
           ? null
-          : templatePartialName(path, templateFolderOf(this.#deps.settings));
+          : templatePartialName(
+              path,
+              templateFolderOf(this.#deps.settings, this.#deps.bridge),
+            );
       const context: TemplateAuthoringContext | null =
         source && (path !== null || source.builtin === true)
           ? {
@@ -1042,6 +1045,7 @@ export class NotePreviewView extends ItemView {
       {
         app: this.app,
         settings: this.#deps.settings,
+        bridge: this.#deps.bridge,
         lookup: this.#deps.itemLookup,
       },
       previousItem ?? undefined,

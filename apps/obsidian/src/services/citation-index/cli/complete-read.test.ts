@@ -144,7 +144,9 @@ it.effect(
         .handler({ file: "draft.md" })
         .pipe(Effect.forkChild);
       yield* Effect.promise(() => held.entered);
-      h.settings.update({ "citation.annotation-citations": false });
+      h.settingsBridge.runSync(
+        h.settings.update({ "citation.annotation-citations": false }),
+      );
       held.release();
       const answer = JSON.parse(yield* Fiber.join(fiber));
       expect(answer.entries).toMatchObject([

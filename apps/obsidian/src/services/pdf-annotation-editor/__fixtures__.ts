@@ -34,9 +34,9 @@ import type {
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import { freshnessSignal } from "@/services/zotero-local-api/__fixtures__";
 import type { WireAnnotation } from "@/services/zotero-local-api/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
@@ -477,22 +477,21 @@ export function markGestures() {
  * with a write held in memory the way a save holds it on disk.
  */
 export function readerSettings(): Pick<
-  PlainPluginSettings,
+  PluginSettings["Service"],
   "current" | "update"
 > {
   let current: Settings = { ...defaults };
   return {
-    get current() {
-      return current;
-    },
-    update: (patchOrUpdater) => {
-      const patch =
-        typeof patchOrUpdater === "function"
-          ? patchOrUpdater(current)
-          : patchOrUpdater;
-      current = { ...current, ...patch } as Settings;
-      return current;
-    },
+    current: Effect.sync(() => current),
+    update: (patchOrUpdater) =>
+      Effect.sync(() => {
+        const patch =
+          typeof patchOrUpdater === "function"
+            ? patchOrUpdater(current)
+            : patchOrUpdater;
+        current = { ...current, ...patch } as Settings;
+        return current;
+      }),
   };
 }
 

@@ -8,10 +8,11 @@ import type { VersionedCliHost } from "@/lib/cli-command";
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -88,7 +89,8 @@ interface TemplateWorkbenchRegistrationDeps {
     PlainNoteIndex,
     "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  bridge: Pick<EffectBridge, "runSync">;
   profile: Pick<
     PlainProfile,
     | "resolveProfile"
@@ -378,7 +380,8 @@ export function registerTemplateWorkbench(
       app: deps.app,
       profile: deps.profile,
       templates: deps.templates,
-      folder: () => deps.settings.current!["template.folder"],
+      folder: () =>
+        deps.bridge.runSync(deps.settings.current)["template.folder"],
       identity: getIdentity,
     }),
   });
@@ -393,7 +396,8 @@ export function registerTemplateWorkbench(
       app: deps.app,
       profile: deps.profile,
       templates: deps.templates,
-      folder: () => deps.settings.current!["template.folder"],
+      folder: () =>
+        deps.bridge.runSync(deps.settings.current)["template.folder"],
       identity: getIdentity,
       data: deps,
     }),
@@ -416,18 +420,14 @@ export function registerTemplateWorkbench(
       readCitationData(deps, selector, variant),
     templates: deps.templates,
     literatureNotes: {
-      readProfiles: () => {
-        const settings = deps.settings.current;
-        if (!settings) throw new Error("Settings are not loaded");
-        return {
-          defaultProfile: deps.profile.resolveProfile("default"),
-          profiles: deps.profile.profiles.map((entry) => ({
-            ...entry,
-            bindings: deps.profile.resolveProfile(entry.id)!.bindings,
-          })),
-          diagnostics: deps.profile.diagnostics,
-        };
-      },
+      readProfiles: () => ({
+        defaultProfile: deps.profile.resolveProfile("default"),
+        profiles: deps.profile.profiles.map((entry) => ({
+          ...entry,
+          bindings: deps.profile.resolveProfile(entry.id)!.bindings,
+        })),
+        diagnostics: deps.profile.diagnostics,
+      }),
       getDocumentStatuses: () =>
         deps.templates.getLiteratureNoteTemplateStatuses(),
       getDocument: (reference) =>
@@ -449,7 +449,9 @@ export function registerTemplateWorkbench(
       validateExpr: (expr, language) =>
         deps.templates.validateFrontmatterExpr(expr, language),
       write: (fields) => {
-        deps.settings.update({ "note.frontmatter-fields": [...fields] });
+        deps.bridge.runSync(
+          deps.settings.update({ "note.frontmatter-fields": [...fields] }),
+        );
       },
     },
   });

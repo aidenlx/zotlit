@@ -43,7 +43,9 @@ export function citationsPageItems(
           name: m.settings_citation_at_trigger_name(),
           desc: m.settings_citation_at_trigger_desc(),
           visible: () =>
-            ctx.settings.current?.["citation.editor-suggester"] ?? true,
+            ctx.bridge.runSync(ctx.settings.current)?.[
+              "citation.editor-suggester"
+            ] ?? true,
           control: { type: "toggle", key: "citation.at-trigger" },
         },
         {
@@ -248,8 +250,8 @@ function requireModPage(
     name: m.settings_citation_hover_mod_page_name(),
     desc: m.settings_citation_hover_mod_desc(),
     visible: () =>
-      (ctx.settings.current?.["citation.hover-action"] ?? "popover") ===
-      "popover",
+      (ctx.bridge.runSync(ctx.settings.current)?.["citation.hover-action"] ??
+        "popover") === "popover",
     items: REQUIRE_MOD_KEYS.map(([key, id, name]) => ({
       id,
       name: name(),
@@ -288,7 +290,7 @@ function renderReferencesStyleRow(
   });
 
   const selectedValue = (): string =>
-    ctx.settings.current?.["note.default-profile"].bindings[
+    ctx.bridge.runSync(ctx.settings.current)?.["note.default-profile"].bindings[
       "citation.references-style"
     ] ?? STYLE_DEFAULT;
 
@@ -336,9 +338,11 @@ function renderReferencesStyleRow(
   setting.addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      ctx.settings.updateDefaultLiteratureNoteProfileBindings({
-        "citation.references-style": value === STYLE_DEFAULT ? null : value,
-      });
+      ctx.bridge.runSync(
+        ctx.settings.updateDefaultLiteratureNoteProfileBindings({
+          "citation.references-style": value === STYLE_DEFAULT ? null : value,
+        }),
+      );
     });
     repopulate();
   });

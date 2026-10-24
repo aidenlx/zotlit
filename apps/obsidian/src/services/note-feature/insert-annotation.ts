@@ -41,6 +41,7 @@ export async function prepareAnnotationInsert(
     | "zoteroReads"
     | "zoteroPref"
     | "settings"
+    | "bridge"
     | "singleExcerpt"
     | "noteIndex"
   >,
@@ -52,7 +53,12 @@ export async function prepareAnnotationInsert(
     !signal.aborted &&
     options.valid() &&
     options.sourceScope === ctx.zoteroPref.dataDir;
-  if (!valid() || !ctx.singleExcerpt || !ctx.settings.current) return null;
+  if (
+    !valid() ||
+    !ctx.singleExcerpt ||
+    !ctx.bridge.runSync(ctx.settings.current)
+  )
+    return null;
   const paths = {
     dataDir: ctx.zoteroPref.dataDir,
     baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
@@ -111,7 +117,7 @@ export async function prepareAnnotationInsert(
   const prepared = await ctx.singleExcerpt({
     annotation: a,
     request,
-    settings: ctx.settings.current,
+    settings: ctx.bridge.runSync(ctx.settings.current),
     notePath: options.notePath,
     sourceLink: `[Zotero](${backlink})`,
     signal,

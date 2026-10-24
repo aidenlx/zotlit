@@ -25,7 +25,7 @@ function items(
     bridge: effectBridge(runtime),
     webWorkbenchEnabled: true,
     app: { loadLocalStorage: () => null, saveLocalStorage: () => {} },
-    settings: { current: { "log.to-file": false } },
+    settings: { current: Effect.succeed({ "log.to-file": false }) },
     template: { loaded: false },
     localServer: stubService<LocalServer["Service"]>("LocalServer", {
       effectivePort: Effect.succeed(null),

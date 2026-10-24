@@ -3,6 +3,7 @@ import type { App, TFile } from "obsidian";
 import type { Item, ItemRef } from "@zotlit/db";
 
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
@@ -21,7 +22,7 @@ import type {
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -40,7 +41,8 @@ export interface SingleUpdateDeps {
     PlainZoteroReads,
     "acquireRead" | "reads" | "snapshot" | "state"
   >;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
+  bridge: Pick<EffectBridge, "runSync">;
   noteFeature: NoteFeature;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
   /** Which Libraries an unqualified library-wide update covers. */

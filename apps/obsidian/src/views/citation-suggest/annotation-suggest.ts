@@ -13,8 +13,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
   appendExcerptText,
@@ -29,7 +29,7 @@ import { resolveAnnotationTrigger } from "./annotation-trigger";
 
 export interface AnnotationSuggestDeps extends AnnotationInsertDeps {
   query: Pick<QueryService, "run">;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
   /**
    * The comment renderer every annotation surface shares, which draws a
    * comment as the Markdown the note will hold. `owner` holds the rendered
@@ -74,8 +74,9 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
     _file: TFile | null,
   ): EditorSuggestTriggerInfo | null {
     const trigger =
-      this.#deps.settings.current?.["citation.annotation-trigger"] ??
-      defaults["citation.annotation-trigger"];
+      this.#deps.bridge.runSync(this.#deps.settings.current)?.[
+        "citation.annotation-trigger"
+      ] ?? defaults["citation.annotation-trigger"];
     const found = resolveAnnotationTrigger(
       editor.getLine(cursor.line),
       cursor.ch,

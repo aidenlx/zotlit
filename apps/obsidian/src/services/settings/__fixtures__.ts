@@ -1,11 +1,12 @@
 import type { Plugin } from "obsidian";
 
 import { Context, Effect, Layer } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
-import { plainPluginSettings } from "./plain";
-import type { PlainPluginSettings } from "./plain";
 import { layerPluginSettings, PluginSettings } from "./service";
 import type { PluginSettingsOptions, Settings } from "./service";
 
@@ -35,15 +36,22 @@ export const settingsRuntimeOf = Effect.fnUntraced(function* (
   return handle;
 });
 
-/** Consumer fixtures outside Effect own the adapter's runtime through this handle. */
-export async function buildSettings(options: SettingsFixtureOptions): Promise<
-  PlainPluginSettings &
-    AsyncDisposable & {
-      runtime: import("@/lib/effect-stream").SubscriptionRuntime;
-    }
-> {
-  const { settings, close, runtime } = await openSettings(options);
-  return Object.assign(settings, { runtime, [Symbol.asyncDispose]: close });
+export type SettingsFixture = PluginSettings["Service"] &
+  AsyncDisposable & {
+    readonly bridge: EffectBridge;
+    readonly runtime: SubscriptionRuntime;
+  };
+
+/** Consumer fixtures outside Effect own the service's runtime through this handle. */
+export async function buildSettings(
+  options: SettingsFixtureOptions,
+): Promise<SettingsFixture> {
+  const { settings, bridge, close, runtime } = await openSettings(options);
+  return Object.assign(settings, {
+    bridge,
+    runtime,
+    [Symbol.asyncDispose]: close,
+  });
 }
 
 async function openSettings(
@@ -56,15 +64,20 @@ async function openSettings(
   );
   const runtime = buildRuntime(layer, stack);
   await runtime.context();
-  const settings = Object.assign(plainPluginSettings(runtime), { runtime });
+  const settings = runtime.runSync(PluginSettings);
   const lifetime = stack.move();
-  return { settings, runtime, close: () => lifetime.disposeAsync() };
+  return {
+    settings,
+    bridge: effectBridge(runtime),
+    runtime,
+    close: () => lifetime.disposeAsync(),
+  };
 }
 
-export const plainSettingsOf = Effect.fnUntraced(function* (
+export const settingsRuntimeBridgeOf = Effect.fnUntraced(function* (
   options: SettingsFixtureOptions,
 ) {
-  return (yield* settingsRuntimeOf(options)).settings;
+  return yield* settingsRuntimeOf(options);
 });
 
 /** Values a test seeds: persisted settings, and default Profile bindings by name. */
@@ -85,9 +98,10 @@ const BINDING_KEYS = [
  */
 export function applySettings(
   settings: Pick<
-    PlainPluginSettings,
+    PluginSettings["Service"],
     "update" | "updateDefaultLiteratureNoteProfileBindings"
   >,
+  bridge: Pick<EffectBridge, "runSync">,
   overrides: SettingsOverrides,
 ): void {
   const persisted: Record<string, unknown> = { ...overrides };
@@ -98,10 +112,12 @@ export function applySettings(
     delete persisted[key];
   }
   if (Object.keys(persisted).length > 0)
-    settings.update(persisted as Partial<Settings>);
+    bridge.runSync(settings.update(persisted as Partial<Settings>));
   if (Object.keys(bindings).length > 0)
-    settings.updateDefaultLiteratureNoteProfileBindings(
-      bindings as Partial<ResolvedLiteratureNoteProfileBindings>,
+    bridge.runSync(
+      settings.updateDefaultLiteratureNoteProfileBindings(
+        bindings as Partial<ResolvedLiteratureNoteProfileBindings>,
+      ),
     );
 }
 
@@ -113,6 +129,6 @@ export async function buildSeededSettings(overrides: SettingsOverrides = {}) {
       saveData: () => Promise.resolve(),
     },
   });
-  applySettings(settings, overrides);
+  applySettings(settings, settings.bridge, overrides);
   return settings;
 }

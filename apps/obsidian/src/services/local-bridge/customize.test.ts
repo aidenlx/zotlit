@@ -102,6 +102,7 @@ function harness({
   const update = vi.fn((patch: Partial<Settings>) => {
     Object.assign(settings, patch);
   });
+  const effect = effectBridge(testRuntime());
   const file = activeNote && { basename: activeNote.basename };
   const portRef = Effect.runSync(
     SubscriptionRef.make<number | null>(effectivePort),
@@ -143,10 +144,16 @@ function harness({
     webWorkbenchEnabled,
     app,
     settings: {
-      get current() {
-        return settings;
-      },
-      update,
+      current: Effect.sync(() => settings),
+      update: (patch: Parameters<CustomizeDeps["settings"]["update"]>[0]) =>
+        Effect.sync(() => {
+          update(
+            (typeof patch === "function"
+              ? patch(settings)
+              : patch) as Partial<Settings>,
+          );
+          return settings;
+        }),
     } as unknown as CustomizeDeps["settings"],
     profile: {
       ready: Promise.resolve(),
@@ -165,7 +172,7 @@ function harness({
       effectivePort: SubscriptionRef.get(portRef),
       effectivePortChanges: changesUntil(portRef, Effect.never),
     }),
-    effect: effectBridge(testRuntime()),
+    effect,
     pluginVersion: PLUGIN_VERSION,
     bridge: {
       launchUrl: (launch: unknown) => {

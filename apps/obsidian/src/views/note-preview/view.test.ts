@@ -19,7 +19,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
 import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
@@ -156,6 +155,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     runtime: testRuntime(),
     app,
     settings: fixture.deps.settings,
+    bridge: fixture.deps.bridge,
     zoteroReads: fixture.deps.zoteroReads,
     zoteroPref: { dataDir: null },
     templates: fixture.deps.templates,
@@ -188,7 +188,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   ) {
     const preview = new Preview({ app } as unknown as WorkspaceLeaf, "zotlit", {
       ...fixture.deps,
-      settings: fixture.deps.settings as PlainPluginSettings,
+      settings: fixture.settings,
       profile,
       itemLookup: { search: vi.fn(), openSession: vi.fn() },
     });
@@ -714,16 +714,18 @@ Custom Default body.
 --- zotlit:annotation ---
 Annotation`,
     });
-    source.settings.update({
-      "note.frontmatter-fields": [
-        {
-          key: "reading-status",
-          expr: "'unread'",
-          merge: "keep",
-          language: "liquid",
-        },
-      ],
-    });
+    source.bridge.runSync(
+      source.settings.update({
+        "note.frontmatter-fields": [
+          {
+            key: "reading-status",
+            expr: "'unread'",
+            merge: "keep",
+            language: "liquid",
+          },
+        ],
+      }),
+    );
     expect(await source.profile.getSource("default")).toContain(
       "Custom Default body.",
     );

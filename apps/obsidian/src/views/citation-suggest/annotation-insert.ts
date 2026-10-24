@@ -18,7 +18,7 @@ const logger = getLogger(["views", "annotation-suggest"]);
 export interface AnnotationInsertDeps {
   app: App;
   annotations: Pick<AnnotationRepository["Service"], "read">;
-  bridge: Pick<EffectBridge, "runPromise">;
+  bridge: Pick<EffectBridge, "runPromise" | "runSync">;
   noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   useLedger: Pick<PlainUseLedger, "record">;

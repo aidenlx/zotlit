@@ -7,14 +7,15 @@ import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { Context, Effect, Layer } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { buildSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { buildTemplate, templateSettings } from "./__fixtures__";
 import { layerTemplateMigration } from "./migration";
@@ -76,13 +77,33 @@ async function makeHarness(
   const trashFile = vi.fn(async (file: { path: string }) => {
     files.delete(file.path);
   });
+  const update = vi.fn(
+    (
+      patch:
+        | Partial<typeof state>
+        | ((current: Readonly<typeof state>) => Partial<typeof state>),
+    ) =>
+      Effect.sync(() => {
+        Object.assign(
+          state,
+          typeof patch === "function" ? patch(state) : patch,
+        );
+        return { ...defaults, ...state } as Settings;
+      }),
+  );
   const settings = {
-    current: state,
-    update: vi.fn((patch: Partial<typeof state>) =>
-      Object.assign(state, patch),
-    ),
-    flush: vi.fn(async () => {}),
+    current: Effect.sync(() => ({ ...defaults, ...state }) as Settings),
+    update,
+    reset: () => Effect.sync(() => ({ ...defaults, ...state }) as Settings),
+    updateDefaultLiteratureNoteProfileBindings: () => Effect.void,
+    loaded: Effect.succeed({ ...defaults, ...state } as Settings),
+    diagnostics: Effect.succeed([]),
+    hydrationOrigin: Effect.succeed(null),
+    changes: Stream.empty,
+    flush: vi.fn(() => Effect.void),
+    release: () => Effect.void,
   };
+  const bridge = { runSync: Effect.runSync, runPromise: Effect.runPromise };
   const template = {
     refresh: vi.fn(async () => {}),
     getLegacyLiteratureNoteTemplateFiles: vi.fn(() =>
@@ -134,6 +155,7 @@ async function makeHarness(
         },
       } as unknown as App,
       settings,
+      bridge,
       template,
       loadVerificationData: async () => ({
         note: { title: "Paper" },
@@ -158,6 +180,7 @@ async function makeHarness(
       await service.whenSettled();
     },
     openPrompt,
+    bridge,
     service,
     settings,
     template,
@@ -269,7 +292,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           "converted source",
         );
         expect(
-          harness.settings.current["note.default-profile"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.default-profile"
+          ],
         ).not.toHaveProperty("document");
         expect(harness.settings.update).toHaveBeenCalledWith({
           "note.template-conversion-pending": false,
@@ -282,7 +307,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           true,
         );
         expect(
-          harness.settings.current["note.template-conversion-result"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-result"
+          ],
         ).toEqual({
           document: "templates/zotlit-profile.default.md",
           trashed: 3,
@@ -306,7 +333,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       harness.files.delete("templates/zotlit-content.liquid.md");
       yield* Effect.promise(() => service.convert());
       expect(
-        harness.settings.current["note.template-conversion-result"],
+        harness.bridge.runSync(harness.settings.current)[
+          "note.template-conversion-result"
+        ],
       ).toEqual({
         document: "templates/zotlit-profile.default.md",
         trashed: 3,
@@ -336,7 +365,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         });
         // The documents stay active and the file that resisted is recorded.
         expect(
-          failed.settings.current["note.template-conversion-pending"],
+          failed.bridge.runSync(failed.settings.current)[
+            "note.template-conversion-pending"
+          ],
         ).toBe(false);
         expect(failed.files.has("templates/zotlit-profile.default.md")).toBe(
           true,
@@ -345,7 +376,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           true,
         );
         expect(
-          failed.settings.current["note.template-conversion-result"],
+          failed.bridge.runSync(failed.settings.current)[
+            "note.template-conversion-result"
+          ],
         ).toMatchObject({
           document: "templates/zotlit-profile.default.md",
           trashed: 2,
@@ -379,7 +412,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           false,
         );
         expect(
-          failed.settings.current["note.template-conversion-result"],
+          failed.bridge.runSync(failed.settings.current)[
+            "note.template-conversion-result"
+          ],
         ).toMatchObject({
           document: "templates/zotlit-profile.default.md",
           trashed: 3,
@@ -440,10 +475,14 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         );
         expect(harness.files.has("templates/zotlit-note.liquid.md")).toBe(true);
         expect(
-          harness.settings.current["note.template-conversion-pending"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-pending"
+          ],
         ).toBe(true);
         expect(
-          harness.settings.current["note.template-conversion-result"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-result"
+          ],
         ).toBeNull();
       }),
   );
@@ -460,10 +499,14 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           async () => harness.service,
         );
         expect(
-          harness.settings.current["note.template-conversion-result"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-result"
+          ],
         ).toBeNull();
         expect(
-          harness.settings.current["note.template-conversion-pending"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-pending"
+          ],
         ).toBe(false);
       }),
   );
@@ -676,7 +719,7 @@ async function makeVaultHarness(
       migrateV9: noMigration,
     }),
   );
-  await settings.loaded;
+  await settings.bridge.runPromise(settings.loaded);
   const template = stack.use(await buildTemplate({ app, settings }, context));
   const openPrompt = vi.fn();
   const service = stack.use(
@@ -684,6 +727,7 @@ async function makeVaultHarness(
       {
         app,
         settings,
+        bridge: settings.bridge,
         template,
         loadVerificationData: async () => ({
           note: { title: "Paper" },
@@ -705,6 +749,7 @@ async function makeVaultHarness(
     openPrompt,
     service,
     settings,
+    bridge: settings.bridge,
     template,
     vault,
     trashFile,
@@ -931,7 +976,9 @@ language: liquid
 
         expect(harness.openPrompt).toHaveBeenCalledOnce();
         expect(
-          harness.settings.current?.["note.template-conversion-pending"],
+          harness.bridge.runSync(harness.settings.current)?.[
+            "note.template-conversion-pending"
+          ],
         ).toBe(true);
       }),
   );
@@ -1122,7 +1169,9 @@ describe("layout-ready legacy conversion detection", () => {
           makeVaultHarness({}, undefined, context),
         );
         expect(
-          harness.settings.current?.["note.template-conversion-pending"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-pending"
+          ],
         ).toBe(false);
         // Obsidian populates its initial inventory without create events.
         for (const [path, source] of Object.entries(original))
@@ -1132,7 +1181,9 @@ describe("layout-ready legacy conversion detection", () => {
 
         expect(harness.openPrompt).toHaveBeenCalledOnce();
         expect(
-          harness.settings.current?.["note.template-conversion-pending"],
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-pending"
+          ],
         ).toBe(true);
         expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
       }),
@@ -1162,7 +1213,9 @@ describe("layout-ready legacy conversion detection", () => {
 
         expect(resumed.openPrompt).not.toHaveBeenCalled();
         expect(
-          resumed.settings.current?.["note.template-conversion-pending"],
+          resumed.bridge.runSync(resumed.settings.current)[
+            "note.template-conversion-pending"
+          ],
         ).toBe(true);
         // The late inventory still renders through the legacy files.
         expect(
@@ -1274,7 +1327,9 @@ describe("cleanup retry across restart", () => {
           ),
         );
         expect(
-          resumed.settings.current?.["note.template-conversion-result"],
+          resumed.bridge.runSync(resumed.settings.current)[
+            "note.template-conversion-result"
+          ],
         ).toMatchObject({
           pendingCleanup: ["templates/zotlit-cite.liquid.md"],
         });
@@ -1301,11 +1356,8 @@ describe("cleanup retry across restart", () => {
 async function buildMigration(
   options: TemplateMigrationOptions & {
     app: App;
-    settings: {
-      current: Partial<PlainPluginSettings["current"]>;
-      update: (patch: Partial<PlainPluginSettings["current"]>) => void;
-      flush: () => Promise<void>;
-    };
+    settings: PluginSettings["Service"];
+    bridge: Pick<import("@/lib/effect-bridge").EffectBridge, "runSync">;
     template: Pick<
       PlainTemplate,
       | "refresh"
@@ -1327,7 +1379,7 @@ async function buildMigration(
   const runtime = buildRuntime(
     layerTemplateMigration(options).pipe(
       Layer.provide(Layer.succeed(ObsidianApp, options.app)),
-      Layer.provide(templateSettings(options.settings as PlainPluginSettings)),
+      Layer.provide(templateSettings(options.settings)),
       Layer.provide(
         Layer.succeed(
           Template,

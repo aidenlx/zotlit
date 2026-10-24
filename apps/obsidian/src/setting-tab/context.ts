@@ -17,8 +17,8 @@ import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { Release } from "@/services/release/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
@@ -104,7 +104,7 @@ export interface SettingTabContext {
    */
   manifest: PluginManifest;
   settings: Pick<
-    PlainPluginSettings,
+    PluginSettings["Service"],
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"

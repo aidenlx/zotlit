@@ -98,8 +98,13 @@ export async function createRenderFixture(options: { existing?: string; javascri
   const plugin = new PluginStub(app, { __VERSION__: 1, "note.template-conversion-pending": true, "citation.wikilink-citations": options.wikilinks ?? false });
   const identity = (raw: unknown) => raw;
   const settings = await buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
-  await settings.loaded;
-  if (options.defaultStyle) settings.updateDefaultLiteratureNoteProfileBindings({ "citation.references-style": options.defaultStyle });
+  await settings.bridge.runPromise(settings.loaded);
+  if (options.defaultStyle)
+    settings.bridge.runSync(
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "citation.references-style": options.defaultStyle,
+      }),
+    );
   const templates = await buildTemplate({ app, settings });
     const renderCitations = vi.fn<NativeRenderDeps["bibliographyRender"]["renderCitations"]>(async (sources, _items, presentation) => {
     const content = presentation?.styleId === "numeric" ? "[1]" : "(Rougier 2014)";
@@ -115,7 +120,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   // first `changed` lands before a view subscribes.
   await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
   await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
-  const deps: NativeRenderDeps = { runtime: settings.runtime,
+  const deps: NativeRenderDeps = { runtime: settings.runtime, bridge: settings.bridge,
     citationParse: plainTestParseClient(inProcessParseClient),
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
@@ -132,5 +137,5 @@ export async function createRenderFixture(options: { existing?: string; javascri
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
-  return { deps, client, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
+  return { deps, settings, client, snapshot, host, vault, renderCitations, writes, async [Symbol.asyncDispose]() { await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }

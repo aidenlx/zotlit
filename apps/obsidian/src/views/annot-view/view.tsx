@@ -41,7 +41,7 @@ import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/servi
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
@@ -162,7 +162,7 @@ export interface AnnotViewDeps extends QueryViewDeps {
   >;
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {
@@ -644,6 +644,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         app: this.#deps.app,
         lookup: this.#deps.itemLookup,
         settings: this.#deps.settings,
+        bridge: this.#deps.bridge,
       },
       m.annot_view_pin_placeholder(),
     ).then((hit) => {
@@ -682,10 +683,12 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   #enableLiveUpdates(): void {
-    this.#deps.settings.update({
-      "server.enabled": true,
-      "server.live-update": true,
-    });
+    this.#deps.bridge.runSync(
+      this.#deps.settings.update({
+        "server.enabled": true,
+        "server.live-update": true,
+      }),
+    );
   }
 
   // #endregion

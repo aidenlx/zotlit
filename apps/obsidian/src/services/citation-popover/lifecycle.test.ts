@@ -4,6 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -400,7 +401,7 @@ describe("Citation Popover visits", () => {
         {
           app: {} as never,
           settings: {
-            current: { "citation.hover-action": "popover" },
+            current: Effect.succeed({ "citation.hover-action": "popover" }),
           } as never,
           citationPopover: run.service,
           bridge: run.bridge,

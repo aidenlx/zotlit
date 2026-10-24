@@ -21,6 +21,7 @@ import { selectorOf } from "@/services/library-scope/scope";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -273,9 +274,17 @@ function makeDeps(
       options.dbState ?? "ready",
     ),
     settings: {
-      current: { ...defaults, ...settings },
-      update: vi.fn(),
+      current: Effect.succeed({ ...defaults, ...settings }),
+      update: ((patch) =>
+        Effect.succeed({
+          ...defaults,
+          ...settings,
+          ...(typeof patch === "function"
+            ? patch({ ...defaults, ...settings })
+            : patch),
+        })) as PluginSettings["Service"]["update"],
     },
+    bridge: { runSync: Effect.runSync },
     libraryScope: { resolveLibraries: () => currentScope },
     noteImport: {
       importNote,

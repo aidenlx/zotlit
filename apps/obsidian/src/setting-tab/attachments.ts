@@ -22,7 +22,8 @@ export function attachmentPageItems(
       id: "settings_attachment_folder",
       name: m.settings_attachment_folder_name(),
       desc: m.settings_attachment_folder_desc(),
-      visible: () => ctx.settings.current?.["attachment.import"] ?? true,
+      visible: () =>
+        ctx.bridge.runSync(ctx.settings.current)?.["attachment.import"] ?? true,
       // Empty value falls back to Obsidian's default attachment folder.
       control: {
         type: "folder",

@@ -269,13 +269,17 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           "[2]",
         ]);
 
-        harness.settings.update({ "citation.annotation-citations": false });
+        harness.settingsBridge.runSync(
+          harness.settings.update({ "citation.annotation-citations": false }),
+        );
         expect(
           firstText(
             (await readText(text, harness.draft)).formatted.get("@roe2025"),
           ),
         ).toBe("[1]");
-        harness.settings.update({ "citation.annotation-citations": true });
+        harness.settingsBridge.runSync(
+          harness.settings.update({ "citation.annotation-citations": true }),
+        );
         expect(
           firstText(
             (await readText(text, harness.draft)).formatted.get("@roe2025"),
@@ -401,7 +405,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         ).toBe("[1]");
         expect(markers(includedEntries)).toEqual(["[1]", "[2]"]);
 
-        settings.update({ "citation.wikilink-citations": false });
+        settings.bridge!.runSync(
+          settings.update({ "citation.wikilink-citations": false }),
+        );
         const excludedSet = await index.getDocumentCitationSet(draft);
         const excludedText = await readText(text, draft);
         const excludedEntries = await sidebarEntries(

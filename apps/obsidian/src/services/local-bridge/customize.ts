@@ -17,7 +17,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { LocalServer } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainTemplate } from "@/services/template/plain";
 import {
   profileCustomization,
@@ -37,9 +37,10 @@ const SERVER_START_TIMEOUT_MS = 10_000;
  * enabling it for a web launch.
  */
 export function workbenchEnabled(
-  settings: Pick<PlainPluginSettings, "current">,
+  settings: Pick<PluginSettings["Service"], "current">,
+  effect: Pick<EffectBridge, "runSync">,
 ): boolean {
-  return settings.current?.["server.workbench"] ?? false;
+  return effect.runSync(settings.current)?.["server.workbench"] ?? false;
 }
 
 /** What an entry action asks Customize to open. */
@@ -82,7 +83,7 @@ export type ConfirmLaunch = (
 export interface CustomizeDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "update">;
+  settings: Pick<PluginSettings["Service"], "current" | "update">;
   profile: Pick<PlainProfile, "profiles" | "defaultDocumentPath" | "getSource">;
   template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   localServer: Pick<
@@ -136,8 +137,9 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       return;
     }
 
-    const turnServerOn = deps.settings.current?.["server.enabled"] !== true;
-    const turnWorkbenchOn = !workbenchEnabled(deps.settings);
+    const turnServerOn =
+      deps.effect.runSync(deps.settings.current)?.["server.enabled"] !== true;
+    const turnWorkbenchOn = !workbenchEnabled(deps.settings, deps.effect);
     if (turnServerOn || turnWorkbenchOn || preference !== "web") {
       const consent = await deps.confirmLaunch({
         website: new URL(DOCS_SITE_URL).host,
@@ -154,10 +156,12 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
         return;
       }
       if (turnServerOn || turnWorkbenchOn)
-        deps.settings.update({
-          ...(turnServerOn ? { "server.enabled": true } : {}),
-          ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
-        });
+        deps.effect.runSync(
+          deps.settings.update({
+            ...(turnServerOn ? { "server.enabled": true } : {}),
+            ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
+          }),
+        );
       if (
         turnServerOn &&
         !(await whenListening(deps.localServer, deps.effect))

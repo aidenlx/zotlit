@@ -5,8 +5,9 @@ import type { TFile } from "obsidian";
 
 import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
 
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 import {
   classifyTemplateFolderFile,
   inTemplateFolder,
@@ -14,9 +15,13 @@ import {
 
 /** The template folder the classifier reads within, as the service reads it. */
 export function templateFolderOf(
-  settings: Pick<PlainPluginSettings, "current">,
+  settings: Pick<PluginSettings["Service"], "current">,
+  bridge: Pick<EffectBridge, "runSync">,
 ): string {
-  return settings.current?.["template.folder"] ?? defaults["template.folder"];
+  return (
+    bridge.runSync(settings.current)?.["template.folder"] ??
+    defaults["template.folder"]
+  );
 }
 
 /**

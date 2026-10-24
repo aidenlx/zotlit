@@ -48,8 +48,8 @@ import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { applySettings, buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
-import type { Settings as PluginSettings } from "@/services/settings/schema";
 
 type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
@@ -308,7 +308,7 @@ export async function openCitationVault({
   const profileChanged = testEvent<void>();
   const settings = stack.use(await buildSeededSettings(persisted));
   const profileSettings = (): Settings => ({
-    ...settings.current,
+    ...settings.bridge.runSync(settings.current),
     ...profileFixture,
   });
   const harness = stack.use(
@@ -568,7 +568,7 @@ export async function openCitationVault({
     },
     async setSettings(next) {
       const { profiles, defaultDocument, ...persisted } = next;
-      applySettings(settings, persisted);
+      applySettings(settings, settings.bridge, persisted);
       if ("profiles" in next || "defaultDocument" in next) {
         profileFixture = { ...profileFixture, profiles, defaultDocument };
         profileChanged.emit();
@@ -629,10 +629,7 @@ function exportAdapter({
   dataDir: string;
   engine: Awaited<ReturnType<typeof createCitationEngine>>;
   harness: CitationIndexHarness;
-  settings: {
-    current: Readonly<PluginSettings>;
-    changes: Stream.Stream<Readonly<PluginSettings>>;
-  };
+  settings: SettingsFixture;
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
@@ -654,6 +651,7 @@ function exportAdapter({
       get: () => true,
     } as unknown as PandocExportDeps["zoteroPref"],
     settings,
+    bridge: settings.bridge,
     openSettings: () => undefined,
   };
 }

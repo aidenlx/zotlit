@@ -794,6 +794,7 @@ describe("zotlit:template-data with the real loader", () => {
 });
 
 type FixtureDeps = TemplateDataDeps & {
+  bridge: { runSync: typeof Effect.runSync };
   templates: TemplateDataDeps["templates"] & {
     compileErrors: ReadonlyMap<string, { message: string }>;
   };
@@ -853,8 +854,9 @@ function createFixture(options?: {
           whenIndexed: async () => {},
         },
         settings: {
-          current: settingsDefaults,
+          current: Effect.succeed(settingsDefaults),
         },
+        bridge: { runSync: Effect.runSync },
         templates: {
           compileErrors: options?.compileError
             ? new Map([["citation", { message: options.compileError }]])

@@ -11,11 +11,12 @@ import {
 } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { activateAnnotView } from "@/views/annot-view/register";
@@ -36,7 +37,8 @@ export interface AttachmentOpenLookupDeps {
 /** What opening a PDF in Obsidian needs, wherever the gesture came from. */
 export interface PdfReaderDeps {
   app: App;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 /**
@@ -48,7 +50,12 @@ export interface PdfReaderDeps {
 export function createPdfReader(deps: PdfReaderDeps): TargetReader {
   return createObsidianAttachmentReader(deps.app, {
     onOpened: () => {
-      if (deps.settings.current?.["reader.focus-annot-view"] ?? true) {
+      if (
+        deps.bridge.runSync(deps.settings.current)?.[
+          "reader.focus-annot-view"
+        ] ??
+        true
+      ) {
         void activateAnnotView(deps.app);
       }
     },

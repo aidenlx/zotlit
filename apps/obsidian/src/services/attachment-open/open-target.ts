@@ -19,13 +19,14 @@ import {
   parseIndexedKey,
 } from "@zotlit/db";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
   AttachmentLookup,
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
 import { filename, obsidianOpenPath } from "./resolve";
@@ -87,7 +88,8 @@ export interface TargetOpenerDeps {
    * Read per followed link: `reader.open-annotation-links` decides whether a
    * Durable Annotation Link is ZotLit's to follow.
    */
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
   /** The vault's own directory, for telling an in-vault file from one outside. */
   vaultBasePath: string;
   /** @default process.platform */
@@ -133,6 +135,7 @@ export function createTargetOpener({
   reader,
   native,
   settings,
+  bridge,
   vaultBasePath,
   platform = process.platform,
   indexWait = Temporal.Duration.from({ seconds: 5 }),
@@ -228,7 +231,7 @@ export function createTargetOpener({
   ): Promise<OpenOutcome> | null => {
     const link = parseAnnotationOpenUri(url);
     if (link === null) return null;
-    const current = settings.current ?? defaults;
+    const current = bridge.runSync(settings.current) ?? defaults;
     if (!current["reader.open-annotation-links"]) {
       logger.debug("Durable Annotation Link left to Zotero", {
         attachmentKey: link.attachmentKey,

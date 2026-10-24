@@ -66,7 +66,7 @@ import { plainProfile } from "./profile/plain";
 import { plainQueryClients } from "./query-client/plain";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { plainPluginSettings } from "./settings/plain";
+import { PluginSettings } from "./settings/service";
 import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
@@ -143,7 +143,7 @@ export async function buildServices(
     .useValue({ runtime: () => runtime })
     .useValue({ bridge: () => bridge })
     .useValue({
-      settings: () => plainPluginSettings(runtime),
+      settings: () => runtime.runSync(PluginSettings),
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),
@@ -208,9 +208,10 @@ export async function buildServices(
       targetOpener: ({ attachmentResolver, settings }) =>
         createTargetOpener({
           attachments: attachmentResolver,
-          reader: createPdfReader({ app: plugin.app, settings }),
+          reader: createPdfReader({ app: plugin.app, settings, bridge }),
           native: openWithSystem,
           settings,
+          bridge,
           // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
           vaultBasePath: (
             plugin.app.vault.adapter as FileSystemAdapter
@@ -293,6 +294,7 @@ export async function buildServices(
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({
           runtime,
+          bridge,
           app: plugin.app,
           settings,
           zoteroPref,
@@ -323,7 +325,6 @@ export async function buildServices(
         zoteroPref,
       }) =>
         new LocalBridgeService({
-          runtime,
           bridge,
           webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
           app: plugin.app,
@@ -387,7 +388,7 @@ export async function buildServices(
               },
               options,
             ),
-          openPrompt: () => openWelcomeView(plugin.app, settings),
+          openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
         });
         return plainTemplateMigration(runtime);
       },
@@ -437,6 +438,7 @@ export async function buildServices(
           noteIndex,
           zoteroPref,
           settings,
+          bridge,
           attachmentImport,
         }),
     })
@@ -509,6 +511,7 @@ export async function buildServices(
           noteFeature,
           zoteroReads,
           settings,
+          bridge,
           libraryScope,
           noteImport,
           noteIndex,

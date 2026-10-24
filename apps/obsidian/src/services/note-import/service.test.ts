@@ -8,7 +8,8 @@ import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { Stream } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { AttachmentImportService } from "@/services/attachment-import/service";
@@ -19,7 +20,6 @@ import type {
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { PlainTemplate } from "@/services/template/plain";
 import {
@@ -211,19 +211,22 @@ function makeAttachmentImport() {
  * the `file://` fallback the production seam renders, rather than a stub's.
  */
 function makeBlockingAttachmentImport(): AttachmentImportService {
+  const runtime = testRuntime();
   return new AttachmentImportService({
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app: {
       loadLocalStorage: () => null,
       saveLocalStorage: () => undefined,
     } as unknown as App,
     settings: {
-      current: {
+      current: Effect.succeed({
+        ...defaults,
         "attachment.import": true,
         "attachment.folder-path": "Attachments",
-      },
+      }),
       changes: Stream.empty,
-    } as unknown as PlainPluginSettings,
+    },
     zoteroPref: {
       dataDir: "/nonexistent-zotero-data",
       baseAttachmentPath: null,

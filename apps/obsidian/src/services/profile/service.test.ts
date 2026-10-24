@@ -45,11 +45,13 @@ describe("PlainProfile", () => {
         const f = yield* acquireAsyncDisposable(() =>
           harness(undefined, undefined, context),
         );
-        f.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": "Reading",
-          "note.import-folder": "Imported",
-          "citation.references-style": "http://www.zotero.org/styles/apa",
-        });
+        f.bridge.runSync(
+          f.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": "Reading",
+            "note.import-folder": "Imported",
+            "citation.references-style": "http://www.zotero.org/styles/apa",
+          }),
+        );
         const before = new Map(f.vault.contents);
         const plan = yield* Effect.promise(() =>
           f.profile.prepareShare("default"),
@@ -74,9 +76,11 @@ describe("PlainProfile", () => {
         });
         expect(exported.manifest.folder).toBeUndefined();
         expect(exported.manifest.importFolder).toBeUndefined();
-        f.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": "Later",
-        });
+        f.bridge.runSync(
+          f.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": "Later",
+          }),
+        );
         expect(plan.render(options)).toBe(output);
         expect(
           parseLiteratureNoteTemplate(
@@ -202,11 +206,13 @@ describe("PlainProfile", () => {
             context,
           ),
         );
-        const { profile, settings } = fixture;
-        settings.updateDefaultLiteratureNoteProfileBindings({
-          "citation.references-style": "apa",
-          "note.import-folder": "My notes",
-        });
+        const { bridge, profile, settings } = fixture;
+        bridge.runSync(
+          settings.updateDefaultLiteratureNoteProfileBindings({
+            "citation.references-style": "apa",
+            "note.import-folder": "My notes",
+          }),
+        );
         expect(
           profile.profiles.map(({ id, document }) => ({ id, document })),
         ).toEqual([{ id: BOOKS, document: "zotlit-profile.books.md" }]);
@@ -1059,7 +1065,7 @@ describe("PlainProfile", () => {
         const fixture = yield* acquireAsyncDisposable(() =>
           harness(undefined, undefined, context),
         );
-        const { profile, vault, settings } = fixture;
+        const { bridge, profile, vault, settings } = fixture;
         expect(profile.resolveProfile("default")?.document).toBeUndefined();
         const pending = profile.ejectDefault();
         yield* TestClock.adjust(500);
@@ -1072,9 +1078,9 @@ describe("PlainProfile", () => {
         expect(
           vault.contents.get("templates/zotlit-profile.default.md"),
         ).toContain("id: default");
-        expect(settings.current?.["note.default-profile"]).not.toHaveProperty(
-          "document",
-        );
+        expect(
+          bridge.runSync(settings.current)?.["note.default-profile"],
+        ).not.toHaveProperty("document");
         const restore = profile.restoreDefault();
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => restore);
@@ -1132,17 +1138,19 @@ describe("PlainProfile", () => {
         const fixture = yield* acquireAsyncDisposable(() =>
           harness(undefined, undefined, context),
         );
-        const { profile, vault, settings } = fixture;
-        settings.update({
-          "note.frontmatter-fields": [
-            {
-              key: "reading-status",
-              expr: "'unread'",
-              merge: "keep",
-              language: "liquid",
-            },
-          ],
-        });
+        const { bridge, profile, vault, settings } = fixture;
+        bridge.runSync(
+          settings.update({
+            "note.frontmatter-fields": [
+              {
+                key: "reading-status",
+                expr: "'unread'",
+                merge: "keep",
+                language: "liquid",
+              },
+            ],
+          }),
+        );
         const pending = profile.ejectDefault();
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => pending);

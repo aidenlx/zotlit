@@ -173,7 +173,7 @@ export const checkPlainDocument = Effect.fn(
       };
     const data = {
       ...deps.data,
-      settings: { current: profile.settings },
+      settings: { current: Effect.succeed(profile.settings) },
     };
     const loaded = yield* (
       root === "citation"

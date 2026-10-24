@@ -15,8 +15,10 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Release } from "@/services/release/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { SettingsPatch } from "@/services/settings/service";
+import type {
+  PluginSettings,
+  SettingsPatch,
+} from "@/services/settings/service";
 import type { PlainTemplateMigration } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
@@ -63,7 +65,7 @@ export interface WelcomeBannerDeps {
   >;
   queries: Pick<PlainQueryClients, "peek" | "read">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  settings: Pick<PlainPluginSettings, "changes" | "update" | "flush">;
+  settings: Pick<PluginSettings["Service"], "changes" | "update" | "flush">;
   setupActions: SetupActions;
   templateMigration: Pick<PlainTemplateMigration, "convert" | "retryCleanup">;
   release: Pick<
@@ -115,9 +117,9 @@ export class WelcomeBanner extends Component {
    * after it shows the banner as it is now.
    */
   #keep(patch: SettingsPatch): void {
-    const { settings } = this.#deps;
-    settings.update(patch);
-    settings.flush().catch((error: unknown) => {
+    const { bridge, settings } = this.#deps;
+    bridge.runSync(settings.update(patch));
+    bridge.runPromise(settings.flush()).catch((error: unknown) => {
       logger.warn("The Welcome View banner could not keep its state", {
         error,
       });

@@ -13,8 +13,8 @@ import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import { subscribe } from "@/lib/effect-stream";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
-import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { citationRunItem } from "./citation-fragment";
 import type { CitationRunItem } from "./citation-fragment";
@@ -283,7 +283,7 @@ export class WikilinkDisplaySettings {
    * Follows the settings, and asks for a redraw whenever they change what a
    * link displays or who answers its hover.
    *
-   * `PlainPluginSettings.subscribe` invokes its listener immediately, so the first
+   * `PluginSettings.subscribe` invokes its listener immediately, so the first
    * snapshot only seeds the values: everything drawn so far already read them,
    * and a startup redraw would show nothing new. A first snapshot of null seeds
    * the defaults, and the settings that arrive after it redraw like any change.
@@ -292,7 +292,7 @@ export class WikilinkDisplaySettings {
    */
   watch(
     runtime: SubscriptionRuntime,
-    settings: Pick<PlainPluginSettings, "changes">,
+    settings: Pick<PluginSettings["Service"], "changes">,
     redraw: () => void,
   ): () => void {
     let seeded = false;

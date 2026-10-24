@@ -9,7 +9,7 @@ import { effectBridge } from "@/lib/effect-bridge";
 import { it } from "@/lib/effect-vitest";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
-import { plainSettingsOf } from "@/services/settings/__fixtures__";
+import { settingsRuntimeBridgeOf } from "@/services/settings/__fixtures__";
 
 import { ZotLitSettingTab } from "./index";
 import type { ZotLitSettingTabOptions } from "./index";
@@ -19,7 +19,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       let disk: unknown;
-      const settings = yield* plainSettingsOf({
+      const { settings, bridge } = yield* settingsRuntimeBridgeOf({
         plugin: {
           loadData: async () => null,
           saveData: async (value) => {
@@ -27,7 +27,7 @@ it.effect(
           },
         },
       });
-      yield* Effect.promise(() => settings.loaded);
+      yield* Effect.promise(() => bridge.runPromise(settings.loaded));
       const cleanup: (() => void)[] = [];
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -79,7 +79,7 @@ it.effect(
       expect(tab.getControlValue("note-profile:default:folder")).toBe(
         "Research",
       );
-      yield* Effect.promise(() => settings.flush());
+      yield* Effect.promise(() => bridge.runPromise(settings.flush()));
       expect(disk).toMatchObject({
         __VERSION__: 11,
         "citation.at-trigger": true,

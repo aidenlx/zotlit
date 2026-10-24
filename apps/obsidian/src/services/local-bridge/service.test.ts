@@ -9,17 +9,16 @@ import {
   LOCAL_BRIDGE_PATHS,
 } from "@zotlit/workbench/bridge";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { DOCS_SITE_URL } from "@/lib/constants";
 import { Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { buildLocalServer } from "@/services/local-server/__fixtures__";
 import type { ProfileReader } from "@/services/profile/service";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
-import type { Settings } from "@/services/settings/service";
+import type { PluginSettings, Settings } from "@/services/settings/service";
 
 import type { BridgeProfileWriter } from "./save";
 import { LocalBridgeService } from "./service";
@@ -107,9 +106,10 @@ interface CallInit {
 
 interface Harness extends AsyncDisposable {
   bridge: LocalBridgeService;
-  settings: PlainPluginSettings;
+  settings: PluginSettings["Service"];
   /** Every write to the store, which still goes through. */
-  settingsUpdates: Mock<PlainPluginSettings["update"]>;
+  settingsUpdates: Mock<PluginSettings["Service"]["update"]>;
+  settingsBridge: Pick<EffectBridge, "runSync">;
   device: ReturnType<typeof makeDevice>;
   /** A plain request against the bound port, the way the page makes one. */
   call(path: string, init?: CallInit): Promise<Response>;
@@ -144,7 +144,6 @@ async function harness(
   );
   const bridge = stack.use(
     new LocalBridgeService({
-      runtime: testRuntime(),
       bridge: effectBridge(localServer.runtime),
       webWorkbenchEnabled: options.webWorkbenchEnabled ?? true,
       app: device.app,
@@ -167,6 +166,7 @@ async function harness(
     bridge,
     settings,
     settingsUpdates,
+    settingsBridge: effectBridge(localServer.runtime),
     device,
     call,
     async connect(profileId = BOOKS_PROFILE) {
@@ -341,7 +341,9 @@ it("ends the live connection when the Workbench toggle is turned off", async () 
   await using bridge = await harness();
   await bridge.connect();
 
-  bridge.settings.update({ "server.workbench": false });
+  bridge.settingsBridge.runSync(
+    bridge.settings.update({ "server.workbench": false }),
+  );
 
   expect(bridge.bridge.connection).toBe(null);
 });

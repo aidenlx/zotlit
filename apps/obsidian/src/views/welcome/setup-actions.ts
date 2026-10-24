@@ -2,11 +2,12 @@
 import { FuzzySuggestModal } from "obsidian";
 import type { App, TFolder } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { openSettingsTab } from "@/lib/open-settings";
 import { requireDialog } from "@/lib/require";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 const logger = getLogger(["views", "welcome"]);
@@ -20,9 +21,10 @@ export interface SetupActions {
 export interface SetupActionsDeps {
   app: App;
   settings: Pick<
-    PlainPluginSettings,
+    PluginSettings["Service"],
     "updateDefaultLiteratureNoteProfileBindings"
   >;
+  bridge: Pick<EffectBridge, "runSync">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "setDataDir">;
   /** Plugin id — identifies the settings tab. */
   pluginId: string;
@@ -35,9 +37,11 @@ export function createSetupActions(deps: SetupActionsDeps): SetupActions {
     },
     pickFolder: () => {
       new LiteratureFolderModal(deps.app, (folder) => {
-        deps.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": folder.path,
-        });
+        deps.bridge.runSync(
+          deps.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": folder.path,
+          }),
+        );
       }).open();
     },
     locateZotero: () => {

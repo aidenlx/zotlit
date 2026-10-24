@@ -99,6 +99,7 @@ async function fixture(
     app: f.app,
     templates: f.template,
     settings: f.settings,
+    bridge: f.bridge,
     profile: f.profile,
     zoteroPref,
     noteIndex,
@@ -420,9 +421,12 @@ describe("plain document checks", () => {
           selectedProfile: { id: "Bk3Qn7XvT2Lp" },
           outputs: { partial: "Paper" },
         });
-        expect(
-          vi.mocked(readTemplateData).mock.calls.at(-1)?.[0].settings.current,
-        ).toMatchObject({ "note.literature-folder": "Selected folder" });
+        const loadedSettings = yield* vi
+          .mocked(readTemplateData)
+          .mock.calls.at(-1)![0].settings.current;
+        expect(loadedSettings).toMatchObject({
+          "note.literature-folder": "Selected folder",
+        });
         yield* f.draft("---\nlanguage: liquid\n---\n{% render 'missing' %}");
         const failed = yield* f.check({
           document: "partial:new",
@@ -774,10 +778,12 @@ describe("registered template-check", () => {
             "contract: 5\nfolder: Installed\ncitationStyle: installed-style",
           ),
         );
-        f.settings.updateDefaultLiteratureNoteProfileBindings({
-          "note.literature-folder": "Inherited",
-          "citation.references-style": "inherited-style",
-        });
+        f.bridge.runSync(
+          f.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.literature-folder": "Inherited",
+            "citation.references-style": "inherited-style",
+          }),
+        );
         const draft = yield* f.draft(
           SOURCE.replace(
             "contract: 5",
@@ -822,10 +828,9 @@ describe("registered template-check", () => {
           },
         });
         expect(inherited.outputs.fold["zotlit-csl"]).toBeUndefined();
-        const loadedSettings = yield* Effect.sync(
-          () =>
-            vi.mocked(readTemplateData).mock.calls.at(-1)![0].settings.current,
-        );
+        const loadedSettings = yield* vi
+          .mocked(readTemplateData)
+          .mock.calls.at(-1)![0].settings.current;
         expect(
           getProfileBinding(loadedSettings, "citation.references-style"),
         ).toBe("inherited-style");

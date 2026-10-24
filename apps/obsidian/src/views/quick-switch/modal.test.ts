@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Item } from "@zotlit/db";
 
 import { openAttachments } from "@/lib/attachment-open";
+import { Effect } from "@/lib/effect";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
 import type {
@@ -65,7 +66,8 @@ function makeModal(): QuickSwitchModal {
     lookup: { openSession: vi.fn() },
     noteFeature: { createNote: vi.fn() },
     noteIndex: { getNotesByItemKey: vi.fn().mockReturnValue([]) },
-    settings: { current: {} },
+    settings: { current: Effect.succeed({}) },
+    bridge: { runSync: Effect.runSync },
   } as unknown as QuickSwitchDeps;
   return makeQuickSwitchModal(deps);
 }
@@ -192,7 +194,8 @@ describe("QuickSwitchModal PDF chord", () => {
       lookup: { openSession: vi.fn() },
       noteFeature: { createNote: vi.fn() },
       noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
-      settings: { current: {} },
+      settings: { current: Effect.succeed({}) },
+      bridge: { runSync: Effect.runSync },
       reads: { acquireRead: vi.fn() },
       zoteroPref: { dataDir: null, baseAttachmentPath: null },
       opener: { open },
@@ -312,11 +315,12 @@ describe("QuickSwitchModal Profile creation", () => {
       },
       zoteroPref: { dataDir: null },
       settings: {
-        current: {
+        current: Effect.succeed({
           ...defaults,
           ...profileSettings([{ id: books, label: "Books" }]),
-        },
+        }),
       },
+      bridge: { runSync: Effect.runSync },
     };
     return {
       deps,
@@ -466,7 +470,8 @@ describe("QuickSwitchModal Show in Library chord", () => {
       lookup: { openSession: vi.fn() },
       noteFeature: { createNote: vi.fn() },
       noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
-      settings: { current: {} },
+      settings: { current: Effect.succeed({}) },
+      bridge: { runSync: Effect.runSync },
       showInLibrary,
     } as unknown as QuickSwitchDeps);
     const select = vi

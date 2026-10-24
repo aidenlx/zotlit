@@ -139,7 +139,11 @@ function setup(
   } as unknown as WorkspaceLeaf;
   const view = new TestTemplateWorkbenchView(leaf, {
     app,
-    settings: { changes: Stream.empty },
+    settings: {
+      current: Effect.succeed({}),
+      changes: Stream.empty,
+    },
+    bridge: { runSync: Effect.runSync },
     pluginVersion: "2.1.3",
     zoteroReads: { state: "ready" },
     zoteroPref: { dataDir: null },

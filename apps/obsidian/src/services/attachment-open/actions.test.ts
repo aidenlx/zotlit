@@ -6,6 +6,7 @@ import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
+import { Effect } from "@/lib/effect";
 import { defaults } from "@/services/settings/schema";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {
@@ -71,7 +72,8 @@ function lookupDeps(
     app: { vault: { adapter: { getBasePath: () => "/vault" } } },
     reads,
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-    settings: { current: defaults },
+    settings: { current: Effect.succeed(defaults) },
+    bridge: { runSync: Effect.runSync },
     ...overrides,
   } as unknown as AttachmentOpenLookupDeps;
 }
@@ -259,7 +261,10 @@ describe("createPdfReader", () => {
         { ready: new Promise(() => {}) } as never,
         {
           settings: {
-            current: { ...defaults, "reader.focus-annot-view": false },
+            current: Effect.succeed({
+              ...defaults,
+              "reader.focus-annot-view": false,
+            }),
           },
         } as unknown as Partial<AttachmentOpenLookupDeps>,
       ),
@@ -273,7 +278,7 @@ describe("createPdfReader", () => {
       lookupDeps(
         { ready: new Promise(() => {}) } as never,
         {
-          settings: { current: null },
+          settings: { current: Effect.succeed(null) },
         } as unknown as Partial<AttachmentOpenLookupDeps>,
       ),
     )();

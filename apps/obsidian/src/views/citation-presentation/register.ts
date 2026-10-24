@@ -3,12 +3,13 @@
 
 import type { App, Plugin, TFile } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import type { FileMenuSegment } from "@/services/file-menu";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { openCitationPresentationModal } from "./modal";
@@ -24,7 +25,8 @@ export interface CitationPresentationDeps {
   /** Where the installed styles the dialog lists are read from. */
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   /** The vault selections a note inherits where it names none of its own. */
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 /**
@@ -74,9 +76,9 @@ export function citationPresentationFileMenu(
  */
 export async function setCitationPresentation(
   file: TFile,
-  { app, zoteroPref, settings }: CitationPresentationDeps,
+  { app, zoteroPref, settings, bridge }: CitationPresentationDeps,
 ): Promise<void> {
-  const vault = settings.current;
+  const vault = bridge.runSync(settings.current);
   const choice = await openCitationPresentationModal(app, {
     dataDir: zoteroPref.dataDir,
     vaultStyleId:

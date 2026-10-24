@@ -9,6 +9,7 @@ import type { Library } from "@zotlit/db";
 
 import { citationStyleLabel } from "@/lib/citation-style";
 import { Effect } from "@/lib/effect";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { nodeFetch } from "@/lib/node-fetch";
@@ -35,7 +36,7 @@ import type { ExportPorts } from "@/services/pandoc/export";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PluginSettings } from "@/services/settings/service";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
@@ -55,7 +56,8 @@ export interface PandocExportDeps {
     "binary" | "runSync" | "runPromise"
   >;
   zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
-  settings: Pick<PlainPluginSettings, "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  bridge: Pick<EffectBridge, "runSync">;
   profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
@@ -87,7 +89,7 @@ export async function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<void> {
-  const { app, pandocEngine, zoteroPref, settings } = deps;
+  const { app, bridge, pandocEngine, zoteroPref, settings } = deps;
   if (
     pandocEngine.runSync(pandocEngine.binary.getStatus()).kind !== "installed"
   ) {
@@ -126,7 +128,7 @@ export async function runPandocExport(
   // it the exported document's language.
   const effective = effectivePresentation(
     declared.presentation,
-    vaultPresentation(settings.current),
+    vaultPresentation(bridge.runSync(settings.current)),
   );
   // A literal citation key resolves through the snapshot, so this export waits
   // for its first rebuild the way every in-app surface does.

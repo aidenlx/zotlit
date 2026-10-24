@@ -53,7 +53,9 @@ export function templateConversionReminderItem(
         button
           .setButtonText(m.settings_template_conversion_reminder_action())
           .setCta()
-          .onClick(() => void openWelcomeView(ctx.app, ctx.settings)),
+          .onClick(
+            () => void openWelcomeView(ctx.app, ctx.settings, ctx.bridge),
+          ),
       );
     },
   };
@@ -98,9 +100,10 @@ function renderMigrationReminderButtons(
 export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
-  const pending = ctx.settings.current?.["release.migration-pending"] === true;
+  const current = ctx.bridge.runSync(ctx.settings.current);
+  const pending = current?.["release.migration-pending"] === true;
   const templateConversionPending =
-    ctx.settings.current?.["note.template-conversion-pending"] === true;
+    current?.["note.template-conversion-pending"] === true;
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",

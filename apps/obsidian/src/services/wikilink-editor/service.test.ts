@@ -11,7 +11,7 @@ import { buildRuntime } from "@/lib/effect-layer";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 
 import { WikilinkEditor } from "./service";
@@ -37,7 +37,8 @@ const leaves = (dispatched: string[]) =>
 
 interface Harness extends AsyncDisposable {
   service: WikilinkEditor;
-  settings: PlainPluginSettings;
+  settings: SettingsFixture;
+  bridge: SettingsFixture["bridge"];
   /** Gives the vault's one Literature Note another Item key, or none. */
   writeNote: (itemKey: string | undefined) => Promise<void>;
   citationText: CitationTextStub;
@@ -80,6 +81,7 @@ async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
   return {
     service,
     settings,
+    bridge: settings.bridge,
     writeNote: (itemKey) => notes.writeNote("Doe 2024.md", itemKey),
     citationText,
     citationLookup,
@@ -122,27 +124,29 @@ describe("WikilinkEditor redraw", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
     });
-    const { settings, dispatched } = harnessed;
+    const { bridge, settings, dispatched } = harnessed;
 
-    settings.update({ "citation.wikilink-citations": true });
+    bridge.runSync(settings.update({ "citation.wikilink-citations": true }));
     expect(dispatched).toEqual(["note.md", "other.md"]);
 
     dispatched.length = 0;
-    settings.update({ "citation.show-formatted": false });
+    bridge.runSync(settings.update({ "citation.show-formatted": false }));
     expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
   it("redraws when the Hover Action changes who answers a hover", async () => {
     await using harnessed = await harness();
-    const { settings, dispatched } = harnessed;
+    const { bridge, settings, dispatched } = harnessed;
 
-    settings.update({ "citation.hover-action": "off" });
+    bridge.runSync(settings.update({ "citation.hover-action": "off" }));
     expect(dispatched).toEqual(["note.md", "other.md"]);
 
     // Which mode holds a hover back for a modifier is read at hover time, so
     // nothing drawn depends on it.
     dispatched.length = 0;
-    settings.update({ "citation.hover-require-mod-live-preview": true });
+    bridge.runSync(
+      settings.update({ "citation.hover-require-mod-live-preview": true }),
+    );
     expect(dispatched).toEqual([]);
   });
 
@@ -156,9 +160,9 @@ describe("WikilinkEditor redraw", () => {
 
   it("leaves the editors alone when an unrelated setting changes", async () => {
     await using harnessed = await harness();
-    const { settings, dispatched } = harnessed;
+    const { bridge, settings, dispatched } = harnessed;
 
-    settings.update({ "citation.open-as-links": false });
+    bridge.runSync(settings.update({ "citation.open-as-links": false }));
     expect(dispatched).toEqual([]);
   });
 
@@ -178,9 +182,9 @@ describe("WikilinkEditor redraw", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
     });
-    const { settings, dispatched } = harnessed;
+    const { bridge, settings, dispatched } = harnessed;
 
-    settings.update({ "citation.show-formatted": false });
+    bridge.runSync(settings.update({ "citation.show-formatted": false }));
     expect(dispatched).toEqual([]);
   });
 });

@@ -81,7 +81,7 @@ export interface ProtocolDeps extends SingleUpdateDeps {
     LocalServer["Service"],
     "updateManyRequests" | "importNotesRequests"
   >;
-  bridge: Pick<EffectBridge, "subscribe">;
+  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   zoteroReads: Pick<
     PlainZoteroReads,
     "state" | "reads" | "acquireRead" | "snapshot"

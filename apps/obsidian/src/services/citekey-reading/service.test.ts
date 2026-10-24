@@ -363,9 +363,10 @@ describe("CitekeyReading", () => {
       citationText: { changed: Stream.empty, invalidated: Stream.empty },
       citekeyEditor: {},
       settings: {
-        current: defaults,
+        current: Effect.succeed(defaults),
         changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
       },
+      bridge: { runSync: Effect.runSync },
     } as never);
     await service.ready;
     expect(rerender).not.toHaveBeenCalled();

@@ -195,13 +195,19 @@ it.effect(
           throw new Error("event listener failed");
         },
       );
-      h.settings.update({ "citation.pandoc-citations": false });
-      h.settings.update({ "citation.pandoc-citations": true });
+      h.settingsBridge.runSync(
+        h.settings.update({ "citation.pandoc-citations": false }),
+      );
+      h.settingsBridge.runSync(
+        h.settings.update({ "citation.pandoc-citations": true }),
+      );
       await expect.poll(() => states).toEqual(["excluded", "included"]);
       await expect.poll(() => memberships.length).toBe(2);
       offState();
       offEvent();
-      h.settings.update({ "citation.pandoc-citations": false });
+      h.settingsBridge.runSync(
+        h.settings.update({ "citation.pandoc-citations": false }),
+      );
       expect(h.index.syntaxes().citekey).toBe("excluded");
       expect(states).toHaveLength(2);
       expect(memberships).toHaveLength(2);

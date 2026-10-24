@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as confirmation from "@/lib/confirm";
+import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import {
@@ -43,9 +44,14 @@ function context(): SettingTabContext {
     runtime: testRuntime(),
     app: { vault: { getFileByPath: () => null } },
     customize: vi.fn(() => Promise.resolve()),
+    bridge: {
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+      subscribe: () => () => {},
+    },
     settings: {
-      current: defaults,
-      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+      current: Effect.succeed(defaults),
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
     },
     profile: {
       profiles: [],
@@ -226,8 +232,8 @@ describe("Profile settings", () => {
   it("keeps native customization while the web Template Workbench is off", () => {
     const ctx = context();
     ctx.settings = {
-      current: { ...defaults, "server.workbench": false },
-      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+      current: Effect.succeed({ ...defaults, "server.workbench": false }),
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
     } as unknown as SettingTabContext["settings"];
 
     expect(buttonLabels(documentRow(ctx))).toEqual([m.settings_profile_edit()]);
@@ -266,8 +272,8 @@ describe("Profile settings", () => {
   it("keeps More actions available while web access is off", () => {
     const ctx = context();
     ctx.settings = {
-      current: { ...defaults, "server.workbench": false },
-      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+      current: Effect.succeed({ ...defaults, "server.workbench": false }),
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(() => Effect.void),
     } as unknown as SettingTabContext["settings"];
     const { defaultRow, profileRow } = pageWithOneProfile(ctx);
 
@@ -298,10 +304,15 @@ describe("Profile settings", () => {
   it("writes only default bindings through the settings controls", () => {
     const ctx = context();
     expect(
-      getProfileControlValue(ctx.settings, "note-profile:default:folder"),
+      getProfileControlValue(
+        ctx.settings,
+        ctx.bridge,
+        "note-profile:default:folder",
+      ),
     ).toBe("literatures");
     setProfileControlValue(
       ctx.settings,
+      ctx.bridge,
       "note-profile:default:folder",
       "Reading",
     );

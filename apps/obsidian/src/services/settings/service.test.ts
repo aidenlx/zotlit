@@ -5,7 +5,7 @@ import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 
-import { plainSettingsOf } from "./__fixtures__";
+import { settingsRuntimeBridgeOf } from "./__fixtures__";
 import type { SettingsFixtureOptions } from "./__fixtures__";
 import {
   migrateLegacyV0,
@@ -60,7 +60,7 @@ const makeService = Effect.fnUntraced(function* (
   overrides: MakeServiceOptions = {},
 ) {
   const plugin = overrides.plugin ?? new PluginStub();
-  const service = yield* plainSettingsOf({
+  const { settings, bridge, runtime } = yield* settingsRuntimeBridgeOf({
     plugin,
     migrateLegacy: noopMigrate,
     migrateV1: noopMigrateV1,
@@ -83,7 +83,41 @@ const makeService = Effect.fnUntraced(function* (
       ]),
     ),
   );
-  return { plugin, service };
+  return {
+    plugin,
+    service: {
+      runtime,
+      get current() {
+        return bridge.runSync(settings.current);
+      },
+      get loaded() {
+        return bridge.runPromise(settings.loaded).then(() => {
+          return bridge.runSync(settings.current);
+        });
+      },
+      get diagnostics() {
+        return bridge.runSync(settings.diagnostics);
+      },
+      get hydrationOrigin() {
+        return bridge.runSync(settings.hydrationOrigin);
+      },
+      update: (patch: Parameters<typeof settings.update>[0]) =>
+        bridge.runSync(settings.update(patch)),
+      reset: (keys?: Parameters<typeof settings.reset>[0]) =>
+        bridge.runSync(settings.reset(keys)),
+      updateDefaultLiteratureNoteProfileBindings: (
+        patch: Parameters<
+          typeof settings.updateDefaultLiteratureNoteProfileBindings
+        >[0],
+      ) =>
+        bridge.runSync(
+          settings.updateDefaultLiteratureNoteProfileBindings(patch),
+        ),
+      flush: () => bridge.runPromise(settings.flush()),
+      release: () => bridge.runSync(settings.release()),
+      changes: settings.changes,
+    },
+  };
 });
 
 function defaultProfileWith(

@@ -8,7 +8,7 @@ import { Effect, Stream } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { queryClientsOf } from "@/services/query-client/__fixtures__";
-import { plainSettingsOf } from "@/services/settings/__fixtures__";
+import { settingsRuntimeBridgeOf } from "@/services/settings/__fixtures__";
 import { readsFixture } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { layerSource } from "@/services/zotero-reads/source";
@@ -85,7 +85,7 @@ it.effect(
         }),
       );
       const queries = yield* queryClientsOf();
-      const settings = yield* plainSettingsOf({
+      const { settings, bridge } = yield* settingsRuntimeBridgeOf({
         plugin: { loadData: async () => null, saveData: async () => {} },
       });
       registerWelcomeView(
@@ -96,7 +96,7 @@ it.effect(
             callbacks.push(callback);
           },
         },
-        { runtime: testRuntime(), reads: plain, queries, settings },
+        { runtime: testRuntime(), reads: plain, queries, settings, bridge },
       );
       expect(document.body.textContent).toContain(
         m.notice_db_not_found_on_device(),

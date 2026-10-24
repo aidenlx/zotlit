@@ -57,6 +57,7 @@ async function fixture(
     app: f.app,
     templates: f.template,
     settings: f.settings,
+    bridge: f.bridge,
     profile: f.profile,
     zoteroPref: {
       sourceId: "fixture-source",

@@ -108,7 +108,7 @@ async function openLibrary() {
       migrateV9: (raw) => raw,
     }),
   );
-  await settings.loaded;
+  await settings.bridge.runPromise(settings.loaded);
   const saveData = vi.spyOn(plugin, "saveData");
   const runtime = testRuntime();
   const deps = {
@@ -131,7 +131,9 @@ async function openLibrary() {
   } as unknown as QueryViewDeps;
   // The view's text is the toolbar's, which the storage takes changes from.
   const toolbar = { text: (): string | null => null };
-  const storage = new LibraryViewStorage(settings, () => toolbar.text());
+  const storage = new LibraryViewStorage(settings, settings.bridge, () =>
+    toolbar.text(),
+  );
   storage.load();
   const query = new QueryView(deps, {
     scope: new Scope(),
