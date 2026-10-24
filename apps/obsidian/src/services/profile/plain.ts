@@ -13,7 +13,10 @@ export type PlainProfile = ProfileOperations & {
 };
 
 export function plainProfile(
-  runtime: ManagedRuntime.ManagedRuntime<Profile, never>,
+  runtime: Pick<
+    ManagedRuntime.ManagedRuntime<Profile, never>,
+    "runSync" | "runFork" | "scope"
+  >,
 ): PlainProfile {
   const service = runtime.runSync(Profile);
   const context = runtime.runSync(Effect.context<never>());

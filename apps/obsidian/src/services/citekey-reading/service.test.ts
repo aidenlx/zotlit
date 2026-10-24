@@ -8,6 +8,8 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { Layer, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -24,7 +26,7 @@ import {
   literalOccurrences,
   rendered,
 } from "@/services/citation-text/__fixtures__";
-import { CitationText } from "@/services/citation-text/service";
+import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -164,7 +166,7 @@ async function makeHarness({
     inProcessReadsService(memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open),
   );
   const citationText = stack.use(
-    new CitationText({
+    citationTextFixture({
       openDocuments: new OpenDocumentsStub(),
       citationLookup,
       profile: profileReader(defaults, {
@@ -176,6 +178,7 @@ async function makeHarness({
           getFileByPath: (path: string) => ({ path }) as TFile,
         },
         metadataCache: {
+          offref: () => {},
           on: (event: string, cb: (file: { path: string }) => void) => {
             metadataListeners.set(event, cb);
             return { e: { offref: () => undefined } };
@@ -242,7 +245,6 @@ async function makeHarness({
       queryClient: stack.use(queryClientsFixture()),
     } as never),
   );
-  await citationText.ready;
   if (!formatCitations) {
     citationText.peek("note.md");
     await vi.waitFor(() => {
@@ -253,6 +255,7 @@ async function makeHarness({
 
   const service = stack.use(
     new CitekeyReading({
+      runtime: citationText.runtime,
       app: {
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
         workspace: {
@@ -338,14 +341,14 @@ describe("CitekeyReading", () => {
       Object.create(MarkdownView.prototype) as MarkdownView,
       { previewMode: { rerender } },
     );
+    await using stack = new AsyncDisposableStack();
     await using service = new CitekeyReading({
+      runtime: buildRuntime(Layer.empty, stack),
       app: {
         workspace: { getLeavesOfType: () => [{ view }] },
       },
       plugin: { registerMarkdownPostProcessor: () => undefined },
-      citationText: {
-        on: () => () => undefined,
-      },
+      citationText: { changed: Stream.empty, invalidated: Stream.empty },
       citekeyEditor: {},
       settings: {
         current: defaults,

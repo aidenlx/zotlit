@@ -14,8 +14,8 @@ import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type {} from "@/services/citation-index/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import { shownCitationContent } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { Inlines } from "@/services/pandoc/ast";
@@ -50,7 +50,7 @@ export interface CitationPopoverDeps {
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<PlainLibraryScope, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
-  citationText: Pick<CitationText, "read">;
+  citationText: Pick<PlainCitationText, "read">;
   profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<

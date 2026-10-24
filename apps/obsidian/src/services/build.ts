@@ -5,7 +5,6 @@ import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
-import { workspaceOpenDocuments } from "@/lib/open-documents";
 import { revealSetting } from "@/lib/open-settings";
 import { libraryTagNames } from "@/services/database/library-tag-names";
 import {
@@ -38,7 +37,7 @@ import {
 } from "./citation-index/plain";
 import { plainCitationParse } from "./citation-parse/plain";
 import { CitationPopover } from "./citation-popover/service";
-import { CitationText } from "./citation-text/service";
+import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { ExcerptDisplayService } from "./excerpt-image/display";
@@ -130,6 +129,7 @@ export async function buildServices(
   };
 
   return container
+    .useValue({ runtime: () => runtime })
     .useValue({
       settings: () => plainPluginSettings(runtime),
     })
@@ -549,26 +549,7 @@ export async function buildServices(
     .useValue({
       bibliographyRender: () => plainBibliographyRender(runtime),
     })
-    .use({
-      citationText: ({
-        profile,
-        citationIndex,
-        citationLookup,
-        noteIndex,
-        bibliographyRender,
-        queryClient,
-      }) =>
-        new CitationText({
-          profile,
-          app: plugin.app,
-          citationIndex,
-          citationLookup,
-          noteIndex,
-          bibliographyRender,
-          queryClient,
-          openDocuments: workspaceOpenDocuments(plugin.app),
-        }),
-    })
+    .useValue({ citationText: () => plainCitationText(runtime) })
     .use({
       citationPopover: ({
         profile,
@@ -632,6 +613,7 @@ export async function buildServices(
         libraryScope,
       }) =>
         new CitekeyEditor({
+          runtime,
           app: plugin.app,
           plugin,
           noteIndex,
@@ -667,6 +649,7 @@ export async function buildServices(
         citationLookup,
       }) =>
         new WikilinkEditor({
+          runtime,
           app: plugin.app,
           plugin,
           noteIndex,
@@ -686,6 +669,7 @@ export async function buildServices(
         settings,
       }) =>
         new WikilinkReading({
+          runtime,
           app: plugin.app,
           plugin,
           noteIndex,
@@ -704,6 +688,7 @@ export async function buildServices(
         settings,
       }) =>
         new CitekeyReading({
+          runtime,
           app: plugin.app,
           plugin,
           citationText,

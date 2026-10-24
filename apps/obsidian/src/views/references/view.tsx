@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { writeClipboardRichText } from "@/lib/clipboard";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -20,7 +21,7 @@ import type {
   DocumentCitationSet,
   ReferenceSource,
 } from "@/services/citation-index/service";
-import type { CitationText } from "@/services/citation-text/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import {
@@ -64,6 +65,7 @@ export const REFERENCES_VIEW_TYPE = "zotlit-references";
 const logger = getLogger(["views", "references"]);
 
 export interface ReferencesViewDeps {
+  runtime: Parameters<typeof subscribe<unknown, never>>[0];
   app: App;
   db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead" | "on">;
   citationLookup: Pick<PlainCitationLookup, "status" | "on">;
@@ -76,7 +78,7 @@ export interface ReferencesViewDeps {
    * The active document's formatted citations, which say whether that document
    * shows Entry Serials — the gutter follows what the citations show.
    */
-  citationText: Pick<CitationText, "peek" | "on">;
+  citationText: Pick<PlainCitationText, "peek" | "changed">;
   pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
@@ -234,7 +236,7 @@ export class ReferencesView extends ItemView {
     // What the document's own citations show decides what this gutter shows,
     // so a fresh read of the note on screen republishes the list.
     this.register(
-      citationText.on("changed", (path) => {
+      subscribe(this.#deps.runtime, citationText.changed, (path) => {
         if (path === this.#path) this.#reload();
       }),
     );

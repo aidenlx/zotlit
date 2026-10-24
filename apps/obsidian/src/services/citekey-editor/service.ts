@@ -7,6 +7,7 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { AnnotationPopover } from "@/services/annotation-popover/service";
@@ -20,7 +21,7 @@ import type {
   SnapshotItem,
 } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
-import type { CitationText } from "@/services/citation-text/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   CITEKEY_HOVER_SOURCE,
   hoverPreferences,
@@ -49,6 +50,7 @@ import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
+  runtime: Parameters<typeof subscribe<unknown, never>>[0];
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
@@ -58,7 +60,7 @@ export interface CitekeyEditorDeps {
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   db: Pick<PlainZoteroReads, "state" | "reads">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "peek" | "on">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   /** What a hovered Durable Annotation Link shows. */
@@ -109,6 +111,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #zoteroPref;
   readonly #db;
   readonly #citationText;
+  readonly #runtime;
   readonly #citationPopover;
   readonly #annotationPopover;
   readonly #settings;
@@ -144,6 +147,7 @@ export class CitekeyEditor extends Service<void> {
     this.#zoteroPref = deps.zoteroPref;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
+    this.#runtime = deps.runtime;
     this.#citationPopover = deps.citationPopover;
     this.#annotationPopover = deps.annotationPopover;
     this.#settings = deps.settings;
@@ -211,10 +215,14 @@ export class CitekeyEditor extends Service<void> {
     // surface, so the editors showing that document draw again when it lands
     // or goes stale — until then they keep the raw marked source.
     stack.defer(
-      this.#citationText.on("changed", (path) => this.#redrawWidgets(path)),
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#redrawWidgets(path),
+      ),
     );
     stack.defer(
-      this.#citationText.on("invalidated", () => this.#redrawWidgets()),
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#redrawWidgets(),
+      ),
     );
 
     this.commit(stack.move());
