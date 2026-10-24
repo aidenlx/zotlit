@@ -1,6 +1,7 @@
 // The Annotation History entries in a bound PDF view's More options menu.
 import type { WorkspaceLeaf } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 
@@ -20,7 +21,8 @@ const ICONS: Readonly<Record<HistoryDirection, string>> = {
 };
 
 export interface AnnotationHistoryMenuDeps {
-  annotations: Pick<AnnotationRepository, "canRedo" | "canUndo">;
+  annotations: Pick<AnnotationRepository["Service"], "canRedo" | "canUndo">;
+  bridge: Pick<EffectBridge, "runSync">;
   /**
    * The Annotation History surface a leaf holds, or `null` where it holds
    * none — a PDF view bound to a Zotero Attachment, and nothing else.
@@ -56,7 +58,12 @@ export function annotationHistoryFileMenu(
           .setTitle(historyCommandName(direction))
           .setIcon(ICONS[direction])
           .setDisabled(
-            !historyStands(deps.annotations, attachmentKey, direction),
+            !historyStands({
+              annotations: deps.annotations,
+              bridge: deps.bridge,
+              attachmentKey,
+              direction,
+            }),
           )
           .onClick(() => surface.stepHistory(direction)),
       );

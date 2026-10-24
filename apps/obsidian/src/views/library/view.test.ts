@@ -40,6 +40,7 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import type { UseKind } from "@/services/use-ledger/service";
@@ -506,7 +507,6 @@ async function pluginData(stored?: unknown) {
     changed: () => void;
     "libraries-changed": () => void;
   }>(["changed", "libraries-changed"]);
-  const off = () => () => {};
   // The saved scope also names a group the database no longer holds.
   const libraryScope = {
     ...scopeEvents.streams,
@@ -553,8 +553,10 @@ async function pluginData(stored?: unknown) {
         ),
     );
   };
+  const runtime = testRuntime();
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     useLedger: { get: () => undefined },
     app: {
       ...host.app,
@@ -586,7 +588,7 @@ async function pluginData(stored?: unknown) {
       }),
     },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    annotations: annotationReads(),
     items,
     settings,
     welcome: {

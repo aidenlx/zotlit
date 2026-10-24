@@ -124,7 +124,7 @@ function renderEditingRow(
 
   const apply = (): void => {
     const model = editingRowModel({
-      capability: ctx.annotations.capability,
+      capability: ctx.bridge.runSync(ctx.annotations.capability),
       checking,
       remembered,
       now: Temporal.Now.instant(),
@@ -134,7 +134,8 @@ function renderEditingRow(
     detailEl.textContent = model.status.detail ?? "";
     detailEl.toggle(model.status.detail !== null);
     rememberedEl.toggle(
-      remembered && ctx.annotations.capability.kind === "read-only",
+      remembered &&
+        ctx.bridge.runSync(ctx.annotations.capability).kind === "read-only",
     );
     applyAction(checkButton, model.check);
     applyAction(enableButton, model.enable);
@@ -187,9 +188,9 @@ function renderEditingRow(
           checking = true;
           apply();
           try {
-            await ctx.annotations.probe();
+            await ctx.bridge.runPromise(ctx.annotations.probe());
             const result = editingCapabilityCopy(
-              ctx.annotations.capability,
+              ctx.bridge.runSync(ctx.annotations.capability),
               Temporal.Now.instant(),
             );
             new BaseNotice(
@@ -221,12 +222,12 @@ function renderEditingRow(
 
   apply();
   refreshRemembered();
-  void ctx.annotations.probe();
+  void ctx.bridge.runPromise(ctx.annotations.probe());
   // An Allow editing from outside this row, such as a notice's button, can
   // save or drop a key, and the capability moves with it. The status redraws
   // at once; the key's line follows when the keystore answers.
   stack.defer(
-    ctx.annotations.on("capability-changed", () => {
+    ctx.bridge.subscribe(ctx.annotations.capabilityChanges, () => {
       apply();
       refreshRemembered();
     }),

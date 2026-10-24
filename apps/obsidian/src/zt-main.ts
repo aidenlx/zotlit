@@ -453,6 +453,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         app: this.app,
         query: services.query,
         annotations: services.annotationRepository,
+        bridge: services.bridge,
         noteFeature: services.noteFeature,
         zoteroPref: services.zoteroPref,
         settings: services.settings,
@@ -510,6 +511,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       libraryScope: services.libraryScope,
       query: services.query,
       annotations: services.annotationRepository,
+      bridge: services.bridge,
       excerptDisplay: services.excerptDisplay,
       allowEditing: () => void services.capabilityNotices.allowEditing(),
       reportBlockedGesture: (attachmentKey) =>
@@ -589,6 +591,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // them the user is in, and the menu on the leaf it was opened over.
     addAnnotationHistoryActions(this, {
       annotations: services.annotationRepository,
+      bridge: services.bridge,
       activeSurface: (): HistorySurface | null => {
         const view = this.app.workspace.getActiveViewOfType(View);
         if (view instanceof AnnotationView) return view;
@@ -730,6 +733,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         citationPresentationFileMenu(citationPresentationDeps),
         annotationHistoryFileMenu({
           annotations: services.annotationRepository,
+          bridge: services.bridge,
           surfaceFor: (leaf) =>
             services.pdfAnnotationEditor.bindingFor(leaf.view),
         }),
@@ -780,9 +784,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // an older read that lands late would cancel the newer replacement.
     const latestEdit = new Map<string, symbol>();
     stack.defer(
-      services.annotationRepository.on(
-        "excerpt-pixels-changed",
-        (record, source) => {
+      services.bridge.subscribe(
+        services.annotationRepository.excerptPixelsChanged,
+        ({ record, source }) => {
           const edit = Symbol(record.key);
           latestEdit.set(record.key, edit);
           void savedExcerptRequest({

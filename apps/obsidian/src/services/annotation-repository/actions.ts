@@ -2,6 +2,7 @@
 // is not a key: the command palette, and the PDF view's More options menu.
 import type { Plugin } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { HistoryDirection, HistoryOutcome } from "./history";
@@ -30,7 +31,8 @@ export interface HistorySurface {
 
 /** What the two commands read, and what they act on. */
 export interface AnnotationHistoryActionDeps {
-  annotations: Pick<AnnotationRepository, "canRedo" | "canUndo">;
+  annotations: Pick<AnnotationRepository["Service"], "canRedo" | "canUndo">;
+  bridge: Pick<EffectBridge, "runSync">;
   /**
    * The surface the active view offers, or `null` where it offers none — the
    * reading that decides whether the palette carries the commands at all.
@@ -90,14 +92,20 @@ export function historyCommandName(direction: HistoryDirection): string {
  *
  * @param attachmentKey the Attachment's Indexed Key.
  */
-export function historyStands(
-  annotations: Pick<AnnotationRepository, "canRedo" | "canUndo">,
-  attachmentKey: string,
-  direction: HistoryDirection,
-): boolean {
+export function historyStands({
+  annotations,
+  bridge,
+  attachmentKey,
+  direction,
+}: {
+  annotations: Pick<AnnotationRepository["Service"], "canRedo" | "canUndo">;
+  bridge: Pick<EffectBridge, "runSync">;
+  attachmentKey: string;
+  direction: HistoryDirection;
+}): boolean {
   return direction === "undo"
-    ? annotations.canUndo(attachmentKey)
-    : annotations.canRedo(attachmentKey);
+    ? bridge.runSync(annotations.canUndo(attachmentKey))
+    : bridge.runSync(annotations.canRedo(attachmentKey));
 }
 
 /**
@@ -122,7 +130,14 @@ export function addAnnotationHistoryActions(
         const surface = deps.activeSurface();
         const attachmentKey = surface?.historyAttachment ?? null;
         if (!surface || attachmentKey === null) return false;
-        if (!historyStands(deps.annotations, attachmentKey, direction)) {
+        if (
+          !historyStands({
+            annotations: deps.annotations,
+            bridge: deps.bridge,
+            attachmentKey,
+            direction,
+          })
+        ) {
           return false;
         }
         if (!checking) surface.stepHistory(direction);

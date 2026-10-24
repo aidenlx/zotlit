@@ -8,9 +8,21 @@ import { createClient } from "@zotlit/db/client/node";
 // repository itself produces.
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
-import { Stream } from "@/lib/effect";
-import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import {
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+} from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
+import { plainQueryClients } from "@/services/query-client/plain";
+import { layerQueryClients } from "@/services/query-client/service";
 import {
   annotationItem,
   annotationPage,
@@ -30,15 +42,26 @@ import type {
   ZoteroAnswers,
   ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
+import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import type { WireTag } from "@/services/zotero-local-api/wire";
-import type { ZoteroReadLease } from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsEvent,
+} from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { AnnotationRepository } from "./service";
-import type { AnnotationRepositoryDeps } from "./service";
+import type {
+  AnnotationList,
+  AnnotationRecord,
+  AnnotationRepositoryCore,
+  AnnotationRepositoryCoreDeps,
+  AnnotationSource,
+} from "./repository";
+import { layerAnnotationRepository, AnnotationRepository } from "./service";
 
 export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -147,7 +170,7 @@ export function afterWrite(
 
 /** Read once so the Capability Probe runs, and wait for the source it finds. */
 export async function switchToLocalApi(
-  repository: AnnotationRepository,
+  repository: RepositoryClient,
 ): Promise<void> {
   const announced = nextChange(repository);
   await repository.read("RGRPDF24");
@@ -170,7 +193,7 @@ export async function setup(
     /** The repository's own clock, which the `dateAdded` window is read against. */
     repositoryNow?: () => Temporal.Instant;
     /** What this device's persisted Excerpt Images were made from, by Annotation. */
-    persistedExcerpt?: AnnotationRepositoryDeps["persistedExcerpt"];
+    persistedExcerpt?: AnnotationRepositoryCoreDeps["persistedExcerpt"];
     /** The Annotations Zotero imported from the PDF file, by key. */
     external?: readonly string[];
     /** The Fixture's rows in a group library, not the personal library. */
@@ -198,48 +221,75 @@ export async function setup(
   );
   if (group) moveToGroup(client, group);
 
-  const changed = testEvent<void>();
-  const dbEvents = { emit: (_event: "changed") => changed.emit() };
   const reads = stack.use(inProcessReadsService(sharedClientOpener(client)));
   const acquireRead = vi.fn(() => reads.acquireRead());
-  const db = {
-    acquireRead,
-    refresh: vi.fn(() => Promise.resolve()),
-    changed: changed.stream,
-    degraded: Stream.empty,
-    "refresh-failed": Stream.empty,
-    refreshing: Stream.empty,
-    "db-file-missing": Stream.empty,
-    "refresh-requested": Stream.empty,
+  const refresh = vi.fn(() => Promise.resolve());
+  const dbBus = Effect.runSync(PubSub.unbounded<ZoteroReadsEvent>());
+  stack.defer(() => Effect.runSync(PubSub.shutdown(dbBus)));
+  const dbEvents = {
+    emit: (_event: "changed") => {
+      PubSub.publishUnsafe(dbBus, { _tag: "changed" });
+    },
   };
+  const readsService = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+    snapshot: Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () => acquireRead(),
+        catch: (error) => error,
+      }),
+      (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.map((lease) => lease.reads),
+    ) as ZoteroReads["Service"]["snapshot"],
+    refresh: () =>
+      Effect.tryPromise({
+        try: () => refresh(),
+        catch: (error) => error,
+      }) as ReturnType<ZoteroReads["Service"]["refresh"]>,
+    events: Stream.fromPubSub(dbBus),
+  });
 
   const {
     client: localApi,
     service: localApiService,
-    bridge,
     requests,
     serverEvents,
     prefEvents,
   } = await localApiClient(answers, clientOptions);
   stack.use(localApi);
 
-  const queryClient = queryClientsFixture();
-  stack.use(queryClient);
-  const repository = new AnnotationRepository({
-    runtime: queryClient.runtime,
-    db,
-    queryClient,
-    localApi,
-    now: repositoryNow ?? (() => NOW),
-    writeToken,
-    persistedExcerpt,
-  });
-  stack.use(repository);
-  await repository.ready;
+  const runtime = buildRuntime(
+    Layer.mergeAll(
+      Layer.succeed(ZoteroReads, readsService),
+      layerQueryClients,
+      Layer.succeed(ZoteroLocalApi, localApiService),
+    ),
+    stack,
+  );
+  const dependencies = await runtime.context();
+  const repositoryScope = Scope.forkUnsafe(runtime.scope, "parallel");
+  const closeRepository = () =>
+    runtime.runPromise(Scope.close(repositoryScope, Exit.void));
+  stack.defer(closeRepository);
+  const repositoryContext = await runtime.runPromise(
+    Layer.buildWithScope(
+      layerAnnotationRepository({
+        now: repositoryNow ?? (() => NOW),
+        writeToken,
+        persistedExcerpt,
+      }).pipe(Layer.provide(Layer.succeedContext(dependencies))),
+      repositoryScope,
+    ),
+  );
+  const service = Context.get(repositoryContext, AnnotationRepository);
+  const bridge = effectBridge(runtime);
+  const repository = repositoryClient(service, bridge, closeRepository);
+  const queryClient = plainQueryClients(runtime);
   return {
     repository,
+    service,
     client,
-    db,
+    db: { acquireRead, refresh },
     dbEvents,
     acquireRead,
     queryClient,
@@ -250,6 +300,129 @@ export async function setup(
     serverEvents,
     prefEvents,
   };
+}
+
+type FixtureEvents = {
+  "annotations-changed": (attachmentKey: string) => void;
+  "excerpt-pixels-changed": (
+    record: AnnotationRecord,
+    source: AnnotationSource,
+  ) => void;
+  "capability-changed": () => void;
+  "annotation-changed": (annotationKey: string) => void;
+  "history-changed": (attachmentKey: string) => void;
+  "write-conflict": (annotationKey: string, attachmentKey: string) => void;
+};
+
+export type RepositoryClient = AnnotationRepositoryCore & {
+  listen<K extends keyof FixtureEvents>(
+    event: K,
+    callback: FixtureEvents[K],
+  ): () => void;
+} & AsyncDisposable;
+
+const PROMISE_MEMBERS = new Set<PropertyKey>([
+  "createAnnotation",
+  "deleteAnnotation",
+  "deleteAnnotations",
+  "patchColor",
+  "patchColors",
+  "patchComment",
+  "patchGeometry",
+  "probe",
+  "read",
+  "redo",
+  "refresh",
+  "retryTextDraft",
+  "retryWrite",
+  "submitTags",
+  "submitTextField",
+  "undo",
+]);
+
+/** The tag and bridge behind the synchronous repository surface used by tests. */
+export function repositoryClient(
+  service: AnnotationRepository["Service"],
+  bridge: EffectBridge,
+  dispose: () => Promise<void>,
+): RepositoryClient {
+  const refreshes = new Map<string, Promise<AnnotationList | null>>();
+  return new Proxy({} as RepositoryClient, {
+    get(_target, property) {
+      if (property === Symbol.asyncDispose) return dispose;
+      if (property === "listen") {
+        return <K extends keyof FixtureEvents>(
+          event: K,
+          callback: FixtureEvents[K],
+        ): (() => void) => {
+          switch (event) {
+            case "annotations-changed":
+              return bridge.subscribe(service.annotationsChanged, (key) =>
+                (callback as FixtureEvents["annotations-changed"])(key),
+              );
+            case "excerpt-pixels-changed":
+              return bridge.subscribe(
+                service.excerptPixelsChanged,
+                ({ record, source }) =>
+                  (callback as FixtureEvents["excerpt-pixels-changed"])(
+                    record,
+                    source,
+                  ),
+              );
+            case "capability-changed":
+              return bridge.subscribe(service.capabilityChanges, () =>
+                (callback as FixtureEvents["capability-changed"])(),
+              );
+            case "annotation-changed":
+              return bridge.subscribe(service.annotationChanged, (key) =>
+                (callback as FixtureEvents["annotation-changed"])(key),
+              );
+            case "history-changed":
+              return bridge.subscribe(service.historyChanged, (key) =>
+                (callback as FixtureEvents["history-changed"])(key),
+              );
+            case "write-conflict":
+              return bridge.subscribe(service.writeConflicts, (conflict) =>
+                (callback as FixtureEvents["write-conflict"])(
+                  conflict.annotationKey,
+                  conflict.attachmentKey,
+                ),
+              );
+          }
+        };
+      }
+      if (property === "capability") return bridge.runSync(service.capability);
+      if (property === "refresh") {
+        return (attachmentKey: string): Promise<AnnotationList | null> => {
+          const running = refreshes.get(attachmentKey);
+          if (running) return running;
+          const refreshing = bridge.runPromise(service.refresh(attachmentKey));
+          refreshes.set(attachmentKey, refreshing);
+          void refreshing.then(
+            () => {
+              if (refreshes.get(attachmentKey) === refreshing)
+                refreshes.delete(attachmentKey);
+            },
+            () => {
+              if (refreshes.get(attachmentKey) === refreshing)
+                refreshes.delete(attachmentKey);
+            },
+          );
+          return refreshing;
+        };
+      }
+      const member = service[property as keyof typeof service];
+      if (typeof member !== "function") return member;
+      return (...args: unknown[]): unknown => {
+        const effect = (
+          member as (...args: unknown[]) => Effect.Effect<unknown>
+        )(...args);
+        return PROMISE_MEMBERS.has(property)
+          ? bridge.runPromise(effect)
+          : bridge.runSync(effect);
+      };
+    },
+  });
 }
 
 /**
@@ -348,11 +521,11 @@ function moveToGroup(
 
 /** The next `annotations-changed` the repository emits, as a completion signal. */
 export function nextChange(
-  repository: AnnotationRepository,
+  repository: RepositoryClient,
 ): Promise<readonly string[]> {
   return new Promise((resolve) => {
     const announced: string[] = [];
-    const off = repository.on("annotations-changed", (key) => {
+    const off = repository.listen("annotations-changed", (key) => {
       announced.push(key);
       queueMicrotask(() => {
         off();

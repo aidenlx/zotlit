@@ -127,7 +127,7 @@ const VIEW_MENU_SECTIONS = [
  */
 export interface AnnotViewDeps extends QueryViewDeps {
   runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "subscribe">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   reads: Pick<
     PlainZoteroReads,
     | "reads"
@@ -470,7 +470,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       zoteroReaderClosed: this.#deps.bridge.runSync(
         this.#deps.liveUpdate.readerClosed,
       ),
-      capability: this.#deps.annotations.capability,
+      capability: this.#deps.bridge.runSync(this.#deps.annotations.capability),
     });
 
     this.#layout.render(this.contentEl, <AnnotView />);
@@ -562,8 +562,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     this.register(
-      this.#deps.annotations.on("capability-changed", () =>
-        this.#syncCapability(),
+      this.#deps.bridge.subscribe(
+        this.#deps.annotations.capabilityChanges,
+        () => this.#syncCapability(),
       ),
     );
     // The capability the header reports is the Attachment's, so it moves with
@@ -1157,8 +1158,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#store.setState({
       capability:
         selectedAttachmentKey === null
-          ? this.#deps.annotations.capability
-          : this.#deps.annotations.capabilityFor(selectedAttachmentKey),
+          ? this.#deps.bridge.runSync(this.#deps.annotations.capability)
+          : this.#deps.bridge.runSync(
+              this.#deps.annotations.capabilityFor(selectedAttachmentKey),
+            ),
     });
   }
 

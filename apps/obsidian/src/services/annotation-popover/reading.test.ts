@@ -28,10 +28,11 @@ const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
  * test; the section is a real component Obsidian would unload.
  */
 async function harness(stack: AsyncDisposableStack) {
-  const { repository } = await setup(stack);
+  const { service: repository, bridge } = await setup(stack);
   const popover = stack.use(
     new AnnotationPopover({
       annotations: repository,
+      bridge,
       excerptDisplay: {
         open: () => {
           throw new Error("The hovered Annotation has no Excerpt Image");

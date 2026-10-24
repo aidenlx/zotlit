@@ -24,6 +24,7 @@ import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -38,6 +39,7 @@ import type {
   QueryViewRow,
 } from "@/services/item-query/query-view";
 import type { LibraryScope } from "@/services/library-scope/scope";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { fakeQuery, requested } from "./__fixtures__/query-run";
@@ -231,7 +233,12 @@ async function mount(
   const libraryScope = testEvents<Record<string, (...args: unknown[]) => void>>(
     ["changed", "libraries-changed"],
   );
-  const repository = emitter();
+  const annotations = annotationReads();
+  const repository = {
+    emit(event: "annotations-changed", attachmentKey: string): void {
+      annotations.replace(attachmentKey, list.annotations);
+    },
+  };
   let list = LIST;
   const held: string[][] = [];
   const released: string[][] = [];
@@ -303,8 +310,10 @@ async function mount(
     }),
   };
   const readers = { open: vi.fn(() => Promise.resolve()) };
+  const runtime = testRuntime();
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app: editorApp() as unknown as App,
     reads: {
       ...reads.streams,
@@ -338,24 +347,28 @@ async function mount(
     },
     query: fakeQuery(run),
     annotations: {
-      read: () => Promise.resolve(list),
-      peek: () => ({ value: list }),
-      refresh: () => Promise.resolve(),
-      capabilityFor: (): EditingCapability => ({ kind: "writable" }),
-      textDraftFor: () => null,
-      tagDraftFor: () => null,
-      annotationState: () => ({
-        mutation: IDLE,
-        textDrafts: {},
-        tagDraft: null,
-        hidden: false,
-        gone: false,
-      }),
-      on: repository.on,
+      ...annotations,
+      read: () => Effect.succeed(list),
+      peek: () => Effect.succeed({ value: list }),
+      refresh: () => Effect.void,
+      capabilityFor: (): Effect.Effect<EditingCapability> =>
+        Effect.succeed({ kind: "writable" }),
+      textDraftFor: () => Effect.succeed(null),
+      tagDraftFor: () => Effect.succeed(null),
+      annotationState: () =>
+        Effect.succeed({
+          mutation: IDLE,
+          textDrafts: { comment: null, text: null },
+          tagDraft: null,
+          hidden: false,
+          gone: false,
+        }),
       hold: (keys: Iterable<string>) => {
         const list = [...keys];
         held.push(list);
-        return { [Symbol.dispose]: () => released.push(list) };
+        return Effect.succeed({
+          [Symbol.dispose]: () => released.push(list),
+        });
       },
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },

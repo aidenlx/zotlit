@@ -1,9 +1,17 @@
 /** Database reads for views and legacy services, on the plugin runtime. */
-import { Cause, Effect, Exit, Stream } from "@/lib/effect";
-import type { ManagedRuntime } from "@/lib/effect";
+import { Cause, Effect, Exit } from "@/lib/effect";
+import type { ManagedRuntime, Stream } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { isScopeClosed } from "@/lib/effect-scope";
 
+import {
+  changed,
+  dbFileMissing,
+  degraded,
+  refreshFailed,
+  refreshing,
+  refreshRequested,
+} from "./events";
 import { acquireReadLease } from "./lease";
 import type { DbUnavailable } from "./rpc";
 import { ZoteroReads } from "./service";
@@ -65,29 +73,11 @@ export function plainZoteroReads(
       if (!closed()) runtime.runFork(service.notifyExternalChange());
     },
     changes: service.changes,
-    "refresh-requested": service.events.pipe(
-      Stream.filter((event) => event._tag === "refresh-requested"),
-      Stream.map(() => undefined),
-    ),
-    changed: service.events.pipe(
-      Stream.filter((event) => event._tag === "changed"),
-      Stream.map(() => undefined),
-    ),
-    degraded: service.events.pipe(
-      Stream.filter((event) => event._tag === "degraded"),
-      Stream.map((event) => event.error),
-    ),
-    "refresh-failed": service.events.pipe(
-      Stream.filter((event) => event._tag === "refresh-failed"),
-      Stream.map((event) => event.error),
-    ),
-    refreshing: service.events.pipe(
-      Stream.filter((event) => event._tag === "refreshing"),
-      Stream.map((event) => event.active),
-    ),
-    "db-file-missing": service.events.pipe(
-      Stream.filter((event) => event._tag === "db-file-missing"),
-      Stream.map(() => undefined),
-    ),
+    "refresh-requested": refreshRequested(service),
+    changed: changed(service),
+    degraded: degraded(service),
+    "refresh-failed": refreshFailed(service),
+    refreshing: refreshing(service),
+    "db-file-missing": dbFileMissing(service),
   };
 }

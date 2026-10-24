@@ -1,12 +1,17 @@
 import { Menu, TFile } from "@mock/obsidian";
 import type { WorkspaceLeaf } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { Effect } from "@/lib/effect";
 import { fileMenuHandler } from "@/services/__fixtures__/file-menu";
 
 import type { HistorySurface } from "./actions";
 import type { HistoryDirection } from "./history";
 import { annotationHistoryFileMenu } from "./menu";
+
+const bridge = openTestBridge();
+afterAll(() => bridge[Symbol.asyncDispose]());
 
 interface Surface extends HistorySurface {
   /** Every step this surface was asked to take, in the order asked. */
@@ -39,7 +44,11 @@ function setup({
   const surfaceFor = vi.fn(() => active);
   const registered = fileMenuHandler([
     annotationHistoryFileMenu({
-      annotations: { canUndo: () => undo, canRedo: () => redo },
+      annotations: {
+        canUndo: () => Effect.succeed(undo),
+        canRedo: () => Effect.succeed(redo),
+      },
+      bridge,
       surfaceFor,
     }),
   ]);

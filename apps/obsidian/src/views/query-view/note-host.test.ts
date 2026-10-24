@@ -19,10 +19,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
@@ -101,9 +103,10 @@ function setup(kind: HostKind) {
   const run = vi.fn((_request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(EMPTY),
   );
-  const off = () => () => {};
+  const runtime = testRuntime();
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app,
     reads: {
       changed: Stream.empty,
@@ -116,10 +119,7 @@ function setup(kind: HostKind) {
     libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
     query: fakeQuery(run),
     cardFocus,
-    annotations: {
-      on: off,
-      hold: () => ({ [Symbol.dispose]: () => {} }),
-    },
+    annotations: annotationReads(),
     literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
 

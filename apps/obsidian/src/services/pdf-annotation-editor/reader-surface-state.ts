@@ -10,6 +10,7 @@ import { createStore } from "zustand/vanilla";
 import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { offeredSwatches } from "@/lib/annotation-colors";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { capabilityReason } from "@/services/annotation-repository/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -931,8 +932,8 @@ export function dropRecord(store: ReaderSurfaceStore, key: string): void {
 
 /** What the per-Annotation facts are read and announced through. */
 export type AnnotationFacts = Pick<
-  AnnotationRepository,
-  "annotationState" | "on"
+  AnnotationRepository["Service"],
+  "annotationState" | "annotationChanged"
 >;
 
 /**
@@ -942,11 +943,21 @@ export type AnnotationFacts = Pick<
 export function ingestAnnotations(
   store: ReaderSurfaceStore,
   records: readonly AnnotationRecord[],
-  annotations: Omit<AnnotationFacts, "on">,
+  {
+    annotations,
+    bridge,
+  }: {
+    annotations: Pick<AnnotationRepository["Service"], "annotationState">;
+    bridge: Pick<EffectBridge, "runSync">;
+  },
 ): void {
   ingestRecords(store, records);
   for (const { key } of records) {
-    ingestAnnotationState(store, key, annotations.annotationState(key));
+    ingestAnnotationState(
+      store,
+      key,
+      bridge.runSync(annotations.annotationState(key)),
+    );
   }
 }
 
@@ -959,11 +970,16 @@ export function ingestAnnotations(
 export function listenAnnotationEvents(
   store: ReaderSurfaceStore,
   annotations: AnnotationFacts,
+  bridge: Pick<EffectBridge, "runSync" | "subscribe">,
 ): DisposableStack {
   const listening = new DisposableStack();
   listening.defer(
-    annotations.on("annotation-changed", (key) =>
-      ingestAnnotationState(store, key, annotations.annotationState(key)),
+    bridge.subscribe(annotations.annotationChanged, (key) =>
+      ingestAnnotationState(
+        store,
+        key,
+        bridge.runSync(annotations.annotationState(key)),
+      ),
     ),
   );
   return listening;

@@ -64,8 +64,8 @@ export type CitationIndexActions = Pick<PlainCitationIndex, "reset">;
  * it moved.
  */
 export type AnnotationCapabilityActions = Pick<
-  AnnotationRepository,
-  "capability" | "on" | "probe"
+  AnnotationRepository["Service"],
+  "capability" | "capabilityChanges" | "probe"
 >;
 
 /**
@@ -92,7 +92,7 @@ export type AttachmentImportActions = Pick<
  */
 export interface SettingTabContext {
   runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;

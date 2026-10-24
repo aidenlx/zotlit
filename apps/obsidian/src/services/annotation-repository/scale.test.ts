@@ -17,8 +17,8 @@ import {
   NOW,
   switchToLocalApi,
 } from "./__fixtures__";
+import type { RepositoryClient } from "./__fixtures__";
 import { UNHELD_RETENTION } from "./service";
-import type { AnnotationRepository } from "./service";
 
 it("reads the Annotations of several Attachments in one batch read", async () => {
   await using stack = new AsyncDisposableStack();
@@ -122,7 +122,7 @@ async function settled(): Promise<void> {
 }
 
 /** The Attachments of `keys` whose list the repository still publishes. */
-function published(repository: AnnotationRepository, keys: readonly string[]) {
+function published(repository: RepositoryClient, keys: readonly string[]) {
   return keys.filter((key) => repository.peek(key) !== null);
 }
 

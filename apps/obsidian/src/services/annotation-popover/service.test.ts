@@ -7,6 +7,7 @@
 import type { HoverParent } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { setup } from "@/services/annotation-repository/__fixtures__";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -33,10 +34,16 @@ async function shownUnder(parent: HoverParent): Promise<HTMLElement> {
  * text. No case here hovers an Annotation with an Excerpt Image.
  */
 async function harness(stack: AsyncDisposableStack) {
-  const { repository, client } = await setup(stack);
-  const service = stack.use(
+  const {
+    repository,
+    service: annotations,
+    bridge,
+    client,
+  } = await setup(stack);
+  const popover = stack.use(
     new AnnotationPopover({
-      annotations: repository,
+      annotations,
+      bridge,
       excerptDisplay: {
         open: () => {
           throw new Error("No hovered Annotation here has an Excerpt Image");
@@ -65,7 +72,7 @@ async function harness(stack: AsyncDisposableStack) {
         document.createElement("span"),
       );
       stack.defer(() => targetEl.remove());
-      return service.show({
+      return popover.show({
         event: new MouseEvent("mouseover"),
         hoverParent,
         targetEl,
@@ -126,7 +133,7 @@ describe("AnnotationPopover", () => {
   // answering with the list the repository read for its Attachment.
   it("keeps the newer link when the first hover's read lands after it", async () => {
     await using stack = new AsyncDisposableStack();
-    const { repository } = await setup(stack);
+    const { repository, bridge } = await setup(stack);
     const lists = {
       EPUBBKS2: await repository.read("EPUBBKS2"),
       RGRPDF24: await repository.read("RGRPDF24"),
@@ -135,15 +142,17 @@ describe("AnnotationPopover", () => {
     const service = stack.use(
       new AnnotationPopover({
         annotations: {
-          read: async (key) => {
-            const held = Promise.withResolvers<void>();
-            reads.push({ key, held });
-            await held.promise;
-            return lists[key as keyof typeof lists];
-          },
-          hold: () => ({ [Symbol.dispose]: () => {} }),
-          on: () => () => {},
+          read: (key) =>
+            Effect.promise(async () => {
+              const held = Promise.withResolvers<void>();
+              reads.push({ key, held });
+              await held.promise;
+              return lists[key as keyof typeof lists];
+            }),
+          hold: () => Effect.succeed({ [Symbol.dispose]: () => {} }),
+          annotationsChanged: Stream.never,
         },
+        bridge,
         excerptDisplay: {
           open: () => {
             throw new Error("No hovered Annotation here has an Excerpt Image");
@@ -205,7 +214,12 @@ describe("AnnotationPopover with an Excerpt Image", () => {
    * the decode failure itself.
    */
   async function harness(stack: AsyncDisposableStack) {
-    const { repository, db, queryClient } = await setup(stack);
+    const {
+      service: annotations,
+      bridge,
+      db,
+      queryClient,
+    } = await setup(stack);
     const images = stack.use(
       new ExcerptImageService({ read: async () => redPng }),
     );
@@ -218,7 +232,8 @@ describe("AnnotationPopover with an Excerpt Image", () => {
     );
     const service = stack.use(
       new AnnotationPopover({
-        annotations: repository,
+        annotations,
+        bridge,
         excerptDisplay: display,
         excerptRequest: ({ annotation, source }) =>
           savedExcerptRequest({

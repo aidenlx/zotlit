@@ -58,7 +58,7 @@ async function harness(
   doc: string,
   { whileRendering }: { whileRendering?: (cm: EditorView) => void } = {},
 ) {
-  const { repository } = await repositorySetup(stack);
+  const { service: repository, bridge } = await repositorySetup(stack);
   const app = host();
   const useLedger = buildUseLedger(app, stack);
   const cm = stateEditor({ doc });
@@ -89,6 +89,7 @@ async function harness(
       {
         app,
         annotations: repository,
+        bridge,
         noteFeature: { prepareAnnotationInsert: prepare },
         zoteroPref: { dataDir: "/zotero" },
         useLedger,

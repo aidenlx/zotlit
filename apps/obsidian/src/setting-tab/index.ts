@@ -50,7 +50,7 @@ import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
   runtime: SubscriptionRuntime;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;

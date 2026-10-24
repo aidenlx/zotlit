@@ -108,12 +108,39 @@ export async function buildServices(
   const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
     bindMigration = resolve;
   });
+  let excerptImages: ExcerptImageService | undefined;
   const runtime = buildRuntime(
-    pluginLayer(plugin, {
-      loadVerificationData: async (options) =>
-        (await migrationActions).loadVerificationData(options),
-      openPrompt: async () => (await migrationActions).openPrompt(),
-    }),
+    pluginLayer(
+      plugin,
+      {
+        loadVerificationData: async (options) =>
+          (await migrationActions).loadVerificationData(options),
+        openPrompt: async () => (await migrationActions).openPrompt(),
+      },
+      {
+        // A session's first read of an Attachment has no list that stood
+        // before it to compare against, so it is compared against the image
+        // this device persists for the Annotation instead — the display's own
+        // stored-outcome read, so an Annotation this device never cached has
+        // no baseline here exactly as it has no image to replace there.
+        persistedExcerpt: async (annotation, source) => {
+          if (!excerptImages) return null;
+          const zoteroPref = plainZoteroPref(runtime);
+          const zoteroReads = plainZoteroReads(runtime);
+          const request = await savedExcerptRequest({
+            annotation,
+            source,
+            sourceScope: zoteroPref.dataDir,
+            zoteroReads,
+            paths: zoteroPref,
+          });
+          if (!request) return null;
+          return (
+            (await excerptImages.stored(request))?.identity.fingerprint ?? null
+          );
+        },
+      },
+    ),
     stack,
   );
   await runtime.context();
@@ -174,10 +201,10 @@ export async function buildServices(
     })
     .use({
       excerptImage: () =>
-        new ExcerptImageService({
+        (excerptImages = new ExcerptImageService({
           openStore: () => openExcerptStore(plugin.app.appId),
           readers,
-        }),
+        })),
     })
     .use({
       excerptDisplay: ({ queryClient, excerptImage }) =>
@@ -212,42 +239,14 @@ export async function buildServices(
         }),
     })
     .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
-    .use({
-      annotationRepository: ({
-        zoteroReads,
-        queryClient,
-        zoteroPref,
-        excerptImage,
-      }) =>
-        new AnnotationRepository({
-          runtime,
-          db: zoteroReads,
-          queryClient,
-          localApi,
-          // A session's first read of an Attachment has no list that stood
-          // before it to compare against, so it is compared against the image
-          // this device persists for the Annotation instead — the display's own
-          // stored-outcome read, so an Annotation this device never cached has
-          // no baseline here exactly as it has no image to replace there.
-          persistedExcerpt: async (annotation, source) => {
-            const request = await savedExcerptRequest({
-              annotation,
-              source,
-              sourceScope: zoteroPref.dataDir,
-              zoteroReads,
-              paths: zoteroPref,
-            });
-            if (!request) return null;
-            return (
-              (await excerptImage.stored(request))?.identity.fingerprint ?? null
-            );
-          },
-        }),
+    .useValue({
+      annotationRepository: () => runtime.runSync(AnnotationRepository),
     })
     .use({
       capabilityNotices: ({ annotationRepository }) =>
         new CapabilityNotices({
           capabilities: annotationRepository,
+          bridge,
           writes: localApi,
           openEditingSettings: () =>
             revealSetting(
@@ -287,6 +286,7 @@ export async function buildServices(
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
+          bridge,
           noteIndex,
           libraryTagNames,
           settings,
@@ -561,6 +561,7 @@ export async function buildServices(
       }) =>
         new AnnotationPopover({
           annotations: annotationRepository,
+          bridge,
           excerptDisplay,
           excerptRequest: ({ annotation, source }) =>
             savedExcerptRequest({

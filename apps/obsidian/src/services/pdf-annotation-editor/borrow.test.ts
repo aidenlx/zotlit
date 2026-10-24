@@ -7,6 +7,7 @@ import { FileSystemAdapter, Scope } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
 
 import {
@@ -71,6 +72,7 @@ async function readerRegistry(
     app: workspace([{ view }]),
     attachments,
     annotations,
+    bridge: noteIndexes.use(openTestBridge()),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),

@@ -14,7 +14,9 @@ import {
 } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
@@ -108,9 +110,10 @@ async function openLibrary() {
   );
   await settings.loaded;
   const saveData = vi.spyOn(plugin, "saveData");
-  const off = () => () => {};
+  const runtime = testRuntime();
   const deps = {
-    runtime: testRuntime(),
+    runtime,
+    bridge: effectBridge(runtime),
     app: { ...host.app, scope: undefined },
     reads: {
       changed: Stream.empty,
@@ -123,7 +126,7 @@ async function openLibrary() {
     libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },
+    annotations: annotationReads(),
     literatureNotes: noLiteratureNotes(),
   } as unknown as QueryViewDeps;
   // The view's text is the toolbar's, which the storage takes changes from.

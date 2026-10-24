@@ -6,6 +6,7 @@ import type { Component, HoverParent } from "obsidian";
 import { formatIndexedKey } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
   AnnotationRecord,
@@ -39,7 +40,11 @@ export interface AnnotationHoverRequest {
 }
 
 export interface AnnotationPopoverDeps {
-  annotations: Pick<AnnotationRepository, "read" | "hold" | "on">;
+  annotations: Pick<
+    AnnotationRepository["Service"],
+    "read" | "hold" | "annotationsChanged"
+  >;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
   /** The live Excerpt Image display the Annotation View's cards share. */
   excerptDisplay: Pick<ExcerptDisplayService, "open">;
   /** The file inputs one saved Annotation's Excerpt Image resolves through. */
@@ -131,12 +136,14 @@ export class AnnotationPopover extends Service {
 
     // Released last: letting a held list go announces a change, which the
     // subscription below must no longer answer.
-    subscriptions.use(deps.annotations.hold([attachmentKey]));
+    subscriptions.use(
+      deps.bridge.runSync(deps.annotations.hold([attachmentKey])),
+    );
     const draw = (): Promise<void> => {
       const generation = ++visit.state.generation;
       const current = (): boolean => visit.state.generation === generation;
-      return deps.annotations
-        .read(attachmentKey)
+      return deps.bridge
+        .runPromise(deps.annotations.read(attachmentKey))
         .then((list) => {
           if (!current()) return;
           // No list stands: the library holds no such Attachment, or a change
@@ -190,7 +197,7 @@ export class AnnotationPopover extends Service {
         });
     };
     subscriptions.defer(
-      deps.annotations.on("annotations-changed", (changed) => {
+      deps.bridge.subscribe(deps.annotations.annotationsChanged, (changed) => {
         if (changed === attachmentKey) void draw();
       }),
     );

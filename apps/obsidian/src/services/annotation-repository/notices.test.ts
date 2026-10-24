@@ -1,5 +1,7 @@
-import { expect, it, vi } from "vitest";
+import { afterAll, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiResult } from "@/services/zotero-local-api/service";
 
@@ -7,22 +9,30 @@ import type { CapabilityNotice } from "./capability-notices";
 import { CapabilityNotices } from "./notices";
 import { IDLE } from "./write";
 
+const bridge = openTestBridge();
+afterAll(() => bridge[Symbol.asyncDispose]());
+
 /** The two dependencies the gesture runs through, each recording its order. */
 function seam() {
   const ran: string[] = [];
   let release: (() => void) | null = null;
   const notices = new CapabilityNotices({
     capabilities: {
-      capabilityFor: () => ({ kind: "writable" }),
-      mutationFor: () => IDLE,
-      on: () => () => undefined,
-      probe: vi.fn(async () => {
-        ran.push("probe");
-        await new Promise<void>((resolve) => {
-          release = resolve;
-        });
-      }),
+      capabilityFor: () => Effect.succeed({ kind: "writable" as const }),
+      mutationFor: () => Effect.succeed(IDLE),
+      capabilityChanges: Stream.never,
+      annotationChanged: Stream.never,
+      writeConflicts: Stream.never,
+      probe: vi.fn(() =>
+        Effect.promise(async () => {
+          ran.push("probe");
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }),
+      ),
     },
+    bridge,
     writes: {
       authorize: async () => ({ value: undefined }),
       on: () => () => undefined,
@@ -66,11 +76,15 @@ function answering(...answers: LocalApiResult<void>[]) {
   );
   const notices = new CapabilityNotices({
     capabilities: {
-      capabilityFor: () => ({ kind: "authorization-required" }),
-      mutationFor: () => IDLE,
-      on: () => () => undefined,
-      probe: async () => undefined,
+      capabilityFor: () =>
+        Effect.succeed({ kind: "authorization-required" as const }),
+      mutationFor: () => Effect.succeed(IDLE),
+      capabilityChanges: Stream.never,
+      annotationChanged: Stream.never,
+      writeConflicts: Stream.never,
+      probe: () => Effect.void,
     },
+    bridge,
     writes: { authorize, on: () => () => undefined },
     openEditingSettings: () => undefined,
     cardShown: () => true,

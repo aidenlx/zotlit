@@ -8,6 +8,8 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginHost } from "@/lib/plugin-host";
 import { openLibraryView } from "@/views/library/register";
 
+import { layerAnnotationRepository } from "./annotation-repository/service";
+import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
 import type { ChineseSegmenter } from "./chinese-segmenter/service";
 import { layerCitationsCli } from "./citation-index/cli/register";
@@ -82,7 +84,13 @@ import { workerClient } from "./zotero-reads/worker-client";
 export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: TemplateMigrationOptions,
+  annotations: {
+    readonly persistedExcerpt?: Parameters<
+      typeof layerAnnotationRepository
+    >[0]["persistedExcerpt"];
+  },
 ): Layer.Layer<
+  | AnnotationRepository
   | CitationText
   | CitationPopover
   | CitationIndex
@@ -120,6 +128,11 @@ export function pluginLayer(
         layerLibraryScope.pipe(startingAs("LibraryScope")),
         layerProfile.pipe(startingAs("Profile")),
       ),
+    ),
+    Layer.provideMerge(
+      layerAnnotationRepository({
+        persistedExcerpt: annotations.persistedExcerpt,
+      }).pipe(startingAs("AnnotationRepository")),
     ),
     Layer.provideMerge(
       layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),

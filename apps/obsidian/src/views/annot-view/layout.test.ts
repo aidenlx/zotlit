@@ -11,14 +11,15 @@ import { act } from "preact/test-utils";
 import type { DragEvent as ReactDragEvent } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { Effect } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepositoryEvents,
 } from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
 import type { NoteFeature } from "@/services/note-feature";
+import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { stateEditor } from "./__fixtures__/editor";
 import { editorApp } from "./__fixtures__/editor-app";
@@ -76,49 +77,40 @@ type Listener = (...args: never[]) => void;
 
 /** A repository that answers two Attachments, each with its own source and capability. */
 function repository() {
-  const listeners = new Map<string, Set<Listener>>();
   const lists = { ...LISTS };
   const capabilities = { ...CAPABILITIES };
+  const base = annotationReads();
+  const api = {
+    ...base,
+    read: vi.fn((key: string) => Effect.succeed(lists[key] ?? null)),
+    peek: vi.fn((key: string) =>
+      Effect.succeed(lists[key] ? { value: lists[key] } : null),
+    ),
+    refresh: vi.fn(() => Effect.void),
+    capabilityFor: (key: string) => Effect.succeed(capabilities[key]!),
+    tagDraftFor: vi.fn(() => Effect.succeed(null)),
+  };
   return {
     lists,
     capabilities,
-    emit<E extends keyof AnnotationRepositoryEvents>(
-      event: E,
-      ...args: Parameters<AnnotationRepositoryEvents[E]>
-    ) {
-      for (const cb of listeners.get(event) ?? [])
-        (cb as (...a: unknown[]) => void)(...args);
+    emit(
+      event: "annotations-changed" | "capability-changed",
+      attachmentKey?: string,
+    ): void {
+      if (event === "annotations-changed") {
+        base.replace(attachmentKey!, lists[attachmentKey!]?.annotations ?? []);
+      } else {
+        base.setCapability({ kind: "writable" });
+      }
     },
-    api: {
-      read: vi.fn((key: string) => Promise.resolve(lists[key] ?? null)),
-      peek: (key: string) => (lists[key] ? { value: lists[key] } : null),
-      refresh: vi.fn(() => Promise.resolve()),
-      capability: { kind: "writable" } as EditingCapability,
-      capabilityFor: (key: string) => capabilities[key]!,
-      textDraftFor: () => null,
-      tagDraftFor: () => null,
-      annotationState: () => ({
-        mutation: IDLE,
-        textDrafts: {},
-        tagDraft: null,
-        hidden: false,
-        gone: false,
-      }),
-      on: (event: string, cb: Listener) => {
-        const set = listeners.get(event) ?? new Set();
-        set.add(cb);
-        listeners.set(event, set);
-        return () => set.delete(cb);
-      },
-      hold: () => ({ [Symbol.dispose]: () => {} }),
-    },
+    api,
   };
 }
 
-let cleanup: DisposableStack;
+let cleanup: AsyncDisposableStack;
 
 beforeEach(() => {
-  cleanup = new DisposableStack();
+  cleanup = new AsyncDisposableStack();
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   vi.spyOn(Keymap, "isModifier").mockImplementation(
@@ -126,8 +118,8 @@ beforeEach(() => {
   );
 });
 
-afterEach(() => {
-  cleanup.dispose();
+afterEach(async () => {
+  await cleanup.disposeAsync();
   document.body.replaceChildren();
   vi.restoreAllMocks();
 });
@@ -137,6 +129,7 @@ async function mountLayout(
   host: Pick<AnnotationsLayoutHost, "showNewRecords" | "onListChanged"> = {},
 ) {
   const repo = repository();
+  const bridge = cleanup.use(openTestBridge());
   const workspaceListeners = new Map<string, Set<Listener>>();
   const app = Object.assign(editorApp(), {
     workspace: {
@@ -158,6 +151,7 @@ async function mountLayout(
   const deps = {
     app,
     annotations: repo.api,
+    bridge,
     reads: {},
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },
