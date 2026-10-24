@@ -6,6 +6,7 @@ import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
@@ -1328,29 +1329,35 @@ async function buildMigration(
       Layer.provide(Layer.succeed(ObsidianApp, options.app)),
       Layer.provide(templateSettings(options.settings as PlainPluginSettings)),
       Layer.provide(
-        Layer.succeed(Template, {
-          refresh: () => Effect.promise(() => template.refresh()),
-          getLegacyLiteratureNoteTemplateFiles: () =>
-            Effect.sync(() => template.getLegacyLiteratureNoteTemplateFiles()),
-          getLegacyTemplateDocuments: () =>
-            Effect.sync(() => template.getLegacyTemplateDocuments()),
-          convertLegacyLiteratureNoteTemplates: (data: {
-            note: object;
-            filename: object;
-            annotation?: object;
-          }) =>
-            Effect.tryPromise({
-              try: () => template.convertLegacyLiteratureNoteTemplates(data),
-              catch: (error) => error,
-            }),
-          convertLegacyTemplateDocuments: (
-            refs: readonly import("@zotlit/db").CiteRef[],
-          ) =>
-            Effect.tryPromise({
-              try: () => template.convertLegacyTemplateDocuments(refs),
-              catch: (error) => error,
-            }),
-        } as unknown as Template["Service"]),
+        Layer.succeed(
+          Template,
+          stubService<Template["Service"]>("Template", {
+            refresh: () => Effect.promise(() => template.refresh()),
+            getLegacyLiteratureNoteTemplateFiles: () =>
+              Effect.sync(() =>
+                template.getLegacyLiteratureNoteTemplateFiles(),
+              ),
+            getLegacyTemplateDocuments: () =>
+              Effect.sync(() => template.getLegacyTemplateDocuments()),
+            // The fake template converts to the fields migration reads only.
+            convertLegacyLiteratureNoteTemplates: ((data: {
+              note: object;
+              filename: object;
+              annotation?: object;
+            }) =>
+              Effect.tryPromise({
+                try: () => template.convertLegacyLiteratureNoteTemplates(data),
+                catch: (error) => error,
+              })) as unknown as Template["Service"]["convertLegacyLiteratureNoteTemplates"],
+            convertLegacyTemplateDocuments: ((
+              refs: readonly import("@zotlit/db").CiteRef[],
+            ) =>
+              Effect.tryPromise({
+                try: () => template.convertLegacyTemplateDocuments(refs),
+                catch: (error) => error,
+              })) as unknown as Template["Service"]["convertLegacyTemplateDocuments"],
+          }),
+        ),
       ),
       Layer.provideMerge(Layer.succeedContext(context)),
     ),

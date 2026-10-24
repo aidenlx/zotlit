@@ -139,6 +139,7 @@ export async function measureCitationScan(vaultId: string) {
     const summary = {
       density,
       medianMs: sorted[Math.floor(sorted.length / 2)]!,
+      p90Ms: sorted[Math.floor(sorted.length * 0.9)]!,
       maxMs: sorted.at(-1)!,
       samples: evidence.samples,
       harnessFloor: {

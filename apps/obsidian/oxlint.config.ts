@@ -151,6 +151,10 @@ export default defineConfig({
       },
     },
     {
+      files: ["src/**"],
+      rules: { "zotlit-effect-tests/service-stub": "error" },
+    },
+    {
       // These tests exercise the run entry points themselves.
       files: ["src/lib/effect-runtime.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },

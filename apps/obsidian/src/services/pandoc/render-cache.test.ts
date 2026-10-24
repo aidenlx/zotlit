@@ -8,6 +8,7 @@ import { describe, expect } from "vitest";
 import type { CslItemData } from "@zotlit/db";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { subscribe } from "@/lib/effect-stream";
@@ -60,15 +61,21 @@ it.effect.each(["Profile", "preference override"] as const)(
             Layer.provide(Layer.succeed(ZoteroPref, pref)),
             Layer.provide(layerQueryClients),
             Layer.provide(
-              Layer.succeed(ZoteroReads, {
-                events: Stream.never,
-              } as unknown as ZoteroReads["Service"]),
+              Layer.succeed(
+                ZoteroReads,
+                stubService<ZoteroReads["Service"]>("ZoteroReads", {
+                  events: Stream.never,
+                }),
+              ),
             ),
             Layer.provide(
-              Layer.succeed(PandocEngine, {
-                getStatus: () => Effect.succeed({ kind: "absent" }),
-                changes: Stream.never,
-              } as unknown as PandocEngine["Service"]),
+              Layer.succeed(
+                PandocEngine,
+                stubService<PandocEngine["Service"]>("PandocEngine", {
+                  getStatus: () => Effect.succeed({ kind: "absent" }),
+                  changes: Stream.never,
+                }),
+              ),
             ),
           ),
         ),

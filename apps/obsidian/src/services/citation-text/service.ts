@@ -14,6 +14,7 @@ import {
   Cause,
   Context,
   Effect,
+  Exit,
   Layer,
   PubSub,
   Scope,
@@ -35,7 +36,6 @@ import {
 } from "@/lib/wikilink-citation";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { renderParsedCitation } from "@/services/citation-index/parsed-note";
-import { plainCitationIndex } from "@/services/citation-index/plain";
 import type { NoteScanRecord } from "@/services/citation-index/scan-note";
 import { CitationIndex } from "@/services/citation-index/service";
 import type {
@@ -43,7 +43,6 @@ import type {
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
-import { plainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
@@ -52,10 +51,7 @@ import {
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type { RenderPresentation } from "@/services/pandoc/render-cache";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
-import { plainBibliographyRender } from "@/services/pandoc/render-cache/plain";
-import { plainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
-import { plainQueryClients } from "@/services/query-client/plain";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
 
@@ -152,34 +148,41 @@ export const layerCitationText = (open?: OpenDocuments) =>
       const lookup = yield* CitationLookup;
       const notes = yield* NoteIndex;
       const renders = yield* BibliographyRender;
-      yield* Profile;
-      const queryService = yield* QueryClients;
+      const profiles = yield* Profile;
+      const queries = yield* QueryClients;
       const scope = yield* Scope.fork(yield* Scope.Scope);
-      const context = yield* Effect.context<
-        CitationIndex | NoteIndex | BibliographyRender | Profile | QueryClients
-      >();
+      const context = yield* Effect.context<never>();
       const run = Effect.runSyncWith(context);
-      const runner = {
-        scope,
-        runSync: run,
-        runPromiseExit: Effect.runPromiseExitWith(context),
-        runFork: <A, E>(
-          effect: Effect.Effect<
-            A,
-            E,
-            | CitationIndex
-            | NoteIndex
-            | BibliographyRender
-            | Profile
-            | QueryClients
-          >,
-        ) => run(Effect.forkIn(effect, scope, { startImmediately: true })),
+      const runExit = Effect.runPromiseExitWith(context);
+      /**
+       * Runs a sibling service's read from the Promise code TanStack queries
+       * call. Interruption means this layer is closing, so the read answers
+       * `released`; any other failure rethrows its cause.
+       */
+      const settle = async <A>(
+        effect: Effect.Effect<A, unknown>,
+        released: () => A,
+      ): Promise<A> => {
+        const exit = await runExit(effect);
+        if (Exit.isSuccess(exit)) return exit.value;
+        if (Cause.hasInterruptsOnly(exit.cause)) return released();
+        throw Cause.squash(exit.cause);
       };
-      const citationIndex = plainCitationIndex(runner);
-      const noteIndex = plainNoteIndex(runner);
-      const bibliographyRender = plainBibliographyRender(runner);
-      const profile = plainProfile(runner);
-      const queries = plainQueryClients(runner);
+      const releasedRead = (): never => {
+        throw new DOMException("Citation text released", "AbortError");
+      };
+      const readProfile = <A>(effect: Effect.Effect<A, unknown>): A => {
+        const exit = run(Effect.exit(effect));
+        if (Exit.isSuccess(exit)) return exit.value;
+        throw Cause.squash(exit.cause);
+      };
+      /** The Literature Note Profiles a document's presentation property names. */
+      const profile = {
+        get loaded() {
+          return readProfile(profiles.loaded);
+        },
+        profileOf: (file?: TFile) => readProfile(profiles.profileOf(file)),
+      };
       const openDocuments = open ?? workspaceOpenDocuments(app);
       /** Releases for the pins that keep each open document's text held. */
       const pins = new Map<string, () => void>();
@@ -237,10 +240,13 @@ export const layerCitationText = (open?: OpenDocuments) =>
           drop(path);
           return null;
         }
-        void queries.ask(documentKey(path), ({ signal }) =>
-          readPath(path, signal),
+        void settle(
+          queries.ask(documentKey(path), ({ signal }) =>
+            readPath(path, signal),
+          ),
+          () => null,
         );
-        return queries.peek<DocumentCitations>(documentKey(path));
+        return run(queries.peek<DocumentCitations>(documentKey(path)));
       }
 
       /**
@@ -257,10 +263,13 @@ export const layerCitationText = (open?: OpenDocuments) =>
         { signal }: { signal?: AbortSignal } = {},
       ): Promise<DocumentCitations | null> {
         if (stopped) return null;
-        const text = await queries.read(
-          documentKey(path),
-          ({ signal }) => readPath(path, signal),
-          signal,
+        const text = await settle(
+          queries.read(
+            documentKey(path),
+            ({ signal }) => readPath(path, signal),
+            signal,
+          ),
+          () => null,
         );
         // A file deleted while its read ran holds nothing: the path is resolved
         // again here, because the read may have started before the file went.
@@ -286,7 +295,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         ) {
           return;
         }
-        queries.invalidate(queryKey);
+        run(queries.invalidate(queryKey));
         if (path === undefined) emit({ type: "invalidated" });
         else emit({ type: "changed", path });
       }
@@ -371,11 +380,14 @@ export const layerCitationText = (open?: OpenDocuments) =>
         file: TFile,
         signal: AbortSignal,
       ): Promise<DocumentCitations> {
-        await abortable(noteIndex.whenIndexed(), signal);
-        signal.throwIfAborted();
-        const { facts, set } = await citationIndex.getParsedDocument(
-          file,
+        await abortable(
+          settle(notes.whenIndexed(), () => undefined),
           signal,
+        );
+        signal.throwIfAborted();
+        const { facts, set } = await settle(
+          index.getParsedDocument(file, signal),
+          releasedRead,
         );
         signal.throwIfAborted();
         const { source: body, record } = facts;
@@ -459,7 +471,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // reading as though a vault selection were what the note declared.
         const presented = documentCitationPresentation(
           documentPresentation(app.metadataCache, file, profile),
-          bibliographyRender.vaultPresentation,
+          run(renders.state).vaultPresentation,
           { citations: set.citations, works },
         );
         const presentation =
@@ -467,10 +479,13 @@ export const layerCitationText = (open?: OpenDocuments) =>
         const rendered =
           presentation === null
             ? null
-            : await bibliographyRender.readCitations(sources, items, {
-                presentation,
-                signal,
-              });
+            : await settle(
+                renders.readCitations(sources, items, {
+                  presentation,
+                  signal,
+                }),
+                releasedRead,
+              );
         signal.throwIfAborted();
         // A style whose citations are footnotes leaves a note in the rendered
         // content, which no surface can show. That output — not the style — is
@@ -564,10 +579,10 @@ export const layerCitationText = (open?: OpenDocuments) =>
         }: { presentation: RenderPresentation; signal: AbortSignal },
       ): Promise<ReadonlyMap<string, number>> {
         const serials = new Map<string, number>();
-        const rendered = await bibliographyRender.readBibliography(items, {
-          presentation,
-          signal,
-        });
+        const rendered = await settle(
+          renders.readBibliography(items, { presentation, signal }),
+          releasedRead,
+        );
         signal.throwIfAborted();
         if (rendered === null) {
           log("debug", "Cannot number the cited entries");
@@ -692,10 +707,10 @@ export const layerCitationText = (open?: OpenDocuments) =>
         yield* acquireDisposable(() =>
           openDocuments.subscribe(intake.callback("open")),
         );
-        const initialSettlement = yield* queryService.current;
+        const initialSettlement = yield* queries.current;
         yield* forkEach(
           Stream.dropWhile(
-            queryService.changes,
+            queries.changes,
             (next) => next === initialSettlement,
           ),
           (change) => {

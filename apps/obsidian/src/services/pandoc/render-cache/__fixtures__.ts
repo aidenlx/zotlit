@@ -1,4 +1,5 @@
 /** The real bibliography layer over the dependency ports used by consumer fixtures. */
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { PlainPandocEngine } from "@/services/pandoc/plain";
@@ -79,68 +80,87 @@ export async function bibliographyRenderFixture(
   });
   const query = options.queryClient;
   const queryLayer = query
-    ? Layer.succeed(QueryClients, {
-        current: Effect.succeed(null),
-        changes: callbacks<HeldReadChange>((emit) => {
-          let changed = false;
-          return query.watch([], {
-            changed: () => {
-              changed = true;
-            },
-            settled: (key, held) => {
-              emit({ key, held, changed });
-              changed = false;
-            },
-          });
+    ? Layer.succeed(
+        QueryClients,
+        stubService<QueryClients["Service"]>("QueryClients", {
+          current: Effect.succeed(null),
+          changes: callbacks<HeldReadChange>((emit) => {
+            let changed = false;
+            return query.watch([], {
+              changed: () => {
+                changed = true;
+              },
+              settled: (key, held) => {
+                emit({ key, held, changed });
+                changed = false;
+              },
+            });
+          }),
+          ask: (key, fn) =>
+            Effect.tryPromise({
+              try: () => query.ask(key, fn),
+              catch: (error) => error,
+            }),
+          peek: (key) => Effect.sync(() => query.peek(key)),
+          readFresh: (key, fn, signal) =>
+            Effect.tryPromise({
+              try: () => query.readFresh(key, fn, signal),
+              catch: (error) => error,
+            }),
+          invalidate: (key) => Effect.sync(() => query.invalidate(key)),
         }),
-        ask: (key, fn) =>
-          Effect.tryPromise({
-            try: () => query.ask(key, fn),
-            catch: (error) => error,
-          }),
-        peek: (key) => Effect.sync(() => query.peek(key)),
-        readFresh: (key, fn, signal) =>
-          Effect.tryPromise({
-            try: () => query.readFresh(key, fn, signal),
-            catch: (error) => error,
-          }),
-        invalidate: (key) => Effect.sync(() => query.invalidate(key)),
-      } as QueryClients["Service"])
+      )
     : layerQueryClients;
   const layer = layerBibliographyRender.pipe(
     Layer.provide(
       Layer.mergeAll(
         queryLayer,
-        Layer.succeed(Profile, {
-          state: Effect.succeed(profileState),
-          changes: options.profile.changed.pipe(
-            Stream.map(() => ({ ...profileState })),
-          ),
-        } as unknown as Profile["Service"]),
-        Layer.succeed(ZoteroReads, {
-          events: options.db.changed.pipe(
-            Stream.map(() => ({ _tag: "changed" as const })),
-          ),
-        } as ZoteroReads["Service"]),
-        Layer.succeed(PandocEngine, {
-          getStatus: () => Effect.sync(() => options.pandocEngine.getStatus()),
-          getEngine: () =>
-            Effect.tryPromise({
-              try: () => options.pandocEngine.getEngine(),
-              catch: (error) => error as Error,
-            }),
-          changes: options.pandocEngine.changes,
-        } as PandocEngine["Service"]),
-        Layer.succeed(ZoteroPref, {
-          current: Effect.sync(prefSnapshot),
-          changes: options.zoteroPref["resolved-changed"].pipe(
-            Stream.map(() => ({ ...prefSnapshot(), prefs: new Map() })),
-          ),
-        } as unknown as ZoteroPref["Service"]),
-        Layer.succeed(PluginSettings, {
-          current: Effect.sync(() => options.settings.current),
-          changes: options.settings.changes,
-        } as PluginSettings["Service"]),
+        Layer.succeed(
+          Profile,
+          stubService<Profile["Service"]>("Profile", {
+            state: Effect.succeed(profileState),
+            changes: options.profile.changed.pipe(
+              Stream.map(() => ({ ...profileState })),
+            ),
+          }),
+        ),
+        Layer.succeed(
+          ZoteroReads,
+          stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            events: options.db.changed.pipe(
+              Stream.map(() => ({ _tag: "changed" as const })),
+            ),
+          }),
+        ),
+        Layer.succeed(
+          PandocEngine,
+          stubService<PandocEngine["Service"]>("PandocEngine", {
+            getStatus: () =>
+              Effect.sync(() => options.pandocEngine.getStatus()),
+            getEngine: () =>
+              Effect.tryPromise({
+                try: () => options.pandocEngine.getEngine(),
+                catch: (error) => error as Error,
+              }),
+            changes: options.pandocEngine.changes,
+          }),
+        ),
+        Layer.succeed(
+          ZoteroPref,
+          stubService<ZoteroPref["Service"]>("ZoteroPref", {
+            current: Effect.sync(prefSnapshot),
+            changes: options.zoteroPref["resolved-changed"].pipe(
+              Stream.map(() => ({ ...prefSnapshot(), prefs: new Map() })),
+            ),
+          }),
+        ),
+        Layer.succeed(
+          PluginSettings,
+          stubService<PluginSettings["Service"]>("PluginSettings", {
+            current: Effect.sync(() => options.settings.current),
+            changes: options.settings.changes,
+          }),
+        ),
       ),
     ),
   );

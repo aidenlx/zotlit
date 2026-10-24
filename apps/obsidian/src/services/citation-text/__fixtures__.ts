@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -176,118 +177,133 @@ export function citationTextFixture(
       Layer.provide(
         Layer.mergeAll(
           Layer.succeed(ObsidianApp, deps.app),
-          Layer.succeed(CitationIndex, {
-            getParsedDocument: (file, signal) =>
-              Effect.tryPromise(() =>
-                deps.citationIndex.getParsedDocument(file, signal),
+          Layer.succeed(
+            CitationIndex,
+            stubService<CitationIndex["Service"]>("CitationIndex", {
+              getParsedDocument: (file, signal) =>
+                Effect.tryPromise(() =>
+                  deps.citationIndex.getParsedDocument(file, signal),
+                ),
+              changes: Stream.empty,
+              events: Stream.merge(
+                deps.citationIndex.changed.pipe(
+                  Stream.map((path): CitationIndexEvent => ({
+                    type: "changed",
+                    path,
+                  })),
+                ),
+                deps.citationIndex["membership-changed"].pipe(
+                  Stream.map((): CitationIndexEvent => ({
+                    type: "membership-changed",
+                  })),
+                ),
               ),
-            changes: Stream.empty,
-            events: Stream.merge(
-              deps.citationIndex.changed.pipe(
-                Stream.map((path): CitationIndexEvent => ({
-                  type: "changed",
-                  path,
-                })),
-              ),
-              deps.citationIndex["membership-changed"].pipe(
-                Stream.map((): CitationIndexEvent => ({
-                  type: "membership-changed",
-                })),
-              ),
-            ),
-          } satisfies Partial<
-            CitationIndex["Service"]
-          > as unknown as CitationIndex["Service"]),
-          Layer.succeed(CitationLookup, {
-            current: Effect.succeed(initialLookup),
-            changes: deps.citationLookup.changed.pipe(
-              Stream.map((): CitationLookupState => ({
-                ...initialLookup,
-                revision: String(++revision),
-              })),
-            ),
-          } as CitationLookup["Service"]),
-          Layer.succeed(NoteIndex, {
-            current: Effect.succeed(initialNote),
-            whenIndexed: () =>
-              Effect.promise(() => deps.noteIndex.whenIndexed()),
-            changes: Stream.merge(
-              deps.noteIndex.changed.pipe(
-                Stream.map((file): NoteIndexChange => ({
-                  type: "changed",
-                  file,
-                })),
-              ),
-              deps.noteIndex.indexed.pipe(
-                Stream.map((): NoteIndexChange => ({ type: "indexed" })),
-              ),
-            ),
-          } as NoteIndex["Service"]),
-          Layer.succeed(Profile, {
-            loaded: Effect.sync(() => deps.profile.loaded),
-            profiles: Effect.sync(() => deps.profile.profiles),
-            resolveProfile: (
-              ...args: Parameters<ProfileReader["resolveProfile"]>
-            ) => Effect.sync(() => deps.profile.resolveProfile(...args)),
-            profileOf: (...args: Parameters<ProfileReader["profileOf"]>) =>
-              Effect.sync(() => deps.profile.profileOf(...args)),
-            changes: Stream.empty,
-          } as unknown as Profile["Service"]),
-          Layer.succeed(BibliographyRender, {
-            state: Effect.sync(() => ({
-              vaultPresentation: deps.bibliographyRender.vaultPresentation,
-              missingStyle: null,
-            })),
-            readCitations: (...args) =>
-              Effect.tryPromise({
-                try: () => deps.bibliographyRender.readCitations(...args),
-                catch: (error) => error,
-              }),
-            readBibliography: (...args) =>
-              Effect.tryPromise({
-                try: () => deps.bibliographyRender.readBibliography(...args),
-                catch: (error) => error,
-              }),
-            changes: Stream.empty,
-            events: deps.bibliographyRender.invalidated.pipe(
-              Stream.map((): BibliographyRenderEvent => ({
-                _tag: "invalidated",
-              })),
-            ),
-          } satisfies Partial<
-            BibliographyRender["Service"]
-          > as unknown as BibliographyRender["Service"]),
-          Layer.succeed(QueryClients, {
-            client: queries.client,
-            current: Effect.succeed(null),
-            changes: callbacks<HeldReadChange>((emit) => {
-              let changed = false;
-              return [
-                queries.watch([], {
-                  changed: () => {
-                    changed = true;
-                  },
-                  settled: (key, held) => {
-                    emit({ key, held, changed });
-                    changed = false;
-                  },
-                }),
-              ];
             }),
-            ask: (key, fn) =>
-              Effect.tryPromise({
-                try: () => queries.ask(key, fn),
-                catch: (error) => error,
+          ),
+          Layer.succeed(
+            CitationLookup,
+            stubService<CitationLookup["Service"]>("CitationLookup", {
+              current: Effect.succeed(initialLookup),
+              changes: deps.citationLookup.changed.pipe(
+                Stream.map((): CitationLookupState => ({
+                  ...initialLookup,
+                  revision: String(++revision),
+                })),
+              ),
+            }),
+          ),
+          Layer.succeed(
+            NoteIndex,
+            stubService<NoteIndex["Service"]>("NoteIndex", {
+              current: Effect.succeed(initialNote),
+              whenIndexed: () =>
+                Effect.promise(() => deps.noteIndex.whenIndexed()),
+              changes: Stream.merge(
+                deps.noteIndex.changed.pipe(
+                  Stream.map((file): NoteIndexChange => ({
+                    type: "changed",
+                    file,
+                  })),
+                ),
+                deps.noteIndex.indexed.pipe(
+                  Stream.map((): NoteIndexChange => ({ type: "indexed" })),
+                ),
+              ),
+            }),
+          ),
+          Layer.succeed(
+            Profile,
+            stubService<Profile["Service"]>("Profile", {
+              loaded: Effect.sync(() => deps.profile.loaded),
+              profiles: Effect.sync(() => deps.profile.profiles),
+              resolveProfile: (
+                ...args: Parameters<ProfileReader["resolveProfile"]>
+              ) => Effect.sync(() => deps.profile.resolveProfile(...args)),
+              profileOf: (...args: Parameters<ProfileReader["profileOf"]>) =>
+                Effect.sync(() => deps.profile.profileOf(...args)),
+              changes: Stream.empty,
+            }),
+          ),
+          Layer.succeed(
+            BibliographyRender,
+            stubService<BibliographyRender["Service"]>("BibliographyRender", {
+              state: Effect.sync(() => ({
+                vaultPresentation: deps.bibliographyRender.vaultPresentation,
+                missingStyle: null,
+              })),
+              readCitations: (...args) =>
+                Effect.tryPromise({
+                  try: () => deps.bibliographyRender.readCitations(...args),
+                  catch: (error) => error,
+                }),
+              readBibliography: (...args) =>
+                Effect.tryPromise({
+                  try: () => deps.bibliographyRender.readBibliography(...args),
+                  catch: (error) => error,
+                }),
+              changes: Stream.empty,
+              events: deps.bibliographyRender.invalidated.pipe(
+                Stream.map((): BibliographyRenderEvent => ({
+                  _tag: "invalidated",
+                })),
+              ),
+            }),
+          ),
+          Layer.succeed(
+            QueryClients,
+            stubService<QueryClients["Service"]>("QueryClients", {
+              client: queries.client,
+              current: Effect.succeed(null),
+              changes: callbacks<HeldReadChange>((emit) => {
+                let changed = false;
+                return [
+                  queries.watch([], {
+                    changed: () => {
+                      changed = true;
+                    },
+                    settled: (key, held) => {
+                      emit({ key, held, changed });
+                      changed = false;
+                    },
+                  }),
+                ];
               }),
-            read: (key, fn, signal) =>
-              Effect.tryPromise({
-                try: () => queries.read(key, fn, signal),
-                catch: (error) => error,
-              }),
-            peek: (key) => Effect.sync(() => queries.peek(key)),
-            invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
-            watch: (prefix, on) => Effect.sync(() => queries.watch(prefix, on)),
-          } as QueryClients["Service"]),
+              ask: (key, fn) =>
+                Effect.tryPromise({
+                  try: () => queries.ask(key, fn),
+                  catch: (error) => error,
+                }),
+              read: (key, fn, signal) =>
+                Effect.tryPromise({
+                  try: () => queries.read(key, fn, signal),
+                  catch: (error) => error,
+                }),
+              peek: (key) => Effect.sync(() => queries.peek(key)),
+              invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
+              watch: (prefix, on) =>
+                Effect.sync(() => queries.watch(prefix, on)),
+            }),
+          ),
         ),
       ),
       Layer.provideMerge(Layer.succeedContext(context)),

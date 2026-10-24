@@ -1,4 +1,5 @@
 /** Library Scope's real dependency graph over a test's RPC client and saved settings. */
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -89,22 +90,28 @@ export async function buildLibraryScope(
       Layer.provide(
         Layer.mergeAll(
           layerQueryClients,
-          Layer.succeed(PluginSettings, {
-            current: Effect.sync(() => settings.current),
-            diagnostics: Effect.sync(() => settings.diagnostics),
-            changes: settings.changes,
-          } as PluginSettings["Service"]),
-          Layer.succeed(ZoteroReads, {
-            reads: deps.reads.reads,
-            events: Stream.merge(
-              deps.reads.changed.pipe(
-                Stream.map(() => ({ _tag: "changed" as const })),
+          Layer.succeed(
+            PluginSettings,
+            stubService<PluginSettings["Service"]>("PluginSettings", {
+              current: Effect.sync(() => settings.current),
+              diagnostics: Effect.sync(() => settings.diagnostics),
+              changes: settings.changes,
+            }),
+          ),
+          Layer.succeed(
+            ZoteroReads,
+            stubService<ZoteroReads["Service"]>("ZoteroReads", {
+              reads: deps.reads.reads,
+              events: Stream.merge(
+                deps.reads.changed.pipe(
+                  Stream.map(() => ({ _tag: "changed" as const })),
+                ),
+                deps.reads.degraded.pipe(
+                  Stream.map((error) => ({ _tag: "degraded" as const, error })),
+                ),
               ),
-              deps.reads.degraded.pipe(
-                Stream.map((error) => ({ _tag: "degraded" as const, error })),
-              ),
-            ),
-          } as ZoteroReads["Service"]),
+            }),
+          ),
         ),
       ),
     ),
