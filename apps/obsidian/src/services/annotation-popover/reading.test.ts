@@ -33,11 +33,11 @@ async function harness(stack: AsyncDisposableStack) {
     new AnnotationPopoverCore({
       annotations: repository,
       bridge,
-      excerptDisplay: () => ({
+      excerptDisplay: {
         open: () => {
           throw new Error("The hovered Annotation has no Excerpt Image");
         },
-      }),
+      },
       excerptRequest: () =>
         Promise.reject(new Error("No Excerpt Image is asked for")),
       commentRenderer: () => () => () => {},
@@ -52,9 +52,11 @@ async function harness(stack: AsyncDisposableStack) {
   );
   const service = stack.use(
     new AnnotationLinkReadingCore({
-      app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
-      plugin: {
-        registerMarkdownPostProcessor: (postProcessor) => {
+      host: {
+        app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
+        registerMarkdownPostProcessor: (
+          postProcessor: MarkdownPostProcessor,
+        ) => {
           process = postProcessor;
           return postProcessor;
         },

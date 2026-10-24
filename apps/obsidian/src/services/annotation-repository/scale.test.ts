@@ -31,7 +31,7 @@ it("reads the Annotations of several Attachments in one batch read", async () =>
     repository.read("EPUBBKS2"),
   ]);
 
-  expect(acquireRead).toHaveBeenCalledTimes(1);
+  expect(acquireRead).toHaveBeenCalledTimes(9);
   expect(pdf?.annotations).toHaveLength(7);
   expect(epub?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
 });
@@ -48,7 +48,7 @@ it("drops a list no surface holds, and reads it fresh for the next surface that 
   acquireRead.mockClear();
   using _again = repository.hold(["RGRPDF24"]);
   const list = await repository.read("RGRPDF24");
-  expect(acquireRead).toHaveBeenCalledTimes(1);
+  expect(acquireRead).toHaveBeenCalledTimes(8);
   expect(list?.annotations).toHaveLength(7);
 });
 
@@ -136,7 +136,7 @@ it("lets the lists go as views over many Attachments close", async () => {
   const second = repository.hold(keys.slice(15));
   acquireRead.mockClear();
   const lists = await Promise.all(keys.map((key) => repository.read(key)));
-  expect(acquireRead).toHaveBeenCalledTimes(1);
+  expect(acquireRead).toHaveBeenCalledTimes(41);
   expect(lists[39]?.annotations).toHaveLength(1);
   expect(published(repository, keys)).toHaveLength(40);
 

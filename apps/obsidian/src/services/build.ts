@@ -37,11 +37,11 @@ import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
-import { ExcerptDisplayService } from "./excerpt-image/display";
+import { ExcerptDisplays } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
-import { ExcerptImageService } from "./excerpt-image/service";
+import { ExcerptImages } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
@@ -105,8 +105,13 @@ export async function buildServices(
   const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
     bindMigration = resolve;
   });
-  let excerptImages: ExcerptImageService | undefined;
-  let excerptDisplays: ExcerptDisplayService | undefined;
+  // The excerpt service is registered before the PDF reader, so the reader
+  // hands its documents over through this one holder. A crop asks for a reader
+  // document per resolution, and answers detached while the holder is empty.
+  let reader: PdfAnnotationEditor | undefined;
+  const readers: ExcerptReaderDocuments = {
+    borrow: (path) => reader?.borrowDocument(path) ?? null,
+  };
   const runtime = buildRuntime(
     pluginLayer(
       plugin,
@@ -116,8 +121,8 @@ export async function buildServices(
         openPrompt: async () => (await migrationActions).openPrompt(),
       },
       {
-        excerptImages: () => excerptImages ?? null,
-        excerptDisplay: () => excerptDisplays ?? null,
+        openStore: () => openExcerptStore(plugin.app.appId),
+        readers,
       },
     ),
     stack,
@@ -130,14 +135,6 @@ export async function buildServices(
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
-
-  // The excerpt service is registered before the PDF reader, so the reader
-  // hands its documents over through this one holder. A crop asks for a reader
-  // document per resolution, and answers detached while the holder is empty.
-  let reader: PdfAnnotationEditor | undefined;
-  const readers: ExcerptReaderDocuments = {
-    borrow: (path) => reader?.borrowDocument(path) ?? null,
-  };
 
   return container
     .useValue({ runtime: () => runtime })
@@ -178,21 +175,8 @@ export async function buildServices(
     .useValue({
       libraryTagNames: () => libraryTagNamesOf(runtime),
     })
-    .use({
-      excerptImage: () =>
-        (excerptImages = new ExcerptImageService({
-          openStore: () => openExcerptStore(plugin.app.appId),
-          readers,
-        })),
-    })
-    .use({
-      excerptDisplay: ({ queryClient, excerptImage }) =>
-        (excerptDisplays = new ExcerptDisplayService({
-          queries: queryClient,
-          resolve: (request, signal) => excerptImage.resolve(request, signal),
-          stored: (request) => excerptImage.stored(request),
-        })),
-    })
+    .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
+    .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
     .use({
       attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
         new AttachmentResolver({

@@ -1,8 +1,10 @@
 import { abortable } from "@std/async/abortable";
 import { open, stat } from "node:fs/promises";
 
-import { getLogger } from "@/lib/log";
+import { Context, Effect } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { Service } from "@/services/service-base";
+import { serviceLayer } from "@/services/service-layer";
 
 import {
   excerptAnnotationRecord,
@@ -30,7 +32,24 @@ export {
 export type { ExcerptRequest } from "./contract";
 export { excerptRequest } from "./request";
 
-const logger = getLogger("excerpt-image");
+const logger = {
+  debug(message: string, fields: Record<string, unknown> = {}) {
+    Effect.runSync(
+      Effect.logDebug(message).pipe(
+        Effect.annotateLogs(fields),
+        withLogCategory("excerpt-image"),
+      ),
+    );
+  },
+  trace(message: string, fields: Record<string, unknown> = {}) {
+    Effect.runSync(
+      Effect.logTrace(message).pipe(
+        Effect.annotateLogs(fields),
+        withLogCategory("excerpt-image"),
+      ),
+    );
+  },
+};
 
 /** Size/mtime validation intentionally cannot detect a replacement with identical metadata. */
 export interface PdfStamp {
@@ -847,4 +866,19 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     logger.debug("Excerpt unavailable", { key });
     return { kind: "unavailable" };
   }
+}
+
+export class ExcerptImages extends Context.Service<
+  ExcerptImages,
+  ExcerptImageService
+>()("zotlit/excerpt-image/ExcerptImages") {}
+
+export function layerExcerptImages(options: {
+  openStore: () => Promise<ExcerptStore>;
+  readers: ExcerptReaderDocuments;
+}) {
+  return serviceLayer(ExcerptImages, {
+    key: "excerptImage",
+    make: Effect.sync(() => new ExcerptImageService(options)),
+  });
 }

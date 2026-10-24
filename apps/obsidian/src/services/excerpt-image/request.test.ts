@@ -219,6 +219,42 @@ describe("Saved excerpt request", () => {
         expect(request).toBeNull();
       }),
   );
+
+  it.effect(
+    "resolves to nothing through the Effect services where the data directory moves during the read",
+    () =>
+      Effect.gen(function* () {
+        const db = yield* fixtureDb();
+        const bridge = yield* acquireAsyncDisposable(() =>
+          Promise.resolve(openTestBridge()),
+        );
+        let started = false;
+        const requestOver = savedExcerptRequestOver({
+          reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            snapshot: Effect.sync(() => {
+              started = true;
+              return db.reads;
+            }),
+          }),
+          pref: {
+            current: Effect.sync(
+              () =>
+                ({
+                  dataDir: started ? "/other-zotero" : paths.dataDir,
+                  baseAttachmentPath: paths.baseAttachmentPath,
+                }) as ZoteroPrefSnapshot,
+            ),
+          },
+          bridge,
+        });
+
+        expect(
+          yield* Effect.promise(() =>
+            requestOver({ annotation, source: apiSource }),
+          ),
+        ).toBeNull();
+      }),
+  );
 });
 
 describe("Excerpt request verification", () => {

@@ -1,5 +1,5 @@
 import { MarkdownRenderChild } from "obsidian";
-import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 // The reading-mode surface of annotation hover: a rendered Durable Annotation
 // Link shows the Annotation it names.
 
@@ -10,6 +10,7 @@ import { Effect, Layer } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { acquireDisposable } from "@/lib/effect-scope";
 import { PluginHost } from "@/lib/plugin-host";
+import type { PluginHostShape } from "@/lib/plugin-host";
 import { isDraftMarkdown, markdownViewOf } from "@/lib/reading-view";
 
 import { AnnotationPopover } from "./service";
@@ -19,8 +20,7 @@ import type { AnnotationHoverRequest } from "./service";
 const LINK_SELECTOR = 'a.external-link[href^="zotero://open/"]';
 
 export interface AnnotationLinkReadingDeps {
-  app: App;
-  plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
+  host: Pick<PluginHostShape, "app" | "registerMarkdownPostProcessor">;
   /** What a hovered Durable Annotation Link shows. */
   show: (request: AnnotationHoverRequest) => void;
 }
@@ -44,7 +44,7 @@ export class AnnotationLinkReadingCore implements Disposable {
 
   constructor(deps: AnnotationLinkReadingDeps) {
     this.#deps = deps;
-    deps.plugin.registerMarkdownPostProcessor((el, ctx) =>
+    deps.host.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),
     );
   }
@@ -93,7 +93,7 @@ export class AnnotationLinkReadingCore implements Disposable {
     // within one link hovers it once.
     const related = event.relatedTarget as Node | null;
     if (related?.instanceOf(Node) && anchor.contains(related)) return;
-    const hoverParent = markdownViewOf(this.#deps.app, anchor);
+    const hoverParent = markdownViewOf(this.#deps.host.app, anchor);
     if (hoverParent === null) return;
     this.#deps.show({
       event,
@@ -114,8 +114,7 @@ export const layerAnnotationLinkReading = Layer.effectDiscard(
     yield* acquireDisposable(
       () =>
         new AnnotationLinkReadingCore({
-          app: host.app,
-          plugin: host,
+          host,
           show: (request) => void bridge.runPromise(popover.show(request)),
         }),
     );

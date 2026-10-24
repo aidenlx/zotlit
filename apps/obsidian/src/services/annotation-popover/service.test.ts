@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Layer, Stream } from "@/lib/effect";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -21,10 +22,12 @@ import type {
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import {
   EXCERPT_DISPLAY,
+  ExcerptDisplays,
   ExcerptDisplayService,
 } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
+import { taggedQueryClients } from "@/services/query-client/__fixtures__";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -56,11 +59,11 @@ async function harness(stack: AsyncDisposableStack) {
     new AnnotationPopoverCore({
       annotations,
       bridge,
-      excerptDisplay: () => ({
+      excerptDisplay: {
         open: () => {
           throw new Error("No hovered Annotation here has an Excerpt Image");
         },
-      }),
+      },
       excerptRequest: () =>
         Promise.reject(new Error("No Excerpt Image is asked for")),
       commentRenderer: () => (el, html) => {
@@ -148,10 +151,20 @@ describe("AnnotationPopover", () => {
       } as ZoteroPrefSnapshot),
     });
     const runtime = buildRuntime(
-      layerAnnotationPopover({ excerptDisplay: () => null }).pipe(
+      layerAnnotationPopover().pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(AnnotationRepository, repository),
+            Layer.succeed(
+              ExcerptDisplays,
+              stubService<ExcerptDisplayService>("ExcerptDisplays", {
+                open: () => {
+                  throw new Error(
+                    "No hovered Annotation here has an Excerpt Image",
+                  );
+                },
+              }),
+            ),
             Layer.succeed(ZoteroReads, reads),
             Layer.succeed(ZoteroPref, pref),
             Layer.succeed(ObsidianApp, {} as App),
@@ -184,6 +197,111 @@ describe("AnnotationPopover", () => {
     expect((await shownUnder(hoverParent)).textContent).toContain(
       "Shown through the layer",
     );
+  });
+
+  it("keeps a hover hidden before its layer read answers", async () => {
+    await using stack = new AsyncDisposableStack();
+    const annotation: AnnotationRecord = {
+      key: "LAYER002",
+      parentKey: "PDFLAYER",
+      type: "highlight",
+      text: "Hidden before the read",
+      comment: null,
+      color: "#ffd400",
+      pageLabel: "1",
+      sortIndex: "00000|000000|00000",
+      tags: [],
+      version: null,
+      lock: null,
+      position: { kind: "pdf-rects", pageIndex: 0, rects: [] },
+    };
+    const source: AnnotationSource = {
+      kind: "zotero-db",
+      database: { userID: 1, localUserKey: "user", serverID: "server" },
+      libraryID: 1,
+      libraryRevision: 1,
+    };
+    const held = Promise.withResolvers<{
+      source: AnnotationSource;
+      annotations: AnnotationRecord[];
+    }>();
+    const repository = stubService<AnnotationRepository["Service"]>(
+      "AnnotationRepository",
+      {
+        read: () => Effect.promise(() => held.promise),
+        hold: () => Effect.succeed({ [Symbol.dispose]: () => {} }),
+        annotationsChanged: Stream.never,
+      },
+    );
+    const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+      snapshot: Effect.die(new Error("No Excerpt Image is asked for")),
+    });
+    const pref = stubService<ZoteroPref["Service"]>("ZoteroPref", {
+      current: Effect.succeed({
+        dataDir: "/zotero",
+        baseAttachmentPath: null,
+      } as ZoteroPrefSnapshot),
+    });
+    const runtime = buildRuntime(
+      layerAnnotationPopover().pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(AnnotationRepository, repository),
+            Layer.succeed(
+              ExcerptDisplays,
+              stubService<ExcerptDisplayService>("ExcerptDisplays", {
+                open: () => {
+                  throw new Error(
+                    "No hovered Annotation here has an Excerpt Image",
+                  );
+                },
+              }),
+            ),
+            Layer.succeed(ZoteroReads, reads),
+            Layer.succeed(ZoteroPref, pref),
+            Layer.succeed(ObsidianApp, {} as App),
+          ),
+        ),
+      ),
+      stack,
+    );
+    await runtime.context();
+    const popover = runtime.runSync(AnnotationPopover);
+    const bridge = effectBridge(runtime);
+    const hoverParent: HoverParent = { hoverPopover: null };
+    const targetEl = document.body.appendChild(document.createElement("span"));
+    stack.defer(() => targetEl.remove());
+
+    vi.useFakeTimers();
+    try {
+      const completed = Promise.withResolvers<void>();
+      void bridge
+        .runPromise(
+          popover.show({
+            event: new MouseEvent("mouseover"),
+            hoverParent,
+            targetEl,
+            sourcePath: "note.md",
+            link: {
+              attachmentKey: "PDFLAYER",
+              annotationKey: "LAYER002",
+              pageLabel: null,
+              groupID: null,
+            },
+          }),
+        )
+        .then(completed.resolve, completed.reject);
+      vi.advanceTimersByTime(1000);
+      const shown = hoverParent.hoverPopover!;
+      shown.hide();
+      held.resolve({ source, annotations: [annotation] });
+      await completed.promise;
+
+      expect(hoverParent.hoverPopover).toBeNull();
+      expect(shown.hoverEl.textContent).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("redraws an open popover when the annotation changes", async () => {
@@ -243,11 +361,11 @@ describe("AnnotationPopover", () => {
           annotationsChanged: Stream.never,
         },
         bridge,
-        excerptDisplay: () => ({
+        excerptDisplay: {
           open: () => {
             throw new Error("No hovered Annotation here has an Excerpt Image");
           },
-        }),
+        },
         excerptRequest: () =>
           Promise.reject(new Error("No Excerpt Image is asked for")),
         commentRenderer: () => (el, html) => {
@@ -315,7 +433,8 @@ describe("AnnotationPopover with an Excerpt Image", () => {
     );
     const display = stack.use(
       new ExcerptDisplayService({
-        queries: queryClient,
+        queries: taggedQueryClients(queryClient),
+        bridge,
         resolve: (request, signal) => images.resolve(request, signal),
         stored: (request) => images.stored(request),
       }),
@@ -324,7 +443,7 @@ describe("AnnotationPopover with an Excerpt Image", () => {
       new AnnotationPopoverCore({
         annotations,
         bridge,
-        excerptDisplay: () => display,
+        excerptDisplay: display,
         excerptRequest: ({ annotation, source }) =>
           savedExcerptRequest({
             annotation,

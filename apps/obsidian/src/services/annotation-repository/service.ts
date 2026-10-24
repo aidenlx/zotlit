@@ -6,7 +6,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { filterTag } from "@/lib/effect-stream";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
-import type { ExcerptImageService } from "@/services/excerpt-image/service";
+import { ExcerptImages } from "@/services/excerpt-image/service";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { localApiPort } from "@/services/zotero-local-api/port";
@@ -348,17 +348,17 @@ export class AnnotationRepository extends Context.Service<
 >()("zotlit/annotation-repository/AnnotationRepository") {}
 
 export function layerAnnotationRepository(options: {
-  readonly excerptImages: () => Pick<ExcerptImageService, "stored"> | null;
   readonly now?: () => Temporal.Instant;
   readonly writeToken?: () => string;
 }): Layer.Layer<
   AnnotationRepository,
   never,
-  ZoteroReads | QueryClients | ZoteroLocalApi | ZoteroPref
+  ExcerptImages | ZoteroReads | QueryClients | ZoteroLocalApi | ZoteroPref
 > {
   return Layer.effect(
     AnnotationRepository,
     Effect.gen(function* () {
+      const images = yield* ExcerptImages;
       const reads = yield* ZoteroReads;
       const queries = yield* QueryClients;
       const api = yield* ZoteroLocalApi;
@@ -375,8 +375,6 @@ export function layerAnnotationRepository(options: {
       // no baseline here exactly as it has no image to replace there.
       const persistedExcerpt: AnnotationRepositoryCoreDeps["persistedExcerpt"] =
         async (annotation, source) => {
-          const images = options.excerptImages();
-          if (!images) return null;
           const request = await excerptRequest({ annotation, source });
           if (!request) return null;
           return (await images.stored(request))?.identity.fingerprint ?? null;

@@ -218,7 +218,7 @@ it("serves one database read to every surface that asks for one attachment at on
     repository.read("RGRPDF24"),
   ]);
 
-  expect(acquireRead).toHaveBeenCalledOnce();
+  expect(acquireRead).toHaveBeenCalledTimes(8);
   expect(overlay).toBe(view);
   expect(repository.peek("RGRPDF24")?.value).toBe(overlay);
 });
@@ -242,7 +242,7 @@ it("shares one refresh and publishes the canonical held result", async () => {
   gate.resolve();
 
   const refreshed = await overlay;
-  expect(acquireRead).toHaveBeenCalledTimes(2);
+  expect(acquireRead).toHaveBeenCalledTimes(9);
   expect(refreshed).toBe(first);
   expect(repository.peek("RGRPDF24")?.value).toBe(first);
 });

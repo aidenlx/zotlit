@@ -112,8 +112,13 @@ export function savedExcerptRequestOver(services: {
         acquireRead: () => acquireReadLease(services.reads, services.bridge),
       },
       paths: {
-        dataDir: pref.dataDir,
-        baseAttachmentPath: pref.baseAttachmentPath,
+        get dataDir() {
+          return services.bridge.runSync(services.pref.current).dataDir;
+        },
+        get baseAttachmentPath() {
+          return services.bridge.runSync(services.pref.current)
+            .baseAttachmentPath;
+        },
       },
     });
   };

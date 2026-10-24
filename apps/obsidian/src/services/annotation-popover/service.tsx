@@ -1,11 +1,10 @@
 // The Annotation Popover as an Effect service.
 import { Context, Effect, Layer } from "@/lib/effect";
 import { scopedBridge } from "@/lib/effect-bridge";
-import { withLogCategory } from "@/lib/effect-log";
 import { acquireDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
-import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
+import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -30,18 +29,20 @@ export class AnnotationPopover extends Context.Service<
   }
 >()("zotlit/annotation-popover/AnnotationPopover") {}
 
-export function layerAnnotationPopover(options: {
-  /** The Excerpt Image display, once the container has built it. */
-  readonly excerptDisplay: () => Pick<ExcerptDisplayService, "open"> | null;
-}): Layer.Layer<
+export function layerAnnotationPopover(): Layer.Layer<
   AnnotationPopover,
   never,
-  AnnotationRepository | ZoteroReads | ZoteroPref | ObsidianApp
+  | AnnotationRepository
+  | ExcerptDisplays
+  | ZoteroReads
+  | ZoteroPref
+  | ObsidianApp
 > {
   return Layer.effect(
     AnnotationPopover,
     Effect.gen(function* () {
       const repository = yield* AnnotationRepository;
+      const excerptDisplay = yield* ExcerptDisplays;
       const reads = yield* ZoteroReads;
       const pref = yield* ZoteroPref;
       const app = yield* ObsidianApp;
@@ -51,7 +52,7 @@ export function layerAnnotationPopover(options: {
           new AnnotationPopoverCore({
             annotations: repository,
             bridge,
-            excerptDisplay: options.excerptDisplay,
+            excerptDisplay,
             excerptRequest: savedExcerptRequestOver({ reads, pref, bridge }),
             commentRenderer: (owner, sourcePath) =>
               createCommentRenderer({
@@ -65,6 +66,6 @@ export function layerAnnotationPopover(options: {
         // The core catches read failures, and this starts its first read now.
         show: (request) => Effect.promise(() => core.show(request)),
       });
-    }).pipe(withLogCategory("annotation-popover")),
+    }),
   );
 }

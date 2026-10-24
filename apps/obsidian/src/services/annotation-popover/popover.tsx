@@ -44,11 +44,8 @@ export interface AnnotationPopoverCoreDeps {
     "read" | "hold" | "annotationsChanged"
   >;
   bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
-  /**
-   * The live Excerpt Image display the Annotation View's cards share, once the
-   * container has built it.
-   */
-  excerptDisplay: () => Pick<ExcerptDisplayService, "open"> | null;
+  /** The live Excerpt Image display the Annotation View's cards share. */
+  excerptDisplay: Pick<ExcerptDisplayService, "open">;
   /** The file inputs one saved Annotation's Excerpt Image resolves through. */
   excerptRequest: (input: {
     annotation: AnnotationRecord;
@@ -157,13 +154,9 @@ export class AnnotationPopoverCore implements Disposable {
           }
           if (list !== null && hasExcerptImage(annotation)) {
             if (excerpt === null) {
-              // The container may still be building the display. The popover
-              // then draws the Annotation's text without its image.
-              const opened = deps.excerptDisplay()?.open() ?? null;
-              if (opened !== null) {
-                subscriptions.defer(() => opened.release());
-                excerpt = opened;
-              }
+              const opened = deps.excerptDisplay.open();
+              subscriptions.defer(() => opened.release());
+              excerpt = opened;
             }
             if (excerpt !== null) {
               const demand = excerpt;

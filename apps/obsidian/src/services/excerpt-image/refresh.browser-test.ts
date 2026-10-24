@@ -9,7 +9,9 @@
 // Chromium canvas encoded as lossless WebP. Note-asset and Zotero-cache
 // survival need a vault and a Zotero data directory, so they are covered where
 // those exist — see `service.test.ts`.
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import { taggedQueryClients } from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { check } from "./__fixtures__/check";
@@ -164,8 +166,10 @@ async function live(options: {
     render: gate.render,
   });
   const queries = queryClientsFixture();
+  const bridge = openTestBridge();
   const display = new ExcerptDisplayService({
-    queries,
+    queries: taggedQueryClients(queries),
+    bridge,
     resolve: (request, signal) => service.resolve(request, signal),
     stored: (request) => {
       const read = service.stored(request);
@@ -212,6 +216,7 @@ async function live(options: {
     },
     async close() {
       await display[Symbol.asyncDispose]();
+      await bridge[Symbol.asyncDispose]();
       await queries[Symbol.asyncDispose]();
       await service[Symbol.asyncDispose]();
       store[Symbol.dispose]();

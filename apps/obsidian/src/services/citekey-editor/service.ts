@@ -170,7 +170,7 @@ export class CitekeyEditor extends Service<void> {
     // A Durable Annotation Link shows its Annotation on every hover.
     this.#annotationLinkHover = annotationLinkHoverExtension({
       showAnnotation: (request) =>
-        this.#bridge.runPromise(this.#annotationPopover.show(request)),
+        void this.#bridge.runPromise(this.#annotationPopover.show(request)),
     });
     this.ready = this.#load();
   }

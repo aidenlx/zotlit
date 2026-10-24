@@ -27,8 +27,12 @@ import type { CitationPopover } from "./citation-popover/service";
 import { layerCitationText } from "./citation-text/service";
 import type { CitationText } from "./citation-text/service";
 import { layerDatabaseActions } from "./database/actions";
-import type { ExcerptDisplayService } from "./excerpt-image/display";
-import type { ExcerptImageService } from "./excerpt-image/service";
+import { layerExcerptDisplays } from "./excerpt-image/display";
+import type { ExcerptDisplays } from "./excerpt-image/display";
+import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { layerExcerptImages } from "./excerpt-image/service";
+import type { ExcerptImages } from "./excerpt-image/service";
+import type { ExcerptStore } from "./excerpt-image/store";
 import { layerLibraryScopeCli } from "./library-scope/cli";
 import { layerLibraryScopeNotices } from "./library-scope/notices";
 import { layerLibraryScope } from "./library-scope/service";
@@ -89,13 +93,15 @@ import { workerClient } from "./zotero-reads/worker-client";
 export function pluginLayer(
   plugin: Plugin & CliHost,
   migration: TemplateMigrationOptions,
-  annotations: {
-    readonly excerptImages: () => Pick<ExcerptImageService, "stored"> | null;
-    readonly excerptDisplay: () => Pick<ExcerptDisplayService, "open"> | null;
+  excerpt: {
+    readonly openStore: () => Promise<ExcerptStore>;
+    readonly readers: ExcerptReaderDocuments;
   },
 ): Layer.Layer<
   | AnnotationRepository
   | AnnotationPopover
+  | ExcerptDisplays
+  | ExcerptImages
   | CitationText
   | CitationPopover
   | CitationIndex
@@ -120,9 +126,7 @@ export function pluginLayer(
 > {
   const services = Layer.mergeAll(
     layerCitationPopover.pipe(startingAs("CitationPopover")),
-    layerAnnotationPopover({
-      excerptDisplay: annotations.excerptDisplay,
-    }).pipe(startingAs("AnnotationPopover")),
+    layerAnnotationPopover().pipe(startingAs("AnnotationPopover")),
   ).pipe(
     Layer.provideMerge(layerCitationText().pipe(startingAs("CitationText"))),
     Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
@@ -139,9 +143,13 @@ export function pluginLayer(
       ),
     ),
     Layer.provideMerge(
-      layerAnnotationRepository({
-        excerptImages: annotations.excerptImages,
-      }).pipe(startingAs("AnnotationRepository")),
+      layerAnnotationRepository({}).pipe(startingAs("AnnotationRepository")),
+    ),
+    Layer.provideMerge(
+      layerExcerptDisplays.pipe(startingAs("ExcerptDisplays")),
+    ),
+    Layer.provideMerge(
+      layerExcerptImages(excerpt).pipe(startingAs("ExcerptImages")),
     ),
     Layer.provideMerge(
       layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),

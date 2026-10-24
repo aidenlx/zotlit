@@ -22,6 +22,7 @@ import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { AvailableExcerpt } from "@/services/excerpt-image/service";
+import { ExcerptImages } from "@/services/excerpt-image/service";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import { plainQueryClients } from "@/services/query-client/plain";
 import { layerQueryClients } from "@/services/query-client/service";
@@ -270,22 +271,25 @@ export async function setup(
       } as ZoteroPrefSnapshot),
     }),
   );
-  const excerptImages = persistedExcerpt
-    ? stubService<ExcerptImageService>("ExcerptImageService", {
-        stored: async ({ annotation, source }) => {
-          const fingerprint = await persistedExcerpt(annotation, source);
-          return fingerprint === null
-            ? null
-            : ({ identity: { fingerprint } } as AvailableExcerpt);
-        },
-      })
-    : undefined;
+  const excerptImages = stubService<ExcerptImageService>(
+    "ExcerptImageService",
+    {
+      stored: async ({ annotation, source }) => {
+        if (!persistedExcerpt) return null;
+        const fingerprint = await persistedExcerpt(annotation, source);
+        return fingerprint === null
+          ? null
+          : ({ identity: { fingerprint } } as AvailableExcerpt);
+      },
+    },
+  );
 
   const runtime = buildRuntime(
     Layer.mergeAll(
       Layer.succeed(ZoteroReads, readsService),
       layerQueryClients,
       Layer.succeed(ZoteroLocalApi, localApiService),
+      Layer.succeed(ExcerptImages, excerptImages),
       pref,
     ),
     stack,
@@ -298,7 +302,6 @@ export async function setup(
   const repositoryContext = await runtime.runPromise(
     Layer.buildWithScope(
       layerAnnotationRepository({
-        excerptImages: () => excerptImages ?? null,
         now: repositoryNow ?? (() => NOW),
         writeToken,
       }).pipe(Layer.provide(Layer.succeedContext(dependencies))),
