@@ -29,11 +29,11 @@ import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { Held } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
+import type { LocalApiPort } from "@/services/zotero-local-api/port";
 import type {
   LocalApiAnnotation,
   LocalApiFailure,
   LocalApiSource,
-  ZoteroLocalApiClient,
 } from "@/services/zotero-local-api/service";
 import {
   libraryPath,
@@ -520,7 +520,7 @@ export interface AnnotationRepositoryDeps {
     "client" | "invalidate" | "keysUnder" | "peek" | "read"
   >;
   localApi: Pick<
-    ZoteroLocalApiClient,
+    LocalApiPort,
     | "authorizedSend"
     | "demandSource"
     | "listAnnotations"

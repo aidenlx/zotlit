@@ -215,12 +215,13 @@ export async function setup(
 
   const {
     client: localApi,
+    service: localApiService,
+    bridge,
     requests,
     serverEvents,
     prefEvents,
-  } = localApiClient(answers, clientOptions);
+  } = await localApiClient(answers, clientOptions);
   stack.use(localApi);
-  await localApi.ready;
 
   const queryClient = queryClientsFixture();
   stack.use(queryClient);
@@ -243,6 +244,8 @@ export async function setup(
     acquireRead,
     queryClient,
     localApi,
+    localApiService,
+    bridge,
     requests,
     serverEvents,
     prefEvents,

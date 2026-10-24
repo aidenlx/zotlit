@@ -25,11 +25,7 @@ import {
   viewport,
 } from "./__fixtures__";
 import type { readerSurfaces } from "./__fixtures__";
-import {
-  ingestCapability,
-  selectMarkHandles,
-  setCommenting,
-} from "./reader-surface-state";
+import { ingestCapability, selectMarkHandles } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
 /** Every notice the reader shows, by its text. */
@@ -1105,18 +1101,15 @@ it("takes no typed name into a tag draft a database switch hid", async () => {
   expect(h.writes()).toEqual([]);
 });
 
-it("opens no tag editor while no tag session can start", async () => {
+it("closes the mark editor when no tag session can start", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
-  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  // Zotero quits, and the repository learns it before the reader does.
+  // The probe settles the reader before a tag gesture can start.
   h.zotero.quit();
   await h.repository.probe();
 
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
-
-  expect(h.store.getState().floating).toMatchObject({ tagging: false });
-  expect(tagInput(popup.hoverEl)).toBeNull();
+  expect(h.popup()).toBeNull();
+  expect(h.store.getState().floating).toEqual({ kind: "none" });
 });
 
 it("binds the held tags panel to Save tags and Discard, and keeps it through a refresh", async () => {
@@ -1183,19 +1176,15 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
   expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]);
 });
 
-it("falls back to the comment field, and closes the editor, when no draft can be started", async () => {
+it("closes the editor when no draft can be started", async () => {
   await using h = await setup();
   click(h.page.div, ON_WORD);
-  // Zotero quits, and the repository learns it before the reader does.
+  // The probe settles the reader before an editor can start.
   h.zotero.quit();
   await h.repository.probe();
 
-  setCommenting(h.store, true);
-
-  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  expect(commentView(popup.hoverEl)).toBeNull();
-  expect(commentField(popup.hoverEl)).not.toBeNull();
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(h.popup()).toBeNull();
+  expect(h.store.getState().floating).toEqual({ kind: "none" });
 });
 
 /**

@@ -18,9 +18,9 @@ import {
   Deferred,
   Effect,
   Layer,
+  Stream,
   SubscriptionRef,
 } from "@/lib/effect";
-import type { Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
 import { changesUntil } from "@/lib/effect-stream";
@@ -101,6 +101,19 @@ export class ZoteroPref extends Context.Service<
     listProfiles(): Effect.Effect<ZoteroProfileInfo[]>;
   }
 >()("zotlit/zotero-pref/ZoteroPref") {}
+
+/** Fires when the resolved paths may have moved: the prefs or the data directory override changed. */
+export function resolvedChanged(
+  pref: Pick<ZoteroPref["Service"], "changes">,
+): Stream.Stream<void> {
+  return pref.changes.pipe(
+    Stream.changesWith(
+      (a, b) => a.prefs === b.prefs && a.dataDirOverride === b.dataDirOverride,
+    ),
+    Stream.drop(1),
+    Stream.map(() => undefined),
+  );
+}
 
 export const layerZoteroPref = Layer.effect(
   ZoteroPref,

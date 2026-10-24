@@ -3,6 +3,7 @@ import type { Plugin } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
 import { Layer } from "@/lib/effect";
+import { nodeFetch } from "@/lib/node-fetch";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { PluginHost } from "@/lib/plugin-host";
 import { openLibraryView } from "@/views/library/register";
@@ -57,6 +58,9 @@ import { layerTemplate } from "./template/service";
 import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
+import { layerZoteroLocalApi } from "./zotero-local-api/service";
+import type { ZoteroLocalApi } from "./zotero-local-api/service";
+import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
 import type { ZoteroPref } from "./zotero-pref/service";
 import { layerZoteroReads } from "./zotero-reads/service";
@@ -97,6 +101,7 @@ export function pluginLayer(
   | PandocEngine
   | NoteIndex
   | LocalServer
+  | ZoteroLocalApi
   | Template
   | TemplateMigration
 > {
@@ -118,6 +123,16 @@ export function pluginLayer(
     ),
     Layer.provideMerge(
       layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),
+    ),
+    Layer.provideMerge(
+      // The Remembered Write Authorization lives in Obsidian's Keychain,
+      // where the user can see and delete it — never in synced settings.
+      layerZoteroLocalApi({
+        fetch: nodeFetch,
+        credentials: new SecretWriteAuthorizationStore({
+          secrets: plugin.app.secretStorage,
+        }),
+      }).pipe(startingAs("ZoteroLocalApi")),
     ),
     Layer.provideMerge(layerLocalServer.pipe(startingAs("LocalServer"))),
     Layer.provideMerge(

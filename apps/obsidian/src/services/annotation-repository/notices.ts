@@ -5,7 +5,7 @@
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
-import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
+import type { LocalApiPort } from "@/services/zotero-local-api/port";
 
 import {
   allowEditingNotice,
@@ -70,7 +70,7 @@ export interface CapabilityNoticesDeps {
    * What a refused write, a swapped database and a retired mark are heard on,
    * and the one request Allow editing sends.
    */
-  writes: Pick<ZoteroLocalApiClient, "authorize" | "on">;
+  writes: Pick<LocalApiPort, "authorize" | "on">;
   /** Reveals the "Zotero editing" settings row. */
   openEditingSettings: () => void;
   /** Whether an Annotation View on screen already shows this card. */

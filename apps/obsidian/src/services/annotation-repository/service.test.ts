@@ -1519,15 +1519,19 @@ it("retains a paused draft until an explicit save after authorization returns", 
   useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
-    const { repository, localApi, requests } = await writable(stack, {
-      authorize: () => authorized({ remember: true }),
-      item: () =>
-        annotationItem(
-          afterWrite("PUPR5FG5", { comment: "Keep these words", version: 20 }),
-        ),
-    });
+    const { repository, localApi, localApiService, bridge, requests } =
+      await writable(stack, {
+        authorize: () => authorized({ remember: true }),
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", {
+              comment: "Keep these words",
+              version: 20,
+            }),
+          ),
+      });
     repository.editTextField("comment", "PUPR5FG5", "Keep these words");
-    await localApi.forgetAuthorization();
+    await bridge.runPromise(localApiService.forgetAuthorization());
     repository.editTextField("comment", "PUPR5FG5", "Blocked typing");
     expect(repository.textDraftFor("comment", "PUPR5FG5")?.text).toBe(
       "Keep these words",
@@ -1564,22 +1568,25 @@ it("saves text typed during a held draft's save once that save lands", async () 
     const first = Promise.withResolvers<Response>();
     const submitted: string[] = [];
     let version = 20;
-    const { repository, localApi } = await writable(stack, {
-      authorize: () => authorized({ remember: true }),
-      write: (request) => {
-        submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
-        return submitted.length === 1 ? first.promise : writeAccepted();
+    const { repository, localApi, localApiService, bridge } = await writable(
+      stack,
+      {
+        authorize: () => authorized({ remember: true }),
+        write: (request) => {
+          submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
+          return submitted.length === 1 ? first.promise : writeAccepted();
+        },
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", {
+              comment: submitted.at(-1),
+              version: version++,
+            }),
+          ),
       },
-      item: () =>
-        annotationItem(
-          afterWrite("PUPR5FG5", {
-            comment: submitted.at(-1),
-            version: version++,
-          }),
-        ),
-    });
+    );
     repository.editTextField("comment", "PUPR5FG5", "Held words");
-    await localApi.forgetAuthorization();
+    await bridge.runPromise(localApiService.forgetAuthorization());
     await localApi.authorize();
 
     const saving = repository.submitTextField("comment", "PUPR5FG5");
@@ -5913,10 +5920,13 @@ it("hides an old database's tag draft when the database switches", async () => {
 it("holds a tag draft when editing becomes unavailable, until Save tags after it returns", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-  const { repository, localApi } = await writable(stack, zotero.answers);
+  const { repository, localApi, localApiService, bridge } = await writable(
+    stack,
+    zotero.answers,
+  );
 
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo"]);
-  await localApi.forgetAuthorization();
+  await bridge.runPromise(localApiService.forgetAuthorization());
   expect(repository.tagDraftFor("PUPR5FG5")?.manualSave).toBe(true);
   // The editor closes as editing goes, and adds the text still typed first.
   repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
@@ -6086,9 +6096,12 @@ it("discards the tag draft with the comment draft when the Annotation is deleted
 it("discards a held tag draft and keeps the tags Zotero holds", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
-  const { repository, localApi } = await writable(stack, zotero.answers);
+  const { repository, localApiService, bridge } = await writable(
+    stack,
+    zotero.answers,
+  );
   repository.editTags("PUPR5FG5", ["figure"]);
-  await localApi.forgetAuthorization();
+  await bridge.runPromise(localApiService.forgetAuthorization());
   await repository.submitTags("PUPR5FG5", { automatic: true });
 
   repository.discardTagDraft("PUPR5FG5");

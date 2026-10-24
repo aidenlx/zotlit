@@ -4,7 +4,7 @@ import type { ManagedRuntime } from "@/lib/effect";
 import { isScopeClosed } from "@/lib/effect-scope";
 
 import type { PrefValue } from "./prefs-file";
-import { ZoteroPref } from "./service";
+import { resolvedChanged, ZoteroPref } from "./service";
 import type { ZoteroPrefSnapshot, ZoteroProfileInfo } from "./service";
 
 export interface PlainZoteroPref extends Omit<ZoteroPrefSnapshot, "prefs"> {
@@ -79,13 +79,6 @@ export function plainZoteroPref(
       Stream.drop(1),
       Stream.map(() => undefined),
     ),
-    "resolved-changed": pref.changes.pipe(
-      Stream.changesWith(
-        (a, b) =>
-          a.prefs === b.prefs && a.dataDirOverride === b.dataDirOverride,
-      ),
-      Stream.drop(1),
-      Stream.map(() => undefined),
-    ),
+    "resolved-changed": resolvedChanged(pref),
   };
 }

@@ -22,7 +22,7 @@ import {
   SERVER_ID,
 } from "./__fixtures__";
 import type { ClientOptions, ZoteroAnswers } from "./__fixtures__";
-import type { ZoteroLocalApiClient } from "./service";
+import type { LocalApiPort } from "./port";
 
 /** One annotation of the personal library, as a write route names it. */
 const ITEM_PATH = "/api/users/0/items/PUPR5FG5";
@@ -58,10 +58,13 @@ it("asks Zotero under the one Client Name, and only when a gesture asks", async 
 
 it("refuses an Allow, and keeps no key to send", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, requests, credentials } = await setup(stack, {
-    authorize: () => authorized({ remember: false }),
-    write: () => writeAccepted(),
-  });
+  const { client, service, bridge, requests, credentials } = await setup(
+    stack,
+    {
+      authorize: () => authorized({ remember: false }),
+      write: () => writeAccepted(),
+    },
+  );
 
   const grant = await client.authorize();
   const sent = requests.length;
@@ -74,7 +77,7 @@ it("refuses an Allow, and keeps no key to send", async () => {
   expect(grant).toEqual({ failure: { kind: "not-remembered" } });
   // Nothing was written down, and the session still has to ask.
   expect(credentials.writes).toEqual([]);
-  expect(await client.remembered()).toBe(false);
+  expect(await bridge.runPromise(service.remembered())).toBe(false);
   expect(capabilityInput(client).authorized).toBe(false);
   // The write is refused here: the key from Allow never reaches the wire.
   expect(write).toEqual({ failure: { kind: "unauthorized" } });
@@ -353,7 +356,7 @@ it("announces a swapped Zotero database from the probe that adopts it", async ()
 
 it("invalidates the record keyless when Zotero rejects the key", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, credentials } = await setup(
+  const { client, service, bridge, credentials } = await setup(
     stack,
     { write: () => keyRejected() },
     { key: "5ixBzUhQfLu8i8RIhU6OEzENW4pAITLf" },
@@ -370,7 +373,7 @@ it("invalidates the record keyless when Zotero rejects the key", async () => {
   expect(credentials.writes).toEqual([{ serverID: SERVER_ID }]);
   expect(credentials.record).toEqual({ serverID: SERVER_ID });
   expect(capabilityInput(client).authorized).toBe(false);
-  expect(await client.remembered()).toBe(false);
+  expect(await bridge.runPromise(service.remembered())).toBe(false);
 });
 
 it("serves two presses of Allow editing with one request", async () => {
@@ -447,7 +450,7 @@ it("answers a write with no session without reaching Zotero", async () => {
 
 it("drops the Remembered Authorization when the settings row forgets it", async () => {
   await using stack = new AsyncDisposableStack();
-  const { client, credentials } = await setup(
+  const { client, service, bridge, credentials } = await setup(
     stack,
     {},
     {
@@ -457,11 +460,11 @@ it("drops the Remembered Authorization when the settings row forgets it", async 
   await client.probe();
 
   expect(capabilityInput(client).authorized).toBe(true);
-  await client.forgetAuthorization();
+  await bridge.runPromise(service.forgetAuthorization());
 
   expect(credentials.record).toEqual({ serverID: SERVER_ID });
   expect(capabilityInput(client).authorized).toBe(false);
-  expect(await client.remembered()).toBe(false);
+  expect(await bridge.runPromise(service.remembered())).toBe(false);
 });
 
 it("disables editing when a remembered grant was removed outside ZotLit", async () => {
@@ -495,7 +498,7 @@ function atTheDialog(requests: readonly { url: URL }[]): Promise<void> {
 }
 
 /** The probe half of what the Editing Capability is computed from. */
-function capabilityInput(client: ZoteroLocalApiClient) {
+function capabilityInput(client: LocalApiPort) {
   const state = client.state;
   return { authorized: state.kind === "available" && state.authorized };
 }
@@ -505,8 +508,7 @@ async function setup(
   answers: ZoteroAnswers = {},
   options: ClientOptions = {},
 ) {
-  const harness = localApiClient(answers, options);
+  const harness = await localApiClient(answers, options);
   stack.use(harness.client);
-  await harness.client.ready;
   return harness;
 }

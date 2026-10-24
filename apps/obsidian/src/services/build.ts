@@ -5,7 +5,6 @@ import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
@@ -78,10 +77,11 @@ import { plainUseLedger } from "./use-ledger/plain";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
-import { ZoteroLocalApiClient } from "./zotero-local-api/service";
-import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
+import { localApiPort } from "./zotero-local-api/port";
+import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
 import { plainZoteroReads } from "./zotero-reads/plain";
+import { ZoteroReads } from "./zotero-reads/service";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -208,20 +208,7 @@ export async function buildServices(
           ).getBasePath(),
         }),
     })
-    .use({
-      zoteroLocalApi: ({ zoteroPref, localServer }) =>
-        new ZoteroLocalApiClient({
-          runtime,
-          fetch: nodeFetch,
-          zoteroPref,
-          localServer,
-          // The Remembered Write Authorization lives in Obsidian's Keychain,
-          // where the user can see and delete it — never in synced settings.
-          credentials: new SecretWriteAuthorizationStore({
-            secrets: plugin.app.secretStorage,
-          }),
-        }),
-    })
+    .useValue({ zoteroLocalApi: () => runtime.runSync(ZoteroLocalApi) })
     .use({
       annotationRepository: ({
         zoteroReads,
@@ -234,7 +221,7 @@ export async function buildServices(
           runtime,
           db: zoteroReads,
           queryClient,
-          localApi: zoteroLocalApi,
+          localApi: localApiPort(zoteroLocalApi, bridge),
           // A session's first read of an Attachment has no list that stood
           // before it to compare against, so it is compared against the image
           // this device persists for the Annotation instead — the display's own
@@ -259,7 +246,7 @@ export async function buildServices(
       capabilityNotices: ({ annotationRepository, zoteroLocalApi }) =>
         new CapabilityNotices({
           capabilities: annotationRepository,
-          writes: zoteroLocalApi,
+          writes: localApiPort(zoteroLocalApi, bridge),
           openEditingSettings: () =>
             revealSetting(
               plugin.app,
@@ -279,7 +266,6 @@ export async function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
-        zoteroReads,
         libraryTagNames,
         noteIndex,
         settings,
@@ -288,7 +274,11 @@ export async function buildServices(
           recordRead: ({ attachmentKey, itemKey, serverID, instant }) => {
             useLedger.record(itemKey, "read", instant);
             void writeReadUse(
-              { reads: zoteroReads, api: zoteroLocalApi },
+              {
+                reads: runtime.runSync(ZoteroReads),
+                bridge,
+                api: zoteroLocalApi,
+              },
               { attachmentKey, instant, serverID },
             );
           },
