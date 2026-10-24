@@ -20,6 +20,8 @@ import {
 } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
@@ -65,9 +67,21 @@ import {
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 export interface ExplorerViewDeps extends TemplateDataDeps {
-  zoteroReads: Pick<PlainZoteroReads, "state" | "reads" | "on" | "acquireRead">;
+  runtime: SubscriptionRuntime;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    | "state"
+    | "reads"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "acquireRead"
+  >;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   templates: Pick<
     PlainTemplate,
     "javascriptTemplatesEnabled" | "render" | "renderCitation"
@@ -523,7 +537,9 @@ export class TemplateDataExplorerView extends ItemView {
       ),
     );
     cleanup.defer(
-      this.#deps.zoteroReads.on("changed", () => this.#session.refresh()),
+      subscribe(this.#deps.runtime, this.#deps.zoteroReads["changed"], () =>
+        this.#session.refresh(),
+      ),
     );
     this.#mount();
     this.#cleanup = cleanup.move();

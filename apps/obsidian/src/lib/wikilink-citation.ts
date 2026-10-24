@@ -1,5 +1,3 @@
-// The shared core that derives Citations from Literature Note wikilinks.
-
 import {
   formatPandocCitation,
   PandocCitationError,
@@ -9,7 +7,10 @@ import type {
   PandocCitationForm,
   PandocCitationItem,
 } from "@zotlit/templates/pandoc-citation";
+// The shared core that derives Citations from Literature Note wikilinks.
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import type { PlainPluginSettings } from "@/services/settings/plain";
@@ -290,11 +291,12 @@ export class WikilinkDisplaySettings {
    * @returns the unsubscribe.
    */
   watch(
-    settings: Pick<PlainPluginSettings, "subscribe">,
+    runtime: SubscriptionRuntime,
+    settings: Pick<PlainPluginSettings, "changes">,
     redraw: () => void,
   ): () => void {
     let seeded = false;
-    return settings.subscribe((next) => {
+    return subscribe(runtime, settings.changes, (next) => {
       const seeding = !seeded;
       seeded = true;
       if (!next) return;

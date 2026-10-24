@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { buildLibraryScope } from "@/services/library-scope/__fixtures__";
 import { plainPluginSettings } from "@/services/settings/plain";
@@ -11,7 +11,7 @@ import { plainProfile } from "@/services/profile/plain";
 
 export async function profileServiceFixture(
   files: Record<string, string> = {},
-  reads?: Pick<PlainZoteroReads, "reads" | "on">,
+  reads?: Pick<PlainZoteroReads, "reads" | "changed" | "degraded" | "refresh-failed" | "refreshing" | "db-file-missing" | "refresh-requested">,
   context = Context.empty(),
 ) {
   await using stack = new AsyncDisposableStack();
@@ -24,12 +24,12 @@ export async function profileServiceFixture(
   const libraryScope = await buildLibraryScope({ settings,
     reads: reads ?? ({
       reads: { Libraries: () => Effect.succeed([{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }]) },
-      on: () => () => {},
+      changed: Stream.empty, degraded: Stream.empty, "refresh-failed": Stream.empty, refreshing: Stream.empty, "db-file-missing": Stream.empty, "refresh-requested": Stream.empty,
     } as unknown as PlainZoteroReads),
   }, stack);
   const cleanup = stack.move();
   return {
-    app: host.app, vault: host.vault, settings, template, profile, libraryScope, host,
+    runtime, app: host.app, vault: host.vault, settings, template, profile, libraryScope, host,
     indexNotes: () => host.metadataCache.announceAll(),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };

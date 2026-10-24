@@ -1,6 +1,8 @@
 import { expect } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import {
@@ -44,11 +46,15 @@ it.effect(
       yield* Effect.promise(() => f.plain.whenResolved());
       const seen: string[] = [];
       let notifications = 0;
-      const off = f.plain.subscribe((state) => {
-        seen.push(state.revision!);
-        if (seen.length === 1) throw new Error("listener failed");
-      });
-      const offEvent = f.plain.on("changed", () => {
+      const off = subscribe(
+        f.runtime,
+        Stream.drop(f.plain.changes, 1),
+        (state) => {
+          seen.push(state.revision!);
+          if (seen.length === 1) throw new Error("listener failed");
+        },
+      );
+      const offEvent = subscribe(f.runtime, f.plain["changed"], () => {
         notifications++;
         if (notifications === 1) throw new Error("event listener failed");
       });

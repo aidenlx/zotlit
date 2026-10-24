@@ -2,6 +2,7 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { Effect, Queue, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { zoteroPrefFixture } from "./__fixtures__";
@@ -23,8 +24,12 @@ it.effect(
       );
       const plain = plainZoteroPref(f.runtime);
       const received: string[] = [];
-      const unsubscribe = plain.subscribe(() => received.push("change"));
-      const stopEvent = plain.on("resolved-changed", () =>
+      const unsubscribe = subscribe(
+        f.runtime,
+        Stream.drop(plain.changes, 1),
+        () => received.push("change"),
+      );
+      const stopEvent = subscribe(f.runtime, plain["resolved-changed"], () =>
         received.push("event"),
       );
       // No intervening adapter read: the retained snapshot must include this write.
@@ -50,10 +55,14 @@ it.effect(
       expect(yield* Effect.promise(() => plain.listProfiles())).toEqual([
         { name: "Research", dir: "/profile", isDefault: true },
       ]);
-      const stopLate = plain.subscribe(() => received.push("late"));
+      const stopLate = subscribe(f.runtime, Stream.drop(plain.changes, 1), () =>
+        received.push("late"),
+      );
       const lateEvents = (
         ["changed", "data-dir-changed", "resolved-changed"] as const
-      ).map((event) => plain.on(event, () => received.push(event)));
+      ).map((event) =>
+        subscribe(f.runtime, plain[event], () => received.push(event)),
+      );
       stopLate();
       for (const stop of lateEvents) stop();
       unsubscribe();
@@ -72,12 +81,16 @@ it.effect(
       const received: string[] = [];
       const delivered = yield* Queue.unbounded<void>();
       const run = Effect.runSyncWith(yield* Effect.context<never>());
-      const unsubscribe = plain.subscribe((next) => {
-        received.push(next.dataDir);
-        if (received.length === 1) throw new Error("listener failed");
-        if (next.dataDir === "/library-two")
-          run(Queue.offer(delivered, undefined));
-      });
+      const unsubscribe = subscribe(
+        f.runtime,
+        Stream.drop(plain.changes, 1),
+        (next) => {
+          received.push(next.dataDir);
+          if (received.length === 1) throw new Error("listener failed");
+          if (next.dataDir === "/library-two")
+            run(Queue.offer(delivered, undefined));
+        },
+      );
       plain.setDataDir("/library-one");
       plain.setDataDir("/library-two");
       yield* Queue.take(delivered);
@@ -104,10 +117,14 @@ it.effect("provides plain reads, Promises, and cancellable subscriptions", () =>
     const received: string[] = [];
     const delivered = yield* Queue.unbounded<void>();
     const run = Effect.runSyncWith(yield* Effect.context<never>());
-    const unsubscribe = plain.subscribe((next) => {
-      received.push(next.dataDir);
-      run(Queue.offer(delivered, undefined));
-    });
+    const unsubscribe = subscribe(
+      f.runtime,
+      Stream.drop(plain.changes, 1),
+      (next) => {
+        received.push(next.dataDir);
+        run(Queue.offer(delivered, undefined));
+      },
+    );
     plain.setDataDir("/library-one");
     yield* Queue.take(delivered);
     unsubscribe();
@@ -137,9 +154,11 @@ it.effect(
       const resolved = yield* Queue.unbounded<void>();
       const run = Effect.runSyncWith(yield* Effect.context<never>());
       const stops = [
-        plain.on("changed", () => events.push("prefs")),
-        plain.on("data-dir-changed", () => events.push("data")),
-        plain.on("resolved-changed", () => {
+        subscribe(f.runtime, plain.changed, () => events.push("prefs")),
+        subscribe(f.runtime, plain["data-dir-changed"], () =>
+          events.push("data"),
+        ),
+        subscribe(f.runtime, plain["resolved-changed"], () => {
           run(Queue.offer(resolved, undefined));
         }),
       ];

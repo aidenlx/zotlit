@@ -4,6 +4,7 @@ import { MarkdownView, TFile } from "obsidian";
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import {
@@ -91,6 +92,7 @@ function setup() {
     register: vi.fn(),
   } as unknown as Plugin;
   const deps = {
+    runtime: testRuntime(),
     webWorkbenchEnabled: true,
     app,
     // The classifier reads a filename only inside the template folder.

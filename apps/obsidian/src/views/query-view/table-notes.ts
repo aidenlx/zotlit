@@ -12,6 +12,8 @@ import type { App, TFile } from "obsidian";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { processLiveFrontMatter } from "@/lib/live-text";
 import type { LiveTextApp } from "@/lib/live-text";
 import {
@@ -180,15 +182,21 @@ export interface LiteratureNotes {
 }
 
 export interface LiteratureNotesDeps extends InteractiveCreationDeps {
+  runtime: SubscriptionRuntime;
   app: App & LiveTextApp;
   noteIndex: Pick<
     PlainNoteIndex,
-    "getNotesByItemKey" | "getIndexedItemKeys" | "getPropertyNames" | "on"
+    | "getNotesByItemKey"
+    | "getIndexedItemKeys"
+    | "getPropertyNames"
+    | "changed"
+    | "indexed"
+    | "frontmatter-changed"
   >;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "replacedKeys">;
-  profile: Pick<PlainProfile, "on">;
-  template: Pick<PlainTemplate, "on">;
+  profile: Pick<PlainProfile, "changed">;
+  template: Pick<PlainTemplate, "compile-status-changed">;
   zoteroReads: Pick<PlainZoteroReads, "reads">;
 }
 
@@ -223,16 +231,16 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   // their subscriptions need no end.
   let memo = freshMemo();
   const events = createNanoEvents<VaultEvents>();
-  deps.noteIndex.on("changed", () => {
+  subscribe(deps.runtime, deps.noteIndex["changed"], () => {
     memo = freshMemo();
     events.emit("changed");
   });
   // The Full Scan reports no `changed` for each note it finds.
-  deps.noteIndex.on("indexed", () => {
+  subscribe(deps.runtime, deps.noteIndex["indexed"], () => {
     memo = freshMemo();
     events.emit("changed");
   });
-  deps.noteIndex.on("frontmatter-changed", (file) => {
+  subscribe(deps.runtime, deps.noteIndex["frontmatter-changed"], (file) => {
     // A note's own frontmatter, its Profile stamp among it, decides what its
     // Profile replaces; the other notes keep theirs.
     memo = {
@@ -247,8 +255,12 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     memo = { ...memo, replaced: new Map() };
     events.emit("frontmatter-changed");
   };
-  deps.profile.on("changed", profilesChanged);
-  deps.template.on("compile-status-changed", profilesChanged);
+  subscribe(deps.runtime, deps.profile["changed"], profilesChanged);
+  subscribe(
+    deps.runtime,
+    deps.template["compile-status-changed"],
+    profilesChanged,
+  );
   // A read of what a note's Profile replaces settles after the cell asked;
   // the cells read again once for all that settle together.
   let telling = false;

@@ -1,5 +1,6 @@
 import type { App, Plugin } from "obsidian";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
@@ -23,18 +24,35 @@ type ReferencesPlugin = Pick<
 >;
 
 export interface ReferencesRegistrationDeps {
+  runtime: SubscriptionRuntime;
   profile: ProfileReader;
   app: App;
-  db: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state" | "on">;
+  db: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   citationIndex: PlainCitationIndex;
   citationLookup: ReferencesViewDeps["citationLookup"];
   libraryScope: Pick<PlainLibraryScope, "current">;
   citationText: CitationText;
   citekeyEditor: CitekeyEditor;
-  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "subscribe" | "decline">;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "decline">;
   bibliographyRender: Pick<
     PlainBibliographyRender,
-    "render" | "on" | "vaultPresentation"
+    | "render"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
+    | "vaultPresentation"
   >;
 }
 
@@ -43,6 +61,7 @@ export function registerReferencesView(
   deps: ReferencesRegistrationDeps,
 ): void {
   const viewDeps: ReferencesViewDeps = {
+    runtime: deps.runtime,
     app: deps.app,
     profile: deps.profile,
     db: deps.db,

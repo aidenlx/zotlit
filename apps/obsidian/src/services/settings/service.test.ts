@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, vi } from "vitest";
 
 import { Effect, Fiber, Logger, Queue } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 
@@ -273,7 +274,9 @@ describe("PluginSettings loading", () => {
     Effect.gen(function* () {
       const { service } = yield* makeService();
       const seen: (object | null)[] = [];
-      const unsub = service.subscribe((v) => seen.push(v));
+      const unsub = subscribe(service.runtime, service.changes, (v) =>
+        seen.push(v),
+      );
       expect(seen).toEqual([defaults]);
       yield* Effect.promise(() => service.loaded);
       expect(seen[0]).toEqual(defaults);
@@ -302,10 +305,10 @@ describe("PluginSettings loading", () => {
       Effect.gen(function* () {
         const { service } = yield* makeService();
         const seen: (object | null)[] = [];
-        service.subscribe(() => {
+        subscribe(service.runtime, service.changes, () => {
           throw new Error("boom");
         });
-        service.subscribe((v) => seen.push(v));
+        subscribe(service.runtime, service.changes, (v) => seen.push(v));
         yield* Effect.promise(() =>
           expect(service.loaded).resolves.toEqual(defaults),
         );
@@ -318,7 +321,7 @@ describe("PluginSettings loading", () => {
     Effect.gen(function* () {
       const { service, plugin } = yield* makeService();
       yield* Effect.promise(() => service.loaded);
-      service.subscribe(() => {
+      subscribe(service.runtime, service.changes, () => {
         throw new Error("boom");
       });
       expect(() => service.update({ "server.hostname": "/x" })).not.toThrow();
@@ -1266,7 +1269,7 @@ describe("PluginSettings broken overrides", () => {
       Effect.gen(function* () {
         const { service } = yield* makeBrokenService();
         const seen: (object | null)[] = [];
-        service.subscribe((v) => seen.push(v));
+        subscribe(service.runtime, service.changes, (v) => seen.push(v));
         yield* Effect.promise(() => service.loaded);
 
         const effective = {

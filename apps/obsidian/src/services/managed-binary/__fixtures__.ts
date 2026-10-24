@@ -32,7 +32,7 @@ export async function buildManagedBinary<
   );
   await runtime.context();
   const service = runtime.runSync(tag);
-  return plainManagedBinary(runtime, service);
+  return Object.assign(plainManagedBinary(runtime, service), { runtime });
 }
 
 /** A disposable test owner around the plain adapter, which has no lifecycle API. */

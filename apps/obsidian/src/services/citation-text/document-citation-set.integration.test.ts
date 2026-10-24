@@ -6,7 +6,9 @@ import type { CachedMetadata, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { Stream } from "@/lib/effect";
 import { themeHook } from "@/lib/theme-hooks";
 import {
   annotationRows,
@@ -625,6 +627,7 @@ function openText(
   const { xml: styleXml, observeInput } =
     typeof style === "string" ? { xml: style, observeInput: undefined } : style;
   return new CitationText({
+    runtime: testRuntime(),
     openDocuments: new OpenDocumentsStub(),
     profile: profileReader(),
     app,
@@ -644,7 +647,10 @@ function openText(
           hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
         };
       },
-      on: () => () => undefined,
+      changed: Stream.empty,
+      settled: Stream.empty,
+      invalidated: Stream.empty,
+      "style-missing": Stream.empty,
     },
     queryClient,
   });

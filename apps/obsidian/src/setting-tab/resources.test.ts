@@ -3,6 +3,7 @@ import { ButtonComponent, Setting } from "@mock/obsidian";
 import type { Setting as ObsidianSetting } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import { openWelcomeView } from "@/views/welcome/register";
@@ -43,6 +44,7 @@ function reviewButton(settings: Setting[]): ButtonComponent | undefined {
 it("opens conversion review from the pending reminder and removes it after acceptance", () => {
   let current = { ...defaults, "note.template-conversion-pending": true };
   const ctx = {
+    runtime: testRuntime(),
     app: {},
     languagePack: { getSituation: () => ({ kind: "active" }) },
     manifest: { version: "2.3.0" },

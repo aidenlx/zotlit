@@ -3,7 +3,6 @@ import type { CslItemData } from "@zotlit/db";
 
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
@@ -98,13 +97,17 @@ export interface PlainBibliographyRender {
     items: readonly CslItemData[],
     options?: ReadOptions,
   ): Promise<readonly RenderedCitation[] | null>;
-  subscribe(callback: (state: BibliographyRenderState) => void): () => void;
-  on<K extends keyof BibliographyRenderEvents>(
-    event: K,
-    callback: BibliographyRenderEvents[K],
-  ): () => void;
-  /** Subscribe to the first unavailable selected style, including one already found. */
-  onStyleMissing(callback: (styleId: string) => void): () => void;
+  readonly changes: Stream.Stream<BibliographyRenderState>;
+  readonly changed: Stream.Stream<
+    Parameters<BibliographyRenderEvents["changed"]>[0]
+  >;
+  readonly settled: Stream.Stream<
+    Readonly<Parameters<BibliographyRenderEvents["settled"]>>
+  >;
+  readonly invalidated: Stream.Stream<void>;
+  readonly "style-missing": Stream.Stream<string>;
+  /** The selected missing style, including one found during acquisition. */
+  readonly missingStyle: Stream.Stream<string>;
 }
 
 export function plainBibliographyRender(
@@ -132,21 +135,6 @@ export function plainBibliographyRender(
     if (Cause.hasInterruptsOnly(exit.cause)) return released();
     throw Cause.squash(exit.cause);
   };
-  const missing = (replay: boolean, callback: (styleId: string) => void) => {
-    const seen = runSync(service.state);
-    return subscribe(
-      runtime,
-      service.changes.pipe(
-        Stream.dropWhile(
-          (next) => !replay && next.missingStyle === seen.missingStyle,
-        ),
-        Stream.map((next) => next.missingStyle),
-        Stream.changes,
-        Stream.filter((style): style is string => style !== null),
-      ),
-      callback,
-    );
-  };
   return {
     get state() {
       return runSync(service.state);
@@ -161,31 +149,29 @@ export function plainBibliographyRender(
       run(service.readBibliography(...args), releasedRead),
     readCitations: (...args) =>
       run(service.readCitations(...args), releasedRead),
-    subscribe: (callback) => subscribe(runtime, service.changes, callback),
-    onStyleMissing: (callback) => missing(true, callback),
-    on: (event, callback) => {
-      if (event === "style-missing")
-        return missing(
-          false,
-          callback as BibliographyRenderEvents["style-missing"],
-        );
-      return subscribe(runtime, service.events, (next) => {
-        if (next._tag !== event) return;
-        switch (next._tag) {
-          case "changed":
-            (callback as BibliographyRenderEvents["changed"])(next.key);
-            break;
-          case "settled":
-            (callback as BibliographyRenderEvents["settled"])(
-              next.key,
-              next.held,
-            );
-            break;
-          case "invalidated":
-            (callback as BibliographyRenderEvents["invalidated"])();
-            break;
-        }
-      });
-    },
+    changes: service.changes,
+    changed: service.events.pipe(
+      Stream.filter((event) => event._tag === "changed"),
+      Stream.map((event) => event.key),
+    ),
+    settled: service.events.pipe(
+      Stream.filter((event) => event._tag === "settled"),
+      Stream.map((event) => [event.key, event.held] as const),
+    ),
+    invalidated: service.events.pipe(
+      Stream.filter((event) => event._tag === "invalidated"),
+      Stream.map(() => undefined),
+    ),
+    "style-missing": service.changes.pipe(
+      Stream.map((state) => state.missingStyle),
+      Stream.changes,
+      Stream.drop(1),
+      Stream.filter((style): style is string => style !== null),
+    ),
+    missingStyle: service.changes.pipe(
+      Stream.map((state) => state.missingStyle),
+      Stream.changes,
+      Stream.filter((style): style is string => style !== null),
+    ),
   };
 }

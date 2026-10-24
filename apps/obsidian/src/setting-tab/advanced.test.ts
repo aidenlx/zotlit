@@ -6,12 +6,15 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { advancedPageItems, clearExcerptCache } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
-function items(overrides: Partial<SettingTabContext> = {}) {
+function items(
+  overrides: Partial<SettingTabContext> = { runtime: testRuntime() },
+) {
   return advancedPageItems({
     webWorkbenchEnabled: true,
     app: { loadLocalStorage: () => null, saveLocalStorage: () => {} },

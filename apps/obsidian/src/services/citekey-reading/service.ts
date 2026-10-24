@@ -1,7 +1,3 @@
-// The reading-mode surface of the Citekey Editor Treatment: literal citekey
-// citations show formatted in the reading view, navigate like links, and are
-// rewritten in place while Obsidian shows their section.
-
 import { MarkdownRenderChild, setTooltip } from "obsidian";
 import type {
   App,
@@ -9,7 +5,12 @@ import type {
   MarkdownView,
   Plugin,
 } from "obsidian";
+// The reading-mode surface of the Citekey Editor Treatment: literal citekey
+// citations show formatted in the reading view, navigate like links, and are
+// rewritten in place while Obsidian shows their section.
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
@@ -102,6 +103,7 @@ function shownEqual(
 }
 
 export interface CitekeyReadingDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
@@ -114,7 +116,7 @@ export interface CitekeyReadingDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
 /**
@@ -144,6 +146,7 @@ export interface CitekeyReadingDeps {
  * citation at all still renders the views again.
  */
 export class CitekeyReading extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #plugin;
   readonly #citationText;
@@ -164,6 +167,7 @@ export class CitekeyReading extends Service<void> {
 
   constructor(deps: CitekeyReadingDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
@@ -181,7 +185,7 @@ export class CitekeyReading extends Service<void> {
       this.#process(el, ctx),
     );
     stack.defer(
-      this.#settings.subscribe((settings) => {
+      subscribe(this.#runtime, this.#settings.changes, (settings) => {
         if (settings) this.#applySettings(settings);
       }),
     );

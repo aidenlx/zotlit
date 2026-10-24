@@ -333,6 +333,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        runtime: services.runtime,
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         importProfile: services.importProfile,
         profile: services.profile,
@@ -485,6 +486,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
+      runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
       reads: services.zoteroReads,
@@ -500,6 +502,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
+        runtime: services.runtime,
         app: this.app,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
@@ -531,6 +534,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       libraryScope: services.libraryScope,
       settings: services.settings,
       welcome: {
+        runtime: services.runtime,
         app: this.app,
         reads: services.zoteroReads,
         queries: services.queryClient,
@@ -579,6 +583,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
+      runtime: services.runtime,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
@@ -592,6 +597,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       templates: services.template,
       profile: services.profile,
       nativePreview: {
+        runtime: services.runtime,
         citationParse: services.citationParse,
         app: this.app,
         zoteroReads: services.zoteroReads,
@@ -607,6 +613,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
 
     registerTemplateDataExplorer(this, {
+      runtime: services.runtime,
       app: this.app,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
@@ -617,6 +624,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerNotePreview(this, {
+      runtime: services.runtime,
       citationParse: services.citationParse,
       app: this.app,
       itemLookup: services.itemLookup,
@@ -631,15 +639,20 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     stack.defer(
-      registerCitationStyleNotice(services.bibliographyRender, () => {
-        revealSetting(
-          this.app,
-          this.manifest.id,
-          "settings_citation_references_style",
-        );
-      }),
+      registerCitationStyleNotice(
+        services.runtime,
+        services.bibliographyRender,
+        () => {
+          revealSetting(
+            this.app,
+            this.manifest.id,
+            "settings_citation_references_style",
+          );
+        },
+      ),
     );
     registerReferencesView(this, {
+      runtime: services.runtime,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,
@@ -672,6 +685,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     }
 
     registerTemplateWorkbench(this, {
+      runtime: services.runtime,
       profile: services.profile,
       app: this.app,
       zoteroReads: services.zoteroReads,
@@ -744,6 +758,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     registerWelcomeView(this, {
+      runtime: services.runtime,
       reads: services.zoteroReads,
       queries: services.queryClient,
       settings: services.settings,
@@ -765,9 +780,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
     );
     stack.defer(
-      registerLibraryScopeNotices(services.libraryScope, () => {
-        revealSetting(this.app, this.manifest.id, "settings_library_scope");
-      }),
+      registerLibraryScopeNotices(
+        services.runtime,
+        services.libraryScope,
+        () => {
+          revealSetting(this.app, this.manifest.id, "settings_library_scope");
+        },
+      ),
     );
 
     // The companion's Freshness Signal means the database changed and its

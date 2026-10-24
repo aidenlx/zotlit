@@ -14,6 +14,8 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
@@ -123,8 +125,23 @@ const VIEW_MENU_SECTIONS = [
  * Layout, which may answer from the Zotero Local API.
  */
 export interface AnnotViewDeps extends QueryViewDeps {
-  reads: Pick<PlainZoteroReads, "reads" | "state" | "on" | "acquireRead">;
-  libraryScope: Pick<PlainLibraryScope, "libraryRows" | "on" | "current">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "acquireRead"
+  >;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "libraryRows" | "changed" | "libraries-changed" | "current"
+  >;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
@@ -449,7 +466,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#layout.render(this.contentEl, <AnnotView />);
 
     this.register(
-      this.#deps.reads.on("changed", () => {
+      subscribe(this.#deps.runtime, this.#deps.reads["changed"], () => {
         logger.debug("DB changed, refreshing annot view");
         this.#zoteroReader?.refresh();
         this.#reload();
@@ -457,7 +474,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
     // The held Libraries settle after the database change that moved them.
     this.register(
-      this.#deps.libraryScope.on("libraries-changed", () => this.#reload()),
+      subscribe(
+        this.#deps.runtime,
+        this.#deps.libraryScope["libraries-changed"],
+        () => this.#reload(),
+      ),
     );
 
     this.registerEvent(

@@ -7,7 +7,10 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -143,7 +146,6 @@ async function makeHarness({
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
   let resolutionReady = !resolutionPending;
-  const resolutionListeners = new Set<() => void>();
   const answer = (requested: readonly string[]): CitationLookupAnswer =>
     lookupAnswerFor(
       requested,
@@ -165,6 +167,7 @@ async function makeHarness({
   );
   const citationText = stack.use(
     new CitationText({
+      runtime: testRuntime(),
       openDocuments: new OpenDocumentsStub(),
       citationLookup,
       profile: profileReader(defaults, {
@@ -216,13 +219,13 @@ async function makeHarness({
             errors: [],
             lookup: answer(occurrences.map((occurrence) => occurrence.raw)),
           }),
-        on: (event: string, callback: () => void) => {
-          if (event === "resolution-changed") resolutionListeners.add(callback);
-          return () => resolutionListeners.delete(callback);
-        },
+        changed: Stream.empty,
+        "membership-changed": Stream.empty,
       },
       noteIndex: {
-        on: () => () => undefined,
+        changed: Stream.empty,
+        "frontmatter-changed": Stream.empty,
+        indexed: Stream.empty,
         whenIndexed: () => Promise.resolve(),
       },
       bibliographyRender: {
@@ -237,7 +240,10 @@ async function makeHarness({
                 )
               : null;
         },
-        on: () => () => undefined,
+        changed: Stream.empty,
+        settled: Stream.empty,
+        invalidated: Stream.empty,
+        "style-missing": Stream.empty,
       },
       queryClient: stack.use(queryClientsFixture()),
     } as never),
@@ -253,6 +259,7 @@ async function makeHarness({
 
   const service = stack.use(
     new CitekeyReading({
+      runtime: testRuntime(),
       app: {
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
         workspace: {
@@ -319,7 +326,6 @@ async function makeHarness({
       ambiguous = keys;
       resolutionReady = true;
       citationLookup.refresh();
-      for (const callback of resolutionListeners) callback();
     },
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
@@ -332,13 +338,15 @@ async function makeHarness({
 
 describe("CitekeyReading", () => {
   it("rerenders open reading views when Pandoc navigation changes", async () => {
-    let notify: ((settings: Readonly<Settings>) => void) | undefined;
+    const settingsChanged = testEvent<Readonly<Settings>>();
+    const notify = (value: Readonly<Settings>) => settingsChanged.emit(value);
     const rerender = vi.fn();
     const view = Object.assign(
       Object.create(MarkdownView.prototype) as MarkdownView,
       { previewMode: { rerender } },
     );
     await using service = new CitekeyReading({
+      runtime: testRuntime(),
       app: {
         workspace: { getLeavesOfType: () => [{ view }] },
       },
@@ -349,11 +357,7 @@ describe("CitekeyReading", () => {
       citekeyEditor: {},
       settings: {
         current: defaults,
-        subscribe: (listener: (settings: Readonly<Settings>) => void) => {
-          notify = listener;
-          listener(defaults);
-          return () => undefined;
-        },
+        changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
       },
     } as never);
     await service.ready;
@@ -914,16 +918,7 @@ describe("CitekeyReading refresh", () => {
 });
 
 /** Hands out one settings snapshot, the way the service reads its toggles. */
-function settingsStub(overrides: Partial<Settings>): {
-  current: Readonly<Settings>;
-  subscribe: (listener: (settings: Readonly<Settings>) => void) => () => void;
-} {
+function settingsStub(overrides: Partial<Settings>) {
   const current: Readonly<Settings> = { ...defaults, ...overrides };
-  return {
-    current: { ...defaults, ...overrides },
-    subscribe: (listener) => {
-      listener(current);
-      return () => undefined;
-    },
-  };
+  return { current, changes: Stream.succeed(current) };
 }

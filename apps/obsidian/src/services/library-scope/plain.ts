@@ -3,7 +3,6 @@ import type { Library } from "@zotlit/db";
 
 import { Effect, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 
 import type {
   AvailableLibrary,
@@ -11,9 +10,12 @@ import type {
   ResolvedLibraryScope,
 } from "./scope";
 import { LibraryScope } from "./service";
-import type { LibraryScopeEvents, LibraryScopeState } from "./service";
+import type { LibraryScopeState } from "./service";
 
 export interface PlainLibraryScope {
+  readonly changes: Stream.Stream<LibraryScopeState>;
+  readonly changed: Stream.Stream<ResolvedLibraryScope | null>;
+  readonly "libraries-changed": Stream.Stream<void>;
   /** Held resolution, with stable identity until it changes; null while unreadable. */
   readonly current: ResolvedLibraryScope | null;
   /** The saved selection, or My Library while the saved value is broken. */
@@ -26,12 +28,6 @@ export interface PlainLibraryScope {
   readonly libraryRows: readonly Library[] | null;
   /** Resolve once against a caller's Snapshot Libraries. */
   resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope;
-  /** Every state change after this call; the subscription attaches before returning. */
-  subscribe(callback: (state: LibraryScopeState) => void): () => void;
-  on<K extends keyof LibraryScopeEvents>(
-    event: K,
-    callback: LibraryScopeEvents[K],
-  ): () => void;
 }
 
 export function plainLibraryScope(
@@ -39,15 +35,6 @@ export function plainLibraryScope(
 ): PlainLibraryScope {
   const service = runtime.runSync(LibraryScope);
   const run = Effect.runSyncWith(runtime.runSync(Effect.context<never>()));
-  const subscribeChanges = (callback: (state: LibraryScopeState) => void) => {
-    if (runtime.scope.state._tag === "Closed") return () => {};
-    const seen = run(service.state);
-    return subscribe(
-      runtime,
-      Stream.dropWhile(service.changes, (next) => next === seen),
-      callback,
-    );
-  };
   return {
     get current() {
       return run(service.current);
@@ -65,21 +52,19 @@ export function plainLibraryScope(
       return run(service.libraryRows);
     },
     resolveLibraries: (libraries) => run(service.resolveLibraries(libraries)),
-    subscribe: subscribeChanges,
-    on: (event, callback) => {
-      let before = run(service.state);
-      return subscribeChanges((next) => {
-        const previous = before;
-        before = next;
-        if (
-          event === "changed" &&
-          (previous.current !== next.current ||
-            previous.invalid !== next.invalid)
-        )
-          (callback as LibraryScopeEvents["changed"])(next.current);
-        if (event === "libraries-changed" && previous.all !== next.all)
-          (callback as LibraryScopeEvents["libraries-changed"])();
-      });
-    },
+    changes: service.changes,
+    changed: service.changes.pipe(
+      Stream.changesWith(
+        (a, b) => a.current === b.current && a.invalid === b.invalid,
+      ),
+      Stream.drop(1),
+      Stream.map((state) => state.current),
+    ),
+    "libraries-changed": service.changes.pipe(
+      Stream.map((state) => state.all),
+      Stream.changes,
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
   };
 }

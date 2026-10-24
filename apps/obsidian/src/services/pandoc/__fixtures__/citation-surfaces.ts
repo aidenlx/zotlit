@@ -1,3 +1,6 @@
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
@@ -328,27 +331,27 @@ export async function openCitationVault({
   );
   const cache = stack.use(
     await bibliographyRenderFixture({
-      profile: { ...profileReader(), on: (_event, callback) => { let first = true; return settings.subscribe(() => { if (!first) callback(); first = false; }); } },
+      profile: { changed: settings.changes.pipe(Stream.drop(1), Stream.map(() => undefined)) },
       db: harness.db,
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test", binary: { directory: "pandoc-engine", name: "pandoc.wasm" } }),
-        subscribe: () => () => undefined,
+        changes: Stream.empty,
         getEngine: () => Promise.resolve(engine),
       },
-      zoteroPref: { dataDir, on: () => () => undefined },
+      zoteroPref: { dataDir, changed: Stream.empty, "data-dir-changed": Stream.empty, "resolved-changed": Stream.empty },
       settings,
       queryClient: harness.queryClient,
     }),
   );
   let vaultStyleMissing: string | null = null;
   stack.defer(
-    cache.onStyleMissing((styleId) => {
+    subscribe(cache.runtime, cache.missingStyle, (styleId) => {
       vaultStyleMissing = styleId;
     }),
   );
 
   const citationText = stack.use(
-    new CitationText({
+    new CitationText({ runtime: cache.runtime,
       openDocuments: new OpenDocumentsStub(),
       profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
@@ -363,7 +366,7 @@ export async function openCitationVault({
 
   const view = new TestReferencesView(
     {} as WorkspaceLeaf,
-    {
+    { runtime: testRuntime(),
       app: sidebarApp(harness),
       profile: profileReader(() => settings.current, harness.metadataCache),
       db: harness.db,
@@ -373,7 +376,7 @@ export async function openCitationVault({
       citekeyEditor: { openCitekey: () => Promise.resolve() },
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
-        subscribe: () => () => undefined,
+        changes: Stream.empty,
         decline: () => undefined,
       },
       bibliographyRender: cache,
@@ -389,7 +392,7 @@ export async function openCitationVault({
     document.body.replaceChildren();
   });
 
-  const popover = stack.use(new CitationPopover({
+  const popover = stack.use(new CitationPopover({ runtime: cache.runtime,
     profile: profileReader(() => settings.current, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,

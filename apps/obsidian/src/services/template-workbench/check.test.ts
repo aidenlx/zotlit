@@ -13,6 +13,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -94,6 +95,7 @@ async function fixture(
     baseAttachmentPath: null,
   };
   registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
+    runtime: testRuntime(),
     app: f.app,
     templates: f.template,
     settings: f.settings,

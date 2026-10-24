@@ -28,6 +28,7 @@ import {
   ANNOTATION_COLORS,
   annotationColorLabel,
 } from "@/lib/annotation-colors";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
 import { getLogger } from "@/lib/log";
@@ -233,7 +234,11 @@ export class ReadingCard extends Component {
       this.#deps.literatureNotes.on("changed", () => this.#noteChanged()),
     );
     // Zotero's database changed: the Item may read otherwise now.
-    this.register(this.#deps.reads.on("changed", () => this.#reread()));
+    this.register(
+      subscribe(this.#deps.runtime, this.#deps.reads["changed"], () =>
+        this.#reread(),
+      ),
+    );
     this.register(() => {
       this.#read?.abort();
       this.#cancelPreview();

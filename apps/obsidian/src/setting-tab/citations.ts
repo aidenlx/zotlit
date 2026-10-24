@@ -7,6 +7,7 @@ import type {
 
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import { ANNOTATION_SUGGESTER_ENABLED } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
 import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
@@ -357,9 +358,11 @@ function renderReferencesStyleRow(
   });
 
   reload();
-  stack.defer(ctx.zoteroPref.on("resolved-changed", reload));
   stack.defer(
-    ctx.settings.subscribe(() => {
+    subscribe(ctx.runtime, ctx.zoteroPref["resolved-changed"], reload),
+  );
+  stack.defer(
+    subscribe(ctx.runtime, ctx.settings.changes, () => {
       if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
   );

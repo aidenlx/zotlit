@@ -2,28 +2,28 @@
 import { Cause, Effect, Exit, Scope, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
-import { subscribe } from "@/lib/effect-stream";
 
 import { DbUnavailable } from "./rpc";
 import { ZoteroReads } from "./service";
 import type {
   ZoteroReadLease,
   ZoteroReadsApi,
-  ZoteroReadsEvents,
   ZoteroReadsState,
 } from "./service";
 
 export interface PlainZoteroReads extends ZoteroReadsState {
+  readonly changes: Stream.Stream<ZoteroReadsState>;
+  readonly "refresh-requested": Stream.Stream<void>;
+  readonly changed: Stream.Stream<void>;
+  readonly degraded: Stream.Stream<DbUnavailable>;
+  readonly "refresh-failed": Stream.Stream<DbUnavailable>;
+  readonly refreshing: Stream.Stream<boolean>;
+  readonly "db-file-missing": Stream.Stream<void>;
   readonly reads: ZoteroReadsApi;
   readonly snapshot: ZoteroReads["Service"]["snapshot"];
   acquireRead(): Promise<ZoteroReadLease>;
   refresh(): Promise<void>;
   notifyExternalChange(): void;
-  subscribe(callback: (state: ZoteroReadsState) => void): () => void;
-  on<K extends keyof ZoteroReadsEvents>(
-    event: K,
-    callback: ZoteroReadsEvents[K],
-  ): () => void;
 }
 
 const leakedLeases = new FinalizationRegistry<() => Promise<void>>(
@@ -92,28 +92,30 @@ export function plainZoteroReads(
     notifyExternalChange: () => {
       if (!closed()) runtime.runFork(service.notifyExternalChange());
     },
-    subscribe: (callback) => {
-      const seen = read(service.current);
-      return subscribe(
-        runtime,
-        Stream.dropWhile(service.changes, (next) => next === seen),
-        callback,
-      );
-    },
-    on: (event, callback) =>
-      subscribe(runtime, service.events, (change) => {
-        if (change._tag !== event) return;
-        switch (change._tag) {
-          case "degraded":
-          case "refresh-failed":
-            (callback as ZoteroReadsEvents["degraded"])(change.error);
-            break;
-          case "refreshing":
-            (callback as ZoteroReadsEvents["refreshing"])(change.active);
-            break;
-          default:
-            (callback as () => void)();
-        }
-      }),
+    changes: service.changes,
+    "refresh-requested": service.events.pipe(
+      Stream.filter((event) => event._tag === "refresh-requested"),
+      Stream.map(() => undefined),
+    ),
+    changed: service.events.pipe(
+      Stream.filter((event) => event._tag === "changed"),
+      Stream.map(() => undefined),
+    ),
+    degraded: service.events.pipe(
+      Stream.filter((event) => event._tag === "degraded"),
+      Stream.map((event) => event.error),
+    ),
+    "refresh-failed": service.events.pipe(
+      Stream.filter((event) => event._tag === "refresh-failed"),
+      Stream.map((event) => event.error),
+    ),
+    refreshing: service.events.pipe(
+      Stream.filter((event) => event._tag === "refreshing"),
+      Stream.map((event) => event.active),
+    ),
+    "db-file-missing": service.events.pipe(
+      Stream.filter((event) => event._tag === "db-file-missing"),
+      Stream.map(() => undefined),
+    ),
   };
 }

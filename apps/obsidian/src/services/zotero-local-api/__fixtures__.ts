@@ -1,3 +1,8 @@
+import { vi } from "vitest";
+
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 // Zotero Local API answers, and the transport that replays them.
 //
 // PROVENANCE, in two halves.
@@ -22,14 +27,10 @@
 //
 // @see docs/fixture.md — "Trial the Zotero Local API"
 // @see https://github.com/aidenlx/zotlit/issues/1143
-
-import { vi } from "vitest";
-
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { Layer, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
 import type { LocalServerEvents } from "@/services/local-server/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 
 import { ZoteroLocalApiClient } from "./service";
 import type { WireTag } from "./wire";
@@ -729,7 +730,10 @@ export function localApiClient(
   options: ClientOptions = {},
 ) {
   const { fetch, requests } = fakeZotero(answers);
-  const prefEvents = createNanoEvents<ZoteroPrefEvents>();
+  const resolvedChanged = testEvent<void>();
+  const prefEvents = {
+    emit: (_event: "resolved-changed") => resolvedChanged.emit(),
+  };
   const serverEvents = createNanoEvents<LocalServerEvents>();
   const credentials = inMemoryCredentials(
     options.key === undefined
@@ -739,10 +743,14 @@ export function localApiClient(
   // Mutable, so a test can move the port the way a new profile does.
   const zoteroPref = {
     httpPort: PORT as number | null,
-    on: <K extends keyof ZoteroPrefEvents>(event: K, cb: ZoteroPrefEvents[K]) =>
-      prefEvents.on(event, cb),
+    changed: Stream.empty,
+    "data-dir-changed": Stream.empty,
+    "resolved-changed": resolvedChanged.stream,
   };
+  const stack = new AsyncDisposableStack();
+  const runtime = buildRuntime(Layer.empty, stack);
   const client = new ZoteroLocalApiClient({
+    runtime,
     fetch,
     zoteroPref,
     localServer: {
@@ -755,6 +763,13 @@ export function localApiClient(
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
     now: options.now ?? (() => NOW),
+  });
+  const dispose = client[Symbol.asyncDispose].bind(client);
+  Object.assign(client, {
+    [Symbol.asyncDispose]: async () => {
+      await dispose();
+      await stack.disposeAsync();
+    },
   });
   return {
     client,

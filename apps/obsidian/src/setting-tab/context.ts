@@ -1,5 +1,6 @@
 import type { App, PluginManifest } from "obsidian";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
@@ -39,7 +40,7 @@ export type ReleaseTabActions = Pick<
 /** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
 export type ManagedBinaryActions = Pick<
   PlainManagedBinary,
-  "getStatus" | "subscribe" | "install" | "uninstall"
+  "getStatus" | "changes" | "install" | "uninstall"
 >;
 
 /** The Local Server surface the setting tab needs: the bound port and its edges. */
@@ -89,6 +90,7 @@ export type AttachmentImportActions = Pick<
  * search indexing.
  */
 export interface SettingTabContext {
+  runtime: SubscriptionRuntime;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;
@@ -104,7 +106,7 @@ export interface SettingTabContext {
     | "current"
     | "update"
     | "updateDefaultLiteratureNoteProfileBindings"
-    | "subscribe"
+    | "changes"
   >;
   profile: Pick<
     PlainProfile,
@@ -112,7 +114,7 @@ export interface SettingTabContext {
     | "profiles"
     | "diagnostics"
     | "resolveProfile"
-    | "on"
+    | "changed"
     | "duplicate"
     | "ejectDefault"
     | "restoreDefault"
@@ -127,12 +129,26 @@ export interface SettingTabContext {
   >;
   db: Pick<
     PlainZoteroReads,
-    "refresh" | "state" | "error" | "on" | "activeReadMode"
+    | "refresh"
+    | "state"
+    | "error"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "activeReadMode"
   >;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: Pick<
     PlainLibraryScope,
-    "current" | "effective" | "invalid" | "libraries" | "on"
+    | "current"
+    | "effective"
+    | "invalid"
+    | "libraries"
+    | "changed"
+    | "libraries-changed"
   >;
   zoteroPref: Pick<
     PlainZoteroPref,
@@ -146,7 +162,9 @@ export interface SettingTabContext {
     | "baseAttachmentPath"
     | "httpPort"
     | "get"
-    | "on"
+    | "changed"
+    | "data-dir-changed"
+    | "resolved-changed"
     | "setProfileDir"
     | "setDataDir"
     | "companionInstalled"
@@ -192,7 +210,7 @@ export interface SettingTabContext {
     | "getPartialNames"
     | "createPartial"
     | "materializeCitationTemplate"
-    | "on"
+    | "compile-status-changed"
   >;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
   pandocEngine: ManagedBinaryActions;

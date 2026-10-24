@@ -9,6 +9,8 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 
@@ -29,6 +31,7 @@ vi.mock("@/views/template-workbench/register", () => ({
 
 function ctx(): SettingTabContext {
   return {
+    runtime: testRuntime(),
     webWorkbenchEnabled: true,
     app: {
       vault: { getFileByPath: () => null, adapter: {} },
@@ -37,7 +40,7 @@ function ctx(): SettingTabContext {
       saveLocalStorage: () => {},
     },
     manifest: { version: "0.0.0", dir: "plugins/zotlit" },
-    settings: { current: {}, update: () => {}, subscribe: () => () => {} },
+    settings: { current: {}, update: () => {}, changes: Stream.empty },
     profile: {
       loaded: true,
       profiles: [],
@@ -71,11 +74,11 @@ function ctx(): SettingTabContext {
     release: {},
     pandocEngine: {
       getStatus: () => ({ kind: "absent" }),
-      subscribe: () => () => {},
+      changes: Stream.empty,
     },
     chineseSegmenter: {
       getStatus: () => ({ kind: "absent" }),
-      subscribe: () => () => {},
+      changes: Stream.empty,
     },
     languagePack: {
       getSituation: () => ({ kind: "unavailable" }),

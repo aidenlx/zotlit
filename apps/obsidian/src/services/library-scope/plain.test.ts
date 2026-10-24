@@ -1,6 +1,8 @@
 import { expect, vi } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import {
@@ -26,10 +28,14 @@ it.effect("a throwing subscriber receives both immediate changes (#1705)", () =>
   Effect.gen(function* () {
     const f = yield* libraryScopeFixture(client());
     const changes: LibraryScopeState[] = [];
-    const off = f.plain.subscribe((state) => {
-      changes.push(state);
-      if (changes.length === 1) throw new Error("listener failed");
-    });
+    const off = subscribe(
+      f.runtime,
+      Stream.drop(f.plain.changes, 1),
+      (state) => {
+        changes.push(state);
+        if (changes.length === 1) throw new Error("listener failed");
+      },
+    );
     f.settings.update({
       [LIBRARY_SCOPE_KEY]: {
         mode: "selected",
@@ -63,7 +69,7 @@ it.effect("all adapter methods remain safe after whole-runtime disposal", () =>
     const before = f.plain.current;
     const rows = f.plain.libraryRows;
     const listener = vi.fn();
-    f.plain.subscribe(listener);
+    subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener);
     yield* Effect.promise(f.close);
     expect(f.plain.current).toBe(before);
     expect(f.plain.libraries).toEqual(before?.available);
@@ -71,9 +77,9 @@ it.effect("all adapter methods remain safe after whole-runtime disposal", () =>
     expect(f.plain.effective).toEqual({ mode: "all" });
     expect(f.plain.invalid).toBe(false);
     expect(f.plain.resolveLibraries(rows!)).toEqual(before);
-    f.plain.subscribe(listener)();
-    f.plain.on("changed", listener)();
-    f.plain.on("libraries-changed", listener)();
+    subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener)();
+    subscribe(f.runtime, f.plain["changed"], listener)();
+    subscribe(f.runtime, f.plain["libraries-changed"], listener)();
     f.settings.update({
       [LIBRARY_SCOPE_KEY]: { mode: "selected", libraries: [] },
     });

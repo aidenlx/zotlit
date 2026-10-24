@@ -12,6 +12,8 @@ import type {
 
 import { disposable, registerEvent } from "@/lib/disposables";
 import { Effect, Exit, Fiber } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -81,19 +83,40 @@ const CITATION_INDEX_EVENTS = [
 ] as const;
 
 export interface GraphCitationsDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  reads: Pick<PlainZoteroReads, "reads" | "on">;
+  reads: Pick<
+    PlainZoteroReads,
+    | "reads"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   libraryScope: Pick<PlainLibraryScope, "current">;
-  citationIndex: Pick<PlainCitationIndex, "citationsByPath" | "on">;
+  citationIndex: Pick<
+    PlainCitationIndex,
+    | "citationsByPath"
+    | "changed"
+    | "backfilled"
+    | "membership-changed"
+    | "cited-by-invalidated"
+  >;
   citationLookup: Pick<PlainCitationLookup, "observe">;
   noteIndex: Pick<
     PlainNoteIndex,
-    "getIndexedItemKeys" | "getNotesByItemKey" | "on"
+    | "getIndexedItemKeys"
+    | "getNotesByItemKey"
+    | "changed"
+    | "indexed"
+    | "frontmatter-changed"
   >;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: Pick<CitationPopover, "showWork" | "hide">;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
 /** What one installed leaf holds. */
@@ -146,6 +169,7 @@ function releasedOnDispose(view: View, callback: () => void): Disposable {
  * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
  */
 export class GraphCitations extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #reads;
   readonly #libraryScope;
@@ -208,6 +232,7 @@ export class GraphCitations extends Service<void> {
 
   constructor(deps: GraphCitationsDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
@@ -269,14 +294,28 @@ export class GraphCitations extends Service<void> {
     );
     for (const event of CITATION_INDEX_EVENTS) {
       stack.defer(
-        this.#citationIndex.on(event, () => this.#invalidateLabels()),
+        subscribe(this.#runtime, this.#citationIndex[event], () =>
+          this.#invalidateLabels(),
+        ),
       );
     }
-    stack.defer(this.#noteIndex.on("changed", () => this.#invalidateLabels()));
-    stack.defer(this.#noteIndex.on("indexed", () => this.#invalidateLabels()));
-    stack.defer(this.#reads.on("changed", () => this.#invalidateLabels()));
     stack.defer(
-      this.#settings.subscribe((settings) => {
+      subscribe(this.#runtime, this.#noteIndex["changed"], () =>
+        this.#invalidateLabels(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["indexed"], () =>
+        this.#invalidateLabels(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#reads["changed"], () =>
+        this.#invalidateLabels(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#settings.changes, (settings) => {
         if (settings) this.#applySettings(settings);
       }),
     );

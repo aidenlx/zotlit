@@ -1,15 +1,14 @@
 /** Literature Note Profiles for views and legacy services. */
 import { Cause, Effect, Exit, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";
-import { subscribe } from "@/lib/effect-stream";
 
 import { Profile, ProfileOperationError } from "./service";
 import type { ProfileOperations, ProfileState } from "./service";
 
 export type PlainProfile = ProfileOperations & {
+  readonly changes: Stream.Stream<ProfileState>;
+  readonly changed: Stream.Stream<void>;
   readonly state: ProfileState;
-  subscribe(callback: (state: ProfileState) => void): () => void;
-  on(event: "changed", callback: () => void): () => void;
 };
 
 export function plainProfile(
@@ -75,14 +74,10 @@ export function plainProfile(
         import: (options) => run(plan.import(options)),
       };
     },
-    subscribe: (callback) => subscribe(runtime, service.changes, callback),
-    on: (_event, callback) => {
-      const seen = read(service.state);
-      return subscribe(
-        runtime,
-        Stream.dropWhile(service.changes, (next) => next === seen),
-        callback,
-      );
-    },
+    changes: service.changes,
+    changed: service.changes.pipe(
+      Stream.drop(1),
+      Stream.map(() => undefined),
+    ),
   };
 }

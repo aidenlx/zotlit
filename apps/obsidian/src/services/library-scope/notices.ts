@@ -1,5 +1,6 @@
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 // UI seam for Library Scope: the warn-once notice for a broken saved value.
-
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 
@@ -24,10 +25,11 @@ interface LibraryScopeNoticeHandle {
  * @param openSettings reveals the Library scope row so the user can repair it.
  */
 export function registerLibraryScopeNotices(
-  service: Pick<PlainLibraryScope, "invalid" | "on">,
+  runtime: SubscriptionRuntime,
+  service: Pick<PlainLibraryScope, "invalid" | "changed" | "libraries-changed">,
   openSettings: () => void,
 ): () => void {
-  return subscribeLibraryScopeInvalid(service, () =>
+  return subscribeLibraryScopeInvalid(runtime, service, () =>
     showLibraryScopeInvalid(libraryScopeInvalidNotice(openSettings)),
   );
 }
@@ -38,7 +40,8 @@ export function registerLibraryScopeNotices(
  * a user who breaks the value again is told again.
  */
 export function subscribeLibraryScopeInvalid(
-  service: Pick<PlainLibraryScope, "invalid" | "on">,
+  runtime: SubscriptionRuntime,
+  service: Pick<PlainLibraryScope, "invalid" | "changed" | "libraries-changed">,
   showNotice: () => LibraryScopeNoticeHandle,
 ): () => void {
   let notice: LibraryScopeNoticeHandle | null = null;
@@ -52,7 +55,7 @@ export function subscribeLibraryScopeInvalid(
   };
 
   apply();
-  const unsubscribe = service.on("changed", apply);
+  const unsubscribe = subscribe(runtime, service["changed"], apply);
   return () => {
     unsubscribe();
     notice?.hide();

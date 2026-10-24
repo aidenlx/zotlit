@@ -21,6 +21,8 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
@@ -501,7 +503,18 @@ export interface AnnotationRepositoryEvents {
 }
 
 export interface AnnotationRepositoryDeps {
-  db: Pick<PlainZoteroReads, "acquireRead" | "on" | "refresh">;
+  runtime: SubscriptionRuntime;
+  db: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "refresh"
+  >;
   queryClient: Pick<
     PlainQueryClients,
     "client" | "invalidate" | "keysUnder" | "peek" | "read"
@@ -752,6 +765,7 @@ export class LocalApiReadFailed extends Error {
  * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
  */
 export class AnnotationRepository extends Service<void> {
+  readonly #runtime;
   readonly #db;
   readonly #queries;
   readonly #localApi;
@@ -887,6 +901,7 @@ export class AnnotationRepository extends Service<void> {
   ready: Promise<void>;
 
   constructor({
+    runtime,
     db,
     queryClient,
     localApi,
@@ -895,6 +910,7 @@ export class AnnotationRepository extends Service<void> {
     persistedExcerpt,
   }: AnnotationRepositoryDeps) {
     super();
+    this.#runtime = runtime;
     this.#db = db;
     this.#queries = queryClient;
     this.#localApi = localApi;
@@ -2104,7 +2120,7 @@ export class AnnotationRepository extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(
-      this.#db.on("changed", () => {
+      subscribe(this.#runtime, this.#db["changed"], () => {
         this.#dropDatabasePartition();
         void this.#refreshLocks();
       }),

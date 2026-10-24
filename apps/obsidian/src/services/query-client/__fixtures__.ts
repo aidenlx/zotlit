@@ -13,7 +13,9 @@ import { layerQueryClients } from "./service";
 export function buildQueryClients(
   stack: AsyncDisposableStack,
   now?: () => Temporal.Instant,
-): PlainQueryClients {
+): PlainQueryClients & {
+  runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+} {
   const clock = Context.get(Context.empty(), Clock.Clock);
   const layer =
     now === undefined
@@ -31,13 +33,17 @@ export function buildQueryClients(
             }),
           ),
         );
-  return plainQueryClients(buildRuntime(layer, stack));
+  const runtime = buildRuntime(layer, stack);
+  return Object.assign(plainQueryClients(runtime), { runtime });
 }
 
 /** A consumer fixture whose owner disposes its runtime. */
 export function queryClientsFixture(
   now?: () => Temporal.Instant,
-): PlainQueryClients & AsyncDisposable {
+): PlainQueryClients &
+  AsyncDisposable & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  } {
   const stack = new AsyncDisposableStack();
   return Object.assign(buildQueryClients(stack, now), {
     [Symbol.asyncDispose]: () => stack.disposeAsync(),
@@ -55,6 +61,7 @@ export const queryClientsOf = Effect.fn("queryClientsOf")(function* () {
     openTestRuntime(Context.merge(context, services)),
   );
   return Object.assign(plainQueryClients(runtime), {
+    runtime,
     passCooldown: () =>
       runtime.runPromise(
         TestClock.adjust(5001).pipe(Effect.provideContext(context)),

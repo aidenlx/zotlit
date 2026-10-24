@@ -1,14 +1,16 @@
-import "@mock/dom-parser";
 import { TestClock } from "effect/testing";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import "@mock/dom-parser";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { Context, Effect, Fiber, Layer, Queue, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { profileRuntimeOf } from "@/services/profile/__fixtures__";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
@@ -18,10 +20,8 @@ import { layerQueryClients } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import { createTemplateHost } from "@/services/template/__fixtures__";
 import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/plain";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 
 import type { Inlines } from "./ast";
 import type {
@@ -101,8 +101,10 @@ it.effect(
       const harness = yield* harnessOf({ "citation.locale": "en-US" });
       expect(harness.cache.vaultPresentation.locale).toBe("en-US");
       const locales: (string | null)[] = [];
-      const stop = harness.cache.subscribe((state) =>
-        locales.push(state.vaultPresentation.locale),
+      const stop = subscribe(
+        harness.cache.runtime,
+        harness.cache.changes,
+        (state) => locales.push(state.vaultPresentation.locale),
       );
       harness.settings.update({ "citation.locale": "fr-FR" });
       harness.settings.update({ "citation.locale": "de-DE" });
@@ -119,7 +121,9 @@ it.effect.each(["share", "import"] as const)(
       const { profile } = yield* profileRuntimeOf(createTemplateHost());
       const harness = yield* harnessOf({}, undefined, profile);
       const changes: unknown[] = [];
-      profile.on("changed", () => changes.push(profile.state));
+      subscribe(profile.runtime, profile["changed"], () =>
+        changes.push(profile.state),
+      );
       const items = [item("alpha")];
       const before = yield* Effect.promise(() =>
         harness.cache.readBibliography(items),
@@ -198,7 +202,7 @@ it.effect(
       ).pipe(Effect.forkScoped());
       yield* Queue.take(subscribed);
       const seen: unknown[] = [];
-      h.cache.subscribe((state) => seen.push(state));
+      subscribe(h.cache.runtime, h.cache.changes, (state) => seen.push(state));
       const last = h.cache.state;
       const gate = Promise.withResolvers<void>();
       const started = Promise.withResolvers<void>();
@@ -215,7 +219,7 @@ it.effect(
       yield* Fiber.join(stream);
       yield* Effect.promise(() => pending);
       h.settings.update({ "citation.locale": "fr-FR" });
-      h.db.changed();
+      h.db.notifyChanged();
       h.profileEvents.emit("changed");
       h.zoteroPref.resolvedChanged();
       yield* TestClock.adjust(0);
@@ -234,7 +238,7 @@ it.effect(
         }),
       );
       expect(() =>
-        h.cache.onStyleMissing(() => {
+        subscribe(h.cache.runtime, h.cache.missingStyle, () => {
           throw new Error("closed listener");
         })(),
       ).not.toThrow();
@@ -371,16 +375,18 @@ class PandocEngineStub {
     version: "3.10",
     binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
   };
-  readonly #listeners = new Set<() => void>();
+  readonly #events = testEvent<void>();
 
   getStatus(): PandocEngineStatus {
     return this.#status;
   }
 
-  subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
+  readonly changes = Stream.suspend(() =>
+    this.#events.stream.pipe(
+      Stream.map(() => this.#status),
+      Stream.prepend([this.#status]),
+    ),
+  );
 
   getEngine(): Promise<CitationEngine> {
     return Promise.resolve(this.engine);
@@ -389,48 +395,32 @@ class PandocEngineStub {
   /** An install, an uninstall, or a restart: every one wakes the subscribers. */
   setStatus(status: PandocEngineStatus): void {
     this.#status = status;
-    for (const listener of this.#listeners) listener();
+    this.#events.emit();
   }
 }
 
 /** The one database event the cache listens for: a new working client. */
 class DatabaseStub {
-  readonly #listeners = new Set<() => void>();
-
-  on<K extends keyof ZoteroReadsEvents>(
-    event: K,
-    cb: ZoteroReadsEvents[K],
-  ): () => void {
-    const listener = cb as () => void;
-    if (event === "changed") this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  changed(): void {
-    for (const listener of this.#listeners) listener();
+  readonly #events = testEvent<void>();
+  readonly changed = this.#events.stream;
+  readonly degraded = Stream.empty;
+  readonly "refresh-failed" = Stream.empty;
+  readonly refreshing = Stream.empty;
+  readonly "refresh-requested" = Stream.empty;
+  readonly "db-file-missing" = Stream.empty;
+  notifyChanged() {
+    this.#events.emit();
   }
 }
 
 class ZoteroPrefStub {
-  readonly #listeners = new Set<() => void>();
-
-  constructor(
-    /** Zotero data directory whose installed styles are available to renders. */
-    readonly dataDir = "/nowhere/zotlit-render-cache",
-  ) {}
-
-  on<K extends keyof ZoteroPrefEvents>(
-    event: K,
-    cb: ZoteroPrefEvents[K],
-  ): () => void {
-    const listener = cb as () => void;
-    if (event === "resolved-changed") this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  /** Another Zotero data directory: another library, and other styles. */
-  resolvedChanged(): void {
-    for (const listener of this.#listeners) listener();
+  readonly #events = testEvent<void>();
+  readonly changed = Stream.empty;
+  readonly "data-dir-changed" = Stream.empty;
+  readonly "resolved-changed" = this.#events.stream;
+  constructor(readonly dataDir = "/nowhere/zotlit-render-cache") {}
+  resolvedChanged() {
+    this.#events.emit();
   }
 }
 
@@ -439,21 +429,18 @@ class SettingsStub {
   get loaded() {
     return Promise.resolve(this.current);
   }
-  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
+  readonly #events = testEvent<Readonly<Settings>>();
+  readonly changes = Stream.suspend(() =>
+    this.#events.stream.pipe(Stream.prepend([this.current])),
+  );
 
   constructor(overrides: SettingsOverrides = {}) {
     this.current = applySettingsOverrides(defaults, overrides);
   }
 
-  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
   update(overrides: SettingsOverrides): void {
     this.current = applySettingsOverrides(this.current, overrides);
-    for (const listener of this.#listeners) listener(this.current);
+    this.#events.emit(this.current);
   }
 }
 
@@ -497,7 +484,6 @@ interface Harness extends AsyncDisposable {
   /** Every `invalidated` the cache announced. */
   invalidations: number[];
   profileEvents: {
-    on(event: "changed", callback: () => void): () => void;
     emit(event: "changed"): void;
   };
   /** Unavailable selected styles announced during this plugin lifecycle. */
@@ -523,23 +509,13 @@ async function openHarness(
     "citation.references-style": null,
     ...overrides,
   });
-  const listeners = new Set<() => void>();
-  const profileEvents = {
-    on: (_event: "changed", callback: () => void) => {
-      listeners.add(callback);
-      return () => {
-        listeners.delete(callback);
-      };
-    },
-    emit: (_event: "changed") => {
-      for (const callback of listeners) callback();
-    },
-  };
+  const profileChanged = testEvent<void>();
+  const profileEvents = { emit: (_event: "changed") => profileChanged.emit() };
   const cache = stack.use(
     await bibliographyRenderFixture(
       {
         profile: profile ?? {
-          on: (event, callback) => profileEvents.on(event, callback),
+          changed: profileChanged.stream,
         },
         db,
         pandocEngine,
@@ -551,9 +527,13 @@ async function openHarness(
   );
 
   const invalidations: number[] = [];
-  cache.on("invalidated", () => invalidations.push(invalidations.length + 1));
+  subscribe(cache.runtime, cache["invalidated"], () =>
+    invalidations.push(invalidations.length + 1),
+  );
   const missingStyles: string[] = [];
-  cache.onStyleMissing((styleId) => missingStyles.push(styleId));
+  subscribe(cache.runtime, cache.missingStyle, (styleId) =>
+    missingStyles.push(styleId),
+  );
 
   const held = stack.move();
   return {
@@ -728,7 +708,7 @@ describe("BibliographyRenderCache", () => {
       const items = [item("alpha")];
 
       yield* Effect.promise(() => cache.render(items));
-      db.changed();
+      db.notifyChanged();
       yield* Effect.promise(() => cache.render(items));
 
       expect(invalidations).toHaveLength(1);
@@ -892,7 +872,7 @@ describe("BibliographyRenderCache", () => {
       );
       expect(engine.requests).toHaveLength(1);
 
-      db.changed();
+      db.notifyChanged();
       yield* Effect.promise(() =>
         expect(cache.render(items)).resolves.toMatchObject({
           kind: "held",
@@ -934,7 +914,7 @@ describe("BibliographyRenderCache", () => {
         };
         const first = read("Old title");
         yield* Effect.promise(() => started.promise);
-        h.db.changed();
+        h.db.notifyChanged();
         const updated = read("Current title");
         gate.resolve();
         yield* Effect.promise(async () => await first);
@@ -959,7 +939,7 @@ describe("BibliographyRenderCache", () => {
             ? h.cache.readBibliography([item("alpha")])
             : h.cache.readCitations(["[@alpha]"], [item("alpha")]);
         yield* Effect.promise(async () => await read());
-        h.db.changed();
+        h.db.notifyChanged();
         h.engine.fails = true;
 
         yield* Effect.promise(() => expect(read()).rejects.toThrow("no"));
@@ -978,10 +958,12 @@ describe("BibliographyRenderCache", () => {
       const { cache } = harness;
       const settlements: [string, Held<unknown> | null][] = [];
       const delivered = yield* Queue.unbounded<void>();
-      cache.on("settled", (key, held) => {
-        settlements.push([key, held]);
-        Queue.offerUnsafe(delivered, undefined);
-      });
+      subscribe(cache.runtime, cache["settled"], (args) =>
+        ((key, held) => {
+          settlements.push([key, held]);
+          Queue.offerUnsafe(delivered, undefined);
+        })(...args),
+      );
 
       yield* Effect.promise(() => cache.render([item("alpha")]));
       yield* Queue.take(delivered);
@@ -1019,7 +1001,7 @@ describe("BibliographyRenderCache", () => {
       );
 
       engine.fails = true;
-      db.changed();
+      db.notifyChanged();
 
       const replacing = yield* Effect.promise(() => cache.render(items));
       if (replacing.kind !== "held") throw new Error("Missing held render");
@@ -1049,11 +1031,11 @@ describe("BibliographyRenderCache", () => {
 
       const gate = Promise.withResolvers<void>();
       engine.gate = gate;
-      db.changed();
+      db.notifyChanged();
       // The render that answers here is the held one; the replacement it starts
       // is the one the second drop lands on.
       yield* Effect.promise(() => cache.render(items));
-      db.changed();
+      db.notifyChanged();
       gate.resolve();
 
       // The superseded second render never publishes: the ask its cancellation
@@ -1099,11 +1081,15 @@ describe("BibliographyRenderCache", () => {
         expect(missingStyles).toEqual([APA]);
 
         const lateMissingStyles: string[] = [];
-        cache.onStyleMissing((styleId) => lateMissingStyles.push(styleId));
+        subscribe(cache.runtime, cache.missingStyle, (styleId) =>
+          lateMissingStyles.push(styleId),
+        );
         expect(lateMissingStyles).toEqual([APA]);
 
         const newMissingStyles: string[] = [];
-        cache.on("style-missing", (styleId) => newMissingStyles.push(styleId));
+        subscribe(cache.runtime, cache["style-missing"], (styleId) =>
+          newMissingStyles.push(styleId),
+        );
         harness.settings.update({ "citation.locale": "fr-FR" });
         yield* TestClock.adjust(0);
         expect(newMissingStyles).toEqual([]);
@@ -1341,7 +1327,7 @@ describe("BibliographyRenderCache citations", () => {
         }),
       );
       engine.fails = false;
-      db.changed();
+      db.notifyChanged();
       expect(
         citationValue(
           yield* Effect.promise(() =>

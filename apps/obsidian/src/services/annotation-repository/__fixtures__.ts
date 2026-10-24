@@ -1,15 +1,15 @@
+import { vi } from "vitest";
+
+import { createClient } from "@zotlit/db/client/node";
 // The Annotation Repository over a real query client and a real Zotero Local
 // API client, with a fake transport under it: the seam every surface reads and
 // writes through. The repository's own suite and the reader suites build on it,
 // so a reader test sees the pending, failed and conflicted states the
 // repository itself produces.
-
-import { vi } from "vitest";
-
-import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { Stream } from "@/lib/effect";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import {
   annotationItem,
@@ -31,10 +31,7 @@ import type {
   ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
 import type { WireTag } from "@/services/zotero-local-api/wire";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsEvents,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -201,16 +198,19 @@ export async function setup(
   );
   if (group) moveToGroup(client, group);
 
-  const dbEvents = createNanoEvents<ZoteroReadsEvents>();
+  const changed = testEvent<void>();
+  const dbEvents = { emit: (_event: "changed") => changed.emit() };
   const reads = stack.use(inProcessReadsService(sharedClientOpener(client)));
   const acquireRead = vi.fn(() => reads.acquireRead());
   const db = {
     acquireRead,
     refresh: vi.fn(() => Promise.resolve()),
-    on: <K extends keyof ZoteroReadsEvents>(
-      event: K,
-      cb: ZoteroReadsEvents[K],
-    ) => dbEvents.on(event, cb),
+    changed: changed.stream,
+    degraded: Stream.empty,
+    "refresh-failed": Stream.empty,
+    refreshing: Stream.empty,
+    "db-file-missing": Stream.empty,
+    "refresh-requested": Stream.empty,
   };
 
   const {
@@ -225,6 +225,7 @@ export async function setup(
   const queryClient = queryClientsFixture();
   stack.use(queryClient);
   const repository = new AnnotationRepository({
+    runtime: queryClient.runtime,
     db,
     queryClient,
     localApi,

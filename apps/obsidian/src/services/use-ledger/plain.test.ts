@@ -1,7 +1,9 @@
 import { expect } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { buildUseLedger, fakeApp } from "./__fixtures__";
@@ -14,11 +16,10 @@ it.effect("keeps a throwing listener subscribed for later Uses", () =>
       async () => new AsyncDisposableStack(),
     );
     const ledger = buildUseLedger(fakeApp({ load: () => undefined }), stack);
-    ledger.record("AAAAAAAA", "opened");
     const received: Ledger[] = [];
     const { promise, resolve } = Promise.withResolvers<void>();
     stack.defer(
-      ledger.subscribe((next) => {
+      subscribe(ledger.runtime, Stream.drop(ledger.changes, 1), (next) => {
         received.push(next);
         if (received.length === 1) throw new Error("listener failed");
         if ("AAAAAAAC" in next) resolve();
@@ -30,12 +31,18 @@ it.effect("keeps a throwing listener subscribed for later Uses", () =>
     yield* Effect.promise(() => promise);
 
     expect(received.map((next) => Object.keys(next).sort())).toEqual([
-      ["AAAAAAAA", "AAAAAAAB"],
-      ["AAAAAAAA", "AAAAAAAB", "AAAAAAAC"],
+      ["AAAAAAAB"],
+      ["AAAAAAAB", "AAAAAAAC"],
     ]);
+    const last = ledger.current;
     yield* Effect.promise(() => stack.disposeAsync());
+    expect(ledger.current).toBe(last);
+    expect(ledger.get("AAAAAAAB")).toBe(last.AAAAAAAB);
+    expect(Object.keys(ledger.uses).sort()).toEqual(["AAAAAAAB", "AAAAAAAC"]);
+    ledger.record("AAAAAAAD", "opened");
+    expect(ledger.current).toBe(last);
     expect(() =>
-      ledger.subscribe(() => {
+      subscribe(ledger.runtime, Stream.drop(ledger.changes, 1), () => {
         throw new Error("closed listener");
       })(),
     ).not.toThrow();

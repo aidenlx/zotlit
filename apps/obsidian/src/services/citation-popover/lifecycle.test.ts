@@ -3,6 +3,8 @@ import type { HoverParent, TFile } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { wrapNodeHover } from "@/services/graph-citations/hover";
@@ -46,15 +48,12 @@ function harness() {
   const targets = document.body.appendChild(document.createElement("div"));
   const first = targets.appendChild(document.createElement("span"));
   const second = targets.appendChild(document.createElement("span"));
-  const listeners = new Map<string, Set<() => void>>();
-  const on = (event: string, listener: () => void) => {
-    const group = listeners.get(event) ?? new Set();
-    listeners.set(event, group);
-    group.add(listener);
-    return () => {
-      group.delete(listener);
-    };
-  };
+  const events = testEvents<Record<string, () => void>>([
+    "changed",
+    "status-changed",
+    "invalidated",
+  ]);
+
   const metadata = new Map<string, Set<(file: TFile) => void>>();
   const render = vi.fn<() => Promise<BibliographyRenderOutcome>>(async () => ({
     kind: "unavailable",
@@ -68,6 +67,7 @@ function harness() {
   const textReads: AbortSignal[] = [];
   const db = reads();
   const service = new CitationPopover({
+    runtime: testRuntime(),
     app: {
       vault: { getFileByPath: (path: string) => ({ path }) },
       metadataCache: {
@@ -87,7 +87,7 @@ function harness() {
           Object.fromEntries(citekeys.map((key) => [key, { kind: "missing" }])),
         ),
       status: "fresh",
-      on,
+      ...events.streams,
     },
     citationIndex: {
       getDocumentCitationSet: async (
@@ -117,7 +117,7 @@ function harness() {
     libraryScope: { current: [] },
     profile: profileReader(),
     bibliographyRender: {
-      on,
+      ...events.streams,
       render,
       readBibliography,
       vaultPresentation: { styleId: null, locale: null },
@@ -132,7 +132,7 @@ function harness() {
     render,
     readBibliography,
     open,
-    listeners,
+    events,
     metadata,
     textReads,
     async show(
@@ -251,8 +251,8 @@ describe("Citation Popover visits", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(run.parent.hoverPopover).toBeNull();
     expect(document.querySelector(".zt-citation-popover")).toBeNull();
-    expect(run.listeners.get("invalidated")?.size).toBe(0);
-    expect(run.listeners.get("changed")?.size).toBe(0);
+    expect(run.events.subscribers("invalidated")).toBe(0);
+    expect(run.events.subscribers("changed")).toBe(0);
   });
 
   it("releases the previous document's subscriptions when showing a graph work", async () => {
@@ -274,10 +274,10 @@ describe("Citation Popover visits", () => {
     );
     expect(run.metadata.get("deleted")?.size).toBe(0);
     expect(run.metadata.get("changed")?.size).toBe(0);
-    expect(run.listeners.get("invalidated")?.size).toBe(1);
+    expect(run.events.subscribers("invalidated")).toBe(1);
     await run.show({ kind: "item", indexedKey: "ABCD2345" });
-    expect(run.listeners.get("changed")?.size).toBe(0);
-    expect(run.listeners.get("status-changed")?.size).toBe(0);
+    expect(run.events.subscribers("changed")).toBe(0);
+    expect(run.events.subscribers("status-changed")).toBe(0);
   });
 
   it("keeps the newest work and actions when earlier formatting finishes last", async () => {
@@ -290,7 +290,7 @@ describe("Citation Popover visits", () => {
     expect(card.textContent).toContain("Alpha");
 
     run.readBibliography.mockReturnValueOnce(old.promise);
-    for (const listener of run.listeners.get("invalidated") ?? []) listener();
+    run.events.emit("invalidated");
     await act(async () => {});
     run.readBibliography.mockReturnValueOnce(next.promise);
     await run.show({ kind: "item", indexedKey: "BCDE3456" }, run.second);

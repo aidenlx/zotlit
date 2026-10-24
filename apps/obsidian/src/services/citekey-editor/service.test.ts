@@ -5,6 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -96,6 +99,7 @@ describe("CitekeyEditor Profile creation", () => {
       paper2024: { kind: "unique", item },
     });
     const service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: {
         workspace: {
           updateOptions: () => {},
@@ -221,6 +225,7 @@ describe("CitekeyEditor settings lifecycle", () => {
     let registered: Extension[] = [];
     let reconfigures = 0;
     const service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: {
         workspace: {
           updateOptions: () => reconfigures++,
@@ -269,6 +274,7 @@ describe("CitekeyEditor settings lifecycle", () => {
     });
     let registered: Extension[] = [];
     await using service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: { workspace: { updateOptions: () => undefined } },
       plugin: {
         registerEditorExtension: (extension: Extension) => {
@@ -295,6 +301,7 @@ describe("CitekeyEditor hover source", () => {
   it("registers one Mod-gated hover-link source for every citekey surface", async () => {
     const sources: Record<string, HoverLinkSource> = {};
     await using service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: { workspace: { updateOptions: () => undefined } },
       plugin: {
         registerEditorExtension: () => undefined,
@@ -322,6 +329,7 @@ describe("CitekeyEditor lookup ownership", () => {
     const citationLookup = new LookupStub();
     let requests = 0;
     await using service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: {
         workspace: {
           updateOptions: () => undefined,
@@ -362,6 +370,7 @@ describe("CitekeyEditor citation text broadcast", () => {
   const openEditors = async (dispatched: string[]) => {
     const citationText = new CitationTextStub();
     const service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: {
         workspace: {
           updateOptions: () => undefined,
@@ -445,6 +454,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
     const citationLookup = new LookupStub({ doe2024: AMBIGUOUS });
     const ambiguities: AmbiguousCitekey[] = [];
     const service = new CitekeyEditor({
+      runtime: testRuntime(),
       app: {
         workspace: {
           updateOptions: () => undefined,
@@ -595,20 +605,17 @@ class LookupStub extends CitationLookupStub {
 class SettingsStub {
   current: Readonly<Settings>;
   readonly ready = Promise.resolve();
-  readonly #listeners = new Set<(settings: Readonly<Settings>) => void>();
+  readonly #events = testEvent<Readonly<Settings>>();
+  readonly changes = Stream.suspend(() =>
+    this.#events.stream.pipe(Stream.prepend([this.current])),
+  );
 
   constructor(overrides: Partial<Settings> = {}) {
     this.current = { ...defaults, ...overrides };
   }
 
-  subscribe(listener: (settings: Readonly<Settings>) => void): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
   update(overrides: Partial<Settings>): void {
     this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
+    this.#events.emit(this.current);
   }
 }

@@ -13,6 +13,8 @@ import type {
 } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
@@ -106,7 +108,8 @@ export interface LocalServerEvents {
 }
 
 export interface LocalServerServiceDeps {
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  runtime: SubscriptionRuntime;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   zoteroPref: Pick<PlainZoteroPref, "sourceId">;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getIndexedItemKeys">;
 }
@@ -123,6 +126,7 @@ export interface LocalServerServiceDeps {
  * transitions are serialized so a port change can't race a half-closed server.
  */
 export class LocalServerService extends Service<void> {
+  readonly #runtime;
   readonly #settings;
   readonly #zoteroPref;
   readonly #noteIndex;
@@ -146,6 +150,7 @@ export class LocalServerService extends Service<void> {
 
   constructor(deps: LocalServerServiceDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#settings = deps.settings;
     this.#zoteroPref = deps.zoteroPref;
     this.#noteIndex = deps.noteIndex;
@@ -275,7 +280,7 @@ export class LocalServerService extends Service<void> {
       await this.#stopServer();
     });
     stack.defer(
-      this.#settings.subscribe((value) => {
+      subscribe(this.#runtime, this.#settings.changes, (value) => {
         if (value) this.#onSettingsChanged(value);
       }),
     );

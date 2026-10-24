@@ -11,6 +11,8 @@ import {
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
 import { registerEvent } from "@/lib/disposables";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
 import type { OpenDocuments } from "@/lib/open-documents";
@@ -83,19 +85,34 @@ interface CitationTextEvents {
 }
 
 export interface CitationTextDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  citationLookup: Pick<PlainCitationLookup, "on">;
+  citationLookup: Pick<PlainCitationLookup, "changed" | "status-changed">;
   citationIndex: Pick<
     PlainCitationIndex,
-    "getDocumentCitationSet" | "getParsedDocument" | "on"
+    | "getDocumentCitationSet"
+    | "getParsedDocument"
+    | "changed"
+    | "backfilled"
+    | "membership-changed"
+    | "cited-by-invalidated"
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
-  noteIndex: Pick<PlainNoteIndex, "on" | "whenIndexed">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "changed" | "indexed" | "frontmatter-changed" | "whenIndexed"
+  >;
   profile: ProfileReader;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     PlainBibliographyRender,
-    "readCitations" | "readBibliography" | "on" | "vaultPresentation"
+    | "readCitations"
+    | "readBibliography"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
+    | "vaultPresentation"
   >;
   /** The plugin-wide query client every Held Read is realized on. */
   queryClient: Pick<
@@ -130,6 +147,7 @@ export interface CitationTextDeps {
  * {@link CitationTextEvents} says what it holds no longer stands.
  */
 export class CitationText extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #citationIndex;
   readonly #citationLookup;
@@ -146,6 +164,7 @@ export class CitationText extends Service<void> {
 
   constructor(deps: CitationTextDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#citationIndex = deps.citationIndex;
     this.#citationLookup = deps.citationLookup;
@@ -236,11 +255,15 @@ export class CitationText extends Service<void> {
       }),
     );
     stack.defer(
-      this.#citationIndex.on("membership-changed", () => this.#invalidate()),
+      subscribe(this.#runtime, this.#citationIndex["membership-changed"], () =>
+        this.#invalidate(),
+      ),
     );
     // A document's own citekeys decide what its citations say.
     stack.defer(
-      this.#citationIndex.on("changed", (path) => this.#invalidate(path)),
+      subscribe(this.#runtime, this.#citationIndex["changed"], (path) =>
+        this.#invalidate(path),
+      ),
     );
     // So does everything else the document writes around them: a locator or a
     // prefix is part of the source a render is keyed by, and editing one leaves
@@ -263,16 +286,30 @@ export class CitationText extends Service<void> {
     // reaches. The Note Index reports every moved mapping as `changed`, and
     // its one Full Scan per session as `indexed`, which a reader of the
     // index before the scan reads again.
-    stack.defer(this.#noteIndex.on("changed", () => this.#invalidate()));
-    stack.defer(this.#noteIndex.on("indexed", () => this.#invalidate()));
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["changed"], () =>
+        this.#invalidate(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["indexed"], () =>
+        this.#invalidate(),
+      ),
+    );
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
-    stack.defer(this.#citationLookup.on("changed", () => this.#invalidate()));
+    stack.defer(
+      subscribe(this.#runtime, this.#citationLookup["changed"], () =>
+        this.#invalidate(),
+      ),
+    );
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(
-      this.#bibliographyRender.on("invalidated", () => this.#invalidate()),
+      subscribe(this.#runtime, this.#bibliographyRender["invalidated"], () =>
+        this.#invalidate(),
+      ),
     );
 
     this.commit(stack.move());

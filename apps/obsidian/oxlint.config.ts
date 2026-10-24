@@ -187,17 +187,13 @@ export default defineConfig({
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/annotation-repository/__fixtures__.ts",
         "src/services/annotation-repository/service.ts",
         "src/services/attachment-import/service.ts",
-        "src/services/attachment-resolver/__fixtures__.ts",
         "src/services/attachment-resolver/service.ts",
         "src/services/citation-text/service.ts",
         "src/services/citekey-editor/service.ts",
-        "src/services/graph-citations/service.test.ts",
         "src/services/local-bridge/service.ts",
         "src/services/local-server/service.ts",
-        "src/services/note-feature/operations.membership.test.ts",
         "src/services/note-feature/operations.ts",
         "src/services/pdf-annotation-editor/__fixtures__.ts",
         "src/services/pdf-annotation-editor/service.ts",
@@ -207,28 +203,8 @@ export default defineConfig({
         "src/views/library/item-drag.test.ts",
         "src/views/library/view.test.ts",
         "src/views/query-view/table-notes.ts",
-        "src/views/welcome/banner.test.ts",
       ],
       rules: { "zotlit-services/no-nanoevents": "off" },
-    },
-    {
-      // Adapters written before plain-adapter-streams. A file moves off this
-      // list when its callers subscribe through the helper (#1705).
-      files: [
-        "src/services/citation-index/plain.ts",
-        "src/services/library-scope/plain.ts",
-        "src/services/managed-binary/plain.ts",
-        "src/services/note-index/plain.ts",
-        "src/services/pandoc/render-cache/plain.ts",
-        "src/services/profile/plain.ts",
-        "src/services/query-client/plain.ts",
-        "src/services/settings/plain.ts",
-        "src/services/template/plain.ts",
-        "src/services/use-ledger/plain.ts",
-        "src/services/zotero-pref/plain.ts",
-        "src/services/zotero-reads/plain.ts",
-      ],
-      rules: { "zotlit-services/plain-adapter-streams": "off" },
     },
     {
       // Registered its events before obsidianEvents existed. It moves off this

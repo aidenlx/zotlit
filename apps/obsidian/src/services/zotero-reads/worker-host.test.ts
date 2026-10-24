@@ -21,6 +21,7 @@ import {
 } from "@/lib/effect";
 import type { Duration } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { getLogger } from "@/lib/log";
 import type { EffectiveReadMode } from "@/services/database/read-source";
@@ -293,7 +294,9 @@ describe("ZoteroReads worker adapter", () => {
         expect(yield* workerSeen(oldLease.reads)).toBe(1);
 
         const degraded = Promise.withResolvers<void>();
-        const off = service.on("degraded", () => degraded.resolve());
+        const off = subscribe(service.runtime, service["degraded"], () =>
+          degraded.resolve(),
+        );
         yield* workers.kill(1);
         yield* Effect.promise(() => degraded.promise);
         off();
@@ -590,7 +593,7 @@ describe("ZoteroReads worker adapter", () => {
         yield* workerSeen(reads);
 
         const degraded = new Promise<DbUnavailable>((resolve) =>
-          service.on("degraded", resolve),
+          subscribe(service.runtime, service["degraded"], resolve),
         );
         yield* workers.kill(1);
         yield* Effect.promise(() =>
@@ -624,7 +627,9 @@ describe("ZoteroReads worker adapter", () => {
           vi.waitFor(() => expect(service.state).toBe("ready")),
         );
         const degraded: DbUnavailable[] = [];
-        service.on("degraded", (error) => degraded.push(error));
+        subscribe(service.runtime, service["degraded"], (error) =>
+          degraded.push(error),
+        );
 
         yield* runtime.disposeEffect;
 

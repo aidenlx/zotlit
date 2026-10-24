@@ -1,8 +1,10 @@
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect, Layer, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { ParseWorkerDied } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -271,13 +273,17 @@ it.effect(
         },
       );
       const publications: string[][] = [];
-      harness.index.on("changed", () =>
+      subscribe(harness.index.runtime, harness.index["changed"], () =>
         publications.push(harness.index.citationKeys()),
       );
       harness.workspace.layoutReady();
       await started.promise;
       const changed = new Promise<void>((resolve) =>
-        harness.index.once("changed", () => resolve()),
+        subscribe(
+          harness.index.runtime,
+          Stream.take(harness.index["changed"], 1),
+          () => resolve(),
+        ),
       );
       harness.metadataCache.change(harness.draft, "@roe2025");
       await changed;
@@ -658,7 +664,7 @@ it.effect(
         { notes: false, parseClient: recovery.client },
       );
       const publications: string[][] = [];
-      harness.index.on("changed", () =>
+      subscribe(harness.index.runtime, harness.index["changed"], () =>
         publications.push(harness.index.citationKeys()),
       );
       harness.workspace.layoutReady();

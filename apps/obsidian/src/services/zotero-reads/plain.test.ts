@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import { Deferred, Effect, Queue, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { readsFixture } from "./__fixtures__";
@@ -69,14 +70,22 @@ it.effect("keeps throwing state and event listeners subscribed (#1705)", () =>
     const states = yield* Queue.unbounded<string>();
     const requests: string[] = [];
     let changes = 0;
-    const stop = plain.subscribe((next) => {
-      Queue.offerUnsafe(states, next.state);
-      if (++changes === 1) throw new Error("state listener failed");
-    });
-    const stopEvent = plain.on("refresh-requested", () => {
-      requests.push("refresh");
-      if (requests.length === 1) throw new Error("event listener failed");
-    });
+    const stop = subscribe(
+      plain.runtime,
+      Stream.drop(plain.changes, 1),
+      (next) => {
+        Queue.offerUnsafe(states, next.state);
+        if (++changes === 1) throw new Error("state listener failed");
+      },
+    );
+    const stopEvent = subscribe(
+      plain.runtime,
+      plain["refresh-requested"],
+      () => {
+        requests.push("refresh");
+        if (requests.length === 1) throw new Error("event listener failed");
+      },
+    );
     const first = plain.refresh();
     const second = plain.refresh();
     yield* Effect.promise(() => Promise.all([first, second]));
@@ -116,8 +125,12 @@ it.effect(
         }),
       );
       const received: unknown[] = [];
-      plain.subscribe((state) => received.push(state))();
-      plain.on("changed", () => received.push("changed"))();
+      subscribe(plain.runtime, Stream.drop(plain.changes, 1), (state) =>
+        received.push(state),
+      )();
+      subscribe(plain.runtime, plain["changed"], () =>
+        received.push("changed"),
+      )();
       expect(received).toEqual([]);
     }),
 );

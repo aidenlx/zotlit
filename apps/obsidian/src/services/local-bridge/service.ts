@@ -15,6 +15,8 @@ import {
 import type { ProfileBindingDefaults } from "@zotlit/workbench/bridge";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
@@ -68,9 +70,10 @@ export interface LocalBridgeEvents {
 }
 
 export interface LocalBridgeServiceDeps {
+  runtime: SubscriptionRuntime;
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
@@ -95,6 +98,7 @@ export interface LocalBridgeServiceDeps {
  * the plugin disposes the service, which revokes it.
  */
 export class LocalBridgeService extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #webWorkbenchEnabled;
   readonly #settings;
@@ -115,6 +119,7 @@ export class LocalBridgeService extends Service<void> {
 
   constructor(deps: LocalBridgeServiceDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#webWorkbenchEnabled = deps.webWorkbenchEnabled;
     this.#settings = deps.settings;
@@ -209,7 +214,7 @@ export class LocalBridgeService extends Service<void> {
       this.#sessions.revokeAll();
     });
     stack.defer(
-      this.#settings.subscribe((value) => {
+      subscribe(this.#runtime, this.#settings.changes, (value) => {
         if (value) this.#onSettingsChanged(value);
       }),
     );

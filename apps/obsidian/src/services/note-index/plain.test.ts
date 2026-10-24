@@ -1,6 +1,8 @@
 import { expect } from "vitest";
 
+import { Stream } from "@/lib/effect";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { cache, makeHarness } from "./__fixtures__";
@@ -17,12 +19,16 @@ it.effect("a throwing subscriber receives both immediate edits (#1705)", () =>
     const second = vault.files.get("second.md")!;
     const received: NoteIndexChange[] = [];
     const delivered = Promise.withResolvers<void>();
-    const stop = service.subscribe((change) => {
-      received.push(change);
-      if (received.length === 1) throw new Error("listener failed");
-      if (change.type === "frontmatter-changed" && change.file === second)
-        delivered.resolve();
-    });
+    const stop = subscribe(
+      service.runtime,
+      Stream.drop(service.changes, 1),
+      (change) => {
+        received.push(change);
+        if (received.length === 1) throw new Error("listener failed");
+        if (change.type === "frontmatter-changed" && change.file === second)
+          delivered.resolve();
+      },
+    );
     metadataCache.change(first, cache({ itemKey: "ABCD2345" }));
     metadataCache.change(second, cache({ itemKey: "ZZZ99999" }));
     yield* Effect.promise(() => delivered.promise);
@@ -52,8 +58,10 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
     const paper = vault.files.get("paper.md")!;
     const imported = vault.files.get("import.md")!;
     const received: NoteIndexChange[] = [];
-    const stopBeforeClose = service.subscribe((change) =>
-      received.push(change),
+    const stopBeforeClose = subscribe(
+      service.runtime,
+      Stream.drop(service.changes, 1),
+      (change) => received.push(change),
     );
     yield* Effect.promise(close);
     expect(service.getNotesByItemKey("ABCD2345")).toEqual([paper]);
@@ -66,9 +74,15 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
     expect(service.getIndexedItemKeys()).toEqual(["ABCD2345"]);
     yield* Effect.promise(() => service.whenIndexed());
     yield* Effect.promise(() => service.whenSettled());
-    const stop = service.subscribe((change) => received.push(change));
+    const stop = subscribe(
+      service.runtime,
+      Stream.drop(service.changes, 1),
+      (change) => received.push(change),
+    );
     const events: string[] = [];
-    const stopEvent = service.on("changed", () => events.push("changed"));
+    const stopEvent = subscribe(service.runtime, service["changed"], () =>
+      events.push("changed"),
+    );
     metadataCache.change(paper, cache({ itemKey: "NEW12345" }));
     vault.deleteFile("paper.md");
     stopBeforeClose();
@@ -97,10 +111,14 @@ it.effect(
       yield* Effect.promise(() => index.whenIndexed());
       const received: NoteIndexChange[] = [];
       const delivered = Promise.withResolvers<void>();
-      const stop = index.subscribe((change) => {
-        received.push(change);
-        if (change.type === "frontmatter-changed") delivered.resolve();
-      });
+      const stop = subscribe(
+        index.runtime,
+        Stream.drop(index.changes, 1),
+        (change) => {
+          received.push(change);
+          if (change.type === "frontmatter-changed") delivered.resolve();
+        },
+      );
       metadataCache.change(
         vault.files.get("paper.md")!,
         cache({ itemKey: "ABCD2345" }),
@@ -113,9 +131,13 @@ it.effect(
       expect(index.getIndexedItemKeys()).toEqual(["ABCD2345"]);
       stop();
       const removed = Promise.withResolvers<void>();
-      const stopObserver = index.subscribe((change) => {
-        if (change.type === "changed") removed.resolve();
-      });
+      const stopObserver = subscribe(
+        index.runtime,
+        Stream.drop(index.changes, 1),
+        (change) => {
+          if (change.type === "changed") removed.resolve();
+        },
+      );
       vault.deleteFile("paper.md");
       yield* Effect.promise(() => removed.promise);
       stopObserver();

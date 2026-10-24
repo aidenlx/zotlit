@@ -3,6 +3,8 @@ import type { CliData } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import { Effect, Exit, Fiber } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -51,6 +53,7 @@ async function fixture(
   });
   const { host, command } = fakeCliHost();
   registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
+    runtime: testRuntime(),
     app: f.app,
     templates: f.template,
     settings: f.settings,
@@ -526,14 +529,17 @@ describe("registered template-inspect", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture();
         const watching = vi.fn();
-        const on = f.template.on.bind(f.template);
-        vi.spyOn(f.template, "on").mockImplementation((name, callback) => {
-          const off = on(name, callback);
-          watching(true);
-          return () => {
-            watching(false);
-            off();
-          };
+        const original = f.template["compile-status-changed"];
+        Object.defineProperty(f.template, "compile-status-changed", {
+          value: Stream.unwrap(
+            Effect.acquireRelease(
+              Effect.sync(() => {
+                watching(true);
+                return original;
+              }),
+              () => Effect.sync(() => watching(false)),
+            ),
+          ),
         });
         // The first read never answers, so the inspection is still at work.
         f.read.mockImplementation(() => {

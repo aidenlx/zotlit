@@ -9,6 +9,9 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/service";
@@ -31,24 +34,24 @@ interface SettingsStub {
 
 function makeSettings(overrides: Partial<Settings>): SettingsStub {
   let current: Readonly<Settings> = { ...defaults, ...overrides };
-  const subscribers = new Set<(value: Readonly<Settings>) => void>();
+  const updates = testEvent<Readonly<Settings>>();
   return {
     service: {
       current: current,
-      subscribe: (cb: (value: Readonly<Settings>) => void) => {
-        subscribers.add(cb);
-        return () => subscribers.delete(cb);
-      },
+      changes: Stream.suspend(() =>
+        updates.stream.pipe(Stream.prepend([current])),
+      ),
     } as unknown as PlainPluginSettings,
     update(patch) {
       current = { ...current, ...patch };
-      for (const cb of subscribers) cb(current);
+      updates.emit(current);
     },
   };
 }
 
 function makeDeps(settings: PlainPluginSettings): LocalServerServiceDeps {
   return {
+    runtime: testRuntime(),
     settings,
     zoteroPref: { sourceId: SOURCE_ID },
     noteIndex: {

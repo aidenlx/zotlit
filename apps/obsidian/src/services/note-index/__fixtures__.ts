@@ -23,7 +23,8 @@ export const noteIndexOf = Effect.fn("fixture.noteIndexOf")(function* (
 });
 
 export function buildNoteIndex(app: App, stack: AsyncDisposableStack) {
-  return plainNoteIndex(buildRuntime(noteIndexOver(app), stack));
+  const runtime = buildRuntime(noteIndexOver(app), stack);
+  return Object.assign(plainNoteIndex(runtime), { runtime });
 }
 
 type Callback = (...args: unknown[]) => void;
@@ -190,7 +191,9 @@ export interface Harness {
   app: App;
   metadataCache: MockMetadataCache;
   workspace: MockWorkspace;
-  service: PlainNoteIndex;
+  service: PlainNoteIndex & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  };
   close: () => Promise<void>;
   vault: MockVault;
 }

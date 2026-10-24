@@ -2,6 +2,7 @@ import type { App, CachedMetadata, TFile } from "obsidian";
 import { describe, expect } from "vitest";
 
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
 
@@ -97,8 +98,12 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: false },
         );
         const heard: string[] = [];
-        service.on("changed", (file) => heard.push(`changed ${file.path}`));
-        service.on("indexed", () => heard.push("indexed"));
+        subscribe(service.runtime, service["changed"], (file) =>
+          heard.push(`changed ${file.path}`),
+        );
+        subscribe(service.runtime, service["indexed"], () =>
+          heard.push("indexed"),
+        );
         startup({ metadataCache, workspace, vault });
         // The whole index changed, not one file.
         expect(heard).toEqual(["indexed"]);
@@ -148,7 +153,7 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: false },
         );
         const seen: string[][] = [];
-        service.on("indexed", () =>
+        subscribe(service.runtime, service["indexed"], () =>
           seen.push(paths(service.getNotesByItemKey(ITEM_A))),
         );
 
@@ -185,7 +190,9 @@ describe("NoteIndex", () => {
       });
       startup({ metadataCache, workspace, vault });
       const changed: string[] = [];
-      service.on("changed", (file) => changed.push(file.path));
+      subscribe(service.runtime, service["changed"], (file) =>
+        changed.push(file.path),
+      );
 
       metadataCache.change(
         vault.files.get("paper.md")!,
@@ -204,7 +211,9 @@ describe("NoteIndex", () => {
       });
       startup({ metadataCache, workspace, vault });
       const changed: string[] = [];
-      service.on("changed", (file) => changed.push(file.path));
+      subscribe(service.runtime, service["changed"], (file) =>
+        changed.push(file.path),
+      );
 
       metadataCache.change(
         vault.files.get("paper.md")!,
@@ -231,8 +240,10 @@ describe("NoteIndex", () => {
         );
         const changed: string[] = [];
         const frontmatter: string[] = [];
-        service.on("changed", (file) => changed.push(file.path));
-        service.on("frontmatter-changed", (file) =>
+        subscribe(service.runtime, service["changed"], (file) =>
+          changed.push(file.path),
+        );
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
           frontmatter.push(file.path),
         );
 
@@ -270,7 +281,7 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: true },
         );
         const frontmatter: string[] = [];
-        service.on("frontmatter-changed", (file) =>
+        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
           frontmatter.push(file.path),
         );
 
@@ -492,7 +503,9 @@ describe.each([
     const harness = yield* makeHarness(files, { enabledAtRuntime });
     if (!enabledAtRuntime) startup(harness);
     const changed: string[] = [];
-    harness.service.on("changed", (file) => changed.push(file.path));
+    subscribe(harness.service.runtime, harness.service["changed"], (file) =>
+      changed.push(file.path),
+    );
     return { ...harness, changed };
   });
 

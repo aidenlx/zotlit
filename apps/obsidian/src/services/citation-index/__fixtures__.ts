@@ -2,7 +2,7 @@
 import type { App } from "obsidian";
 
 import type { Scope } from "@/lib/effect";
-import { Context, Effect, Layer, Queue, Stream } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -33,7 +33,6 @@ import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { layerZoteroReads, ZoteroReads } from "@/services/zotero-reads/service";
-import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 
 import { CitationLookup, layerCitationLookup } from "./lookup-service";
 import { plainCitationIndex, plainCitationLookup } from "./plain";
@@ -42,10 +41,20 @@ import type { CitekeyStore } from "./store";
 
 export async function citationLookupFixture(
   deps: {
-    reads: Pick<PlainZoteroReads, "reads" | "state" | "on">;
+    reads: Pick<
+      PlainZoteroReads,
+      | "reads"
+      | "state"
+      | "changed"
+      | "degraded"
+      | "refresh-failed"
+      | "refreshing"
+      | "db-file-missing"
+      | "refresh-requested"
+    >;
     libraryScope: Pick<
       PlainLibraryScope,
-      "effective" | "current" | "libraries" | "on"
+      "effective" | "current" | "libraries" | "changed" | "libraries-changed"
     >;
     queryClient: Pick<PlainQueryClients, "client" | "invalidate">;
   },
@@ -76,58 +85,42 @@ export async function citationLookupFixture(
           Layer.succeed(LibraryScope, {
             state: Effect.sync(() => state),
             effective: Effect.sync(() => deps.libraryScope.effective),
-            changes: Stream.callback<LibraryScopeState>(
-              Effect.fnUntraced(function* (queue) {
-                Queue.offerUnsafe(queue, state);
-                for (const event of ["changed", "libraries-changed"] as const) {
-                  yield* Effect.acquireRelease(
-                    Effect.sync(() =>
-                      deps.libraryScope.on(event, () => {
-                        state = {
-                          ...state,
-                          current: deps.libraryScope.current,
-                          all:
-                            event === "libraries-changed"
-                              ? {
-                                  mode: "all",
-                                  invalid: false,
-                                  available: deps.libraryScope.libraries,
-                                  unavailable: [],
-                                }
-                              : state.all,
-                          effective: deps.libraryScope.effective,
-                        };
-                        Queue.offerUnsafe(queue, state);
-                      }),
-                    ),
-                    (off) => Effect.sync(off),
-                  );
-                }
+            changes: Stream.merge(
+              deps.libraryScope.changed.pipe(Stream.map(() => "changed")),
+              deps.libraryScope["libraries-changed"].pipe(
+                Stream.map(() => "libraries-changed"),
+              ),
+            ).pipe(
+              Stream.map((event) => {
+                state = {
+                  ...state,
+                  current: deps.libraryScope.current,
+                  all:
+                    event === "libraries-changed"
+                      ? {
+                          mode: "all",
+                          invalid: false,
+                          available: deps.libraryScope.libraries,
+                          unavailable: [],
+                        }
+                      : state.all,
+                  effective: deps.libraryScope.effective,
+                };
+                return state;
               }),
+              Stream.prepend([state]),
             ),
           } as LibraryScope["Service"]),
           Layer.succeed(ZoteroReads, {
             reads: deps.reads.reads,
             current: Effect.sync(() => ({ state: deps.reads.state })),
-            events: Stream.callback<ZoteroReadsEvent>(
-              Effect.fnUntraced(function* (queue) {
-                yield* Effect.acquireRelease(
-                  Effect.sync(() =>
-                    deps.reads.on("changed", () => {
-                      Queue.offerUnsafe(queue, { _tag: "changed" });
-                    }),
-                  ),
-                  (off) => Effect.sync(off),
-                );
-                yield* Effect.acquireRelease(
-                  Effect.sync(() =>
-                    deps.reads.on("degraded", (error) => {
-                      Queue.offerUnsafe(queue, { _tag: "degraded", error });
-                    }),
-                  ),
-                  (off) => Effect.sync(off),
-                );
-              }),
+            events: Stream.merge(
+              deps.reads.changed.pipe(
+                Stream.map(() => ({ _tag: "changed" as const })),
+              ),
+              deps.reads.degraded.pipe(
+                Stream.map((error) => ({ _tag: "degraded" as const, error })),
+              ),
             ),
           } as ZoteroReads["Service"]),
         ),
@@ -250,6 +243,8 @@ export function citationIndexFixture(
     ),
     stack,
   );
-  const ready = runtime.context().then(() => plainCitationIndex(runtime));
+  const ready = runtime
+    .context()
+    .then(() => Object.assign(plainCitationIndex(runtime), { runtime }));
   return { runtime, ready, service: () => runtime.runSync(CitationIndex) };
 }

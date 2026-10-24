@@ -30,6 +30,7 @@ import type {
 
 // One native render owner loads its own Item Snapshot and annotation examples.
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import {
@@ -111,12 +112,24 @@ export class NativePreviewSession implements Disposable {
     this.state = options.state ?? createNativePreviewStore();
     if (options.item !== undefined) this.state.setState({ item: options.item });
     using cleanup = new DisposableStack();
-    cleanup.defer(deps.zoteroReads.on("changed", () => this.refresh()));
     cleanup.defer(
-      deps.templates.on("compile-status-changed", () => scheduler.invalidate()),
+      subscribe(this.#deps.runtime, deps.zoteroReads["changed"], () =>
+        this.refresh(),
+      ),
     );
     cleanup.defer(
-      deps.bibliographyRender.on("invalidated", () => scheduler.invalidate()),
+      subscribe(
+        this.#deps.runtime,
+        deps.templates["compile-status-changed"],
+        () => scheduler.invalidate(),
+      ),
+    );
+    cleanup.defer(
+      subscribe(
+        this.#deps.runtime,
+        deps.bibliographyRender["invalidated"],
+        () => scheduler.invalidate(),
+      ),
     );
     const modify = deps.app.vault.on("modify", (file) => {
       if (file.path === scheduler.getState().result?.sourcePath)

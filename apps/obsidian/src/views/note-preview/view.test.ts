@@ -13,6 +13,8 @@ import {
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
@@ -151,6 +153,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   Object.assign(app.workspace, workspace);
   const editorLeaf = { app } as unknown as WorkspaceLeaf;
   const editor = new Editor(editorLeaf, {
+    runtime: testRuntime(),
     app,
     settings: fixture.deps.settings,
     zoteroReads: fixture.deps.zoteroReads,
@@ -781,7 +784,13 @@ Annotation`,
   it("rolls back failed binding resources and can retry the same view", async () => {
     await using test = await setup();
     const released = vi.fn();
-    vi.spyOn(test.fixture.deps.zoteroReads, "on").mockReturnValue(released);
+    Object.defineProperty(test.fixture.deps.zoteroReads, "changed", {
+      value: Stream.unwrap(
+        Effect.acquireRelease(Effect.succeed(Stream.never), () =>
+          Effect.sync(released),
+        ),
+      ),
+    });
     vi.mocked(createTemplateWorkbenchHost).mockImplementationOnce(() => {
       throw new Error("Host unavailable");
     });
@@ -2040,6 +2049,7 @@ Annotation`,
     const chooseItem = vi.fn();
     const showProblem = vi.fn();
     const earlierPeer = {
+      runtime: testRuntime(),
       leaf: {} as WorkspaceLeaf,
       file: otherFile,
       nativeRenderDeps: test.editor.nativeRenderDeps,

@@ -1,3 +1,4 @@
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 /**
  * Test double for the Note Index, shared by the consumer suites. Holds a
  * fixed key-to-notes table and property names, and lets a test fire
@@ -8,14 +9,12 @@ type NoteIndexStubEvent = "changed" | "frontmatter-changed" | "indexed";
 export class NoteIndexStub {
   readonly #notes: Record<string, { path: string }[]>;
   readonly #propertyNames: readonly string[];
-  readonly #listeners: Record<
-    NoteIndexStubEvent,
-    Set<(file?: { path: string }) => void>
-  > = {
-    changed: new Set(),
-    "frontmatter-changed": new Set(),
-    indexed: new Set(),
-  };
+  readonly #changed = testEvent<{ path: string }>();
+  readonly #frontmatter = testEvent<{ path: string }>();
+  readonly #indexed = testEvent<void>();
+  readonly changed = this.#changed.stream;
+  readonly "frontmatter-changed" = this.#frontmatter.stream;
+  readonly indexed = this.#indexed.stream;
 
   constructor(
     notes: Record<string, { path: string }[]> = {},
@@ -41,16 +40,10 @@ export class NoteIndexStub {
     return Promise.resolve();
   }
 
-  on(
-    event: NoteIndexStubEvent,
-    cb: (file?: { path: string }) => void,
-  ): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
   /** Fire `event`, for the note `file` where it names one. */
   emit(event: NoteIndexStubEvent, file?: { path: string }): void {
-    for (const cb of this.#listeners[event]) cb(file);
+    if (event === "indexed") this.#indexed.emit();
+    else if (event === "changed") this.#changed.emit(file!);
+    else this.#frontmatter.emit(file!);
   }
 }

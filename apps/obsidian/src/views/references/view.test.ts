@@ -4,7 +4,10 @@ import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { citationOutcome } from "@/services/citation-index/outcome";
@@ -272,6 +275,7 @@ beforeEach(async () => {
   view = new TestReferencesView(
     {} as WorkspaceLeaf,
     {
+      runtime: testRuntime(),
       app,
       db: {
         state: "ready",
@@ -279,19 +283,22 @@ beforeEach(async () => {
           return reads!.reads;
         },
         acquireRead: () => reads!.acquireRead(),
-        on: (event: string, callback: () => void) => {
-          if (event === "changed") onDbChanged = callback;
-          return () => undefined;
-        },
+        changed: (() => {
+          const source = testEvent<void>();
+          onDbChanged = () => source.emit();
+          return source.stream;
+        })(),
       },
       citationLookup: {
         get status() {
           return citekeyResolution ?? "pending";
         },
-        on: (event: string, callback: () => void) => {
-          if (event === "status-changed") onCitedByInvalidated = callback;
-          return () => undefined;
-        },
+        "status-changed": (() => {
+          const source = testEvent<void>();
+          onCitedByInvalidated = () => source.emit();
+          return source.stream;
+        })(),
+        changed: Stream.empty,
       },
       citationIndex: {
         getDocumentCitationSet: () => {
@@ -299,7 +306,10 @@ beforeEach(async () => {
           scans.push(deferred);
           return deferred.promise;
         },
-        on: () => () => undefined,
+        changed: Stream.empty,
+        "membership-changed": Stream.empty,
+        "cited-by-invalidated": Stream.empty,
+        backfilled: Stream.empty,
       },
       citationText: {
         peek: (): Held<DocumentCitations> | null =>
@@ -317,7 +327,7 @@ beforeEach(async () => {
       citekeyEditor: { openIndexedKey: () => Promise.resolve() },
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
-        subscribe: () => () => undefined,
+        changes: Stream.empty,
         decline: () => undefined,
       },
       bibliographyRender: {
@@ -327,10 +337,13 @@ beforeEach(async () => {
           renders.push(deferred);
           return deferred.promise;
         },
-        on: (event: string, callback: () => void) => {
-          if (event === "invalidated") onInvalidated = callback;
-          return () => undefined;
-        },
+        invalidated: (() => {
+          const source = testEvent<void>();
+          onInvalidated = () => source.emit();
+          return source.stream;
+        })(),
+        changed: Stream.empty,
+        settled: Stream.empty,
       },
       profile,
       openSettings: () => undefined,

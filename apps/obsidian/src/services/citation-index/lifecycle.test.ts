@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import { Effect, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
@@ -105,7 +106,9 @@ it.effect(
       h.workspace.layoutReady();
       await h.index.whenIndexed();
       const delivered = Promise.withResolvers<CitationIndexState>();
-      const off = h.index.subscribe((state) => delivered.resolve(state));
+      const off = subscribe(h.index.runtime, h.index.changes, (state) =>
+        delivered.resolve(state),
+      );
       expect(await delivered.promise).toMatchObject({
         backfilled: true,
         coverage: "degraded",
@@ -171,7 +174,7 @@ it.effect(
       const states: string[] = [];
       const memberships: string[] = [];
       let initial = true;
-      const offState = h.index.subscribe((state) => {
+      const offState = subscribe(h.index.runtime, h.index.changes, (state) => {
         if (initial) {
           initial = false;
           return;
@@ -179,10 +182,14 @@ it.effect(
         states.push(state.syntaxes.citekey);
         throw new Error("state listener failed");
       });
-      const offEvent = h.index.subscribe("membership-changed", () => {
-        memberships.push(h.index.syntaxes().citekey);
-        throw new Error("event listener failed");
-      });
+      const offEvent = subscribe(
+        h.index.runtime,
+        h.index["membership-changed"],
+        () => {
+          memberships.push(h.index.syntaxes().citekey);
+          throw new Error("event listener failed");
+        },
+      );
       h.settings.update({ "citation.pandoc-citations": false });
       h.settings.update({ "citation.pandoc-citations": true });
       await expect.poll(() => states).toEqual(["excluded", "included"]);
@@ -212,7 +219,9 @@ it.effect("continues host event intake after a failed handler (#1705)", () =>
       },
     });
     const published = Promise.withResolvers<string>();
-    const off = h.index.subscribe("changed", (path) => published.resolve(path));
+    const off = subscribe(h.index.runtime, h.index["changed"], (path) =>
+      published.resolve(path),
+    );
     h.metadataCache.change(h.draft, "@discarded");
     h.metadataCache.change(h.draft, "@roe2025");
     expect(await published.promise).toBe("draft.md");
@@ -243,7 +252,9 @@ it.effect(
       ).rejects.toMatchObject({ name: "AbortError" });
       expect(h.index.current.stopped).toBe(true);
       const delivered: string[] = [];
-      h.index.subscribe("changed", (path) => delivered.push(path));
+      subscribe(h.index.runtime, h.index["changed"], (path) =>
+        delivered.push(path),
+      );
       h.metadataCache.change(h.draft, "@roe2025");
       expect(delivered).toEqual([]);
       return service;

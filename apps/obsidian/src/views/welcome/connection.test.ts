@@ -2,7 +2,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import {
   inProcessReadsService,
@@ -45,7 +47,9 @@ async function setup(
   const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
   const reads = stack.use(inProcessReadsService(open));
   const queries = stack.use(queryClientsFixture());
-  stack.defer(holdConnectionReadout({ reads, queries }));
+  stack.defer(
+    holdConnectionReadout({ runtime: testRuntime(), reads, queries }),
+  );
   const { reads: initial } = await reads.ready;
   await Effect.runPromise(Effect.ignore(initial.Libraries({})));
   await expect.poll(() => reads.state).not.toBe("loading");
@@ -134,7 +138,7 @@ describe("readConnectionSync", () => {
     await readConnectionStatus(deps);
 
     const changed = new Promise<void>((resolve) => {
-      const off = deps.reads.on("changed", () => {
+      const off = subscribe(deps.reads.runtime, deps.reads["changed"], () => {
         off();
         resolve();
       });

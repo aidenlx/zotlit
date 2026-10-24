@@ -35,7 +35,7 @@ export const profileRuntimeOf = Effect.fnUntraced(function* (
   yield* Effect.promise(() => runtime.context());
   return {
     runtime,
-    profile: plainProfile(runtime),
+    profile: Object.assign(plainProfile(runtime), { runtime }),
     template: plainTemplate(runtime),
     settings: plainPluginSettings(runtime),
   };

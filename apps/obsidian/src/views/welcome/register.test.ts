@@ -3,6 +3,7 @@ import type { App } from "obsidian";
 import { afterEach, expect, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect, Stream } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 import * as m from "@/lib/i18n/generated/messages";
@@ -90,7 +91,7 @@ it.effect(
             callbacks.push(callback);
           },
         },
-        { reads: plain, queries, settings },
+        { runtime: testRuntime(), reads: plain, queries, settings },
       );
       expect(document.body.textContent).toContain(
         m.notice_db_not_found_on_device(),

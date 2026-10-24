@@ -11,6 +11,7 @@ import {
   Stream,
 } from "@/lib/effect";
 import { acquireDisposable } from "@/lib/effect-scope";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { createTemplateHost } from "@/services/template/__fixtures__";
@@ -51,7 +52,7 @@ it.effect(
       const { profile, settings } =
         yield* profileRuntimeOf(createTemplateHost());
       const received = yield* Queue.unbounded<string>();
-      profile.subscribe((state) =>
+      subscribe(profile.runtime, profile.changes, (state) =>
         Queue.offerUnsafe(received, state.defaultDocumentPath),
       );
       settings.update({ "template.folder": "First" });
@@ -144,7 +145,9 @@ it.effect(
       const host = createTemplateHost();
       const { runtime, profile, settings } = yield* profileRuntimeOf(host);
       const received: unknown[] = [];
-      const unsubscribe = profile.subscribe((state) => received.push(state));
+      const unsubscribe = subscribe(profile.runtime, profile.changes, (state) =>
+        received.push(state),
+      );
       expect(received).toHaveLength(1);
       const source = yield* Effect.promise(() => profile.getSource("default"));
       const retained = profile.profiles;
@@ -163,10 +166,10 @@ it.effect(
         (yield* Effect.promise(() => profile.prepareShare("default"))).manifest
           .name,
       ).toBe("Default");
-      profile.subscribe(() => {
+      subscribe(profile.runtime, profile.changes, () => {
         throw new Error("late listener");
       })();
-      profile.on("changed", () => {
+      subscribe(profile.runtime, profile["changed"], () => {
         throw new Error("late event");
       })();
       unsubscribe();

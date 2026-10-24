@@ -3,6 +3,8 @@ import type { EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import {
   annotationRows,
   annotationUri,
@@ -35,6 +37,7 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
   app.workspace.getActiveFile = () => draft;
   app.workspace.on = () => ({}) as EventRef;
   const view = new TestReferencesView({} as WorkspaceLeaf, {
+    runtime: testRuntime(),
     app,
     db,
     libraryScope,
@@ -45,13 +48,16 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
     profile: profileReader(harness.settings.current, app.metadataCache),
     pandocEngine: {
       getStatus: () => ({ kind: "absent" }),
-      subscribe: () => () => {},
+      changes: Stream.empty,
       decline: () => {},
     },
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
       render: async () => ({ kind: "unavailable", reason: "engine-absent" }),
-      on: () => () => {},
+      changed: Stream.empty,
+      settled: Stream.empty,
+      invalidated: Stream.empty,
+      "style-missing": Stream.empty,
     },
     openSettings: () => {},
     openStyleSettings: () => {},

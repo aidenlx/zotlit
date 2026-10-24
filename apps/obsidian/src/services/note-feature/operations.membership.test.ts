@@ -9,10 +9,11 @@ import type { Item, NoteTemplateContext } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -211,9 +212,10 @@ async function harness(
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   seed(client);
-  const zoteroEvents = createNanoEvents<ZoteroReadsEvents>();
+  const zoteroEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   // Library Scope reads the Libraries through ZoteroReads, over the same client.
   const readsEvents = {
+    runtime: testRuntime(),
     reads: {
       Libraries: () =>
         Effect.suspend(() =>
@@ -222,7 +224,7 @@ async function harness(
             : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
         ),
     },
-    on: zoteroEvents.on.bind(zoteroEvents),
+    ...zoteroEvents.streams,
   } as unknown as TestReads;
   let readable = true;
   const fixture = stack.use(
@@ -257,6 +259,7 @@ async function harness(
   // ZotLit Query tests the Profile Matches over the same database.
   const query = stack.use(
     new QueryService({
+      runtime: testRuntime(),
       useLedger: inertUseLedger,
       pluginVersion: "2.2.0",
       reads: zoteroReads,

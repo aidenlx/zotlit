@@ -33,7 +33,10 @@ export interface NativeCitationDeps {
     | "readCitations"
     | "readBibliography"
     | "vaultPresentation"
-    | "on"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
   >;
   citationLookup: Pick<PlainCitationLookup, "read">;
 }

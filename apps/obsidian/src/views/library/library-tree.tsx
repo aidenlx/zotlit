@@ -23,6 +23,8 @@ import { useUniqueId } from "@zotlit/ui";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -59,9 +61,22 @@ import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
 const logger = getLogger(["library-view", "tree"]);
 
 export interface LibraryTreeDeps {
-  reads: Pick<PlainZoteroReads, "on" | "acquireRead">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "acquireRead"
+  >;
   query: Pick<QueryService, "run">;
-  libraryScope: Pick<PlainLibraryScope, "on" | "current" | "libraries">;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "changed" | "libraries-changed" | "current" | "libraries"
+  >;
   /** The Literature Notes the unread count leaves out. */
   literatureNotes: Pick<LiteratureNotes, "find" | "on">;
 }
@@ -172,11 +187,17 @@ export class LibraryTree extends Component {
     const refresh = () => this.refresh();
     // A database change, a database that cannot be read, and another Library
     // Scope each change what the tree holds.
-    this.register(reads.on("changed", refresh));
-    this.register(reads.on("degraded", refresh));
-    this.register(reads.on("db-file-missing", refresh));
-    this.register(libraryScope.on("changed", refresh));
-    this.register(libraryScope.on("libraries-changed", refresh));
+    this.register(subscribe(this.#deps.runtime, reads["changed"], refresh));
+    this.register(subscribe(this.#deps.runtime, reads["degraded"], refresh));
+    this.register(
+      subscribe(this.#deps.runtime, reads["db-file-missing"], refresh),
+    );
+    this.register(
+      subscribe(this.#deps.runtime, libraryScope["changed"], refresh),
+    );
+    this.register(
+      subscribe(this.#deps.runtime, libraryScope["libraries-changed"], refresh),
+    );
     // A Literature Note added or removed makes an Item read or unread.
     this.register(
       this.#deps.literatureNotes.on("changed", () => this.#countUnread()),

@@ -2,6 +2,8 @@ import { Text } from "@codemirror/state";
 import type { App, Editor, EditorSuggestContext, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -542,10 +544,12 @@ describe("Citation Suggester document citations", () => {
       ).open,
     );
     await using lookup = new ItemLookup({
+      runtime: testRuntime(),
       reads,
       useLedger: { uses: {} },
       libraryScope: {
-        on: () => () => {},
+        changed: Stream.empty,
+        "libraries-changed": Stream.empty,
         current: {
           mode: "all",
           invalid: false,

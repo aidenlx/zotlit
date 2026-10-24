@@ -99,6 +99,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
@@ -221,7 +222,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
       PlainTemplate,
       | "waitUntilSettled"
       | "loaded"
-      | "on"
+      | "compile-status-changed"
       | "materializeCitationTemplate"
       | "getPartialDocument"
       | "getPartialDocuments"
@@ -303,6 +304,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * Its report remains available even when this editor's own check differs.
    */
   #arrival: ArrivingProblem | null = null;
+  get runtime() {
+    return this.#deps.runtime;
+  }
+
   get matchDatabase() {
     return this.#deps.zoteroReads;
   }
@@ -590,7 +595,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }),
     );
     this.register(
-      deps.settings.subscribe((settings) => {
+      subscribe(this.#deps.runtime, deps.settings.changes, (settings) => {
         if (!settings) return;
         const bindings = settings["note.default-profile"].bindings;
         this.#bindingDefaults = {
@@ -1687,7 +1692,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * text reads it again from here, the way the preview pane does.
    */
   onTemplatesCompiled(listener: () => void): () => void {
-    return this.#deps.templates.on("compile-status-changed", listener);
+    return subscribe(
+      this.#deps.runtime,
+      this.#deps.templates["compile-status-changed"],
+      listener,
+    );
   }
   /**
    * Open the Shared Partial `name` in a Template Workbench View of its own.
@@ -2698,6 +2707,7 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="match" modeActive={!advanced}>
               <NativeMatchPane
+                runtime={view.runtime}
                 onChooseItem={() => void view.chooseItem()}
                 controller={controller}
                 db={view.matchDatabase}

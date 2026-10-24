@@ -35,11 +35,14 @@ export const settingsRuntimeOf = Effect.fnUntraced(function* (
 });
 
 /** Consumer fixtures outside Effect own the adapter's runtime through this handle. */
-export async function buildSettings(
-  options: SettingsFixtureOptions,
-): Promise<PlainPluginSettings & AsyncDisposable> {
-  const { settings, close } = await openSettings(options);
-  return Object.assign(settings, { [Symbol.asyncDispose]: close });
+export async function buildSettings(options: SettingsFixtureOptions): Promise<
+  PlainPluginSettings &
+    AsyncDisposable & {
+      runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+    }
+> {
+  const { settings, close, runtime } = await openSettings(options);
+  return Object.assign(settings, { runtime, [Symbol.asyncDispose]: close });
 }
 
 async function openSettings(
@@ -52,9 +55,9 @@ async function openSettings(
   );
   const runtime = buildRuntime(layer, stack);
   await runtime.context();
-  const settings = plainPluginSettings(runtime);
+  const settings = Object.assign(plainPluginSettings(runtime), { runtime });
   const lifetime = stack.move();
-  return { settings, close: () => lifetime.disposeAsync() };
+  return { settings, runtime, close: () => lifetime.disposeAsync() };
 }
 
 export const plainSettingsOf = Effect.fnUntraced(function* (

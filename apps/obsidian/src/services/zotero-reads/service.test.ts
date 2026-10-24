@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import { Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 
 import { readsFixture } from "./__fixtures__";
@@ -142,7 +143,9 @@ it.effect("reports the Read Mode of each serving connection", () =>
     );
     expect(plain.activeReadMode).toBe("copy");
     const changes = yield* Queue.unbounded<string | null>();
-    plain.subscribe((next) => Queue.offerUnsafe(changes, next.activeReadMode));
+    subscribe(plain.runtime, Stream.drop(plain.changes, 1), (next) =>
+      Queue.offerUnsafe(changes, next.activeReadMode),
+    );
     mode = "immutable";
     yield* service.refresh();
     expect(yield* Queue.take(changes)).toBe("immutable");

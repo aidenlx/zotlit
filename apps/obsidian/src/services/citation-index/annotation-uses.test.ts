@@ -1,7 +1,9 @@
-import "fake-indexeddb/auto";
 import { deleteDB, openDB } from "idb";
+import "fake-indexeddb/auto";
 import type { App } from "obsidian";
 import { expect, it } from "vitest";
+
+import { subscribe } from "@/lib/effect-stream";
 
 import { openCitekeyStore, SCANNER_REVISION } from "./store";
 import { createCitationIndexHarness, makeFile } from "./test-harness";
@@ -129,7 +131,7 @@ it("keeps uses current through edits, identical touches, renames and deletion (#
   workspace.layoutReady();
   await index.whenIndexed();
   const changes: string[] = [];
-  index.on("changed", (path) => changes.push(path));
+  subscribe(index.runtime, index["changed"], (path) => changes.push(path));
 
   metadataCache.change(draft, body);
   await index.getDocumentCitationSet(draft);

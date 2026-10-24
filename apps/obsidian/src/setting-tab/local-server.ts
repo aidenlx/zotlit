@@ -4,6 +4,7 @@
 import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 
@@ -130,7 +131,7 @@ export function liveUpdatesItems(
           );
           setting.descEl.toggleClass("mod-warning", !listening);
         };
-        stack.defer(ctx.settings.subscribe(apply));
+        stack.defer(subscribe(ctx.runtime, ctx.settings.changes, apply));
         stack.defer(ctx.localServer.on("listening", apply));
         return () => stack.dispose();
       },

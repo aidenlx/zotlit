@@ -8,6 +8,8 @@ import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { PlainQueryClients } from "@/services/query-client/plain";
@@ -42,11 +44,24 @@ const logger = getLogger(["welcome", "banner"]);
 const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeBannerDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  reads: Pick<PlainZoteroReads, "state" | "reads" | "error" | "moved" | "on">;
+  reads: Pick<
+    PlainZoteroReads,
+    | "state"
+    | "reads"
+    | "error"
+    | "moved"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   queries: Pick<PlainQueryClients, "peek" | "read">;
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  settings: Pick<PlainPluginSettings, "subscribe" | "update" | "flush">;
+  settings: Pick<PlainPluginSettings, "changes" | "update" | "flush">;
   setupActions: SetupActions;
   templateMigration: Pick<PlainTemplateMigration, "convert" | "retryCleanup">;
   release: Pick<
@@ -186,7 +201,7 @@ export class WelcomeBanner extends Component {
     const folderExists = (folder: string) =>
       app.vault.getFolderByPath(normalizePath(folder)) !== null;
     stack.defer(
-      settings.subscribe((s) => {
+      subscribe(this.#deps.runtime, settings.changes, (s) => {
         if (s) {
           const literatureFolder =
             s["note.default-profile"].bindings["note.literature-folder"];
@@ -269,12 +284,14 @@ export class WelcomeBanner extends Component {
 
     const { reads } = this.#deps;
     const reload = (): void => this.#loadConnection();
-    stack.defer(reads.on("changed", reload));
-    stack.defer(reads.on("degraded", reload));
-    stack.defer(reads.on("refresh-failed", reload));
-    stack.defer(reads.on("db-file-missing", reload));
+    stack.defer(subscribe(this.#deps.runtime, reads["changed"], reload));
+    stack.defer(subscribe(this.#deps.runtime, reads["degraded"], reload));
+    stack.defer(subscribe(this.#deps.runtime, reads["refresh-failed"], reload));
     stack.defer(
-      reads.on("refreshing", (active) => {
+      subscribe(this.#deps.runtime, reads["db-file-missing"], reload),
+    );
+    stack.defer(
+      subscribe(this.#deps.runtime, reads["refreshing"], (active) => {
         if (active) {
           // Invalidate any in-flight readout so its stale result can't land on
           // top of this refresh, then show checking only once the refresh is

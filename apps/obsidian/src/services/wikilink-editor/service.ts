@@ -1,11 +1,12 @@
+import type { Extension } from "@codemirror/state";
+import type { App, Plugin } from "obsidian";
 // The Wikilink Editor Treatment service: it registers the CodeMirror extension,
 // answers which Literature Note a linkpath names, and asks the open editors to
 // draw again when something outside their documents changed the answer.
 
-import type { Extension } from "@codemirror/state";
-import type { App, Plugin } from "obsidian";
-
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
@@ -30,16 +31,20 @@ import {
 const logger = getLogger("wikilink-editor");
 
 export interface WikilinkEditorDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension">;
-  noteIndex: Pick<PlainNoteIndex, "on">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "changed" | "indexed" | "frontmatter-changed"
+  >;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: Pick<PlainPluginSettings, "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   citationLookup: {
     observe(changed: () => void): CitationLookupObservation;
   };
@@ -62,6 +67,7 @@ export interface WikilinkEditorDeps {
  * setting change needs no extension re-registration.
  */
 export class WikilinkEditor extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
@@ -82,6 +88,7 @@ export class WikilinkEditor extends Service<void> {
 
   constructor(deps: WikilinkEditorDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
@@ -118,13 +125,23 @@ export class WikilinkEditor extends Service<void> {
       this.#app.workspace.updateOptions();
     });
 
-    stack.defer(this.#display.watch(this.#settings, () => this.#redraw()));
+    stack.defer(
+      this.#display.watch(this.#runtime, this.#settings, () => this.#redraw()),
+    );
     // Creating, deleting, or renaming a Literature Note changes what a link
     // displays without changing any document. The Note Index's own
     // invalidation is coarse, so
     // every change redraws every open editor.
-    stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
-    stack.defer(this.#noteIndex.on("indexed", () => this.#redraw()));
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["changed"], () =>
+        this.#redraw(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["indexed"], () =>
+        this.#redraw(),
+      ),
+    );
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
     // lands or goes stale — until then they keep native presentation.
