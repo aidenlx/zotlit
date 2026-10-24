@@ -186,6 +186,7 @@ async function openSidebar(
     query,
     attachmentsOf,
     listOf,
+    listRead,
   }: {
     readsState?: "ready" | "degraded";
     query?: string;
@@ -193,6 +194,8 @@ async function openSidebar(
     attachmentsOf?: (key: string) => AnnotViewAttachment[];
     /** Each Attachment's list, by its key; the one list otherwise. */
     listOf?: (attachmentKey: string) => AnnotationList;
+    /** Settles when the repository answers a read of the Attachment's list. */
+    listRead?: (attachmentKey: string) => Promise<void>;
   } = {},
 ) {
   setMockPlatform({ isMacOS: true });
@@ -249,8 +252,10 @@ async function openSidebar(
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: {
       capability: { kind: "writable" },
-      read: (attachmentKey: string) =>
-        Promise.resolve(listOf?.(attachmentKey) ?? list),
+      read: async (attachmentKey: string) => {
+        await listRead?.(attachmentKey);
+        return listOf?.(attachmentKey) ?? list;
+      },
       peek: () => ({ value: list }),
       refresh: () => Promise.resolve(),
       capabilityFor: (): EditingCapability => ({ kind: "writable" }),
@@ -587,6 +592,28 @@ it("shows the next Item over its cards loading, and none of the last Item's, onc
   next.resolve(rows(ROWS_B));
   await settle();
   expect(cards(view.contentEl)).toEqual(["ANNOTCCC"]);
+});
+
+it("shows the next Item's cards where its list is read after 150 ms and its query before", async () => {
+  // The query answers at once; the repository reads the next Item's list from
+  // Zotero for longer than the next Item waits to show.
+  const answer = (request: QueryViewRequest) =>
+    rows(request.context?.attachment === "PDFBBBBB" ? ROWS_B : ROWS);
+  const { view, settle } = await openSidebar([PDF], answer, {
+    attachmentsOf: (key) => (key === "ITEMBBBB" ? [PDF_B] : [PDF]),
+    listOf: (key) => (key === "PDFBBBBB" ? LIST_B : LIST),
+    listRead: (key) => (key === "PDFBBBBB" ? delay(200) : Promise.resolve()),
+  });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(() => view.close()));
+
+  await act(async () => {
+    view.pinItem("ITEMBBBB");
+    await delay(300);
+  });
+  await settle();
+  expect(cards(view.contentEl)).toEqual(["ANNOTCCC"]);
+  expect(view.contentEl.querySelector("[data-annot-view-loading]")).toBeNull();
 });
 
 it("waits for the next Item's own run where the last Item's run had failed", async () => {

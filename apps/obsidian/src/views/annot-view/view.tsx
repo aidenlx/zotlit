@@ -987,12 +987,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
 
   /**
    * Show the waiting Item now, before its cards: with none of the last
-   * Item's, which never show under the next one's name.
+   * Item's, which never show under the next one's name. Its own cards still
+   * show, from the rows the query may already have landed for it.
    */
   #commitStaged(staged: Staged, loading = false): void {
     if (this.#staged !== staged) return;
     this.#store.setState(this.#takeStaged(staged));
-    if (loading) this.#layout.clear();
+    const attachmentKey = staged.bound?.attachmentKey;
+    if (loading && attachmentKey) this.#layout.clearCardsFor(attachmentKey);
   }
 
   #cancelStaged(): void {
