@@ -3,38 +3,55 @@
 
 import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
-import { Effect } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-
-const logger = getLogger(["database", "library-tag-names"]);
+import { Cause, Effect } from "@/lib/effect";
+import type { ManagedRuntime } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
  * The tag names in use in the Annotation's Library, which the tag editor
  * suggests. The Zotero database answers them, so a tag saved moments ago
- * joins once the database has caught up.
+ * joins once the database has caught up. Any failure answers no tags and
+ * warns, so the editor still opens.
  */
-export async function libraryTagNames(
-  db: Pick<PlainZoteroReads, "state" | "acquireRead">,
+export const libraryTagNames = (
+  reads: Pick<ZoteroReads["Service"], "current" | "snapshot">,
   annotationKey: string,
-): Promise<readonly string[]> {
-  if (db.state === "degraded") return [];
-  try {
-    await using lease = await db.acquireRead();
-    const library = resolveIndexedKeyLibraryIn(
-      await Effect.runPromise(lease.reads.Libraries({})),
-      annotationKey,
+): Effect.Effect<readonly string[]> =>
+  Effect.gen(function* () {
+    if ((yield* reads.current).state === "degraded") return [];
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const snapshot = yield* reads.snapshot;
+        const library = resolveIndexedKeyLibraryIn(
+          yield* snapshot.Libraries({}),
+          annotationKey,
+        );
+        return library
+          ? yield* snapshot.TagNames({ libraryID: library.libraryID })
+          : [];
+      }),
     );
-    return library
-      ? await Effect.runPromise(
-          lease.reads.TagNames({ libraryID: library.libraryID }),
-        )
-      : [];
-  } catch (error) {
-    logger.warn("Failed to read a library's tag names", {
-      annotationKey,
-      error,
-    });
-    return [];
-  }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Failed to read a library's tag names").pipe(
+        Effect.annotateLogs({ annotationKey, error: Cause.squash(cause) }),
+        withLogCategory("database", "library-tag-names"),
+        Effect.as([] as readonly string[]),
+      ),
+    ),
+  );
+
+/**
+ * The Promise form for the Annotation editor and view, which run outside
+ * Effect. It runs on the context captured at construction, so a call after
+ * unload answers no tags instead of rebuilding the runtime.
+ */
+export function libraryTagNamesOf(
+  runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>,
+): (annotationKey: string) => Promise<readonly string[]> {
+  const context = runtime.runSync(Effect.context<ZoteroReads>());
+  const reads = Effect.runSyncWith(context)(ZoteroReads);
+  const run = Effect.runPromiseWith(context);
+  return (annotationKey) => run(libraryTagNames(reads, annotationKey));
 }
