@@ -248,6 +248,43 @@ const CASES: Case[] = [
     markdown: "[[Doe 2020]]; [[Some Note]]; [[Smith 2021]]",
     plain: "(Doe 2020); Some Note; (Smith 2021)",
   },
+  // A Citation inside another one's prefix or suffix exports as text, and its
+  // work reaches the bibliography through nocite (ADR-0081, #1699).
+  {
+    name: "a Literature Note link in a citation suffix keeps the outer citation",
+    markdown: "[@doe2020 with [[Smith 2021]]]",
+    plain: "(Doe 2020 with Smith 2021)",
+  },
+  {
+    name: "a Literature Note link in a citation suffix reaches the bibliography",
+    markdown: "[@doe2020 with [[Smith 2021]]]",
+    plain: "Smith, Ann. 2021. Another Book.",
+  },
+  {
+    name: "a nested Literature Note link shows its alias",
+    markdown: "[@doe2020 with [[Smith 2021|the other book]]]",
+    plain: "(Doe 2020 with the other book)",
+  },
+  {
+    name: "a Literature Note link in a citation prefix keeps the outer citation",
+    markdown: "[after [[Smith 2021]] see @doe2020]",
+    plain: "(after Smith 2021 see Doe 2020)",
+  },
+  {
+    name: "a literal citation in a citation suffix keeps the outer citation",
+    markdown: "[@doe2020 with @smith2021]",
+    plain: "(Doe 2020 with @smith2021)",
+  },
+  {
+    name: "a literal citation in a citation suffix reaches the bibliography",
+    markdown: "[@doe2020 with @smith2021]",
+    plain: "Smith, Ann. 2021. Another Book.",
+  },
+  {
+    name: "a cite intent inside a citation suffix",
+    markdown: "[@doe2020 with [[Smith 2021#cite:locator=3]]]",
+    error: "nested-citation-intent",
+  },
   {
     name: "author-in-text after the first run position",
     markdown: "[[Doe 2020]]; [[Smith 2021#cite:mode=author-in-text]]",

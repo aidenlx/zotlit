@@ -648,10 +648,10 @@ describe(
       {
         name: "a selected vault link inside a citation suffix",
         markdown: "[@a with [[Note]]]",
-        // #1699 owns nested-Cite rendering. Keep d72571525's visible output
-        // and both bibliography entries for this #1694 regression.
+        // The nested link reads as its text, and both works take an entry
+        // (ADR-0081, #1699).
         contains: [
-          '<p><span class="citation" data-cites="a">(Adams 2018)</span></p>',
+          '<p><span class="citation" data-cites="a">(Zeta 2020 with Note)</span></p>',
           'id="ref-a"',
           `id="ref-${ADAMS.id}"`,
         ],
@@ -906,6 +906,61 @@ describe(
         (result as { output: Uint8Array }).output,
       );
       expect(html).toContain('id="ref-zeta2020"');
+    });
+
+    it("keeps the outer citation of a Literature Note link in its suffix (#1699)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [link("Adams 2018")] },
+          markdown: "Read [@zeta2020 with [[Adams 2018]]].",
+          format: "html",
+        },
+        { ...ports(DEMO), engine },
+      );
+
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder()
+        .decode((result as { output: Uint8Array }).output)
+        .replaceAll(/\s+/g, " ");
+      // The link reads as its text, and its work still takes an entry.
+      expect(html).toContain(
+        `data-cites="${ZETA.id}">(Zeta 2020 with Adams 2018)`,
+      );
+      expect(html).toContain(`id="ref-${ZETA.id}"`);
+      expect(html).toContain(`id="ref-${ADAMS.id}"`);
+    });
+
+    it("keeps the outer citation of a literal citation key in its suffix (#1699)", async () => {
+      await using engine = await createCitationEngine(
+        new Blob([await readFile(WASM_PATH)]),
+      );
+      const result = await exportCitedDocument(
+        {
+          document: { sourcePath: SOURCE, links: [] },
+          markdown: "Read [@zeta2020 with @adams2018].",
+          format: "html",
+        },
+        {
+          ...ports({
+            ...DEMO,
+            links: [],
+            citekeys: { zeta2020: "ZETA1234", adams2018: "ADAM5678g5" },
+          }),
+          engine,
+        },
+      );
+
+      expect(result).toHaveProperty("output");
+      const html = new TextDecoder()
+        .decode((result as { output: Uint8Array }).output)
+        .replaceAll(/\s+/g, " ");
+      expect(html).toContain(
+        `data-cites="${ZETA.id}">(Zeta 2020 with @adams2018)`,
+      );
+      expect(html).toContain('id="ref-adams2018"');
     });
 
     it("keeps Pandoc's nocite wildcard whole", async () => {
