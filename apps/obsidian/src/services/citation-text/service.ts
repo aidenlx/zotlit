@@ -47,6 +47,7 @@ import { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
   documentPresentation,
+  profileReaderOf,
 } from "@/services/pandoc/document-presentation";
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type { RenderPresentation } from "@/services/pandoc/render-cache";
@@ -171,18 +172,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
       const releasedRead = (): never => {
         throw new DOMException("Citation text released", "AbortError");
       };
-      const readProfile = <A>(effect: Effect.Effect<A, unknown>): A => {
-        const exit = run(Effect.exit(effect));
-        if (Exit.isSuccess(exit)) return exit.value;
-        throw Cause.squash(exit.cause);
-      };
       /** The Literature Note Profiles a document's presentation property names. */
-      const profile = {
-        get loaded() {
-          return readProfile(profiles.loaded);
-        },
-        profileOf: (file?: TFile) => readProfile(profiles.profileOf(file)),
-      };
+      const profile = profileReaderOf(profiles, run);
       const openDocuments = open ?? workspaceOpenDocuments(app);
       /** Releases for the pins that keep each open document's text held. */
       const pins = new Map<string, () => void>();

@@ -6,7 +6,10 @@ import type { ManagedRuntime } from "@/lib/effect";
 import { isScopeClosed } from "@/lib/effect-scope";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
-import { BibliographyRender } from "@/services/pandoc/render-cache";
+import {
+  BibliographyRender,
+  missingStyleChanges,
+} from "@/services/pandoc/render-cache";
 import type {
   BibliographyRenderEvents,
   BibliographyRenderState,
@@ -172,10 +175,6 @@ export function plainBibliographyRender(
       Stream.drop(1),
       Stream.filter((style): style is string => style !== null),
     ),
-    missingStyle: service.changes.pipe(
-      Stream.map((state) => state.missingStyle),
-      Stream.changes,
-      Stream.filter((style): style is string => style !== null),
-    ),
+    missingStyle: missingStyleChanges(service.changes),
   };
 }

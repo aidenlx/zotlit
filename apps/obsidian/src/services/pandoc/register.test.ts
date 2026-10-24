@@ -10,6 +10,7 @@ import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
 import type { CslResponse } from "./csl";
@@ -22,6 +23,13 @@ import type { PandocResolveDeps } from "./register";
 import type { ResolveResponse } from "./resolve";
 
 const APA = "http://www.zotero.org/styles/apa";
+
+/** The Profile service, answering from a fixture reader. */
+const effectProfile = (reader: ProfileReader) => ({
+  loaded: Effect.sync(() => reader.loaded),
+  profileOf: (file?: Parameters<ProfileReader["profileOf"]>[0]) =>
+    Effect.sync(() => reader.profileOf(file)),
+});
 const UNINSTALLED = "http://www.zotero.org/styles/uninstalled";
 const NOTE_PATH = "/vault/draft.md";
 
@@ -78,9 +86,9 @@ async function cslVault({
       },
       metadataCache,
     },
-    zoteroPref: { dataDir },
-    settings: { current: settings },
-    profile: profileReader(settings, metadataCache),
+    zoteroPref: { current: Effect.succeed({ dataDir }) },
+    settings: { current: Effect.succeed(settings) },
+    profile: effectProfile(profileReader(settings, metadataCache)),
   } as unknown as PandocResolveDeps);
   const handlerOf = (name: string) => command(name).handler;
 

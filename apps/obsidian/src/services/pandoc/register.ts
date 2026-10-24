@@ -26,16 +26,16 @@ import {
   rejectionText,
 } from "@/lib/cli-params";
 import type { CliParamName } from "@/lib/cli-params";
-import { Effect } from "@/lib/effect";
+import { Effect, Layer } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import { PluginHost } from "@/lib/plugin-host";
 import { resolveIndexedKey } from "@/services/note-index/service";
-import type { ProfileReader } from "@/services/profile/service";
+import { Profile } from "@/services/profile/service";
+import type { ProfileOperations } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
-import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsState,
-} from "@/services/zotero-reads/service";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import {
   CSL_COMMAND,
@@ -48,6 +48,7 @@ import type { CslResponse, DocumentStyleRead } from "./csl";
 import {
   documentPresentation,
   effectivePresentation,
+  profileReaderOf,
   styleSourceOf,
   vaultPresentation,
 } from "./document-presentation";
@@ -65,13 +66,29 @@ export { CSL_COMMAND };
 
 export interface PandocResolveDeps {
   app: App;
-  reads: Pick<ZoteroReadsState, "activeReadMode"> & {
-    readonly reads: ZoteroReadsApi;
-  };
-  zoteroPref: Pick<ZoteroPrefSnapshot, "dataDir">;
-  settings: { readonly current: Readonly<Settings> };
-  profile: ProfileReader;
+  reads: Pick<ZoteroReads["Service"], "current" | "reads">;
+  zoteroPref: Pick<ZoteroPref["Service"], "current">;
+  settings: Pick<PluginSettings["Service"], "current">;
+  profile: Pick<Profile["Service"], "loaded" | "profileOf">;
 }
+
+/** The `zotlit:resolve`, `zotlit:csl` and Pandoc integration commands. */
+export const layerPandocResolve: Layer.Layer<
+  never,
+  never,
+  PluginHost | ZoteroReads | ZoteroPref | PluginSettings | Profile
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    registerPandocResolve(host, {
+      app: host.app,
+      reads: yield* ZoteroReads,
+      zoteroPref: yield* ZoteroPref,
+      settings: yield* PluginSettings,
+      profile: yield* Profile,
+    });
+  }),
+);
 
 const resolveParams = cliParams({ file: cliValue("file") }).pipe(
   cliMap(({ file }) => file),
@@ -141,10 +158,15 @@ export function registerPandocResolve(
           resolveIndexedKey: (linkpath, sourcePath) =>
             resolveIndexedKey(linkpath, sourcePath, deps.app),
           database: {
-            describe: () => ({
-              dataDir: deps.zoteroPref.dataDir,
-              readMode: deps.reads.activeReadMode,
-            }),
+            describe: () =>
+              Effect.zipWith(
+                deps.zoteroPref.current,
+                deps.reads.current,
+                ({ dataDir }, { activeReadMode }) => ({
+                  dataDir,
+                  readMode: activeReadMode,
+                }),
+              ),
             read: (indexedKeys) => {
               const unreadable = (error: unknown) =>
                 Effect.logWarning("Cannot read the Zotero database").pipe(
@@ -183,7 +205,10 @@ export function registerPandocResolve(
         const selected = yield* decodeCliParams(params, cslParams, {
           command: CSL_COMMAND,
         });
-        const { dataDir } = deps.zoteroPref;
+        const { dataDir } = yield* deps.zoteroPref.current;
+        const settings = yield* deps.settings.current;
+        const run = Effect.runSyncWith(yield* Effect.context<never>());
+        const profile = profileReaderOf(deps.profile, run);
         // A native run carries no vault Citation Locale: the installed style
         // keeps the locale behavior Zotero installed it with.
         const ports = {
@@ -196,7 +221,10 @@ export function registerPandocResolve(
             : resolveDocumentCslStyle(selected.file, {
                 ...ports,
                 readStyle: (absolutePath) =>
-                  readDocumentStyle(deps, absolutePath),
+                  readDocumentStyle(
+                    { app: deps.app, settings, profile },
+                    absolutePath,
+                  ),
               }),
         );
         return JSON.stringify(response, null, 2);
@@ -213,7 +241,15 @@ export function registerPandocResolve(
  * in-app surface and the built-in export read it through.
  */
 function readDocumentStyle(
-  { app, settings, profile }: PandocResolveDeps,
+  {
+    app,
+    settings,
+    profile,
+  }: {
+    app: App;
+    settings: Readonly<Settings>;
+    profile: Pick<ProfileOperations, "loaded" | "profileOf">;
+  },
   absolutePath: string,
 ): DocumentStyleRead {
   const file = vaultFile(app, absolutePath);
@@ -222,7 +258,7 @@ function readDocumentStyle(
   if (declared.kind === "unusable") return declared;
   const { styleId } = effectivePresentation(
     declared.presentation,
-    vaultPresentation(settings.current),
+    vaultPresentation(settings),
   );
   return { kind: "read", styleId, source: styleSourceOf(declared) };
 }

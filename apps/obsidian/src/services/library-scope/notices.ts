@@ -1,16 +1,13 @@
-import type { Stream } from "@/lib/effect";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 // UI seam for Library Scope: the warn-once notice for a broken saved value.
+import { Effect, Layer } from "@/lib/effect";
+import type { Scope } from "@/lib/effect";
+import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { revealSetting } from "@/lib/open-settings";
+import { PluginHost } from "@/lib/plugin-host";
 
-/** What the notice watches of the Library Scope. */
-interface LibraryScopeSignals {
-  readonly invalid: boolean;
-  readonly changed: Stream.Stream<unknown>;
-  readonly "libraries-changed": Stream.Stream<void>;
-}
+import { LibraryScope, scopeChanges } from "./service";
 
 interface LibraryScopeNoticeCopy {
   title: string;
@@ -26,46 +23,51 @@ interface LibraryScopeNoticeHandle {
 /**
  * Show one notice while the saved Library Scope is broken, and arm it again
  * once the value is repaired. The Settings warning is the persistent half of
- * the pair; this is the one-off half.
- *
- * @param openSettings reveals the Library scope row so the user can repair it.
+ * the pair; this is the one-off half. The notice's action reveals the Library
+ * scope row so the user can repair it.
  */
-export function registerLibraryScopeNotices(
-  runtime: SubscriptionRuntime,
-  service: LibraryScopeSignals,
-  openSettings: () => void,
-): () => void {
-  return subscribeLibraryScopeInvalid(runtime, service, () =>
-    showLibraryScopeInvalid(libraryScopeInvalidNotice(openSettings)),
-  );
-}
+export const layerLibraryScopeNotices = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const scope = yield* LibraryScope;
+    yield* watchLibraryScopeInvalid(scope, () =>
+      showLibraryScopeInvalid(
+        libraryScopeInvalidNotice(() => {
+          revealSetting(host.app, host.manifest.id, "settings_library_scope");
+        }),
+      ),
+    );
+  }),
+);
 
 /**
- * Subscribe the notice lifecycle without coupling its trigger to rendering.
- * One notice per broken spell: a repair hides it and re-arms the next one, so
- * a user who breaks the value again is told again.
+ * Watch the notice lifecycle without coupling its trigger to rendering. One
+ * notice per broken spell: a repair hides it and re-arms the next one, so a
+ * user who breaks the value again is told again. The open notice hides when
+ * the Scope closes.
  */
-export function subscribeLibraryScopeInvalid(
-  runtime: SubscriptionRuntime,
-  service: LibraryScopeSignals,
+export function watchLibraryScopeInvalid(
+  scope: Pick<LibraryScope["Service"], "invalid" | "changes">,
   showNotice: () => LibraryScopeNoticeHandle,
-): () => void {
-  let notice: LibraryScopeNoticeHandle | null = null;
-  const apply = (): void => {
-    if (!service.invalid) {
-      notice?.hide();
-      notice = null;
-      return;
-    }
-    notice ??= showNotice();
-  };
-
-  apply();
-  const unsubscribe = subscribe(runtime, service["changed"], apply);
-  return () => {
-    unsubscribe();
-    notice?.hide();
-  };
+): Effect.Effect<void, never, Scope.Scope> {
+  return Effect.gen(function* () {
+    let notice: LibraryScopeNoticeHandle | null = null;
+    const apply = Effect.gen(function* () {
+      if (!(yield* scope.invalid)) {
+        notice?.hide();
+        notice = null;
+        return;
+      }
+      notice ??= showNotice();
+    });
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        notice?.hide();
+      }),
+    );
+    yield* apply;
+    yield* forkEach(scopeChanges(scope.changes), () => apply);
+  });
 }
 
 export function libraryScopeInvalidNotice(

@@ -1,9 +1,14 @@
-import type { Stream } from "@/lib/effect";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 // Lifecycle notices for citation formatting prerequisites.
+import { Effect, Layer } from "@/lib/effect";
+import type { Scope, Stream } from "@/lib/effect";
+import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { revealSetting } from "@/lib/open-settings";
+import { PluginHost } from "@/lib/plugin-host";
+
+import { BibliographyRender, missingStyleChanges } from "./render-cache";
+import type { BibliographyRenderState } from "./render-cache";
 
 interface CitationStyleNoticeCopy {
   title: string;
@@ -16,30 +21,43 @@ interface CitationStyleNoticeHandle {
 }
 
 /** Show one recovery notice when the render cache first finds its selected style unavailable. */
-export function registerCitationStyleNotice(
-  runtime: SubscriptionRuntime,
-  renderCache: { readonly missingStyle: Stream.Stream<string> },
-  openSettings: () => void,
-): () => void {
-  return subscribeCitationStyleMissing(runtime, renderCache, () =>
-    showCitationStyleMissing(citationStyleMissingNotice(openSettings)),
-  );
-}
+export const layerCitationStyleNotice = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const renders = yield* BibliographyRender;
+    yield* watchCitationStyleMissing(renders, () =>
+      showCitationStyleMissing(
+        citationStyleMissingNotice(() => {
+          revealSetting(
+            host.app,
+            host.manifest.id,
+            "settings_citation_references_style",
+          );
+        }),
+      ),
+    );
+  }),
+);
 
-/** Subscribe the notice lifecycle without coupling its trigger to rendering. */
-export function subscribeCitationStyleMissing(
-  runtime: SubscriptionRuntime,
-  renderCache: { readonly missingStyle: Stream.Stream<string> },
+/**
+ * Watch the notice lifecycle without coupling its trigger to rendering. The
+ * open notice hides when the Scope closes.
+ */
+export function watchCitationStyleMissing(
+  renders: { readonly changes: Stream.Stream<BibliographyRenderState> },
   showNotice: () => CitationStyleNoticeHandle,
-): () => void {
-  let notice: CitationStyleNoticeHandle | null = null;
-  const unsubscribe = subscribe(runtime, renderCache.missingStyle, () => {
-    notice = showNotice();
+): Effect.Effect<void, never, Scope.Scope> {
+  return Effect.gen(function* () {
+    let notice: CitationStyleNoticeHandle | null = null;
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        notice?.hide();
+      }),
+    );
+    yield* forkEach(missingStyleChanges(renders.changes), () => {
+      notice = showNotice();
+    });
   });
-  return () => {
-    unsubscribe();
-    notice?.hide();
-  };
 }
 
 export function citationStyleMissingNotice(

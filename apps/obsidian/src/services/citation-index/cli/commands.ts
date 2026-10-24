@@ -48,7 +48,7 @@ export const CITATIONS_GUIDE_COMMAND = "zotlit:citations-guide" as const;
 export type CitationsCliHandlers = Record<CitationsCommand, CliCommandHandler>;
 
 interface CitationsCliDeps {
-  getIdentity(): CitationsIdentity | Promise<CitationsIdentity>;
+  getIdentity(): Effect.Effect<CitationsIdentity>;
   settleTimeoutMs?: number;
   index: Pick<
     CitationIndex["Service"],
@@ -68,7 +68,7 @@ export function createCitationsCliHandlers(
     Effect.fn(`CitationsCli.${command}`)(
       function* (params: CliData) {
         const request = yield* decode(params);
-        const identity = yield* Effect.promise(async () => deps.getIdentity());
+        const identity = yield* deps.getIdentity();
         const echoed = { request, identity };
         const mismatch = targetMismatch(params, identity);
         if (mismatch)

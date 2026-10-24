@@ -5,11 +5,14 @@
 
 import type { App, Plugin } from "obsidian";
 
+import { Effect, Layer } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { PluginHost } from "@/lib/plugin-host";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
+import { Template } from "./service";
 import type { TemplateOperations } from "./service";
 
 const logger = getLogger(["template", "actions"]);
@@ -19,6 +22,29 @@ export type CitationTemplateActions = Pick<
   TemplateOperations,
   "materializeCitationTemplate"
 >;
+
+/**
+ * The "Customize citation text" command. Its callback is a plain Obsidian
+ * entry point, so the Template service answers it through the layer's own
+ * context, as the setting row and the Workbench View reach it.
+ */
+export const layerCitationTemplateActions: Layer.Layer<
+  never,
+  never,
+  PluginHost | Template
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const template = yield* Template;
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    addCitationTemplateActions(host, {
+      template: {
+        materializeCitationTemplate: () =>
+          runPromise(template.materializeCitationTemplate()),
+      },
+    });
+  }),
+);
 
 export function addCitationTemplateActions(
   plugin: Pick<Plugin, "addCommand" | "app">,

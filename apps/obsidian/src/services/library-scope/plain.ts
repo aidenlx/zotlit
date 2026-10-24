@@ -9,7 +9,7 @@ import type {
   LibraryScope as SavedLibraryScope,
   ResolvedLibraryScope,
 } from "./scope";
-import { LibraryScope } from "./service";
+import { LibraryScope, scopeChanges } from "./service";
 import type { LibraryScopeState } from "./service";
 
 export interface PlainLibraryScope {
@@ -53,11 +53,7 @@ export function plainLibraryScope(
     },
     resolveLibraries: (libraries) => run(service.resolveLibraries(libraries)),
     changes: service.changes,
-    changed: service.changes.pipe(
-      Stream.changesWith(
-        (a, b) => a.current === b.current && a.invalid === b.invalid,
-      ),
-      Stream.drop(1),
+    changed: scopeChanges(service.changes).pipe(
       Stream.map((state) => state.current),
     ),
     "libraries-changed": service.changes.pipe(

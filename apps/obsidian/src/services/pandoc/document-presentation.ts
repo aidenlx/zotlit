@@ -9,6 +9,7 @@ import {
   FIELD_DOCUMENT_LANGUAGE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
+import { Cause, Effect, Exit } from "@/lib/effect";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -17,7 +18,7 @@ import type {
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
-import type { ProfileOperations } from "@/services/profile/service";
+import type { Profile, ProfileOperations } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
@@ -89,6 +90,30 @@ export type DocumentPresentation =
       profileStyle?: ProfileStyleSource;
     }
   | DocumentPresentationFailure;
+
+/**
+ * The Profile service as the synchronous reader {@link documentPresentation}
+ * takes, for a caller already running inside Effect.
+ *
+ * @param run runs one Effect synchronously, as `Effect.runSyncWith` does over
+ *   the caller's context.
+ */
+export function profileReaderOf(
+  profile: Pick<Profile["Service"], "loaded" | "profileOf">,
+  run: <A, E>(effect: Effect.Effect<A, E>) => A,
+): Pick<ProfileOperations, "loaded" | "profileOf"> {
+  const read = <A>(effect: Effect.Effect<A, unknown>): A => {
+    const exit = run(Effect.exit(effect));
+    if (Exit.isSuccess(exit)) return exit.value;
+    throw Cause.squash(exit.cause);
+  };
+  return {
+    get loaded() {
+      return read(profile.loaded);
+    },
+    profileOf: (file) => read(profile.profileOf(file)),
+  };
+}
 
 /**
  * The Citation Presentation one document selects.

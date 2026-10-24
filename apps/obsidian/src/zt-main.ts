@@ -19,7 +19,7 @@ import {
 } from "./lib/i18n/install-toast";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab, revealSetting } from "./lib/open-settings";
+import { openSettingsTab } from "./lib/open-settings";
 import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
 import type { HistorySurface } from "./services/annotation-repository/actions";
 import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
@@ -28,7 +28,6 @@ import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
-import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
@@ -44,8 +43,6 @@ import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerQueryCli } from "./services/item-query/cli";
 import { registerQueryMeasureCli } from "./services/item-query/measure";
-import { registerLibraryScopeCli } from "./services/library-scope/cli";
-import { registerLibraryScopeNotices } from "./services/library-scope/notices";
 import {
   addCustomizeActions,
   customizeFileMenu,
@@ -58,15 +55,12 @@ import {
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
-import { registerCitationStyleNotice } from "./services/pandoc/notices";
 import { reapCslStore } from "./services/pandoc/reap-temps";
-import { registerPandocResolve } from "./services/pandoc/register";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
-import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
@@ -396,7 +390,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       customize,
     };
     addCustomizeActions(this, customizeDeps);
-    addCitationTemplateActions(this, { template: services.template });
     addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.zoteroReads });
     addReleaseActions(this, { release: services.release });
@@ -664,19 +657,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       citationLookup: services.citationLookup,
     });
 
-    stack.defer(
-      registerCitationStyleNotice(
-        services.runtime,
-        services.bibliographyRender,
-        () => {
-          revealSetting(
-            this.app,
-            this.manifest.id,
-            "settings_citation_references_style",
-          );
-        },
-      ),
-    );
     registerReferencesView(this, {
       runtime: services.runtime,
       profile: services.profile,
@@ -695,20 +675,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       citationIndex: services.citationIndex,
     });
-
-    registerCitationsCli(this, {
-      app: this.app,
-      citationIndex: services.citationIndex,
-      zoteroPref: services.zoteroPref,
-    });
-
-    // e2e-only: lets packages/e2e read the resolved Library Scope after a
-    // Scope Case switch, through the plugin's own CLI Contract surface
-    // rather than an internal eval. A dev-build diagnostic port, not a
-    // feature for end users — never registered in a production build.
-    if (__DEV__) {
-      registerLibraryScopeCli(this, { libraryScope: services.libraryScope });
-    }
 
     registerTemplateWorkbench(this, {
       runtime: services.runtime,
@@ -730,14 +696,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     if (__DEV__) {
       registerQueryMeasureCli(this, services.query);
     }
-
-    registerPandocResolve(this, {
-      app: this.app,
-      reads: services.zoteroReads,
-      zoteroPref: services.zoteroPref,
-      settings: services.settings,
-      profile: services.profile,
-    });
 
     registerPandocExport(this, {
       citationParse: services.citationParse,
@@ -804,15 +762,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
     stack.defer(
       registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
-    );
-    stack.defer(
-      registerLibraryScopeNotices(
-        services.runtime,
-        services.libraryScope,
-        () => {
-          revealSetting(this.app, this.manifest.id, "settings_library_scope");
-        },
-      ),
     );
 
     // The companion's Freshness Signal means the database changed and its
