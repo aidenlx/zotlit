@@ -652,7 +652,7 @@ async function measureLibrary(library: Library, cells: Cell[]): Promise<void> {
           };
           cells.push(cell);
           const m = cell.median;
-          // oxlint-disable-next-line no-console -- a benchmark reports as it goes
+          // oxlint-disable-next-line effecttsgo/global-console -- a benchmark reports as it goes
           console.info(
             [
               library.name,
@@ -699,7 +699,7 @@ describe("mixed Query View queries", () => {
         2,
       ),
     );
-    // oxlint-disable-next-line no-console -- where the results went
+    // oxlint-disable-next-line effecttsgo/global-console -- where the results went
     console.info(`results: ${OUT}`);
     expect(cells.length).toBeGreaterThan(0);
   });

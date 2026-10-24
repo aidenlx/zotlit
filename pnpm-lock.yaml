@@ -113,6 +113,9 @@ catalogs:
     '@codemirror/commands':
       specifier: 6.11.0
       version: 6.11.0
+    '@effect/tsgo':
+      specifier: 0.56.0
+      version: 0.56.0
     '@effect/vitest':
       specifier: 4.0.0
       version: 4.0.0
@@ -231,7 +234,7 @@ catalogs:
       specifier: ^0.74.0
       version: 0.74.0
     oxlint:
-      specifier: ^1.89.0
+      specifier: 1.89.0
       version: 1.89.0
     p-queue:
       specifier: ^9.3.3
@@ -301,6 +304,9 @@ importers:
         specifier: ^0.33.1
         version: 0.33.1
     devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.56.0
       '@electron/asar':
         specifier: ^4.2.0
         version: 4.2.0
@@ -350,7 +356,7 @@ importers:
         specifier: 'catalog:'
         version: 1.89.0(oxlint-tsgolint@7.0.2004)
       oxlint-tsgolint:
-        specifier: ^7.0.2004
+        specifier: 7.0.2004
         version: 7.0.2004
       sharp:
         specifier: ^0.35.2
@@ -892,6 +898,9 @@ importers:
 
   packages/config:
     devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.56.0
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
@@ -1932,6 +1941,45 @@ packages:
     resolution: {integrity: sha512-OHo7EPpF3RVPiI+mjoU9yd05LdCdKPjzDXqs5wRgF9CsdVvwN76B0zgt54DxPUcvMYri1tVJOtLCVnK0tRkNQQ==}
     peerDependencies:
       effect: ^4.0.0
+
+  '@effect/tsgo-darwin-arm64@0.56.0':
+    resolution: {integrity: sha512-08yYRU3OOw/jKzy582EF741xKvLJ2HK6GO+L2zuSR97b61ES7fER2fxg1xp4mv8u2Fc3bBRvk7026GzdKEGFgw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@effect/tsgo-darwin-x64@0.56.0':
+    resolution: {integrity: sha512-UQvYvVaam+EVMYm9gfHBx1WpKwLlW+ptjb2UD7qGhZdg+GzxMbl26AhuuqV2t/dN9shZ6EcFE2+++ThISMp/9g==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@effect/tsgo-linux-arm64@0.56.0':
+    resolution: {integrity: sha512-zzzo/w7lLqiCMuJOI+jbjIuhHob3ccmth1bD9m1E98ukMuHhIqQMOXKU9EreoQkCGeoVrxGqHbXkl6E/+68/Sg==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@effect/tsgo-linux-arm@0.56.0':
+    resolution: {integrity: sha512-3WuPwP8vQPqKVpfGmKlnguuAZb7NGUyAhIHQjZnaINU6Aim7WczOy2WOmKjDPSKRlonU2WyYT+Q5T3B7f0VTLw==}
+    cpu: [arm]
+    os: [linux]
+
+  '@effect/tsgo-linux-x64@0.56.0':
+    resolution: {integrity: sha512-R0d3dGf8qKPtvjff+J9HL0UjIBIES6xZiU16rMMezI4K52b+DGQkaWi1OX3tSgGivjlV+NSN7UhPJ2pYKufglw==}
+    cpu: [x64]
+    os: [linux]
+
+  '@effect/tsgo-win32-arm64@0.56.0':
+    resolution: {integrity: sha512-uVaLdXULUZx9U30YxlVu5PBiu+1a+9/UT2Ex7jQpIasnJy1CHWlhMbfCD/+7Ez1vqG5fLOvUESoQu5XSjs3Lnw==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@effect/tsgo-win32-x64@0.56.0':
+    resolution: {integrity: sha512-Cf6SDixFTkp7Aoeg2eRwJps/2BG9lvx2m+iVRjUzxdqkTbCCNKmmOAIyDslNZm2sMwaDUw/iN/BPGqxx7xMxww==}
+    cpu: [x64]
+    os: [win32]
+
+  '@effect/tsgo@0.56.0':
+    resolution: {integrity: sha512-/S5G8RJjtaVjE/RhwFNTvWQwFAQyDGc+3Ig4Oynvlo3gJu8le4MUgM/DBjoiwkwBsQ+BhufGDCBpwojplerGlw==}
+    hasBin: true
 
   '@effect/vitest@4.0.0':
     resolution: {integrity: sha512-kGElCPFGtP+CgMCwV/HjJWqtE3zYo6I1+8MSA54l+EI24lPU9p2Efa+TBp1jfkg9j711KKzEqgSAy3VzTsb76Q==}
@@ -9476,6 +9524,37 @@ snapshots:
   '@effect/platform-browser@4.0.0(effect@4.0.0)':
     dependencies:
       effect: 4.0.0
+
+  '@effect/tsgo-darwin-arm64@0.56.0':
+    optional: true
+
+  '@effect/tsgo-darwin-x64@0.56.0':
+    optional: true
+
+  '@effect/tsgo-linux-arm64@0.56.0':
+    optional: true
+
+  '@effect/tsgo-linux-arm@0.56.0':
+    optional: true
+
+  '@effect/tsgo-linux-x64@0.56.0':
+    optional: true
+
+  '@effect/tsgo-win32-arm64@0.56.0':
+    optional: true
+
+  '@effect/tsgo-win32-x64@0.56.0':
+    optional: true
+
+  '@effect/tsgo@0.56.0':
+    optionalDependencies:
+      '@effect/tsgo-darwin-arm64': 0.56.0
+      '@effect/tsgo-darwin-x64': 0.56.0
+      '@effect/tsgo-linux-arm': 0.56.0
+      '@effect/tsgo-linux-arm64': 0.56.0
+      '@effect/tsgo-linux-x64': 0.56.0
+      '@effect/tsgo-win32-arm64': 0.56.0
+      '@effect/tsgo-win32-x64': 0.56.0
 
   '@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.5(@types/node@26.1.2)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))':
     dependencies:
