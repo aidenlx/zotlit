@@ -4,7 +4,6 @@
 //
 // The sheet itself is a port (`confirmLaunch`), so the decision this module
 // makes is testable apart from the modal that renders it.
-
 import type { App, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
@@ -15,9 +14,9 @@ import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainTemplate } from "@/services/template/plain";
 import {
   profileCustomization,
   saveProfileCustomization,
@@ -38,7 +37,7 @@ const SERVER_START_TIMEOUT_MS = 10_000;
  * enabling it for a web launch.
  */
 export function workbenchEnabled(
-  settings: Pick<SettingsService, "current">,
+  settings: Pick<PlainPluginSettings, "current">,
 ): boolean {
   return settings.current?.["server.workbench"] ?? false;
 }
@@ -83,12 +82,9 @@ export type ConfirmLaunch = (
 export interface CustomizeDeps {
   webWorkbenchEnabled: boolean;
   app: App;
-  settings: Pick<SettingsService, "current" | "update">;
-  profile: Pick<
-    ProfileService,
-    "ready" | "profiles" | "defaultDocumentPath" | "getSource"
-  >;
-  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
+  profile: Pick<PlainProfile, "profiles" | "defaultDocumentPath" | "getSource">;
+  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   localServer: Pick<LocalServerService, "effectivePort" | "on">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
   /** This build's version, which a Profile's `minAppVersion` is read against. */
@@ -103,7 +99,6 @@ export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
 export function createCustomize(deps: CustomizeDeps): CustomizeAction {
   return async (request) => {
-    await deps.profile.ready;
     const item =
       request.item === undefined ? activeNoteItem(deps.app) : request.item;
     const nativeRequest = { ...request, item };
@@ -180,7 +175,6 @@ async function withDependencies(
   deps: Pick<CustomizeDeps, "template">,
   source: string,
 ): Promise<string> {
-  await deps.template.ready;
   try {
     return await deps.template.exportLiteratureNotePackSource(source, {
       onMissingPartial: () => {},

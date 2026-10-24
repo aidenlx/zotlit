@@ -4,6 +4,7 @@ import { describe, it } from "vitest";
 import {
   noEffectRunInTest,
   noRealTimerInEffectTest,
+  serviceStub,
 } from "../../scripts/oxlint-plugin-effect-tests";
 
 RuleTester.describe = describe;
@@ -102,6 +103,31 @@ tester.run("no-real-timer-in-effect-test", noRealTimerInEffectTest, {
     {
       code: 'layer(Probe)("probe", (it) => { it.effect("waits", () => Effect.promise(() => delay(5))); })',
       errors: timer,
+    },
+  ],
+});
+
+const stub = [{ messageId: "stub" }];
+
+tester.run("service-stub", serviceStub, {
+  valid: [
+    'Layer.succeed(Reads, stubService<Reads["Service"]>("Reads", { current }))',
+    // A cast of a value that is not a literal fake.
+    'const service = context.unsafeMap.get(key) as Reads["Service"];',
+    'const options = { retry: 1 } as Options["retry"];',
+  ],
+  invalid: [
+    {
+      code: 'Layer.succeed(Reads, { current } as Reads["Service"])',
+      errors: stub,
+    },
+    {
+      code: 'Layer.succeed(Reads, { current } as unknown as Reads["Service"])',
+      errors: stub,
+    },
+    {
+      code: 'Layer.succeed(Reads, { current } satisfies Partial<Reads["Service"]> as unknown as Reads["Service"])',
+      errors: stub,
     },
   ],
 });

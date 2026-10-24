@@ -9,7 +9,7 @@ import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
@@ -18,12 +18,12 @@ import type {
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { InertTemplateError } from "@/services/template/errors";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 /**
  * Dependencies for the batch runner's single-action create / update path.
@@ -36,12 +36,12 @@ export interface SingleUpdateDeps {
    * The database reads. A batch run opens its Snapshot here, and its note
    * updates read through it.
    */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready" | "state">;
-  settings: SettingsService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads" | "state">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   noteFeature: NoteFeature;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
   /** Which Libraries an unqualified library-wide update covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
+  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
 }
 
 /**
@@ -138,7 +138,7 @@ export async function createAndOpen(
   ref: ItemRef,
   profile?: ProfileSelector,
 ): Promise<void> {
-  const { reads } = await deps.zoteroReads.ready;
+  const { reads } = deps.zoteroReads;
   const items = await Effect.runPromise(
     reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
   );

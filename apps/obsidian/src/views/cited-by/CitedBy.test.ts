@@ -24,9 +24,9 @@ import {
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
 import type {
-  CitationIndex,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
@@ -200,7 +200,7 @@ async function waitForState(assertion: () => void): Promise<void> {
       return;
     } catch (error) {
       if (attempt === 999) throw error;
-      await Promise.resolve();
+      await yieldToMain();
     }
   }
 }
@@ -238,7 +238,7 @@ function makeFile(
 
 async function render(options: {
   previewsPending?: boolean;
-  citationIndex?: Pick<CitationIndex, "getParsedNote">;
+  citationIndex?: Pick<PlainCitationIndex, "getParsedNote">;
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
   read?: (file: TFile) => Promise<string>;
@@ -876,14 +876,15 @@ describe("CitedBy", () => {
       gate.resolve();
       await harness.index.getDocumentCitationSet(harness.draft);
     });
-    await act(async () => {
-      await vi.waitFor(() => {
-        expect(container.textContent).toContain("More context.");
-        expect(container.querySelector("mark")?.textContent).toBe(
-          `[](${annotationUri})`,
-        );
-      });
-    });
+    await expect
+      .poll(async () => {
+        await act(yieldToMain);
+        return container.textContent;
+      })
+      .toContain("More context.");
+    expect(container.querySelector("mark")?.textContent).toBe(
+      `[](${annotationUri})`,
+    );
   });
 
   it("collapses and expands every source group from one toolbar toggle", async () => {

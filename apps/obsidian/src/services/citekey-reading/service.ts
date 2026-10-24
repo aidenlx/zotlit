@@ -1,7 +1,3 @@
-// The reading-mode surface of the Citekey Editor Treatment: literal citekey
-// citations show formatted in the reading view, navigate like links, and are
-// rewritten in place while Obsidian shows their section.
-
 import { MarkdownRenderChild, setTooltip } from "obsidian";
 import type {
   App,
@@ -9,7 +5,12 @@ import type {
   MarkdownView,
   Plugin,
 } from "obsidian";
+// The reading-mode surface of the Citekey Editor Treatment: literal citekey
+// citations show formatted in the reading view, navigate like links, and are
+// rewritten in place while Obsidian shows their section.
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
@@ -27,6 +28,7 @@ import type {
   CitationLookupObservation,
 } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   citationContent,
   citationElement,
@@ -43,7 +45,6 @@ import type {
   CitationKeyState,
   PresentedCitation,
 } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   attachCitationHover,
@@ -58,9 +59,9 @@ import type {
 } from "@/services/citekey-navigation";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import { replaceCitations, sectionCitations } from "./render";
 import type { SectionCitation } from "./render";
@@ -102,10 +103,11 @@ function shownEqual(
 }
 
 export interface CitekeyReadingDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "on" | "peek">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** What a literal citekey names, which is what tells missing from Ambiguous. */
   citationLookup: {
     observe(changed: () => void): CitationLookupObservation;
@@ -114,7 +116,7 @@ export interface CitekeyReadingDeps {
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: Pick<SettingsService, "ready" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
 /**
@@ -144,6 +146,7 @@ export interface CitekeyReadingDeps {
  * citation at all still renders the views again.
  */
 export class CitekeyReading extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #plugin;
   readonly #citationText;
@@ -164,6 +167,7 @@ export class CitekeyReading extends Service<void> {
 
   constructor(deps: CitekeyReadingDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#citationText = deps.citationText;
@@ -176,13 +180,12 @@ export class CitekeyReading extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
 
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),
     );
     stack.defer(
-      this.#settings.subscribe((settings) => {
+      subscribe(this.#runtime, this.#settings.changes, (settings) => {
         if (settings) this.#applySettings(settings);
       }),
     );
@@ -191,10 +194,14 @@ export class CitekeyReading extends Service<void> {
     // rewrites when all text goes stale — which a citekey resolution snapshot
     // rebuild counts as.
     stack.defer(
-      this.#citationText.on("invalidated", () => this.#sections.refresh()),
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#sections.refresh(),
+      ),
     );
     stack.defer(
-      this.#citationText.on("changed", (path) => this.#sections.refresh(path)),
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#sections.refresh(path),
+      ),
     );
     // A rendered citation carries this service's own click and hover handlers,
     // so the reading views render again without it once it is gone. The flag

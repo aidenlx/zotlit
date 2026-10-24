@@ -5,8 +5,10 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { renderAnnotationSources } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { AttachmentImportService } from "@/services/attachment-import/service";
@@ -17,9 +19,9 @@ import type {
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -210,21 +212,22 @@ function makeAttachmentImport() {
  */
 function makeBlockingAttachmentImport(): AttachmentImportService {
   return new AttachmentImportService({
+    runtime: testRuntime(),
     app: {
       loadLocalStorage: () => null,
       saveLocalStorage: () => undefined,
     } as unknown as App,
     settings: {
-      loaded: Promise.resolve({
+      current: {
         "attachment.import": true,
         "attachment.folder-path": "Attachments",
-      }),
-      subscribe: () => () => undefined,
-    } as unknown as SettingsService,
+      },
+      changes: Stream.empty,
+    } as unknown as PlainPluginSettings,
     zoteroPref: {
       dataDir: "/nonexistent-zotero-data",
       baseAttachmentPath: null,
-      on: () => () => undefined,
+      "resolved-changed": Stream.empty,
     },
   });
 }
@@ -236,7 +239,7 @@ function makeService(
     literatureNotes?: TFile[];
     attachmentImport?: Pick<AttachmentImportService, "prepare">;
     template?: Pick<
-      TemplateService,
+      PlainTemplate,
       "render" | "renderCitation" | "renderProfileAnnotation"
     >;
   } = {},
@@ -258,7 +261,7 @@ function makeService(
         renderCitation: vi.fn(() => "[@cite]"),
         renderProfileAnnotation: vi.fn(() => "profile annotation"),
       } as Pick<
-        TemplateService,
+        PlainTemplate,
         "render" | "renderCitation" | "renderProfileAnnotation"
       >),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
@@ -622,7 +625,7 @@ describe("createNoteImporter", () => {
       renderCitation: vi.fn(() => "[@cite]"),
       renderProfileAnnotation,
     } as Pick<
-      TemplateService,
+      PlainTemplate,
       "render" | "renderCitation" | "renderProfileAnnotation"
     >;
     const { app, host } = makeApp({

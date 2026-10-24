@@ -99,6 +99,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { Effect } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
@@ -116,9 +117,9 @@ import type {
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
 import { openCitationTemplate } from "@/services/template/actions";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
 import { openWorkbenchLayout } from "@/views/note-preview/register";
@@ -218,10 +219,10 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   pluginVersion?: string;
   templates: ExplorerViewDeps["templates"] &
     Pick<
-      TemplateService,
+      PlainTemplate,
       | "waitUntilSettled"
       | "loaded"
-      | "on"
+      | "compile-status-changed"
       | "materializeCitationTemplate"
       | "getPartialDocument"
       | "getPartialDocuments"
@@ -231,7 +232,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
       | "unpackPartials"
     >;
   profile?: Pick<
-    ProfileService,
+    PlainProfile,
     | "getSource"
     | "profileOf"
     | "getBuiltInSource"
@@ -303,6 +304,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * Its report remains available even when this editor's own check differs.
    */
   #arrival: ArrivingProblem | null = null;
+  get runtime() {
+    return this.#deps.runtime;
+  }
+
   get matchDatabase() {
     return this.#deps.zoteroReads;
   }
@@ -324,7 +329,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #closed = false;
   #generation = 0;
   #bindingDefaults = BUILT_IN_BINDING_DEFAULTS;
-  #databaseUnavailable = false;
   #stylesUnavailable = false;
   #citationStyles: NameFolderPaneProps["citationStyles"] = [];
   /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
@@ -591,7 +595,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }),
     );
     this.register(
-      deps.settings.subscribe((settings) => {
+      subscribe(this.#deps.runtime, deps.settings.changes, (settings) => {
         if (!settings) return;
         const bindings = settings["note.default-profile"].bindings;
         this.#bindingDefaults = {
@@ -756,23 +760,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   get unavailableDependencies(): string[] {
     return [
-      ...(this.#databaseUnavailable
+      ...(this.#deps.zoteroReads.state === "degraded"
         ? [m.template_workbench_database_unavailable()]
         : []),
       ...(this.#stylesUnavailable
         ? [m.template_workbench_styles_unavailable()]
         : []),
     ];
-  }
-  async #databaseReady(): Promise<boolean> {
-    try {
-      await this.#deps.zoteroReads.ready;
-      return true;
-    } catch {
-      this.#databaseUnavailable = true;
-      this.#mount();
-      return false;
-    }
   }
 
   subscribeReveals(
@@ -1330,11 +1324,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (itemGeneration !== this.#itemGeneration) return;
     if (typeof value.itemIndexedKey === "string") {
       store.setItem({ id: value.itemIndexedKey, title: null });
-      if (
-        !getSampleItem(value.itemIndexedKey) &&
-        !(await this.#databaseReady())
-      )
-        return;
       if (!this.#closed && itemGeneration === this.#itemGeneration)
         await this.#selectKey(value.itemIndexedKey);
     } else if (value.itemIndexedKey === null) store.setItem(null);
@@ -1445,7 +1434,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#root = createRoot(this.contentEl);
     this.#mount();
     void this.refreshStyles();
-    void this.#databaseReady();
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;
@@ -1704,7 +1692,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * text reads it again from here, the way the preview pane does.
    */
   onTemplatesCompiled(listener: () => void): () => void {
-    return this.#deps.templates.on("compile-status-changed", listener);
+    return subscribe(
+      this.#deps.runtime,
+      this.#deps.templates["compile-status-changed"],
+      listener,
+    );
   }
   /**
    * Open the Shared Partial `name` in a Template Workbench View of its own.
@@ -1854,7 +1846,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   async refreshStyles(): Promise<void> {
     try {
-      await this.#deps.zoteroPref.ready;
       if (this.#closed) return;
       const dataDir = this.#deps.zoteroPref.dataDir;
       const styles = dataDir ? await listInstalledStyles(dataDir) : [];
@@ -1975,7 +1966,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       return false;
     const generation = this.#itemGeneration;
     try {
-      const { reads } = await this.#deps.zoteroReads.ready;
+      const { reads } = this.#deps.zoteroReads;
       const items = await Effect.runPromise(
         reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
       );
@@ -2716,6 +2707,7 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="match" modeActive={!advanced}>
               <NativeMatchPane
+                runtime={view.runtime}
                 onChooseItem={() => void view.chooseItem()}
                 controller={controller}
                 db={view.matchDatabase}

@@ -34,8 +34,8 @@ import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActionDeps, AnnotActions } from "./actions";
@@ -112,7 +112,7 @@ export interface AnnotationsLayoutDeps {
    */
   opener: Pick<TargetOpener, "open">;
   /** The database the Excerpt Image requests resolve through. */
-  reads: Pick<ZoteroReadsService, "acquireRead">;
+  reads: Pick<PlainZoteroReads, "acquireRead">;
   /**
    * The one read and write path for each Attachment's Annotations, so the
    * cards and the reader overlay show one Annotation Source's records rather
@@ -157,7 +157,7 @@ export interface AnnotationsLayoutDeps {
   reportBlockedGesture: (attachmentKey: string) => void;
   /** The tag names of an Annotation's Library, which the tag editor suggests. */
   libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<ExcerptDisplayService, "open" | "refresh">;
   noteFeature: Pick<

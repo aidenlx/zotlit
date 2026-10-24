@@ -7,20 +7,22 @@ import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { AnnotationPopover } from "@/services/annotation-popover/service";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import { heldResolution } from "@/services/citation-index/lookup";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {
   CitationLookupAnswer,
   CitationLookupObservation,
   SnapshotItem,
 } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
-import type { CitationText } from "@/services/citation-text/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   CITEKEY_HOVER_SOURCE,
   hoverPreferences,
@@ -30,17 +32,17 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { NoteFeature } from "@/services/note-feature";
 import { createNoteInteractively } from "@/services/note-feature";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { annotationLinkHoverExtension } from "./annotation-link";
@@ -49,26 +51,27 @@ import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
+  runtime: SubscriptionRuntime;
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: NoteFeature;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
-  db: Pick<ZoteroReadsService, "state" | "ready">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
+  db: Pick<PlainZoteroReads, "state" | "reads">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "peek" | "on">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
-  settings: SettingsService;
-  citationLookup: Pick<CitationLookup, "read"> & {
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  citationLookup: Pick<PlainCitationLookup, "read"> & {
     observe(changed: () => void): CitationLookupObservation;
   };
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
 }
 
 export type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
@@ -100,6 +103,7 @@ interface CitekeyEditorEvents {
  * reconfigure — the mechanism `registerEditorExtension` documents.
  */
 export class CitekeyEditor extends Service<void> {
+  readonly #runtime;
   readonly #createProfile;
   readonly #importProfile;
   readonly #app;
@@ -135,6 +139,7 @@ export class CitekeyEditor extends Service<void> {
 
   constructor(deps: CitekeyEditorDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#createProfile = deps.createProfile;
     this.#importProfile = deps.importProfile;
@@ -181,7 +186,6 @@ export class CitekeyEditor extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
 
     // Registered once and for the plugin's lifetime, so the row in Obsidian's
     // Page preview settings stays put while the Hover Action changes. Mod is
@@ -204,7 +208,7 @@ export class CitekeyEditor extends Service<void> {
       this.#app.workspace.updateOptions();
     });
     stack.defer(
-      this.#settings.subscribe((settings) => {
+      subscribe(this.#runtime, this.#settings.changes, (settings) => {
         if (settings) this.#applySettings(settings);
       }),
     );
@@ -212,10 +216,14 @@ export class CitekeyEditor extends Service<void> {
     // surface, so the editors showing that document draw again when it lands
     // or goes stale — until then they keep the raw marked source.
     stack.defer(
-      this.#citationText.on("changed", (path) => this.#redrawWidgets(path)),
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#redrawWidgets(path),
+      ),
     );
     stack.defer(
-      this.#citationText.on("invalidated", () => this.#redrawWidgets()),
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#redrawWidgets(),
+      ),
     );
 
     this.commit(stack.move());
@@ -435,7 +443,7 @@ export class CitekeyEditor extends Service<void> {
 
   /** The live Item an Indexed Key names, or `undefined` when none does. */
   async #readItem(indexedKey: string) {
-    const { reads } = await this.#db.ready;
+    const { reads } = this.#db;
     const items = await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [indexedKey] }),
     );

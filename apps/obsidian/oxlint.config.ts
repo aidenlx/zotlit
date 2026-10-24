@@ -128,8 +128,9 @@ export default defineConfig({
       rules: { "zotlit-services/worker-rpc": "error" },
     },
     {
-      // ZoteroReads owns the effect/rpc launch, shutdown and log transport.
+      // These adapters own effect/rpc worker creation, shutdown and log transport.
       files: [
+        "src/services/citation-parse/worker-host.ts",
         "src/services/zotero-reads/worker-launch.ts",
         "src/services/zotero-reads/worker-host.ts",
         "src/services/zotero-reads/worker.ts",
@@ -139,12 +140,7 @@ export default defineConfig({
     {
       // Worker migration backlog: move snapshot integrity checks to effect/rpc,
       // then remove this file from the list.
-      files: [
-        "src/services/database/snapshot-integrity.ts",
-        // #1705 moves the citation parse worker to effect/rpc.
-        "src/services/citation-parse/worker-host.ts",
-        "src/services/citation-parse/worker.ts",
-      ],
+      files: ["src/services/database/snapshot-integrity.ts"],
       rules: { "zotlit-services/worker-rpc": "off" },
     },
     {
@@ -153,6 +149,10 @@ export default defineConfig({
         "zotlit-effect-tests/no-effect-run-in-test": "error",
         "zotlit-effect-tests/no-real-timer-in-effect-test": "error",
       },
+    },
+    {
+      files: ["src/**"],
+      rules: { "zotlit-effect-tests/service-stub": "error" },
     },
     {
       // These tests exercise the run entry points themselves.
@@ -164,8 +164,54 @@ export default defineConfig({
       excludeFiles: ["**/*.test.{ts,tsx}"],
       rules: {
         "zotlit-services/effect-native-resources": "error",
+        "zotlit-services/interrupt-predicate": "error",
+        "zotlit-services/layer-stream-consumer": "error",
         "zotlit-services/no-legacy-service": "error",
+        "zotlit-services/obsidian-events-intake": "error",
+        "zotlit-services/scope-closed": "error",
+        "zotlit-services/state-stream": "error",
       },
+    },
+    {
+      // The helper the rule points at.
+      files: ["src/lib/effect-scope.ts"],
+      rules: { "zotlit-services/scope-closed": "off" },
+    },
+    {
+      files: ["src/**"],
+      rules: { "zotlit-services/no-nanoevents": "error" },
+    },
+    {
+      files: ["src/services/**/plain.ts"],
+      rules: { "zotlit-services/plain-adapter-streams": "error" },
+    },
+    {
+      // Legacy emitters, written before no-nanoevents. A file moves off this
+      // list when its service converts to Effect.
+      files: [
+        "src/services/annotation-repository/service.ts",
+        "src/services/attachment-import/service.ts",
+        "src/services/attachment-resolver/service.ts",
+        "src/services/citekey-editor/service.ts",
+        "src/services/local-bridge/service.ts",
+        "src/services/local-server/service.ts",
+        "src/services/note-feature/operations.ts",
+        "src/services/pdf-annotation-editor/__fixtures__.ts",
+        "src/services/pdf-annotation-editor/service.ts",
+        "src/services/reader-session/session.ts",
+        "src/services/zotero-local-api/__fixtures__.ts",
+        "src/services/zotero-local-api/service.ts",
+        "src/views/library/item-drag.test.ts",
+        "src/views/library/view.test.ts",
+        "src/views/query-view/table-notes.ts",
+      ],
+      rules: { "zotlit-services/no-nanoevents": "off" },
+    },
+    {
+      // Registered its events before obsidianEvents existed. It moves off this
+      // list when it adopts the helper.
+      files: ["src/services/use-ledger/service.ts"],
+      rules: { "zotlit-services/obsidian-events-intake": "off" },
     },
     {
       files: ["src/views/annot-view/*.{ts,tsx}"],
@@ -236,7 +282,6 @@ export default defineConfig({
         "src/zt-main.ts",
         "src/services/build.ts",
         "src/services/service-base.ts",
-        "src/services/settings/service.ts",
         "src/services/log/**",
       ],
       rules: {
@@ -308,10 +353,7 @@ export default defineConfig({
         "src/services/zotero-reads/citation-lookup.test.ts",
         "src/services/zotero-reads/connection.test.ts",
         "src/services/zotero-reads/handlers.test.ts",
-        "src/services/zotero-reads/service.test.ts",
         "src/services/zotero-reads/source.test.ts",
-        "src/services/zotero-reads/worker-host.test.ts",
-        "src/services/zotero-reads/zotero-reads.test.ts",
         "src/views/template-workbench/view.test.ts",
       ],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
@@ -326,10 +368,7 @@ export default defineConfig({
         "src/services/annotation-repository/service.ts",
         "src/services/attachment-import/service.ts",
         "src/services/attachment-resolver/service.ts",
-        "src/services/citation-index/lookup-service.ts",
-        "src/services/citation-index/service.ts",
         "src/services/citation-popover/service.tsx",
-        "src/services/citation-text/service.ts",
         "src/services/citekey-editor/service.ts",
         "src/services/citekey-reading/service.ts",
         "src/services/excerpt-image/display.ts",
@@ -337,24 +376,13 @@ export default defineConfig({
         "src/services/graph-citations/service.ts",
         "src/services/item-lookup/service.ts",
         "src/services/item-query/service.ts",
-        "src/services/library-scope/service.ts",
         "src/services/local-bridge/service.ts",
         "src/services/local-server/service.ts",
-        "src/services/managed-binary/service.ts",
-        "src/services/note-index/service.ts",
-        "src/services/pandoc/render-cache.ts",
         "src/services/pdf-annotation-editor/service.ts",
-        "src/services/profile/service.ts",
-        "src/services/query-client/service.ts",
         "src/services/release/service.ts",
-        "src/services/settings/service.ts",
-        "src/services/template/migration.ts",
-        "src/services/template/service.ts",
         "src/services/wikilink-editor/service.ts",
         "src/services/wikilink-reading/service.ts",
         "src/services/zotero-local-api/service.ts",
-        "src/services/zotero-pref/service.ts",
-        "src/services/zotero-reads/service.ts",
       ],
       rules: { "zotlit-services/no-legacy-service": "off" },
     },

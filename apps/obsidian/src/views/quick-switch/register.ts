@@ -4,10 +4,10 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { QuickSwitchModal } from "./modal";
@@ -16,12 +16,12 @@ export interface QuickSwitchDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
-  reads: Pick<ZoteroReadsService, "acquireRead">;
+  reads: Pick<PlainZoteroReads, "acquireRead">;
   lookup: ItemLookup;
-  noteIndex: NoteIndex;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
   noteFeature: Pick<NoteFeature, "createNote" | "planCreations">;
-  settings: SettingsService;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  settings: Pick<PlainPluginSettings, "current">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   /** Opens the PDF a result asks for. */
   opener: Pick<TargetOpener, "open">;
   /** Open the Library View with the Item selected. */

@@ -347,8 +347,9 @@ class HostMetadataCache {
     }
   }
 
-  on(_name: MetadataEvent, callback: MetadataCallback): EventRef {
-    this.#listeners.add(callback);
+  /** Only `changed` fires; a listener for any other event hears nothing. */
+  on(name: MetadataEvent | (string & {}), callback: MetadataCallback): EventRef {
+    if (name === "changed") this.#listeners.add(callback);
     return { e: this, callback } as unknown as EventRef;
   }
 

@@ -1,28 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
+
 import {
   citationStyleMissingNotice,
   subscribeCitationStyleMissing,
 } from "./notices";
 
 function styleEvents(existing = false) {
-  let listener: ((styleId: string) => void) | null = null;
+  const event = testEvent<string>();
+  const style = "http://www.zotero.org/styles/missing";
   return {
     cache: {
-      onStyleMissing(cb: (styleId: string) => void) {
-        listener = cb;
-        if (existing) cb("http://www.zotero.org/styles/missing");
-        return () => {
-          listener = null;
-        };
-      },
+      missingStyle: existing
+        ? event.stream.pipe(Stream.prepend([style]))
+        : event.stream,
     },
-    emit() {
-      listener?.("http://www.zotero.org/styles/missing");
-    },
-    hasListener() {
-      return listener !== null;
-    },
+    emit: () => event.emit(style),
+    hasListener: () => event.subscribers > 0,
   };
 }
 
@@ -49,6 +46,7 @@ describe("subscribeCitationStyleMissing", () => {
     const showNotice = vi.fn(() => ({ hide }));
 
     const dispose = subscribeCitationStyleMissing(
+      testRuntime(),
       events.cache as never,
       showNotice,
     );
@@ -64,6 +62,7 @@ describe("subscribeCitationStyleMissing", () => {
     const hide = vi.fn();
     const showNotice = vi.fn(() => ({ hide }));
     const dispose = subscribeCitationStyleMissing(
+      testRuntime(),
       events.cache as never,
       showNotice,
     );

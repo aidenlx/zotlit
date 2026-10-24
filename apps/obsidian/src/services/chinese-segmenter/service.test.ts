@@ -3,9 +3,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
-import { ManagedBinaryService } from "@/services/managed-binary/service";
+import { Effect } from "@/lib/effect";
+import { it } from "@/lib/effect-vitest";
+import { openManagedBinary } from "@/services/managed-binary/__fixtures__";
 import type { BinaryPin } from "@/services/managed-binary/service";
 import { memoryDevice } from "@/services/managed-binary/test-utils";
 
@@ -42,49 +44,56 @@ function open(
   device: Device,
   { download = serve(), consent = device.consent, pin = PIN } = {},
 ) {
-  return new ManagedBinaryService(
+  return openManagedBinary(
     { ...SEGMENTER, pin },
     { openStore: device.openStore, download, consent },
   );
 }
 
 describe("Chinese Segmenter", () => {
-  it("cuts a Chinese title with the installed binary", async () => {
-    const device = memoryDevice();
-    await using segmenter = open(device);
-    await segmenter.ready;
-    await segmenter.install();
+  it.effect("cuts a Chinese title with the installed binary", () =>
+    Effect.promise(async () => {
+      const device = memoryDevice();
+      await using segmenter = await open(device);
+      await segmenter.install();
 
-    const { module } = await segmenter.getEngine();
-    initSync({ module });
+      const { module } = (await segmenter.getEngine())!;
+      initSync({ module });
 
-    expect(cut_for_search("长江流域的城市化研究", true)).toEqual([
-      "长江",
-      "江流",
-      "流域",
-      "长江流域",
-      "的",
-      "城市",
-      "城市化",
-      "研究",
-    ]);
-  });
+      expect(cut_for_search("长江流域的城市化研究", true)).toEqual([
+        "长江",
+        "江流",
+        "流域",
+        "长江流域",
+        "的",
+        "城市",
+        "城市化",
+        "研究",
+      ]);
+    }),
+  );
 
-  it("reports a downloaded binary that does not start as init-failed at install", async () => {
-    const device = memoryDevice();
-    const garbage = new Uint8Array(new TextEncoder().encode("not wasm"));
-    const pin = {
-      ...PIN,
-      sha256: createHash("sha256").update(garbage).digest("hex"),
-    };
-    await using segmenter = open(device, { download: serve(garbage), pin });
-    await segmenter.ready;
+  it.effect(
+    "reports a downloaded binary that does not start as init-failed at install",
+    () =>
+      Effect.promise(async () => {
+        const device = memoryDevice();
+        const garbage = new Uint8Array(new TextEncoder().encode("not wasm"));
+        const pin = {
+          ...PIN,
+          sha256: createHash("sha256").update(garbage).digest("hex"),
+        };
+        await using segmenter = await open(device, {
+          download: serve(garbage),
+          pin,
+        });
 
-    await expect(segmenter.install()).rejects.toThrow();
+        await expect(segmenter.install()).rejects.toThrow();
 
-    expect(segmenter.getStatus()).toMatchObject({
-      kind: "failed",
-      failure: { code: "init-failed" },
-    });
-  });
+        expect(segmenter.getStatus()).toMatchObject({
+          kind: "failed",
+          failure: { code: "init-failed" },
+        });
+      }),
+  );
 });

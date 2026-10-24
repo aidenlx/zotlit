@@ -7,6 +7,7 @@ import type {
 } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
 import type {
@@ -123,7 +124,7 @@ export function databaseLocationItems(
  * Database file row: resolved `zotero.sqlite` path + a refresh button + an
  * inline status line that surfaces loading / refreshing / degraded /
  * refresh-failed states. The path derives from the Zotero profile's data dir
- * ({@link ZoteroPrefService.databasePath}), so it updates when the profile changes.
+ * ({@link PlainZoteroPref.databasePath}), so it updates when the profile changes.
  */
 function renderDatabaseFileRow(
   setting: Setting,
@@ -207,29 +208,29 @@ function renderDatabaseFileRow(
 
   applyStatus();
 
-  stack.defer(ctx.zoteroPref.on("changed", applyPath));
+  stack.defer(subscribe(ctx.runtime, ctx.zoteroPref["changed"], applyPath));
   stack.defer(
-    ctx.db.on("changed", () => {
+    subscribe(ctx.runtime, ctx.db["changed"], () => {
       lastRefreshFailed = false;
       lastErrorMessage = null;
       applyStatus();
     }),
   );
   stack.defer(
-    ctx.db.on("degraded", (err) => {
+    subscribe(ctx.runtime, ctx.db["degraded"], (err) => {
       lastErrorMessage = extractErrorMessage(err);
       applyStatus();
     }),
   );
   stack.defer(
-    ctx.db.on("refresh-failed", (err) => {
+    subscribe(ctx.runtime, ctx.db["refresh-failed"], (err) => {
       lastRefreshFailed = true;
       lastErrorMessage = extractErrorMessage(err);
       applyStatus();
     }),
   );
   stack.defer(
-    ctx.db.on("refreshing", (active) => {
+    subscribe(ctx.runtime, ctx.db["refreshing"], (active) => {
       refreshing = active;
       applyStatus();
     }),
@@ -299,9 +300,11 @@ function renderReadModeRow(
   });
 
   applyActiveMode();
-  stack.defer(ctx.db.on("changed", applyActiveMode));
-  stack.defer(ctx.db.on("degraded", applyActiveMode));
-  stack.defer(ctx.db.on("refresh-failed", applyActiveMode));
+  stack.defer(subscribe(ctx.runtime, ctx.db["changed"], applyActiveMode));
+  stack.defer(subscribe(ctx.runtime, ctx.db["degraded"], applyActiveMode));
+  stack.defer(
+    subscribe(ctx.runtime, ctx.db["refresh-failed"], applyActiveMode),
+  );
 
   return () => stack.dispose();
 }
@@ -310,7 +313,7 @@ function renderReadModeRow(
  * Profile picker row: a dropdown listing the `profiles.ini` profiles, plus an
  * "auto-detect default" entry (first) and a "choose folder" entry (last) that
  * opens a folder dialog. The description shows the resolved `prefs.js` path and
- * an inline loading / failed-to-read status from {@link ZoteroPrefService}.
+ * an inline loading / failed-to-read status from {@link PlainZoteroPref}.
  */
 function renderProfileDirRow(
   setting: Setting,
@@ -394,11 +397,6 @@ function renderProfileDirRow(
   };
 
   applyStatus();
-  if (pref.state === "loading") {
-    void pref.ready.then(() => {
-      if (pathCode.isConnected) applyStatus();
-    });
-  }
   void pref.listProfiles().then((list) => {
     if (!dropdown?.selectEl.isConnected) return;
     profiles = list;
@@ -406,7 +404,7 @@ function renderProfileDirRow(
   });
 
   stack.defer(
-    pref.on("changed", () => {
+    subscribe(ctx.runtime, pref["changed"], () => {
       applyStatus();
       if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
@@ -428,7 +426,7 @@ function extractErrorMessage(err: Error): string {
 
 /**
  * Advanced data-directory override (auto-detect / a chosen folder). Wins over
- * the profile-derived data dir in {@link ZoteroPrefService.dataDir}; the resolved
+ * the profile-derived data dir in {@link PlainZoteroPref.dataDir}; the resolved
  * path is echoed live so the user sees the effective value either way.
  */
 function renderDataDirRow(
@@ -483,15 +481,10 @@ function renderDataDirRow(
   });
 
   applyPath();
-  if (pref.state === "loading") {
-    void pref.ready.then(() => {
-      if (pathCode.isConnected) applyPath();
-    });
-  }
 
-  stack.defer(pref.on("changed", applyPath));
+  stack.defer(subscribe(ctx.runtime, pref["changed"], applyPath));
   stack.defer(
-    pref.on("data-dir-changed", () => {
+    subscribe(ctx.runtime, pref["data-dir-changed"], () => {
       applyPath();
       if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
     }),
@@ -502,7 +495,7 @@ function renderDataDirRow(
 
 /**
  * Live echo of the resolved profile dir, data dir, and computed
- * {@link ZoteroPrefService.sourceId}. Live updates are accepted only from a
+ * {@link PlainZoteroPref.sourceId}. Live updates are accepted only from a
  * Zotero install whose own profile + data dir hash to this same id, so showing
  * all three makes a mismatch diagnosable instead of silent.
  */
@@ -530,15 +523,10 @@ function renderSourceIdRow(
 
   setting.setDesc(desc);
   refresh();
-  if (pref.state === "loading") {
-    void pref.ready.then(() => {
-      if (idLine.isConnected) refresh();
-    });
-  }
 
-  stack.defer(ctx.settings.subscribe(() => refresh()));
-  stack.defer(pref.on("changed", refresh));
-  stack.defer(pref.on("data-dir-changed", refresh));
+  stack.defer(subscribe(ctx.runtime, ctx.settings.changes, () => refresh()));
+  stack.defer(subscribe(ctx.runtime, pref["changed"], refresh));
+  stack.defer(subscribe(ctx.runtime, pref["data-dir-changed"], refresh));
 
   return () => stack.dispose();
 }

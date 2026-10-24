@@ -18,7 +18,7 @@ import type {
 import { applyComposedFrontmatter } from "@/services/note-feature/compose";
 import { prepareManagedFrontmatter } from "@/services/note-feature/frontmatter";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 
 import { previewBaseline } from "./baseline";
 
@@ -75,11 +75,9 @@ export function checkDiagnostic(error: unknown, caller: RenderCallerSource) {
 
 /** Each component executes independently; disclosure is applied after all checks finish. */
 export function checkNativeProfile(
-  templates: Pick<TemplateService, "render" | "frontmatterFields">,
+  templates: Pick<PlainTemplate, "render" | "frontmatterFields">,
   input: {
-    document: ReturnType<
-      TemplateService["prepareLiteratureNoteTemplateSource"]
-    >;
+    document: ReturnType<PlainTemplate["prepareLiteratureNoteTemplateSource"]>;
     profile: ResolvedProfile;
     source: string;
     note: NoteTemplateContext;

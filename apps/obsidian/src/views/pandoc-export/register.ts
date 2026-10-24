@@ -14,7 +14,7 @@ import { getLogger } from "@/lib/log";
 import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
@@ -30,13 +30,13 @@ import {
 } from "@/services/pandoc/document-presentation";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import type { PlainPandocEngine } from "@/services/pandoc/plain";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { openPandocExportModal } from "./modal";
 import { showEngineMissing, showExportFailure } from "./notices";
@@ -46,12 +46,12 @@ const logger = getLogger(["views", "pandoc-export"]);
 export interface PandocExportDeps {
   citationParse: Pick<PlainCitationParse, "parse">;
   app: App;
-  db: Pick<ZoteroReadsService, "ready">;
+  db: Pick<PlainZoteroReads, "reads">;
   /** Resolves the literal citation keys of the exported document. */
-  citationLookup: Pick<CitationLookup, "read">;
-  pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
-  settings: Pick<SettingsService, "current">;
+  citationLookup: Pick<PlainCitationLookup, "read">;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "getEngine">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "httpPort" | "get">;
+  settings: Pick<PlainPluginSettings, "current">;
   profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
@@ -83,7 +83,6 @@ export async function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<void> {
-  await deps.profile.ready;
   const { app, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.getStatus().kind !== "installed") {
     showEngineMissing(deps.openSettings);
@@ -123,7 +122,6 @@ export async function runPandocExport(
     declared.presentation,
     vaultPresentation(settings.current),
   );
-  await zoteroPref.ready;
   // A literal citation key resolves through the snapshot, so this export waits
   // for its first rebuild the way every in-app surface does.
 
@@ -159,6 +157,8 @@ export async function runPandocExport(
 
   let output: Uint8Array;
   try {
+    const engine = await pandocEngine.getEngine();
+    if (!engine) return;
     const result = await exportCitedDocument(
       {
         document: {
@@ -169,7 +169,7 @@ export async function runPandocExport(
         format: choices.format,
         ...engineStyle,
       },
-      exportPorts(deps, await pandocEngine.getEngine()),
+      exportPorts(deps, engine),
     );
     if ("error" in result) {
       showExportFailure(result.error);
@@ -235,7 +235,7 @@ async function exportPresentation(
 
 function exportPorts(
   deps: PandocExportDeps,
-  engine: Awaited<ReturnType<PandocEngineService["getEngine"]>>,
+  engine: NonNullable<Awaited<ReturnType<PlainPandocEngine["getEngine"]>>>,
 ): ExportPorts {
   const { app, citationLookup, db, zoteroPref } = deps;
   return {
@@ -261,7 +261,7 @@ async function readItemRefs(
   indexedKeys: readonly string[],
 ): Promise<ReadonlyMap<string, BibliographyItemRef> | null> {
   try {
-    const { reads } = await db.ready;
+    const { reads } = db;
     const libraries = await Effect.runPromise(reads.Libraries({}));
     const refs = new Map<string, BibliographyItemRef>();
     for (const indexedKey of new Set(indexedKeys)) {

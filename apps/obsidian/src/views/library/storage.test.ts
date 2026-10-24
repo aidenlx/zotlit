@@ -12,8 +12,10 @@ import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
-import { SettingsService } from "@/services/settings/service";
+import { buildSettings } from "@/services/settings/__fixtures__";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 import { QueryView } from "@/views/query-view/view";
@@ -90,7 +92,7 @@ async function openLibrary() {
     "library.document": STORED_EARLIER,
   });
   const settings = cleanup.use(
-    new SettingsService({
+    await buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,
@@ -104,13 +106,21 @@ async function openLibrary() {
       migrateV9: (raw) => raw,
     }),
   );
-  await settings.ready;
+  await settings.loaded;
   const saveData = vi.spyOn(plugin, "saveData");
   const off = () => () => {};
   const deps = {
+    runtime: testRuntime(),
     app: { ...host.app, scope: undefined },
-    reads: { on: off },
-    libraryScope: { on: off },
+    reads: {
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "refresh-failed": Stream.empty,
+      refreshing: Stream.empty,
+      "db-file-missing": Stream.empty,
+      "refresh-requested": Stream.empty,
+    },
+    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: { on: off, hold: () => ({ [Symbol.dispose]: () => {} }) },

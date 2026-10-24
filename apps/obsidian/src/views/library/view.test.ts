@@ -17,11 +17,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { keymapApp, pressTop } from "@/lib/__fixtures__/keymap";
 import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
@@ -37,8 +39,8 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
-import { QueryClientService } from "@/services/query-client/service";
-import { SettingsService } from "@/services/settings/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import { buildSettings } from "@/services/settings/__fixtures__";
 import type { UseKind } from "@/services/use-ledger/service";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import {
@@ -423,7 +425,7 @@ const GROUPS: Readonly<Record<string, (item: SeedItem) => readonly string[]>> =
   };
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
-function pluginData(stored?: unknown) {
+async function pluginData(stored?: unknown) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
@@ -432,7 +434,7 @@ function pluginData(stored?: unknown) {
     ...(stored !== undefined && { "library.document": stored }),
   });
   const settings = cleanup.use(
-    new SettingsService({
+    await buildSettings({
       plugin,
       migrateLegacy: (raw) => raw,
       migrateV1: (raw) => raw,
@@ -450,7 +452,13 @@ function pluginData(stored?: unknown) {
   const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(answer(database.items, request)),
   );
-  const reads = createNanoEvents<Record<string, () => void>>();
+  const reads = testEvents<Record<string, () => void>>([
+    "changed",
+    "degraded",
+    "refresh-failed",
+    "db-file-missing",
+    "refreshing",
+  ]);
   /** What the database service says of Zotero's database. */
   const database_ = {
     state: "ready" as "ready" | "degraded",
@@ -458,7 +466,7 @@ function pluginData(stored?: unknown) {
     moved: false,
   };
   const readsDeps = {
-    on: reads.on.bind(reads),
+    ...reads.streams,
     get state() {
       return database_.state;
     },
@@ -468,9 +476,7 @@ function pluginData(stored?: unknown) {
     get moved() {
       return database_.moved;
     },
-    ready: Promise.resolve({
-      reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
-    }),
+    reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
   };
   const setupActions = {
     openSettings: vi.fn(),
@@ -495,11 +501,14 @@ function pluginData(stored?: unknown) {
     copyCitationKey: vi.fn(() => Promise.resolve()),
     showInZotero: vi.fn(),
   };
-  const scopeEvents = createNanoEvents<{ changed: () => void }>();
+  const scopeEvents = testEvents<{
+    changed: () => void;
+    "libraries-changed": () => void;
+  }>(["changed", "libraries-changed"]);
   const off = () => () => {};
   // The saved scope also names a group the database no longer holds.
   const libraryScope = {
-    on: scopeEvents.on.bind(scopeEvents),
+    ...scopeEvents.streams,
     effective: {
       mode: "selected",
       libraries: [
@@ -544,6 +553,7 @@ function pluginData(stored?: unknown) {
     );
   };
   const deps = {
+    runtime: testRuntime(),
     useLedger: { get: () => undefined },
     app: {
       ...host.app,
@@ -579,9 +589,10 @@ function pluginData(stored?: unknown) {
     items,
     settings,
     welcome: {
+      runtime: testRuntime(),
       app: host.app,
       reads: readsDeps,
-      queries: new QueryClientService(),
+      queries: queryClientsFixture(),
       zoteroPref: { dataDir: "/Zotero" },
       settings,
       setupActions,
@@ -674,7 +685,7 @@ function pluginData(stored?: unknown) {
  * The requests of the list: without the count requests of the Library Tree,
  * which read no field, and without the Reading Card's reads of one Item.
  */
-function listRuns(run: ReturnType<typeof pluginData>["run"]) {
+function listRuns(run: Awaited<ReturnType<typeof pluginData>>["run"]) {
   return run.mock.calls
     .map(([request]) => request)
     .filter((request) => (request.fields ?? []).length > 0)
@@ -790,7 +801,7 @@ const RECENT: LibraryNode = { kind: "recent" };
 const MY_LIBRARY: LibraryNode = { kind: "library", library: PERSONAL };
 
 it("opens on Recent, every Library in the Library Scope newest activity first, where plugin data holds no document", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const view = await openTab(deps);
   expect(listRuns(run)).toHaveLength(1);
   const [request] = listRuns(run) as [QueryViewRequest];
@@ -812,7 +823,7 @@ it("opens on Recent, every Library in the Library Scope newest activity first, w
 // worded as current, and leakage into other Library nodes or their query
 // projections.
 it("shows the newest Zotero activity only on Recent and stops requesting it on other nodes", async () => {
-  const { deps, change, run } = pluginData();
+  const { deps, change, run } = await pluginData();
   change([
     {
       ...SEED[0]!,
@@ -897,7 +908,7 @@ async function recentRow(
     .spyOn(Temporal.Now, "instant")
     .mockReturnValue(Temporal.Instant.from("2025-01-02T00:00:00Z"));
   cleanup.defer(() => now.mockRestore());
-  const { deps, change } = pluginData();
+  const { deps, change } = await pluginData();
   const item = SEED[0]!;
   change([{ ...item, fields }]);
   deps.useLedger = {
@@ -911,7 +922,7 @@ async function recentRow(
 }
 
 it("opens on the document plugin data holds, once it has loaded", async () => {
-  const { deps, run } = pluginData({
+  const { deps, run } = await pluginData({
     node: {
       kind: "collection",
       library: { type: "group", groupID: 4815 },
@@ -934,7 +945,7 @@ it("opens on the document plugin data holds, once it has loaded", async () => {
 });
 
 it("opens on every field of the document plugin data holds that it can read, where one facet is unknown, and on Papers where an earlier build stored the Table", async () => {
-  const { deps, run } = pluginData({
+  const { deps, run } = await pluginData({
     node: { kind: "library", library: PERSONAL },
     facets: ["annotated", "starred"],
     search: "",
@@ -953,7 +964,7 @@ it("opens on every field of the document plugin data holds that it can read, whe
 });
 
 it("opens again on a sort the toolbar changed, and runs the query the toolbar ran", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const first = await openTab(deps);
   await act(async () => {
     first.query.document.editView({
@@ -972,7 +983,7 @@ it("opens again on a sort the toolbar changed, and runs the query the toolbar ra
 });
 
 it("lists the libraries in the Library Scope with their Collections, each counting the Items of its subtree once", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   // A Collection's count holds the Items of its subcollections, each once:
   // "Thesis" holds A, B and C, though its Collections hold four memberships.
@@ -987,7 +998,7 @@ it("lists the libraries in the Library Scope with their Collections, each counti
 });
 
 it("opens a Collection to its subcollections, each counted alone", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS).querySelector("[data-library-expand]")!);
   expect(tree(view)).toEqual([
@@ -1003,7 +1014,7 @@ it("opens a Collection to its subcollections, each counted alone", async () => {
 });
 
 it("keeps the nodes the researcher opens and closes in the document, and opens on them again", async () => {
-  const { deps, settings } = pluginData();
+  const { deps, settings } = await pluginData();
   const first = await openTab(deps);
   await press(
     first,
@@ -1039,7 +1050,7 @@ it("keeps the nodes the researcher opens and closes in the document, and opens o
 });
 
 it("drops the open nodes Zotero no longer has from the document, and keeps the rest", async () => {
-  const { deps, settings } = pluginData({
+  const { deps, settings } = await pluginData({
     node: { kind: "recent" },
     expanded: [
       JSON.stringify(["personal", "Thesis"]),
@@ -1058,7 +1069,7 @@ it("drops the open nodes Zotero no longer has from the document, and keeps the r
 });
 
 it("lists a Collection with its subcollections' Items, names it in the header, and keeps it", async () => {
-  const { deps, run, settings } = pluginData();
+  const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
   expect(listRuns(run).at(-1)).toMatchObject({
@@ -1072,7 +1083,7 @@ it("lists a Collection with its subcollections' Items, names it in the header, a
 });
 
 it("lists a group library on its own, with no filter", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
   await press(view, row(view, { kind: "library", library: LAB }));
@@ -1083,7 +1094,7 @@ it("lists a group library on its own, with no filter", async () => {
 });
 
 it("shows the libraries outside the Library Scope on request, and lists one", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const view = await openTab(deps);
   const all = () =>
     view.contentEl.querySelector<HTMLElement>("[data-library-all]")!;
@@ -1124,7 +1135,7 @@ it("shows the libraries outside the Library Scope on request, and lists one", as
 });
 
 it("lets go of Show all libraries once the Library Scope holds every Library, and offers it again when the scope narrows", async () => {
-  const { deps, rescope } = pluginData();
+  const { deps, rescope } = await pluginData();
   const view = await openTab(deps);
   const all = () =>
     view.contentEl.querySelector<HTMLElement>("[data-library-all]");
@@ -1145,7 +1156,7 @@ it("lets go of Show all libraries once the Library Scope holds every Library, an
 });
 
 it("opens again on the node the tree selected", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const first = await openTab(deps);
   await press(first, row(first, { kind: "library", library: LAB }));
   const selected = listRuns(run).at(-1)!;
@@ -1157,7 +1168,7 @@ it("opens again on the node the tree selected", async () => {
 });
 
 it("counts again after a database change", async () => {
-  const { deps, change } = pluginData();
+  const { deps, change } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
     change([
@@ -1175,7 +1186,7 @@ it("counts again after a database change", async () => {
 });
 
 it("moves the selection up to its library where Zotero no longer has the Collection", async () => {
-  const { deps, run, settings } = pluginData({
+  const { deps, run, settings } = await pluginData({
     node: { kind: "collection", library: PERSONAL, path: ["Old name"] },
     facets: [],
     search: "",
@@ -1193,7 +1204,7 @@ it("moves the selection up to its library where Zotero no longer has the Collect
 });
 
 it("names the tree and the facets for a screen reader, with no tooltip over them", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   const pane = view.contentEl.querySelector("[data-library-tree]")!;
   // Obsidian shows every `aria-label` as a tooltip on hover.
@@ -1206,7 +1217,7 @@ it("names the tree and the facets for a screen reader, with no tooltip over them
 });
 
 it("puts the open tree away on Escape from inside it, on a Scope above the list's", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const app = keymapApp();
   Object.assign(deps.app, { keymap: app.keymap });
   const view = await openTab(deps);
@@ -1254,7 +1265,7 @@ it("puts the open tree away on Escape from inside it, on a Scope above the list'
 });
 
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
-  const { deps, lose, locate, setupActions } = pluginData();
+  const { deps, lose, locate, setupActions } = await pluginData();
   lose();
   const view = await openTab(deps);
   const shell = view.contentEl.querySelector(
@@ -1305,7 +1316,7 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
 });
 
 it("keeps the last rows with a note where a refresh of the database fails, and drops the note once it reads again", async () => {
-  const { deps, refreshFails, locate } = pluginData(ON_MY_LIBRARY);
+  const { deps, refreshFails, locate } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const rows = shown(view);
   const shell = view.contentEl.querySelector(
@@ -1328,7 +1339,7 @@ it("keeps the last rows with a note where a refresh of the database fails, and d
 });
 
 it("says Zotero is not found where the data folder changes to one that does not read, though the earlier database still serves", async () => {
-  const { deps, moveFails } = pluginData(ON_MY_LIBRARY);
+  const { deps, moveFails } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const shell = view.contentEl.querySelector(
     "[data-library-tree]",
@@ -1344,7 +1355,7 @@ it("says Zotero is not found where the data folder changes to one that does not 
 });
 
 it("reads the new Library Scope on Recent once the researcher changes it", async () => {
-  const { deps, run, rescope } = pluginData();
+  const { deps, run, rescope } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
     rescope([LIBRARIES[1]!]);
@@ -1357,7 +1368,7 @@ it("reads the new Library Scope on Recent once the researcher changes it", async
 });
 
 it("reads the saved Library Scope on Recent where the database holds none of its Libraries, so the view names the one missing", async () => {
-  const { deps, run, rescope } = pluginData();
+  const { deps, run, rescope } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
     rescope([], [GONE]);
@@ -1370,7 +1381,7 @@ it("reads the saved Library Scope on Recent where the database holds none of its
 });
 
 it("keeps Recent selected through a sort change, and selecting it again sorts newest activity first", async () => {
-  const { deps, run, settings } = pluginData();
+  const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
     view.query.document.editView({
@@ -1402,7 +1413,7 @@ it("keeps Recent selected through a sort change, and selecting it again sorts ne
 });
 
 it("marks the Sort button as set only for a sort other than the one the selected node writes", async () => {
-  const { deps, run, settings } = pluginData();
+  const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
   /** The Sort button: whether it shows a sort as set, and its text. */
   const sort = () => {
@@ -1438,7 +1449,7 @@ it("marks the Sort button as set only for a sort other than the one the selected
 });
 
 it("keeps a sort the researcher changed on Recent once they leave it", async () => {
-  const { deps, run, settings } = pluginData();
+  const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
     view.query.document.editView({
@@ -1465,7 +1476,7 @@ it("keeps a sort the researcher changed on Recent once they leave it", async () 
 
 it("marks the Sort button again on a switch between Recent and My Library that leaves the query text as it was", async () => {
   // On My Library, newest activity first is the researcher's sort.
-  const { deps, rescope } = pluginData({
+  const { deps, rescope } = await pluginData({
     ...ON_MY_LIBRARY,
     sort: [{ property: "lastActivity", direction: "DESC" }],
   });
@@ -1497,7 +1508,7 @@ function sortTwice(view: LibraryView) {
 }
 
 it("selects Recent with its own sort after two quick sorts, on screen and in plugin data", async () => {
-  const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+  const { deps, run, settings } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   await act(async () => {
     sortTwice(view);
@@ -1517,7 +1528,7 @@ it("selects Recent with its own sort after two quick sorts, on screen and in plu
 });
 
 it("keeps the last of two quick sorts once the search is cleared", async () => {
-  const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+  const { deps, run, settings } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   await type(view, "figures");
   await act(async () => {
@@ -1537,7 +1548,7 @@ it("keeps the last of two quick sorts once the search is cleared", async () => {
 });
 
 it("reads only the Library Scope on Recent while the tree shows every Library", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const view = await openTab(deps);
   await press(
     view,
@@ -1574,7 +1585,7 @@ describe("Reading State facets", () => {
     ["has-note", ["AAAAAAAA", "DDDDDDDD"]],
     ["pdf", ["AAAAAAAA", "BBBBBBBB"]],
   ])("narrows My Library to the Items %s holds", async (id, keys) => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     await press(view, row(view, MY_LIBRARY));
     expect(listed(view)).toEqual([
@@ -1595,7 +1606,7 @@ describe("Reading State facets", () => {
   });
 
   it("narrows Recent, over every Library in the Library Scope", async () => {
-    const { deps, run } = pluginData();
+    const { deps, run } = await pluginData();
     const view = await openTab(deps);
     await press(view, facet(view, "unread"));
     expect(listRuns(run).at(-1)).toMatchObject({
@@ -1612,7 +1623,7 @@ describe("Reading State facets", () => {
   });
 
   it("combines with the Collection selected and with each other", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     await press(view, row(view, THESIS));
     await press(view, facet(view, "pdf"));
@@ -1622,7 +1633,7 @@ describe("Reading State facets", () => {
   });
 
   it("counts the unread Items of the selection in the header, once the vault answers for their notes", async () => {
-    const { deps, addNote } = pluginData();
+    const { deps, addNote } = await pluginData();
     const view = await openTab(deps);
     // Recent counts no unread Items.
     expect(header(view)).toBe("Recent | 7 papers");
@@ -1643,7 +1654,7 @@ describe("Reading State facets", () => {
   });
 
   it("opens again with the facets the researcher left on", async () => {
-    const { deps, settings } = pluginData();
+    const { deps, settings } = await pluginData();
     const first = await openTab(deps);
     await press(first, facet(first, "pdf"));
     await press(first, facet(first, "annotated"));
@@ -1729,7 +1740,7 @@ const D = "DDDDDDDD";
 const E = "EEEEEEEE";
 
 it("expands a paper whose only child is its Literature Note, to that note", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   // D has a Literature Note, and no Attachment, Child Note or Annotation.
   await act(() =>
@@ -1746,7 +1757,7 @@ it("expands a paper whose only child is its Literature Note, to that note", asyn
 });
 
 it("selects a row on a click and moves the selection with the arrow keys", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const view = await openTab(deps);
   // The tab opens on Recent, which lists every Library in the scope.
   expect(itemRows(view)).toEqual([
@@ -1771,7 +1782,7 @@ it("selects a row on a click and moves the selection with the arrow keys", async
 });
 
 it("lets the keyboard enter the list at its first row while none is selected, and names the selected row to assistive technology", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   const stops = () =>
     [...view.contentEl.querySelectorAll<HTMLElement>("[data-query-item-row]")]
@@ -1789,7 +1800,7 @@ it("lets the keyboard enter the list at its first row while none is selected, an
 });
 
 it("selects the row the keyboard enters the list at, with no Reading Card, so its keys act on it", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).focus());
   expect(view.selection.getState()).toEqual({ key: A, card: false });
@@ -1800,7 +1811,7 @@ it("selects the row the keyboard enters the list at, with no Reading Card, so it
 });
 
 it("selects a row whose expand button is clicked, and asks for no Reading Card", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   const expand = itemRow(view, A).querySelector<HTMLElement>(
     "button[data-query-expand]",
@@ -1810,7 +1821,7 @@ it("selects a row whose expand button is clicked, and asks for no Reading Card",
 });
 
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, B).click());
   const row = itemRow(view, B);
@@ -1827,7 +1838,7 @@ it("answers the quick switcher's keys on the selected row: Enter the note, Mod+E
 });
 
 it("leaves Enter and the arrow keys to a field, a button and the Library Tree", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, B).click());
   const field = view.contentEl.createEl("input");
@@ -1844,7 +1855,7 @@ it("leaves Enter and the arrow keys to a field, a button and the Library Tree", 
 });
 
 it("opens the PDF on a double click", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => {
     itemRow(view, C).dispatchEvent(
@@ -1855,7 +1866,7 @@ it("opens the PDF on a double click", async () => {
 });
 
 it("lists the row's actions in its menu, which other plugins add to", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const trigger = vi.fn();
   deps.app.workspace.trigger = trigger;
   const view = await openTab(deps);
@@ -1889,7 +1900,7 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
 });
 
 it("offers no PDF to open in the menu of a row whose Item has no PDF", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   deps.app.workspace.trigger = vi.fn();
   const view = await openTab(deps);
   await act(() => {
@@ -1906,7 +1917,7 @@ it("offers no PDF to open in the menu of a row whose Item has no PDF", async () 
 });
 
 it("shows an Item in its first Collection, selected, with its Reading Card", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
     await view.reveal(A);
@@ -1923,7 +1934,7 @@ it("shows an Item in its first Collection, selected, with its Reading Card", asy
 });
 
 it("turns the Reading State facets off to show an Item they leave out", async () => {
-  const { deps, run, settings } = pluginData();
+  const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
   // A has Annotations, so Unread leaves it out.
   await press(view, facet(view, "unread"));
@@ -1942,7 +1953,7 @@ it("turns the Reading State facets off to show an Item they leave out", async ()
 });
 
 it("says it cannot show an Item past the rows the list holds, and selects nothing", async () => {
-  const { deps, change } = pluginData();
+  const { deps, change } = await pluginData();
   // A thousand Items of My Library come before the one revealed.
   const octal = (n: number) =>
     Array.from(n.toString(8).padStart(6, "0"))
@@ -1967,7 +1978,7 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
 });
 
 it("shows an Item filed in no Collection in its Library", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
   await act(async () => {
@@ -2018,7 +2029,7 @@ function shown(view: LibraryView) {
 }
 
 it("offers no toolbar search of the rows on screen beside its own search box", async () => {
-  const { deps } = pluginData(ON_MY_LIBRARY);
+  const { deps } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   expect(
     view.contentEl.querySelector('[data-query-toolbar="search"]'),
@@ -2026,7 +2037,7 @@ it("offers no toolbar search of the rows on screen beside its own search box", a
 });
 
 it("keeps Sort in place but off while a search lists its hits in rank order, and turns it on again once the search is cleared", async () => {
-  const { deps } = pluginData(ON_MY_LIBRARY);
+  const { deps } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const sort = () =>
     view.contentEl.querySelector<HTMLElement>('[data-query-toolbar="sort"]');
@@ -2059,7 +2070,7 @@ async function bringForward(view: LibraryView) {
 }
 
 it("has the search box focused when the command brings the tab forward", async () => {
-  const { deps, host } = pluginData();
+  const { deps, host } = await pluginData();
   // Setup is complete, so no Welcome View banner shows.
   host.vault.addFile("literatures/Paper.md", "");
   const view = await openTab(deps);
@@ -2070,7 +2081,7 @@ it("has the search box focused when the command brings the tab forward", async (
 });
 
 it("leaves the search box unfocused when the command brings the tab forward under the Welcome View banner", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   await act(() => view.welcome.settled);
   expect(view.contentEl.querySelector("[data-welcome-banner]")).not.toBeNull();
@@ -2083,13 +2094,13 @@ it("leaves the search box unfocused when the command brings the tab forward unde
  * on a first launch, where Zotero's database is still loading.
  */
 function holdReadout(deps: LibraryViewDeps) {
-  const ready = Promise.withResolvers<unknown>();
-  Object.assign(deps.welcome.reads, { ready: ready.promise });
+  const ready = Promise.withResolvers<{ itemCount: number }>();
+  Object.assign(deps.welcome.reads, {
+    reads: { ConnectionReadout: () => Effect.promise(() => ready.promise) },
+  });
   return async (view: LibraryView) => {
     await act(async () => {
-      ready.resolve({
-        reads: { ConnectionReadout: () => Effect.succeed({ itemCount: 8 }) },
-      });
+      ready.resolve({ itemCount: 8 });
       await view.welcome.settled;
     });
     await act(() => view.arrived);
@@ -2097,7 +2108,7 @@ function holdReadout(deps: LibraryViewDeps) {
 }
 
 it("leaves the search box unfocused when the command brings the tab forward before the banner's readout lands, and the banner comes to show", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const land = holdReadout(deps);
   const view = await openTab(deps);
   await bringForward(view);
@@ -2107,7 +2118,7 @@ it("leaves the search box unfocused when the command brings the tab forward befo
 });
 
 it("has the search box focused once the banner's readout lands where no banner comes to show", async () => {
-  const { deps, host } = pluginData();
+  const { deps, host } = await pluginData();
   host.vault.addFile("literatures/Paper.md", "");
   const land = holdReadout(deps);
   const view = await openTab(deps);
@@ -2118,7 +2129,7 @@ it("has the search box focused once the banner's readout lands where no banner c
 });
 
 it("leaves the cursor where the researcher moved it while the banner's readout was pending", async () => {
-  const { deps, host } = pluginData();
+  const { deps, host } = await pluginData();
   host.vault.addFile("literatures/Paper.md", "");
   const land = holdReadout(deps);
   const view = await openTab(deps);
@@ -2131,7 +2142,7 @@ it("leaves the cursor where the researcher moved it while the banner's readout w
 });
 
 it("puts the cursor in its own search box from the Welcome View banner's Search your library", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   await act(() => view.welcome.settled);
   expect(document.activeElement).not.toBe(searchBox(view));
@@ -2146,7 +2157,7 @@ it("puts the cursor in its own search box from the Welcome View banner's Search 
 });
 
 it("lists a search's hits in the rank of the worker search, inside the selected node", async () => {
-  const { deps, searches } = pluginData(ON_MY_LIBRARY);
+  const { deps, searches } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   expect(shown(view)).toEqual([
     "AAAAAAAA",
@@ -2171,7 +2182,7 @@ it("lists a search's hits in the rank of the worker search, inside the selected 
 });
 
 it("announces the search's match count as a status, and not a tree selection", async () => {
-  const { deps } = pluginData(ON_MY_LIBRARY);
+  const { deps } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const status = () =>
     view.contentEl.querySelectorAll<HTMLElement>('[role="status"]');
@@ -2187,7 +2198,7 @@ it("announces the search's match count as a status, and not a tree selection", a
 });
 
 it("searches all libraries in the Library Scope on request, past the selected Collection", async () => {
-  const { deps, run, searches } = pluginData();
+  const { deps, run, searches } = await pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
   await type(view, "figures");
@@ -2221,7 +2232,7 @@ it("searches all libraries in the Library Scope on request, past the selected Co
 });
 
 it("narrows a tag: token to the Items with that tag, in the list's order", async () => {
-  const { deps, searches } = pluginData(ON_MY_LIBRARY);
+  const { deps, searches } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const before = searches.length;
   await type(view, "tag:method");
@@ -2232,7 +2243,7 @@ it("narrows a tag: token to the Items with that tag, in the list's order", async
 });
 
 it("asks the search again after a database change, so a renamed Item joins its hits", async () => {
-  const { deps, change } = pluginData(ON_MY_LIBRARY);
+  const { deps, change } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   await type(view, "figures");
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
@@ -2249,7 +2260,7 @@ it("asks the search again after a database change, so a renamed Item joins its h
 });
 
 it("clears the search on Escape, and lists the selected node again", async () => {
-  const { deps, settings } = pluginData(ON_MY_LIBRARY);
+  const { deps, settings } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   await type(view, "figures");
   await act(async () => {
@@ -2273,7 +2284,7 @@ it("clears the search on Escape, and lists the selected node again", async () =>
 });
 
 it("says how to recover from a search that finds nothing, offering to search all libraries, then to clear it, with no filter hint", async () => {
-  const { deps } = pluginData(ON_MY_LIBRARY);
+  const { deps } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const empty = () =>
     view.contentEl.querySelector<HTMLElement>("[data-query-empty]");
@@ -2312,7 +2323,7 @@ it("says how to recover from a search that finds nothing, offering to search all
 });
 
 it("says the facets left nothing to list where no paper passes them", async () => {
-  const { deps } = pluginData(ON_MY_LIBRARY);
+  const { deps } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   // An unread paper has no Literature Note, so none passes both.
   await press(view, facet(view, "has-note"));
@@ -2325,7 +2336,7 @@ it("says the facets left nothing to list where no paper passes them", async () =
 });
 
 it("keeps a search inside the active facets, the vault's among them, in the search's rank", async () => {
-  const { deps } = pluginData(ON_MY_LIBRARY);
+  const { deps } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   await type(view, "figures");
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
@@ -2340,7 +2351,7 @@ it("keeps a search inside the active facets, the vault's among them, in the sear
 });
 
 it("keeps a search of all libraries inside the active facets", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   await press(view, row(view, THESIS));
   await press(view, facet(view, "unread"));
@@ -2358,7 +2369,7 @@ it("keeps a search of all libraries inside the active facets", async () => {
 });
 
 it("lists nothing more once the tab closed during a search", async () => {
-  const { deps, run } = pluginData();
+  const { deps, run } = await pluginData();
   // The worker answers once the tab has closed.
   const gate = Promise.withResolvers<void>();
   const open = deps.lookup.openSession.bind(deps.lookup);
@@ -2388,7 +2399,7 @@ it("lists nothing more once the tab closed during a search", async () => {
 });
 
 it("keeps the search text, and opens again on its hits", async () => {
-  const { deps, settings } = pluginData(ON_MY_LIBRARY);
+  const { deps, settings } = await pluginData(ON_MY_LIBRARY);
   const first = await openTab(deps);
   await type(first, "figures");
   await act(() => first.close());
@@ -2399,7 +2410,7 @@ it("keeps the search text, and opens again on its hits", async () => {
 });
 
 it("searches every Library in the Library Scope on Recent, with no offer to widen", async () => {
-  const { deps, searches } = pluginData();
+  const { deps, searches } = await pluginData();
   const view = await openTab(deps);
   await type(view, "figures");
   expect(searches.at(-1)).toEqual({ query: "figures", libraries: [1, 2] });
@@ -2409,7 +2420,7 @@ it("searches every Library in the Library Scope on Recent, with no offer to wide
 });
 
 it("leaves Enter and the arrow keys to the Welcome View banner's controls", async () => {
-  const { deps, items } = pluginData();
+  const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, B).click());
   const dismiss = view.contentEl.querySelector("[data-welcome-dismiss]")!;
@@ -2431,7 +2442,7 @@ describe("Welcome View banner once setup is complete", () => {
 
   /** A tab of a vault with the literature-notes folder, its banner settled. */
   async function setUp() {
-    const harness = pluginData();
+    const harness = await pluginData();
     harness.host.vault.addFile("literatures/Paper.md", "");
     const view = await openTab(harness.deps);
     await act(() => view.welcome.settled);
@@ -2519,7 +2530,7 @@ describe("Welcome View banner once setup is complete", () => {
 });
 
 it("asks the database nothing from the search box while Zotero's data folder is missing, and searches once it is set", async () => {
-  const { deps, searches, lose, locate } = pluginData(ON_MY_LIBRARY);
+  const { deps, searches, lose, locate } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   lose();
   await act(async () => {
@@ -2537,7 +2548,7 @@ it("asks the database nothing from the search box while Zotero's data folder is 
 });
 
 it("lets go of the selected row once a search leaves it out, and hides its Reading Card", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).click());
   expect(view.selection.getState().key).toBe(A);
@@ -2550,7 +2561,7 @@ it("lets go of the selected row once a search leaves it out, and hides its Readi
 });
 
 it("opens again on the paper the researcher selected, scrolled into view, with its Reading Card beside a wide list", async () => {
-  const { deps, settings } = pluginData();
+  const { deps, settings } = await pluginData();
   const first = await openTab(deps);
   await act(() => itemRow(first, C).click());
   await act(() => settings.flush());
@@ -2573,7 +2584,7 @@ it("opens again on the paper the researcher selected, scrolled into view, with i
 });
 
 it("lets go of the selected paper in the document once the researcher picks another node", async () => {
-  const { deps, settings } = pluginData();
+  const { deps, settings } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).click());
   await press(view, row(view, MY_LIBRARY));
@@ -2582,7 +2593,7 @@ it("lets go of the selected paper in the document once the researcher picks anot
 });
 
 it("opens with no paper selected where the list no longer holds the one it kept, and forgets it", async () => {
-  const { deps, settings } = pluginData({
+  const { deps, settings } = await pluginData({
     node: { kind: "recent" },
     selected: "1:ZZZZZZZZ",
   });
@@ -2616,7 +2627,7 @@ describe("Reading Card", () => {
     )!;
 
   it("hides while no row is selected, and shows the selected Item's title, creators in full, publication with year, and abstract", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     expect(shownCard(view)).toBeNull();
     await act(async () => {
@@ -2644,7 +2655,7 @@ describe("Reading Card", () => {
   });
 
   it("reads the selected Item again after a database change", async () => {
-    const { deps, change } = pluginData();
+    const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -2663,7 +2674,7 @@ describe("Reading Card", () => {
   });
 
   it("opens its row menu under the more button", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     deps.app.workspace.trigger = vi.fn();
     const view = await openTab(deps);
     await act(async () => {
@@ -2677,7 +2688,7 @@ describe("Reading Card", () => {
   });
 
   it("shows none of the last Item's Annotations while it reads another's, and says so where that read fails", async () => {
-    const { deps, run, change } = pluginData();
+    const { deps, run, change } = await pluginData();
     const view = await openTab(deps);
     // B has an Annotation here, so its card offers it.
     const annotated = SEED.map((item) =>
@@ -2716,7 +2727,7 @@ describe("Reading Card", () => {
   });
 
   it("lists the selected Item's Annotations with the Item as the Query Context, from the Item's Library", async () => {
-    const { deps, run } = pluginData();
+    const { deps, run } = await pluginData();
     const view = await openTab(deps);
     await select(view, A);
     await open(view, "annotations");
@@ -2733,7 +2744,7 @@ describe("Reading Card", () => {
   });
 
   it("hides once the researcher picks another node in the tree", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -2745,7 +2756,7 @@ describe("Reading Card", () => {
   });
 
   it("opens the PDF and opens or writes the Literature Note, and cites from its More menu, as the row menu does", async () => {
-    const { deps, items, addNote } = pluginData();
+    const { deps, items, addNote } = await pluginData();
     deps.app.workspace.trigger = vi.fn();
     const view = await openTab(deps);
     await act(async () => {
@@ -2779,7 +2790,7 @@ describe("Reading Card", () => {
   });
 
   it("offers no Open PDF for an Item with no PDF, and makes its Literature Note the primary button, from the row's header on", async () => {
-    const { deps, addNote } = pluginData();
+    const { deps, addNote } = await pluginData();
     deps.app.workspace.trigger = vi.fn();
     const view = await openTab(deps);
     const actions = () =>
@@ -2812,7 +2823,7 @@ describe("Reading Card", () => {
   });
 
   it("closes from its close button, gives the focus back to the row, and keeps it closed", async () => {
-    const { deps, settings } = pluginData();
+    const { deps, settings } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -2832,7 +2843,7 @@ describe("Reading Card", () => {
   });
 
   it("stays closed while the arrow keys move the selection, and opens again on a row click", async () => {
-    const { deps, settings } = pluginData();
+    const { deps, settings } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -2861,7 +2872,10 @@ describe("Reading Card", () => {
   });
 
   it("opens again on Space on the selected row", async () => {
-    const { deps } = pluginData({ node: { kind: "recent" }, cardClosed: true });
+    const { deps } = await pluginData({
+      node: { kind: "recent" },
+      cardClosed: true,
+    });
     const view = await openTab(deps);
     expect(await pressKey(view, itemRow(view, A), ["ArrowDown"])).toBe(true);
     expect(view.selection.getState().key).not.toBeNull();
@@ -2872,7 +2886,7 @@ describe("Reading Card", () => {
   });
 
   it("opens on a click or on Space on the selected row, and stays closed while the arrow keys move the selection", async () => {
-    const { deps, items } = pluginData();
+    const { deps, items } = await pluginData();
     const view = await openTab(deps);
     // Space with no row selected leaves the list to scroll.
     expect(await pressKey(view, itemRow(view, A), [" "])).toBe(false);
@@ -2893,7 +2907,7 @@ describe("Reading Card", () => {
   });
 
   it("shows no Annotations section for an Item with none", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -2923,7 +2937,7 @@ describe("Reading Card", () => {
       dt.nextElementSibling?.textContent,
     ]);
   };
-  const annotationRuns = (run: ReturnType<typeof pluginData>["run"]) =>
+  const annotationRuns = (run: Awaited<ReturnType<typeof pluginData>>["run"]) =>
     run.mock.calls.filter(([request]) => request.from === "annotations");
   async function select(view: LibraryView, key: string) {
     await act(async () => {
@@ -3020,7 +3034,7 @@ describe("Reading Card", () => {
   });
 
   it("shows its parts in order under the buttons, with All fields and Annotations closed and the Annotations unread until opened", async () => {
-    const { deps, run, change } = pluginData();
+    const { deps, run, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(FILLED);
@@ -3080,7 +3094,7 @@ describe("Reading Card", () => {
   });
 
   it("lists the files, which open in their reader, the Zotero notes, which link to Zotero, and the tags as chips", async () => {
-    const { deps, change } = pluginData();
+    const { deps, change } = await pluginData();
     const open = vi.fn(() => Promise.resolve());
     Object.assign(deps, { opener: { open } });
     const view = await openTab(deps);
@@ -3118,7 +3132,7 @@ describe("Reading Card", () => {
   });
 
   it("shows where the Item sits as its Library and each Collection path", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     await select(view, A);
     expect(
@@ -3154,7 +3168,7 @@ describe("Reading Card", () => {
     card(view).querySelector("[data-library-card-added]")?.textContent ?? null;
 
   it("shows a journal article's Venue with volume, issue, pages and year, its DOI and citation key as chips, the date added, and its other filled fields under All fields with Zotero's labels", async () => {
-    const { deps, change, items } = pluginData();
+    const { deps, change, items } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(FILLED);
@@ -3191,7 +3205,7 @@ describe("Reading Card", () => {
   });
 
   it("names every author in full up to ten, then et al., with the rest under All fields", async () => {
-    const { deps, change } = pluginData();
+    const { deps, change } = await pluginData();
     const view = await openTab(deps);
     const authors = Array.from({ length: 12 }, (_, index) => ({
       role: "author",
@@ -3218,7 +3232,7 @@ describe("Reading Card", () => {
   });
 
   it("shows a letter's year under its title, and its full date, URL and other filled fields in a letter's order", async () => {
-    const { deps, change } = pluginData();
+    const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(FILLED);
@@ -3264,7 +3278,7 @@ describe("Reading Card", () => {
   });
 
   it("remembers All fields and Annotations open for the Library View, across Items and when the tab opens again", async () => {
-    const { deps, settings, run, change } = pluginData();
+    const { deps, settings, run, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(FILLED);
@@ -3344,7 +3358,7 @@ describe("Reading Card", () => {
     ].map((el) => el.textContent);
 
   it("previews the first two Annotations as quotes with their page, under the count of each colour as text, and mounts every Annotation Card from See all", async () => {
-    const { deps, run, change } = pluginData();
+    const { deps, run, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(MARKED);
@@ -3394,7 +3408,7 @@ describe("Reading Card", () => {
   });
 
   it("previews an area as an image and an ink drawing as a drawing, each with its page", async () => {
-    const { deps, change } = pluginData();
+    const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(
@@ -3426,7 +3440,7 @@ describe("Reading Card", () => {
   });
 
   it("leaves out every part an Item has nothing for", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     // E has a tag and nothing else: no fields, abstract, file, note or Annotation.
     await select(view, E);
@@ -3437,7 +3451,7 @@ describe("Reading Card", () => {
   });
 
   it("cuts a long abstract to a few lines, with Show more and Show less", async () => {
-    const { deps, change } = pluginData();
+    const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       change(
@@ -3469,7 +3483,7 @@ describe("Reading Card", () => {
   });
 
   it("leaves Enter and the arrow keys inside the card to the card", async () => {
-    const { deps, items } = pluginData();
+    const { deps, items } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
       itemRow(view, B).click();
@@ -3483,7 +3497,7 @@ describe("Reading Card", () => {
 });
 
 it("says in the Save as query file dialog, from the toolbar button, what the file leaves out, and offers the selected Collection's name", async () => {
-  const { deps } = pluginData();
+  const { deps } = await pluginData();
   Object.assign(deps.app, {
     fileManager: {
       getNewFileParent: () => ({ isRoot: () => true, path: "/" }),
@@ -3567,7 +3581,7 @@ describe("Tag Selector", () => {
   }
 
   it("lists the tags of the Items the selected node lists, by name", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     // Recent reads My Library and Lab, the Library Scope.
     expect(tags(view)).toEqual(["figure", "lab-meeting", "method", "talk"]);
@@ -3578,7 +3592,7 @@ describe("Tag Selector", () => {
   });
 
   it("narrows the list to the Items with a tag, and with every tag selected", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     await press(view, row(view, MY_LIBRARY));
     await press(view, tag(view, "method"));
@@ -3595,7 +3609,7 @@ describe("Tag Selector", () => {
   });
 
   it("shows the selected tags as chips under the heading, on Recent too", async () => {
-    const { deps } = pluginData();
+    const { deps } = await pluginData();
     const view = await openTab(deps);
     expect(filterChips(view)).toEqual([]);
     await press(view, tag(view, "method"));
@@ -3608,7 +3622,7 @@ describe("Tag Selector", () => {
   });
 
   it("removes a facet or a tag from its chip under the heading, which names what it removes", async () => {
-    const { deps, settings } = pluginData(ON_MY_LIBRARY);
+    const { deps, settings } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await press(view, facet(view, "annotated"));
     await press(view, tag(view, "figure"));
@@ -3644,7 +3658,7 @@ describe("Tag Selector", () => {
   });
 
   it("clears every facet and tag from Clear all, in one run of the list", async () => {
-    const { deps, run, settings } = pluginData(ON_MY_LIBRARY);
+    const { deps, run, settings } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await press(view, facet(view, "pdf"));
     await press(view, tag(view, "method"));
@@ -3667,7 +3681,7 @@ describe("Tag Selector", () => {
   });
 
   it("deselects every tag at once, and offers that only while one is selected", async () => {
-    const { deps } = pluginData(ON_MY_LIBRARY);
+    const { deps } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     expect(deselectAll(view)).toBeNull();
     await press(view, tag(view, "method"));
@@ -3680,7 +3694,7 @@ describe("Tag Selector", () => {
   });
 
   it("selects a tag the Reading Card shows, beside those selected already", async () => {
-    const { deps, settings } = pluginData(ON_MY_LIBRARY);
+    const { deps, settings } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await press(view, tag(view, "method"));
     await act(async () => {
@@ -3707,7 +3721,7 @@ describe("Tag Selector", () => {
   });
 
   it("filters the tag names it shows, never the papers, and keeps a selected tag in view", async () => {
-    const { deps, run } = pluginData(ON_MY_LIBRARY);
+    const { deps, run } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await press(view, tag(view, "talk"));
     const runs = listRuns(run).length;
@@ -3722,7 +3736,7 @@ describe("Tag Selector", () => {
   });
 
   it("keeps the selected tags on another node, where they still show though no Item there has them", async () => {
-    const { deps, settings } = pluginData(ON_MY_LIBRARY);
+    const { deps, settings } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await press(view, tag(view, "talk"));
     await press(view, row(view, { ...THESIS, path: ["Reading list"] }));
@@ -3737,7 +3751,7 @@ describe("Tag Selector", () => {
   });
 
   it("opens again with the tags the researcher left selected", async () => {
-    const { deps } = pluginData({
+    const { deps } = await pluginData({
       ...ON_MY_LIBRARY,
       tags: ["figure", "method"],
     });
@@ -3747,7 +3761,7 @@ describe("Tag Selector", () => {
   });
 
   it("lists the tags again after a database change", async () => {
-    const { deps, change } = pluginData(ON_MY_LIBRARY);
+    const { deps, change } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await act(async () => {
       change([
@@ -3760,7 +3774,7 @@ describe("Tag Selector", () => {
   });
 
   it("lets go of the selected tags to show an Item they leave out", async () => {
-    const { deps } = pluginData(ON_MY_LIBRARY);
+    const { deps } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await press(view, tag(view, "talk"));
     await act(async () => {
@@ -3771,7 +3785,7 @@ describe("Tag Selector", () => {
   });
 
   it("names the tags for a screen reader by their heading, each a toggle button, with one stop for Tab and the arrow keys between them", async () => {
-    const { deps } = pluginData(ON_MY_LIBRARY);
+    const { deps } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     const pane = view.contentEl.querySelector("[data-library-tree]")!;
     expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);

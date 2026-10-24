@@ -1,19 +1,20 @@
 import type { App, CliFlag, CliFlags, FileSystemAdapter } from "obsidian";
 import { apiVersion } from "obsidian";
+
+import type { VersionedCliHost } from "@/lib/cli-command";
 // Registers the Workbench commands with Obsidian's CLI.
 //
 // Command, flag, guide, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
-
-import type { VersionedCliHost } from "@/lib/cli-command";
 import { Effect } from "@/lib/effect";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { ProfileService } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import {
   createCheckHandler,
@@ -69,13 +70,66 @@ import { CONTRACT_ROOT_NAMES } from "./schema";
 import { choices } from "./vocabulary";
 
 interface TemplateWorkbenchRegistrationDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  zoteroReads: ZoteroReadsService;
-  noteIndex: NoteIndex;
-  settings: SettingsService;
-  profile: ProfileService;
-  templates: TemplateService;
-  zoteroPref: ZoteroPrefService;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
+  profile: Pick<
+    PlainProfile,
+    | "resolveProfile"
+    | "profiles"
+    | "diagnostics"
+    | "profileOf"
+    | "getBuiltInSource"
+  >;
+  templates: Pick<
+    PlainTemplate,
+    | "frontmatterFields"
+    | "prepareLiteratureNoteTemplateSource"
+    | "renderCitationSource"
+    | "renderPartialSource"
+    | "getTemplateFileStatuses"
+    | "getPartialDocument"
+    | "renderFilename"
+    | "renderCitationData"
+    | "waitUntilSettled"
+    | "analyzeRootVariables"
+    | "getTemplateSource"
+    | "getLiteratureNoteTemplateStatuses"
+    | "getLiteratureNoteTemplate"
+    | "renderLiteratureNoteTemplateSource"
+    | "getFrontmatterFieldStatus"
+    | "javascriptTemplatesEnabled"
+    | "evaluateFrontmatterFields"
+    | "validateFrontmatterExpr"
+    | "getCitationTemplateStatus"
+    | "compileErrors"
+    | "getPartialDocuments"
+    | "getReservedPartialFiles"
+    | "getLoadedDocumentSource"
+    | "compile-status-changed"
+    | "render"
+    | "renderCitation"
+  >;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
+  >;
 }
 
 /** The Indexed Key selector a command with no other way to name an object takes. */
@@ -291,9 +345,11 @@ function frontmatterReorderFlags(): CliFlags {
  */
 export async function readWorkbenchIdentity(deps: {
   app: App;
-  zoteroPref: ZoteroPrefService;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "sourceId" | "databasePath" | "dataDir" | "baseAttachmentPath"
+  >;
 }): Promise<WorkbenchIdentity> {
-  await deps.zoteroPref.ready;
   return {
     vault: {
       name: deps.app.vault.getName(),
@@ -311,7 +367,6 @@ export function registerTemplateWorkbench(
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
   const getIdentity = async () => {
-    await deps.profile.ready;
     return readWorkbenchIdentity(deps);
   };
   host.registerCliCommand(TEMPLATE_INSPECT_COMMAND, {
@@ -319,6 +374,7 @@ export function registerTemplateWorkbench(
       "Inspect a Template Document and verify saved source freshness",
     flags: inspectFlags,
     handler: createInspectHandler({
+      runtime: deps.runtime,
       app: deps.app,
       profile: deps.profile,
       templates: deps.templates,
@@ -331,6 +387,7 @@ export function registerTemplateWorkbench(
       "Check every saved Profile create or update component with verified source freshness",
     flags: checkFlags,
     handler: createCheckHandler({
+      runtime: deps.runtime,
       pluginVersion: host.manifest.version,
       hostVersion: `Obsidian ${apiVersion}`,
       app: deps.app,
@@ -345,7 +402,6 @@ export function registerTemplateWorkbench(
     pluginVersion: host.manifest.version,
     getIdentity,
     selectNote: async (name) => {
-      await deps.profile.ready;
       return selectInspectionNote(deps, name);
     },
     loadData: (indexedKey, root, options) =>

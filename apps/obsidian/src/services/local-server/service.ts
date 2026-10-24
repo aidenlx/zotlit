@@ -13,11 +13,14 @@ import type {
 } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { Service } from "@/services/service-base";
-import type { Settings, SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { createLiveUpdateApp } from "./live-update-app";
 
@@ -105,9 +108,10 @@ export interface LocalServerEvents {
 }
 
 export interface LocalServerServiceDeps {
-  settings: SettingsService;
-  zoteroPref: ZoteroPrefService;
-  noteIndex: NoteIndex;
+  runtime: SubscriptionRuntime;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  zoteroPref: Pick<PlainZoteroPref, "sourceId">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getIndexedItemKeys">;
 }
 
 /**
@@ -122,6 +126,7 @@ export interface LocalServerServiceDeps {
  * transitions are serialized so a port change can't race a half-closed server.
  */
 export class LocalServerService extends Service<void> {
+  readonly #runtime;
   readonly #settings;
   readonly #zoteroPref;
   readonly #noteIndex;
@@ -145,6 +150,7 @@ export class LocalServerService extends Service<void> {
 
   constructor(deps: LocalServerServiceDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#settings = deps.settings;
     this.#zoteroPref = deps.zoteroPref;
     this.#noteIndex = deps.noteIndex;
@@ -258,7 +264,7 @@ export class LocalServerService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     await using stack = new AsyncDisposableStack();
 
     this.#enabled = settings["server.enabled"];
@@ -274,7 +280,7 @@ export class LocalServerService extends Service<void> {
       await this.#stopServer();
     });
     stack.defer(
-      this.#settings.subscribe((value) => {
+      subscribe(this.#runtime, this.#settings.changes, (value) => {
         if (value) this.#onSettingsChanged(value);
       }),
     );

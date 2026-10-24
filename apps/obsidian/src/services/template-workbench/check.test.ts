@@ -13,6 +13,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Deferred, Effect, Exit, Fiber } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -88,13 +89,13 @@ async function fixture(
     getImportedNoteByNoteKey: () => [],
   };
   const zoteroPref = {
-    ready: Promise.resolve(),
     sourceId: "fixture",
     databasePath: "/fixture/db",
     dataDir: "/fixture",
     baseAttachmentPath: null,
   };
   registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
+    runtime: testRuntime(),
     app: f.app,
     templates: f.template,
     settings: f.settings,
@@ -419,13 +420,9 @@ describe("plain document checks", () => {
           selectedProfile: { id: "Bk3Qn7XvT2Lp" },
           outputs: { partial: "Paper" },
         });
-        yield* Effect.promise(() =>
-          expect(
-            vi.mocked(readTemplateData).mock.calls.at(-1)?.[0].settings.loaded,
-          ).resolves.toMatchObject({
-            "note.literature-folder": "Selected folder",
-          }),
-        );
+        expect(
+          vi.mocked(readTemplateData).mock.calls.at(-1)?.[0].settings.current,
+        ).toMatchObject({ "note.literature-folder": "Selected folder" });
         yield* f.draft("---\nlanguage: liquid\n---\n{% render 'missing' %}");
         const failed = yield* f.check({
           document: "partial:new",
@@ -628,7 +625,7 @@ describe("registered template-check", () => {
         f.vault.addFile("notes/existing.md", "Existing note");
         const before = [...f.vault.contents];
         const settings = JSON.stringify(
-          yield* Effect.promise(() => f.settings.loaded),
+          yield* Effect.sync(() => f.settings.current),
         );
         const draft = yield* f.draft(
           SOURCE.replace("# {{ zt.title }}", "# Draft {{ zt.title }}"),
@@ -651,7 +648,7 @@ describe("registered template-check", () => {
         );
         expect([...f.vault.contents]).toEqual(before);
         expect(
-          JSON.stringify(yield* Effect.promise(() => f.settings.loaded)),
+          JSON.stringify(yield* Effect.sync(() => f.settings.current)),
         ).toBe(settings);
         expect(f.profile.profiles).toHaveLength(1);
         expect(f.template.getLoadedDocumentSource(PATH)).toBe(SOURCE);
@@ -825,9 +822,9 @@ describe("registered template-check", () => {
           },
         });
         expect(inherited.outputs.fold["zotlit-csl"]).toBeUndefined();
-        const loadedSettings = yield* Effect.promise(
+        const loadedSettings = yield* Effect.sync(
           () =>
-            vi.mocked(readTemplateData).mock.calls.at(-1)![0].settings.loaded,
+            vi.mocked(readTemplateData).mock.calls.at(-1)![0].settings.current,
         );
         expect(
           getProfileBinding(loadedSettings, "citation.references-style"),

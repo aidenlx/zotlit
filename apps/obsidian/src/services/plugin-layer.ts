@@ -1,59 +1,128 @@
 // The plugin's services that live in the Effect Layer graph, converted or bridged.
 import type { Plugin } from "obsidian";
 
-import { Clock, Effect, Layer } from "@/lib/effect";
-import { instantClock } from "@/lib/effect-clock";
+import { Layer } from "@/lib/effect";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
+import { layerChineseSegmenter } from "./chinese-segmenter/service";
+import type { ChineseSegmenter } from "./chinese-segmenter/service";
+import { layerCitationLookup } from "./citation-index/lookup-service";
+import type { CitationLookup } from "./citation-index/lookup-service";
+import { layerCitationIndex } from "./citation-index/service";
+import type { CitationIndex } from "./citation-index/service";
 import { layerCitationParse } from "./citation-parse/service";
 import type { CitationParse } from "./citation-parse/service";
+import { layerCitationText } from "./citation-text/service";
+import type { CitationText } from "./citation-text/service";
+import { layerLibraryScope } from "./library-scope/service";
+import type { LibraryScope } from "./library-scope/service";
 import { layerLogging, layerLogOutput } from "./log/service";
-import { QueryClients, QueryClientService } from "./query-client/service";
-import { serviceLayer } from "./service-layer";
-import { settingsMigrations } from "./settings/migrate";
-import { PluginSettings, SettingsService } from "./settings/service";
+import { layerManagedBinaryPlatform } from "./managed-binary/service";
+import { layerNoteIndex } from "./note-index/service";
+import type { NoteIndex } from "./note-index/service";
+import { layerBibliographyRender } from "./pandoc/render-cache";
+import type { BibliographyRender } from "./pandoc/render-cache";
+import { layerPandocEngine } from "./pandoc/service";
+import type { PandocEngine } from "./pandoc/service";
+import { layerProfile } from "./profile/service";
+import type { Profile } from "./profile/service";
+import { layerQueryClients } from "./query-client/service";
+import type { QueryClients } from "./query-client/service";
+import { layerPluginSettings } from "./settings/service";
+import type { PluginSettings } from "./settings/service";
+import { startingAs } from "./startup-failure";
+import { layerTemplateMigration } from "./template/migration";
+import type {
+  TemplateMigration,
+  TemplateMigrationOptions,
+} from "./template/migration";
+import { layerTemplate } from "./template/service";
+import type { Template } from "./template/service";
 import { layerUseLedger } from "./use-ledger/service";
 import type { UseLedger } from "./use-ledger/service";
+import { layerZoteroPref, layerZoteroPrefFiles } from "./zotero-pref/service";
+import type { ZoteroPref } from "./zotero-pref/service";
+import { layerZoteroReads } from "./zotero-reads/service";
+import type { ZoteroReads } from "./zotero-reads/service";
+import { workerClient } from "./zotero-reads/worker-client";
 
 /**
  * The graph `buildServices` builds before the container over `plugin`:
  * converted services, and the legacy services bridged into it with
  * `serviceLayer`. Settings and logging build first, so every other service
  * logs from its first line and closes before them. Every service reads time
- * from the Effect Clock, which a test replaces.
+ * from the Effect Clock, which a test replaces. Each layer starts under its
+ * service's name, so a defect during acquisition names what failed.
  */
 export function pluginLayer(
   plugin: Plugin,
-): Layer.Layer<PluginSettings | UseLedger | QueryClients | CitationParse> {
-  return Layer.mergeAll(
-    layerUseLedger,
-    layerCitationParse,
-    serviceLayer(QueryClients, {
-      key: "queryClient",
-      make: Effect.map(
-        Clock.Clock,
-        (clock) => new QueryClientService({ now: instantClock(clock) }),
+  migration: TemplateMigrationOptions,
+): Layer.Layer<
+  | CitationText
+  | CitationIndex
+  | BibliographyRender
+  | CitationLookup
+  | Profile
+  | LibraryScope
+  | ZoteroReads
+  | PluginSettings
+  | UseLedger
+  | QueryClients
+  | CitationParse
+  | ZoteroPref
+  | ChineseSegmenter
+  | PandocEngine
+  | NoteIndex
+  | Template
+  | TemplateMigration
+> {
+  return layerCitationText().pipe(
+    startingAs("CitationText"),
+    Layer.provideMerge(layerCitationIndex().pipe(startingAs("CitationIndex"))),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        layerBibliographyRender.pipe(startingAs("BibliographyRender")),
+        layerCitationLookup.pipe(startingAs("CitationLookup")),
       ),
-    }),
-  ).pipe(
+    ),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        layerLibraryScope.pipe(startingAs("LibraryScope")),
+        layerProfile.pipe(startingAs("Profile")),
+      ),
+    ),
+    Layer.provideMerge(
+      layerZoteroReads(workerClient()).pipe(startingAs("ZoteroReads")),
+    ),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        layerUseLedger.pipe(startingAs("UseLedger")),
+        layerTemplateMigration(migration).pipe(
+          startingAs("TemplateMigration"),
+          Layer.provideMerge(layerTemplate.pipe(startingAs("Template"))),
+        ),
+        layerZoteroPref.pipe(
+          Layer.provide(layerZoteroPrefFiles),
+          startingAs("ZoteroPref"),
+        ),
+        Layer.mergeAll(
+          layerChineseSegmenter.pipe(startingAs("ChineseSegmenter")),
+          layerPandocEngine.pipe(startingAs("PandocEngine")),
+        ).pipe(Layer.provide(layerManagedBinaryPlatform)),
+        layerNoteIndex.pipe(startingAs("NoteIndex")),
+        layerCitationParse.pipe(startingAs("CitationParse")),
+        layerQueryClients.pipe(startingAs("QueryClients")),
+      ),
+    ),
     Layer.provide(Layer.succeed(ObsidianApp, plugin.app)),
     Layer.provideMerge(
-      layerLogging.pipe(Layer.provide(layerLogOutput(plugin))),
+      layerLogging.pipe(
+        Layer.provide(layerLogOutput(plugin)),
+        startingAs("Logging"),
+      ),
     ),
-    Layer.provideMerge(layerSettings(plugin)),
+    Layer.provideMerge(
+      layerPluginSettings(plugin).pipe(startingAs("PluginSettings")),
+    ),
   );
-}
-
-function layerSettings(plugin: Plugin): Layer.Layer<PluginSettings> {
-  return serviceLayer(PluginSettings, {
-    key: "settings",
-    make: Effect.sync(
-      () =>
-        new SettingsService({
-          plugin,
-          ...settingsMigrations,
-          handoff: plugin.app,
-        }),
-    ),
-  });
 }

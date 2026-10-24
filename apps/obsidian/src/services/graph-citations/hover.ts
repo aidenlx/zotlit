@@ -15,7 +15,7 @@ import {
 } from "@/services/citekey-navigation";
 import type { NavigationPane } from "@/services/citekey-navigation";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import type { GraphCitationAdditions } from "./adapter";
 import { CITATION_POPOVER } from "./display";
@@ -28,7 +28,7 @@ const logger = getLogger("graph-citations");
 /** What one graph leaf's hover wrap reads the world through. */
 export interface NodeHoverDeps {
   app: App;
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
   citationPopover: Pick<CitationPopover, "showWork" | "hide">;
   /** Opens the exact Item displayed in the popover. */
   open: (indexedKey: string, pane: NavigationPane) => void;

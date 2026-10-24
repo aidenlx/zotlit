@@ -13,7 +13,7 @@ import {
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
 import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
@@ -27,7 +27,7 @@ export interface InteractiveProfileSwitchDeps {
   importProfile: ImportProfile;
   app: App;
   noteFeature: Pick<NoteFeature, "prepareProfileSwitch" | "switchNoteProfile">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
 export interface ProfileSwitchConsent {

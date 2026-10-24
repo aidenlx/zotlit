@@ -4,11 +4,14 @@ import { describe, expect, it } from "vitest";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import {
   inProcessReadsService,
@@ -394,9 +397,10 @@ function itemLookup(
   libraryScope: FakeLibraryScope = new FakeLibraryScope(),
 ): ItemLookup {
   return new ItemLookup({
+    runtime: testRuntime(),
     useLedger: { uses: {} },
     reads: reads.service,
-    libraryScope: libraryScope as unknown as LibraryScopeService,
+    libraryScope: libraryScope as unknown as PlainLibraryScope,
   });
 }
 
@@ -527,9 +531,9 @@ function library(libraryID: number): AvailableLibrary {
 
 class FakeLibraryScope {
   #libraries: readonly AvailableLibrary[] | null;
-  readonly #subscribers = new Set<
-    (scope: ResolvedLibraryScope | null) => void
-  >();
+  readonly #events = testEvent<ResolvedLibraryScope | null>();
+  readonly changed = this.#events.stream;
+  readonly "libraries-changed" = Stream.empty;
 
   readonly ready = Promise.resolve();
 
@@ -548,19 +552,9 @@ class FakeLibraryScope {
     return this.#resolved()!;
   }
 
-  on(
-    _event: "changed",
-    cb: (scope: ResolvedLibraryScope | null) => void,
-  ): () => void {
-    this.#subscribers.add(cb);
-    return () => {
-      this.#subscribers.delete(cb);
-    };
-  }
-
   setLibraries(libraries: readonly AvailableLibrary[]): void {
     this.#libraries = libraries;
-    for (const cb of this.#subscribers) cb(this.#resolved());
+    this.#events.emit(this.#resolved());
   }
 
   #resolved(): ResolvedLibraryScope | null {

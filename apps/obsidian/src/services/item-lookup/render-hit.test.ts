@@ -10,12 +10,12 @@ import type { ItemFields } from "@zotlit/zotero-types";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import { renderSuggestion } from "./render-hit";
 import type { SearchHit } from "./service";
 
-const settings = { current: {} } as unknown as SettingsService;
+const settings = { current: {} } as unknown as PlainPluginSettings;
 
 describe("renderSuggestion library label", () => {
   it.each([null, group(100, "Shared A")])(

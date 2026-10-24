@@ -68,7 +68,6 @@ it("verifies against the first in-scope item that renders, its Citation read bef
   const deps = {
     zoteroReads: reads,
     libraryScope: {
-      ready: Promise.resolve(),
       resolveLibraries: (libraries: readonly Library[]) =>
         resolveLibraryScope(libraries, MY_LIBRARY_SCOPE),
     },

@@ -12,6 +12,8 @@ import type { App, TFile } from "obsidian";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { processLiveFrontMatter } from "@/lib/live-text";
 import type { LiveTextApp } from "@/lib/live-text";
 import {
@@ -25,10 +27,10 @@ import {
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import type { NoteFeature } from "@/services/note-feature/operations";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { ProfileService } from "@/services/profile/service";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { LITERATURE_NOTE } from "./query-file";
 
@@ -180,16 +182,22 @@ export interface LiteratureNotes {
 }
 
 export interface LiteratureNotesDeps extends InteractiveCreationDeps {
+  runtime: SubscriptionRuntime;
   app: App & LiveTextApp;
   noteIndex: Pick<
-    NoteIndex,
-    "getNotesByItemKey" | "getIndexedItemKeys" | "getPropertyNames" | "on"
+    PlainNoteIndex,
+    | "getNotesByItemKey"
+    | "getIndexedItemKeys"
+    | "getPropertyNames"
+    | "changed"
+    | "indexed"
+    | "frontmatter-changed"
   >;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "replacedKeys">;
-  profile: Pick<ProfileService, "on">;
-  template: Pick<TemplateService, "on">;
-  zoteroReads: Pick<ZoteroReadsService, "ready">;
+  profile: Pick<PlainProfile, "changed">;
+  template: Pick<PlainTemplate, "compile-status-changed">;
+  zoteroReads: Pick<PlainZoteroReads, "reads">;
 }
 
 /** The keys a note's Profile replaces, or the read of them under way. */
@@ -223,16 +231,16 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   // their subscriptions need no end.
   let memo = freshMemo();
   const events = createNanoEvents<VaultEvents>();
-  deps.noteIndex.on("changed", () => {
+  subscribe(deps.runtime, deps.noteIndex["changed"], () => {
     memo = freshMemo();
     events.emit("changed");
   });
   // The Full Scan reports no `changed` for each note it finds.
-  deps.noteIndex.on("indexed", () => {
+  subscribe(deps.runtime, deps.noteIndex["indexed"], () => {
     memo = freshMemo();
     events.emit("changed");
   });
-  deps.noteIndex.on("frontmatter-changed", (file) => {
+  subscribe(deps.runtime, deps.noteIndex["frontmatter-changed"], (file) => {
     // A note's own frontmatter, its Profile stamp among it, decides what its
     // Profile replaces; the other notes keep theirs.
     memo = {
@@ -247,8 +255,12 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     memo = { ...memo, replaced: new Map() };
     events.emit("frontmatter-changed");
   };
-  deps.profile.on("changed", profilesChanged);
-  deps.template.on("compile-status-changed", profilesChanged);
+  subscribe(deps.runtime, deps.profile["changed"], profilesChanged);
+  subscribe(
+    deps.runtime,
+    deps.template["compile-status-changed"],
+    profilesChanged,
+  );
   // A read of what a note's Profile replaces settles after the cell asked;
   // the cells read again once for all that settle together.
   let telling = false;
@@ -382,7 +394,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   };
   /** The usual creation of an Item's note; `null` where none came of it. */
   async function createNote(itemKey: string): Promise<TFile | null> {
-    const { reads } = await deps.zoteroReads.ready;
+    const { reads } = deps.zoteroReads;
     const item = (
       await Effect.runPromise(
         reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),

@@ -20,6 +20,8 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -31,8 +33,8 @@ import type {
   ExcerptRequest,
 } from "@/services/excerpt-image/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -111,12 +113,13 @@ async function fixture(mode = "normal") {
   const paths = { dataDir, baseAttachmentPath: null };
   const attachments = stack.use(
     new AttachmentImportService({
+      runtime: testRuntime(),
       app,
       settings: {
-        loaded: Promise.resolve(settings),
-        subscribe: () => () => {},
-      } as unknown as SettingsService,
-      zoteroPref: { ...paths, on: () => () => {} },
+        current: settings,
+        changes: Stream.empty,
+      } as unknown as PlainPluginSettings,
+      zoteroPref: { ...paths, "resolved-changed": Stream.empty },
     }),
   );
   await attachments.ready;

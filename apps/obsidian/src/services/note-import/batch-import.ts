@@ -29,22 +29,19 @@ import {
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   NoteFeature,
   CreationProfileSelection,
   ProfilePreview,
 } from "@/services/note-feature";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
 import type {
   FlatTask,
@@ -76,15 +73,13 @@ export interface NoteImportDeps {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
   /** A note write's reads: one lease spans the write and what it imports. */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "state">;
-  settings: Pick<SettingsService, "loaded" | "update">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "state">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveLibraries">;
+  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
   noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
+  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
-  /** Only template readiness is gated here; rendering lives in `noteImport`. */
-  template: Pick<TemplateService, "ready">;
 }
 
 /**
@@ -479,7 +474,6 @@ function openNoteImportModal(
     total: ids.length,
     onClassify: async (controls) => {
       const classified = await classifyNoteImport(deps, ids, controls);
-      await deps.profile.ready;
       profilesEnabled = deps.profile.profiles.length > 0;
       if (profilesEnabled)
         profileChoice = await prepareImportProfiles(
@@ -607,7 +601,6 @@ function openChildImportModal(
     onClassify: async (controls) => {
       const parents = await classifyChildImport(deps, ids, controls);
       const allActions = parents.flatMap((parent) => parent.actions);
-      await deps.profile.ready;
       profilesEnabled = deps.profile.profiles.length > 0;
       if (profilesEnabled)
         profileChoice = await prepareImportProfiles(
@@ -728,10 +721,7 @@ async function importOne(
   ref: ChildNote,
   targetFile: TFile | undefined,
 ): Promise<WriteOutcome> {
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.template.ready,
-  ]);
+  const settings = deps.settings.current;
   // One Snapshot for the read and the write it feeds.
   await using lease = await deps.zoteroReads.acquireRead();
   const [note] = await Effect.runPromise(
@@ -769,10 +759,7 @@ async function executeImportRun(
     profileCounts?: Map<ProfileSelector, BatchProfileCount>;
   },
 ): Promise<BatchRunResult> {
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.template.ready,
-  ]);
+  const settings = deps.settings.current;
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   // One run is one initiating batch: every note it writes reuses one retention,
@@ -900,14 +887,14 @@ async function reimportNoteByKey(
     return { outcome: "db-unavailable" };
   }
 
-  await Promise.all([deps.noteIndex.whenIndexed(), deps.template.ready]);
+  await deps.noteIndex.whenIndexed();
 
   // One Snapshot for the read and the write it feeds.
   await using lease = await deps.zoteroReads.acquireRead();
   const note = await readNoteByIndexedKey(lease.reads, noteKey);
   if (!note) return { outcome: "not-found" };
 
-  const settings = await deps.settings.loaded;
+  const settings = deps.settings.current;
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   const writeOutcome = await deps.noteImport.importNote(note, {
     reads: lease.reads,

@@ -3,10 +3,11 @@
 // Citations it placed when their text changes, and asks the open reading views
 // to render again when something outside their documents changed which links
 // it touches.
-
 import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
@@ -25,13 +26,13 @@ import type { RunMember } from "@/lib/wikilink-citation";
 import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import {
   citationContent,
   sectionCoordinates,
   showCitation,
 } from "@/services/citation-text/present";
 import type { ShownCitation } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import {
   clickWikilinkCitation,
@@ -39,10 +40,10 @@ import {
   markCitationClick,
 } from "@/services/citekey-navigation";
 import type { CitationHover } from "@/services/citekey-navigation";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { resolveLiteratureNote } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import {
   hasInternalLink,
@@ -55,16 +56,20 @@ import "./style.css";
 const logger = getLogger("wikilink-reading");
 
 export interface WikilinkReadingDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  noteIndex: Pick<NoteIndex, "on">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "changed" | "indexed" | "frontmatter-changed"
+  >;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "on" | "peek">;
+  citationText: Pick<PlainCitationText, "peek" | "changed" | "invalidated">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
 /**
@@ -94,6 +99,7 @@ export interface WikilinkReadingDeps {
  * @see docs/research/wikilink-display-decoration-interaction.md — section 6
  */
 export class WikilinkReading extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
@@ -113,6 +119,7 @@ export class WikilinkReading extends Service<void> {
 
   constructor(deps: WikilinkReadingDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
@@ -125,26 +132,41 @@ export class WikilinkReading extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
 
     this.#plugin.registerMarkdownPostProcessor((el, ctx) =>
       this.#process(el, ctx),
     );
-    stack.defer(this.#display.watch(this.#settings, () => this.#rerender()));
+    stack.defer(
+      this.#display.watch(this.#runtime, this.#settings, () =>
+        this.#rerender(),
+      ),
+    );
     // Creating, deleting, or renaming a Literature Note changes which links
     // are Citations without changing any document, so every open reading view
     // renders again. The Note Index reports every moved mapping as `changed`,
     // and its one Full Scan per session as `indexed`.
-    stack.defer(this.#noteIndex.on("changed", () => this.#rerender()));
-    stack.defer(this.#noteIndex.on("indexed", () => this.#rerender()));
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["changed"], () =>
+        this.#rerender(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["indexed"], () =>
+        this.#rerender(),
+      ),
+    );
     // What a placed Citation says follows its document's Held Read: the live
     // sections of that document rewrite on its change, and every live section
     // rewrites when all text goes stale.
     stack.defer(
-      this.#citationText.on("invalidated", () => this.#sections.refresh()),
+      subscribe(this.#runtime, this.#citationText.invalidated, () =>
+        this.#sections.refresh(),
+      ),
     );
     stack.defer(
-      this.#citationText.on("changed", (path) => this.#sections.refresh(path)),
+      subscribe(this.#runtime, this.#citationText.changed, (path) =>
+        this.#sections.refresh(path),
+      ),
     );
     // A reading view holds the text this service wrote, so the views render
     // again without it once it is gone. The flag goes first: the post-processor

@@ -214,6 +214,7 @@ export type LegacyTemplateConversionErrorCode =
   | "legacy-frontmatter-evaluation";
 
 export class LegacyTemplateConversionError extends Error {
+  readonly _tag = "LegacyTemplateConversionError";
   readonly code: LegacyTemplateConversionErrorCode;
   readonly difference: string;
   readonly recovery: string;
@@ -378,6 +379,7 @@ export type LiteratureNoteTemplateErrorCode =
   | "reserved-annotation-partial";
 
 export class LiteratureNoteTemplateError extends Error {
+  readonly _tag = "LiteratureNoteTemplateError";
   readonly code: LiteratureNoteTemplateErrorCode;
   readonly recovery: string;
   /** Readable manifest identity for diagnostics, even when the document is invalid. */

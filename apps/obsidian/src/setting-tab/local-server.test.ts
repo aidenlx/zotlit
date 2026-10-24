@@ -7,6 +7,7 @@ import type {
 } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import * as m from "@/lib/i18n/generated/messages";
 import type { WorkbenchConnection } from "@/services/local-bridge/service";
 import { defaults } from "@/services/settings/schema";
@@ -28,6 +29,7 @@ function setup({
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
   const ctx = {
+    runtime: testRuntime(),
     webWorkbenchEnabled: true,
     settings: { current },
     localServer: { effectivePort: null, on: () => () => {} },

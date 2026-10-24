@@ -64,6 +64,7 @@ import { registerPandocResolve } from "./services/pandoc/register";
 import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
+import { ServiceStartupFailed } from "./services/startup-failure";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
 import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
@@ -159,6 +160,29 @@ function assertElectronVersion(): void {
   );
 }
 
+/**
+ * Stop plugin load on a service whose acquisition died, naming it on screen
+ * and in the console. The onload stack releases what started as the error
+ * leaves onload.
+ *
+ * @throws the startup failure, aborting plugin load.
+ */
+function reportStartupFailure(error: unknown): never {
+  if (error instanceof ServiceStartupFailed) {
+    new BaseNotice(
+      BaseNotice.render((renderer) => {
+        renderer.setTitle(m.notice_startup_failed());
+        renderer.addText(
+          m.notice_startup_failed_detail({ service: error.service }),
+        );
+      }),
+      0,
+    );
+    console.error(`ZotLit: ${error.message}`, error.cause);
+  }
+  throw error;
+}
+
 function showLanguagePackLifecycle(lifecycle: LanguagePackLifecycle): void {
   const situation = lifecycle.getSituation();
   switch (situation.kind) {
@@ -212,7 +236,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
   #stack?: AsyncDisposableStack;
 
   // Debug/escape-hatch access only. Services should depend on each other via DI.
-  #services?: ReturnType<typeof buildServices>["services"];
+  #services?: Awaited<ReturnType<typeof buildServices>>["services"];
 
   /**
    * The service container, for `obsidian eval` callers outside the bundle —
@@ -286,7 +310,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // Block load on too-old Obsidian installers before allocating any resources.
     assertElectronVersion();
 
-    // Local stack gives automatic rollback if any synchronous startup wiring
+    // Local stack gives automatic rollback if any startup acquisition or wiring
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
@@ -299,7 +323,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     void reapCslStore({ signal: reapAbort.signal });
     void reapExcerptTemps({ signal: reapAbort.signal });
 
-    const { services } = buildServices(this, stack);
+    const { services } = await buildServices(this, stack).catch(
+      reportStartupFailure,
+    );
 
     // One Customize flow shared by every entry action.
     const customize = createCustomize({
@@ -333,6 +359,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        runtime: services.runtime,
         webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         importProfile: services.importProfile,
         profile: services.profile,
@@ -485,6 +512,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
+      runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
       reads: services.zoteroReads,
@@ -500,6 +528,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
+        runtime: services.runtime,
         app: this.app,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
@@ -531,6 +560,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       libraryScope: services.libraryScope,
       settings: services.settings,
       welcome: {
+        runtime: services.runtime,
         app: this.app,
         reads: services.zoteroReads,
         queries: services.queryClient,
@@ -579,6 +609,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
+      runtime: services.runtime,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
@@ -592,6 +623,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       templates: services.template,
       profile: services.profile,
       nativePreview: {
+        runtime: services.runtime,
         citationParse: services.citationParse,
         app: this.app,
         zoteroReads: services.zoteroReads,
@@ -607,6 +639,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
 
     registerTemplateDataExplorer(this, {
+      runtime: services.runtime,
       app: this.app,
       zoteroReads: services.zoteroReads,
       noteIndex: services.noteIndex,
@@ -617,6 +650,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerNotePreview(this, {
+      runtime: services.runtime,
       citationParse: services.citationParse,
       app: this.app,
       itemLookup: services.itemLookup,
@@ -631,15 +665,20 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     stack.defer(
-      registerCitationStyleNotice(services.bibliographyRender, () => {
-        revealSetting(
-          this.app,
-          this.manifest.id,
-          "settings_citation_references_style",
-        );
-      }),
+      registerCitationStyleNotice(
+        services.runtime,
+        services.bibliographyRender,
+        () => {
+          revealSetting(
+            this.app,
+            this.manifest.id,
+            "settings_citation_references_style",
+          );
+        },
+      ),
     );
     registerReferencesView(this, {
+      runtime: services.runtime,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,
@@ -672,6 +711,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     }
 
     registerTemplateWorkbench(this, {
+      runtime: services.runtime,
       profile: services.profile,
       app: this.app,
       zoteroReads: services.zoteroReads,
@@ -744,6 +784,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     registerWelcomeView(this, {
+      runtime: services.runtime,
       reads: services.zoteroReads,
       queries: services.queryClient,
       settings: services.settings,
@@ -765,9 +806,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
     );
     stack.defer(
-      registerLibraryScopeNotices(services.libraryScope, () => {
-        revealSetting(this.app, this.manifest.id, "settings_library_scope");
-      }),
+      registerLibraryScopeNotices(
+        services.runtime,
+        services.libraryScope,
+        () => {
+          revealSetting(this.app, this.manifest.id, "settings_library_scope");
+        },
+      ),
     );
 
     // The companion's Freshness Signal means the database changed and its

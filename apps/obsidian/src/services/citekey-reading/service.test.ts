@@ -7,7 +7,10 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { Layer, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -24,11 +27,11 @@ import {
   literalOccurrences,
   rendered,
 } from "@/services/citation-text/__fixtures__";
-import { CitationText } from "@/services/citation-text/service";
+import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import { QueryClientService } from "@/services/query-client/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import {
@@ -143,7 +146,6 @@ async function makeHarness({
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
   let resolutionReady = !resolutionPending;
-  const resolutionListeners = new Set<() => void>();
   const answer = (requested: readonly string[]): CitationLookupAnswer =>
     lookupAnswerFor(
       requested,
@@ -164,7 +166,7 @@ async function makeHarness({
     inProcessReadsService(memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open),
   );
   const citationText = stack.use(
-    new CitationText({
+    citationTextFixture({
       openDocuments: new OpenDocumentsStub(),
       citationLookup,
       profile: profileReader(defaults, {
@@ -176,6 +178,7 @@ async function makeHarness({
           getFileByPath: (path: string) => ({ path }) as TFile,
         },
         metadataCache: {
+          offref: () => {},
           on: (event: string, cb: (file: { path: string }) => void) => {
             metadataListeners.set(event, cb);
             return { e: { offref: () => undefined } };
@@ -216,13 +219,13 @@ async function makeHarness({
             errors: [],
             lookup: answer(occurrences.map((occurrence) => occurrence.raw)),
           }),
-        on: (event: string, callback: () => void) => {
-          if (event === "resolution-changed") resolutionListeners.add(callback);
-          return () => resolutionListeners.delete(callback);
-        },
+        changed: Stream.empty,
+        "membership-changed": Stream.empty,
       },
       noteIndex: {
-        on: () => () => undefined,
+        changed: Stream.empty,
+        "frontmatter-changed": Stream.empty,
+        indexed: Stream.empty,
         whenIndexed: () => Promise.resolve(),
       },
       bibliographyRender: {
@@ -237,12 +240,14 @@ async function makeHarness({
                 )
               : null;
         },
-        on: () => () => undefined,
+        changed: Stream.empty,
+        settled: Stream.empty,
+        invalidated: Stream.empty,
+        "style-missing": Stream.empty,
       },
-      queryClient: stack.use(new QueryClientService()),
+      queryClient: stack.use(queryClientsFixture()),
     } as never),
   );
-  await citationText.ready;
   if (!formatCitations) {
     citationText.peek("note.md");
     await vi.waitFor(() => {
@@ -253,6 +258,7 @@ async function makeHarness({
 
   const service = stack.use(
     new CitekeyReading({
+      runtime: citationText.runtime,
       app: {
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
         workspace: {
@@ -319,7 +325,6 @@ async function makeHarness({
       ambiguous = keys;
       resolutionReady = true;
       citationLookup.refresh();
-      for (const callback of resolutionListeners) callback();
     },
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
@@ -332,28 +337,25 @@ async function makeHarness({
 
 describe("CitekeyReading", () => {
   it("rerenders open reading views when Pandoc navigation changes", async () => {
-    let notify: ((settings: Readonly<Settings>) => void) | undefined;
+    const settingsChanged = testEvent<Readonly<Settings>>();
+    const notify = (value: Readonly<Settings>) => settingsChanged.emit(value);
     const rerender = vi.fn();
     const view = Object.assign(
       Object.create(MarkdownView.prototype) as MarkdownView,
       { previewMode: { rerender } },
     );
+    await using stack = new AsyncDisposableStack();
     await using service = new CitekeyReading({
+      runtime: buildRuntime(Layer.empty, stack),
       app: {
         workspace: { getLeavesOfType: () => [{ view }] },
       },
       plugin: { registerMarkdownPostProcessor: () => undefined },
-      citationText: {
-        on: () => () => undefined,
-      },
+      citationText: { changed: Stream.empty, invalidated: Stream.empty },
       citekeyEditor: {},
       settings: {
-        ready: Promise.resolve(),
-        subscribe: (listener: (settings: Readonly<Settings>) => void) => {
-          notify = listener;
-          listener(defaults);
-          return () => undefined;
-        },
+        current: defaults,
+        changes: settingsChanged.stream.pipe(Stream.prepend([defaults])),
       },
     } as never);
     await service.ready;
@@ -914,16 +916,7 @@ describe("CitekeyReading refresh", () => {
 });
 
 /** Hands out one settings snapshot, the way the service reads its toggles. */
-function settingsStub(overrides: Partial<Settings>): {
-  ready: Promise<void>;
-  subscribe: (listener: (settings: Readonly<Settings>) => void) => () => void;
-} {
+function settingsStub(overrides: Partial<Settings>) {
   const current: Readonly<Settings> = { ...defaults, ...overrides };
-  return {
-    ready: Promise.resolve(),
-    subscribe: (listener) => {
-      listener(current);
-      return () => undefined;
-    },
-  };
+  return { current, changes: Stream.succeed(current) };
 }

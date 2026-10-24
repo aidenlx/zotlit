@@ -9,10 +9,11 @@ import type { Item, NoteTemplateContext } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -22,12 +23,10 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { QueryService } from "@/services/item-query/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReadsEvents,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -213,21 +212,20 @@ async function harness(
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   seed(client);
-  const zoteroEvents = createNanoEvents<ZoteroReadsEvents>();
+  const zoteroEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   // Library Scope reads the Libraries through ZoteroReads, over the same client.
   const readsEvents = {
-    ready: Promise.resolve({
-      reads: {
-        Libraries: () =>
-          Effect.suspend(() =>
-            readable
-              ? Effect.succeed(getLibraries(client))
-              : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
-          ),
-      },
-    }),
-    on: zoteroEvents.on.bind(zoteroEvents),
-  } as unknown as ZoteroReadsService;
+    runtime: testRuntime(),
+    reads: {
+      Libraries: () =>
+        Effect.suspend(() =>
+          readable
+            ? Effect.succeed(getLibraries(client))
+            : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
+        ),
+    },
+    ...zoteroEvents.streams,
+  } as unknown as TestReads;
   let readable = true;
   const fixture = stack.use(
     await profileServiceFixture(
@@ -261,6 +259,7 @@ async function harness(
   // ZotLit Query tests the Profile Matches over the same database.
   const query = stack.use(
     new QueryService({
+      runtime: testRuntime(),
       useLedger: inertUseLedger,
       pluginVersion: "2.2.0",
       reads: zoteroReads,
@@ -285,7 +284,6 @@ async function harness(
     template,
     settings,
     noteIndex: {
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: (key) => notesByKey.get(key) ?? [],
       getImportedNoteByNoteKey: () => [],

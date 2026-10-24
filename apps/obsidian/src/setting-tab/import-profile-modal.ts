@@ -17,11 +17,11 @@ import { requireDialog } from "@/lib/require";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { describeMatch } from "@/services/profile-selection";
+import type { PlainProfile } from "@/services/profile/plain";
 import type {
   LiteratureNoteProfile,
   PreparedProfileImport,
   ProfileImportOptions,
-  ProfileService,
 } from "@/services/profile/service";
 
 import { loadProfilePreviewData } from "./create-profile-modal";
@@ -51,7 +51,7 @@ export interface ImportProfileDeps extends Pick<
   ProfileCreationDeps,
   "app" | "template" | "noteFeature"
 > {
-  profile: Pick<ProfileService, "ready" | "resolveProfile" | "prepareImport">;
+  profile: Pick<PlainProfile, "resolveProfile" | "prepareImport">;
 }
 
 export function createProfileImporter(
@@ -80,7 +80,6 @@ export function createProfileImporter(
       return undefined;
     }
     try {
-      await Promise.all([deps.profile.ready, deps.template.ready]);
       let plan: PreparedProfileImport;
       try {
         plan = await deps.profile.prepareImport(source, {});

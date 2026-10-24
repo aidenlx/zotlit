@@ -1,3 +1,5 @@
+import { Stream } from "@/lib/effect";
+import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
@@ -9,8 +11,8 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { RenderedCitation } from "@/services/pandoc/engine";
-import { SettingsService } from "@/services/settings/service";
-import { TemplateService } from "@/services/template/service";
+
+import { buildTemplate } from "@/services/template/__fixtures__";
 import { createObsidianHost, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { inProcessReadsService, sharedClientOpener } from "@/services/zotero-reads/test-utils";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
@@ -94,12 +96,11 @@ export async function createRenderFixture(options: { existing?: string; javascri
   } as unknown as App;
   const plugin = new PluginStub(app, { __VERSION__: 1, "note.template-conversion-pending": true, "citation.wikilink-citations": options.wikilinks ?? false });
   const identity = (raw: unknown) => raw;
-  const settings = new SettingsService({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
-  await settings.ready;
+  const settings = await buildSettings({ plugin, migrateLegacy: identity, migrateV1: identity, migrateV2: identity, migrateV3: identity, migrateV4: identity, migrateV5: identity, migrateV6: identity, migrateV7: identity, migrateV8: identity, migrateV9: identity });
+  await settings.loaded;
   if (options.defaultStyle) settings.updateDefaultLiteratureNoteProfileBindings({ "citation.references-style": options.defaultStyle });
-  const templates = new TemplateService({ app, settings });
-  await templates.ready;
-  const renderCitations = vi.fn<NativeRenderDeps["bibliographyRender"]["renderCitations"]>(async (sources, _items, presentation) => {
+  const templates = await buildTemplate({ app, settings });
+    const renderCitations = vi.fn<NativeRenderDeps["bibliographyRender"]["renderCitations"]>(async (sources, _items, presentation) => {
     const content = presentation?.styleId === "numeric" ? "[1]" : "(Rougier 2014)";
     const value: RenderedCitation[] = sources.map(() => ({ content: [{ t: "Str", c: content }], citations: [{ id: "MAIN2345", mode: "normal" }] }));
     return { kind: "held", key: "fixture", record: { value, status: "fresh", settled: Promise.resolve(value) } };
@@ -113,20 +114,20 @@ export async function createRenderFixture(options: { existing?: string; javascri
   // first `changed` lands before a view subscribes.
   await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
   await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
-  const deps: NativeRenderDeps = {
+  const deps: NativeRenderDeps = { runtime: settings.runtime,
     citationParse: inProcessParseClient,
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
     zoteroReads,
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
-    zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
+    zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
     citationLookup: {
       read: async ({citekeys = [], indexedKeys = []}) => lookupAnswer(
         Object.fromEntries(citekeys.map((key) => [key, key === "figures2014" ? { kind: "unique", item: { itemID: 1, libraryID: 1, key: "MAIN2345", indexedKey: "MAIN2345" } } : {kind: "missing"}])),
         Object.fromEntries(indexedKeys.map((key) => [key, key === "MAIN2345" ? "figures2014" : null])),
       ),
     },
-    bibliographyRender: { on: () => () => {}, renderCitations, readCitations, readBibliography: async () => null, vaultPresentation: { styleId: null, locale: null } },
+    bibliographyRender: { changed: Stream.empty, settled: Stream.empty, invalidated: Stream.empty, "style-missing": Stream.empty, renderCitations, readCitations, readBibliography: async () => null, vaultPresentation: { styleId: null, locale: null } },
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });

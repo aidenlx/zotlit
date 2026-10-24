@@ -112,7 +112,8 @@ function openVault({
 }: VaultOptions = {}) {
   const file = markdownFile("draft.md");
   const frontmatter = note ?? {};
-  const getEngine = vi.fn();
+  // The export stub above still needs an available engine handle.
+  const getEngine = vi.fn(() => Promise.resolve({}));
   let command: Command | undefined;
   const {
     ["citation.references-style"]: referencesStyle,
@@ -158,7 +159,7 @@ function openVault({
         getStatus: () => ({ kind: engineInstalled ? "installed" : "absent" }),
         getEngine,
       },
-      zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
+      zoteroPref: { dataDir: DATA_DIR },
       citationLookup: {
         read: async () => lookupAnswer(),
       },

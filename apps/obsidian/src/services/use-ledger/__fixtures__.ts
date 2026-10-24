@@ -1,7 +1,7 @@
 // A Use Ledger built from its layer over a fake App.
 import type { App } from "obsidian";
 
-import { Context, Effect, Layer } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -33,11 +33,9 @@ export function useLedgerOf(
 }
 
 /** The same ledger for a test outside Effect; `stack` closes it. */
-export function buildUseLedger(
-  app: App,
-  stack: AsyncDisposableStack,
-): PlainUseLedger {
-  return plainUseLedger(buildRuntime(ledgerOver(app), stack));
+export function buildUseLedger(app: App, stack: AsyncDisposableStack) {
+  const runtime = buildRuntime(ledgerOver(app), stack);
+  return Object.assign(plainUseLedger(runtime), { runtime });
 }
 
 /** A ledger that holds no Use and records none. */
@@ -50,7 +48,7 @@ export const inertUseLedger: PlainUseLedger = {
     kind,
   }),
   withoutNoteUse: (_file, open) => open(),
-  subscribe: () => () => {},
+  changes: Stream.succeed({}),
 };
 
 function ledgerOver(app: App): Layer.Layer<UseLedger> {

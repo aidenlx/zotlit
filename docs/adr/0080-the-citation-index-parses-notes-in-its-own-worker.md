@@ -80,7 +80,7 @@ Code (fenced, indented, inline), math (`$…$`, `$$…$$`), `%%` comments and fr
 - **Performance gate.** A committed benchmark (10k, 100k and 1M characters; dense and sparse; with and without links) must show:
   - linear parse time
   - under about 100 ms in the worker for a 1M-character note
-  - no backfill regression on the fixture vault
+  - fixture backfill worker/legacy ≤ 1.0, evaluated as the median of three in-process comparisons; each comparison uses the worker median divided by the legacy median, with three warm-ups and 15 measured samples per path
   - under 2 ms of renderer work (post plus apply) per `changed` at 100k characters
 
 ## Considered Options

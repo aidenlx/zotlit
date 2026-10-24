@@ -15,13 +15,27 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { PaneState } from "@/components/pane-state";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { refreshFailed, unavailable } from "@/views/welcome/connection";
 import type { SetupActions } from "@/views/welcome/setup-actions";
 
 export interface ZoteroNotFoundDeps {
-  reads: Pick<ZoteroReadsService, "on" | "state" | "error" | "moved">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "state"
+    | "error"
+    | "moved"
+  >;
   setupActions: Pick<SetupActions, "locateZotero" | "openSettings">;
 }
 
@@ -72,10 +86,14 @@ export class ZoteroNotFound extends Component {
       );
       if (was && !missing) this.#found();
     };
-    this.register(reads.on("changed", update));
-    this.register(reads.on("degraded", update));
-    this.register(reads.on("refresh-failed", update));
-    this.register(reads.on("db-file-missing", update));
+    this.register(subscribe(this.#deps.runtime, reads["changed"], update));
+    this.register(subscribe(this.#deps.runtime, reads["degraded"], update));
+    this.register(
+      subscribe(this.#deps.runtime, reads["refresh-failed"], update),
+    );
+    this.register(
+      subscribe(this.#deps.runtime, reads["db-file-missing"], update),
+    );
     update();
     this.#mount(tree, <TreeNotFound />);
     this.#mount(list, <ListNotFound actions={setupActions} />);

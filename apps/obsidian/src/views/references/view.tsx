@@ -5,24 +5,27 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { writeClipboardRichText } from "@/lib/clipboard";
+import { Stream } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import {
   citationsEqual,
   documentCitationErrorsEqual,
 } from "@/services/citation-index/service";
 import type {
   Citation,
-  CitationIndex,
   DocumentCitationError,
   DocumentCitationSet,
   ReferenceSource,
 } from "@/services/citation-index/service";
-import type { CitationText } from "@/services/citation-text/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import {
   documentCitationPresentation,
   documentPresentation,
@@ -32,14 +35,12 @@ import type {
   DocumentPresentationFailure,
   DocumentPresentation,
 } from "@/services/pandoc/document-presentation";
-import type {
-  BibliographyRenderCache,
-  BibliographyRenderResult,
-} from "@/services/pandoc/render-cache";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import type { PlainPandocEngine } from "@/services/pandoc/plain";
+import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import type { Held } from "@/services/query-client/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -66,27 +67,51 @@ export const REFERENCES_VIEW_TYPE = "zotlit-references";
 const logger = getLogger(["views", "references"]);
 
 export interface ReferencesViewDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead" | "on">;
-  citationLookup: Pick<CitationLookup, "status" | "on">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet" | "on">;
+  db: Pick<
+    PlainZoteroReads,
+    | "state"
+    | "reads"
+    | "acquireRead"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
+  citationLookup: Pick<
+    PlainCitationLookup,
+    "status" | "changed" | "status-changed"
+  >;
+  citationIndex: Pick<
+    PlainCitationIndex,
+    | "getDocumentCitationSet"
+    | "changed"
+    | "backfilled"
+    | "membership-changed"
+    | "cited-by-invalidated"
+  >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
   /** Opens the Literature Note an Indexed Key names, creating it first when it has none. */
   citekeyEditor: Pick<CitekeyEditor, "openIndexedKey">;
   /**
    * The active document's formatted citations, which say whether that document
    * shows Entry Serials — the gutter follows what the citations show.
    */
-  citationText: Pick<CitationText, "peek" | "on">;
-  pandocEngine: Pick<
-    PandocEngineService,
-    "getStatus" | "subscribe" | "decline"
-  >;
+  citationText: Pick<PlainCitationText, "peek" | "changed">;
+  pandocEngine: Pick<PlainPandocEngine, "getStatus" | "changes" | "decline">;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
-    BibliographyRenderCache,
-    "render" | "on" | "vaultPresentation"
+    PlainBibliographyRender,
+    | "render"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
+    | "vaultPresentation"
   >;
   profile: ProfileReader;
   /** Reveals the engine row in settings, where the install lives. */
@@ -209,7 +234,7 @@ export class ReferencesView extends ItemView {
       app.workspace.on("active-leaf-change", () => this.#rescan()),
     );
     this.register(
-      citationIndex.on("changed", (path) => {
+      subscribe(this.#deps.runtime, citationIndex["changed"], (path) => {
         if (path === app.workspace.getActiveFile()?.path) this.#rescan();
       }),
     );
@@ -221,41 +246,57 @@ export class ReferencesView extends ItemView {
     // leaves the Citations identical — every key still unresolved — skips the
     // reload, and the pending label must still give way to the verdict.
     this.register(
-      this.#deps.citationLookup.on("changed", () => {
-        this.#publishResolution();
-        this.#rescan();
-      }),
+      subscribe(
+        this.#deps.runtime,
+        this.#deps.citationLookup["changed"],
+        () => {
+          this.#publishResolution();
+          this.#rescan();
+        },
+      ),
     );
     // An equal-revision recovery must retry a failed scan of the active note.
     this.register(
-      this.#deps.citationLookup.on("status-changed", () => {
-        this.#publishResolution();
-        if (this.#scanFailed && this.#deps.citationLookup.status === "fresh")
-          this.#rescan();
-      }),
+      subscribe(
+        this.#deps.runtime,
+        this.#deps.citationLookup["status-changed"],
+        () => {
+          this.#publishResolution();
+          if (this.#scanFailed && this.#deps.citationLookup.status === "fresh")
+            this.#rescan();
+        },
+      ),
     );
-    this.register(citationIndex.on("membership-changed", () => this.#rescan()));
+    this.register(
+      subscribe(this.#deps.runtime, citationIndex["membership-changed"], () =>
+        this.#rescan(),
+      ),
+    );
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     // What the document's own citations show decides what this gutter shows,
     // so a fresh read of the note on screen republishes the list.
     this.register(
-      citationText.on("changed", (path) => {
+      subscribe(this.#deps.runtime, citationText.changed, (path) => {
         if (path === this.#path) this.#reload();
       }),
     );
     this.register(
-      db.on("changed", () => {
+      subscribe(this.#deps.runtime, db["changed"], () => {
         this.#rescan();
         this.#reload();
       }),
     );
-    this.register(pandocEngine.subscribe(() => this.#reload()));
+    this.register(
+      subscribe(this.#deps.runtime, Stream.drop(pandocEngine.changes, 1), () =>
+        this.#reload(),
+      ),
+    );
     // What the cache holds is what this pane shows, so its wholesale drop —
     // for a Zotero change, a Citation and References Style change, or an engine
     // that came or went — keeps entries on screen while the reload runs. A
     // changed Profile presentation clears entries from the previous style.
     this.register(
-      bibliographyRender.on("invalidated", () => {
+      subscribe(this.#deps.runtime, bibliographyRender["invalidated"], () => {
         const presentation = this.#readPresentation(this.#file);
         const invalidate = !samePresentation(this.#presentation, presentation);
         this.#presentation = presentation;
@@ -265,11 +306,16 @@ export class ReferencesView extends ItemView {
     const repaint = (key: string): void => {
       if (key === this.#renderKey) this.#reload();
     };
-    this.register(bibliographyRender.on("changed", repaint));
-    this.register(bibliographyRender.on("settled", repaint));
+    this.register(
+      subscribe(this.#deps.runtime, bibliographyRender["changed"], repaint),
+    );
+    this.register(
+      subscribe(this.#deps.runtime, bibliographyRender["settled"], ([key]) =>
+        repaint(key),
+      ),
+    );
     this.#reload();
     this.#rescan();
-    await Promise.all([db.ready, this.#deps.profile.ready]);
     this.#rescan();
     this.#reload();
   }

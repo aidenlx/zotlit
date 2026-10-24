@@ -3,9 +3,10 @@ import { Keymap, TFile } from "obsidian";
 import type { App } from "obsidian";
 import type { MouseEvent } from "react";
 
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+
 export { currentOccurrence } from "@/services/citation-index/parsed-note";
 import type {
-  CitationIndex,
   CitedByGroup,
   CitationOccurrence,
 } from "@/services/citation-index/service";
@@ -14,7 +15,7 @@ import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 export async function openCitedByOccurrence(
   app: App,
   options: {
-    citationIndex: Pick<CitationIndex, "getParsedNote">;
+    citationIndex: Pick<PlainCitationIndex, "getParsedNote">;
     group: CitedByGroup;
     occurrence: CitationOccurrence;
     event: MouseEvent;

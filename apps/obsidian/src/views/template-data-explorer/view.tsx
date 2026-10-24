@@ -20,15 +20,17 @@ import {
 } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import {
   activeTemplateWorkbench,
   registerCompanionHistory,
@@ -65,15 +67,24 @@ import {
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 export interface ExplorerViewDeps extends TemplateDataDeps {
+  runtime: SubscriptionRuntime;
   zoteroReads: Pick<
-    ZoteroReadsService,
-    "state" | "ready" | "on" | "acquireRead"
+    PlainZoteroReads,
+    | "state"
+    | "reads"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "acquireRead"
   >;
   itemLookup: Pick<ItemLookup, "search" | "openSession">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   templates: Pick<
-    TemplateService,
-    "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"
+    PlainTemplate,
+    "javascriptTemplatesEnabled" | "render" | "renderCitation"
   >;
   pluginVersion: string;
 }
@@ -526,12 +537,13 @@ export class TemplateDataExplorerView extends ItemView {
       ),
     );
     cleanup.defer(
-      this.#deps.zoteroReads.on("changed", () => this.#session.refresh()),
+      subscribe(this.#deps.runtime, this.#deps.zoteroReads["changed"], () =>
+        this.#session.refresh(),
+      ),
     );
     this.#mount();
     this.#cleanup = cleanup.move();
     updateSelectionTitle(this);
-    await this.#deps.zoteroReads.ready;
     if (this.#closed || this.#session.state.getState().context) return;
     if (!this.#session.state.getState().item) {
       const file = this.app.workspace.getActiveFile();

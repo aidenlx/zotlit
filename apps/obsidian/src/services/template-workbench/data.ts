@@ -27,9 +27,9 @@ import { Data, Effect, Stream } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { creatorSummary } from "@/lib/item-summary";
 import { itemFacets } from "@/services/note-feature/context";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import {
@@ -37,12 +37,10 @@ import {
   findExistingLitNote,
   resolveObsidianExcerptImageContext,
 } from "@/services/template/inert-resolver-host";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 /**
  * The object one Citation's data is built from: a built-in example set, or an
@@ -67,17 +65,14 @@ export type CitationDataLoadResult =
 export interface TemplateDataDeps {
   app: App;
   /** Each root reads its Item's bundle through a lease. */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   noteIndex: Pick<
-    NoteIndex,
+    PlainNoteIndex,
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
-  settings: Pick<SettingsService, "loaded">;
-  templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
-  zoteroPref: Pick<
-    ZoteroPrefService,
-    "ready" | "dataDir" | "baseAttachmentPath"
-  >;
+  settings: Pick<PlainPluginSettings, "current">;
+  templates: Pick<PlainTemplate, "render" | "renderCitation">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
 /**
@@ -145,10 +140,8 @@ export const readTemplateData = Effect.fn("TemplateData.read")(function* (
   }
   const [settings] = yield* Effect.all(
     [
-      attempt(() => deps.settings.loaded),
+      Effect.sync(() => deps.settings.current),
       attempt(() => deps.noteIndex.whenIndexed()),
-      attempt(() => deps.zoteroPref.ready),
-      attempt(() => deps.templates.ready),
     ],
     { concurrency: "unbounded" },
   );
@@ -228,7 +221,6 @@ export const readCitationData = Effect.fn("TemplateData.readCitation")(
         ),
       };
     }
-    yield* attempt(() => deps.settings.loaded);
     const selected = yield* Effect.scoped(
       Effect.flatMap(readLease(deps), (reads) =>
         readNoteItem(reads, selector.key),

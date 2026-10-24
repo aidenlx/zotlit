@@ -1,4 +1,6 @@
-// Rule tests: src/lint/popout-windows.test.ts.
+// zotlit-obsidian: UI code works in the window it stands in, a pop-out
+// included (policies/popout-windows.md). Rejects global DOM instanceof checks
+// and global timers in UI code. Rule tests: src/lint/popout-windows.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 type Rule = Parameters<RuleTester["run"]>[1];
@@ -47,6 +49,12 @@ function isWindowLocalConstructor(name: string): boolean {
   );
 }
 
+/**
+ * Each pop-out window has its own DOM constructors, so `x instanceof
+ * HTMLElement` is false for an element from a pop-out. Obsidian's
+ * `instanceOf` checks against the element's own window; the message names the
+ * replacement for each constructor.
+ */
 export const noCrossWindowInstanceof: Rule = {
   meta: {
     type: "problem",

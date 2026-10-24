@@ -35,16 +35,16 @@ import type {
 import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { QueryService } from "@/services/item-query/service";
 import { childNoteLink } from "@/services/note-import/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type { ProfileBindingSettings } from "@/services/profile/bindings";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { resolveFreeNotePath } from "./filename";
 
@@ -72,17 +72,16 @@ interface NoteVaultApp {
  * Every member is a structural `Pick` of the full service sized to what the
  * operations touch, so {@link createNoteFeature} accepts the full services as-is
  * and tests hand-write stubs with no casts. Holds no mutable state — compiled
- * template artifacts live in {@link TemplateService}.
+ * template artifacts live in {@link PlainTemplate}.
  */
 export interface NoteFeatureDeps {
   profile: Pick<
-    ProfileService,
-    "ready" | "loaded" | "profiles" | "resolveProfile" | "profileOf"
+    PlainProfile,
+    "loaded" | "profiles" | "resolveProfile" | "profileOf"
   >;
   app: NoteVaultApp;
   template: Pick<
-    TemplateService,
-    | "ready"
+    PlainTemplate,
     | "loaded"
     | "render"
     | "renderManagedContent"
@@ -96,15 +95,15 @@ export interface NoteFeatureDeps {
    * The note write pipeline's reads: an operation holds one lease, so every
    * read of one write sees one database state.
    */
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "ready">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead" | "reads">;
   /** ZotLit Query, which tests the Profile Matches of an Item. */
   query: Pick<QueryService, "run">;
   noteIndex: Pick<
-    NoteIndex,
-    "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<SettingsService, "current" | "loaded" | "update">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
   singleExcerpt?: (

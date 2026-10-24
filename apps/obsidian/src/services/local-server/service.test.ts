@@ -9,9 +9,9 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
-import { defaults } from "@/services/settings/schema";
-import type { Settings, SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 
 import { LocalServerService } from "./service";
 import type { LocalServerServiceDeps } from "./service";
@@ -23,39 +23,16 @@ const companionHeaders = {
   [SOURCE_ID_HEADER]: SOURCE_ID,
 };
 
-interface SettingsStub {
-  service: SettingsService;
-  /** Push a settings change the way the settings tab's toggles do. */
-  update(patch: Partial<Settings>): void;
-}
-
-function makeSettings(overrides: Partial<Settings>): SettingsStub {
-  let current: Readonly<Settings> = { ...defaults, ...overrides };
-  const subscribers = new Set<(value: Readonly<Settings>) => void>();
+function makeDeps(settings: PlainPluginSettings): LocalServerServiceDeps {
   return {
-    service: {
-      loaded: Promise.resolve(current),
-      subscribe: (cb: (value: Readonly<Settings>) => void) => {
-        subscribers.add(cb);
-        return () => subscribers.delete(cb);
-      },
-    } as unknown as SettingsService,
-    update(patch) {
-      current = { ...current, ...patch };
-      for (const cb of subscribers) cb(current);
-    },
-  };
-}
-
-function makeDeps(settings: SettingsService): LocalServerServiceDeps {
-  return {
+    runtime: testRuntime(),
     settings,
-    zoteroPref: { sourceId: SOURCE_ID } as unknown as ZoteroPrefService,
+    zoteroPref: { sourceId: SOURCE_ID },
     noteIndex: {
       whenIndexed: () => Promise.resolve(),
       getIndexedItemKeys: () => ["ABCD2345"],
     },
-  } as LocalServerServiceDeps;
+  } as unknown as LocalServerServiceDeps;
 }
 
 /** Resolve the port once the listener binds one. */
@@ -88,12 +65,12 @@ async function whenClosed(service: LocalServerService): Promise<void> {
 it("serves without taking over the window's Request and Response", async () => {
   const nativeRequest = globalThis.Request;
   const nativeResponse = globalThis.Response;
-  const settings = makeSettings({
+  await using settings = await buildSeededSettings({
     "server.enabled": true,
     "server.port": 0,
   });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   const port = await whenListening(service);
   expect(port).toBeGreaterThan(0);
 
@@ -111,14 +88,14 @@ it("serves without taking over the window's Request and Response", async () => {
 });
 
 it("keeps the listener up for the Workbench while Live updates is off", async () => {
-  const settings = makeSettings({
+  await using settings = await buildSeededSettings({
     "server.enabled": true,
     "server.live-update": false,
     "server.workbench": true,
     "server.port": 0,
   });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   const port = await whenListening(service);
 
   expect(service.effectivePort).toBe(port);
@@ -152,12 +129,12 @@ it("binds the next free port when the configured one is taken", async () => {
     });
     port = (holder.address() as AddressInfo).port;
   } while (port > 65535 - 9);
-  const settings = makeSettings({
+  await using settings = await buildSeededSettings({
     "server.enabled": true,
     "server.port": port,
   });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   const bound = await whenListening(service);
 
   // The held port is skipped for one inside the range of ten. Which one is not
@@ -172,14 +149,14 @@ it("binds the next free port when the configured one is taken", async () => {
 });
 
 it("unloads cleanly when no port in the range can bind", async () => {
-  const settings = makeSettings({
+  await using settings = await buildSeededSettings({
     "server.enabled": true,
     "server.port": 0,
     // An address this machine does not own, so every bind in the range fails.
     "server.hostname": "203.0.113.1",
   });
 
-  const service = new LocalServerService(makeDeps(settings.service));
+  const service = new LocalServerService(makeDeps(settings));
   await service.ready;
   // Disposal waits on the bind chain: a bind attempt that never settles hangs
   // the plugin's unload instead of returning here.
@@ -190,12 +167,12 @@ it("unloads cleanly when no port in the range can bind", async () => {
 });
 
 it("closes and reopens the listener as the server toggle changes", async () => {
-  const settings = makeSettings({
+  await using settings = await buildSeededSettings({
     "server.enabled": true,
     "server.port": 0,
   });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   const port = await whenListening(service);
 
   settings.update({ "server.enabled": false });
@@ -217,12 +194,12 @@ it("closes and reopens the listener as the server toggle changes", async () => {
 });
 
 it("answers a mounted route group beside the Live Update routes", async () => {
-  const settings = makeSettings({
+  await using settings = await buildSeededSettings({
     "server.enabled": true,
     "server.port": 0,
   });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   // The seam #1002 mounts the Local Bridge on: the same listener, its own
   // base path, and gates of its own — the Live Update gates stay off it.
   service.mount(
@@ -259,9 +236,12 @@ const READER_ACTIVE = {
 };
 
 it("keeps the last reader target and flags it closed on reader/inactive", async () => {
-  const settings = makeSettings({ "server.enabled": true, "server.port": 0 });
+  await using settings = await buildSeededSettings({
+    "server.enabled": true,
+    "server.port": 0,
+  });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   const port = await whenListening(service);
   const closedEdges: boolean[] = [];
   service.on("reader/closed", (closed) => closedEdges.push(closed));
@@ -292,9 +272,12 @@ it("keeps the last reader target and flags it closed on reader/inactive", async 
 });
 
 it("holds the reader target past a listener that stops answering", async () => {
-  const settings = makeSettings({ "server.enabled": true, "server.port": 0 });
+  await using settings = await buildSeededSettings({
+    "server.enabled": true,
+    "server.port": 0,
+  });
 
-  await using service = new LocalServerService(makeDeps(settings.service));
+  await using service = new LocalServerService(makeDeps(settings));
   const port = await whenListening(service);
   expect(await notify(port, READER_ACTIVE)).toBe(204);
 

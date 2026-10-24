@@ -12,30 +12,30 @@ import type {
 
 import { disposable, registerEvent } from "@/lib/disposables";
 import { Effect, Exit, Fiber } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { workLabel } from "@/lib/item-summary";
 import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { heldResolution } from "@/services/citation-index/lookup";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {
   CitationOccurrence,
   CitationSyntax,
 } from "@/services/citation-index/scan";
-import type {
-  CitationIndex,
-  CitationLookupObservation,
-} from "@/services/citation-index/service";
+import type { CitationLookupObservation } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
@@ -83,16 +83,40 @@ const CITATION_INDEX_EVENTS = [
 ] as const;
 
 export interface GraphCitationsDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  reads: Pick<ZoteroReadsService, "ready" | "on">;
-  libraryScope: Pick<LibraryScopeService, "current">;
-  citationIndex: Pick<CitationIndex, "ready" | "citationsByPath" | "on">;
-  citationLookup: Pick<CitationLookup, "observe">;
-  noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
+  reads: Pick<
+    PlainZoteroReads,
+    | "reads"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
+  libraryScope: Pick<PlainLibraryScope, "current">;
+  citationIndex: Pick<
+    PlainCitationIndex,
+    | "citationsByPath"
+    | "changed"
+    | "backfilled"
+    | "membership-changed"
+    | "cited-by-invalidated"
+  >;
+  citationLookup: Pick<PlainCitationLookup, "observe">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    | "getIndexedItemKeys"
+    | "getNotesByItemKey"
+    | "changed"
+    | "indexed"
+    | "frontmatter-changed"
+  >;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: Pick<CitationPopover, "showWork" | "hide">;
-  settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
 }
 
 /** What one installed leaf holds. */
@@ -145,6 +169,7 @@ function releasedOnDispose(view: View, callback: () => void): Disposable {
  * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
  */
 export class GraphCitations extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #reads;
   readonly #libraryScope;
@@ -207,6 +232,7 @@ export class GraphCitations extends Service<void> {
 
   constructor(deps: GraphCitationsDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#reads = deps.reads;
     this.#libraryScope = deps.libraryScope;
@@ -232,11 +258,7 @@ export class GraphCitations extends Service<void> {
     // Read before layout-ready where startup allows it: Obsidian saves the
     // layout no earlier, and a save made while ZotLit's rows are absent
     // writes their keys out of the file.
-    const [, , savedLeaves] = await Promise.all([
-      this.#settings.ready,
-      this.#citationIndex.ready,
-      savedLeafOptions(this.#app),
-    ]);
+    const savedLeaves = await savedLeafOptions(this.#app);
     this.#savedLeaves = savedLeaves;
 
     await using stack = new AsyncDisposableStack();
@@ -272,14 +294,28 @@ export class GraphCitations extends Service<void> {
     );
     for (const event of CITATION_INDEX_EVENTS) {
       stack.defer(
-        this.#citationIndex.on(event, () => this.#invalidateLabels()),
+        subscribe(this.#runtime, this.#citationIndex[event], () =>
+          this.#invalidateLabels(),
+        ),
       );
     }
-    stack.defer(this.#noteIndex.on("changed", () => this.#invalidateLabels()));
-    stack.defer(this.#noteIndex.on("indexed", () => this.#invalidateLabels()));
-    stack.defer(this.#reads.on("changed", () => this.#invalidateLabels()));
     stack.defer(
-      this.#settings.subscribe((settings) => {
+      subscribe(this.#runtime, this.#noteIndex["changed"], () =>
+        this.#invalidateLabels(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#noteIndex["indexed"], () =>
+        this.#invalidateLabels(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#reads["changed"], () =>
+        this.#invalidateLabels(),
+      ),
+    );
+    stack.defer(
+      subscribe(this.#runtime, this.#settings.changes, (settings) => {
         if (settings) this.#applySettings(settings);
       }),
     );
@@ -574,10 +610,7 @@ export class GraphCitations extends Service<void> {
     this.#cancelLabelRead();
     if (this.#stopped) return;
     const fiber = Effect.runFork(
-      Effect.flatMap(
-        Effect.promise(() => this.#reads.ready),
-        ({ reads }) => reads.WorkLabels({ indexedKeys: [...keys] }),
-      ),
+      this.#reads.reads.WorkLabels({ indexedKeys: [...keys] }),
     );
     this.#labelRead = { keys, fiber };
     fiber.addObserver((exit) => {

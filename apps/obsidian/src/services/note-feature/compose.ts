@@ -2,7 +2,6 @@
 // carries, composed from an already-built template context. `operations.ts`
 // writes them; the Note Preview renders them, so what the preview shows is what
 // Create writes. Nothing here touches the vault or queues an import.
-
 import { stringifyYaml } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
@@ -16,10 +15,8 @@ import {
 } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type {
-  ResolvedLiteratureNoteTemplate,
-  TemplateService,
-} from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import {
   applyDocumentManagedFrontmatter,
@@ -35,7 +32,7 @@ const logger = getLogger("note-feature");
 
 /** The template slice the composition renders through. */
 export interface ComposeNoteDeps {
-  template: Pick<TemplateService, "render" | "frontmatterFields">;
+  template: Pick<PlainTemplate, "render" | "frontmatterFields">;
   events?: {
     emit: (
       event: "frontmatter-eval-failed",

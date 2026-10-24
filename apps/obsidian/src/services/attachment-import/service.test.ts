@@ -12,7 +12,10 @@ import { FileSystemAdapter, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { copyAttachments } from "@/lib/copy-attachments";
+import { Stream } from "@/lib/effect";
 
 import { AttachmentImportService } from "./service";
 import type { AttachmentSkipSummary } from "./service";
@@ -64,29 +67,26 @@ function makeSettings(value: {
   "attachment.folder-path": string | null;
 }) {
   return {
-    loaded: Promise.resolve(value),
-    subscribe: () => () => undefined,
+    current: value,
+    changes: Stream.empty,
   };
 }
 
 /**
- * A mutable stand-in for `ZoteroPrefService`, carrying the `resolved-changed`
+ * A mutable stand-in for `PlainZoteroPref`, carrying the `resolved-changed`
  * event the import service rebuilds its root snapshot on.
  */
 function makeZoteroPref(values: {
   dataDir: string;
   baseAttachmentPath: string | null;
 }) {
-  const listeners = new Set<() => void>();
+  const events = testEvent<void>();
   return {
     ...values,
-    on(_event: "resolved-changed", cb: () => void) {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
+    "resolved-changed": events.stream,
     /** Announce that the resolved Zotero location moved. */
     emitResolvedChanged() {
-      for (const cb of listeners) cb();
+      events.emit();
     },
   };
 }
@@ -99,6 +99,7 @@ async function makeService(options?: {
   app?: App;
 }): Promise<AttachmentImportService> {
   const service = new AttachmentImportService({
+    runtime: testRuntime(),
     app: options?.app ?? makeApp(),
     settings: makeSettings({
       "attachment.import": options?.importEnabled ?? true,
@@ -253,6 +254,7 @@ describe("AttachmentImportService", () => {
       baseAttachmentPath: baseDir,
     });
     const service = new AttachmentImportService({
+      runtime: testRuntime(),
       app: makeApp(),
       settings: makeSettings({
         "attachment.import": true,
@@ -281,6 +283,7 @@ describe("AttachmentImportService", () => {
     await mkdir(join(movedDataDir, "storage"), { recursive: true });
     const zoteroPref = makeZoteroPref({ dataDir, baseAttachmentPath: null });
     const service = new AttachmentImportService({
+      runtime: testRuntime(),
       app: makeApp(),
       settings: makeSettings({
         "attachment.import": true,
@@ -371,6 +374,7 @@ describe("AttachmentImportService", () => {
     await symlink(realDataDir, linkedDataDir);
 
     const service = new AttachmentImportService({
+      runtime: testRuntime(),
       app: makeApp(),
       settings: makeSettings({
         "attachment.import": true,

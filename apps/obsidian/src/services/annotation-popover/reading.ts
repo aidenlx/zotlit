@@ -1,12 +1,13 @@
-// The reading-mode surface of annotation hover: a rendered Durable Annotation
-// Link shows the Annotation it names, as the Hover Action asks.
-
 import { MarkdownRenderChild } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
+// The reading-mode surface of annotation hover: a rendered Durable Annotation
+// Link shows the Annotation it names, as the Hover Action asks.
 
 import { parseAnnotationOpenUri } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { isDraftMarkdown, markdownViewOf } from "@/lib/reading-view";
 import {
@@ -17,8 +18,8 @@ import {
 } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { Service } from "@/services/service-base";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
 
 import type { AnnotationPopover } from "./service";
 
@@ -28,9 +29,10 @@ const logger = getLogger("annotation-popover");
 const LINK_SELECTOR = 'a.external-link[href^="zotero://open/"]';
 
 export interface AnnotationLinkReadingDeps {
+  runtime: SubscriptionRuntime;
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
-  settings: Pick<SettingsService, "ready" | "subscribe">;
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
   /** What a hovered Durable Annotation Link shows. */
   annotationPopover: Pick<AnnotationPopover, "show">;
 }
@@ -67,9 +69,9 @@ export class AnnotationLinkReading extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     const { settings, plugin } = this.#deps;
-    await settings.ready;
+
     stack.defer(
-      settings.subscribe((current) => {
+      subscribe(this.#deps.runtime, settings.changes, (current) => {
         if (!current) return;
         this.#hover = hoverPreferences(current);
         this.#enabled = current["citation.annotation-links"];

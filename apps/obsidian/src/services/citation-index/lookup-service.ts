@@ -1,304 +1,359 @@
 // Citation Lookup: fresh command reads and view-owned Held Reads of requested keys.
 import { QueryObserver } from "@tanstack/query-core";
 import type { QueryObserverOptions } from "@tanstack/query-core";
+import type { RpcClientError } from "effect/rpc";
 
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
-import { Deferred, Effect } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
-import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { Held, QueryClientService } from "@/services/query-client/service";
-import { Service } from "@/services/service-base";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { changesUntil, forkEach } from "@/lib/effect-stream";
+import { LibraryScope } from "@/services/library-scope/service";
+import { QueryClients } from "@/services/query-client/service";
+import type { Held } from "@/services/query-client/service";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { CitationLookupAnswer } from "./lookup";
 import type { CitationLookupRequest } from "./lookup";
-
-const logger = getLogger("citation-index");
-
-export interface CitationLookupDeps {
-  queryClient: QueryClientService;
-  libraryScope: Pick<LibraryScopeService, "ready" | "effective" | "on">;
-  reads: Pick<ZoteroReadsService, "ready" | "state" | "on">;
-}
 
 export interface CitationLookupObservation extends Disposable {
   readonly current: Held<CitationLookupAnswer> | null;
   set(request: CitationLookupRequest): void;
 }
-
 export type CitationLookupStatus =
   | Held<CitationLookupAnswer>["status"]
   | "pending";
-
-interface LookupEvents {
-  /** A new worker revision was published. */
-  changed: () => void;
-  /** Freshness changed, including recovery at the same revision. */
-  "status-changed": () => void;
-  invalidated: () => void;
-  stopped: () => void;
+export interface CitationLookupState {
+  readonly status: CitationLookupStatus;
+  readonly revision: string | null;
+  readonly stopped: boolean;
 }
+export class CitationLookup extends Context.Service<
+  CitationLookup,
+  {
+    readonly current: Effect.Effect<CitationLookupState>;
+    readonly changes: Stream.Stream<CitationLookupState>;
+    readonly invalidated: Stream.Stream<void>;
+    /** A fresh answer from one published revision; unavailable reads fail. */
+    read(
+      request: CitationLookupRequest,
+    ): Effect.Effect<
+      CitationLookupAnswer,
+      DbUnavailable | RpcClientError.RpcClientError
+    >;
+    observe(changed: () => void): Effect.Effect<CitationLookupObservation>;
+    /** Wait for the current publication attempt, including failure or unload. */
+    whenResolved(): Effect.Effect<void>;
+  }
+>()("zotlit/citation-index/CitationLookup") {}
 
 const LOOKUP_KEY = ["citation-lookup"] as const;
 const GC_TIME = Temporal.Duration.from({ minutes: 5 }).total("milliseconds");
 
-/** Owns signal intake and the answers open views hold. */
-export class CitationLookup extends Service {
-  readonly #deps;
-  readonly #events = createNanoEvents<LookupEvents>();
-  readonly #stop = Deferred.makeUnsafe<never>();
-  #status: CitationLookupStatus = "pending";
-  #revision: string | null = null;
-  #refresh: Promise<unknown> = Promise.resolve();
-  ready: Promise<void>;
+export function inertObservation(): CitationLookupObservation {
+  return { current: null, set: () => {}, [Symbol.dispose]: () => {} };
+}
 
-  constructor(deps: CitationLookupDeps) {
-    super();
-    this.#deps = deps;
-    this.ready = this.#load();
-  }
-
-  get status(): CitationLookupStatus {
-    return this.#status;
-  }
-
-  on<K extends "changed" | "status-changed">(
-    event: K,
-    cb: LookupEvents[K],
-  ): () => void {
-    return this.#events.on(event, cb);
-  }
-
-  /** A fresh answer from one published revision; unavailable reads reject. */
-  read(
-    request: CitationLookupRequest,
-    { signal }: { signal?: AbortSignal } = {},
-  ): Promise<CitationLookupAnswer> {
-    const citekeys = [...new Set(request.citekeys ?? [])];
-    const indexedKeys = [...new Set(request.indexedKeys ?? [])];
-    const annotationKeys = [...new Set(request.annotationKeys ?? [])];
-    return Effect.runPromise(
-      Effect.gen({ self: this }, function* () {
-        yield* Effect.tryPromise(() => this.ready);
-        yield* Effect.tryPromise(() => this.#deps.libraryScope.ready);
-        const { client } = yield* Effect.tryPromise(
-          () => this.#deps.reads.ready,
-        );
+export const layerCitationLookup = Layer.effect(
+  CitationLookup,
+  Effect.gen(function* () {
+    const reads = yield* ZoteroReads;
+    const libraryScope = yield* LibraryScope;
+    const queries = yield* QueryClients;
+    const scope = yield* Scope.Scope;
+    const context = yield* Effect.context<never>();
+    const run = Effect.runSyncWith(context);
+    const runPromise = Effect.runPromiseWith(context);
+    const subscriptions = yield* Scope.fork(scope);
+    const state = yield* SubscriptionRef.make<CitationLookupState>({
+      status: "pending",
+      revision: null,
+      stopped: false,
+    });
+    const current = SubscriptionRef.get(state);
+    // Including the terminal state lets even a subscriber after close see it.
+    const changes = changesUntil(state, (state) => state.stopped);
+    const events = yield* PubSub.unbounded<void>();
+    const invalidated = Stream.fromPubSub(events);
+    const stop = yield* Deferred.make<never>();
+    const observations = new Set<() => void>();
+    let refresh: Fiber.Fiber<void> | undefined;
+    const recover = <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("Citation lookup refresh failed", cause),
+        ),
+        withLogCategory("citation-index"),
+      );
+    const setStatus = Effect.fn("CitationLookup.setStatus")(function* (
+      status: CitationLookupStatus,
+    ) {
+      const before = yield* current;
+      if (before.stopped || before.status === status) return;
+      yield* SubscriptionRef.set(state, { ...before, status });
+      if (status === "fresh" && before.status === "failed")
+        void queries.client.refetchQueries({
+          queryKey: LOOKUP_KEY,
+          type: "active",
+          predicate: (query) => query.state.status === "error",
+        });
+    });
+    const read = Effect.fn("CitationLookup.read")(
+      function* (request: CitationLookupRequest) {
+        const citekeys = [...new Set(request.citekeys ?? [])];
+        const indexedKeys = [...new Set(request.indexedKeys ?? [])];
+        const annotationKeys = [...new Set(request.annotationKeys ?? [])];
         while (true) {
-          if (this.#deps.reads.state !== "ready") {
-            this.#setStatus("failed");
+          if ((yield* current).stopped) return yield* Effect.interrupt;
+          if ((yield* reads.current).state !== "ready") {
+            yield* setStatus("failed");
             return yield* new DbUnavailable({
               message: "ZoteroReads is unavailable",
             });
           }
-          const scope = this.#deps.libraryScope.effective;
+          const selected = yield* libraryScope.effective;
           const result = yield* Effect.result(
-            client.CitationLookup({
-              scope,
+            reads.reads.CitationLookup({
+              scope: selected,
               citekeys,
               indexedKeys,
               annotationKeys,
             }),
           );
           if (
-            JSON.stringify(scope) !==
-            JSON.stringify(this.#deps.libraryScope.effective)
+            JSON.stringify(selected) !==
+            JSON.stringify(yield* libraryScope.effective)
           )
             continue;
           if (result._tag === "Failure") {
-            this.#setStatus("failed");
+            yield* setStatus("failed");
             return yield* result.failure;
           }
           const answer = new CitationLookupAnswer(result.success);
-          const changed = this.#revision !== answer.revision;
-          this.#revision = answer.revision;
-          this.#setStatus("fresh");
-          if (changed) this.#events.emit("changed");
+          const before = yield* current;
+          yield* setStatus("fresh");
+          if (before.revision !== answer.revision)
+            yield* SubscriptionRef.update(state, (snapshot) => ({
+              ...snapshot,
+              revision: answer.revision,
+            }));
           return answer;
         }
-      }).pipe(Effect.raceFirst(Deferred.await(this.#stop))),
-      { signal },
+      },
+      Effect.raceFirst(Deferred.await(stop)),
     );
-  }
-
-  /** Pins only this view's query. Request changes use its previous answer as a placeholder. */
-  observe(changed: () => void): CitationLookupObservation {
-    const client = this.#deps.queryClient.client;
-    let request: CitationLookupRequest | null = null;
-    let identity: string | null = null;
-    let current: Held<CitationLookupAnswer> | null = null;
-    let previous: CitationLookupAnswer | undefined;
-    let disposed = false;
-    const options = (): QueryObserverOptions<CitationLookupAnswer> => ({
-      queryKey: [
-        ...LOOKUP_KEY,
-        this.#deps.libraryScope.effective,
-        request?.citekeys ?? [],
-        request?.indexedKeys ?? [],
-        request?.annotationKeys ?? [],
-      ],
-      queryFn: ({ signal }) => this.read(request!, { signal }),
-      enabled: request !== null,
-      gcTime: GC_TIME,
-      placeholderData: (answer) => answer ?? previous,
-      structuralSharing: (old, value) => {
-        const answer = value as CitationLookupAnswer;
-        // Parent links can change while the Citekey Resolution Snapshot stays equal.
-        return old instanceof CitationLookupAnswer &&
-          old.revision === answer.revision &&
-          (request?.annotationKeys ?? []).every((key) => {
-            if (
-              !old.coversAnnotationKey(key) ||
-              !answer.coversAnnotationKey(key)
-            )
-              return false;
-            const before = old.parentOfAnnotation(key);
-            const after = answer.parentOfAnnotation(key);
-            return (
-              before?.indexedKey === after?.indexedKey &&
-              before?.citekey === after?.citekey
-            );
-          })
-          ? old
-          : answer;
-      },
-    });
-    const observer = new QueryObserver(client, options());
-    const publish = (): void => {
-      if (disposed) return;
-      const result = observer.getCurrentResult();
-      // query-core drops placeholderData on error. The view still owns the
-      // last delivered answer, including one from its previous request.
-      const value = result.data ?? previous;
-      previous = value;
-      const query = observer.getCurrentQuery();
-      current =
-        value === undefined
-          ? null
-          : {
-              value,
-              status:
-                result.isFetching || (result.isStale && !result.isError)
-                  ? "revalidating"
-                  : result.isError
-                    ? "failed"
-                    : "fresh",
-              settled: Promise.resolve()
-                .then(() => query.promise)
-                .then(
-                  (answer) => answer ?? value,
-                  () => (disposed ? null : value),
-                ),
-            };
-      try {
-        changed();
-      } catch (error) {
-        logger.warn("Lookup observer failed", { error });
-      }
-    };
-    const unsubscribe = observer.subscribe(publish);
-    const offInvalidated = this.#events.on("invalidated", () => {
-      if (request) observer.setOptions(options());
-    });
-    const dispose = (): void => {
-      if (disposed) return;
-      disposed = true;
-      unsubscribe();
-      observer.destroy();
-      offInvalidated();
-      offStopped();
-      current = null;
-      previous = undefined;
-    };
-    const offStopped = this.#events.on("stopped", dispose);
-    if (this.disposing) dispose();
-    return {
-      get current() {
-        return current;
-      },
-      set(next) {
+    /** Pins only this view's query. Request changes use its previous answer as a placeholder. */
+    const observe = Effect.fn("CitationLookup.observe")(function* (
+      changed: () => void,
+    ) {
+      if ((yield* SubscriptionRef.get(state)).stopped)
+        return inertObservation();
+      const client = queries.client;
+      let request: CitationLookupRequest | null = null;
+      let identity: string | null = null;
+      let current: Held<CitationLookupAnswer> | null = null;
+      let previous: CitationLookupAnswer | undefined;
+      let disposed = false;
+      const options = (): QueryObserverOptions<CitationLookupAnswer> => ({
+        queryKey: [
+          ...LOOKUP_KEY,
+          run(libraryScope.effective),
+          request?.citekeys ?? [],
+          request?.indexedKeys ?? [],
+          request?.annotationKeys ?? [],
+        ],
+        queryFn: ({ signal }) => runPromise(read(request!), { signal }),
+        enabled: request !== null,
+        gcTime: GC_TIME,
+        placeholderData: (answer) => answer ?? previous,
+        structuralSharing: (old, value) => {
+          const answer = value as CitationLookupAnswer;
+          // Parent links can change while the Citekey Resolution Snapshot stays equal.
+          return old instanceof CitationLookupAnswer &&
+            old.revision === answer.revision &&
+            (request?.annotationKeys ?? []).every((key) => {
+              if (
+                !old.coversAnnotationKey(key) ||
+                !answer.coversAnnotationKey(key)
+              )
+                return false;
+              const before = old.parentOfAnnotation(key);
+              const after = answer.parentOfAnnotation(key);
+              return (
+                before?.indexedKey === after?.indexedKey &&
+                before?.citekey === after?.citekey
+              );
+            })
+            ? old
+            : answer;
+        },
+      });
+      const observer = new QueryObserver(client, options());
+      const publish = (): void => {
         if (disposed) return;
-        const selected = {
-          citekeys: [...new Set(next.citekeys ?? [])].sort(),
-          indexedKeys: [...new Set(next.indexedKeys ?? [])].sort(),
-          annotationKeys: [...new Set(next.annotationKeys ?? [])].sort(),
-        };
-        const nextIdentity = JSON.stringify(selected);
-        if (identity === nextIdentity) return;
-        identity = nextIdentity;
-        request = selected;
-        observer.setOptions(options());
-      },
-      [Symbol.dispose]: dispose,
-    };
-  }
+        const result = observer.getCurrentResult();
+        // query-core drops placeholderData on error. The view still owns the
+        // last delivered answer, including one from its previous request.
+        const value = result.data ?? previous;
+        previous = value;
+        const query = observer.getCurrentQuery();
+        current =
+          value === undefined
+            ? null
+            : {
+                value,
+                status:
+                  result.isFetching || (result.isStale && !result.isError)
+                    ? "revalidating"
+                    : result.isError
+                      ? "failed"
+                      : "fresh",
+                settled: Promise.resolve()
+                  .then(() => query.promise)
+                  .then(
+                    (answer) => answer ?? value,
+                    () => (disposed ? null : value),
+                  ),
+              };
+        try {
+          changed();
+        } catch (error) {
+          run(
+            Effect.logWarning("Lookup observer failed").pipe(
+              Effect.annotateLogs({ error }),
+              withLogCategory("citation-index"),
+            ),
+          );
+        }
+      };
+      const unsubscribe = observer.subscribe(publish);
+      const observation = yield* Scope.fork(subscriptions);
+      const dispose = (): void => {
+        if (disposed) return;
+        disposed = true;
+        unsubscribe();
+        observer.destroy();
+        void runPromise(Scope.close(observation, Exit.void));
+        observations.delete(dispose);
+        current = null;
+        previous = undefined;
+      };
+      yield* Scope.provide(
+        forkEach(invalidated, (): void => {
+          if (request && !disposed) observer.setOptions(options());
+        }),
+        observation,
+      );
+      yield* Scope.provide(
+        forkEach(changes, (state): void => {
+          if (state.stopped) dispose();
+        }),
+        observation,
+      );
+      observations.add(dispose);
+      return {
+        get current() {
+          return current;
+        },
+        set(next) {
+          if (disposed) return;
+          const selected = {
+            citekeys: [...new Set(next.citekeys ?? [])].sort(),
+            indexedKeys: [...new Set(next.indexedKeys ?? [])].sort(),
+            annotationKeys: [...new Set(next.annotationKeys ?? [])].sort(),
+          };
+          const nextIdentity = JSON.stringify(selected);
+          if (identity === nextIdentity) return;
+          identity = nextIdentity;
+          request = selected;
+          observer.setOptions(options());
+        },
+        [Symbol.dispose]: dispose,
+      };
+    });
 
-  /** Wait for the current publication attempt, including a failed attempt or unload. */
-  async whenResolved(): Promise<void> {
-    await this.ready;
-    await this.#refresh;
-  }
-
-  #setStatus(status: CitationLookupStatus): void {
-    if (this.disposing || this.#status === status) return;
-    const previous = this.#status;
-    this.#status = status;
-    this.#events.emit("status-changed");
-    if (status === "fresh" && previous === "failed")
-      void this.#deps.queryClient.client.refetchQueries({
+    const invalidate = Effect.fn("CitationLookup.invalidate")(function* () {
+      yield* setStatus(
+        (yield* current).revision === null ? "pending" : "revalidating",
+      );
+      yield* queries.invalidate(LOOKUP_KEY);
+      yield* PubSub.publish(events, undefined);
+      void queries.client.refetchQueries({
         queryKey: LOOKUP_KEY,
         type: "active",
-        predicate: (query) => query.state.status === "error",
       });
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    stack.defer(this.#deps.reads.on("changed", () => this.#revalidate()));
-    stack.defer(
-      this.#deps.reads.on("degraded", (error) => {
-        this.#invalidate();
-        this.#setStatus("failed");
-        logger.warn("ZoteroReads unavailable", { error });
+    });
+    const revalidate = Effect.fn("CitationLookup.revalidate")(function* () {
+      if ((yield* current).stopped) return;
+      yield* invalidate();
+      refresh = yield* Effect.forkIn(
+        read({}).pipe(Effect.asVoid, recover),
+        scope,
+        { startImmediately: true },
+      );
+    });
+    yield* Stream.runForEach(reads.events, (event) =>
+      recover(
+        Effect.gen(function* () {
+          if (event._tag === "changed") yield* revalidate();
+          else if (event._tag === "degraded") {
+            yield* invalidate();
+            yield* setStatus("failed");
+            yield* Effect.logWarning("ZoteroReads unavailable").pipe(
+              Effect.annotateLogs({ error: event.error }),
+            );
+          }
+        }),
+      ),
+    ).pipe(Effect.forkScoped({ startImmediately: true }));
+    let previous = yield* libraryScope.state;
+    yield* Stream.runForEach(libraryScope.changes, (next) => {
+      const before = previous;
+      previous = next;
+      return before.current !== next.current ||
+        before.invalid !== next.invalid ||
+        before.all !== next.all
+        ? recover(revalidate())
+        : Effect.void;
+    }).pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        yield* SubscriptionRef.update(state, (snapshot) => ({
+          ...snapshot,
+          stopped: true,
+        }));
+        yield* Deferred.interrupt(stop);
+        for (const dispose of observations) dispose();
+        queries.client.removeQueries({ queryKey: LOOKUP_KEY });
+        yield* PubSub.shutdown(events);
       }),
     );
-    // A scope change keeps the source: every read carries the scope, so the
-    // worker rebuilds membership through stable selectors without a refresh.
-    stack.defer(
-      this.#deps.libraryScope.on("changed", () => this.#revalidate()),
-    );
-    stack.defer(
-      this.#deps.libraryScope.on("libraries-changed", () => this.#revalidate()),
-    );
-    stack.defer(() => {
-      Effect.runSync(Deferred.interrupt(this.#stop));
-      this.#events.emit("stopped");
-      this.#deps.queryClient.client.removeQueries({ queryKey: LOOKUP_KEY });
+    // Legacy ready registered intake and started this attempt; it never awaited the database.
+    yield* revalidate();
+    return CitationLookup.of({
+      current,
+      changes,
+      invalidated,
+      read,
+      observe,
+      whenResolved: Effect.fn("CitationLookup.whenResolved")(function* () {
+        // Let queued dependency notifications start their replacement attempt.
+        yield* Effect.yieldNow;
+        if (refresh) yield* Fiber.await(refresh);
+      }),
     });
-    // Let the constructor assign ready before read() waits for it.
-    await Promise.resolve();
-    this.#revalidate();
-    this.commit(stack.move());
-  }
-
-  #revalidate(): void {
-    if (this.disposing) return;
-    this.#invalidate();
-    this.#refresh = this.read({}).catch((error: unknown) => {
-      if (!this.disposing)
-        logger.warn("Citation lookup refresh failed", { error });
-    });
-  }
-
-  #invalidate(): void {
-    this.#setStatus(this.#revision === null ? "pending" : "revalidating");
-    this.#deps.queryClient.invalidate(LOOKUP_KEY);
-    this.#events.emit("invalidated");
-    void this.#deps.queryClient.client.refetchQueries({
-      queryKey: LOOKUP_KEY,
-      type: "active",
-    });
-  }
-}
+  }).pipe(withLogCategory("citation-index")),
+);

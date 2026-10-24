@@ -1,4 +1,8 @@
-// Rule tests: src/lint/services.test.ts.
+// zotlit-services: the mechanical part of the Obsidian service architecture
+// (policies/services.md, policies/events.md): Effect services over legacy
+// classes, tag ids, Scope-owned resources, CLI registration, workers on
+// effect/rpc, Effect-native events and state, and failure boundaries. Rule
+// tests: src/lint/services.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 
@@ -102,8 +106,9 @@ export const effectNativeResources: Rule = {
 };
 
 /**
- * New services are Effect services (`/obsidian-services`). A legacy service
- * keeps its class until it converts; oxlint.config.ts lists those files.
+ * New services are Effect services (policies/services.md → Conversion scope).
+ * A legacy service keeps its class until the change made for its conversion;
+ * oxlint.config.ts lists those files as the backlog.
  */
 export const noLegacyService: Rule = {
   meta: {
@@ -128,7 +133,11 @@ export const noLegacyService: Rule = {
 
 const TAG_ID = /^zotlit\/[a-z0-9-]+\/[A-Z][A-Za-z0-9]*$/;
 
-/** `Context.Service<…>()("id")`: the id names the module and the service. */
+/**
+ * `Context.Service<…>()("id")`: the id names the module and the service. Tag
+ * ids key the runtime's Context and show in spans and logs, so a reader can
+ * go from an id in a trace to the file that declares it.
+ */
 export const serviceTagId: Rule = {
   meta: {
     type: "problem",
@@ -223,7 +232,12 @@ function workerType(node: WorkerNode | undefined): boolean {
   );
 }
 
-/** Worker transports follow ZoteroReads; file exceptions live in oxlint.config.ts. */
+/**
+ * Worker transports follow ZoteroReads (docs/adr/0068): an effect/rpc group
+ * gives typed operations and errors, interrupts reach the worker, and the
+ * layer's Scope ends the worker. A raw `postMessage` protocol re-earns each of
+ * those by hand. File exceptions live in oxlint.config.ts.
+ */
 export const workerRpc: Rule = {
   meta: {
     type: "problem",
@@ -314,13 +328,310 @@ export const workerRpc: Rule = {
   },
 };
 
+interface EventNode extends AstNode {
+  readonly key?: AstNode;
+  readonly source?: AstNode | null;
+}
+
+/**
+ * Events are Streams and state: a `SubscriptionRef` for what consumers watch,
+ * a `PubSub` Stream for occurrences (policies/events.md). Tests are checked
+ * too, since a fake emitter keeps the legacy shape alive in its consumers.
+ * Legacy emitters stay on a backlog list in oxlint.config.ts until each
+ * service converts.
+ */
+export const noNanoevents: Rule = {
+  meta: {
+    type: "problem",
+    docs: { description: "Require Effect-native events over nanoevents." },
+    messages: {
+      nanoevents:
+        "Expose events as Streams and state: a SubscriptionRef for watched state, a PubSub Stream for occurrences (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node: unknown) => {
+      const { source } = node as EventNode;
+      if (
+        source?.type === "Literal" &&
+        typeof source.value === "string" &&
+        /(^|\/)nanoevents$/.test(source.value)
+      )
+        context.report({ node: source as never, messageId: "nanoevents" });
+    };
+    return {
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+      ImportExpression: check,
+    };
+  },
+};
+
+const EMITTER_KEYS = new Set(["on", "subscribe"]);
+
+/** The name of a non-computed property, method, or signature key. */
+function keyName(node: EventNode): string | undefined {
+  const key = node.computed ? undefined : node.key;
+  if (key?.type === "Identifier") return String(key.name);
+  if (key?.type === "Literal" && typeof key.value === "string")
+    return key.value;
+  return undefined;
+}
+
+/**
+ * A plain adapter (`<service>/plain.ts`, policies/services.md → Plain adapter)
+ * hands out its service's Streams and state. Plain code subscribes with `subscribe(runtime, stream, callback)`
+ * from `@/lib/effect-stream`. The helper attaches before returning, isolates
+ * each callback's failures, and goes quiet after runtime disposal. An
+ * adapter's own `on`/`subscribe` would each have to re-earn those guarantees.
+ */
+export const plainAdapterStreams: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Forbid emitter-shaped on/subscribe members on plain adapters.",
+    },
+    messages: {
+      emitter:
+        "Expose the Stream or state instead of `{{name}}`; plain code subscribes with subscribe(runtime, stream, callback) from @/lib/effect-stream (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node: unknown) => {
+      const member = node as EventNode;
+      const name = keyName(member);
+      if (name && EMITTER_KEYS.has(name))
+        context.report({
+          node: member.key as never,
+          messageId: "emitter",
+          data: { name },
+        });
+    };
+    return {
+      Property: check,
+      MethodDefinition: check,
+      PropertyDefinition: check,
+      TSMethodSignature: check,
+      TSPropertySignature: check,
+    };
+  },
+};
+
+/**
+ * Inside a layer, Obsidian events enter through `obsidianEvents` from
+ * `@/lib/effect-obsidian-events` (policies/events.md → Obsidian events), which gives one ordered intake and a failure
+ * boundary per event. A bare `registerEvent` gives neither. A function nested
+ * in an Effect generator counts too, such as the acquire callback of
+ * `acquireDisposable`.
+ */
+export const obsidianEventsIntake: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require obsidianEvents for Obsidian events in a layer.",
+    },
+    messages: {
+      intake:
+        "Register Obsidian events through obsidianEvents from @/lib/effect-obsidian-events: one ordered intake with a failure boundary per event (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const insideEffect = (node: AstNode) => {
+      for (let at = node.parent; at; at = at.parent)
+        if (isEffectGenerator(at)) return true;
+      return false;
+    };
+    return {
+      CallExpression(node) {
+        if (
+          node.callee.type === "Identifier" &&
+          node.callee.name === "registerEvent" &&
+          insideEffect(node as AstNode)
+        )
+          context.report({ node, messageId: "intake" });
+      },
+    };
+  },
+};
+
+const FUNCTION_TYPES = new Set([
+  "FunctionExpression",
+  "FunctionDeclaration",
+  "ArrowFunctionExpression",
+]);
+
+/**
+ * A layer consumes another service's Stream with `forkEach` from
+ * `@/lib/effect-stream` (policies/events.md → Subscribing from plain code),
+ * which forks the consumer on the layer's Scope.
+ * `subscribe(runtime, stream, callback)` is the plain-code bridge: inside a
+ * layer it hands back an unsubscribe no Scope owns, and it needs a hand-built
+ * runner. Only a call whose nearest function is the layer's Effect generator
+ * is reported; a nested plain function, such as a per-call observer that
+ * returns its own unsubscribe to a plain caller, keeps `subscribe`.
+ */
+export const layerStreamConsumer: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require forkEach for a Stream consumer in a layer body.",
+    },
+    messages: {
+      forkEach:
+        "Consume the Stream with `yield* forkEach(stream, handle)` from @/lib/effect-stream so the layer's Scope owns it (policies/events.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const inLayerBody = (node: AstNode) => {
+      for (let at = node.parent; at; at = at.parent)
+        if (FUNCTION_TYPES.has(at.type)) return isEffectGenerator(at);
+      return false;
+    };
+    return {
+      CallExpression(node) {
+        if (
+          node.callee.type === "Identifier" &&
+          node.callee.name === "subscribe" &&
+          inLayerBody(node as AstNode)
+        )
+          context.report({ node, messageId: "forkEach" });
+      },
+    };
+  },
+};
+
+const SUBSCRIPTION_REF = new Set(["SubscriptionRef"]);
+
+/**
+ * A service exposes its `SubscriptionRef` through `changesUntil` from
+ * `@/lib/effect-stream` (policies/events.md → State or event), which attaches
+ * a consumer before layer acquisition returns and ends every subscriber when
+ * the service stops. A bare `SubscriptionRef.changes` does neither, so its
+ * subscribers outlive the layer.
+ */
+export const stateStream: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require changesUntil to expose a SubscriptionRef.",
+    },
+    messages: {
+      changesUntil:
+        "Expose the state with `changesUntil(state, until)` from @/lib/effect-stream: `until` is the service's stop signal or a terminal-state predicate.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (
+          isMemberOf(
+            node.callee as AstNode,
+            SUBSCRIPTION_REF,
+            (name) => name === "changes",
+          )
+        )
+          context.report({ node, messageId: "changesUntil" });
+      },
+    };
+  },
+};
+
+const CAUSE_OR_EXIT = new Set(["Cause", "Exit"]);
+
+/**
+ * A failure boundary tells shutdown from failure with `hasInterruptsOnly`. A
+ * cause holding both an interrupt and a failure carries a real failure, which
+ * `hasInterrupts` would swallow as shutdown while a sibling boundary logs it.
+ */
+export const interruptPredicate: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Require hasInterruptsOnly to tell shutdown from failure.",
+    },
+    messages: {
+      only: "Use `hasInterruptsOnly`: a cause with an interrupt and a failure is a failure.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (
+          isMemberOf(
+            node.callee as AstNode,
+            CAUSE_OR_EXIT,
+            (name) => name === "hasInterrupts",
+          )
+        )
+          context.report({ node, messageId: "only" });
+      },
+    };
+  },
+};
+
+/** `<x>.state._tag`: a Scope's open or closed state, read by hand. */
+function isStateTag(node: AstNode | undefined): boolean {
+  return (
+    node?.type === "MemberExpression" &&
+    node.property?.name === "_tag" &&
+    node.object?.type === "MemberExpression" &&
+    node.object.property?.name === "state"
+  );
+}
+
+/**
+ * A plain adapter asks whether its runtime is released through `isScopeClosed`
+ * from `@/lib/effect-scope`, so every adapter reads release the same way.
+ */
+export const scopeClosed: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: { description: "Require isScopeClosed to test a closed Scope." },
+    messages: {
+      helper:
+        "Test the Scope with `isScopeClosed(scope)` from @/lib/effect-scope.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const closed = (side: AstNode | undefined) =>
+      side?.type === "Literal" && side.value === "Closed";
+    return {
+      BinaryExpression(node) {
+        const left = node.left as AstNode;
+        const right = node.right as AstNode;
+        if (
+          (isStateTag(left) && closed(right)) ||
+          (isStateTag(right) && closed(left))
+        )
+          context.report({ node, messageId: "helper" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
     "cli-command-registration": cliCommandRegistration,
     "effect-native-resources": effectNativeResources,
+    "interrupt-predicate": interruptPredicate,
+    "layer-stream-consumer": layerStreamConsumer,
     "no-legacy-service": noLegacyService,
+    "no-nanoevents": noNanoevents,
+    "obsidian-events-intake": obsidianEventsIntake,
+    "plain-adapter-streams": plainAdapterStreams,
+    "scope-closed": scopeClosed,
     "service-tag-id": serviceTagId,
+    "state-stream": stateStream,
     "worker-rpc": workerRpc,
   },
 };

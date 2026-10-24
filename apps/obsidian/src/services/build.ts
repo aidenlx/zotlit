@@ -3,10 +3,8 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { Effect } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
 import { nodeFetch } from "@/lib/node-fetch";
-import { workspaceOpenDocuments } from "@/lib/open-documents";
 import { revealSetting } from "@/lib/open-settings";
 import { libraryTagNames } from "@/services/database/library-tag-names";
 import {
@@ -32,12 +30,14 @@ import { createPdfReader } from "./attachment-open/actions";
 import { openWithSystem } from "./attachment-open/capture";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
-import { createChineseSegmenterService } from "./chinese-segmenter/service";
-import { CitationLookup } from "./citation-index/lookup-service";
-import { CitationIndex } from "./citation-index/service";
+import { plainChineseSegmenter } from "./chinese-segmenter/plain";
+import {
+  plainCitationIndex,
+  plainCitationLookup,
+} from "./citation-index/plain";
 import { plainCitationParse } from "./citation-parse/plain";
 import { CitationPopover } from "./citation-popover/service";
-import { CitationText } from "./citation-text/service";
+import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { ExcerptDisplayService } from "./excerpt-image/display";
@@ -50,7 +50,7 @@ import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { ItemLookup } from "./item-lookup/service";
 import { QueryService } from "./item-query/service";
-import { LibraryScopeService } from "./library-scope/service";
+import { plainLibraryScope } from "./library-scope/plain";
 import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
 import { createNoteFeature } from "./note-feature";
@@ -60,30 +60,27 @@ import type { BatchImport } from "./note-import/batch-import";
 import { createNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { createNoteImportView } from "./note-import/view";
-import { NoteIndex } from "./note-index/service";
-import { BibliographyRenderCache } from "./pandoc/render-cache";
-import { createPandocEngineService } from "./pandoc/service";
+import { plainNoteIndex } from "./note-index/plain";
+import { plainPandocEngine } from "./pandoc/plain";
+import { plainBibliographyRender } from "./pandoc/render-cache/plain";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
-import { ProfileService } from "./profile/service";
-import { QueryClients } from "./query-client/service";
+import { plainProfile } from "./profile/plain";
+import { plainQueryClients } from "./query-client/plain";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
-import { PluginSettings } from "./settings/service";
-import {
-  LiteratureNoteTemplateMigrationService,
-  loadLiteratureNoteTemplateMigrationData,
-} from "./template/migration";
-import { TemplateService } from "./template/service";
+import { plainPluginSettings } from "./settings/plain";
+import { loadLiteratureNoteTemplateMigrationData } from "./template/migration";
+import type { TemplateMigrationOptions } from "./template/migration";
+import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
-import { ZoteroPrefService } from "./zotero-pref/service";
-import { ZoteroReadsService } from "./zotero-reads/service";
-import { workerClient } from "./zotero-reads/worker-client";
+import { plainZoteroPref } from "./zotero-pref/plain";
+import { plainZoteroReads } from "./zotero-reads/plain";
 
 /**
  * Construct and wire all Obsidian plugin services.
@@ -91,7 +88,8 @@ import { workerClient } from "./zotero-reads/worker-client";
  * This function does not own lifecycle. `zt-main.ts` creates the stack, passes
  * it here, and moves the stack only after all plugin startup wiring succeeds.
  *
- * The runtime over {@link pluginLayer} is built first, and the container
+ * The runtime over {@link pluginLayer} finishes acquisition first, including
+ * each layer's asynchronous first load. The container then
  * injects its services with `useValue`: a converted service through its plain
  * adapter, a bridged one as it is. The runtime's disposal sits under every
  * container registration on `stack`, so the whole graph closes after the last
@@ -101,11 +99,23 @@ import { workerClient } from "./zotero-reads/worker-client";
  *
  * Within the container, registration order matters: services dispose in LIFO.
  */
-export function buildServices(
+export async function buildServices(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
 ) {
-  const runtime = buildRuntime(pluginLayer(plugin), stack);
+  let bindMigration!: (actions: TemplateMigrationOptions) => void;
+  const migrationActions = new Promise<TemplateMigrationOptions>((resolve) => {
+    bindMigration = resolve;
+  });
+  const runtime = buildRuntime(
+    pluginLayer(plugin, {
+      loadVerificationData: async (options) =>
+        (await migrationActions).loadVerificationData(options),
+      openPrompt: async () => (await migrationActions).openPrompt(),
+    }),
+    stack,
+  );
+  await runtime.context();
   const container = new ServiceContainer(stack, (key, error) => {
     console.error(`Service "${key}" failed to initialize`, error);
   });
@@ -119,8 +129,9 @@ export function buildServices(
   };
 
   return container
+    .useValue({ runtime: () => runtime })
     .useValue({
-      settings: () => runtime.runSync(PluginSettings.use(Effect.succeed)),
+      settings: () => plainPluginSettings(runtime),
     })
     .useValue({
       useLedger: () => plainUseLedger(runtime),
@@ -132,7 +143,7 @@ export function buildServices(
         cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
     })
     .useValue({
-      queryClient: () => runtime.runSync(QueryClients.use(Effect.succeed)),
+      queryClient: () => plainQueryClients(runtime),
     })
     .use({
       release: ({ settings }) =>
@@ -147,30 +158,24 @@ export function buildServices(
           },
         }),
     })
-    .use({
-      template: ({ settings }) =>
-        new TemplateService({ app: plugin.app, settings }),
+    .useValue({
+      template: () => plainTemplate(runtime),
     })
-    .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+    .useValue({
+      noteIndex: () => plainNoteIndex(runtime),
     })
-    .use({
-      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
+    .useValue({
+      zoteroPref: () => plainZoteroPref(runtime),
     })
     .use({
       localServer: ({ settings, zoteroPref, noteIndex }) =>
-        new LocalServerService({ settings, zoteroPref, noteIndex }),
+        new LocalServerService({ runtime, settings, zoteroPref, noteIndex }),
     })
-    .use({
-      chineseSegmenter: () => createChineseSegmenterService(plugin.app),
+    .useValue({
+      chineseSegmenter: () => plainChineseSegmenter(runtime),
     })
-    .use({
-      // Interactive reads use their own worker; Citation Index bulk reads
-      // use a second capability registered below.
-      zoteroReads: ({ settings, zoteroPref, chineseSegmenter }) =>
-        new ZoteroReadsService({
-          client: workerClient({ settings, zoteroPref, chineseSegmenter }),
-        }),
+    .useValue({
+      zoteroReads: () => plainZoteroReads(runtime),
     })
     .use({
       excerptImage: () =>
@@ -190,6 +195,7 @@ export function buildServices(
     .use({
       attachmentResolver: ({ zoteroReads, queryClient, zoteroPref }) =>
         new AttachmentResolver({
+          runtime,
           reads: zoteroReads,
           queries: queryClient,
           zoteroPref,
@@ -213,6 +219,7 @@ export function buildServices(
     .use({
       zoteroLocalApi: ({ zoteroPref, localServer }) =>
         new ZoteroLocalApiClient({
+          runtime,
           fetch: nodeFetch,
           zoteroPref,
           localServer,
@@ -232,6 +239,7 @@ export function buildServices(
         excerptImage,
       }) =>
         new AnnotationRepository({
+          runtime,
           db: zoteroReads,
           queryClient,
           localApi: zoteroLocalApi,
@@ -320,19 +328,18 @@ export function buildServices(
     })
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
-        new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
-    })
-    .use({
-      libraryScope: ({ zoteroReads, queryClient, settings }) =>
-        new LibraryScopeService({
-          reads: zoteroReads,
-          queries: queryClient,
+        new AttachmentImportService({
+          runtime,
+          app: plugin.app,
           settings,
+          zoteroPref,
         }),
     })
+    .useValue({ libraryScope: () => plainLibraryScope(runtime) })
     .use({
       query: ({ zoteroReads, libraryScope, zoteroPref, useLedger }) =>
         new QueryService({
+          runtime,
           pluginVersion: plugin.manifest.version,
           reads: zoteroReads,
           libraryScope,
@@ -341,15 +348,7 @@ export function buildServices(
           useLedger,
         }),
     })
-    .use({
-      profile: ({ settings, template, noteIndex }) =>
-        new ProfileService({
-          app: plugin.app,
-          settings,
-          template,
-          noteIndex,
-        }),
-    })
+    .useValue({ profile: () => plainProfile(runtime) })
     .use({
       localBridge: ({
         settings,
@@ -361,6 +360,7 @@ export function buildServices(
         zoteroPref,
       }) =>
         new LocalBridgeService({
+          runtime,
           webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
           app: plugin.app,
           settings,
@@ -400,7 +400,7 @@ export function buildServices(
             })(options),
         }),
     })
-    .use({
+    .useValue({
       templateMigration: ({
         zoteroReads,
         libraryScope,
@@ -408,11 +408,8 @@ export function buildServices(
         settings,
         template,
         zoteroPref,
-      }) =>
-        new LiteratureNoteTemplateMigrationService({
-          app: plugin.app,
-          settings,
-          template,
+      }) => {
+        bindMigration({
           loadVerificationData: (options) =>
             loadLiteratureNoteTemplateMigrationData(
               {
@@ -427,11 +424,18 @@ export function buildServices(
               options,
             ),
           openPrompt: () => openWelcomeView(plugin.app, settings),
-        }),
+        });
+        return plainTemplateMigration(runtime);
+      },
     })
     .use({
       itemLookup: ({ zoteroReads, libraryScope, useLedger }) =>
-        new ItemLookup({ reads: zoteroReads, libraryScope, useLedger }),
+        new ItemLookup({
+          runtime,
+          reads: zoteroReads,
+          libraryScope,
+          useLedger,
+        }),
     })
     .useValue({
       noteFeature: ({
@@ -530,7 +534,6 @@ export function buildServices(
         libraryScope,
         noteImport,
         noteIndex,
-        template,
       }): BatchImport =>
         createBatchImport({
           view: createNoteImportView(plugin.app, {
@@ -546,77 +549,22 @@ export function buildServices(
           noteImport,
           noteIndex,
           metadataCache: plugin.app.metadataCache,
-          template,
         }),
     })
-    .use({
-      citationLookup: ({ zoteroReads, libraryScope, queryClient }) =>
-        new CitationLookup({ reads: zoteroReads, libraryScope, queryClient }),
+    .useValue({
+      citationLookup: () => plainCitationLookup(runtime),
     })
     .useValue({
       citationParse: () => plainCitationParse(runtime),
     })
-    .use({
-      citationIndex: ({
-        noteIndex,
-        settings,
-        citationLookup,
-        citationParse,
-        zoteroReads,
-        libraryScope,
-      }) =>
-        new CitationIndex({
-          runPromise: (effect) => runtime.runPromise(effect),
-          db: zoteroReads,
-          libraryScope,
-          app: plugin.app,
-          noteIndex,
-          settings,
-          lookup: citationLookup,
-          parseClient: citationParse,
-        }),
+    .useValue({ citationIndex: () => plainCitationIndex(runtime) })
+    .useValue({
+      pandocEngine: () => plainPandocEngine(runtime),
     })
-    .use({
-      pandocEngine: () => createPandocEngineService(plugin.app),
+    .useValue({
+      bibliographyRender: () => plainBibliographyRender(runtime),
     })
-    .use({
-      bibliographyRender: ({
-        zoteroReads,
-        pandocEngine,
-        zoteroPref,
-        settings,
-        profile,
-        queryClient,
-      }) =>
-        new BibliographyRenderCache({
-          profile,
-          db: zoteroReads,
-          pandocEngine,
-          zoteroPref,
-          settings,
-          queryClient,
-        }),
-    })
-    .use({
-      citationText: ({
-        profile,
-        citationIndex,
-        citationLookup,
-        noteIndex,
-        bibliographyRender,
-        queryClient,
-      }) =>
-        new CitationText({
-          profile,
-          app: plugin.app,
-          citationIndex,
-          citationLookup,
-          noteIndex,
-          bibliographyRender,
-          queryClient,
-          openDocuments: workspaceOpenDocuments(plugin.app),
-        }),
-    })
+    .useValue({ citationText: () => plainCitationText(runtime) })
     .use({
       citationPopover: ({
         profile,
@@ -628,6 +576,7 @@ export function buildServices(
         libraryScope,
       }): CitationPopover =>
         new CitationPopover({
+          runtime,
           profile,
           app: plugin.app,
           db: zoteroReads,
@@ -680,6 +629,7 @@ export function buildServices(
         libraryScope,
       }) =>
         new CitekeyEditor({
+          runtime,
           app: plugin.app,
           plugin,
           noteIndex,
@@ -699,6 +649,7 @@ export function buildServices(
     .use({
       annotationLinkReading: ({ annotationPopover, settings }) =>
         new AnnotationLinkReading({
+          runtime,
           app: plugin.app,
           plugin,
           settings,
@@ -715,6 +666,7 @@ export function buildServices(
         citationLookup,
       }) =>
         new WikilinkEditor({
+          runtime,
           app: plugin.app,
           plugin,
           noteIndex,
@@ -734,6 +686,7 @@ export function buildServices(
         settings,
       }) =>
         new WikilinkReading({
+          runtime,
           app: plugin.app,
           plugin,
           noteIndex,
@@ -752,6 +705,7 @@ export function buildServices(
         settings,
       }) =>
         new CitekeyReading({
+          runtime,
           app: plugin.app,
           plugin,
           citationText,
@@ -773,6 +727,7 @@ export function buildServices(
         settings,
       }) =>
         new GraphCitations({
+          runtime,
           app: plugin.app,
           reads: zoteroReads,
           libraryScope,

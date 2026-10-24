@@ -1,25 +1,23 @@
-import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { TestClock } from "effect/testing";
+import { describe, expect, vi } from "vitest";
 
 import type { Library } from "@zotlit/db";
 
-import { QueryClientService } from "@/services/query-client/service";
-import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import { Deferred, Effect, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
+import { it } from "@/lib/effect-vitest";
+import { layerRcRef } from "@/services/zotero-reads/connection";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
-  inProcessReadsService,
+  inProcessClient,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import type { LibraryScope, ResolvedLibraryScope } from "./scope";
-import { LIBRARY_SCOPE_KEY, LibraryScopeService } from "./service";
+import { libraryScopeFixture } from "./__fixtures__";
+import type { LibraryScope as SavedScope, ResolvedLibraryScope } from "./scope";
+import { LIBRARY_SCOPE_KEY } from "./service";
 
-/**
- * Local library ids run against group-id order — group 200 sits at libraryID 3
- * and group 100 at libraryID 7 — so a canonical-order assertion cannot pass on
- * database row order.
- */
+// Group-id order differs from local library-id order.
 const MY_LIBRARY: Library = {
   libraryID: 1,
   version: 0,
@@ -29,356 +27,346 @@ const MY_LIBRARY: Library = {
   name: null,
 };
 const GROUP_200: Library = {
+  ...MY_LIBRARY,
   libraryID: 3,
-  version: 0,
-  clientVersion: null,
   type: "group",
   groupID: 200,
   name: "Shared B",
 };
 const GROUP_100: Library = {
+  ...MY_LIBRARY,
   libraryID: 7,
-  version: 0,
-  clientVersion: null,
   type: "group",
   groupID: 100,
   name: "Shared A",
 };
 
-describe("LibraryScopeService", () => {
-  it("resolves the saved scope once the database is ready", async () => {
-    const { service } = await makeService();
+const changedScope = (
+  f: Fixture,
+  predicate: (scope: ResolvedLibraryScope | null) => boolean,
+) =>
+  Stream.runHead(
+    f.service.changes.pipe(Stream.filter((state) => predicate(state.current))),
+  );
 
-    expect(service.current).toMatchObject({
-      mode: "all",
-      invalid: false,
-      available: [
-        { selector: { type: "personal" }, libraryID: 1, name: null },
-        { selector: { type: "group", groupID: 100 }, libraryID: 7 },
-        { selector: { type: "group", groupID: 200 }, libraryID: 3 },
-      ],
-    });
-  });
+describe("LibraryScope", () => {
+  it.effect("resolves the saved scope before acquisition finishes", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService();
+      expect(f.plain.current).toMatchObject({
+        mode: "all",
+        invalid: false,
+        available: [
+          { selector: { type: "personal" }, libraryID: 1, name: null },
+          { selector: { type: "group", groupID: 100 }, libraryID: 7 },
+          { selector: { type: "group", groupID: 200 }, libraryID: 3 },
+        ],
+      });
+    }),
+  );
 
-  it("emits nothing for a refresh that finds the same libraries", async () => {
-    await using f = await makeService();
+  it.effect("emits nothing for an equivalent refresh", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService();
+      const before = f.plain.current;
+      yield* f.refresh([MY_LIBRARY, GROUP_200, GROUP_100]);
+      expect(f.plain.current).toBe(before);
+      expect(f.changed).not.toHaveBeenCalled();
+    }),
+  );
 
-    const before = f.librariesRead;
+  it.effect("emits a change when a group is renamed", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService();
+      yield* f.refresh([
+        MY_LIBRARY,
+        GROUP_200,
+        { ...GROUP_100, name: "Renamed" },
+      ]);
+      yield* changedScope(
+        f,
+        (scope) => scope?.available[1]?.name === "Renamed",
+      );
+      expect(f.plain.current?.available[1]?.name).toBe("Renamed");
+      yield* Effect.promise(() =>
+        expect.poll(() => f.changed.mock.calls.length).toBe(1),
+      );
+    }),
+  );
 
-    await f.refresh([MY_LIBRARY, GROUP_200, GROUP_100]);
-    await expect.poll(() => f.librariesRead).toBeGreaterThan(before);
-    await f.service.ready;
+  it.effect(
+    "reports changed Libraries outside the saved scope without changing its resolution",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* makeService({
+          scope: { mode: "selected", libraries: [{ type: "personal" }] },
+        });
+        const before = f.plain.current;
+        const changed = vi.fn();
+        subscribe(f.runtime, f.plain["libraries-changed"], changed);
+        yield* f.refresh([
+          MY_LIBRARY,
+          GROUP_200,
+          { ...GROUP_100, name: "Renamed" },
+        ]);
+        yield* Effect.promise(() =>
+          expect.poll(() => f.plain.libraries[1]?.name).toBe("Renamed"),
+        );
+        yield* Effect.promise(() =>
+          expect.poll(() => changed.mock.calls.length).toBe(1),
+        );
+        expect(f.plain.current).toBe(before);
+        expect(f.changed).not.toHaveBeenCalled();
+      }),
+  );
 
-    expect(f.changed).not.toHaveBeenCalled();
-  });
+  it.effect("gives a returning group its current local library id", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService({
+        libraries: [MY_LIBRARY],
+        scope: {
+          mode: "selected",
+          libraries: [{ type: "personal" }, { type: "group", groupID: 100 }],
+        },
+      });
+      expect(f.plain.current?.unavailable).toEqual([
+        { type: "group", groupID: 100 },
+      ]);
+      yield* f.refresh([MY_LIBRARY, { ...GROUP_100, libraryID: 11 }]);
+      yield* changedScope(f, (scope) => scope?.unavailable.length === 0);
+      expect(f.plain.current?.available[1]?.libraryID).toBe(11);
+    }),
+  );
 
-  it("emits a change when a group is renamed", async () => {
-    await using f = await makeService();
-    const { changed } = f;
+  it.effect("replays an unreadable database to a late subscriber", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService({ libraries: null });
+      expect(f.plain.current).toBeNull();
+      expect(f.plain.libraries).toEqual([]);
+      expect(yield* Stream.runHead(f.service.changes)).toMatchObject({
+        value: { current: null, libraryRows: null },
+      });
+    }),
+  );
 
-    await f.refresh([MY_LIBRARY, GROUP_200, { ...GROUP_100, name: "Renamed" }]);
+  it.effect("holds the previous scope while a replacement read runs", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService();
+      const before = f.plain.current;
+      const gate = yield* f.gateLibraries();
+      yield* f.refreshSource([MY_LIBRARY]);
+      yield* Deferred.await(gate.waiting);
+      expect(f.plain.current).toBe(before);
+      yield* Deferred.succeed(gate.release, undefined);
+      yield* changedScope(f, (scope) => scope?.available.length === 1);
+    }),
+  );
 
-    await expect.poll(() => changed.mock.calls).toHaveLength(1);
-    expect(changed.mock.lastCall?.[0]?.available[1]).toMatchObject({
-      name: "Renamed",
-    });
-  });
+  it.effect(
+    "holds the previous scope on a failed read and retries after cooldown",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* makeService();
+        const before = f.plain.current;
+        f.failLibraries(true);
+        yield* f.refreshSource([MY_LIBRARY]);
+        yield* Effect.promise(() =>
+          expect.poll(() => f.librariesFailed).toBeGreaterThan(0),
+        );
+        expect(f.plain.current).toBe(before);
+        f.failLibraries(false);
+        yield* TestClock.adjust("10 seconds");
+        expect(f.plain.current).toBe(before);
+        yield* changedScope(f, (scope) => scope?.available.length === 1);
+      }),
+  );
 
-  it("gives a returning group its current local library id", async () => {
-    await using f = await makeService({
-      libraries: [MY_LIBRARY],
-      scope: {
+  it.effect("holds the previous scope when a database refresh fails", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService();
+      const before = f.plain.current;
+      yield* f.refreshSource(null);
+      expect(f.plain.current).toBe(before);
+      expect(f.changed).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("separates an unreadable database from zero Libraries", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService({ libraries: [] });
+      expect(f.plain.current).toEqual({
+        mode: "all",
+        invalid: false,
+        available: [],
+        unavailable: [],
+      });
+    }),
+  );
+
+  it.effect("falls back to My Library for a broken saved value", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService({ broken: true });
+      expect(f.plain.invalid).toBe(true);
+      expect(f.plain.current).toMatchObject({
         mode: "selected",
-        libraries: [{ type: "personal" }, { type: "group", groupID: 100 }],
-      },
-    });
-    const { service, changed } = f;
+        invalid: true,
+        available: [{ selector: { type: "personal" }, libraryID: 1 }],
+      });
+    }),
+  );
 
-    expect(service.current?.unavailable).toEqual([
-      { type: "group", groupID: 100 },
-    ]);
+  it.effect("replays a broken saved value even with no readable database", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService({ broken: true, libraries: null });
+      expect(yield* Stream.runHead(f.service.changes)).toMatchObject({
+        value: {
+          current: null,
+          invalid: true,
+          effective: { mode: "selected", libraries: [{ type: "personal" }] },
+        },
+      });
+    }),
+  );
 
-    await f.refresh([MY_LIBRARY, { ...GROUP_100, libraryID: 11 }]);
+  it.effect("emits a change when a repair clears the broken value", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService({ broken: true });
+      f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } });
+      yield* changedScope(f, (scope) => scope?.invalid === false);
+      expect(f.plain.invalid).toBe(false);
+      expect(f.plain.current?.mode).toBe("all");
+      yield* Effect.promise(() =>
+        expect.poll(() => f.changed.mock.calls.length).toBe(1),
+      );
+    }),
+  );
 
-    await expect.poll(() => service.current?.unavailable).toEqual([]);
-    expect(service.current?.available[1]).toMatchObject({ libraryID: 11 });
-    expect(changed).toHaveBeenCalledOnce();
-  });
+  it.effect("emits a change when the user selects a different scope", () =>
+    Effect.gen(function* () {
+      const f = yield* makeService();
+      f.settings.update({
+        [LIBRARY_SCOPE_KEY]: {
+          mode: "selected",
+          libraries: [{ type: "group", groupID: 200 }],
+        },
+      });
+      yield* changedScope(f, (scope) => scope?.mode === "selected");
+      expect(f.plain.current?.available).toEqual([
+        {
+          selector: { type: "group", groupID: 200 },
+          libraryID: 3,
+          name: "Shared B",
+        },
+      ]);
+    }),
+  );
 
-  it("reports no scope at all while the database is unreadable", async () => {
-    await using f = await makeService({ libraries: null });
-
-    expect(f.service.current).toBeNull();
-    expect(f.service.libraries).toEqual([]);
-  });
-
-  it("keeps the previous scope while a fresh read of the Libraries runs", async () => {
-    await using f = await makeService();
-    const before = f.service.current;
-    const gate = f.gateLibraries();
-
-    await f.refresh([MY_LIBRARY]);
-    await expect.poll(() => gate.waiting).toBe(true);
-
-    expect(f.service.current).toBe(before);
-    gate.release();
-    await expect.poll(() => f.service.current?.available).toHaveLength(1);
-  });
-
-  it("keeps the previous scope when a Libraries read fails, and asks again after the failure cooldown", async () => {
-    await using f = await makeService();
-    const before = f.service.current;
-    f.failLibraries(true);
-
-    await f.refresh([MY_LIBRARY]);
-    await expect.poll(() => f.librariesFailed).toBeGreaterThan(0);
-
-    expect(f.service.current).toBe(before);
-    f.failLibraries(false);
-    f.advance(10);
-    expect(f.service.current).toBe(before);
-    await expect.poll(() => f.service.current?.available).toHaveLength(1);
-  });
-
-  it("keeps the previous scope when a refresh fails", async () => {
-    await using f = await makeService();
-    const before = f.service.current;
-
-    await f.refresh(null);
-
-    expect(f.service.current).toBe(before);
-    expect(f.changed).not.toHaveBeenCalled();
-  });
-
-  it("separates an unreadable database from a scope with no library", async () => {
-    await using f = await makeService({ libraries: [] });
-
-    expect(f.service.current).toEqual({
-      mode: "all",
-      invalid: false,
-      available: [],
-      unavailable: [],
-    });
-  });
-
-  it("falls back to my library while the saved value is broken", async () => {
-    await using f = await makeService({ scope: null, broken: true });
-    const { service } = f;
-
-    expect(service.invalid).toBe(true);
-    expect(service.current).toMatchObject({
-      mode: "selected",
-      invalid: true,
-      available: [{ selector: { type: "personal" }, libraryID: 1 }],
-    });
-  });
-
-  it("emits a change when a repair clears the broken value", async () => {
-    await using f = await makeService({ scope: null, broken: true });
-    const { settings, service, changed } = f;
-
-    settings.repair({ mode: "all" });
-
-    expect(service.invalid).toBe(false);
-    expect(service.current).toMatchObject({ mode: "all", invalid: false });
-    expect(changed).toHaveBeenCalledOnce();
-  });
-
-  it("emits a change when the user saves a different scope", async () => {
-    await using f = await makeService();
-    const { settings, service, changed } = f;
-
-    settings.set({
-      mode: "selected",
-      libraries: [{ type: "group", groupID: 200 }],
-    });
-
-    expect(service.current?.available).toEqual([
-      {
-        selector: { type: "group", groupID: 200 },
-        libraryID: 3,
-        name: "Shared B",
-      },
-    ]);
-    expect(changed).toHaveBeenCalledOnce();
-  });
-
-  it("resolves against a caller's Snapshot Libraries rather than the held Libraries", async () => {
-    await using f = await makeService();
-
-    await f.refresh([MY_LIBRARY]);
-    await expect.poll(() => f.service.current?.available).toHaveLength(1);
-
-    expect(
-      f.service.resolveLibraries([MY_LIBRARY, GROUP_200, GROUP_100]).available,
-    ).toHaveLength(3);
-  });
+  it.effect(
+    "resolves a caller's Snapshot independently of the held Libraries",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* makeService();
+        yield* f.refresh([MY_LIBRARY]);
+        yield* changedScope(f, (scope) => scope?.available.length === 1);
+        expect(
+          f.plain.resolveLibraries([MY_LIBRARY, GROUP_200, GROUP_100])
+            .available,
+        ).toHaveLength(3);
+      }),
+  );
 });
 
-/** The rows one database open holds; `null` fails that open. */
 function librariesSql(libraries: readonly Library[] | null): string | null {
   if (libraries === null) return null;
   return libraries
     .map(
       (library) =>
-        `insert into libraries (libraryID, type) values (${library.libraryID}, '${library.type}');${
-          library.groupID === null
-            ? ""
-            : `insert into groups (groupID, libraryID, name) values (${library.groupID}, ${library.libraryID}, '${library.name}');`
-        }`,
+        `insert into libraries (libraryID, type) values (${library.libraryID}, '${library.type}');${library.groupID === null ? "" : `insert into groups (groupID, libraryID, name) values (${library.groupID}, ${library.libraryID}, '${library.name}');`}`,
     )
     .join("\n");
 }
 
-async function makeService(
+type Fixture = Effect.Success<ReturnType<typeof makeService>>;
+const makeService = Effect.fnUntraced(function* (
   options: {
     libraries?: readonly Library[] | null;
-    scope?: LibraryScope | null;
+    scope?: SavedScope;
     broken?: boolean;
   } = {},
 ) {
-  const stack = new AsyncDisposableStack();
-  /** What each open of the database holds, in open order. */
-  const opens: (readonly Library[] | null)[] = [
+  const opens = [
     options.libraries === undefined
       ? [MY_LIBRARY, GROUP_200, GROUP_100]
       : options.libraries,
   ];
-  let gate: PromiseWithResolvers<void> | null = null;
-  let waiting = false;
+  let gate:
+    | { waiting: Deferred.Deferred<void>; release: Deferred.Deferred<void> }
+    | undefined;
+  let failing = false;
   let librariesRead = 0;
   let librariesFailed = 0;
-  let failing = false;
-  let now = Temporal.Now.instant();
-  const { open } = memoryOpener((n) => librariesSql(opens[n - 1] ?? null));
-  const reads = stack.use(
-    inProcessReadsService(open, {
-      wrap: (client) => ({
-        ...client,
-        Libraries: ((...args: Parameters<typeof client.Libraries>) =>
-          Effect.andThen(
-            Effect.andThen(
-              Effect.promise(async () => {
-                if (gate === null) return;
-                waiting = true;
-                await gate.promise;
-              }),
-              () =>
-                failing
-                  ? Effect.suspend(() => {
-                      librariesFailed += 1;
-                      return Effect.fail(
-                        new DbUnavailable({ message: "the read failed" }),
-                      );
-                    })
-                  : Effect.void,
-            ),
-            Effect.map(client.Libraries(...args), (libraries) => {
-              librariesRead += 1;
-              return libraries;
-            }),
-          )) as typeof client.Libraries,
-      }),
+  const client = Effect.map(
+    inProcessClient(
+      layerRcRef(memoryOpener((n) => librariesSql(opens[n - 1] ?? null)).open),
+    ),
+    (client) => ({
+      ...client,
+      Libraries: ((...args: Parameters<typeof client.Libraries>) =>
+        Effect.gen(function* () {
+          if (gate) {
+            yield* Deferred.succeed(gate.waiting, undefined);
+            yield* Deferred.await(gate.release);
+          }
+          if (failing) {
+            librariesFailed++;
+            return yield* new DbUnavailable({ message: "the read failed" });
+          }
+          const rows = yield* client.Libraries(...args);
+          librariesRead++;
+          return rows;
+        })) as typeof client.Libraries,
     }),
   );
-  const queries = stack.use(new QueryClientService({ now: () => now }));
-  const settings = new FakeSettings(
-    options.scope === undefined ? { mode: "all" } : options.scope,
-    options.broken ?? false,
+  const f = yield* libraryScopeFixture(client, {
+    __VERSION__: 10,
+    [LIBRARY_SCOPE_KEY]: options.broken
+      ? "nonsense"
+      : (options.scope ?? { mode: "all" }),
+  });
+  yield* Effect.promise(() =>
+    expect.poll(() => f.reads.state).not.toBe("loading"),
   );
-  const service = stack.use(
-    new LibraryScopeService({
-      reads,
-      queries,
-      settings: settings as unknown as SettingsService,
-    }),
-  );
-  await service.ready;
-  // Subscribed after startup, so every assertion counts only what the test did.
   const changed = vi.fn<(scope: ResolvedLibraryScope | null) => void>();
-  service.on("changed", changed);
+  subscribe(f.runtime, f.plain["changed"], changed);
+  const refreshSource = Effect.fnUntraced(function* (
+    libraries: readonly Library[] | null,
+  ) {
+    opens.push(libraries);
+    yield* Effect.promise(() => f.reads.refresh().catch(() => {}));
+  });
   return {
-    service,
-    settings,
+    ...f,
     changed,
-    /** How many `Libraries` reads have answered. */
-    get librariesRead() {
-      return librariesRead;
-    },
-    /** How many `Libraries` reads have failed. */
     get librariesFailed() {
       return librariesFailed;
     },
-    /** A database refresh onto a source holding `libraries`; `null` fails it. */
-    refresh: async (libraries: readonly Library[] | null) => {
-      opens.push(libraries);
-      await reads.refresh().catch(() => {});
-    },
-    /** Makes every later `Libraries` read fail, until set back. */
+    refreshSource,
+    refresh: Effect.fnUntraced(function* (libraries: readonly Library[]) {
+      const before = librariesRead;
+      yield* refreshSource(libraries);
+      yield* Effect.promise(() =>
+        expect.poll(() => librariesRead).toBeGreaterThan(before),
+      );
+    }),
     failLibraries: (on: boolean) => {
       failing = on;
     },
-    /** Moves the failure cooldown clock forward from the real time. */
-    advance: (seconds: number) => {
-      now = now.add({ seconds });
-    },
-    /** Holds every later `Libraries` read until `release`. */
-    gateLibraries: () => {
-      const held = Promise.withResolvers<void>();
-      gate = held;
-      return {
-        get waiting() {
-          return waiting;
-        },
-        release: () => held.resolve(),
+    gateLibraries: Effect.fnUntraced(function* () {
+      gate = {
+        waiting: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
       };
-    },
-    [Symbol.asyncDispose]: () => stack.disposeAsync(),
+      return gate;
+    }),
   };
-}
-
-class FakeSettings {
-  #scope: LibraryScope | null;
-  #broken: boolean;
-  readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
-
-  constructor(scope: LibraryScope | null, broken: boolean) {
-    this.#scope = scope;
-    this.#broken = broken;
-  }
-
-  get current(): Readonly<Settings> {
-    return { [LIBRARY_SCOPE_KEY]: this.#scope } as unknown as Settings;
-  }
-
-  get loaded(): Promise<Readonly<Settings>> {
-    return Promise.resolve(this.current);
-  }
-
-  get diagnostics(): readonly { key: string; value: unknown }[] {
-    return this.#broken ? [{ key: LIBRARY_SCOPE_KEY, value: "nonsense" }] : [];
-  }
-
-  subscribe(cb: (value: Readonly<Settings> | null) => void): () => void {
-    this.#subscribers.add(cb);
-    cb(this.current);
-    return () => {
-      this.#subscribers.delete(cb);
-    };
-  }
-
-  set(scope: LibraryScope): void {
-    this.#scope = scope;
-    this.#notify();
-  }
-
-  /** The first valid edit replaces the broken value and clears its diagnostic. */
-  repair(scope: LibraryScope): void {
-    this.#broken = false;
-    this.set(scope);
-  }
-
-  #notify(): void {
-    for (const cb of this.#subscribers) cb(this.current);
-  }
-}
+});

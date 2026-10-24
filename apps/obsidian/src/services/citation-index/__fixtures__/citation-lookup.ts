@@ -1,22 +1,29 @@
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+
+import { Stream } from "@/lib/effect";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
 } from "@/services/citation-index/lookup";
 import type {
-  CitationLookup,
   CitationLookupObservation,
   CitationLookupStatus,
+  CitationLookupState,
 } from "@/services/citation-index/lookup-service";
 
 /** The consumer seam: async delivery, strict requested answers, and a held placeholder. */
 export class CitationLookupStub implements Pick<
-  CitationLookup,
-  "ready" | "read" | "observe" | "on" | "status" | "whenResolved"
+  PlainCitationLookup,
+  "read" | "observe" | "changed" | "status-changed" | "status" | "whenResolved" | "changes"
 > {
-  ready = Promise.resolve();
   status: CitationLookupStatus = "fresh";
+  #revision = 0;
+  readonly #events = testEvent<CitationLookupState>();
+  readonly changes = Stream.suspend(() => this.#events.stream.pipe(Stream.prepend([{status: this.status, revision: String(this.#revision), stopped: false}])));
+  readonly changed = this.#events.stream.pipe(Stream.map(() => undefined));
+  readonly "status-changed" = this.changed;
   readonly #answer;
   readonly #deliveries = new Set<Promise<void>>();
 
@@ -27,10 +34,7 @@ export class CitationLookupStub implements Pick<
     await Promise.all(this.#deliveries);
   }
   readonly #refresh = new Set<() => void>();
-  readonly #events = createNanoEvents<{
-    changed: () => void;
-    "status-changed": () => void;
-  }>();
+
 
   constructor(
     answer: (
@@ -43,8 +47,6 @@ export class CitationLookupStub implements Pick<
   get activeObservations(): number {
     return this.#refresh.size;
   }
-
-  on = this.#events.on.bind(this.#events);
 
   async whenResolved(): Promise<void> {}
 
@@ -60,9 +62,9 @@ export class CitationLookupStub implements Pick<
   }
 
   refresh(): void {
+    this.#revision++;
     for (const refresh of this.#refresh) refresh();
-    this.#events.emit("changed");
-    this.#events.emit("status-changed");
+    this.#events.emit({status: this.status, revision: String(this.#revision), stopped: false});
   }
 
   observe(changed: () => void): CitationLookupObservation {

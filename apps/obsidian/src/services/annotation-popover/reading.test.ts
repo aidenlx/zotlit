@@ -11,6 +11,8 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import {
   setup,
   useFakeTimers,
@@ -52,6 +54,7 @@ async function harness(stack: AsyncDisposableStack) {
   );
   const service = stack.use(
     new AnnotationLinkReading({
+      runtime: testRuntime(),
       app: { workspace: { getLeavesOfType: () => [{ view }] } } as never,
       plugin: {
         registerMarkdownPostProcessor: (postProcessor) => {
@@ -60,11 +63,8 @@ async function harness(stack: AsyncDisposableStack) {
         },
       },
       settings: {
-        ready: Promise.resolve(),
-        subscribe: (listener) => {
-          listener(defaults);
-          return () => undefined;
-        },
+        current: defaults,
+        changes: Stream.succeed(defaults),
       },
       annotationPopover: popover,
     }),

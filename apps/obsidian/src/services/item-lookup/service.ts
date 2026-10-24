@@ -18,17 +18,19 @@
  */
 import { Effect, Exit, FiberHandle, FiberSet, Scope } from "@/lib/effect";
 import { openScope } from "@/lib/effect-scope";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import { selectorKey } from "@/services/library-scope/scope";
 import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
 import { Service } from "@/services/service-base";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type { SearchHit as ReadsSearchHit } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 
 const logger = getLogger(["item-lookup"]);
 export const DEFAULT_LIMIT = 50;
@@ -52,9 +54,13 @@ export interface SearchHit extends ReadsSearchHit {
 }
 
 export interface ItemLookupDeps {
+  runtime: SubscriptionRuntime;
   useLedger: Pick<PlainUseLedger, "uses">;
-  reads: Pick<ZoteroReadsService, "ready">;
-  libraryScope: Pick<LibraryScopeService, "ready" | "on" | "current">;
+  reads: Pick<PlainZoteroReads, "reads">;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "changed" | "libraries-changed" | "current"
+  >;
 }
 
 /**
@@ -77,6 +83,7 @@ interface ItemLookupReady {
 }
 
 export class ItemLookup extends Service<ItemLookupReady> {
+  readonly #runtime;
   readonly #reads;
   readonly #useLedger;
   readonly #libraryScope;
@@ -84,6 +91,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
   constructor(deps: ItemLookupDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#reads = deps.reads;
     this.#useLedger = deps.useLedger;
     this.#libraryScope = deps.libraryScope;
@@ -194,7 +202,7 @@ export class ItemLookup extends Service<ItemLookupReady> {
     };
     let scopeKey = scopeKeyOf(this.#libraryScope.current);
     stack.defer(
-      this.#libraryScope.on("changed", (resolved) => {
+      subscribe(this.#runtime, this.#libraryScope["changed"], (resolved) => {
         // A pending answer covers the Libraries it asked with; once those
         // change, it must not reach a picker. A rename keeps it.
         const next = scopeKeyOf(resolved);
@@ -216,7 +224,6 @@ export class ItemLookup extends Service<ItemLookupReady> {
 
     this.commit(stack.move());
 
-    await Promise.all([this.#reads.ready, this.#libraryScope.ready]);
     logger.info("Item lookup ready");
     scopeKey = scopeKeyOf(this.#libraryScope.current);
     prewarm(this.#libraryScope.current);
@@ -236,42 +243,41 @@ export class ItemLookup extends Service<ItemLookupReady> {
         : null;
     const citedKeys = new Set(cited);
     const t0 = performance.now();
-    return Effect.promise(() => this.#reads.ready).pipe(
-      Effect.flatMap(({ reads }) =>
-        reads.SearchItems({
-          libraryIDs: libraries.map((library) => library.libraryID),
-          query,
-          limit,
-          ...(query.trim() === ""
-            ? { uses: this.#useLedger.uses, ...(cited ? { cited } : {}) }
-            : {}),
-        }),
-      ),
-      Effect.map((hits) => {
-        logger.debug("Search completed", {
-          libraries: libraries.length,
-          queryLength: query.length,
-          hits: hits.length,
-          durationMs: performance.now() - t0,
-        });
-        return hits.map((hit): SearchHit => ({
-          ...hit,
-          library: labels?.get(hit.item.libraryID) ?? null,
-          cited: citedKeys.has(hit.item.indexedKey),
-        }));
-      }),
-      Effect.catchTag("DbUnavailable", (error) =>
-        Effect.sync(() => {
-          logger.debug("Search answered empty; database unavailable", {
-            error,
+    return this.#reads.reads
+      .SearchItems({
+        libraryIDs: libraries.map((library) => library.libraryID),
+        query,
+        limit,
+        ...(query.trim() === ""
+          ? { uses: this.#useLedger.uses, ...(cited ? { cited } : {}) }
+          : {}),
+      })
+      .pipe(
+        Effect.map((hits) => {
+          logger.debug("Search completed", {
+            libraries: libraries.length,
+            queryLength: query.length,
+            hits: hits.length,
+            durationMs: performance.now() - t0,
           });
-          return [];
+          return hits.map((hit): SearchHit => ({
+            ...hit,
+            library: labels?.get(hit.item.libraryID) ?? null,
+            cited: citedKeys.has(hit.item.indexedKey),
+          }));
         }),
-      ),
-      // A search answers; a failure of any other kind is logged, not thrown.
-      Effect.catch((error) => this.#logFailure(error)),
-      Effect.catchDefect((defect) => this.#logFailure(defect)),
-    );
+        Effect.catchTag("DbUnavailable", (error) =>
+          Effect.sync(() => {
+            logger.debug("Search answered empty; database unavailable", {
+              error,
+            });
+            return [];
+          }),
+        ),
+        // A search answers; a failure of any other kind is logged, not thrown.
+        Effect.catch((error) => this.#logFailure(error)),
+        Effect.catchDefect((defect) => this.#logFailure(defect)),
+      );
   }
 
   #logFailure(error: unknown): Effect.Effect<SearchHit[]> {

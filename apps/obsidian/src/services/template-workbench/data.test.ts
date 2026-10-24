@@ -16,6 +16,7 @@ import { CITATION_EXAMPLE_IDS } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -49,6 +50,7 @@ function registeredData(deps: FixtureDeps) {
   });
   Object.assign(deps.templates, { waitUntilSettled: async () => "settled" });
   registerTemplateWorkbench({ ...host, manifest: { version: "test" } }, {
+    runtime: testRuntime(),
     ...deps,
     profile: {
       ready: Promise.resolve(),
@@ -851,10 +853,9 @@ function createFixture(options?: {
           whenIndexed: async () => {},
         },
         settings: {
-          loaded: Promise.resolve(settingsDefaults),
+          current: settingsDefaults,
         },
         templates: {
-          ready: Promise.resolve(),
           compileErrors: options?.compileError
             ? new Map([["citation", { message: options.compileError }]])
             : new Map(),
@@ -875,7 +876,6 @@ function createFixture(options?: {
           },
         },
         zoteroPref: {
-          ready: Promise.resolve(),
           dataDir: "/Zotero",
           baseAttachmentPath: null,
         },

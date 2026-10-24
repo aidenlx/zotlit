@@ -15,27 +15,30 @@ import {
   citationTarget,
   wikilinkCitation,
 } from "@/lib/wikilink-citation";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type { PlainCitationParse } from "@/services/citation-parse/plain";
 import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 export interface NativeCitationDeps {
   app: App;
   citationParse: Pick<PlainCitationParse, "parse">;
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead">;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
   bibliographyRender: Pick<
-    BibliographyRenderCache,
+    PlainBibliographyRender,
     | "renderCitations"
     | "readCitations"
     | "readBibliography"
     | "vaultPresentation"
-    | "on"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
   >;
-  citationLookup: Pick<CitationLookup, "read">;
+  citationLookup: Pick<PlainCitationLookup, "read">;
 }
 export interface PreviewCitation extends PresentedCitation {
   source: string;

@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
+
 import {
   libraryScopeInvalidNotice,
   subscribeLibraryScopeInvalid,
 } from "./notices";
-import type { LibraryScopeService } from "./service";
+import type { PlainLibraryScope } from "./plain";
 
 describe("libraryScopeInvalidNotice", () => {
   it("carries the approved copy and opens settings through its action", () => {
@@ -72,31 +76,29 @@ function subscribe(scope: ReturnType<typeof fakeScope>) {
   const hide = vi.fn();
   const showNotice = vi.fn(() => ({ hide }));
   const dispose = subscribeLibraryScopeInvalid(
-    scope as unknown as Pick<LibraryScopeService, "invalid" | "on">,
+    testRuntime(),
+    scope as unknown as Pick<
+      PlainLibraryScope,
+      "invalid" | "changed" | "libraries-changed"
+    >,
     showNotice,
   );
   return { dispose, showNotice, hide };
 }
 
 function fakeScope(invalid: boolean) {
-  let listener: (() => void) | null = null;
+  const event = testEvent<null>();
   return {
     invalid,
-    on(_event: "changed", cb: () => void) {
-      listener = cb;
-      return () => {
-        listener = null;
-      };
-    },
+    changed: event.stream,
+    "libraries-changed": Stream.empty,
     emitChanged() {
-      listener?.();
+      event.emit(null);
     },
-    setInvalid(next: boolean) {
-      this.invalid = next;
-      listener?.();
+    setInvalid(value: boolean) {
+      this.invalid = value;
+      event.emit(null);
     },
-    hasListener() {
-      return listener !== null;
-    },
+    hasListener: () => event.subscribers > 0,
   };
 }

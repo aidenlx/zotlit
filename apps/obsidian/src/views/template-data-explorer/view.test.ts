@@ -4,6 +4,9 @@ import type { App, EventRef, WorkspaceLeaf, ViewStateResult } from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect } from "@/lib/effect";
+import { Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { loadTemplateData } from "@/services/template-workbench/data";
@@ -87,6 +90,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
     canInsertField: true,
   };
   const editor = {
+    runtime: testRuntime(),
     leaf: editorLeaf,
     authoringContext: context,
     getViewData: () => "A note",
@@ -110,8 +114,16 @@ it("binds copied context to its editor, addresses field requests, and releases w
   const view = new ExplorerView(
     { app } as unknown as WorkspaceLeaf,
     {
+      runtime: testRuntime(),
       app,
-      zoteroReads: { ready: Promise.resolve(), on: () => unsubscribeDb },
+      zoteroReads: {
+        ready: Promise.resolve(),
+        changed: Stream.unwrap(
+          Effect.acquireRelease(Effect.succeed(Stream.never), () =>
+            Effect.sync(unsubscribeDb),
+          ),
+        ),
+      },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );
@@ -181,6 +193,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
     expect(insertion()).toBeDefined();
     const earlierLeaf = { app } as unknown as WorkspaceLeaf;
     const earlierPeer = {
+      runtime: testRuntime(),
       leaf: earlierLeaf,
       authoringContext: {
         ...context,
@@ -266,8 +279,17 @@ it("restores independent Explorer navigation after delayed data and keeps search
   const view = new ExplorerView(
     { app } as unknown as WorkspaceLeaf,
     {
+      runtime: testRuntime(),
       app,
-      zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
+      zoteroReads: {
+        ready: Promise.resolve(),
+        changed: Stream.empty,
+        degraded: Stream.empty,
+        "refresh-failed": Stream.empty,
+        refreshing: Stream.empty,
+        "db-file-missing": Stream.empty,
+        "refresh-requested": Stream.empty,
+      },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );
@@ -341,8 +363,17 @@ it("restores independent Explorer navigation after delayed data and keeps search
   const recreated = new ExplorerView(
     { app } as unknown as WorkspaceLeaf,
     {
+      runtime: testRuntime(),
       app,
-      zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
+      zoteroReads: {
+        ready: Promise.resolve(),
+        changed: Stream.empty,
+        degraded: Stream.empty,
+        "refresh-failed": Stream.empty,
+        refreshing: Stream.empty,
+        "db-file-missing": Stream.empty,
+        "refresh-requested": Stream.empty,
+      },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );
@@ -396,6 +427,7 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
   };
   let accepted = true;
   const editor = {
+    runtime: testRuntime(),
     get authoringContext() {
       return context;
     },
@@ -424,8 +456,17 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
     const view = new ExplorerView(
       { app, pinned: true } as unknown as WorkspaceLeaf,
       {
+        runtime: testRuntime(),
         app,
-        zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
+        zoteroReads: {
+          ready: Promise.resolve(),
+          changed: Stream.empty,
+          degraded: Stream.empty,
+          "refresh-failed": Stream.empty,
+          refreshing: Stream.empty,
+          "db-file-missing": Stream.empty,
+          "refresh-requested": Stream.empty,
+        },
         templates: { javascriptTemplatesEnabled: true },
       } as unknown as ExplorerViewDeps,
     );
@@ -503,6 +544,7 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     canInsertField: true,
   };
   const editor = {
+    runtime: testRuntime(),
     leaf: editorLeaf,
     authoringContext: context,
     chooseItem: vi.fn(),
@@ -521,8 +563,17 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
   const view = new ExplorerView(
     { app, pinned: true } as unknown as WorkspaceLeaf,
     {
+      runtime: testRuntime(),
       app,
-      zoteroReads: { ready: Promise.resolve(), on: () => () => {} },
+      zoteroReads: {
+        ready: Promise.resolve(),
+        changed: Stream.empty,
+        degraded: Stream.empty,
+        "refresh-failed": Stream.empty,
+        refreshing: Stream.empty,
+        "db-file-missing": Stream.empty,
+        "refresh-requested": Stream.empty,
+      },
       templates: { javascriptTemplatesEnabled: true },
     } as unknown as ExplorerViewDeps,
   );

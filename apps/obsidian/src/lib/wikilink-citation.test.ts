@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
 
 import {
   WikilinkDisplaySettings,
@@ -199,26 +199,26 @@ describe("citationOfRun", () => {
 });
 
 describe("WikilinkDisplaySettings", () => {
-  it("seeds from the first snapshot without asking for a redraw", () => {
-    const settings = new SettingsStub({
+  it("seeds from the first snapshot without asking for a redraw", async () => {
+    await using settings = await buildSeededSettings({
       "citation.wikilink-citations": true,
     });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
 
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
 
     expect(display.enabled).toBe(true);
     expect(redraws).toBe(0);
   });
 
-  it("shows wikilinks only while their source and formatted presentation are on", () => {
-    const settings = new SettingsStub({
+  it("shows wikilinks only while their source and formatted presentation are on", async () => {
+    await using settings = await buildSeededSettings({
       "citation.wikilink-citations": true,
       "citation.show-formatted": true,
     });
     const display = new WikilinkDisplaySettings();
-    display.watch(settings, () => undefined);
+    display.watch(testRuntime(), settings, () => undefined);
 
     settings.update({ "citation.show-formatted": false });
     expect(display.enabled).toBe(false);
@@ -230,13 +230,13 @@ describe("WikilinkDisplaySettings", () => {
     expect(display.enabled).toBe(false);
   });
 
-  it("asks for a redraw when a later snapshot changes what a link displays", () => {
-    const settings = new SettingsStub({
+  it("asks for a redraw when a later snapshot changes what a link displays", async () => {
+    await using settings = await buildSeededSettings({
       "citation.wikilink-citations": false,
     });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
 
     settings.update({ "citation.wikilink-citations": true });
     expect(redraws).toBe(1);
@@ -245,21 +245,23 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(2);
   });
 
-  it("stays quiet for a setting neither surface reads", () => {
-    const settings = new SettingsStub();
+  it("stays quiet for a setting neither surface reads", async () => {
+    await using settings = await buildSeededSettings();
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
 
     settings.update({ "citation.pandoc-citations": false });
     expect(redraws).toBe(0);
   });
 
-  it("takes the click while Citations stay closed as links", () => {
-    const settings = new SettingsStub({ "citation.open-as-links": true });
+  it("takes the click while Citations stay closed as links", async () => {
+    await using settings = await buildSeededSettings({
+      "citation.open-as-links": true,
+    });
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
-    display.watch(settings, () => redraws++);
+    display.watch(testRuntime(), settings, () => redraws++);
     expect(display.clickIntercepted).toBe(false);
 
     settings.update({ "citation.open-as-links": false });
@@ -268,48 +270,26 @@ describe("WikilinkDisplaySettings", () => {
     expect(redraws).toBe(1);
   });
 
-  it("reads the click apart from the Hover Action", () => {
-    const settings = new SettingsStub({ "citation.hover-action": "off" });
+  it("reads the click apart from the Hover Action", async () => {
+    await using settings = await buildSeededSettings({
+      "citation.hover-action": "off",
+    });
     const display = new WikilinkDisplaySettings();
-    display.watch(settings, () => undefined);
+    display.watch(testRuntime(), settings, () => undefined);
 
     expect(display.popoverHover).toBe(false);
     expect(display.clickIntercepted).toBe(true);
   });
 
-  it("stops following once unsubscribed", () => {
-    const settings = new SettingsStub();
+  it("stops following once unsubscribed", async () => {
+    await using settings = await buildSeededSettings();
     const display = new WikilinkDisplaySettings();
     let redraws = 0;
 
-    display.watch(settings, () => redraws++)();
+    display.watch(testRuntime(), settings, () => redraws++)();
     settings.update({ "citation.wikilink-citations": true });
 
     expect(display.enabled).toBe(false);
     expect(redraws).toBe(0);
   });
 });
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
-  }
-}

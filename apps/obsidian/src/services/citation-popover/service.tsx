@@ -2,6 +2,8 @@ import type { App, HoverParent } from "obsidian";
 import type { ReactNode } from "react";
 
 import { registerEvent } from "@/lib/disposables";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -10,13 +12,14 @@ import {
   describeCandidates,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
-import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import { readReferenceSources } from "@/services/citation-index/service";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type {} from "@/services/citation-index/service";
+import type { PlainCitationText } from "@/services/citation-text/plain";
 import { shownCitationContent } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
   documentCitationPresentation,
@@ -25,10 +28,10 @@ import {
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -42,19 +45,29 @@ import type { HoverVisit } from "./visits";
 const logger = getLogger("citation-popover");
 
 export interface CitationPopoverDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  db: Pick<ZoteroReadsService, "state" | "ready" | "acquireRead">;
-  citationLookup: Pick<CitationLookup, "read" | "status" | "on">;
-  citationIndex: Pick<CitationIndex, "getDocumentCitationSet">;
+  db: Pick<PlainZoteroReads, "state" | "reads" | "acquireRead">;
+  citationLookup: Pick<
+    PlainCitationLookup,
+    "read" | "status" | "changed" | "status-changed"
+  >;
+  citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: Pick<PlainLibraryScope, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
-  citationText: Pick<CitationText, "read">;
+  citationText: Pick<PlainCitationText, "read">;
   profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
-    BibliographyRenderCache,
-    "render" | "readBibliography" | "on" | "vaultPresentation"
+    PlainBibliographyRender,
+    | "render"
+    | "readBibliography"
+    | "changed"
+    | "settled"
+    | "invalidated"
+    | "style-missing"
+    | "vaultPresentation"
   >;
 }
 
@@ -162,12 +175,16 @@ export class CitationPopover extends Service {
     const draw = (): void => {
       void read();
     };
-    subscriptions.defer(deps.bibliographyRender.on("invalidated", draw));
+    subscriptions.defer(
+      subscribe(deps.runtime, deps.bibliographyRender["invalidated"], draw),
+    );
     if (!("work" in request) || request.work.kind === "citekey") {
-      subscriptions.defer(deps.citationLookup.on("changed", draw));
+      subscriptions.defer(
+        subscribe(deps.runtime, deps.citationLookup["changed"], draw),
+      );
       let freshness = deps.citationLookup.status;
       subscriptions.defer(
-        deps.citationLookup.on("status-changed", () => {
+        subscribe(deps.runtime, deps.citationLookup["status-changed"], () => {
           const previous = freshness;
           freshness = deps.citationLookup.status;
           if (freshness === "failed") showFailure(currentVisit);
@@ -311,7 +328,6 @@ async function readWork(
   request: WorkHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
-  await deps.profile.ready;
   const work = request.work;
   const empty: PopoverRead = {
     blocks: [],
@@ -401,7 +417,6 @@ async function readBlocks(
   request: CitationHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
-  await deps.profile.ready;
   const file = deps.app.vault.getFileByPath(request.sourcePath);
   if (!file) {
     logger.debug("Hovered citation sits in no note", {

@@ -9,10 +9,11 @@ import type {
 } from "obsidian";
 
 import type { Library, LibraryCitekey } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
-import { Effect } from "@/lib/effect";
+import type { Context } from "@/lib/effect";
+import { Effect, Stream } from "@/lib/effect";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -22,31 +23,28 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import type { LibraryScopeEvents } from "@/services/library-scope/service";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import { QueryClientService } from "@/services/query-client/service";
+import { buildNoteIndex } from "@/services/note-index/__fixtures__";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import { testClock } from "@/services/query-client/test-clock";
-import { defaults } from "@/services/settings/schema";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsEvents,
-  ZoteroReadsReady,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { citationIndexFixture, citationLookupFixture } from "./__fixtures__";
 import { CitationLookup } from "./lookup-service";
-import { CitationIndex } from "./service";
-import type {
-  CitationIndexOptions,
-  CitekeyRecord,
-  CitekeyStore,
-} from "./service";
+import type { PlainCitationIndex } from "./plain";
+import type { CitekeyRecord, CitekeyStore } from "./service";
 
 export const KEY_A = "ABCD2345";
 export const KEY_B = "ZZZ99999g7";
@@ -95,6 +93,11 @@ export class MockMetadataCache {
 
   getCache(path: string): CachedMetadata | null {
     return this.fileCache.get(path) ?? null;
+  }
+
+  /** The cache holds every file the harness added, so it is already clean. */
+  onCleanCache(callback: () => void): void {
+    callback();
   }
 
   getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
@@ -157,7 +160,10 @@ export class MockMetadataCache {
 export class MockVault {
   readonly bodies = new Map<string, string>();
   readonly reads: string[] = [];
-  readonly #listeners = new Set<Callback>();
+  readonly #listeners: Record<"rename" | "delete", Set<Callback>> = {
+    rename: new Set(),
+    delete: new Set(),
+  };
   readonly #held = new Map<string, PromiseWithResolvers<void>>();
   readonly #failures = new Map<string, unknown>();
 
@@ -203,14 +209,17 @@ export class MockVault {
     file.stat = statOf(body);
   }
 
-  on(_name: "rename", callback: Callback): EventRef {
-    this.#listeners.add(callback);
-    return { e: this, callback } as unknown as EventRef;
+  on(name: "rename" | "delete", callback: Callback): EventRef {
+    this.#listeners[name].add(callback);
+    return { e: this, name, callback } as unknown as EventRef;
   }
 
   offref(ref: EventRef): void {
-    const { callback } = ref as unknown as { callback: Callback };
-    this.#listeners.delete(callback);
+    const { name, callback } = ref as unknown as {
+      name: "rename" | "delete";
+      callback: Callback;
+    };
+    this.#listeners[name].delete(callback);
   }
 
   deleteFile(file: TFile): void {
@@ -228,7 +237,7 @@ export class MockVault {
     updateFilePath(file, path);
     this.metadataCache.files.set(path, file);
     if (cache) this.metadataCache.fileCache.set(path, cache);
-    for (const callback of this.#listeners) callback(file, oldPath);
+    for (const callback of this.#listeners.rename) callback(file, oldPath);
   }
 }
 
@@ -241,23 +250,6 @@ export class MockWorkspace {
 
   layoutReady(): void {
     for (const callback of this.#pending.splice(0)) callback();
-  }
-}
-
-export class NoteIndexStub {
-  readonly notes = new Map<string, TFile>();
-
-  getNotesByItemKey(indexedKey: string): TFile[] {
-    const note = this.notes.get(indexedKey);
-    return note ? [note] : [];
-  }
-
-  whenIndexed(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  on(): () => void {
-    return () => undefined;
   }
 }
 
@@ -274,8 +266,15 @@ export class DatabaseStub implements AsyncDisposable {
   readonly citekeys = new CitekeysStub(defaultCitekeys());
   itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
-  readonly #service: ZoteroReadsService;
-  readonly #events = createNanoEvents<ZoteroReadsEvents>();
+  readonly #service: TestReads;
+  readonly #changed = testEvent<void>();
+  readonly #degraded = testEvent<DbUnavailable>();
+  readonly changed = this.#changed.stream;
+  readonly degraded = this.#degraded.stream;
+  readonly "refresh-failed" = Stream.empty;
+  readonly refreshing = Stream.empty;
+  readonly "db-file-missing" = Stream.empty;
+  readonly "refresh-requested" = Stream.empty;
   readonly #ready = Promise.withResolvers<void>();
 
   constructor({
@@ -395,11 +394,23 @@ export class DatabaseStub implements AsyncDisposable {
         }) as ZoteroReadsClient,
     );
 
-  get ready(): Promise<ZoteroReadsReady> {
+  get ready(): TestReads["ready"] {
     return this.#ready.promise.then(async () => ({
       ...(await this.#service.ready),
       client: await Effect.runPromise(this.#client()),
     }));
+  }
+
+  get reads() {
+    return {
+      ...this.#service.reads,
+      CitationLookup: (
+        ...args: Parameters<ZoteroReadsClient["CitationLookup"]>
+      ) =>
+        Effect.flatMap(this.#client(), (client) =>
+          client.CitationLookup(...args),
+        ),
+    } as PlainZoteroReads["reads"];
   }
 
   async acquireRead(): Promise<ZoteroReadLease> {
@@ -407,7 +418,7 @@ export class DatabaseStub implements AsyncDisposable {
     return this.#service.acquireRead();
   }
 
-  get snapshot(): ZoteroReadsService["snapshot"] {
+  get snapshot(): PlainZoteroReads["snapshot"] {
     return Effect.andThen(
       Effect.promise(() => this.#ready.promise),
       this.#service.snapshot,
@@ -418,34 +429,25 @@ export class DatabaseStub implements AsyncDisposable {
     this.#ready.resolve();
   }
 
-  on<K extends keyof ZoteroReadsEvents>(
-    event: K,
-    cb: ZoteroReadsEvents[K],
-  ): () => void {
-    return this.#events.on(event, cb);
-  }
-
-  changed(): void {
-    this.#events.emit("changed");
+  notifyChanged(): void {
+    this.#changed.emit();
   }
 
   async replaceRows(seed: string): Promise<void> {
     this.#seed = seed;
     this.#lastSql = seed;
     await this.#service.refresh();
-    this.changed();
+    this.notifyChanged();
   }
 
   degrade(): void {
     this.state = "degraded";
-    this.#events.emit(
-      "degraded",
-      new DbUnavailable({ message: "Database unavailable" }),
-    );
+    const error = new DbUnavailable({ message: "Database unavailable" });
+    this.#degraded.emit(error);
   }
 
   [Symbol.asyncDispose](): Promise<void> {
-    return this.#service[Symbol.asyncDispose]();
+    return Promise.resolve(this.#service[Symbol.asyncDispose]());
   }
 }
 
@@ -462,12 +464,15 @@ export class CitekeysStub {
 
 /**
  * The Libraries the active database holds and the scope resolved over them —
- * the stand-in for `LibraryScopeService` the Citation Index resolves against.
+ * the stand-in for `PlainLibraryScope` the Citation Index resolves against.
  */
 export class LibraryScopeStub {
   libraries: AvailableLibrary[];
   ready = Promise.resolve();
-  readonly #listeners = new Map<keyof LibraryScopeEvents, Set<() => void>>();
+  readonly #changed = testEvent<ResolvedLibraryScope | null>();
+  readonly #libraries = testEvent<void>();
+  readonly changed = this.#changed.stream;
+  readonly "libraries-changed" = this.#libraries.stream;
   #current: ResolvedLibraryScope | null;
 
   constructor(libraries: AvailableLibrary[] = [personalLibrary()]) {
@@ -508,16 +513,6 @@ export class LibraryScopeStub {
     return this.#current;
   }
 
-  on(
-    event: keyof LibraryScopeEvents,
-    cb: LibraryScopeEvents[keyof LibraryScopeEvents],
-  ): () => void {
-    const notify = () => cb(this.#current);
-    const listeners = this.#listeners.get(event) ?? new Set();
-    this.#listeners.set(event, listeners.add(notify));
-    return () => listeners.delete(notify);
-  }
-
   /**
    * The database now holds `libraries`, and the saved scope resolves as it
    * did: only `libraries-changed` reports it.
@@ -546,7 +541,8 @@ export class LibraryScopeStub {
   }
 
   #emit(event: keyof LibraryScopeEvents = "changed"): void {
-    for (const listener of this.#listeners.get(event) ?? []) listener();
+    if (event === "changed") this.#changed.emit(this.#current);
+    else this.#libraries.emit();
   }
 }
 
@@ -600,99 +596,19 @@ export class MemoryStore implements CitekeyStore {
   [Symbol.dispose](): void {}
 }
 
-export class SettingsStub {
-  current: Readonly<Settings>;
-  readonly #ready = Promise.withResolvers<void>();
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(
-    overrides: SettingsOverrides = {},
-    options: { readyImmediately?: boolean } = {},
-  ) {
-    this.current = applySettingsOverrides(defaults, overrides);
-    if (options.readyImmediately ?? true) this.#ready.resolve();
-  }
-
-  get ready(): Promise<void> {
-    return this.#ready.promise;
-  }
-
-  settle(): void {
-    this.#ready.resolve();
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: SettingsOverrides): void {
-    this.current = applySettingsOverrides(this.current, overrides);
-    for (const listener of this.#listeners) listener(this.current);
-  }
-}
-
-type SettingsOverrides = Partial<Settings> &
-  Partial<ResolvedLiteratureNoteProfileBindings>;
-
-function applySettingsOverrides(
-  current: Readonly<Settings>,
-  overrides: SettingsOverrides,
-): Settings {
-  const {
-    ["note.literature-folder"]: literatureFolder,
-    ["citation.references-style"]: referencesStyle,
-    ["note.import-folder"]: importFolder,
-    ["note.import-colored-highlights"]: importColoredHighlights,
-    ["note.import-annotations-as-template"]: importAnnotationsAsTemplate,
-    ...persisted
-  } = overrides;
-  const profile = overrides["note.default-profile"];
-  return {
-    ...current,
-    ...persisted,
-    "note.default-profile": {
-      ...current["note.default-profile"],
-      ...profile,
-      bindings: {
-        ...current["note.default-profile"].bindings,
-        ...profile?.bindings,
-        ...(literatureFolder === undefined
-          ? {}
-          : { "note.literature-folder": literatureFolder }),
-        ...(referencesStyle === undefined
-          ? {}
-          : { "citation.references-style": referencesStyle }),
-        ...(importFolder === undefined
-          ? {}
-          : { "note.import-folder": importFolder }),
-        ...(importColoredHighlights === undefined
-          ? {}
-          : { "note.import-colored-highlights": importColoredHighlights }),
-        ...(importAnnotationsAsTemplate === undefined
-          ? {}
-          : {
-              "note.import-annotations-as-template":
-                importAnnotationsAsTemplate,
-            }),
-      },
-    },
-  };
-}
-
 export interface CitationIndexHarness extends AsyncDisposable {
   app: App;
   draft: TFile;
-  index: CitationIndex;
-  lookup: CitationLookup;
+  index: PlainCitationIndex & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  };
+  ready: Promise<void>;
+  runtime: ReturnType<typeof citationIndexFixture>["runtime"];
+  closeIndex: () => Promise<void>;
+  lookup: Awaited<ReturnType<typeof citationLookupFixture>>;
   metadataCache: MockMetadataCache;
-  noteIndex: NoteIndexStub;
-  settings: SettingsStub;
+  noteIndex: PlainNoteIndex;
+  settings: PlainPluginSettings;
   store: MemoryStore;
   vault: MockVault;
   workspace: MockWorkspace;
@@ -700,13 +616,13 @@ export interface CitationIndexHarness extends AsyncDisposable {
   citekeys: CitekeysStub;
   libraryScope: LibraryScopeStub;
   /** The one client the owners built on this harness share. */
-  queryClient: QueryClientService;
+  queryClient: PlainQueryClients;
   /** Moves the client's clock one step past the failure cooldown deadline. */
   passCooldown: () => void;
 }
 
 export interface CitationIndexHarnessOptions {
-  runPromise?: CitationIndexOptions["runPromise"];
+  context?: Context.Context<never>;
   parseClient?: ParseClient;
   openStore?: () => Promise<CitekeyStore>;
   settings?: Partial<Settings>;
@@ -719,7 +635,7 @@ export interface CitationIndexHarnessOptions {
    */
   zoteroRows?: string;
   notes?: boolean;
-  settingsService?: SettingsStub;
+  settingsService?: PlainPluginSettings;
   awaitReady?: boolean;
   libraryScope?: LibraryScopeStub;
 }
@@ -732,7 +648,6 @@ export async function createCitationIndexHarness(
   const metadataCache = new MockMetadataCache();
   const vault = new MockVault(metadataCache);
   const workspace = new MockWorkspace();
-  const noteIndex = new NoteIndexStub();
   const store = options.store ?? new MemoryStore();
   const db = stack.use(
     options.db ?? new DatabaseStub({ seed: options.zoteroRows }),
@@ -758,14 +673,13 @@ export async function createCitationIndexHarness(
       ["roe2025", KEY_B],
     ] as const) {
       const path = citekey === "doe2024" ? "Doe 2024.md" : "Roe 2025.md";
-      const note = addFile(path, "");
+      addFile(path, "");
       metadataCache.fileCache.set(path, {
         frontmatter: {
           [FIELD_ZOTERO_KEY]: indexedKey,
           [FIELD_CITEKEY]: citekey,
         },
       } as CachedMetadata);
-      noteIndex.notes.set(indexedKey, note);
     }
   }
   for (const [path, body] of Object.entries(documents)) {
@@ -774,32 +688,51 @@ export async function createCitationIndexHarness(
   }
 
   const app = { metadataCache, vault, workspace } as unknown as App;
+  // The Note Index runs as it does once enabled at runtime: layout is ready
+  // and the cache clean, so its Full Scan finishes before the harness returns.
+  // The Citation Index keeps the deferred layout the test releases.
+  const noteIndex = buildNoteIndex(
+    {
+      metadataCache,
+      vault,
+      workspace: { onLayoutReady: (callback: () => void) => callback() },
+    } as unknown as App,
+    stack,
+  );
   const settings =
-    options.settingsService ?? new SettingsStub(options.settings);
+    options.settingsService ??
+    stack.use(await buildSeededSettings(options.settings));
   const clock = testClock();
-  const queryClient = stack.use(new QueryClientService({ now: clock.now }));
+  const queryClient = stack.use(queryClientsFixture(clock.now));
   const lookup = stack.use(
-    new CitationLookup({
+    await citationLookupFixture({
       reads: db,
       libraryScope,
       queryClient,
     }),
   );
-  const index = stack.use(
-    new CitationIndex({
-      runPromise: options.runPromise ?? Effect.runPromise,
+  const fixture = citationIndexFixture(
+    {
+      app,
       db,
       libraryScope,
-      app,
       noteIndex,
       settings,
-      lookup,
+      lookup: lookup.runtime.runSync(CitationLookup),
       parseClient: options.parseClient ?? inProcessParseClient,
       openStore: options.openStore ?? (() => Promise.resolve(store)),
-    }),
+      context: options.context,
+    },
+    stack,
   );
+  let index: PlainCitationIndex & {
+    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  };
+  const ready = fixture.ready.then((value) => {
+    index = value;
+  });
   const awaitReady = options.awaitReady ?? true;
-  if (awaitReady) await index.ready;
+  if (awaitReady) await ready;
   if (awaitReady && !options.db) await lookup.whenResolved();
   vault.reads.length = 0;
   store.writes.length = 0;
@@ -808,7 +741,12 @@ export async function createCitationIndexHarness(
   return {
     app,
     draft: metadataCache.files.get("draft.md")!,
-    index,
+    get index() {
+      return index;
+    },
+    ready,
+    runtime: fixture.runtime,
+    closeIndex: () => fixture.runtime.dispose(),
     lookup,
     metadataCache,
     noteIndex,

@@ -6,7 +6,6 @@
 // the document reference names this Connection's Profile, the draft is a Liquid
 // Profile this build can run, it parses and compiles, its dependencies resolve
 // in this vault, and the vault still holds the revision the page loaded.
-
 import { TemplateFacade } from "@zotlit/templates/facade";
 import { LiteratureNotePackError } from "@zotlit/templates/literature-note-pack";
 import type {
@@ -15,8 +14,8 @@ import type {
 } from "@zotlit/workbench/bridge";
 
 import { getLogger } from "@/lib/log";
-import type { ProfileService } from "@/services/profile/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { PlainTemplate } from "@/services/template/plain";
 
 import { ProfileDocumentMissingError, profileSelector } from "./reads";
 import type { BridgeProfileReader } from "./reads";
@@ -26,7 +25,7 @@ const logger = getLogger("local-bridge");
 
 /** The Profile service as the write boundary uses it: the reads plus the write. */
 export type BridgeProfileWriter = BridgeProfileReader &
-  Pick<ProfileService, "saveSource">;
+  Pick<PlainProfile, "saveSource">;
 
 /**
  * A Save answered. `reference-refused` is the one outcome the contract carries
@@ -39,7 +38,7 @@ export type LocalBridgeSaveOutcome =
 
 export interface LocalBridgeSaveDeps {
   profile: BridgeProfileWriter;
-  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
+  template: Pick<PlainTemplate, "exportLiteratureNotePackSource">;
   /** This build's version, which a Profile's `minAppVersion` is read against. */
   pluginVersion: string;
   /** Fired once a Save has landed in the vault, never on a refusal. */
@@ -60,7 +59,6 @@ export function createLocalBridgeSave(
 ): LocalBridgeSave {
   return {
     async saveSelectedProfile(profileId, request) {
-      await Promise.all([deps.profile.ready, deps.template.ready]);
       // The reference the page holds is the Profile id and nothing else, so a
       // draft for another Profile cannot reach this Connection's document.
       if (request.reference !== profileId)

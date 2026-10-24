@@ -1,15 +1,12 @@
+import { expect } from "vitest";
 // The Attachment resolver for real, over an in-process Zotero database seeded
 // with the rows a suite names. The resolver's own suite and the opener suites
 // build on it, so a lookup answers as the real index answers it. The database
 // read is the only seam: it can be held, failed, or left unopened.
 
-import { vi } from "vitest";
-
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { Effect, Stream } from "@/lib/effect";
-import { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessReadsService,
@@ -81,28 +78,26 @@ export async function resolverHarness(
       }),
     }),
   );
-  // Settle the lazy adapter's first source event before testing index events.
-  // A missing source is left unopened for the failure scenario.
-  if (seeds[0] !== null) {
-    const { reads: initial } = await reads.ready;
-    await Effect.runPromise(initial.Libraries({}));
-    await vi.waitFor(() => {
-      if (reads.state !== "ready")
-        throw new Error(`reads state is ${reads.state}, not ready`);
-    });
-  }
+  // These index scenarios start after the first database load has settled.
+  await reads.ready;
+  await expect.poll(() => reads.state).not.toBe("loading");
   let now = Temporal.Now.instant();
-  const queries = stack.use(new QueryClientService({ now: () => now }));
+  const queries = stack.use(queryClientsFixture(() => now));
 
-  const prefEvents = createNanoEvents<ZoteroPrefEvents>();
+  const resolvedChanged = testEvent<void>();
+  const prefEvents = {
+    emit: (_event: "resolved-changed") => resolvedChanged.emit(),
+  };
   const zoteroPref = {
     dataDir: DATA_DIR,
     baseAttachmentPath: options.baseAttachmentPath ?? null,
-    on: <K extends keyof ZoteroPrefEvents>(event: K, cb: ZoteroPrefEvents[K]) =>
-      prefEvents.on(event, cb),
+    changed: Stream.empty,
+    "data-dir-changed": Stream.empty,
+    "resolved-changed": resolvedChanged.stream,
   };
 
   const resolver = new AttachmentResolver({
+    runtime: queries.runtime,
     reads,
     queries,
     zoteroPref,

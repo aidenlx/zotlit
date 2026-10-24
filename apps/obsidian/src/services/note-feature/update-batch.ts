@@ -172,7 +172,6 @@ export async function runBatchUpdate(
   }
 
   await deps.noteIndex.whenIndexed();
-  await deps.profile.ready;
   if (profile !== undefined && !deps.profile.resolveProfile(profile)) {
     throw new BatchUpdateRefusedError(unknownProfileDiagnostic(profile));
   }
@@ -617,10 +616,8 @@ async function executeBatchActions(
   using excerptReports = collectExcerptSummary((summary) =>
     deps.noteFeature.reportExcerptImages(summary),
   );
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.noteFeature.ready,
-  ]);
+  await deps.noteFeature.ready;
+  const settings = deps.settings.current;
   // The whole run is one initiating batch, so every row's notes — including the
   // Child Notes they import — reuse one retention; it is released as soon as
   // the run's last admitted consumer settles.

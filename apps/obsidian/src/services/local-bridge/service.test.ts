@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import {
   BRIDGE_VERSION,
@@ -8,13 +9,15 @@ import {
   LOCAL_BRIDGE_PATHS,
 } from "@zotlit/workbench/bridge";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { LocalServerService } from "@/services/local-server/service";
 import type { ProfileReader } from "@/services/profile/service";
-import { defaults } from "@/services/settings/schema";
-import type { Settings, SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { Settings } from "@/services/settings/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import type { BridgeProfileWriter } from "./save";
 import { LocalBridgeService } from "./service";
@@ -25,38 +28,6 @@ const VAULT_NAME = "Research";
 const BOOKS_PROFILE = "Bk7Qm2Xr9Tz4";
 
 const ITEM = { key: "IANNP5A2", title: "Why research findings are false" };
-
-interface SettingsStub {
-  service: SettingsService;
-  update: ReturnType<typeof vi.fn>;
-  push(patch: Partial<Settings>): void;
-}
-
-function makeSettings(overrides: Partial<Settings>): SettingsStub {
-  let current: Readonly<Settings> = { ...defaults, ...overrides };
-  const subscribers = new Set<(value: Readonly<Settings>) => void>();
-  const update = vi.fn();
-  return {
-    update,
-    service: {
-      get current() {
-        return current;
-      },
-      get loaded() {
-        return Promise.resolve(current);
-      },
-      subscribe: (cb: (value: Readonly<Settings>) => void) => {
-        subscribers.add(cb);
-        return () => subscribers.delete(cb);
-      },
-      update,
-    } as unknown as SettingsService,
-    push(patch) {
-      current = { ...current, ...patch };
-      for (const cb of subscribers) cb(current);
-    },
-  };
-}
 
 /** Obsidian's vault-scoped localStorage, as a plain map a test can inspect. */
 function makeDevice(held: Map<string, unknown> = new Map()) {
@@ -100,7 +71,7 @@ const READ_DEPS = {
     ready: Promise.resolve(),
     exportLiteratureNotePackSource: (source: string) => Promise.resolve(source),
   },
-  zoteroPref: { ready: Promise.resolve(), dataDir: "" },
+  zoteroPref: { dataDir: "" },
 } as unknown as Pick<
   LocalBridgeServiceDeps,
   "zoteroReads" | "noteIndex" | "template" | "zoteroPref"
@@ -129,7 +100,9 @@ interface CallInit {
 
 interface Harness extends AsyncDisposable {
   bridge: LocalBridgeService;
-  settings: SettingsStub;
+  settings: PlainPluginSettings;
+  /** Every write to the store, which still goes through. */
+  settingsUpdates: Mock<PlainPluginSettings["update"]>;
   device: ReturnType<typeof makeDevice>;
   /** A plain request against the bound port, the way the page makes one. */
   call(path: string, init?: CallInit): Promise<Response>;
@@ -144,17 +117,21 @@ async function harness(
     device?: Map<string, unknown>;
   } = {},
 ): Promise<Harness> {
-  const settings = makeSettings({
-    "server.enabled": true,
-    "server.port": 0,
-    ...options.settings,
-  });
-  const device = makeDevice(options.device);
   await using stack = new AsyncDisposableStack();
+  const settings = stack.use(
+    await buildSeededSettings({
+      "server.enabled": true,
+      "server.port": 0,
+      ...options.settings,
+    }),
+  );
+  const settingsUpdates = vi.spyOn(settings, "update");
+  const device = makeDevice(options.device);
   const localServer = stack.use(
     new LocalServerService({
-      settings: settings.service,
-      zoteroPref: { sourceId: "a1b2c3d4" } as unknown as ZoteroPrefService,
+      runtime: testRuntime(),
+      settings,
+      zoteroPref: { sourceId: "a1b2c3d4" } as unknown as PlainZoteroPref,
       noteIndex: {
         whenIndexed: () => Promise.resolve(),
         getIndexedItemKeys: () => [],
@@ -163,9 +140,10 @@ async function harness(
   );
   const bridge = stack.use(
     new LocalBridgeService({
+      runtime: testRuntime(),
       webWorkbenchEnabled: options.webWorkbenchEnabled ?? true,
       app: device.app,
-      settings: settings.service,
+      settings,
       profile: PROFILES,
       localServer,
       ...READ_DEPS,
@@ -183,6 +161,7 @@ async function harness(
   return {
     bridge,
     settings,
+    settingsUpdates,
     device,
     call,
     async connect(profileId = BOOKS_PROFILE) {
@@ -263,7 +242,7 @@ it("writes nothing about the session to settings or device storage", async () =>
   await using bridge = await harness();
   const credential = await bridge.connect();
 
-  expect(bridge.settings.update).not.toHaveBeenCalled();
+  expect(bridge.settingsUpdates).not.toHaveBeenCalled();
   // The installation id is the one device record, and it is not the secret.
   expect([...bridge.device.held.keys()]).toEqual([
     "zotlit-local-bridge-installation",
@@ -357,7 +336,7 @@ it("ends the live connection when the Workbench toggle is turned off", async () 
   await using bridge = await harness();
   await bridge.connect();
 
-  bridge.settings.push({ "server.workbench": false });
+  bridge.settings.update({ "server.workbench": false });
 
   expect(bridge.bridge.connection).toBe(null);
 });

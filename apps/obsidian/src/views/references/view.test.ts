@@ -2,9 +2,16 @@
 import { TFile } from "obsidian";
 import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
+import {
+  beforeEach as beforeStreamTest,
+  afterEach as afterStreamTest,
+} from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
+import { Layer, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { citationOutcome } from "@/services/citation-index/outcome";
@@ -20,13 +27,21 @@ import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {
   inProcessReadsService,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
 import { ReferencesView } from "./view";
+
+let streamStack: AsyncDisposableStack;
+let streamRuntime: ReturnType<typeof buildRuntime<never>>;
+beforeStreamTest(() => {
+  streamStack = new AsyncDisposableStack();
+  streamRuntime = buildRuntime(Layer.empty, streamStack);
+});
+afterStreamTest(() => streamStack.disposeAsync());
 
 type RenderedBibliography = Extract<
   BibliographyRenderOutcome,
@@ -151,7 +166,7 @@ let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
 let onDbChanged: (() => void) | undefined;
-let reads: ZoteroReadsService | undefined;
+let reads: TestReads | undefined;
 let onCitedByInvalidated: (() => void) | undefined;
 /** What the Citation Index reports its resolution snapshot as. */
 let citekeyResolution: CitationKeyResolution;
@@ -265,11 +280,8 @@ beforeEach(async () => {
     },
   } as unknown as App;
 
-  const profileReady = Promise.withResolvers<void>();
   const profile = {
     ...profileReader(defaults, app.metadataCache),
-    loaded: false,
-    ready: profileReady.promise,
   };
   reads = inProcessReadsService(memoryOpener(() => SEED).open);
   view = new TestReferencesView(
@@ -278,23 +290,26 @@ beforeEach(async () => {
       app,
       db: {
         state: "ready",
-        get ready() {
-          return reads!.ready;
+        get reads() {
+          return reads!.reads;
         },
         acquireRead: () => reads!.acquireRead(),
-        on: (event: string, callback: () => void) => {
-          if (event === "changed") onDbChanged = callback;
-          return () => undefined;
-        },
+        changed: (() => {
+          const source = testEvent<void>();
+          onDbChanged = () => source.emit();
+          return source.stream;
+        })(),
       },
       citationLookup: {
         get status() {
           return citekeyResolution ?? "pending";
         },
-        on: (event: string, callback: () => void) => {
-          if (event === "status-changed") onCitedByInvalidated = callback;
-          return () => undefined;
-        },
+        "status-changed": (() => {
+          const source = testEvent<void>();
+          onCitedByInvalidated = () => source.emit();
+          return source.stream;
+        })(),
+        changed: Stream.empty,
       },
       citationIndex: {
         getDocumentCitationSet: () => {
@@ -302,9 +317,14 @@ beforeEach(async () => {
           scans.push(deferred);
           return deferred.promise;
         },
-        on: () => () => undefined,
+        changed: Stream.empty,
+        "membership-changed": Stream.empty,
+        "cited-by-invalidated": Stream.empty,
+        backfilled: Stream.empty,
       },
+      runtime: streamRuntime,
       citationText: {
+        changed: Stream.empty,
         peek: (): Held<DocumentCitations> | null =>
           heldCitations === null
             ? null
@@ -313,14 +333,11 @@ beforeEach(async () => {
                 status: "fresh",
                 settled: Promise.resolve(heldCitations),
               },
-        on: (_event: string, _callback: (path: string) => void) => {
-          return () => undefined;
-        },
       },
       citekeyEditor: { openIndexedKey: () => Promise.resolve() },
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
-        subscribe: () => () => undefined,
+        changes: Stream.empty,
         decline: () => undefined,
       },
       bibliographyRender: {
@@ -330,10 +347,13 @@ beforeEach(async () => {
           renders.push(deferred);
           return deferred.promise;
         },
-        on: (event: string, callback: () => void) => {
-          if (event === "invalidated") onInvalidated = callback;
-          return () => undefined;
-        },
+        invalidated: (() => {
+          const source = testEvent<void>();
+          onInvalidated = () => source.emit();
+          return source.stream;
+        })(),
+        changed: Stream.empty,
+        settled: Stream.empty,
       },
       profile,
       openSettings: () => undefined,
@@ -343,12 +363,7 @@ beforeEach(async () => {
 
   document.body.append(view.contentEl);
   await act(async () => {
-    const opening = view!.open();
-    await Promise.resolve();
-    expect(scans).toHaveLength(0);
-    profile.loaded = true;
-    profileReady.resolve();
-    await opening;
+    await view!.open();
   });
   await finishScan();
 });

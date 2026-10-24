@@ -20,7 +20,9 @@ import type { FormulaDiagnostics, QueryContext } from "@zotlit/item-query";
 
 import { shimPopover } from "@/components/__fixtures__/popover";
 import type { ShimmedPopover } from "@/components/__fixtures__/popover";
+import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
@@ -221,8 +223,14 @@ async function mount(
 ) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
-  const reads = emitter();
-  const libraryScope = emitter();
+  const reads = testEvents<Record<string, (...args: unknown[]) => void>>([
+    "changed",
+    "degraded",
+    "db-file-missing",
+  ]);
+  const libraryScope = testEvents<Record<string, (...args: unknown[]) => void>>(
+    ["changed", "libraries-changed"],
+  );
   const repository = emitter();
   let list = LIST;
   const held: string[][] = [];
@@ -296,9 +304,10 @@ async function mount(
   };
   const readers = { open: vi.fn(() => Promise.resolve()) };
   const deps = {
+    runtime: testRuntime(),
     app: editorApp() as unknown as App,
     reads: {
-      on: reads.on,
+      ...reads.streams,
       acquireRead: () =>
         Promise.resolve({
           reads: {
@@ -315,7 +324,7 @@ async function mount(
         }),
     },
     libraryScope: {
-      on: libraryScope.on,
+      ...libraryScope.streams,
       current: {
         available: [
           { selector: { type: "personal" }, libraryID: 1, name: null },

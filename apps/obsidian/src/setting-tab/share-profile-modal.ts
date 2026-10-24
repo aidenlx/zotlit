@@ -10,9 +10,9 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { requireDialog } from "@/lib/require";
+import type { PlainProfile } from "@/services/profile/plain";
 import type {
   PreparedProfileShare,
-  ProfileService,
   ProfileShareOptions,
 } from "@/services/profile/service";
 
@@ -27,7 +27,7 @@ import {
 const logger = getLogger(["setting-tab", "profile-share"]);
 
 export async function shareProfile(
-  deps: { app: App; profile: Pick<ProfileService, "prepareShare"> },
+  deps: { app: App; profile: Pick<PlainProfile, "prepareShare"> },
   selector: ProfileSelector,
 ): Promise<void> {
   const plan = await deps.profile.prepareShare(selector);

@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { Attachment } from "@zotlit/db";
 
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -30,12 +30,12 @@ const CITED: SeededWork = {
 };
 
 /** ZoteroReads on the in-process adapter over the seeded rows. */
-let ready: ZoteroReadsService;
+let ready: TestReads;
 /** The `ItemsByIndexedKeys` calls the readers made. */
 let itemReads: ReturnType<typeof recordCalls>["calls"];
 
 /** Open ZoteroReads over `sql`, recording the item reads. */
-async function readsOver(sql: string): Promise<ZoteroReadsService> {
+async function readsOver(sql: string): Promise<TestReads> {
   const recorded = recordCalls(["ItemsByIndexedKeys"]);
   itemReads = recorded.calls;
   ready = inProcessReadsService(memoryOpener(() => sql).open, {

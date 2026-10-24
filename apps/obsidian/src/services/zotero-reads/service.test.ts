@@ -1,151 +1,173 @@
-import { Effect, Stream } from "effect";
-import { describe, expect, it } from "vitest";
+import { expect } from "vitest";
 
+import { Effect, Exit, Fiber, Queue, Stream } from "@/lib/effect";
+import { subscribe } from "@/lib/effect-stream";
+import { it } from "@/lib/effect-vitest";
+
+import { readsFixture } from "./__fixtures__";
+import { layerRcRef } from "./connection";
 import { DbUnavailable } from "./rpc";
 import type { ChangeEvent } from "./rpc";
-import { inProcessReadsService, memoryOpener } from "./test-utils";
+import { inProcessClient, memoryOpener } from "./test-utils";
 
-/** Open #N reports the user library at `version: N`, so a read shows which connection answered. */
 const versioned = (open: number) => `
   insert into libraries (libraryID, type, version, clientVersion)
     values (1, 'user', ${open}, 0);
 `;
 
-const libraryVersion = (libraries: readonly { version: number }[]) =>
-  libraries[0]!.version;
-
-describe("ZoteroReadsService", () => {
-  it("answers single reads through the unbound interface", async () => {
+it.effect("answers single reads through the unbound interface", () =>
+  Effect.gen(function* () {
     const { open } = memoryOpener(versioned);
-    await using service = inProcessReadsService(open);
-    await service.ready;
-
-    const libraries = await Effect.runPromise(
-      (await service.ready).reads.Libraries({}),
+    const { service, plain } = yield* readsFixture(
+      inProcessClient(layerRcRef(open)),
     );
+    expect(yield* service.reads.Libraries({})).toMatchObject([
+      { libraryID: 1, type: "user" },
+    ]);
+    yield* Stream.runHead(
+      Stream.filter(service.changes, (state) => state.state === "ready"),
+    );
+    expect(plain.state).toBe("ready");
+    expect(plain.error).toBeNull();
+  }),
+);
 
-    expect(libraries).toMatchObject([{ libraryID: 1, type: "user" }]);
-    await expect.poll(() => service.state).toBe("ready");
-    expect(service.error).toBeNull();
-  });
-
-  it("a lease reads one connection across a refresh and releases it on dispose", async () => {
-    const { open, log } = memoryOpener(versioned);
-    await using service = inProcessReadsService(open);
-    await service.ready;
-
-    {
-      await using lease = await service.acquireRead();
-      await expect.poll(() => service.state).toBe("ready");
-      const changed: string[] = [];
-      service.on("changed", () => changed.push("changed"));
-      await service.refresh();
-      await expect.poll(() => changed).toEqual(["changed"]);
-
-      const pinned = await Effect.runPromise(lease.reads.Libraries({}));
-      const current = await Effect.runPromise(
-        (await service.ready).reads.Libraries({}),
+it.effect(
+  "a snapshot holds one connection across a refresh and releases it on scope close",
+  () =>
+    Effect.gen(function* () {
+      const { open, log } = memoryOpener(versioned);
+      const { service } = yield* readsFixture(
+        inProcessClient(layerRcRef(open)),
       );
-      expect(libraryVersion(pinned)).toBe(1);
-      expect(libraryVersion(current)).toBe(2);
-      expect(log).toEqual(["open #1", "open #2"]);
-    }
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const reads = yield* service.snapshot;
+          yield* service.refresh();
+          expect((yield* reads.Libraries({}))[0]!.version).toBe(1);
+          expect((yield* service.reads.Libraries({}))[0]!.version).toBe(2);
+          expect(log).toEqual(["open #1", "open #2"]);
+        }),
+      );
+      // A round trip fences the server's processing of the released Snapshot.
+      yield* service.reads.Libraries({});
+      expect(log).toContain("close #1");
+    }),
+);
 
-    await expect.poll(() => log).toContain("close #1");
-  });
+it.effect(
+  "a failed refresh preserves the serving connection and publishes its error",
+  () =>
+    Effect.gen(function* () {
+      const { open } = memoryOpener((n) => (n === 2 ? null : versioned(n)));
+      const { service } = yield* readsFixture(
+        inProcessClient(layerRcRef(open)),
+      );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "ready"),
+      );
+      const failure = yield* Stream.runHead(
+        Stream.filter(
+          service.events,
+          (event) => event._tag === "refresh-failed",
+        ),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      expect(Exit.isFailure(yield* Effect.exit(service.refresh()))).toBe(true);
+      expect(yield* Fiber.join(failure)).toMatchObject({
+        value: { _tag: "refresh-failed", error: { _tag: "DbUnavailable" } },
+      });
+      expect((yield* service.current).state).toBe("ready");
+      expect((yield* service.current).error).toBeInstanceOf(DbUnavailable);
+      expect((yield* service.reads.Libraries({}))[0]!.version).toBe(1);
+    }),
+);
 
-  it("a failed refresh rejects with DbUnavailable and keeps the current connection serving", async () => {
-    const { open } = memoryOpener((n) => (n === 2 ? null : versioned(n)));
-    await using service = inProcessReadsService(open);
-    await service.ready;
-    await Effect.runPromise((await service.ready).reads.Libraries({}));
-    const failures: DbUnavailable[] = [];
-    service.on("refresh-failed", (error) => failures.push(error));
+it.effect(
+  "an unreadable source publishes degraded state and fails a snapshot",
+  () =>
+    Effect.gen(function* () {
+      const { open } = memoryOpener(() => null);
+      const { service, plain } = yield* readsFixture(
+        inProcessClient(layerRcRef(open)),
+      );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "degraded"),
+      );
+      expect(plain.state).toBe("degraded");
+      expect(plain.error).toBeInstanceOf(DbUnavailable);
+      expect(plain.error?.message).toBe("source #1 is not readable");
+      expect(
+        Exit.isFailure(yield* Effect.exit(Effect.scoped(service.snapshot))),
+      ).toBe(true);
+    }),
+);
 
-    await expect(service.refresh()).rejects.toBeInstanceOf(DbUnavailable);
-
-    await expect.poll(() => failures).toHaveLength(1);
-    expect(service.state).toBe("ready");
-    expect(service.error).toBe(failures[0]);
-    const libraries = await Effect.runPromise(
-      (await service.ready).reads.Libraries({}),
-    );
-    expect(libraryVersion(libraries)).toBe(1);
-  });
-
-  it("a source that cannot open degrades the service and fails a lease", async () => {
-    const { open } = memoryOpener(() => null);
-    await using service = inProcessReadsService(open);
-    await service.ready;
-    const degraded: DbUnavailable[] = [];
-    service.on("degraded", (error) => degraded.push(error));
-
-    await expect(service.acquireRead()).rejects.toBeInstanceOf(DbUnavailable);
-
-    await expect.poll(() => service.state).toBe("degraded");
-    expect(degraded).toHaveLength(1);
-    expect(service.error).toBeInstanceOf(DbUnavailable);
-  });
-
-  it("degrades when the change stream is lost", async () => {
+it.effect("degrades when the change stream is lost", () =>
+  Effect.gen(function* () {
     const { open } = memoryOpener(versioned);
-    await using service = inProcessReadsService(open, {
-      wrap: (client) => ({
+    const { plain } = yield* readsFixture(
+      Effect.map(inProcessClient(layerRcRef(open)), (client) => ({
         ...client,
-        // The seed arrives, then the stream ends as a lost worker's would.
         Changes: ((...args: Parameters<typeof client.Changes>) =>
           Stream.take(
-            client.Changes(...args) as Stream.Stream<unknown>,
+            client.Changes(...args) as Stream.Stream<ChangeEvent>,
             1,
           )) as typeof client.Changes,
-      }),
-    });
-    const degraded: DbUnavailable[] = [];
-    service.on("degraded", (error) => degraded.push(error));
-    await service.ready;
+      })),
+    );
+    expect(plain.state).toBe("degraded");
+    expect(plain.error).toBeInstanceOf(DbUnavailable);
+  }),
+);
 
-    await expect.poll(() => service.state).toBe("degraded");
-    expect(degraded).toHaveLength(1);
-    expect(service.error).toBeInstanceOf(DbUnavailable);
-  });
-
-  it("names the Read Mode of the serving connection, none before one serves", async () => {
+it.effect("reports the Read Mode of each serving connection", () =>
+  Effect.gen(function* () {
     const { open } = memoryOpener(versioned);
     let mode: "copy" | "immutable" = "copy";
-    await using service = inProcessReadsService(open, {
-      wrap: (client) => ({
+    const { service, plain } = yield* readsFixture(
+      Effect.map(inProcessClient(layerRcRef(open)), (client) => ({
         ...client,
-        // The source reports the mode each new connection opened with.
         Changes: ((...args: Parameters<typeof client.Changes>) =>
           Stream.map(
-            client.Changes(...args) as Stream.Stream<ChangeEvent, unknown>,
+            client.Changes(...args) as Stream.Stream<ChangeEvent>,
             (event) =>
               event._tag === "changed" ||
               (event._tag === "state" && event.state === "ready")
                 ? { ...event, readMode: mode }
                 : event,
           )) as typeof client.Changes,
-      }),
-    });
-    await service.ready;
-    expect(service.activeReadMode).toBeNull();
-
-    await Effect.runPromise((await service.ready).reads.Libraries({}));
-    await expect.poll(() => service.activeReadMode).toBe("copy");
-
+      })),
+    );
+    yield* Stream.runHead(
+      Stream.filter(service.changes, (state) => state.state === "ready"),
+    );
+    expect(plain.activeReadMode).toBe("copy");
+    const changes = yield* Queue.unbounded<string | null>();
+    subscribe(plain.runtime, Stream.drop(plain.changes, 1), (next) =>
+      Queue.offerUnsafe(changes, next.activeReadMode),
+    );
     mode = "immutable";
-    await service.refresh();
-    await expect.poll(() => service.activeReadMode).toBe("immutable");
-  });
+    yield* service.refresh();
+    expect(yield* Queue.take(changes)).toBe("immutable");
+  }),
+);
 
-  it("closes the connection when the service is disposed", async () => {
-    const { open, log } = memoryOpener(versioned);
-    const service = inProcessReadsService(open);
-    await service.ready;
-    await Effect.runPromise((await service.ready).reads.Libraries({}));
-
-    await service[Symbol.asyncDispose]();
-
-    expect(log).toEqual(["open #1", "close #1"]);
-  });
-});
+it.effect(
+  "closes the connection and change streams when the runtime is disposed",
+  () =>
+    Effect.gen(function* () {
+      const { open, log } = memoryOpener(versioned);
+      const { service, runtime } = yield* readsFixture(
+        inProcessClient(layerRcRef(open)),
+      );
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "ready"),
+      );
+      const listening = yield* Stream.runDrain(service.changes).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* runtime.disposeEffect;
+      yield* Fiber.join(listening);
+      expect(log).toEqual(["open #1", "close #1"]);
+    }),
+);

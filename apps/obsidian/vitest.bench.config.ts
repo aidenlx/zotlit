@@ -16,6 +16,10 @@ export default defineConfig({
   resolve: {
     alias: {
       obsidian: resolve(packageRoot, "__mocks__/obsidian.ts"),
+      "virtual:citation-parse-worker": resolve(
+        packageRoot,
+        "__mocks__/worker-source.ts",
+      ),
     },
     tsconfigPaths: true,
   },

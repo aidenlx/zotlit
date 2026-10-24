@@ -1,11 +1,12 @@
-// Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
-
 import { homedir } from "node:os";
 
 import { Effect } from "@/lib/effect";
-import type { QueryClientService } from "@/services/query-client/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+// Zotero connection readout for Welcome View step 1; the view re-runs it on database lifecycle events for a live status.
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 export type ConnectionReadout =
   | { status: "checking" }
@@ -21,14 +22,14 @@ export type ConnectionReadout =
 const ITEM_COUNT_KEY = ["welcome", "connection-readout"] as const;
 
 interface ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error" | "moved">;
-  queries: Pick<QueryClientService, "peek">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  reads: Pick<PlainZoteroReads, "state" | "error" | "moved">;
+  queries: Pick<PlainQueryClients, "peek">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
 }
 
 export interface ReadConnectionStatusDeps extends ConnectionQueryDeps {
-  reads: Pick<ZoteroReadsService, "state" | "error" | "moved" | "ready">;
-  queries: Pick<QueryClientService, "peek" | "read">;
+  reads: Pick<PlainZoteroReads, "state" | "error" | "moved" | "reads">;
+  queries: Pick<PlainQueryClients, "peek" | "read">;
 }
 
 export type ReadConnectionSyncDeps = ConnectionQueryDeps;
@@ -41,10 +42,19 @@ export type ReadConnectionSyncDeps = ConnectionQueryDeps;
  * @returns the unsubscribe.
  */
 export function holdConnectionReadout(deps: {
-  reads: Pick<ZoteroReadsService, "on">;
-  queries: Pick<QueryClientService, "invalidate">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
+  queries: Pick<PlainQueryClients, "invalidate">;
 }): () => void {
-  return deps.reads.on("changed", () =>
+  return subscribe(deps.runtime, deps.reads["changed"], () =>
     deps.queries.invalidate(ITEM_COUNT_KEY),
   );
 }
@@ -101,7 +111,7 @@ function missing(deps: Pick<ConnectionQueryDeps, "reads">): boolean {
 export async function readConnectionStatus(
   deps: ReadConnectionStatusDeps,
 ): Promise<ConnectionReadout> {
-  const { reads } = await deps.reads.ready;
+  const { reads } = deps.reads;
   if (missing(deps)) return { status: "missing" };
 
   const held = await deps.queries.read(ITEM_COUNT_KEY, ({ signal }) =>

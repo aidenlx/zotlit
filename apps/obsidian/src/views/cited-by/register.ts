@@ -1,9 +1,10 @@
-// Registration and the explicit command for the Cited By Sidebar.
-import "./style.css";
 import type { App, Plugin } from "obsidian";
 
+// Registration and the explicit command for the Cited By Sidebar.
+import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 
 import { CITED_BY_VIEW_TYPE, CitedByView } from "./view";
 import type { CitedByViewDeps } from "./view";
@@ -12,7 +13,7 @@ type CitedByPlugin = Pick<Plugin, "registerView" | "addCommand" | "app">;
 
 export interface CitedByRegistrationDeps {
   app: App;
-  citationIndex: CitationIndex;
+  citationIndex: PlainCitationIndex;
 }
 
 export function registerCitedByView(

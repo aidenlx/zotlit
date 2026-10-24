@@ -12,17 +12,17 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { NoteFeature, ProfileNotePreview } from "@/services/note-feature";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import type { PlainProfile } from "@/services/profile/plain";
 import type {
   LiteratureNoteProfile,
   ProfileBindings,
-  ProfileService,
   PreparedProfileCreation,
 } from "@/services/profile/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import { loadLiteratureNoteTemplateMigrationData } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationDataDeps } from "@/services/template/migration";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import {
   dialogFooter,
@@ -54,16 +54,10 @@ export type CreateProfile = (
 ) => Promise<CreatedProfile | undefined>;
 export interface ProfileCreationDeps {
   app: App;
-  profile: Pick<
-    ProfileService,
-    "ready" | "profiles" | "resolveProfile" | "prepareCreate"
-  >;
-  template: Pick<
-    TemplateService,
-    "ready" | "prepareLiteratureNoteTemplateSource"
-  >;
+  profile: Pick<PlainProfile, "profiles" | "resolveProfile" | "prepareCreate">;
+  template: Pick<PlainTemplate, "prepareLiteratureNoteTemplateSource">;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
   loadData: (options?: {
     indexedKey?: string;
   }) => Promise<ProfileCreationData | null>;
@@ -73,8 +67,11 @@ export type ProfileDialogServices = Omit<
   LiteratureNoteTemplateMigrationDataDeps,
   "templates"
 > & {
-  template: TemplateService;
-  profile: ProfileService;
+  template: Pick<
+    PlainTemplate,
+    "render" | "renderCitation" | "prepareLiteratureNoteTemplateSource"
+  >;
+  profile: ProfileCreationDeps["profile"] & Pick<PlainProfile, "prepareImport">;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
 };
 
@@ -114,7 +111,6 @@ export async function createProfileDialog(
   deps: ProfileCreationDeps,
   options: CreateProfileOptions = {},
 ): Promise<CreatedProfile | undefined> {
-  await Promise.all([deps.profile.ready, deps.template.ready]);
   const [data, styles] = await Promise.all([
     deps.loadData({ indexedKey: options.indexedKey }).catch((error) => {
       logger.warn("Profile creation preview data is unavailable", {

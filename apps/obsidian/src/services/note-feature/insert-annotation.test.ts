@@ -137,13 +137,11 @@ async function fixture(mode: string) {
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     settings: {
       current: settings,
-      loaded: Promise.resolve(settings),
       update: () => settings,
     },
     profile: profileReader(settings),
     template: {
       renderManagedContent: () => "",
-      ready: Promise.resolve(),
       loaded: true,
       renderProfileAnnotation: render,
       render: () => "",
@@ -153,7 +151,6 @@ async function fixture(mode: string) {
       getLiteratureNoteTemplate: () => undefined,
     },
     noteIndex: {
-      ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
       getImportedNoteByNoteKey: () => [],

@@ -17,6 +17,8 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
@@ -101,9 +103,17 @@ function setup(kind: HostKind) {
   );
   const off = () => () => {};
   const deps = {
+    runtime: testRuntime(),
     app,
-    reads: { on: off },
-    libraryScope: { on: off },
+    reads: {
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "refresh-failed": Stream.empty,
+      refreshing: Stream.empty,
+      "db-file-missing": Stream.empty,
+      "refresh-requested": Stream.empty,
+    },
+    libraryScope: { changed: Stream.empty, "libraries-changed": Stream.empty },
     query: fakeQuery(run),
     cardFocus,
     annotations: {

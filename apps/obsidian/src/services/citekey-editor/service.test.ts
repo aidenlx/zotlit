@@ -1,10 +1,16 @@
 import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
 import type { HoverLinkSource, TFile } from "obsidian";
+import {
+  beforeEach as beforeStreamTest,
+  afterEach as afterStreamTest,
+} from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import { Effect, Layer, PubSub, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
@@ -21,9 +27,9 @@ import type {
   PreparedCreationProfile,
 } from "@/services/note-feature";
 import type { CreationPlan } from "@/services/note-feature/operations";
-import { NoteIndexStub } from "@/services/note-index/test-stub";
-import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
+import { openNoteVault } from "@/services/note-index/__fixtures__";
+import { buildSeededSettings } from "@/services/settings/__fixtures__";
+import type { SettingsOverrides } from "@/services/settings/__fixtures__";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -37,11 +43,33 @@ import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-p
 import { CitekeyEditor } from "./service";
 import type { AmbiguousCitekey } from "./service";
 
-/** Every reads stand-in a test opened, disposed after it. */
+let streamStack: AsyncDisposableStack;
+let streamRuntime: ReturnType<typeof buildRuntime<never>>;
+beforeStreamTest(() => {
+  streamStack = new AsyncDisposableStack();
+  streamRuntime = buildRuntime(Layer.empty, streamStack);
+});
+afterStreamTest(() => streamStack.disposeAsync());
+
+/** Every reads stand-in, settings store, and Note Index a test opened, disposed after it. */
 const opened: AsyncDisposable[] = [];
 afterEach(async () => {
   for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
 });
+
+/** The real settings store, seeded with `overrides`. */
+async function settingsOf(overrides: SettingsOverrides = {}) {
+  const settings = await buildSeededSettings(overrides);
+  opened.push(settings);
+  return settings;
+}
+
+/** The real Note Index over Literature Notes by path, each with its Item key. */
+async function noteIndexOf(notes: Record<string, string> = {}) {
+  const stack = new AsyncDisposableStack();
+  opened.push(stack);
+  return (await openNoteVault(notes, stack)).noteIndex;
+}
 
 /**
  * ZoteroReads on the in-process adapter over My Library and the Shared group
@@ -80,7 +108,7 @@ describe("CitekeyEditor Profile creation", () => {
       ]),
     );
   }
-  function fixture(
+  async function fixture(
     selection: CreationProfileSelection = {
       selector: "default",
       source: "bound",
@@ -96,6 +124,7 @@ describe("CitekeyEditor Profile creation", () => {
       paper2024: { kind: "unique", item },
     });
     const service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: {
         workspace: {
           updateOptions: () => {},
@@ -107,8 +136,8 @@ describe("CitekeyEditor Profile creation", () => {
         registerEditorExtension: () => {},
         registerHoverLinkSource: () => {},
       },
-      settings: new SettingsStub(),
-      noteIndex: new NoteIndexStub(),
+      settings: await settingsOf(),
+      noteIndex: await noteIndexOf(),
       citationLookup,
       citationText: new CitationTextStub(),
       zoteroPref: { dataDir: null },
@@ -141,7 +170,7 @@ describe("CitekeyEditor Profile creation", () => {
   }
 
   it("waits for the Profile choice before creating and preserves the requested pane", async () => {
-    const h = fixture();
+    const h = await fixture();
     await using service = h.service;
     await service.ready;
     const choice = Promise.withResolvers<
@@ -163,7 +192,7 @@ describe("CitekeyEditor Profile creation", () => {
   });
 
   it("creates directly under a match-selected Profile without the picker", async () => {
-    const h = fixture({
+    const h = await fixture({
       selector: books,
       source: "match",
       shouldAsk: true,
@@ -181,7 +210,7 @@ describe("CitekeyEditor Profile creation", () => {
   });
 
   it("keeps hover read-only and dismissal silent", async () => {
-    const h = fixture();
+    const h = await fixture();
     await using service = h.service;
     await service.ready;
     expect(service.hoverNotePath("paper2024")).toBeNull();
@@ -193,7 +222,7 @@ describe("CitekeyEditor Profile creation", () => {
   });
 
   it("asks for a Profile after an exact ambiguous-citekey candidate is selected", async () => {
-    const h = fixture();
+    const h = await fixture();
     await using service = h.service;
     await service.ready;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
@@ -214,13 +243,14 @@ describe("CitekeyEditor Profile creation", () => {
 
 describe("CitekeyEditor settings lifecycle", () => {
   it("registers the extension while formatting or navigation is enabled", async () => {
-    const settings = new SettingsStub({
+    const settings = await settingsOf({
       "citation.show-formatted": false,
       "citation.open-as-links": false,
     });
     let registered: Extension[] = [];
     let reconfigures = 0;
     const service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: {
         workspace: {
           updateOptions: () => reconfigures++,
@@ -233,7 +263,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         },
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex: new NoteIndexStub(),
+      noteIndex: await noteIndexOf(),
       citationText: new CitationTextStub(),
       citationLookup: new LookupStub(),
       settings,
@@ -263,12 +293,13 @@ describe("CitekeyEditor settings lifecycle", () => {
   });
 
   it("stays off while Pandoc citations are off, whatever the editor toggle says", async () => {
-    const settings = new SettingsStub({
+    const settings = await settingsOf({
       "citation.pandoc-citations": false,
       "citation.open-as-links": true,
     });
     let registered: Extension[] = [];
     await using service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: { workspace: { updateOptions: () => undefined } },
       plugin: {
         registerEditorExtension: (extension: Extension) => {
@@ -276,7 +307,7 @@ describe("CitekeyEditor settings lifecycle", () => {
         },
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex: new NoteIndexStub(),
+      noteIndex: await noteIndexOf(),
       citationText: new CitationTextStub(),
       citationLookup: new LookupStub(),
       settings,
@@ -295,6 +326,7 @@ describe("CitekeyEditor hover source", () => {
   it("registers one Mod-gated hover-link source for every citekey surface", async () => {
     const sources: Record<string, HoverLinkSource> = {};
     await using service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: { workspace: { updateOptions: () => undefined } },
       plugin: {
         registerEditorExtension: () => undefined,
@@ -302,10 +334,10 @@ describe("CitekeyEditor hover source", () => {
           sources[id] = info;
         },
       },
-      noteIndex: new NoteIndexStub(),
+      noteIndex: await noteIndexOf(),
       citationText: new CitationTextStub(),
       citationLookup: new LookupStub(),
-      settings: new SettingsStub(),
+      settings: await settingsOf(),
     } as never);
     await service.ready;
 
@@ -322,6 +354,7 @@ describe("CitekeyEditor lookup ownership", () => {
     const citationLookup = new LookupStub();
     let requests = 0;
     await using service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: {
         workspace: {
           updateOptions: () => undefined,
@@ -335,10 +368,10 @@ describe("CitekeyEditor lookup ownership", () => {
         registerEditorExtension: () => undefined,
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex: new NoteIndexStub(),
+      noteIndex: await noteIndexOf(),
       citationText: new CitationTextStub(),
       citationLookup,
-      settings: new SettingsStub(),
+      settings: await settingsOf(),
     } as never);
     await service.ready;
 
@@ -362,6 +395,7 @@ describe("CitekeyEditor citation text broadcast", () => {
   const openEditors = async (dispatched: string[]) => {
     const citationText = new CitationTextStub();
     const service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: {
         workspace: {
           updateOptions: () => undefined,
@@ -372,10 +406,10 @@ describe("CitekeyEditor citation text broadcast", () => {
         registerEditorExtension: () => undefined,
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex: new NoteIndexStub(),
+      noteIndex: await noteIndexOf(),
       citationText,
       citationLookup: new LookupStub(),
-      settings: new SettingsStub(),
+      settings: await settingsOf(),
     } as never);
     await service.ready;
     return { service, citationText };
@@ -438,13 +472,15 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   }
 
   async function openEditor(
-    notes: Record<string, { path: string }[]> = {},
+    /** Each Literature Note's path and the Item key it carries. */
+    notes: Record<string, string> = {},
     opened: { path: string; pane: unknown }[] = [],
     works: readonly SeededWork[] = [],
   ) {
     const citationLookup = new LookupStub({ doe2024: AMBIGUOUS });
     const ambiguities: AmbiguousCitekey[] = [];
     const service = new CitekeyEditor({
+      runtime: streamRuntime,
       app: {
         workspace: {
           updateOptions: () => undefined,
@@ -459,7 +495,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
         registerEditorExtension: () => undefined,
         registerHoverLinkSource: () => undefined,
       },
-      noteIndex: new NoteIndexStub(notes),
+      noteIndex: await noteIndexOf(notes),
       citationText: new CitationTextStub(),
       citationLookup,
       libraryScope: {
@@ -471,7 +507,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
         },
       },
       db: reads(works),
-      settings: new SettingsStub(),
+      settings: await settingsOf(),
     } as never);
     await service.ready;
     service.on("citekey-ambiguous", (ambiguous) => ambiguities.push(ambiguous));
@@ -516,8 +552,8 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   // shows none of them: a hover implies no identity the key does not carry.
   it("previews no note for a citekey that names several Items", async () => {
     const { service } = await openEditor({
-      DEAA2345: [{ path: "Doe 2024.md" }],
-      REBB3456g7: [{ path: "Roe 2025.md" }],
+      "Doe 2024.md": "DEAA2345",
+      "Roe 2025.md": "REBB3456g7",
     });
 
     expect(service.hoverNotePath("doe2024")).toBeNull();
@@ -527,7 +563,7 @@ describe("CitekeyEditor ambiguous citation keys", () => {
   it("opens a chosen candidate by its exact Indexed Key without resolving the key again", async () => {
     const opened: { path: string; pane: unknown }[] = [];
     const { service, citationLookup, ambiguities } = await openEditor(
-      { REBB3456g7: [{ path: "Roe 2025.md" }] },
+      { "Roe 2025.md": "REBB3456g7" },
       opened,
     );
     await service.openCitekey("doe2024", "tab");
@@ -542,7 +578,10 @@ describe("CitekeyEditor ambiguous citation keys", () => {
 });
 
 class CitationTextStub {
-  readonly #listeners: Record<string, Set<(path?: string) => void>> = {};
+  readonly #changedBus = Effect.runSync(PubSub.unbounded<string>());
+  readonly #invalidatedBus = Effect.runSync(PubSub.unbounded<void>());
+  readonly changed = Stream.fromPubSub(this.#changedBus);
+  readonly invalidated = Stream.fromPubSub(this.#invalidatedBus);
 
   peek(): DocumentCitations | null {
     return null;
@@ -558,14 +597,9 @@ class CitationTextStub {
     });
   }
 
-  on(event: string, cb: (path?: string) => void): () => void {
-    const listeners = (this.#listeners[event] ??= new Set());
-    listeners.add(cb);
-    return () => listeners.delete(cb);
-  }
-
-  emit(event: string, path?: string): void {
-    for (const cb of this.#listeners[event] ?? []) cb(path);
+  emit(event: "changed" | "invalidated", path?: string): void {
+    if (event === "changed") PubSub.publishUnsafe(this.#changedBus, path!);
+    else PubSub.publishUnsafe(this.#invalidatedBus, undefined);
   }
 }
 
@@ -589,30 +623,5 @@ class LookupStub extends CitationLookupStub {
 
   #answer(citekeys: readonly string[]) {
     return lookupAnswerFor(citekeys, this.#resolutions, "test");
-  }
-}
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly ready = Promise.resolve();
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
   }
 }

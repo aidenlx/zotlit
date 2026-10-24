@@ -1,3 +1,7 @@
+// zotlit-keyboard: keyboard ownership between stacked layers
+// (apps/obsidian/policies/keyboard-scope.md). no-layer-check moves a key that
+// yields to an open layer onto a Scope the layer pushes. Rule tests:
+// oxlint-plugin-keyboard.test.ts.
 import type { RuleTester } from "oxlint/plugins-dev";
 
 type Rule = Parameters<RuleTester["run"]>[1];

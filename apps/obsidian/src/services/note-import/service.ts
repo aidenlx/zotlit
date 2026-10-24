@@ -59,15 +59,15 @@ import type {
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
 import { randomFilenameId } from "@/services/note-feature/filename";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { getProfileBinding } from "@/services/profile/bindings";
 import type {
   ProfileBindingSettings,
   ResolvedProfile,
 } from "@/services/profile/bindings";
-import type { ProfileService } from "@/services/profile/service";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -118,14 +118,17 @@ export type ImportVaultApp = {
 };
 
 interface NoteImporterDeps {
-  profile: Pick<ProfileService, "ready" | "resolveProfile" | "profileOf">;
+  profile: Pick<PlainProfile, "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
-  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "getImportedNoteByNoteKey" | "getNotesByItemKey"
+  >;
   template: Pick<
-    TemplateService,
+    PlainTemplate,
     "render" | "renderCitation" | "renderProfileAnnotation"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   excerptImages?: ExcerptPreparation;
 }
@@ -204,7 +207,7 @@ export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
 export function childNoteLink(
   deps: {
     app: Pick<ImportVaultApp, "fileManager">;
-    noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">;
+    noteIndex: Pick<PlainNoteIndex, "getImportedNoteByNoteKey">;
   },
   note: ChildNote,
   sourcePath: string,
@@ -234,7 +237,6 @@ async function doImportNote(
   note: Note,
   options: ImportNoteOptions,
 ): Promise<WriteOutcome> {
-  await ctx.profile.ready;
   return ctx.writes.add(async () => {
     const { existing, profile } = await explicitImportTarget(
       ctx,
@@ -276,7 +278,6 @@ async function prepareExplicitImport(
   note: ChildNote,
   options: PrepareExplicitImportOptions,
 ): Promise<PreparedExplicitImport> {
-  await ctx.profile.ready;
   const { existing, profile, source, sourcePath } = await explicitImportTarget(
     ctx,
     note,

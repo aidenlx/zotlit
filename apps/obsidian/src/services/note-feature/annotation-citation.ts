@@ -30,12 +30,10 @@ export type AnnotationCitation =
  */
 export async function renderAnnotationCitation(
   ctx: Pick<NoteFeatureDeps, "zoteroReads" | "zoteroPref"> & {
-    template: Pick<NoteFeatureDeps["template"], "ready" | "renderCitation">;
-    profile: Pick<NoteFeatureDeps["profile"], "ready">;
+    template: Pick<NoteFeatureDeps["template"], "renderCitation">;
   },
   annotationKey: string,
 ): Promise<AnnotationCitation> {
-  await Promise.all([ctx.template.ready, ctx.profile.ready]);
   await using lease = await ctx.zoteroReads.acquireRead();
   const { reads } = lease;
   const sources = await Effect.runPromise(

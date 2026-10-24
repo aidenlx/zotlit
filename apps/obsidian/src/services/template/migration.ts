@@ -7,40 +7,46 @@ import {
   LegacyTemplateConversionError,
 } from "@zotlit/templates/facade";
 
-import { Effect, Stream } from "@/lib/effect";
-import { getLogger } from "@/lib/log";
-import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { NoteIndex } from "@/services/note-index/service";
-import { Service } from "@/services/service-base";
+import {
+  Context,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Scope,
+  Stream,
+} from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
+import { obsidianEvents } from "@/lib/effect-obsidian-events";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type {
-  ZoteroReadsApi,
-  ZoteroReadsService,
-} from "@/services/zotero-reads/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { templateFileFromPath } from "./defaults";
+import type { PlainTemplate } from "./plain";
+import { Template, templateFailure } from "./service";
 import type {
   ConvertedLegacyProfileDocument,
   ConvertedLegacyTemplateDocuments,
   LegacyTemplateDocuments,
-  TemplateService,
+  TemplateFailure,
 } from "./service";
 
-const logger = getLogger(["template", "migration"]);
-
 interface MigrationSettings {
-  loaded: Promise<
-    Readonly<
-      Pick<
-        Settings,
-        | "note.default-profile"
-        | "note.template-conversion-pending"
-        | "note.template-conversion-result"
-        | "template.folder"
-      >
+  current: Readonly<
+    Pick<
+      Settings,
+      | "note.default-profile"
+      | "note.template-conversion-pending"
+      | "note.template-conversion-result"
+      | "template.folder"
     >
   >;
   update(patch: Partial<Settings>): void;
@@ -49,7 +55,6 @@ interface MigrationSettings {
 
 interface MigrationTemplateService {
   refresh(): Promise<void>;
-  ready: Promise<void>;
   getLegacyLiteratureNoteTemplateFiles(): readonly string[];
   convertLegacyLiteratureNoteTemplates(data: {
     readonly note: object;
@@ -68,7 +73,7 @@ interface MigrationApp {
   workspace: Pick<Workspace, "onLayoutReady">;
 }
 
-export interface LiteratureNoteTemplateMigrationOptions {
+interface MigrationEngineOptions {
   app: MigrationApp;
   settings: MigrationSettings;
   template: MigrationTemplateService;
@@ -76,6 +81,12 @@ export interface LiteratureNoteTemplateMigrationOptions {
     annotation: boolean;
   }) => Promise<MigrationVerificationData | null>;
   openPrompt: () => void | Promise<void>;
+  defer: (action: "detect" | "prompt") => void;
+  log: (
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    fields?: Record<string, unknown>,
+  ) => void;
 }
 
 /** One real Zotero item, in every shape a conversion verifies against. */
@@ -89,12 +100,15 @@ export interface MigrationVerificationData {
 
 export interface LiteratureNoteTemplateMigrationDataDeps {
   app: Parameters<typeof loadTemplateData>[0]["app"];
-  zoteroReads: ZoteroReadsService;
-  libraryScope: Pick<LibraryScopeService, "ready" | "resolveLibraries">;
-  noteIndex: NoteIndex;
-  settings: SettingsService;
-  templates: TemplateService;
-  zoteroPref: ZoteroPrefService;
+  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
+  libraryScope: Pick<PlainLibraryScope, "resolveLibraries">;
+  noteIndex: Pick<
+    PlainNoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
+  settings: Pick<PlainPluginSettings, "current" | "update" | "flush">;
+  templates: Pick<PlainTemplate, "render" | "renderCitation">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
 /** Load one real in-scope Zotero item through the Workbench's inert render seam. */
@@ -102,7 +116,6 @@ export async function loadLiteratureNoteTemplateMigrationData(
   deps: LiteratureNoteTemplateMigrationDataDeps,
   options: { annotation: boolean },
 ): Promise<MigrationVerificationData | null> {
-  await deps.libraryScope.ready;
   await using lease = await deps.zoteroReads.acquireRead();
   const scope = deps.libraryScope.resolveLibraries(
     await Effect.runPromise(lease.reads.Libraries({})),
@@ -252,7 +265,9 @@ export type LiteratureNoteTemplateMigrationResult =
     };
 
 /** Owns the user-consented, one-shot transition from slot files to one document. */
-export class LiteratureNoteTemplateMigrationService extends Service<void> {
+class MigrationEngine {
+  readonly #defer;
+  readonly #log;
   readonly #app;
   readonly #settings;
   readonly #template;
@@ -260,21 +275,18 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   readonly #openPrompt;
   #stopped = false;
 
-  ready: Promise<void>;
-
-  constructor(options: LiteratureNoteTemplateMigrationOptions) {
-    super();
+  constructor(options: MigrationEngineOptions) {
+    this.#defer = options.defer;
+    this.#log = options.log;
     this.#app = options.app;
     this.#settings = options.settings;
     this.#template = options.template;
     this.#loadVerificationData = options.loadVerificationData;
     this.#openPrompt = options.openPrompt;
-    this.ready = this.#load();
   }
 
   async convert(): Promise<LiteratureNoteTemplateMigrationResult> {
-    await this.ready;
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const slotFiles = this.#template.getLegacyLiteratureNoteTemplateFiles();
     const legacy = this.#template.getLegacyTemplateDocuments();
     if (
@@ -393,7 +405,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       },
     });
     await this.#settings.flush();
-    logger.info("Converted legacy templates", {
+    this.#log("info", "Converted legacy templates", {
       documents: documents.map(({ path }) => path),
       trashed,
       pendingCleanup,
@@ -418,8 +430,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   async retryCleanup(): Promise<
     Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>
   > {
-    await this.ready;
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const accepted = settings["note.template-conversion-result"];
     if (!accepted) {
       throw new Error("Cleanup retry needs a completed conversion");
@@ -463,7 +474,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
         trashed.push(path);
       } catch (error) {
         pendingCleanup.push(path);
-        logger.warn("Failed to move a legacy template file to trash", {
+        this.#log("warn", "Failed to move a legacy template file to trash", {
           error,
           path,
         });
@@ -481,7 +492,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       try {
         await this.#app.fileManager.trashFile(file);
       } catch (error) {
-        logger.error("Failed to roll back a converted document", {
+        this.#log("error", "Failed to roll back a converted document", {
           error,
           path,
         });
@@ -489,19 +500,23 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     }
   }
 
-  async #load(): Promise<void> {
-    await Promise.all([this.#settings.loaded, this.#template.ready]);
-    await using stack = new AsyncDisposableStack();
-    stack.defer(() => {
-      this.#stopped = true;
-    });
-    await this.#detectTemplates(false);
-    this.commit(stack.move());
+  close(): void {
+    this.#stopped = true;
   }
 
-  async #detectTemplates(layoutReady: boolean): Promise<void> {
+  async layoutReady(action: "detect" | "prompt"): Promise<void> {
     if (this.#stopped) return;
-    const settings = await this.#settings.loaded;
+    if (action === "prompt") {
+      await this.#openPrompt();
+      return;
+    }
+    await this.#template.refresh();
+    await this.detectTemplates(true);
+  }
+
+  async detectTemplates(layoutReady: boolean): Promise<void> {
+    if (this.#stopped) return;
+    const settings = this.#settings.current;
     const legacy = this.#template.getLegacyTemplateDocuments();
     const hasLegacyFiles =
       this.#template.getLegacyLiteratureNoteTemplateFiles().length > 0 ||
@@ -522,7 +537,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
           : settings["note.template-conversion-pending"]
             ? "already-answered"
             : "newly-armed";
-    logger.debug("Template conversion detection", {
+    this.#log("debug", "Template conversion detection", {
       phase: layoutReady ? "layout-ready" : "initial",
       foundLegacy: hasLegacyFiles,
       converted,
@@ -531,17 +546,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     if (branch === "deferred") {
       // The first scan can precede Obsidian's vault inventory. Keep startup
       // finite and preserve a saved pending flag until the layout-ready scan.
-      this.#app.workspace.onLayoutReady(async () => {
-        if (this.#stopped) return;
-        try {
-          await this.#template.refresh();
-          await this.#detectTemplates(true);
-        } catch (error) {
-          logger.warn("Deferred template conversion detection failed", {
-            error,
-          });
-        }
-      });
+      this.#defer("detect");
       return;
     }
     if (branch === "converted-or-none") {
@@ -558,9 +563,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     if (layoutReady) {
       if (!this.#stopped) await this.#openPrompt();
     } else {
-      this.#app.workspace.onLayoutReady(() => {
-        if (!this.#stopped) void this.#openPrompt();
-      });
+      this.#defer("prompt");
     }
   }
 }
@@ -602,4 +605,151 @@ function refusedByConversion(
     outcome: "refused",
     diagnostic: { ...detail, code: error.code, files },
   };
+}
+
+export interface TemplateMigrationOptions {
+  loadVerificationData: MigrationEngineOptions["loadVerificationData"];
+  openPrompt: MigrationEngineOptions["openPrompt"];
+}
+
+export class TemplateMigration extends Context.Service<
+  TemplateMigration,
+  {
+    whenSettled(): Effect.Effect<void>;
+    convert(): Effect.Effect<
+      LiteratureNoteTemplateMigrationResult,
+      TemplateFailure
+    >;
+    retryCleanup(): Effect.Effect<
+      Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>,
+      TemplateFailure
+    >;
+  }
+>()("zotlit/template/TemplateMigration") {}
+
+export function layerTemplateMigration(options: TemplateMigrationOptions) {
+  return Layer.effect(
+    TemplateMigration,
+    Effect.gen(function* () {
+      const app = yield* ObsidianApp;
+      const settings = yield* PluginSettings;
+      const template = yield* Template;
+      const context = yield* Effect.context<never>();
+      const scope = yield* Scope.fork(yield* Scope.Scope);
+      const run = Effect.runSyncWith(context);
+      const runPromise = Effect.runPromiseWith(context);
+      const intake = yield* obsidianEvents<{
+        detect: [];
+        prompt: [];
+        settled: [Deferred.Deferred<void>];
+      }>();
+      const engine = new MigrationEngine({
+        ...options,
+        app,
+        settings: {
+          get current() {
+            return run(settings.current);
+          },
+          update: (patch) => {
+            run(settings.update(patch));
+          },
+          flush: () => runPromise(settings.flush()),
+        },
+        template: {
+          refresh: () => runPromise(template.refresh()),
+          getLegacyLiteratureNoteTemplateFiles: () =>
+            run(template.getLegacyLiteratureNoteTemplateFiles()),
+          getLegacyTemplateDocuments: () =>
+            run(template.getLegacyTemplateDocuments()),
+          convertLegacyLiteratureNoteTemplates: (data) =>
+            runPromise(template.convertLegacyLiteratureNoteTemplates(data)),
+          convertLegacyTemplateDocuments: (refs) =>
+            runPromise(template.convertLegacyTemplateDocuments(refs)),
+        },
+        defer: (action) => app.workspace.onLayoutReady(intake.callback(action)),
+        log: (level, message, fields) => {
+          const log = {
+            debug: Effect.logDebug,
+            info: Effect.logInfo,
+            warn: Effect.logWarning,
+            error: Effect.logError,
+          }[level];
+          run(
+            log(message).pipe(
+              Effect.annotateLogs(fields ?? {}),
+              withLogCategory("template", "migration"),
+            ),
+          );
+        },
+      });
+      const report = (cause: unknown) =>
+        Effect.logWarning("Template conversion detection failed").pipe(
+          Effect.annotateLogs({ cause }),
+          withLogCategory("template", "migration"),
+        );
+      let closed = false;
+      const waiters = new Set<Deferred.Deferred<void>>();
+      yield* Effect.addFinalizer(() =>
+        Effect.gen(function* () {
+          closed = true;
+          for (const waiter of waiters)
+            yield* Deferred.succeed(waiter, undefined);
+        }),
+      );
+      yield* intake
+        .consume((event) => {
+          if (event.type === "settled") {
+            waiters.delete(event.args[0]);
+            return Deferred.succeed(event.args[0], undefined).pipe(
+              Effect.asVoid,
+            );
+          }
+          return attemptPromise(() => engine.layoutReady(event.type));
+        })
+        .pipe(Effect.forkScoped);
+      yield* attemptPromise(() => engine.detectTemplates(false)).pipe(
+        Effect.catchCause(report),
+      );
+      const owned = <A, E>(effect: Effect.Effect<A, E>) =>
+        closed
+          ? effect
+          : Effect.forkIn(effect, scope, {
+              startImmediately: true,
+              uninterruptible: true,
+            }).pipe(Effect.flatMap(Fiber.join));
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          closed = true;
+          engine.close();
+        }),
+      );
+      return TemplateMigration.of({
+        whenSettled: Effect.fn("TemplateMigration.whenSettled")(function* () {
+          if (closed) return;
+          const waiter = yield* Deferred.make<void>();
+          waiters.add(waiter);
+          intake.callback("settled")(waiter);
+          yield* Deferred.await(waiter);
+        }),
+        convert: Effect.fn("TemplateMigration.convert")(function* () {
+          return yield* owned(
+            attemptPromise(() => engine.convert()).pipe(Effect.uninterruptible),
+          );
+        }),
+        retryCleanup: Effect.fn("TemplateMigration.retryCleanup")(function* () {
+          return yield* owned(
+            attemptPromise(() => engine.retryCleanup()).pipe(
+              Effect.uninterruptible,
+            ),
+          );
+        }),
+      });
+    }),
+  );
+}
+
+function attemptPromise<A>(
+  evaluate: () => Promise<A>,
+): Effect.Effect<A, TemplateFailure> {
+  return Effect.tryPromise({ try: evaluate, catch: templateFailure });
 }

@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 import type { EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
+import {
+  beforeEach as beforeStreamTest,
+  afterEach as afterStreamTest,
+} from "vitest";
 import { expect, it, vi } from "vitest";
 
+import { Layer, Stream } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
 import {
   annotationRows,
   annotationUri,
@@ -14,6 +20,14 @@ import {
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import { ReferencesView } from "./view";
+
+let streamStack: AsyncDisposableStack;
+let streamRuntime: ReturnType<typeof buildRuntime<never>>;
+beforeStreamTest(() => {
+  streamStack = new AsyncDisposableStack();
+  streamRuntime = buildRuntime(Layer.empty, streamStack);
+});
+afterStreamTest(() => streamStack.disposeAsync());
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
@@ -40,18 +54,22 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
     libraryScope,
     citationIndex: index,
     citationLookup: lookup,
-    citationText: { peek: () => null, on: () => () => {} },
+    runtime: streamRuntime,
+    citationText: { peek: () => null, changed: Stream.empty },
     citekeyEditor: { openIndexedKey: async () => {} },
     profile: profileReader(harness.settings.current, app.metadataCache),
     pandocEngine: {
       getStatus: () => ({ kind: "absent" }),
-      subscribe: () => () => {},
+      changes: Stream.empty,
       decline: () => {},
     },
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
       render: async () => ({ kind: "unavailable", reason: "engine-absent" }),
-      on: () => () => {},
+      changed: Stream.empty,
+      settled: Stream.empty,
+      invalidated: Stream.empty,
+      "style-missing": Stream.empty,
     },
     openSettings: () => {},
     openStyleSettings: () => {},

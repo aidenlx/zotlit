@@ -1,3 +1,4 @@
+import { Stream } from "@/lib/effect";
 // ProfileReader test double for consumers; registry behavior is tested with a vault.
 import type { MetadataCache } from "obsidian";
 
@@ -19,8 +20,8 @@ export function profileReader(
 ): ProfileReader {
   const current = () => typeof settings === "function" ? settings() : settings;
   return {
-    ready: Promise.resolve(), loaded: true,
-    on: () => () => {},
+    loaded: true,
+    changed: Stream.empty,
     get profiles() { return (current().profiles ?? []).map((entry) => ({ document: `zotlit-profile.${entry.label.toLowerCase()}.md`, path: "", bindings: {}, match: compileProfileMatch(undefined), ...entry })); },
     resolveProfile(selector) { return resolveProfile(current(), selector); },
     profileOf(file) {

@@ -12,6 +12,8 @@ import type {
   AttachmentCopyItem,
   AttachmentCopyResult,
 } from "@/lib/copy-attachments";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import {
   ensureFolder,
   joinFolderPath,
@@ -21,8 +23,8 @@ import {
 import { getLogger } from "@/lib/log";
 import { fileUrlLink, syntheticFile } from "@/lib/markdown-link";
 import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 import { loadApprovedFolders, saveApprovedFolders } from "./approved-folders";
 import {
@@ -58,12 +60,13 @@ const logger = getLogger("attachment-import");
 const SKIP_SUMMARY_DEBOUNCE_MS = 1500;
 
 export interface AttachmentImportServiceDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  settings: SettingsService;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath"> & {
-    /** Only the one event the root snapshot follows. */
-    on(event: "resolved-changed", cb: () => void): () => void;
-  };
+  settings: Pick<PlainPluginSettings, "current" | "changes">;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    "dataDir" | "baseAttachmentPath" | "resolved-changed"
+  >;
 }
 
 /** Sources an operation did not import, by the stage that turned them away. */
@@ -124,6 +127,7 @@ export interface AttachmentImport {
 }
 
 export class AttachmentImportService extends Service<void> {
+  readonly #runtime;
   readonly #app;
   readonly #settings;
   readonly #zoteroPref;
@@ -153,6 +157,7 @@ export class AttachmentImportService extends Service<void> {
 
   constructor(deps: AttachmentImportServiceDeps) {
     super();
+    this.#runtime = deps.runtime;
     this.#app = deps.app;
     this.#settings = deps.settings;
     this.#zoteroPref = deps.zoteroPref;
@@ -233,7 +238,7 @@ export class AttachmentImportService extends Service<void> {
     notePath: string,
     opts?: { folderCache?: Map<string, string> },
   ): Promise<AttachmentImport> {
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current;
     const importEnabled = settings["attachment.import"];
     let folderPath: string | null = null;
     if (importEnabled) {
@@ -279,7 +284,7 @@ export class AttachmentImportService extends Service<void> {
       this.#announceSkips.cancel();
     });
     stack.defer(
-      this.#settings.subscribe((value) => {
+      subscribe(this.#runtime, this.#settings.changes, (value) => {
         if (value?.["attachment.import"]) void this.#rebuildRoots();
       }),
     );
@@ -287,7 +292,7 @@ export class AttachmentImportService extends Service<void> {
     // annotation-cache roots are joined onto, and the base attachment path — so
     // a profile re-read or a data-dir override moves them all.
     stack.defer(
-      this.#zoteroPref.on("resolved-changed", () => {
+      subscribe(this.#runtime, this.#zoteroPref["resolved-changed"], () => {
         void this.#rebuildRoots();
       }),
     );

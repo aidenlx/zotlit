@@ -1,25 +1,27 @@
 import type { App, PluginManifest } from "obsidian";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
-import type { CitationIndex } from "@/services/citation-index/service";
+import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import type {} from "@/services/citation-index/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { ManagedBinaryService } from "@/services/managed-binary/service";
-import type { ProfileService } from "@/services/profile/service";
+import type { PlainManagedBinary } from "@/services/managed-binary/plain";
+import type { PlainProfile } from "@/services/profile/plain";
 import type { ReleaseService } from "@/services/release/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import type { ImportProfile } from "./import-profile-modal";
 
@@ -37,8 +39,8 @@ export type ReleaseTabActions = Pick<
 
 /** The Managed Binary surface the setting tab needs: report, watch, and move its status. */
 export type ManagedBinaryActions = Pick<
-  ManagedBinaryService,
-  "getStatus" | "subscribe" | "install" | "uninstall"
+  PlainManagedBinary,
+  "getStatus" | "changes" | "install" | "uninstall"
 >;
 
 /** The Local Server surface the setting tab needs: the bound port and its edges. */
@@ -54,7 +56,7 @@ export type LocalBridgeActions = Pick<
 >;
 
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
-export type CitationIndexActions = Pick<CitationIndex, "reset">;
+export type CitationIndexActions = Pick<PlainCitationIndex, "reset">;
 
 /**
  * The Editing Capability the "Zotero editing" row renders, and the signal that
@@ -88,6 +90,7 @@ export type AttachmentImportActions = Pick<
  * search indexing.
  */
 export interface SettingTabContext {
+  runtime: SubscriptionRuntime;
   webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;
@@ -98,12 +101,75 @@ export interface SettingTabContext {
    * `getSettingDefinitions()` runs inside `onload()`.
    */
   manifest: PluginManifest;
-  settings: SettingsService;
-  profile: ProfileService;
-  db: ZoteroReadsService;
+  settings: Pick<
+    PlainPluginSettings,
+    | "current"
+    | "update"
+    | "updateDefaultLiteratureNoteProfileBindings"
+    | "changes"
+  >;
+  profile: Pick<
+    PlainProfile,
+    | "loaded"
+    | "profiles"
+    | "diagnostics"
+    | "resolveProfile"
+    | "changed"
+    | "duplicate"
+    | "ejectDefault"
+    | "restoreDefault"
+    | "prepareDelete"
+    | "delete"
+    | "getSource"
+    | "defaultDocumentPath"
+    | "prepareCreate"
+    | "prepareShare"
+    | "prepareImport"
+    | "materializeDefault"
+  >;
+  db: Pick<
+    PlainZoteroReads,
+    | "refresh"
+    | "state"
+    | "error"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "activeReadMode"
+  >;
   /** The live Library Scope the Library scope rows read and repair. */
-  libraryScope: LibraryScopeService;
-  zoteroPref: ZoteroPrefService;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    | "current"
+    | "effective"
+    | "invalid"
+    | "libraries"
+    | "changed"
+    | "libraries-changed"
+  >;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    | "state"
+    | "resolvedProfileDir"
+    | "profileDirOverride"
+    | "dataDirOverride"
+    | "dataDir"
+    | "databasePath"
+    | "sourceId"
+    | "baseAttachmentPath"
+    | "httpPort"
+    | "get"
+    | "changed"
+    | "data-dir-changed"
+    | "resolved-changed"
+    | "setProfileDir"
+    | "setDataDir"
+    | "companionInstalled"
+    | "listProfiles"
+  >;
   /** The one loopback listener, read by the Local server rows. */
   localServer: LocalServerActions;
   /** The Workbench Connection the Local server rows name and end. */
@@ -129,7 +195,23 @@ export interface SettingTabContext {
    * `getSettingDefinitions()` runs from `addSettingTab()`, while `onload()` is
    * still wiring and that escape hatch still throws.
    */
-  template: TemplateService;
+  template: Pick<
+    PlainTemplate,
+    | "loaded"
+    | "javascriptTemplatesEnabled"
+    | "setJavascriptTemplatesEnabled"
+    | "getUnrecognizedFiles"
+    | "getPartialDocuments"
+    | "getReservedPartialFiles"
+    | "getPartialDocument"
+    | "deletePartial"
+    | "getCitationTemplateStatus"
+    | "restoreCitationTemplate"
+    | "getPartialNames"
+    | "createPartial"
+    | "materializeCitationTemplate"
+    | "compile-status-changed"
+  >;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
   pandocEngine: ManagedBinaryActions;
   /** The device-wide Chinese Segmenter binary, installed and uninstalled from here. */

@@ -1,18 +1,16 @@
 import { PluginSettingTab } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
+import { Stream } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type { ProfileService } from "@/services/profile/service";
-import type {
-  SettingsPatch,
-  SettingsService,
-} from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsPatch } from "@/services/settings/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import type ZotLitPlugin from "@/zt-main";
 
 import {
@@ -50,14 +48,41 @@ import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
 import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
+  runtime: SubscriptionRuntime;
   webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
-  settings: SettingsService;
-  profile: ProfileService;
-  db: ZoteroReadsService;
-  libraryScope: LibraryScopeService;
-  zoteroPref: ZoteroPrefService;
+  settings: Pick<
+    PlainPluginSettings,
+    | "current"
+    | "update"
+    | "updateDefaultLiteratureNoteProfileBindings"
+    | "changes"
+  >;
+  profile: SettingTabContext["profile"];
+  db: Pick<
+    PlainZoteroReads,
+    | "refresh"
+    | "state"
+    | "error"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "activeReadMode"
+  >;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    | "current"
+    | "effective"
+    | "invalid"
+    | "libraries"
+    | "changed"
+    | "libraries-changed"
+  >;
+  zoteroPref: SettingTabContext["zoteroPref"];
   localServer: LocalServerActions;
   localBridge: LocalBridgeActions;
   customize: CustomizeAction;
@@ -67,7 +92,7 @@ export interface ZotLitSettingTabOptions {
   excerptDisplay: SettingTabContext["excerptDisplay"];
   annotations: AnnotationCapabilityActions;
   writeAuthorization: WriteAuthorizationActions;
-  template: TemplateService;
+  template: SettingTabContext["template"];
   release: ReleaseTabActions;
   pandocEngine: ManagedBinaryActions;
   chineseSegmenter: ManagedBinaryActions;
@@ -78,10 +103,36 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #webWorkbenchEnabled: boolean;
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
-  readonly #settings: SettingsService;
-  readonly #db: ZoteroReadsService;
-  readonly #libraryScope: LibraryScopeService;
-  readonly #zoteroPref: ZoteroPrefService;
+  readonly #settings: Pick<
+    PlainPluginSettings,
+    | "current"
+    | "update"
+    | "updateDefaultLiteratureNoteProfileBindings"
+    | "changes"
+  >;
+  readonly #db: Pick<
+    PlainZoteroReads,
+    | "refresh"
+    | "state"
+    | "error"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "activeReadMode"
+  >;
+  readonly #libraryScope: Pick<
+    PlainLibraryScope,
+    | "current"
+    | "effective"
+    | "invalid"
+    | "libraries"
+    | "changed"
+    | "libraries-changed"
+  >;
+  readonly #zoteroPref: SettingTabContext["zoteroPref"];
   readonly #localServer: LocalServerActions;
   readonly #localBridge: LocalBridgeActions;
   readonly #customize: CustomizeAction;
@@ -91,14 +142,17 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #excerptDisplay: SettingTabContext["excerptDisplay"];
   readonly #annotations: AnnotationCapabilityActions;
   readonly #writeAuthorization: WriteAuthorizationActions;
-  readonly #profile: ProfileService;
-  readonly #template: TemplateService;
+  readonly #profile: SettingTabContext["profile"];
+  readonly #template: SettingTabContext["template"];
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: ManagedBinaryActions;
   readonly #chineseSegmenter: ManagedBinaryActions;
   readonly #languagePack: LanguagePackLifecycle;
 
+  readonly #runtime;
+
   constructor({
+    runtime,
     webWorkbenchEnabled,
     importProfile,
     plugin,
@@ -123,6 +177,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
+    this.#runtime = runtime;
     this.#webWorkbenchEnabled = webWorkbenchEnabled;
     this.#plugin = plugin;
     this.#importProfile = importProfile;
@@ -147,36 +202,35 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#writeAuthorization = writeAuthorization;
     this.#template = template;
     this.#profile = profile;
-    plugin.register(profile.on("changed", () => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, profile["changed"], () => this.#requestUpdate()),
+    );
     this.#release = release;
     this.#pandocEngine = pandocEngine;
     this.#chineseSegmenter = chineseSegmenter;
     this.#languagePack = languagePack;
 
     plugin.register(
-      template.on("compile-status-changed", () => this.#requestUpdate()),
-    );
-    // Obsidian calls `update()` from `addSettingTab()`, so the first pass runs
-    // while `onload` is still wiring and TemplateService is still loading. The
-    // rows that need it structurally are left out of that pass, so re-render
-    // once the service reports ready. `compile-status-changed` can't stand in:
-    // its load-time emit lands before the service flips to loaded.
-    let unloaded = false;
-    plugin.register(() => {
-      unloaded = true;
-    });
-    void profile.ready.then(
-      () => {
-        if (!unloaded) this.#requestUpdate();
-      },
-      () => {},
+      subscribe(runtime, template["compile-status-changed"], () =>
+        this.#requestUpdate(),
+      ),
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
-    plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
-    plugin.register(chineseSegmenter.subscribe(() => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, Stream.drop(pandocEngine.changes, 1), () =>
+        this.#requestUpdate(),
+      ),
+    );
+    plugin.register(
+      subscribe(runtime, Stream.drop(chineseSegmenter.changes, 1), () =>
+        this.#requestUpdate(),
+      ),
+    );
     // Library scope rows are built from the resolved scope, so a database
     // refresh, a group rename, and a repair each rebuild them.
-    plugin.register(libraryScope.on("changed", () => this.#requestUpdate()));
+    plugin.register(
+      subscribe(runtime, libraryScope["changed"], () => this.#requestUpdate()),
+    );
 
     // Settings: the two pending flags are structural — the reminder rows are
     // included or left out, not toggled via `visible` — so the tab re-renders
@@ -187,7 +241,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     let lastTemplateConversionPending =
       settings.current?.["note.template-conversion-pending"];
     plugin.register(
-      settings.subscribe((value) => {
+      subscribe(runtime, settings.changes, (value) => {
         const pending = value?.["release.migration-pending"];
         const templateConversionPending =
           value?.["note.template-conversion-pending"];
@@ -209,7 +263,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.update();
   }
 
-  /** Bridge declarative `control` reads to {@link SettingsService}. */
+  /** Bridge declarative `control` reads to {@link PlainPluginSettings}. */
   override getControlValue(key: string): unknown {
     if (isProfileControlKey(key)) {
       return getProfileControlValue(this.#settings, key);
@@ -222,7 +276,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     return value;
   }
 
-  /** Bridge declarative `control` writes to {@link SettingsService}. */
+  /** Bridge declarative `control` writes to {@link PlainPluginSettings}. */
   override setControlValue(key: string, value: unknown): void {
     if (isProfileControlKey(key)) {
       setProfileControlValue(this.#settings, key, value);
@@ -240,6 +294,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
+      runtime: this.#runtime,
       webWorkbenchEnabled: this.#webWorkbenchEnabled,
       app: this.#plugin.app,
       importProfile: this.#importProfile,

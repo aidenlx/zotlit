@@ -5,12 +5,14 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 // Names the Zotero Attachment behind the absolute path of an open PDF.
 import { Effect, Stream } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { isPdfAttachment } from "@/services/attachment-open/resolve";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import { Service } from "@/services/service-base";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 const logger = getLogger("attachment-resolver");
 
@@ -86,12 +88,30 @@ export type AttachedFile = Extract<AttachmentLookup, { kind: "resolved" }> & {
 };
 
 export interface AttachmentResolverDeps {
-  reads: Pick<ZoteroReadsService, "ready" | "on" | "acquireRead">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "reads"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "acquireRead"
+  >;
   queries: Pick<
-    QueryClientService,
+    PlainQueryClients,
     "client" | "ask" | "invalidate" | "peek" | "watch"
   >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath" | "on">;
+  zoteroPref: Pick<
+    PlainZoteroPref,
+    | "dataDir"
+    | "baseAttachmentPath"
+    | "changed"
+    | "data-dir-changed"
+    | "resolved-changed"
+  >;
   /**
    * The filesystem's platform, which decides whether the lookup key folds case.
    *
@@ -114,6 +134,7 @@ export interface AttachmentResolverDeps {
  * @see apps/obsidian/docs/adr/0035-the-attachment-resolver-case-folds-on-case-insensitive-platforms.md
  */
 export class AttachmentResolver extends Service<void> {
+  readonly #runtime;
   readonly #reads;
   readonly #queries;
   readonly #zoteroPref;
@@ -133,12 +154,14 @@ export class AttachmentResolver extends Service<void> {
   }
 
   constructor({
+    runtime,
     reads,
     queries,
     zoteroPref,
     platform = process.platform,
   }: AttachmentResolverDeps) {
     super();
+    this.#runtime = runtime;
     this.#reads = reads;
     this.#queries = queries;
     this.#zoteroPref = zoteroPref;
@@ -222,10 +245,12 @@ export class AttachmentResolver extends Service<void> {
       }),
     );
     stack.defer(
-      this.#reads.on("changed", () => this.#rebuild("database changed")),
+      subscribe(this.#runtime, this.#reads["changed"], () =>
+        this.#rebuild("database changed"),
+      ),
     );
     stack.defer(
-      this.#zoteroPref.on("resolved-changed", () =>
+      subscribe(this.#runtime, this.#zoteroPref["resolved-changed"], () =>
         this.#rebuild("Zotero paths changed"),
       ),
     );

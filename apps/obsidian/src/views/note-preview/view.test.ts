@@ -13,10 +13,13 @@ import {
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Effect, Stream } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
 import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
@@ -150,10 +153,11 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   Object.assign(app.workspace, workspace);
   const editorLeaf = { app } as unknown as WorkspaceLeaf;
   const editor = new Editor(editorLeaf, {
+    runtime: testRuntime(),
     app,
     settings: fixture.deps.settings,
     zoteroReads: fixture.deps.zoteroReads,
-    zoteroPref: { ready: Promise.resolve(), dataDir: null },
+    zoteroPref: { dataDir: null },
     templates: fixture.deps.templates,
     nativePreview: fixture.deps,
   } as unknown as TemplateWorkbenchDeps);
@@ -184,7 +188,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   ) {
     const preview = new Preview({ app } as unknown as WorkspaceLeaf, "zotlit", {
       ...fixture.deps,
-      settings: fixture.deps.settings as SettingsService,
+      settings: fixture.deps.settings as PlainPluginSettings,
       profile,
       itemLookup: { search: vi.fn(), openSession: vi.fn() },
     });
@@ -229,17 +233,17 @@ async function pick(view: Preview, title: string) {
 const advance = (ms = 300) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
-/**
- * Waits for the preview's Markdown to finish rendering. Each block marks
- * itself pending while its own render runs and clears the mark once it has
- * presented its citations, so the mark's absence is the completion signal.
- */
+/** Wait for the render result and each Markdown block it presents. */
 async function rendered(view: Preview): Promise<void> {
-  for (let round = 0; round < 20; round++) {
-    if (!view.contentEl.querySelector("[data-zotlit-preview-pending]")) return;
-    await act(async () => {});
-  }
-  throw new Error("The preview never finished rendering its Markdown.");
+  await expect
+    .poll(async () => {
+      await act(yieldToMain);
+      return (
+        view.state.getState().status !== "loading" &&
+        !view.contentEl.querySelector("[data-zotlit-preview-pending]")
+      );
+    })
+    .toBe(true);
 }
 
 /** Presses the preview's own button whose text is `label`. */
@@ -301,8 +305,10 @@ async function failing(
   await act(async () => test.editor.open());
   const preview = await test.open();
   await advance();
+  await rendered(preview);
   await act(async () => test.editor.setViewData(source, false));
   await advance();
+  await rendered(preview);
   return preview;
 }
 
@@ -435,6 +441,7 @@ describe("independent native Note Preview", () => {
         source: saved.source,
         item: "MAIN2345",
       });
+      await rendered(preview);
       expect(preview.contentEl.textContent).toContain("Personal space.");
       expect(test.editor.store.getState().item).toBeNull();
     },
@@ -507,6 +514,7 @@ describe("independent native Note Preview", () => {
     await act(async () => choose(first).click());
     await advance();
     expect(first.getState()["item"]).toBe("MAIN2345");
+    await rendered(first);
     expect(first.contentEl.textContent).toContain("Personal space.");
     expect(second.getState()["item"]).toBeNull();
     vi.mocked(pickItem).mockResolvedValueOnce(null);
@@ -534,6 +542,7 @@ describe("independent native Note Preview", () => {
       source: { path: "templates/paper.md" },
       item: "MAIN2345",
     });
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     expect(pickItem).not.toHaveBeenCalled();
   });
@@ -575,6 +584,7 @@ describe("independent native Note Preview", () => {
       item: "MAIN2345",
       showMarkdown: true,
     });
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Current group draft.");
     preview.leaf.pinned = true;
     const pinnedResult: import("obsidian").ViewStateResult = { history: false };
@@ -619,6 +629,7 @@ describe("independent native Note Preview", () => {
     );
     const restored = await test.open(saved);
     await advance();
+    await rendered(restored);
     expect(restored.contentEl.textContent).toContain("Personal space.");
     expect(menuItem(restored, m.workbench_show_markdown()).checked).toBe(true);
     expect(
@@ -730,6 +741,7 @@ Annotation`,
       showMarkdown: true,
     });
     await advance();
+    await rendered(restored);
     expect(restored.contentEl.textContent).toContain("reading-status: unread");
     expect(restored.contentEl.textContent).not.toContain(
       "Custom Default body.",
@@ -772,7 +784,13 @@ Annotation`,
   it("rolls back failed binding resources and can retry the same view", async () => {
     await using test = await setup();
     const released = vi.fn();
-    vi.spyOn(test.fixture.deps.zoteroReads, "on").mockReturnValue(released);
+    Object.defineProperty(test.fixture.deps.zoteroReads, "changed", {
+      value: Stream.unwrap(
+        Effect.acquireRelease(Effect.succeed(Stream.never), () =>
+          Effect.sync(released),
+        ),
+      ),
+    });
     vi.mocked(createTemplateWorkbenchHost).mockImplementationOnce(() => {
       throw new Error("Host unavailable");
     });
@@ -796,6 +814,7 @@ Annotation`,
         .setItem({ id: "MAIN2345", title: "Better figures" }),
     );
     await advance();
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () => preview.close());
     expect(released).toHaveBeenCalledTimes(2);
@@ -824,6 +843,7 @@ Annotation`,
       );
     });
     await advance(1000);
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Disk update.");
     const delayed = Promise.withResolvers<string>();
     vault.cachedRead.mockReturnValueOnce(delayed.promise);
@@ -842,6 +862,7 @@ Annotation`,
       );
     });
     await advance(1000);
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Current live source.");
     expect(preview.contentEl.textContent).not.toContain("Old disk update.");
     vault.renameFile(file.path, "templates/renamed.md");
@@ -852,6 +873,7 @@ Annotation`,
       );
     });
     await advance(1000);
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Renamed source.");
     await act(async () => vault.deleteFile(file.path));
     expect(preview.contentEl.textContent).toContain(
@@ -897,6 +919,7 @@ Annotation`,
       vault.renameFile(file.path, "templates/renamed.md");
     });
     await advance(1000);
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Renamed current source.");
     await act(async () => pending.resolve(PROFILE_SOURCE));
     await advance(1000);
@@ -919,6 +942,8 @@ Annotation`,
         .setItem({ id: "MAIN2345", title: "Better figures" }),
     );
     await advance();
+    await rendered(first);
+    await rendered(second);
     expect(first.contentEl.textContent).toContain("Personal space.");
     expect(second.contentEl.textContent).toContain("Personal space.");
     await pick(first, m.workbench_preview_auto_refresh());
@@ -946,9 +971,12 @@ Annotation`,
     expect(test.editor.getViewData()).toBe(PROFILE_SOURCE);
     await act(async () => test.editor.scheduler.run());
     await advance(0);
-    expect(test.editor.scheduler.getState().result?.creationBody).toContain(
-      "Personal space.",
-    );
+    await expect
+      .poll(async () => {
+        await act(yieldToMain);
+        return test.editor.scheduler.getState().result?.creationBody;
+      })
+      .toContain("Personal space.");
     expect(second.contentEl.textContent).toContain("Personal space.");
   });
 
@@ -995,6 +1023,7 @@ Annotation`,
       ).toThrow("Disk unavailable");
     });
     await run(preview);
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Current output.");
     expect(
       vi.mocked(renderNativeTemplate).mock.calls.at(-1)?.[1].source,
@@ -1037,6 +1066,7 @@ Annotation`,
     await act(async () => test.editor.open());
     const preview = await test.open();
     await advance();
+    await rendered(preview);
     await act(async () =>
       test.editor.setViewData(
         PROFILE_SOURCE.replace(
@@ -1087,6 +1117,7 @@ Annotation`,
       ),
     );
     await advance();
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Repaired output.");
     expect(preview.contentEl.textContent).not.toContain(
       m.workbench_preview_problem(),
@@ -1383,6 +1414,7 @@ Annotation`,
     );
     const preview = await test.open();
     await advance();
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () =>
       test.editor.setViewData(
@@ -1441,6 +1473,7 @@ Annotation`,
     const preview = await test.open();
     await advance();
     await act(async () => {});
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("See [1].");
 
     await act(async () =>
@@ -1816,6 +1849,7 @@ Annotation`,
     await advance();
     // The remaining problem keeps the area from reporting success, and the
     // reader is offered the next explanation rather than moved to it.
+    await rendered(preview);
     expect(area.textContent).toContain(m.workbench_problems_resolved());
     expect(
       area
@@ -1921,6 +1955,7 @@ Annotation`,
     );
     const preview = await test.open();
     await advance();
+    await rendered(preview);
     const calls = vi.mocked(renderNativeTemplate).mock.calls.length;
     await act(async () =>
       test.editor.setViewData("An incomplete Profile", false),
@@ -1978,6 +2013,7 @@ Annotation`,
     );
     const preview = await test.open();
     await advance();
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     preview.leaf.pinned = true;
     await act(async () => test.editor.store.getState().setItem(null));
@@ -2013,6 +2049,7 @@ Annotation`,
     const chooseItem = vi.fn();
     const showProblem = vi.fn();
     const earlierPeer = {
+      runtime: testRuntime(),
       leaf: {} as WorkspaceLeaf,
       file: otherFile,
       nativeRenderDeps: test.editor.nativeRenderDeps,
@@ -2519,12 +2556,14 @@ After
       .getState()
       .setItem({ id: "MAIN2345", title: "Better figures" });
     await advance();
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Alpha");
 
     test.fixture.vault.modifyFile(partial.path, "Beta");
     await act(async () => void (await vi.advanceTimersByTimeAsync(600)));
     await advance();
 
+    await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Beta");
     expect(preview.contentEl.textContent).not.toContain("Alpha");
   });

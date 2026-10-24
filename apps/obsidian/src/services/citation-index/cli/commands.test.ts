@@ -33,7 +33,6 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
     app: h.app,
     citationIndex: h.index,
     zoteroPref: {
-      ready: Promise.resolve(),
       sourceId: "test-source",
       databasePath: "/test/zotero.sqlite",
     },
@@ -396,9 +395,12 @@ it.effect.each(["PDF23456", "NTEE2345"])(
       `,
         settings: { "citation.wikilink-citations": true },
       });
-      h.metadataCache.setFrontmatter(h.noteIndex.notes.get("ABCD2345")!, {
-        "zotero-key": key,
-      });
+      h.metadataCache.setFrontmatter(
+        h.noteIndex.getNotesByItemKey("ABCD2345")[0]!,
+        {
+          "zotero-key": key,
+        },
+      );
       const answer = JSON.parse(
         yield* h.command("zotlit:cited-by").handler({ key }),
       );

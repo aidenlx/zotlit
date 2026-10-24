@@ -9,7 +9,7 @@ import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 
-import type { TemplateService } from "@/services/template/service";
+import type { PlainTemplate } from "@/services/template/plain";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -51,11 +51,10 @@ function seed(citekey: string | null) {
 function citationTemplate(
   source = defaultCitation,
   language: TemplateLanguage = "liquid",
-): Pick<TemplateService, "ready" | "renderCitation"> {
+): Pick<PlainTemplate, "renderCitation"> {
   const facade = new TemplateFacade();
   facade.define("citation", source, language);
   return {
-    ready: Promise.resolve(),
     renderCitation: (refs, variant) =>
       inlineCitation(
         facade.render("citation", citekeysToCiteTemplateData(refs, variant)),
@@ -67,7 +66,7 @@ async function render(
   annotationKey: string,
   options: {
     citekey?: string | null;
-    template?: Pick<TemplateService, "ready" | "renderCitation">;
+    template?: Pick<PlainTemplate, "renderCitation">;
   } = {},
 ) {
   await using stack = new AsyncDisposableStack();
@@ -84,7 +83,6 @@ async function render(
   return await renderAnnotationCitation(
     {
       template: options.template ?? citationTemplate(),
-      profile: { ready: Promise.resolve() },
       zoteroReads,
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     },

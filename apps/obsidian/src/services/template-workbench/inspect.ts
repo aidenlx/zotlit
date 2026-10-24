@@ -24,21 +24,21 @@ import type { CliOutput, CliParamName } from "@/lib/cli-params";
 import { Clock, Duration, Effect, Schema } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { isErrno } from "@/lib/errno";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type {
-  ProfileDiagnostic,
-  ProfileService,
-} from "@/services/profile/service";
+import type { PlainProfile } from "@/services/profile/plain";
+import type { ProfileDiagnostic } from "@/services/profile/service";
 import { DEFAULT_PROFILE_DOCUMENT } from "@/services/profile/service";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { citationPath, partialNameRefusal } from "@/services/template/defaults";
+import type { PlainTemplate } from "@/services/template/plain";
 import type {
   CompileError,
   LiteratureNoteTemplateStatus,
-  TemplateService,
 } from "@/services/template/service";
 
 import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
@@ -172,9 +172,32 @@ export const verifySavedSources = Effect.fn(
 );
 
 export interface InspectDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  profile: ProfileService;
-  templates: TemplateService;
+  profile: Pick<
+    PlainProfile,
+    | "resolveProfile"
+    | "profiles"
+    | "diagnostics"
+    | "profileOf"
+    | "getBuiltInSource"
+  >;
+  templates: Pick<
+    PlainTemplate,
+    | "javascriptTemplatesEnabled"
+    | "renderCitationSource"
+    | "renderPartialSource"
+    | "prepareLiteratureNoteTemplateSource"
+    | "frontmatterFields"
+    | "render"
+    | "getLiteratureNoteTemplateStatuses"
+    | "getCitationTemplateStatus"
+    | "compileErrors"
+    | "getPartialDocuments"
+    | "getReservedPartialFiles"
+    | "getLoadedDocumentSource"
+    | "compile-status-changed"
+  >;
   folder: () => string;
   identity: () => Promise<WorkbenchIdentity>;
   timeoutMs?: number;
@@ -455,9 +478,6 @@ export function createInspectHandler(
         query["expect-source"] !== identity.source.id
       )
         return fail("TARGET_MISMATCH");
-      yield* Effect.promise(() =>
-        Promise.all([deps.templates.ready, deps.profile.ready]),
-      );
       const draftDocument: InspectDocument | undefined =
         draft && query.document?.startsWith("partial:")
           ? {
@@ -539,7 +559,11 @@ export function createInspectHandler(
           read: (path) => deps.app.vault.adapter.read(path),
           loaded: (path) => deps.templates.getLoadedDocumentSource(path),
           onChange: (callback) =>
-            deps.templates.on("compile-status-changed", callback),
+            subscribe(
+              deps.runtime,
+              deps.templates["compile-status-changed"],
+              callback,
+            ),
           absent: new Set(builtinPaths),
         },
         paths,

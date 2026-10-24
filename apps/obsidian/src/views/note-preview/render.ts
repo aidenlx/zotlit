@@ -36,6 +36,7 @@ import type {
 
 import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation-render";
 import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
 import { readLiveText } from "@/lib/live-text";
@@ -47,16 +48,16 @@ import {
   prepareLiteratureNote,
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
+import type { PlainProfile } from "@/services/profile/plain";
 import { bindUnvalidatedDraftProfile } from "@/services/profile/service";
-import type { ProfileService } from "@/services/profile/service";
 import {
   loadCitationData,
   loadTemplateData,
 } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainTemplate } from "@/services/template/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { previewBaseline } from "./baseline";
 export { previewBaseline } from "./baseline";
@@ -65,10 +66,19 @@ import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
-  zoteroReads: Pick<ZoteroReadsService, "acquireRead" | "on">;
+  runtime: SubscriptionRuntime;
+  zoteroReads: Pick<
+    PlainZoteroReads,
+    | "acquireRead"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+  >;
   templates: Pick<
-    TemplateService,
-    | "ready"
+    PlainTemplate,
     | "render"
     | "renderCitation"
     | "renderCitationSource"
@@ -76,10 +86,10 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     | "prepareLiteratureNoteTemplateSource"
     | "frontmatterFields"
     | "javascriptTemplatesEnabled"
-    | "on"
+    | "compile-status-changed"
   >;
   /** Reads the Profile a Shared Partial preview renders its bindings under. */
-  profile: Pick<ProfileService, "resolveProfile">;
+  profile: Pick<PlainProfile, "resolveProfile">;
 }
 export interface NativeRenderResult extends TemplateRenderResult {
   readonly sourcePath: string;
@@ -204,8 +214,7 @@ async function partialRootData(
 ): Promise<
   { kind: "data"; data: object } | { kind: "unavailable"; message: string }
 > {
-  await deps.templates.ready;
-  const settings = await deps.settings.loaded;
+  const settings = deps.settings.current;
   const chosen =
     selection.profile === null
       ? undefined
@@ -221,7 +230,7 @@ async function partialRootData(
       ? bindUnvalidatedDraftProfile(settings, draft)
       : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
-    { ...deps, settings: { loaded: Promise.resolve(profile.settings) } },
+    { ...deps, settings: { current: profile.settings } },
     request,
     selection.context,
   );
@@ -321,7 +330,6 @@ async function renderNativeCitation(
 ): Promise<NativeRenderResult> {
   const identity = renderIdentity(request);
   try {
-    await deps.templates.ready;
     const data = await citationRootData(deps, request);
     if (data.kind !== "data") throw new Error(data.message);
     return {
@@ -385,16 +393,15 @@ export async function renderNativeProfile(
   let noteName: string | null = null;
   let noteNameFailure: RenderDiagnostic | null = null;
   try {
-    await deps.templates.ready;
     const document = deps.templates.prepareLiteratureNoteTemplateSource(
       request.source,
     );
-    const settings = await deps.settings.loaded;
+    const settings = deps.settings.current;
     const manifest = document.manifest;
     const profile = bindUnvalidatedDraftProfile(settings, manifest);
     const dataDeps = {
       ...deps,
-      settings: { loaded: Promise.resolve(profile.settings) },
+      settings: { current: profile.settings },
     };
     const indexedKey = request.snapshot.item.indexedKey;
     const sample = request.snapshot.provenance.kind === "sample";

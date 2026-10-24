@@ -526,11 +526,7 @@ export function createNoteFeature(deps: NoteFeatureDeps): NoteFeature {
   return {
     reportExcerptImages: (summary) =>
       events.emit("excerpt-images-reported", summary),
-    ready: Promise.all([
-      deps.template.ready,
-      deps.noteIndex.ready,
-      deps.profile.ready,
-    ]).then(() => {}),
+    ready: Promise.resolve(),
     createNote: createAtGate,
     resolveCompanionNote: (indexedKey, options) =>
       resolveCompanionNote(ctx, indexedKey, options),
@@ -561,7 +557,7 @@ async function resolveCompanionNote(
   indexedKey: string,
   options: { profile?: ProfileSelector } = {},
 ): Promise<CompanionNoteTarget> {
-  await Promise.all([ctx.profile.ready, ctx.noteIndex.whenIndexed()]);
+  await ctx.noteIndex.whenIndexed();
   if (
     options.profile !== undefined &&
     !ctx.profile.resolveProfile(options.profile)
@@ -631,12 +627,7 @@ async function planCreations(
   },
 ): Promise<ReadonlyMap<string, CreationPlan>> {
   const signal = options.signal ?? new AbortController().signal;
-  await Promise.all([
-    ctx.settings.loaded,
-    ctx.profile.ready,
-    ctx.template.ready,
-    ctx.noteIndex.whenIndexed(),
-  ]);
+  await ctx.noteIndex.whenIndexed();
   signal.throwIfAborted();
   const shouldAsk = ctx.profile.profiles.length > 0;
   const given = givenCreationProfile(ctx, options, shouldAsk);
@@ -804,7 +795,6 @@ async function resolveCreationProfile(
   ctx: NoteFeatureDeps,
   sources: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
-  await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
   const shouldAsk = ctx.profile.profiles.length > 0;
   return (
     givenCreationProfile(ctx, sources, shouldAsk) ??
@@ -913,12 +903,8 @@ async function createNote(
   item: Item,
   options: CreateNoteInternalOptions = {},
 ): Promise<CreateNoteResult> {
-  const [settings] = await Promise.all([
-    ctx.settings.loaded,
-    ctx.noteIndex.whenIndexed(),
-    ctx.template.ready,
-    ctx.profile.ready,
-  ]);
+  await ctx.noteIndex.whenIndexed();
+  const settings = ctx.settings.current;
   const requestedProfile = options.profile ?? DEFAULT_PROFILE;
   const profile = ctx.profile.resolveProfile(requestedProfile);
   if (!profile) {
@@ -1116,13 +1102,8 @@ async function updateNote(
   // Settle readiness and prepare the attachment handle before pinning the
   // Snapshot, so the lease spans only the DB reads and the vault writes — not
   // the warm-up awaits.
-  const [settings] = await Promise.all([
-    ctx.settings.loaded,
-    ctx.noteIndex.whenIndexed(),
-    ctx.template.ready,
-    ctx.profile.ready,
-  ]);
-  await ctx.profile.ready;
+  await ctx.noteIndex.whenIndexed();
+  const settings = ctx.settings.current;
   const existing = ctx.profile.profileOf(file);
   const existingSelector = noteProfileSelector(existing);
   if (options.profile !== undefined && existingSelector !== undefined) {
@@ -1250,11 +1231,7 @@ async function replacedKeys(
   file: TFile,
 ): Promise<ReadonlySet<string>> {
   try {
-    const [settings] = await Promise.all([
-      ctx.settings.loaded,
-      ctx.template.ready,
-      ctx.profile.ready,
-    ]);
+    const settings = ctx.settings.current;
     const cache = await parsedCache(ctx, file);
     const resolved = ctx.profile.profileOf(file);
     if (!resolved.ok) return NO_KEYS;
@@ -1330,7 +1307,6 @@ async function prepareProfileSwitch(
   ctx: NoteFeatureDeps,
   file: TFile,
 ): Promise<PreparedProfileSwitch> {
-  await Promise.all([ctx.profile.ready, ctx.settings.loaded]);
   const current = ctx.profile.profileOf(file);
   const cache = ctx.app.metadataCache.getFileCache(file);
   const imported = noteKeyFromFrontmatter(cache) !== null;
@@ -1385,11 +1361,7 @@ async function switchNoteProfile(
     move?: boolean;
   },
 ): Promise<UpdateResult> {
-  const [, settings] = await Promise.all([
-    ctx.profile.ready,
-    ctx.settings.loaded,
-    ctx.template.ready,
-  ]);
+  const settings = ctx.settings.current;
   const selector = options.profile;
   const profile = ctx.profile.resolveProfile(selector);
   if (!profile) return refusedUpdateProfile(selector, file.path);
@@ -1518,7 +1490,6 @@ async function writeNoteUpdate(
   file: TFile,
   options: WriteNoteUpdateOptions,
 ): Promise<UpdateResult> {
-  await ctx.profile.ready;
   const existing = ctx.profile.profileOf(file);
   const existingSelector = noteProfileSelector(existing);
   if (options.profile !== undefined && existingSelector !== undefined) {
@@ -1688,12 +1659,8 @@ async function overwriteNote(
   // Settle readiness and prepare the attachment handle before pinning the
   // Snapshot, so the lease spans only the DB reads and the vault writes — not
   // the warm-up awaits.
-  const [settings] = await Promise.all([
-    ctx.settings.loaded,
-    ctx.noteIndex.whenIndexed(),
-    ctx.template.ready,
-    ctx.profile.ready,
-  ]);
+  await ctx.noteIndex.whenIndexed();
+  const settings = ctx.settings.current;
   const result = ctx.profile.profileOf(file);
   if (!result.ok) return refusedUpdateProfile(result.stamped.stamp, file.path);
   const profile = result.profile;
@@ -1804,10 +1771,8 @@ function renderCitation(
 /**
  * Assumes the caller has settled note-index and template readiness (and pinned
  * a Snapshot via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
- * so before acquiring the lease. `template.ready` in particular gates
- * {@link applyComposedFrontmatter}, which reads `template.frontmatterFields` — without it,
- * an early update could strip managed frontmatter to the still-empty compiled
- * fields.
+ * so before acquiring the lease. The Template layer completes compilation before
+ * consumers build, so {@link applyComposedFrontmatter} reads settled fields.
  */
 async function contextForIndexedKey(
   ctx: NoteFeatureDeps,

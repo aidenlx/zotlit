@@ -8,6 +8,9 @@ import { expect, it, vi } from "vitest";
 
 import type { AnnotViewAttachment } from "@zotlit/db";
 
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { Stream } from "@/lib/effect";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -41,6 +44,7 @@ it("settles a pending attachment load without restarting a closed view", async (
   const subscribe = vi.fn(() => vi.fn());
   const read = vi.fn(() => Promise.resolve({ annotations: [], source: null }));
   const deps = {
+    runtime: testRuntime(),
     app: {
       scope: {},
       loadLocalStorage: () => null,
@@ -48,16 +52,14 @@ it("settles a pending attachment load without restarting a closed view", async (
     },
     reads: {
       state: "ready",
-      ready: Promise.resolve({
-        reads: {
-          ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-          AnnotViewAttachments: () =>
-            Effect.promise(() => {
-              started.resolve();
-              return pending.promise;
-            }),
-        },
-      }),
+      reads: {
+        ItemsByIndexedKeys: () => Effect.succeed(new Map()),
+        AnnotViewAttachments: () =>
+          Effect.promise(() => {
+            started.resolve();
+            return pending.promise;
+          }),
+      },
     },
     libraryScope: { libraryRows: [] },
     annotations: { on: subscribe, read },
@@ -198,7 +200,11 @@ async function openSidebar(
   const run = vi.fn((request: QueryViewRequest, _signal: AbortSignal) =>
     Promise.resolve(requested(answer(request), request)),
   );
-  const reads = emitter();
+  const reads = testEvents<Record<string, (...args: unknown[]) => void>>([
+    "changed",
+    "degraded",
+    "db-file-missing",
+  ]);
   const app = Object.assign(editorApp(), {
     loadLocalStorage: () => null,
     saveLocalStorage: () => {},
@@ -215,19 +221,23 @@ async function openSidebar(
   });
   const repository = emitter();
   const deps = {
+    runtime: testRuntime(),
     app,
     reads: {
       state: readsState,
-      on: reads.on,
-      ready: Promise.resolve({
-        reads: {
-          ItemsByIndexedKeys: () => Effect.succeed(new Map()),
-          AnnotViewAttachments: ({ key }: { key: string }) =>
-            Effect.succeed(attachmentsOf?.(key) ?? attachments),
-        },
-      }),
+      ...reads.streams,
+      reads: {
+        ItemsByIndexedKeys: () => Effect.succeed(new Map()),
+        AnnotViewAttachments: ({ key }: { key: string }) =>
+          Effect.succeed(attachmentsOf?.(key) ?? attachments),
+      },
     },
-    libraryScope: { libraryRows: [], on: () => () => {}, current: null },
+    libraryScope: {
+      libraryRows: [],
+      changed: Stream.empty,
+      "libraries-changed": Stream.empty,
+      current: null,
+    },
     liveUpdate: {
       available: false,
       readerClosed: false,

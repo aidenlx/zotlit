@@ -10,7 +10,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { createNoteInteractively } from "./creation-view";
 import type { InteractiveCreationDeps } from "./creation-view";
@@ -27,7 +27,7 @@ import {
 
 export interface CompanionNoteDeps extends InteractiveCreationDeps {
   useLedger: Pick<PlainUseLedger, "withoutNoteUse">;
-  zoteroReads: Pick<ZoteroReadsService, "ready">;
+  zoteroReads: Pick<PlainZoteroReads, "reads">;
   noteFeature: InteractiveCreationDeps["noteFeature"] &
     Pick<NoteFeature, "resolveCompanionNote" | "updateNote">;
 }
@@ -80,7 +80,7 @@ export async function openCompanionNote(
     new BaseNotice(m.notice_update_metadata_no_note());
     return;
   }
-  const { reads } = await deps.zoteroReads.ready;
+  const { reads } = deps.zoteroReads;
   const item: Item | undefined = (
     await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),

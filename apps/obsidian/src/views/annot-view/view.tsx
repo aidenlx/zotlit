@@ -14,6 +14,8 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import { Effect } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
@@ -27,19 +29,19 @@ import type {
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import type {
   LocalServerService,
   ReaderTarget,
 } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { PlainNoteIndex } from "@/services/note-index/plain";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
@@ -123,8 +125,23 @@ const VIEW_MENU_SECTIONS = [
  * Layout, which may answer from the Zotero Local API.
  */
 export interface AnnotViewDeps extends QueryViewDeps {
-  reads: Pick<ZoteroReadsService, "ready" | "state" | "on" | "acquireRead">;
-  libraryScope: Pick<LibraryScopeService, "libraryRows" | "on" | "current">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "reads"
+    | "state"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "acquireRead"
+  >;
+  libraryScope: Pick<
+    PlainLibraryScope,
+    "libraryRows" | "changed" | "libraries-changed" | "current"
+  >;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
@@ -136,9 +153,9 @@ export interface AnnotViewDeps extends QueryViewDeps {
     ExcerptDisplayService,
     "open" | "refresh" | "revalidate"
   >;
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
+  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookup, "openSession">;
-  settings: SettingsService;
+  settings: Pick<PlainPluginSettings, "current" | "update">;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {
@@ -449,7 +466,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#layout.render(this.contentEl, <AnnotView />);
 
     this.register(
-      this.#deps.reads.on("changed", () => {
+      subscribe(this.#deps.runtime, this.#deps.reads["changed"], () => {
         logger.debug("DB changed, refreshing annot view");
         this.#zoteroReader?.refresh();
         this.#reload();
@@ -457,7 +474,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
     // The held Libraries settle after the database change that moved them.
     this.register(
-      this.#deps.libraryScope.on("libraries-changed", () => this.#reload()),
+      subscribe(
+        this.#deps.runtime,
+        this.#deps.libraryScope["libraries-changed"],
+        () => this.#reload(),
+      ),
     );
 
     this.registerEvent(
@@ -540,7 +561,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
       ),
     );
 
-    await this.#deps.reads.ready;
     this.#reload();
   }
 
@@ -786,7 +806,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     signal: AbortSignal,
   ): Promise<ZoteroReaderResolution | null> {
     try {
-      const { reads } = await this.#deps.reads.ready;
+      const { reads } = this.#deps.reads;
       // The wire carries a selection as numeric ids, and this is the last
       // place they are read: the session speaks Indexed Keys from here on.
       const named = await Effect.runPromise(
@@ -985,7 +1005,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     key,
     libraryID,
   }: LoadTarget): Promise<AnnotViewAttachment[]> {
-    const { reads } = await this.#deps.reads.ready;
+    const { reads } = this.#deps.reads;
     return Effect.runPromise(
       reads.AnnotViewAttachments({
         libraryID,
@@ -1132,7 +1152,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     const { itemKey } = target;
     if (this.#followMode === "active-tab" || itemKey === null) return null;
     try {
-      const { reads } = await this.#deps.reads.ready;
+      const { reads } = this.#deps.reads;
       const items = await Effect.runPromise(
         reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
       );

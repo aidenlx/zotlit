@@ -1,30 +1,44 @@
+import { TestClock } from "effect/testing";
 import type { App } from "obsidian";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Context, Effect, Layer } from "@/lib/effect";
+import { buildRuntime } from "@/lib/effect-layer";
+import { acquireAsyncDisposable } from "@/lib/effect-scope";
+import { it } from "@/lib/effect-vitest";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import { buildSettings } from "@/services/settings/__fixtures__";
+import type { PlainPluginSettings } from "@/services/settings/plain";
 import { defaults } from "@/services/settings/schema";
-import { SettingsService } from "@/services/settings/service";
 
-import { LiteratureNoteTemplateMigrationService } from "./migration";
-import type { LiteratureNoteTemplateMigrationOptions } from "./migration";
-import { TemplateService } from "./service";
+import { buildTemplate, templateSettings } from "./__fixtures__";
+import { layerTemplateMigration } from "./migration";
+import type { TemplateMigrationOptions } from "./migration";
+import { plainTemplateMigration } from "./plain";
+import type { PlainTemplate } from "./plain";
+import { Template } from "./service";
 import type { LegacyTemplateDocuments } from "./service";
 
-function makeHarness(options?: {
-  pending?: boolean;
-  defaultDocument?: string;
-  ejectedAnnotation?: boolean;
-  verificationAnnotation?: object | null;
-  /**
-   * The 2.1.x documents the folder holds. Supplying them makes this a vault
-   * with no Legacy Template File slots at all, which the prompt still arms
-   * for: a `cite` or a bare partial is a legacy file like any other.
-   */
-  legacyDocuments?: LegacyTemplateDocuments;
-}) {
+async function makeHarness(
+  options?: {
+    pending?: boolean;
+    defaultDocument?: string;
+    ejectedAnnotation?: boolean;
+    verificationAnnotation?: object | null;
+    /**
+     * The 2.1.x documents the folder holds. Supplying them makes this a vault
+     * with no Legacy Template File slots at all, which the prompt still arms
+     * for: a `cite` or a bare partial is a legacy file like any other.
+     */
+    legacyDocuments?: LegacyTemplateDocuments;
+  },
+  context = Context.empty(),
+) {
   const documentsOnly = options?.legacyDocuments !== undefined;
   const state = {
     "note.default-profile": {
@@ -63,7 +77,6 @@ function makeHarness(options?: {
     files.delete(file.path);
   });
   const settings = {
-    loaded: Promise.resolve(state),
     current: state,
     update: vi.fn((patch: Partial<typeof state>) =>
       Object.assign(state, patch),
@@ -72,7 +85,6 @@ function makeHarness(options?: {
   };
   const template = {
     refresh: vi.fn(async () => {}),
-    ready: Promise.resolve(),
     getLegacyLiteratureNoteTemplateFiles: vi.fn(() =>
       documentsOnly
         ? []
@@ -107,38 +119,44 @@ function makeHarness(options?: {
     })),
   };
   const openPrompt = vi.fn();
-  const service = new LiteratureNoteTemplateMigrationService({
-    app: {
-      vault: {
-        getFileByPath: (path: string) => files.get(path) ?? null,
-        create,
-      },
-      fileManager: { trashFile },
-      workspace: {
-        onLayoutReady: (callback: () => void | Promise<void>) => {
-          layoutReady = callback;
+  const service = await buildMigration(
+    {
+      app: {
+        vault: {
+          getFileByPath: (path: string) => files.get(path) ?? null,
+          create,
         },
-      },
-    } as unknown as LiteratureNoteTemplateMigrationOptions["app"],
-    settings,
-    template,
-    loadVerificationData: async () => ({
-      note: { title: "Paper" },
-      filename: { citationKey: "doePaper" },
-      annotation:
-        options && "verificationAnnotation" in options
-          ? (options.verificationAnnotation ?? null)
-          : options?.ejectedAnnotation
-            ? { text: "Excerpt" }
-            : null,
-      citation: [{ citationKey: "smith2024" }],
-    }),
-    openPrompt,
-  });
+        fileManager: { trashFile },
+        workspace: {
+          onLayoutReady: (callback: () => void | Promise<void>) => {
+            layoutReady = callback;
+          },
+        },
+      } as unknown as App,
+      settings,
+      template,
+      loadVerificationData: async () => ({
+        note: { title: "Paper" },
+        filename: { citationKey: "doePaper" },
+        annotation:
+          options && "verificationAnnotation" in options
+            ? (options.verificationAnnotation ?? null)
+            : options?.ejectedAnnotation
+              ? { text: "Excerpt" }
+              : null,
+        citation: [{ citationKey: "smith2024" }],
+      }),
+      openPrompt,
+    },
+    context,
+  );
   return {
     create,
     files,
-    layoutReady: () => layoutReady?.(),
+    layoutReady: async () => {
+      await layoutReady?.();
+      await service.whenSettled();
+    },
     openPrompt,
     service,
     settings,
@@ -147,327 +165,451 @@ function makeHarness(options?: {
   };
 }
 
+it.effect(
+  "#1705: closing a migration fixture scope disables late layout callbacks",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fixture = yield* Effect.promise(() =>
+            makeHarness(undefined, context),
+          );
+          yield* acquireAsyncDisposable(async () => fixture.service);
+          return fixture;
+        }),
+      );
+      yield* Effect.promise(() => harness.layoutReady());
+      expect(harness.openPrompt).not.toHaveBeenCalled();
+    }),
+);
+
 describe("LiteratureNoteTemplateMigrationService", () => {
-  it("durably arms the prompt without changing legacy files", async () => {
-    const harness = makeHarness();
-    const paths = [...harness.files.keys()];
+  it.effect("durably arms the prompt without changing legacy files", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* Effect.promise(() =>
+        makeHarness(undefined, context),
+      );
+      yield* acquireAsyncDisposable(async () => harness.service);
+      const paths = [...harness.files.keys()];
 
-    await harness.service.ready;
-    await harness.layoutReady();
+      yield* Effect.promise(() => harness.layoutReady());
 
-    expect(harness.settings.update).toHaveBeenCalledWith({
-      "note.template-conversion-pending": true,
-    });
-    expect(harness.openPrompt).toHaveBeenCalledOnce();
-    expect([...harness.files.keys()]).toEqual(paths);
-    expect(harness.create).not.toHaveBeenCalled();
-    expect(harness.trashFile).not.toHaveBeenCalled();
-  });
+      expect(harness.settings.update).toHaveBeenCalledWith({
+        "note.template-conversion-pending": true,
+      });
+      expect(harness.openPrompt).toHaveBeenCalledOnce();
+      expect([...harness.files.keys()]).toEqual(paths);
+      expect(harness.create).not.toHaveBeenCalled();
+      expect(harness.trashFile).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("arms the prompt for a vault whose only legacy files are 2.1.x documents", async () => {
-    const harness = makeHarness({
-      legacyDocuments: {
-        citation: [],
-        partials: [
-          {
-            name: "venue",
-            path: "templates/zotlit-venue.liquid.md",
-            language: "liquid",
-            inert: false,
-            shadowed: [],
+  it.effect(
+    "arms the prompt for a vault whose only legacy files are 2.1.x documents",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness(
+            {
+              legacyDocuments: {
+                citation: [],
+                partials: [
+                  {
+                    name: "venue",
+                    path: "templates/zotlit-venue.liquid.md",
+                    language: "liquid",
+                    inert: false,
+                    shadowed: [],
+                  },
+                ],
+              },
+            },
+            context,
+          ),
+        );
+        yield* acquireAsyncDisposable(async () => harness.service);
+
+        yield* Effect.promise(() => harness.layoutReady());
+
+        expect(harness.settings.update).toHaveBeenCalledWith({
+          "note.template-conversion-pending": true,
+        });
+        expect(harness.openPrompt).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
+    "writes the verified document before persisting and trashing legacy files",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        yield* acquireAsyncDisposable(async () => harness.service);
+
+        const result = yield* Effect.promise(() => harness.service.convert());
+
+        expect(result).toEqual({
+          outcome: "converted",
+          document: "zotlit-profile.default.md",
+          trashed: [
+            "templates/zotlit-filename.liquid.md",
+            "templates/zotlit-note.liquid.md",
+            "templates/zotlit-content.liquid.md",
+          ],
+          pendingCleanup: [],
+          kept: [],
+        });
+        expect(harness.create).toHaveBeenCalledWith(
+          "templates/zotlit-profile.default.md",
+          "converted source",
+        );
+        expect(
+          harness.settings.current["note.default-profile"],
+        ).not.toHaveProperty("document");
+        expect(harness.settings.update).toHaveBeenCalledWith({
+          "note.template-conversion-pending": false,
+        });
+        expect(harness.settings.flush).toHaveBeenCalledBefore(
+          harness.trashFile,
+        );
+        expect(harness.trashFile).toHaveBeenCalledTimes(3);
+        expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
+          true,
+        );
+        expect(
+          harness.settings.current["note.template-conversion-result"],
+        ).toEqual({
+          document: "templates/zotlit-profile.default.md",
+          trashed: 3,
+          pendingCleanup: [],
+        });
+        expect(
+          harness.settings.flush.mock.invocationCallOrder.at(-1),
+        ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
+      }),
+  );
+
+  it.effect("records only files actually trashed", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* Effect.promise(() =>
+        makeHarness({ pending: true, ejectedAnnotation: true }, context),
+      );
+      const service = yield* acquireAsyncDisposable(
+        async () => harness.service,
+      );
+      harness.files.delete("templates/zotlit-content.liquid.md");
+      yield* Effect.promise(() => service.convert());
+      expect(
+        harness.settings.current["note.template-conversion-result"],
+      ).toEqual({
+        document: "templates/zotlit-profile.default.md",
+        trashed: 3,
+        pendingCleanup: [],
+      });
+    }),
+  );
+
+  it.effect(
+    "keeps the conversion active and records the file when trash fails",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const failed = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        const service = yield* acquireAsyncDisposable(
+          async () => failed.service,
+        );
+        failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+
+        const result = yield* Effect.promise(() => service.convert());
+
+        expect(result).toMatchObject({
+          outcome: "converted",
+          pendingCleanup: ["templates/zotlit-filename.liquid.md"],
+        });
+        // The documents stay active and the file that resisted is recorded.
+        expect(
+          failed.settings.current["note.template-conversion-pending"],
+        ).toBe(false);
+        expect(failed.files.has("templates/zotlit-profile.default.md")).toBe(
+          true,
+        );
+        expect(failed.files.has("templates/zotlit-filename.liquid.md")).toBe(
+          true,
+        );
+        expect(
+          failed.settings.current["note.template-conversion-result"],
+        ).toMatchObject({
+          document: "templates/zotlit-profile.default.md",
+          trashed: 2,
+          pendingCleanup: ["templates/zotlit-filename.liquid.md"],
+        });
+      }),
+  );
+
+  it.effect(
+    "retries retained files and clears the list once the fault is gone",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const failed = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        const service = yield* acquireAsyncDisposable(
+          async () => failed.service,
+        );
+        failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+        yield* Effect.promise(() => service.convert());
+
+        const retried = yield* Effect.promise(() => service.retryCleanup());
+
+        expect(retried).toMatchObject({
+          outcome: "converted",
+          trashed: ["templates/zotlit-filename.liquid.md"],
+          pendingCleanup: [],
+        });
+        expect(failed.files.has("templates/zotlit-filename.liquid.md")).toBe(
+          false,
+        );
+        expect(
+          failed.settings.current["note.template-conversion-result"],
+        ).toMatchObject({
+          document: "templates/zotlit-profile.default.md",
+          trashed: 3,
+          pendingCleanup: [],
+        });
+      }),
+  );
+
+  it.effect(
+    "takes back the documents it created when a later write fails",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        const service = yield* acquireAsyncDisposable(
+          async () => harness.service,
+        );
+        harness.template.getLegacyTemplateDocuments.mockReturnValue({
+          citation: [
+            {
+              name: "cite",
+              path: "templates/zotlit-cite.liquid.md",
+              language: "liquid",
+              inert: false,
+              shadowed: [],
+            },
+          ],
+          partials: [],
+        });
+        harness.template.convertLegacyTemplateDocuments.mockResolvedValueOnce({
+          documents: [
+            { path: "templates/zotlit-citation.md", source: "citation source" },
+          ],
+          trashed: ["templates/zotlit-cite.liquid.md"],
+          kept: [],
+        });
+        let writes = 0;
+        harness.create.mockImplementation(
+          async (path: string, source: string) => {
+            writes += 1;
+            if (writes === 2) throw new Error("Disk full");
+            const file = { path, source };
+            harness.files.set(path, file);
+            return file;
           },
-        ],
-      },
-    });
+        );
 
-    await harness.service.ready;
-    await harness.layoutReady();
+        yield* Effect.promise(() =>
+          expect(service.convert()).rejects.toThrow("Disk full"),
+        );
 
-    expect(harness.settings.update).toHaveBeenCalledWith({
-      "note.template-conversion-pending": true,
-    });
-    expect(harness.openPrompt).toHaveBeenCalledOnce();
-  });
+        // Only the document this pass created goes back; every legacy file stays.
+        expect(harness.trashFile).toHaveBeenCalledTimes(1);
+        expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
+          false,
+        );
+        expect(harness.files.has("templates/zotlit-note.liquid.md")).toBe(true);
+        expect(
+          harness.settings.current["note.template-conversion-pending"],
+        ).toBe(true);
+        expect(
+          harness.settings.current["note.template-conversion-result"],
+        ).toBeNull();
+      }),
+  );
 
-  it("writes the verified document before persisting and trashing legacy files", async () => {
-    const harness = makeHarness({ pending: true });
-    await harness.service.ready;
+  it.effect(
+    "does not infer a completed conversion from an existing Default document",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true, defaultDocument: "existing" }, context),
+        );
+        const _service = yield* acquireAsyncDisposable(
+          async () => harness.service,
+        );
+        expect(
+          harness.settings.current["note.template-conversion-result"],
+        ).toBeNull();
+        expect(
+          harness.settings.current["note.template-conversion-pending"],
+        ).toBe(false);
+      }),
+  );
 
-    const result = await harness.service.convert();
+  it.effect(
+    "leaves the vault and settings untouched when parity verification fails",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        yield* acquireAsyncDisposable(async () => harness.service);
+        harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
+          new LegacyTemplateConversionError(
+            "legacy-render-mismatch",
+            "Converted create output differs at byte 10",
+            {
+              difference: "create output",
+              recovery: "Keep the legacy files unchanged.",
+            },
+          ),
+        );
+        harness.settings.update.mockClear();
 
-    expect(result).toEqual({
-      outcome: "converted",
-      document: "zotlit-profile.default.md",
-      trashed: [
-        "templates/zotlit-filename.liquid.md",
-        "templates/zotlit-note.liquid.md",
-        "templates/zotlit-content.liquid.md",
-      ],
-      pendingCleanup: [],
-      kept: [],
-    });
-    expect(harness.create).toHaveBeenCalledWith(
-      "templates/zotlit-profile.default.md",
-      "converted source",
-    );
-    expect(harness.settings.current["note.default-profile"]).not.toHaveProperty(
-      "document",
-    );
-    expect(harness.settings.update).toHaveBeenCalledWith({
-      "note.template-conversion-pending": false,
-    });
-    expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
-    expect(harness.trashFile).toHaveBeenCalledTimes(3);
-    expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(true);
-    expect(harness.settings.current["note.template-conversion-result"]).toEqual(
-      {
-        document: "templates/zotlit-profile.default.md",
-        trashed: 3,
-        pendingCleanup: [],
-      },
-    );
-    expect(
-      harness.settings.flush.mock.invocationCallOrder.at(-1),
-    ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
-  });
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-  it("records only files actually trashed", async () => {
-    const harness = makeHarness({ pending: true, ejectedAnnotation: true });
-    await using service = harness.service;
-    await service.ready;
-    harness.files.delete("templates/zotlit-content.liquid.md");
-    await service.convert();
-    expect(harness.settings.current["note.template-conversion-result"]).toEqual(
-      {
-        document: "templates/zotlit-profile.default.md",
-        trashed: 3,
-        pendingCleanup: [],
-      },
-    );
-  });
+        expect(result).toEqual({
+          outcome: "refused",
+          diagnostic: {
+            code: "legacy-render-mismatch",
+            difference: "create output",
+            message: "Converted create output differs at byte 10",
+            hint: "Keep the legacy files unchanged.",
+            files: [
+              "templates/zotlit-filename.liquid.md",
+              "templates/zotlit-note.liquid.md",
+              "templates/zotlit-content.liquid.md",
+            ],
+          },
+        });
+        expect(harness.create).not.toHaveBeenCalled();
+        expect(harness.trashFile).not.toHaveBeenCalled();
+        expect(harness.settings.update).not.toHaveBeenCalled();
+      }),
+  );
 
-  it("keeps the conversion active and records the file when trash fails", async () => {
-    const failed = makeHarness({ pending: true });
-    await using service = failed.service;
-    await service.ready;
-    failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+  it.effect(
+    "returns affected fields and leaves the vault untouched when the dry run fails",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        yield* acquireAsyncDisposable(async () => harness.service);
+        harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
+          new LegacyTemplateConversionError(
+            "legacy-frontmatter-evaluation",
+            "Converted Managed Frontmatter failed for: tags, creators",
+            {
+              difference: "Managed Frontmatter evaluation",
+              recovery: "Correct these fields, then retry conversion.",
+              fields: ["tags", "creators"],
+            },
+          ),
+        );
 
-    const result = await service.convert();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toMatchObject({
-      outcome: "converted",
-      pendingCleanup: ["templates/zotlit-filename.liquid.md"],
-    });
-    // The documents stay active and the file that resisted is recorded.
-    expect(failed.settings.current["note.template-conversion-pending"]).toBe(
-      false,
-    );
-    expect(failed.files.has("templates/zotlit-profile.default.md")).toBe(true);
-    expect(failed.files.has("templates/zotlit-filename.liquid.md")).toBe(true);
-    expect(
-      failed.settings.current["note.template-conversion-result"],
-    ).toMatchObject({
-      document: "templates/zotlit-profile.default.md",
-      trashed: 2,
-      pendingCleanup: ["templates/zotlit-filename.liquid.md"],
-    });
-  });
+        expect(result).toEqual({
+          outcome: "refused",
+          diagnostic: {
+            code: "legacy-frontmatter-evaluation",
+            difference: "Managed Frontmatter evaluation",
+            message: "Converted Managed Frontmatter failed for: tags, creators",
+            hint: "Correct these fields, then retry conversion.",
+            fields: ["tags", "creators"],
+          },
+        });
+        expect(harness.create).not.toHaveBeenCalled();
+        expect(harness.trashFile).not.toHaveBeenCalled();
+      }),
+  );
 
-  it("retries retained files and clears the list once the fault is gone", async () => {
-    const failed = makeHarness({ pending: true });
-    await using service = failed.service;
-    await service.ready;
-    failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
-    await service.convert();
+  it.effect(
+    "trashes an ejected annotation template after the verified document write",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true, ejectedAnnotation: true }, context),
+        );
+        yield* acquireAsyncDisposable(async () => harness.service);
 
-    const retried = await service.retryCleanup();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(retried).toMatchObject({
-      outcome: "converted",
-      trashed: ["templates/zotlit-filename.liquid.md"],
-      pendingCleanup: [],
-    });
-    expect(failed.files.has("templates/zotlit-filename.liquid.md")).toBe(false);
-    expect(
-      failed.settings.current["note.template-conversion-result"],
-    ).toMatchObject({
-      document: "templates/zotlit-profile.default.md",
-      trashed: 3,
-      pendingCleanup: [],
-    });
-  });
+        expect(result).toMatchObject({
+          outcome: "converted",
+          trashed: expect.arrayContaining([
+            "templates/zotlit-annotation.liquid.md",
+          ]),
+        });
+        expect(
+          harness.template.convertLegacyLiteratureNoteTemplates,
+        ).toHaveBeenCalledWith({
+          note: { title: "Paper" },
+          filename: { citationKey: "doePaper" },
+          annotation: { text: "Excerpt" },
+        });
+        expect(harness.settings.flush).toHaveBeenCalledBefore(
+          harness.trashFile,
+        );
+      }),
+  );
 
-  it("takes back the documents it created when a later write fails", async () => {
-    const harness = makeHarness({ pending: true });
-    await using service = harness.service;
-    await service.ready;
-    harness.template.getLegacyTemplateDocuments.mockReturnValue({
-      citation: [
-        {
-          name: "cite",
-          path: "templates/zotlit-cite.liquid.md",
-          language: "liquid",
-          inert: false,
-          shadowed: [],
+  it.effect("names the missing verification annotation and its recovery", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* Effect.promise(() =>
+        makeHarness(
+          {
+            pending: true,
+            ejectedAnnotation: true,
+            verificationAnnotation: null,
+          },
+          context,
+        ),
+      );
+      yield* acquireAsyncDisposable(async () => harness.service);
+
+      const result = yield* Effect.promise(() => harness.service.convert());
+
+      expect(result).toEqual({
+        outcome: "refused",
+        diagnostic: {
+          code: "no-verification-annotation",
+          message:
+            "No Zotero annotation is available for conversion verification",
+          hint: "Add an annotation to a Zotero item, then retry conversion.",
         },
-      ],
-      partials: [],
-    });
-    harness.template.convertLegacyTemplateDocuments.mockResolvedValueOnce({
-      documents: [
-        { path: "templates/zotlit-citation.md", source: "citation source" },
-      ],
-      trashed: ["templates/zotlit-cite.liquid.md"],
-      kept: [],
-    });
-    let writes = 0;
-    harness.create.mockImplementation(async (path: string, source: string) => {
-      writes += 1;
-      if (writes === 2) throw new Error("Disk full");
-      const file = { path, source };
-      harness.files.set(path, file);
-      return file;
-    });
-
-    await expect(service.convert()).rejects.toThrow("Disk full");
-
-    // Only the document this pass created goes back; every legacy file stays.
-    expect(harness.trashFile).toHaveBeenCalledTimes(1);
-    expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
-      false,
-    );
-    expect(harness.files.has("templates/zotlit-note.liquid.md")).toBe(true);
-    expect(harness.settings.current["note.template-conversion-pending"]).toBe(
-      true,
-    );
-    expect(
-      harness.settings.current["note.template-conversion-result"],
-    ).toBeNull();
-  });
-
-  it("does not infer a completed conversion from an existing Default document", async () => {
-    const harness = makeHarness({ pending: true, defaultDocument: "existing" });
-    await using service = harness.service;
-    await service.ready;
-    expect(
-      harness.settings.current["note.template-conversion-result"],
-    ).toBeNull();
-    expect(harness.settings.current["note.template-conversion-pending"]).toBe(
-      false,
-    );
-  });
-
-  it("leaves the vault and settings untouched when parity verification fails", async () => {
-    const harness = makeHarness({ pending: true });
-    await harness.service.ready;
-    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
-      new LegacyTemplateConversionError(
-        "legacy-render-mismatch",
-        "Converted create output differs at byte 10",
-        {
-          difference: "create output",
-          recovery: "Keep the legacy files unchanged.",
-        },
-      ),
-    );
-    harness.settings.update.mockClear();
-
-    const result = await harness.service.convert();
-
-    expect(result).toEqual({
-      outcome: "refused",
-      diagnostic: {
-        code: "legacy-render-mismatch",
-        difference: "create output",
-        message: "Converted create output differs at byte 10",
-        hint: "Keep the legacy files unchanged.",
-        files: [
-          "templates/zotlit-filename.liquid.md",
-          "templates/zotlit-note.liquid.md",
-          "templates/zotlit-content.liquid.md",
-        ],
-      },
-    });
-    expect(harness.create).not.toHaveBeenCalled();
-    expect(harness.trashFile).not.toHaveBeenCalled();
-    expect(harness.settings.update).not.toHaveBeenCalled();
-  });
-
-  it("returns affected fields and leaves the vault untouched when the dry run fails", async () => {
-    const harness = makeHarness({ pending: true });
-    await harness.service.ready;
-    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
-      new LegacyTemplateConversionError(
-        "legacy-frontmatter-evaluation",
-        "Converted Managed Frontmatter failed for: tags, creators",
-        {
-          difference: "Managed Frontmatter evaluation",
-          recovery: "Correct these fields, then retry conversion.",
-          fields: ["tags", "creators"],
-        },
-      ),
-    );
-
-    const result = await harness.service.convert();
-
-    expect(result).toEqual({
-      outcome: "refused",
-      diagnostic: {
-        code: "legacy-frontmatter-evaluation",
-        difference: "Managed Frontmatter evaluation",
-        message: "Converted Managed Frontmatter failed for: tags, creators",
-        hint: "Correct these fields, then retry conversion.",
-        fields: ["tags", "creators"],
-      },
-    });
-    expect(harness.create).not.toHaveBeenCalled();
-    expect(harness.trashFile).not.toHaveBeenCalled();
-  });
-
-  it("trashes an ejected annotation template after the verified document write", async () => {
-    const harness = makeHarness({ pending: true, ejectedAnnotation: true });
-    await harness.service.ready;
-
-    const result = await harness.service.convert();
-
-    expect(result).toMatchObject({
-      outcome: "converted",
-      trashed: expect.arrayContaining([
-        "templates/zotlit-annotation.liquid.md",
-      ]),
-    });
-    expect(
-      harness.template.convertLegacyLiteratureNoteTemplates,
-    ).toHaveBeenCalledWith({
-      note: { title: "Paper" },
-      filename: { citationKey: "doePaper" },
-      annotation: { text: "Excerpt" },
-    });
-    expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
-  });
-
-  it("names the missing verification annotation and its recovery", async () => {
-    const harness = makeHarness({
-      pending: true,
-      ejectedAnnotation: true,
-      verificationAnnotation: null,
-    });
-    await harness.service.ready;
-
-    const result = await harness.service.convert();
-
-    expect(result).toEqual({
-      outcome: "refused",
-      diagnostic: {
-        code: "no-verification-annotation",
-        message:
-          "No Zotero annotation is available for conversion verification",
-        hint: "Add an annotation to a Zotero item, then retry conversion.",
-      },
-    });
-    expect(harness.create).not.toHaveBeenCalled();
-    expect(harness.trashFile).not.toHaveBeenCalled();
-  });
+      });
+      expect(harness.create).not.toHaveBeenCalled();
+      expect(harness.trashFile).not.toHaveBeenCalled();
+    }),
+  );
 });
 
 const CITE_LIQUID = "<{{ zt.citations | pandoc_cite }}>\n";
@@ -483,6 +625,7 @@ const SUMMARY_LIQUID = "> {{ zt.abstract }}\n";
 async function makeVaultHarness(
   files: Record<string, string>,
   options?: { javascriptTemplates?: boolean; storedSettings?: unknown },
+  context = Context.empty(),
 ) {
   const vault = new MockVault();
   for (const [path, content] of Object.entries(files)) {
@@ -519,7 +662,7 @@ async function makeVaultHarness(
   // fails halfway still disposes what it already built.
   await using stack = new AsyncDisposableStack();
   const settings = stack.use(
-    new SettingsService({
+    await buildSettings({
       plugin,
       migrateLegacy: noMigration,
       migrateV1: noMigration,
@@ -533,28 +676,32 @@ async function makeVaultHarness(
       migrateV9: noMigration,
     }),
   );
-  await settings.ready;
-  const template = stack.use(new TemplateService({ app, settings }));
-  await template.ready;
+  await settings.loaded;
+  const template = stack.use(await buildTemplate({ app, settings }, context));
   const openPrompt = vi.fn();
   const service = stack.use(
-    new LiteratureNoteTemplateMigrationService({
-      app,
-      settings,
-      template,
-      loadVerificationData: async () => ({
-        note: { title: "Paper" },
-        filename: { citationKey: "smith2024" },
-        annotation: null,
-        citation: [{ citationKey: "smith2024" }],
-      }),
-      openPrompt,
-    }),
+    await buildMigration(
+      {
+        app,
+        settings,
+        template,
+        loadVerificationData: async () => ({
+          note: { title: "Paper" },
+          filename: { citationKey: "smith2024" },
+          annotation: null,
+          citation: [{ citationKey: "smith2024" }],
+        }),
+        openPrompt,
+      },
+      context,
+    ),
   );
-  await service.ready;
   const owned = stack.move();
   return {
-    layoutReady: () => layoutReady?.(),
+    layoutReady: async () => {
+      await layoutReady?.();
+      await service.whenSettled();
+    },
     openPrompt,
     service,
     settings,
@@ -567,37 +714,43 @@ async function makeVaultHarness(
 }
 
 describe("one-pass conversion of the 2.1.x cite and partial files", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  beforeEach(() => {});
+  afterEach(() => {});
 
-  it("folds cite and cite2 into one Citation Template and renames each partial", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-      "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
-      "templates/zotlit-authors.liquid.md": AUTHORS_LIQUID,
-      "templates/zotlit-summary.liquid.md": SUMMARY_LIQUID,
-    });
+  it.effect(
+    "folds cite and cite2 into one Citation Template and renames each partial",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+              "templates/zotlit-authors.liquid.md": AUTHORS_LIQUID,
+              "templates/zotlit-summary.liquid.md": SUMMARY_LIQUID,
+            },
+            undefined,
+            context,
+          ),
+        );
 
-    const result = await harness.service.convert();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toEqual({
-      outcome: "converted",
-      document: null,
-      trashed: [
-        "templates/zotlit-cite.liquid.md",
-        "templates/zotlit-cite2.liquid.md",
-        "templates/zotlit-authors.liquid.md",
-        "templates/zotlit-summary.liquid.md",
-      ],
-      pendingCleanup: [],
-      kept: [],
-    });
-    expect(harness.vault.contents.get("templates/zotlit-citation.md")).toBe(
-      `---
+        expect(result).toEqual({
+          outcome: "converted",
+          document: null,
+          trashed: [
+            "templates/zotlit-cite.liquid.md",
+            "templates/zotlit-cite2.liquid.md",
+            "templates/zotlit-authors.liquid.md",
+            "templates/zotlit-summary.liquid.md",
+          ],
+          pendingCleanup: [],
+          kept: [],
+        });
+        expect(harness.vault.contents.get("templates/zotlit-citation.md")).toBe(
+          `---
 language: liquid
 ---
 {% if zt.variant == "alt" %}
@@ -606,78 +759,117 @@ language: liquid
   <{{ zt.citations | pandoc_cite }}>
 {% endif %}
 `,
-    );
-    expect(
-      harness.vault.contents.get("templates/zotlit-partial.authors.md"),
-    ).toBe(`---\nlanguage: liquid\n---\n${AUTHORS_LIQUID}`);
-    expect(
-      harness.vault.contents.get("templates/zotlit-partial.summary.md"),
-    ).toBe(`---\nlanguage: liquid\n---\n${SUMMARY_LIQUID}`);
-    expect(harness.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
-      false,
-    );
-    expect(harness.vault.files.has("templates/zotlit-authors.liquid.md")).toBe(
-      false,
-    );
-  });
+        );
+        expect(
+          harness.vault.contents.get("templates/zotlit-partial.authors.md"),
+        ).toBe(`---\nlanguage: liquid\n---\n${AUTHORS_LIQUID}`);
+        expect(
+          harness.vault.contents.get("templates/zotlit-partial.summary.md"),
+        ).toBe(`---\nlanguage: liquid\n---\n${SUMMARY_LIQUID}`);
+        expect(harness.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
+          false,
+        );
+        expect(
+          harness.vault.files.has("templates/zotlit-authors.liquid.md"),
+        ).toBe(false);
+      }),
+  );
 
-  it("keeps both gestures rendering what their legacy file rendered", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-      "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
-    });
-    const refs = [{ citationKey: "smith2024" }];
-    const before = {
-      main: harness.template.render(
-        "cite",
-        citekeysToCiteTemplateData(refs, "main"),
-      ),
-      alt: harness.template.render(
-        "cite2",
-        citekeysToCiteTemplateData(refs, "alt"),
-      ),
-    };
+  it.effect(
+    "keeps both gestures rendering what their legacy file rendered",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+            },
+            undefined,
+            context,
+          ),
+        );
+        const refs = [{ citationKey: "smith2024" }];
+        const before = {
+          main: harness.template.render(
+            "cite",
+            citekeysToCiteTemplateData(refs, "main"),
+          ),
+          alt: harness.template.render(
+            "cite2",
+            citekeysToCiteTemplateData(refs, "alt"),
+          ),
+        };
 
-    await harness.service.convert();
-    await vi.advanceTimersByTimeAsync(500);
+        yield* Effect.promise(() => harness.service.convert());
+        yield* TestClock.adjust(500);
 
-    expect(before).toEqual({ main: "<[@smith2024]>\n", alt: "@smith2024!\n" });
-    expect(harness.template.renderCitation(refs, "main")).toBe(
-      "<[@smith2024]>",
-    );
-    expect(harness.template.renderCitation(refs, "alt")).toBe("@smith2024!");
-  });
+        expect(before).toEqual({
+          main: "<[@smith2024]>\n",
+          alt: "@smith2024!\n",
+        });
+        expect(harness.template.renderCitation(refs, "main")).toBe(
+          "<[@smith2024]>",
+        );
+        expect(harness.template.renderCitation(refs, "alt")).toBe(
+          "@smith2024!",
+        );
+      }),
+  );
 
-  it("carries an Eta partial's language into its manifest", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-authors.eta.md": "<%= zt.creators.join(', ') %>\n",
-    });
+  it.effect("carries an Eta partial's language into its manifest", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* acquireAsyncDisposable(() =>
+        makeVaultHarness(
+          {
+            "templates/zotlit-authors.eta.md":
+              "<%= zt.creators.join(', ') %>\n",
+          },
+          undefined,
+          context,
+        ),
+      );
 
-    const result = await harness.service.convert();
+      const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toMatchObject({ document: null, kept: [] });
-    expect(
-      harness.vault.contents.get("templates/zotlit-partial.authors.md"),
-    ).toBe("---\nlanguage: eta\n---\n<%= zt.creators.join(', ') %>\n");
-  });
+      expect(result).toMatchObject({ document: null, kept: [] });
+      expect(
+        harness.vault.contents.get("templates/zotlit-partial.authors.md"),
+      ).toBe("---\nlanguage: eta\n---\n<%= zt.creators.join(', ') %>\n");
+    }),
+  );
 
-  it("folds a mixed-language pair as Liquid and leaves the Eta file in place", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-      "templates/zotlit-cite2.eta.md":
-        '<%= pandocCite(zt.citations, "prefer-author-in-text") %>?\n',
-    });
+  it.effect(
+    "folds a mixed-language pair as Liquid and leaves the Eta file in place",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              "templates/zotlit-cite2.eta.md":
+                '<%= pandocCite(zt.citations, "prefer-author-in-text") %>?\n',
+            },
+            undefined,
+            context,
+          ),
+        );
 
-    const result = await harness.service.convert();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toMatchObject({
-      outcome: "converted",
-      trashed: ["templates/zotlit-cite.liquid.md"],
-      kept: ["templates/zotlit-cite2.eta.md"],
-    });
-    expect(harness.vault.files.has("templates/zotlit-cite2.eta.md")).toBe(true);
-    expect(harness.vault.contents.get("templates/zotlit-citation.md")).toBe(
-      `---
+        expect(result).toMatchObject({
+          outcome: "converted",
+          trashed: ["templates/zotlit-cite.liquid.md"],
+          kept: ["templates/zotlit-cite2.eta.md"],
+        });
+        expect(harness.vault.files.has("templates/zotlit-cite2.eta.md")).toBe(
+          true,
+        );
+        expect(harness.vault.contents.get("templates/zotlit-citation.md")).toBe(
+          `---
 language: liquid
 ---
 {% if zt.variant == "alt" %}
@@ -686,295 +878,495 @@ language: liquid
   <{{ zt.citations | pandoc_cite }}>
 {% endif %}
 `,
-    );
-  });
+        );
+      }),
+  );
 
-  it("refuses a fold whose branch renders a legacy name the pass trashes", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-      "templates/zotlit-cite2.liquid.md":
-        '{% render "cite" with zt as zt %}!\n',
-    });
+  it.effect(
+    "refuses a fold whose branch renders a legacy name the pass trashes",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              "templates/zotlit-cite2.liquid.md":
+                '{% render "cite" with zt as zt %}!\n',
+            },
+            undefined,
+            context,
+          ),
+        );
 
-    const result = await harness.service.convert();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toMatchObject({
-      outcome: "refused",
-      diagnostic: { code: "unsupported-legacy-template" },
-    });
-    expect(harness.vault.files.has("templates/zotlit-citation.md")).toBe(false);
-  });
+        expect(result).toMatchObject({
+          outcome: "refused",
+          diagnostic: { code: "unsupported-legacy-template" },
+        });
+        expect(harness.vault.files.has("templates/zotlit-citation.md")).toBe(
+          false,
+        );
+      }),
+  );
 
-  it("prompts once for a vault holding both note slots and cite files", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-note.liquid.md": "# {{ zt.title }}\n",
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-    });
+  it.effect(
+    "prompts once for a vault holding both note slots and cite files",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-note.liquid.md": "# {{ zt.title }}\n",
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+            },
+            undefined,
+            context,
+          ),
+        );
 
-    await harness.layoutReady();
+        yield* Effect.promise(() => harness.layoutReady());
 
-    expect(harness.openPrompt).toHaveBeenCalledOnce();
-    expect(harness.settings.current?.["note.template-conversion-pending"]).toBe(
-      true,
-    );
-  });
+        expect(harness.openPrompt).toHaveBeenCalledOnce();
+        expect(
+          harness.settings.current?.["note.template-conversion-pending"],
+        ).toBe(true);
+      }),
+  );
 
-  it("prompts for a vault holding only zotlit-cite.liquid.md", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-    });
+  it.effect("prompts for a vault holding only zotlit-cite.liquid.md", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* acquireAsyncDisposable(() =>
+        makeVaultHarness(
+          {
+            "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+          },
+          undefined,
+          context,
+        ),
+      );
 
-    await harness.layoutReady();
+      yield* Effect.promise(() => harness.layoutReady());
 
-    expect(harness.openPrompt).toHaveBeenCalledOnce();
-  });
+      expect(harness.openPrompt).toHaveBeenCalledOnce();
+    }),
+  );
 
-  it("leaves a vault with no legacy file unprompted", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-citation.md": "{{ zt.citations | pandoc_cite }}\n",
-    });
+  it.effect("leaves a vault with no legacy file unprompted", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const harness = yield* acquireAsyncDisposable(() =>
+        makeVaultHarness(
+          {
+            "templates/zotlit-citation.md":
+              "{{ zt.citations | pandoc_cite }}\n",
+          },
+          undefined,
+          context,
+        ),
+      );
 
-    await harness.layoutReady();
+      yield* Effect.promise(() => harness.layoutReady());
 
-    expect(harness.openPrompt).not.toHaveBeenCalled();
-    expect(await harness.service.convert()).toMatchObject({
-      outcome: "refused",
-      diagnostic: { code: "no-legacy-templates" },
-    });
-  });
+      expect(harness.openPrompt).not.toHaveBeenCalled();
+      expect(
+        yield* Effect.promise(() => harness.service.convert()),
+      ).toMatchObject({
+        outcome: "refused",
+        diagnostic: { code: "no-legacy-templates" },
+      });
+    }),
+  );
 
-  it("writes nothing when the Citation Template document already exists", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-      "templates/zotlit-citation.md": "{{ zt.citations | pandoc_cite }}\n",
-    });
+  it.effect(
+    "writes nothing when the Citation Template document already exists",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+              "templates/zotlit-citation.md":
+                "{{ zt.citations | pandoc_cite }}\n",
+            },
+            undefined,
+            context,
+          ),
+        );
 
-    const result = await harness.service.convert();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toEqual({
-      outcome: "refused",
-      diagnostic: {
-        code: "converted-document-exists",
-        message:
-          "Converted document already exists at templates/zotlit-citation.md",
-        hint: "Rename or remove that document, then retry conversion.",
-      },
-    });
-    expect(harness.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
-      true,
-    );
-  });
+        expect(result).toEqual({
+          outcome: "refused",
+          diagnostic: {
+            code: "converted-document-exists",
+            message:
+              "Converted document already exists at templates/zotlit-citation.md",
+            hint: "Rename or remove that document, then retry conversion.",
+          },
+        });
+        expect(harness.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
+          true,
+        );
+      }),
+  );
 
-  it("refuses an Eta citation fold while JavaScript Templates are off", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-cite.eta.md": "<%= pandocCite(zt.citations) %>\n",
-    });
+  it.effect(
+    "refuses an Eta citation fold while JavaScript Templates are off",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-cite.eta.md":
+                "<%= pandocCite(zt.citations) %>\n",
+            },
+            undefined,
+            context,
+          ),
+        );
 
-    const result = await harness.service.convert();
+        const result = yield* Effect.promise(() => harness.service.convert());
 
-    expect(result).toMatchObject({
-      outcome: "refused",
-      diagnostic: { code: "unsupported-legacy-template" },
-    });
-    expect(harness.vault.files.has("templates/zotlit-citation.md")).toBe(false);
-    expect(harness.vault.files.has("templates/zotlit-cite.eta.md")).toBe(true);
-  });
+        expect(result).toMatchObject({
+          outcome: "refused",
+          diagnostic: { code: "unsupported-legacy-template" },
+        });
+        expect(harness.vault.files.has("templates/zotlit-citation.md")).toBe(
+          false,
+        );
+        expect(harness.vault.files.has("templates/zotlit-cite.eta.md")).toBe(
+          true,
+        );
+      }),
+  );
 });
 
 describe("the one-shot conversion aborts before any write", () => {
-  it("leaves the vault untouched when a citation variant fails verification", async () => {
-    const harness = makeHarness({
-      pending: true,
-      legacyDocuments: {
-        citation: [
-          {
-            name: "cite",
-            path: "templates/zotlit-cite.liquid.md",
-            language: "liquid",
-            inert: false,
-            shadowed: [],
+  it.effect(
+    "leaves the vault untouched when a citation variant fails verification",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness(
+            {
+              pending: true,
+              legacyDocuments: {
+                citation: [
+                  {
+                    name: "cite",
+                    path: "templates/zotlit-cite.liquid.md",
+                    language: "liquid",
+                    inert: false,
+                    shadowed: [],
+                  },
+                ],
+                partials: [],
+              },
+            },
+            context,
+          ),
+        );
+        yield* acquireAsyncDisposable(async () => harness.service);
+        harness.template.convertLegacyTemplateDocuments.mockRejectedValueOnce(
+          new LegacyTemplateConversionError(
+            "legacy-render-mismatch",
+            "Converted alternate citation output differs from the legacy render at byte 4",
+            {
+              difference: "alternate citation output",
+              recovery: "Keep the legacy files unchanged.",
+            },
+          ),
+        );
+        harness.settings.update.mockClear();
+
+        const result = yield* Effect.promise(() => harness.service.convert());
+
+        expect(result).toEqual({
+          outcome: "refused",
+          diagnostic: {
+            code: "legacy-render-mismatch",
+            difference: "alternate citation output",
+            message:
+              "Converted alternate citation output differs from the legacy render at byte 4",
+            hint: "Keep the legacy files unchanged.",
+            files: ["templates/zotlit-cite.liquid.md"],
           },
-        ],
-        partials: [],
-      },
-    });
-    await harness.service.ready;
-    harness.template.convertLegacyTemplateDocuments.mockRejectedValueOnce(
-      new LegacyTemplateConversionError(
-        "legacy-render-mismatch",
-        "Converted alternate citation output differs from the legacy render at byte 4",
-        {
-          difference: "alternate citation output",
-          recovery: "Keep the legacy files unchanged.",
-        },
-      ),
-    );
-    harness.settings.update.mockClear();
-
-    const result = await harness.service.convert();
-
-    expect(result).toEqual({
-      outcome: "refused",
-      diagnostic: {
-        code: "legacy-render-mismatch",
-        difference: "alternate citation output",
-        message:
-          "Converted alternate citation output differs from the legacy render at byte 4",
-        hint: "Keep the legacy files unchanged.",
-        files: ["templates/zotlit-cite.liquid.md"],
-      },
-    });
-    expect(harness.create).not.toHaveBeenCalled();
-    expect(harness.trashFile).not.toHaveBeenCalled();
-    expect(harness.settings.update).not.toHaveBeenCalled();
-  });
+        });
+        expect(harness.create).not.toHaveBeenCalled();
+        expect(harness.trashFile).not.toHaveBeenCalled();
+        expect(harness.settings.update).not.toHaveBeenCalled();
+      }),
+  );
 });
 
 describe("layout-ready legacy conversion detection", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
   const original = {
     "templates/zotlit-note.liquid.md":
       '# Late inventory {{ zt.title }}\n{% render "content" with zt as zt %}',
     "templates/zotlit-cite.liquid.md": CITE_LIQUID,
   };
 
-  it("arms the prompt from the layout-ready scan when startup preceded the inventory", async () => {
-    await using harness = await makeVaultHarness({});
-    expect(harness.settings.current?.["note.template-conversion-pending"]).toBe(
-      false,
-    );
-    // Obsidian populates its initial inventory without create events.
-    for (const [path, source] of Object.entries(original))
-      harness.vault.addFile(path, source);
+  it.effect(
+    "arms the prompt from the layout-ready scan when startup preceded the inventory",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness({}, undefined, context),
+        );
+        expect(
+          harness.settings.current?.["note.template-conversion-pending"],
+        ).toBe(false);
+        // Obsidian populates its initial inventory without create events.
+        for (const [path, source] of Object.entries(original))
+          harness.vault.addFile(path, source);
 
-    await harness.layoutReady();
+        yield* Effect.promise(() => harness.layoutReady());
 
-    expect(harness.openPrompt).toHaveBeenCalledOnce();
-    expect(harness.settings.current?.["note.template-conversion-pending"]).toBe(
-      true,
-    );
-    expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
-  });
+        expect(harness.openPrompt).toHaveBeenCalledOnce();
+        expect(
+          harness.settings.current?.["note.template-conversion-pending"],
+        ).toBe(true);
+        expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
+      }),
+  );
 
-  it("keeps a postponed conversion postponed when the inventory arrives late after restart", async () => {
-    await using resumed = await makeVaultHarness(
-      {},
-      {
-        storedSettings: {
-          __VERSION__: 1,
-          "note.template-conversion-pending": true,
-        },
-      },
-    );
-    for (const [path, source] of Object.entries(original))
-      resumed.vault.addFile(path, source);
+  it.effect(
+    "keeps a postponed conversion postponed when the inventory arrives late after restart",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const resumed = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {},
+            {
+              storedSettings: {
+                __VERSION__: 1,
+                "note.template-conversion-pending": true,
+              },
+            },
+            context,
+          ),
+        );
+        for (const [path, source] of Object.entries(original))
+          resumed.vault.addFile(path, source);
 
-    await resumed.layoutReady();
+        yield* Effect.promise(() => resumed.layoutReady());
 
-    expect(resumed.openPrompt).not.toHaveBeenCalled();
-    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
-      true,
-    );
-    // The late inventory still renders through the legacy files.
-    expect(
-      resumed.template.render(
-        "cite",
-        citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
-      ),
-    ).toBe("<[@smith2024]>\n");
-    expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
-  });
+        expect(resumed.openPrompt).not.toHaveBeenCalled();
+        expect(
+          resumed.settings.current?.["note.template-conversion-pending"],
+        ).toBe(true);
+        // The late inventory still renders through the legacy files.
+        expect(
+          resumed.template.render(
+            "cite",
+            citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
+          ),
+        ).toBe("<[@smith2024]>\n");
+        expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
+      }),
+  );
 });
 
 describe("repair and retry after a refusal", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  it.effect(
+    "names the Literature Note slots a layout refusal needs edited and converts once they are fixed",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            {
+              "templates/zotlit-note.liquid.md":
+                "# No content {{ zt.title }}\n",
+              "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+            },
+            undefined,
+            context,
+          ),
+        );
 
-  it("names the Literature Note slots a layout refusal needs edited and converts once they are fixed", async () => {
-    await using harness = await makeVaultHarness({
-      "templates/zotlit-note.liquid.md": "# No content {{ zt.title }}\n",
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-    });
+        const refused = yield* Effect.promise(() => harness.service.convert());
 
-    const refused = await harness.service.convert();
+        expect(refused).toMatchObject({
+          outcome: "refused",
+          diagnostic: {
+            code: "unsupported-legacy-template",
+            files: ["templates/zotlit-note.liquid.md"],
+          },
+        });
+        expect(
+          harness.vault.files.has("templates/zotlit-profile.default.md"),
+        ).toBe(false);
 
-    expect(refused).toMatchObject({
-      outcome: "refused",
-      diagnostic: {
-        code: "unsupported-legacy-template",
-        files: ["templates/zotlit-note.liquid.md"],
-      },
-    });
-    expect(harness.vault.files.has("templates/zotlit-profile.default.md")).toBe(
-      false,
-    );
+        harness.vault.modifyFile(
+          "templates/zotlit-note.liquid.md",
+          '# Fixed {{ zt.title }}\n{% render "content" with zt as zt %}',
+        );
+        yield* TestClock.adjust(500);
 
-    harness.vault.modifyFile(
-      "templates/zotlit-note.liquid.md",
-      '# Fixed {{ zt.title }}\n{% render "content" with zt as zt %}',
-    );
-    await vi.advanceTimersByTimeAsync(500);
+        const retried = yield* Effect.promise(() => harness.service.convert());
 
-    const retried = await harness.service.convert();
-
-    expect(retried).toMatchObject({ outcome: "converted", pendingCleanup: [] });
-    expect(harness.vault.files.has("templates/zotlit-profile.default.md")).toBe(
-      true,
-    );
-    expect(harness.vault.files.has("templates/zotlit-note.liquid.md")).toBe(
-      false,
-    );
-  });
+        expect(retried).toMatchObject({
+          outcome: "converted",
+          pendingCleanup: [],
+        });
+        expect(
+          harness.vault.files.has("templates/zotlit-profile.default.md"),
+        ).toBe(true);
+        expect(harness.vault.files.has("templates/zotlit-note.liquid.md")).toBe(
+          false,
+        );
+      }),
+  );
 });
 
 describe("cleanup retry across restart", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  it.effect(
+    "records the file trash refused and clears it when a later session retries",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        let storedSettings: unknown;
+        {
+          const first = yield* acquireAsyncDisposable(() =>
+            makeVaultHarness(
+              {
+                "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+                "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+              },
+              undefined,
+              context,
+            ),
+          );
+          first.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
 
-  it("records the file trash refused and clears it when a later session retries", async () => {
-    let storedSettings: unknown;
-    {
-      await using first = await makeVaultHarness({
-        "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-        "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
-      });
-      first.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+          const converted = yield* Effect.promise(() =>
+            first.service.convert(),
+          );
 
-      const converted = await first.service.convert();
+          expect(converted).toMatchObject({
+            outcome: "converted",
+            trashed: ["templates/zotlit-cite2.liquid.md"],
+            pendingCleanup: ["templates/zotlit-cite.liquid.md"],
+          });
+          expect(first.vault.files.has("templates/zotlit-citation.md")).toBe(
+            true,
+          );
+          expect(first.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
+            true,
+          );
+          storedSettings = first.storedSettings();
+        }
+        const resumed = yield* acquireAsyncDisposable(() =>
+          makeVaultHarness(
+            { "templates/zotlit-cite.liquid.md": CITE_LIQUID },
+            { storedSettings },
+            context,
+          ),
+        );
+        expect(
+          resumed.settings.current?.["note.template-conversion-result"],
+        ).toMatchObject({
+          pendingCleanup: ["templates/zotlit-cite.liquid.md"],
+        });
+        expect(resumed.openPrompt).not.toHaveBeenCalled();
 
-      expect(converted).toMatchObject({
-        outcome: "converted",
-        trashed: ["templates/zotlit-cite2.liquid.md"],
-        pendingCleanup: ["templates/zotlit-cite.liquid.md"],
-      });
-      expect(first.vault.files.has("templates/zotlit-citation.md")).toBe(true);
-      expect(first.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
-        true,
-      );
-      storedSettings = first.storedSettings();
-    }
-    await using resumed = await makeVaultHarness(
-      { "templates/zotlit-cite.liquid.md": CITE_LIQUID },
-      { storedSettings },
-    );
-    expect(
-      resumed.settings.current?.["note.template-conversion-result"],
-    ).toMatchObject({ pendingCleanup: ["templates/zotlit-cite.liquid.md"] });
-    expect(resumed.openPrompt).not.toHaveBeenCalled();
+        const retried = yield* Effect.promise(() =>
+          resumed.service.retryCleanup(),
+        );
 
-    const retried = await resumed.service.retryCleanup();
-
-    expect(retried).toMatchObject({
-      trashed: ["templates/zotlit-cite.liquid.md"],
-      pendingCleanup: [],
-    });
-    expect(resumed.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
-      false,
-    );
-    expect(resumed.storedSettings()).toMatchObject({
-      "note.template-conversion-result": { trashed: 2, pendingCleanup: [] },
-    });
-  });
+        expect(retried).toMatchObject({
+          trashed: ["templates/zotlit-cite.liquid.md"],
+          pendingCleanup: [],
+        });
+        expect(resumed.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
+          false,
+        );
+        expect(resumed.storedSettings()).toMatchObject({
+          "note.template-conversion-result": { trashed: 2, pendingCleanup: [] },
+        });
+      }),
+  );
 });
+
+async function buildMigration(
+  options: TemplateMigrationOptions & {
+    app: App;
+    settings: {
+      current: Partial<PlainPluginSettings["current"]>;
+      update: (patch: Partial<PlainPluginSettings["current"]>) => void;
+      flush: () => Promise<void>;
+    };
+    template: Pick<
+      PlainTemplate,
+      | "refresh"
+      | "getLegacyLiteratureNoteTemplateFiles"
+      | "getLegacyTemplateDocuments"
+      | "convertLegacyTemplateDocuments"
+    > & {
+      convertLegacyLiteratureNoteTemplates: (data: {
+        note: object;
+        filename: object;
+        annotation?: object;
+      }) => Promise<{ source: string; legacyFiles: readonly string[] }>;
+    };
+  },
+  context = Context.empty(),
+) {
+  await using stack = new AsyncDisposableStack();
+  const template = options.template;
+  const runtime = buildRuntime(
+    layerTemplateMigration(options).pipe(
+      Layer.provide(Layer.succeed(ObsidianApp, options.app)),
+      Layer.provide(templateSettings(options.settings as PlainPluginSettings)),
+      Layer.provide(
+        Layer.succeed(
+          Template,
+          stubService<Template["Service"]>("Template", {
+            refresh: () => Effect.promise(() => template.refresh()),
+            getLegacyLiteratureNoteTemplateFiles: () =>
+              Effect.sync(() =>
+                template.getLegacyLiteratureNoteTemplateFiles(),
+              ),
+            getLegacyTemplateDocuments: () =>
+              Effect.sync(() => template.getLegacyTemplateDocuments()),
+            // The fake template converts to the fields migration reads only.
+            convertLegacyLiteratureNoteTemplates: ((data: {
+              note: object;
+              filename: object;
+              annotation?: object;
+            }) =>
+              Effect.tryPromise({
+                try: () => template.convertLegacyLiteratureNoteTemplates(data),
+                catch: (error) => error,
+              })) as unknown as Template["Service"]["convertLegacyLiteratureNoteTemplates"],
+            convertLegacyTemplateDocuments: ((
+              refs: readonly import("@zotlit/db").CiteRef[],
+            ) =>
+              Effect.tryPromise({
+                try: () => template.convertLegacyTemplateDocuments(refs),
+                catch: (error) => error,
+              })) as unknown as Template["Service"]["convertLegacyTemplateDocuments"],
+          }),
+        ),
+      ),
+      Layer.provideMerge(Layer.succeedContext(context)),
+    ),
+    stack,
+  );
+  await runtime.context();
+  const service = plainTemplateMigration(runtime);
+  const lifetime = stack.move();
+  return Object.assign(service, {
+    [Symbol.asyncDispose]: () => lifetime.disposeAsync(),
+  });
+}

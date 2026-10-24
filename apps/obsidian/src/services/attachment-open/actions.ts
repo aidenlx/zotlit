@@ -15,9 +15,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { activateAnnotView } from "@/views/annot-view/register";
 
 import type { TargetOpener, TargetReader } from "./open-target";
@@ -29,14 +29,14 @@ const logger = getLogger("attachment-open");
 /** What resolving a Literature Note's Attachments needs. */
 export interface AttachmentOpenLookupDeps {
   app: App;
-  reads: Pick<ZoteroReadsService, "acquireRead">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  reads: Pick<PlainZoteroReads, "acquireRead">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
 }
 
 /** What opening a PDF in Obsidian needs, wherever the gesture came from. */
 export interface PdfReaderDeps {
   app: App;
-  settings: Pick<SettingsService, "current">;
+  settings: Pick<PlainPluginSettings, "current">;
 }
 
 /**

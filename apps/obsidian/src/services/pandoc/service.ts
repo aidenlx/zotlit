@@ -1,14 +1,12 @@
 // The Pandoc engine as a Managed Binary: the pinned `pandoc.wasm` inside the official release archive.
 
 import { unzipSync } from "fflate";
-import type { App } from "obsidian";
 
-import {
-  ManagedBinaryService,
-  obsidianBinaryPorts,
-} from "@/services/managed-binary/service";
+import { Context } from "@/lib/effect";
+import { layerManagedBinary } from "@/services/managed-binary/service";
 import type {
   ManagedBinary,
+  ManagedBinaryApi,
   ManagedBinaryFailure,
   ManagedBinaryStatus,
 } from "@/services/managed-binary/service";
@@ -36,12 +34,15 @@ export const PANDOC_ENGINE: ManagedBinary<CitationEngine> = {
   createEngine: createCitationEngine,
 };
 
-export type PandocEngineService = ManagedBinaryService<CitationEngine>;
+export class PandocEngine extends Context.Service<
+  PandocEngine,
+  ManagedBinaryApi<CitationEngine>
+>()("zotlit/pandoc/PandocEngine") {}
 
-/** The service over Obsidian's own ports: `requestUrl` and the origin's OPFS. */
-export function createPandocEngineService(app: App): PandocEngineService {
-  return new ManagedBinaryService(PANDOC_ENGINE, obsidianBinaryPorts(app));
-}
+export const layerPandocEngine = layerManagedBinary(
+  PandocEngine,
+  PANDOC_ENGINE,
+);
 
 /** The official asset nests the binary under a release-named directory. */
 function extractBinary(

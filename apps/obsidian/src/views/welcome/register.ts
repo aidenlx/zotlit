@@ -5,11 +5,14 @@
 // @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
 import type { App, Plugin } from "obsidian";
 
+import { Stream } from "@/lib/effect";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { QueryClientService } from "@/services/query-client/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { openLibraryView } from "@/views/library/register";
 import { LIBRARY_VIEW_TYPE } from "@/views/library/view";
 
@@ -18,9 +21,20 @@ import { notFoundNoticeChange } from "./not-found-notice";
 import type { NotFoundSignal } from "./not-found-notice";
 
 export interface WelcomeRegistrationDeps {
-  reads: Pick<ZoteroReadsService, "on">;
-  queries: Pick<QueryClientService, "invalidate">;
-  settings: Pick<SettingsService, "update">;
+  runtime: SubscriptionRuntime;
+  reads: Pick<
+    PlainZoteroReads,
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
+    | "changes"
+    | "dbFileMissing"
+  >;
+  queries: Pick<PlainQueryClients, "invalidate">;
+  settings: Pick<PlainPluginSettings, "update">;
 }
 
 export function registerWelcomeView(
@@ -28,7 +42,11 @@ export function registerWelcomeView(
   deps: WelcomeRegistrationDeps,
 ): void {
   plugin.register(
-    holdConnectionReadout({ reads: deps.reads, queries: deps.queries }),
+    holdConnectionReadout({
+      runtime: deps.runtime,
+      reads: deps.reads,
+      queries: deps.queries,
+    }),
   );
 
   plugin.addCommand({
@@ -37,11 +55,8 @@ export function registerWelcomeView(
     callback: () => void openWelcomeView(plugin.app, deps.settings),
   });
 
-  // Fresh-device notice: the database service signals when the resolved DB
-  // file is absent (auto-detect missed the install on this device). Attached
-  // synchronously during onload — before the db service's first async refresh
-  // can emit — so the signal is never missed. `notFoundNoticeChange` decides
-  // what each signal does to the notice.
+  // The missing-file state survives startup, so a view registered after the
+  // first database load still offers to locate Zotero on this device.
   let notice: BaseNotice | null = null;
   const hide = () => {
     notice?.hide();
@@ -60,10 +75,15 @@ export function registerWelcomeView(
         void openLibraryView(plugin.app);
       });
   };
+  let missing = deps.reads.dbFileMissing;
   plugin.register(
-    deps.reads.on("db-file-missing", () => apply("db-file-missing")),
+    subscribe(deps.runtime, Stream.drop(deps.reads.changes, 1), (state) => {
+      if (state.dbFileMissing === missing) return;
+      missing = state.dbFileMissing;
+      apply(missing ? "db-file-missing" : "changed");
+    }),
   );
-  plugin.register(deps.reads.on("changed", () => apply("changed")));
+  if (missing) apply("db-file-missing");
   const layout = plugin.app.workspace.on("layout-change", () =>
     apply("layout-change"),
   );
@@ -89,7 +109,7 @@ function notFoundNotice(locate: () => void): BaseNotice {
 /** Show the Welcome View banner again, above the Library View brought forward. */
 export async function openWelcomeView(
   app: App,
-  settings: Pick<SettingsService, "update">,
+  settings: Pick<PlainPluginSettings, "update">,
 ): Promise<void> {
   settings.update({ "welcome.dismissed": false });
   const view = await openLibraryView(app);

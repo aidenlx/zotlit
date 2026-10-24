@@ -1,4 +1,8 @@
-// Rule tests: src/lint/effect-tests.test.ts.
+// zotlit-effect-tests: Effect tests run inside the test runtime
+// (policies/testing-strategy.md, policies/test-timing.md). Rejects running an
+// Effect by hand in a test, real timers in an Effect case, and fake services
+// cast to `Tag["Service"]` instead of built with stubService. Rule tests:
+// src/lint/effect-tests.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
 
@@ -193,10 +197,66 @@ export const noRealTimerInEffectTest: Rule = {
   },
 };
 
+/** The TypeScript cast and type nodes the service-stub rule walks. */
+type TsNode = AstNode & {
+  readonly expression?: TsNode;
+  readonly typeAnnotation?: TsNode;
+  readonly indexType?: TsNode;
+  readonly literal?: TsNode;
+};
+
+/** `Tag["Service"]`: the implementation type of an Effect service tag. */
+function isServiceType(node: TsNode | undefined): boolean {
+  if (node?.type !== "TSIndexedAccessType") return false;
+  const index = node.indexType;
+  return index?.type === "TSLiteralType" && index.literal?.value === "Service";
+}
+
+/** Whether an object literal sits under any `as` / `satisfies` wrapping. */
+function castObject(node: TsNode | undefined): boolean {
+  let at = node;
+  while (at?.type === "TSAsExpression" || at?.type === "TSSatisfiesExpression")
+    at = at.expression;
+  return at?.type === "ObjectExpression";
+}
+
+/**
+ * A fake service built as `{ … } as Tag["Service"]` compiles while it lacks
+ * members, and a consumer that reads a missing one fails as `undefined` far
+ * from the stub, or not at all until an adapter reads it eagerly. The
+ * `stubService` helper from `@/lib/__fixtures__/service-stub` type-checks
+ * each member it is given and names any other member a consumer reads.
+ */
+export const serviceStub: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        'Build a fake service with stubService, not `as Tag["Service"]`.',
+    },
+    messages: {
+      stub: 'Build the fake with stubService<Tag["Service"]>("Tag", { … }) from @/lib/__fixtures__/service-stub: it checks each member and names a missing one when read.',
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      TSAsExpression(node) {
+        const cast = node as unknown as TsNode;
+        // Report the outermost cast once, not each layer of `as unknown as`.
+        if (cast.parent?.type === "TSAsExpression") return;
+        if (isServiceType(cast.typeAnnotation) && castObject(cast.expression))
+          context.report({ node, messageId: "stub" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-effect-tests" },
   rules: {
     "no-effect-run-in-test": noEffectRunInTest,
     "no-real-timer-in-effect-test": noRealTimerInEffectTest,
+    "service-stub": serviceStub,
   },
 };

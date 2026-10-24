@@ -8,17 +8,17 @@ import type { App } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { subscribe } from "@/lib/effect-stream";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { QueryClientService } from "@/services/query-client/service";
+import type { PlainQueryClients } from "@/services/query-client/plain";
 import type { ReleaseService } from "@/services/release/service";
-import type {
-  SettingsPatch,
-  SettingsService,
-} from "@/services/settings/service";
-import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ZoteroReadsService } from "@/services/zotero-reads/service";
+import type { PlainPluginSettings } from "@/services/settings/plain";
+import type { SettingsPatch } from "@/services/settings/service";
+import type { PlainTemplateMigration } from "@/services/template/plain";
+import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions, WelcomeBannerHost } from "./actions";
@@ -44,16 +44,26 @@ const logger = getLogger(["welcome", "banner"]);
 const CONNECTION_CHECKING_DELAY_MS = 200;
 
 export interface WelcomeBannerDeps {
+  runtime: SubscriptionRuntime;
   app: App;
-  reads: Pick<ZoteroReadsService, "state" | "ready" | "error" | "moved" | "on">;
-  queries: Pick<QueryClientService, "peek" | "read">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
-  settings: Pick<SettingsService, "subscribe" | "update" | "flush">;
-  setupActions: SetupActions;
-  templateMigration: Pick<
-    LiteratureNoteTemplateMigrationService,
-    "convert" | "retryCleanup"
+  reads: Pick<
+    PlainZoteroReads,
+    | "state"
+    | "reads"
+    | "error"
+    | "moved"
+    | "changed"
+    | "degraded"
+    | "refresh-failed"
+    | "refreshing"
+    | "db-file-missing"
+    | "refresh-requested"
   >;
+  queries: Pick<PlainQueryClients, "peek" | "read">;
+  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
+  settings: Pick<PlainPluginSettings, "changes" | "update" | "flush">;
+  setupActions: SetupActions;
+  templateMigration: Pick<PlainTemplateMigration, "convert" | "retryCleanup">;
   release: Pick<
     ReleaseService,
     | "hasV1Templates"
@@ -191,7 +201,7 @@ export class WelcomeBanner extends Component {
     const folderExists = (folder: string) =>
       app.vault.getFolderByPath(normalizePath(folder)) !== null;
     stack.defer(
-      settings.subscribe((s) => {
+      subscribe(this.#deps.runtime, settings.changes, (s) => {
         if (s) {
           const literatureFolder =
             s["note.default-profile"].bindings["note.literature-folder"];
@@ -274,12 +284,14 @@ export class WelcomeBanner extends Component {
 
     const { reads } = this.#deps;
     const reload = (): void => this.#loadConnection();
-    stack.defer(reads.on("changed", reload));
-    stack.defer(reads.on("degraded", reload));
-    stack.defer(reads.on("refresh-failed", reload));
-    stack.defer(reads.on("db-file-missing", reload));
+    stack.defer(subscribe(this.#deps.runtime, reads["changed"], reload));
+    stack.defer(subscribe(this.#deps.runtime, reads["degraded"], reload));
+    stack.defer(subscribe(this.#deps.runtime, reads["refresh-failed"], reload));
     stack.defer(
-      reads.on("refreshing", (active) => {
+      subscribe(this.#deps.runtime, reads["db-file-missing"], reload),
+    );
+    stack.defer(
+      subscribe(this.#deps.runtime, reads["refreshing"], (active) => {
         if (active) {
           // Invalidate any in-flight readout so its stale result can't land on
           // top of this refresh, then show checking only once the refresh is
