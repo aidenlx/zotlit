@@ -1,7 +1,7 @@
 /** The real Citation Lookup layer over already-owned consumer fixture dependencies. */
 import type { App } from "obsidian";
 
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { Scope } from "@/lib/effect";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";

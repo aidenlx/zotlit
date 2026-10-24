@@ -1,32 +1,14 @@
 // The metadata cache as a capability tag: the reads ZotLit makes and the
-// events it follows, without the Obsidian `App`.
-//
-// The pattern each Obsidian capability tag copies (FileManager, Vault,
-// Workspace):
-// - Layer shape. `make<Tag>(source)` builds the service over the Obsidian
-//   object on the layer's Scope. `layer<Tag>` reads `ObsidianApp` once and
-//   passes the object in; `layer<Tag>From(source)` takes any object of the
-//   same shape, for a test host.
-// - Events. One `obsidianEventSource` (`@/lib/obsidian-event-source`) for the
-//   source: one listener per Obsidian event name, registered at build and
-//   removed when the layer closes, all publishing one tagged union into one
-//   PubSub, so the order across names stays. Consumers narrow `changes` with
-//   `filterTag` and handle it with `forkEach` (`@/lib/effect-stream`), which
-//   logs a failed handler for each event and keeps the subscription. A view or
-//   a legacy service subscribes through the bridge.
-// - Reads. A sync Obsidian read is `Effect.sync`; Obsidian values such as
-//   `TFile` and `CachedMetadata` stay plain data.
-// - Test layer. `src/lib/__fixtures__/obsidian-<tag>.ts` holds an in-memory
-//   object of the source shape, which the test drives, and a test layer that
-//   runs this same `make<Tag>` over it. A legacy module under test that still
-//   reads `app` gets the same object, so both read one store.
+// events it follows, without the Obsidian `App`. Later tags copy its shape;
+// policies/events.md (Capability tags) describes it.
 import type {
   CachedMetadata,
   MetadataCache as ObsidianMetadataCache,
   TFile,
 } from "obsidian";
 
-import { Context, Deferred, Effect, Layer, Stream } from "@/lib/effect";
+import { Context, Effect, Layer, Stream } from "@/lib/effect";
+import { withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
@@ -53,7 +35,10 @@ export type MetadataEvent =
   | { readonly _tag: "resolved" };
 
 /** The Obsidian object the tag reads: what `app.metadataCache` gives. */
-export type MetadataCacheSource = Pick<ObsidianMetadataCache, "getFileCache"> &
+export type MetadataCacheSource = Pick<
+  ObsidianMetadataCache,
+  "getFileCache" | "onCleanCache"
+> &
   ObsidianEventEmitter;
 
 export interface MetadataCacheShape {
@@ -62,9 +47,12 @@ export interface MetadataCacheShape {
   /** Each metadata cache event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<MetadataEvent>;
   /**
-   * Completes at the first `resolved` after the layer starts, or at once
-   * after it. It does not complete for a vault where `resolved` never fires
-   * after the layer starts (the cache resolved before, and no file changes).
+   * Completes once the cache is resolved: at once when it already is, else
+   * when the parse queue and the link resolver next go idle. It reads
+   * Obsidian's undocumented `onCleanCache`; a build without that hook waits
+   * for the next `resolved`. During startup the cache is empty and reads as
+   * resolved until the vault loads, so a consumer that needs every file waits
+   * for layout-ready first.
    */
   readonly whenResolved: Effect.Effect<void>;
 }
@@ -80,14 +68,6 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
   source: MetadataCacheSource,
 ) {
   const events = yield* obsidianEventSource<MetadataEvent>();
-  const resolved = yield* Deferred.make<void>();
-  // Attach before the listeners, so the first `resolved` cannot pass by.
-  yield* filterTag(events.stream, "resolved").pipe(
-    Stream.take(1),
-    Stream.runDrain,
-    Effect.andThen(Deferred.succeed(resolved, undefined)),
-    Effect.forkScoped({ startImmediately: true }),
-  );
   yield* events.listen(
     source,
     "changed",
@@ -115,9 +95,37 @@ export const makeMetadataCache = Effect.fnUntraced(function* (
   return MetadataCache.of({
     fileCache: (file) => Effect.sync(() => source.getFileCache(file)),
     changes: events.stream,
-    whenResolved: Deferred.await(resolved),
+    whenResolved: whenResolved(source, events.stream),
   });
 });
+
+/**
+ * Obsidian's own one-shot (it uses it before rewriting links on rename): it
+ * calls back at once when no parse task runs and the resolver queue is idle,
+ * else after the next `finished`/`resolved` (Obsidian 1.13.7). The public
+ * `resolved` fires only when the resolver queue drains after running, so a
+ * vault with no indexable files never emits it.
+ */
+function whenResolved(
+  source: MetadataCacheSource,
+  changes: Stream.Stream<MetadataEvent>,
+): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    const { onCleanCache } = source;
+    if (typeof onCleanCache === "function")
+      return Effect.callback<void>((resume) => {
+        onCleanCache.call(source, () => resume(Effect.void));
+      });
+    return Effect.logWarning(
+      "Metadata cache has no onCleanCache hook; waiting for resolved",
+    ).pipe(
+      withLogCategory("metadata-cache"),
+      Effect.andThen(
+        filterTag(changes, "resolved").pipe(Stream.take(1), Stream.runDrain),
+      ),
+    );
+  });
+}
 
 /** The tag over any object of the metadata cache's shape, such as a test host's. */
 export const layerMetadataCacheFrom = (

@@ -1,10 +1,8 @@
 // A Citation Popover built from its real layer over test-owned service reads.
 import type { App, TFile } from "obsidian";
 
-import {
-  layerHostApp,
-  MemoryMetadataCache,
-} from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Effect, Layer, Stream } from "@/lib/effect";
 import type { ManagedRuntime } from "@/lib/effect";

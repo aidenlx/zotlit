@@ -3,10 +3,8 @@ import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef } from "obsidian";
 
-import {
-  layerHostApp,
-  MemoryMetadataCache,
-} from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import { Context, Effect, Layer } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -73,12 +71,8 @@ export async function openNoteVault(
 type Callback = (...args: unknown[]) => void;
 type VaultEvent = "rename" | "delete";
 
-/** The in-memory metadata cache, with Obsidian's clean-cache hook and vault following. */
+/** The in-memory metadata cache, following the vault as Obsidian's does. */
 class MockMetadataCache extends MemoryMetadataCache {
-  /** Mirrors Obsidian's `isCacheClean()`: no parse pending, resolver idle. */
-  clean = false;
-  readonly #cleanCallbacks: Callback[] = [];
-
   /**
    * Obsidian's `watchVaultChanges()`: the cache follows a rename or delete as
    * one more vault listener, in registration order. It subscribes once its
@@ -96,22 +90,6 @@ class MockMetadataCache extends MemoryMetadataCache {
     vault.on("delete", (file) => {
       this.entries.delete((file as TFile).path);
     });
-  }
-
-  /**
-   * Obsidian's undocumented one-shot: at once when the cache is clean, else
-   * after the next `resolved` drains the queue.
-   */
-  onCleanCache(callback: () => void): void {
-    if (this.clean) callback();
-    else this.#cleanCallbacks.push(callback);
-  }
-
-  /** The resolver queue drains: `resolved` fires and queued clean-cache callbacks run. */
-  override resolve(): void {
-    this.clean = true;
-    super.resolve();
-    for (const callback of this.#cleanCallbacks.splice(0)) callback();
   }
 }
 

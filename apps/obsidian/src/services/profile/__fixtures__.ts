@@ -1,4 +1,4 @@
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { Effect, Layer } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";

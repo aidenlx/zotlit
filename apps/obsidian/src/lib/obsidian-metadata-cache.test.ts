@@ -23,14 +23,12 @@ import { it } from "@/lib/effect-vitest";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   layerMetadataCache,
+  layerMetadataCacheFrom,
   MetadataCache,
 } from "@/lib/obsidian-metadata-cache";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 
-import {
-  layerMetadataCacheTest,
-  MemoryMetadataCache,
-} from "./__fixtures__/obsidian-metadata-cache";
+import { MemoryMetadataCache } from "./__fixtures__/obsidian-metadata-cache";
 
 const NAMES = ["changed", "deleted", "resolve", "resolved"] as const;
 
@@ -40,16 +38,30 @@ function file(path: string): TFile {
   return file;
 }
 
+/** The layer built on a Scope of its own, closed with the case's Scope. */
 const open = Effect.fnUntraced(function* (layer: Layer.Layer<MetadataCache>) {
-  const scope = yield* Scope.make();
+  const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
   const context = yield* Layer.buildWithScope(layer, scope);
   return { scope, metadata: Context.get(context, MetadataCache) };
+});
+
+/** Every `changed` the tag streams, by path, from now on. */
+const changedPaths = Effect.fnUntraced(function* (
+  metadata: MetadataCache["Service"],
+) {
+  const paths = yield* Queue.unbounded<string>();
+  yield* forkEach(filterTag(metadata.changes, "changed"), (event) =>
+    Queue.offer(paths, event.file.path),
+  );
+  return paths;
 });
 
 it.effect("owns one listener per event name until the layer closes", () =>
   Effect.gen(function* () {
     const cache = new MemoryMetadataCache();
-    const { scope } = yield* open(layerMetadataCacheTest(cache));
+    const { scope } = yield* open(layerMetadataCacheFrom(cache));
     expect(NAMES.map((name) => cache.listenerCount(name))).toEqual([
       1, 1, 1, 1,
     ]);
@@ -85,7 +97,7 @@ it.effect("reads the live layer's cache from ObsidianApp", () =>
 it.effect("streams the events of every name in Obsidian's order", () =>
   Effect.gen(function* () {
     const cache = new MemoryMetadataCache();
-    const { metadata } = yield* open(layerMetadataCacheTest(cache));
+    const { metadata } = yield* open(layerMetadataCacheFrom(cache));
     const received = yield* Queue.unbounded<MetadataEvent["_tag"]>();
     yield* forkEach(metadata.changes, (event) =>
       Queue.offer(received, event._tag),
@@ -108,10 +120,27 @@ it.effect("streams the events of every name in Obsidian's order", () =>
   }),
 );
 
+// A consumer that joins these events with another source's relies on this:
+// the event reaches it before Obsidian's next callback runs.
+it.effect(
+  "hands each event to an idle consumer inside Obsidian's callback",
+  () =>
+    Effect.gen(function* () {
+      const cache = new MemoryMetadataCache();
+      const { metadata } = yield* open(layerMetadataCacheFrom(cache));
+      const handled: string[] = [];
+      yield* forkEach(filterTag(metadata.changes, "changed"), (event) => {
+        handled.push(event.file.path);
+      });
+      cache.change(file("a.md"), {});
+      expect(handled).toEqual(["a.md"]);
+    }),
+);
+
 it.effect("carries Obsidian's arguments on each event", () =>
   Effect.gen(function* () {
     const cache = new MemoryMetadataCache();
-    const { metadata } = yield* open(layerMetadataCacheTest(cache));
+    const { metadata } = yield* open(layerMetadataCacheFrom(cache));
     const fiber = yield* metadata.changes.pipe(
       Stream.take(2),
       Stream.runCollect,
@@ -129,29 +158,65 @@ it.effect("carries Obsidian's arguments on each event", () =>
 );
 
 it.effect(
-  "completes whenResolved at the first resolved, and at once after",
+  "completes whenResolved at once when the cache is already resolved",
   () =>
     Effect.gen(function* () {
       const cache = new MemoryMetadataCache();
-      const { metadata } = yield* open(layerMetadataCacheTest(cache));
+      cache.resolve();
+      const { metadata } = yield* open(layerMetadataCacheFrom(cache));
+      yield* metadata.whenResolved;
+    }),
+);
+
+it.effect("completes whenResolved when the cache next resolves", () =>
+  Effect.gen(function* () {
+    const cache = new MemoryMetadataCache();
+    const { metadata } = yield* open(layerMetadataCacheFrom(cache));
+    const changed = yield* changedPaths(metadata);
+    const done = yield* Deferred.make<void>();
+    yield* metadata.whenResolved.pipe(
+      Effect.andThen(Deferred.succeed(done, undefined)),
+      Effect.forkScoped({ startImmediately: true }),
+    );
+    cache.change(file("a.md"), {});
+    expect(yield* Queue.take(changed)).toBe("a.md");
+    expect(yield* Deferred.isDone(done)).toBe(false);
+    cache.resolve();
+    yield* Deferred.await(done);
+  }),
+);
+
+it.effect(
+  "waits for the next resolved on a build without onCleanCache, and logs it",
+  () =>
+    Effect.gen(function* () {
+      const cache = new MemoryMetadataCache();
+      Object.defineProperty(cache, "onCleanCache", { value: undefined });
+      cache.clean = true;
+      const { metadata } = yield* open(layerMetadataCacheFrom(cache));
+      const changed = yield* changedPaths(metadata);
+      const warnings: unknown[] = [];
       const done = yield* Deferred.make<void>();
       yield* metadata.whenResolved.pipe(
         Effect.andThen(Deferred.succeed(done, undefined)),
-        Effect.forkScoped,
+        Effect.provide(
+          Logger.layer([Logger.make(({ message }) => warnings.push(message))]),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
       );
       cache.change(file("a.md"), {});
-      yield* Effect.yieldNow;
+      expect(yield* Queue.take(changed)).toBe("a.md");
       expect(yield* Deferred.isDone(done)).toBe(false);
       cache.resolve();
       yield* Deferred.await(done);
-      yield* metadata.whenResolved;
+      expect(warnings).toHaveLength(1);
     }),
 );
 
 it.effect("logs a failed handler and keeps the subscription", () =>
   Effect.gen(function* () {
     const cache = new MemoryMetadataCache();
-    const { metadata } = yield* open(layerMetadataCacheTest(cache));
+    const { metadata } = yield* open(layerMetadataCacheFrom(cache));
     const received = yield* Queue.unbounded<string>();
     const logs: unknown[] = [];
     yield* forkEach(filterTag(metadata.changes, "changed"), (event) =>

@@ -1,15 +1,9 @@
-// An in-memory metadata cache and the MetadataCache test layer over it. The
-// shape the other capability tags' test layers copy: the test drives the
-// in-memory object; the tag's own `make` runs over it.
-import type { App, CachedMetadata, EventRef, TFile } from "obsidian";
+// An in-memory metadata cache for tests. The test drives it; the tag's own
+// layer runs over it (`layerMetadataCacheFrom`, or `layerHostApp` from
+// ./obsidian-host-app). The other capability tags' fixtures copy this shape.
+import type { CachedMetadata, EventRef, TFile } from "obsidian";
 
-import { Layer } from "@/lib/effect";
-import { ObsidianApp } from "@/lib/obsidian-app";
-import { layerMetadataCacheFrom } from "@/lib/obsidian-metadata-cache";
-import type {
-  MetadataCache,
-  MetadataCacheSource,
-} from "@/lib/obsidian-metadata-cache";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
 
 type Callback = (...args: unknown[]) => unknown;
 
@@ -20,7 +14,10 @@ type Callback = (...args: unknown[]) => unknown;
  */
 export class MemoryMetadataCache implements MetadataCacheSource {
   readonly entries = new Map<string, CachedMetadata>();
+  /** Mirrors Obsidian's `isCacheClean()`: no parse pending, resolver idle. */
+  clean = false;
   readonly #listeners = new Map<string, Set<Callback>>();
+  readonly #cleanCallbacks: (() => void)[] = [];
 
   getFileCache(file: TFile): CachedMetadata | null {
     return this.getCache(file.path);
@@ -45,7 +42,7 @@ export class MemoryMetadataCache implements MetadataCacheSource {
     this.#listeners.get(name)?.delete(fn);
   }
 
-  /** The listeners registered for `name`. */
+  /** How many listeners are registered for `name`. */
   listenerCount(name: string): number {
     return this.#listeners.get(name)?.size ?? 0;
   }
@@ -68,9 +65,20 @@ export class MemoryMetadataCache implements MetadataCacheSource {
     this.trigger("deleted", file, prevCache);
   }
 
-  /** Every link is resolved: `resolved`. */
+  /**
+   * Obsidian's undocumented one-shot: at once when the cache is clean, else
+   * after the next `resolved` drains the queue.
+   */
+  onCleanCache(callback: () => void): void {
+    if (this.clean) callback();
+    else this.#cleanCallbacks.push(callback);
+  }
+
+  /** The resolver queue drains: the cache is clean, `resolved` fires, then queued clean-cache callbacks run. */
   resolve(): void {
+    this.clean = true;
     this.trigger("resolved");
+    for (const callback of this.#cleanCallbacks.splice(0)) callback();
   }
 
   /** Call each listener of `name`, in registration order. */
@@ -78,23 +86,4 @@ export class MemoryMetadataCache implements MetadataCacheSource {
     for (const callback of this.#listeners.get(name) ?? [])
       callback(...args);
   }
-}
-
-/** The MetadataCache tag over `cache`, an in-memory one by default. */
-export function layerMetadataCacheTest(
-  cache: MetadataCacheSource = new MemoryMetadataCache(),
-): Layer.Layer<MetadataCache> {
-  return layerMetadataCacheFrom(cache);
-}
-
-/**
- * A test host's `app` and the MetadataCache tag over its `metadataCache`, for
- * a layer that reads both until the other capability tags land.
- */
-export function layerHostApp(
-  app: App,
-): Layer.Layer<ObsidianApp | MetadataCache> {
-  return layerMetadataCacheFrom(app.metadataCache).pipe(
-    Layer.provideMerge(Layer.succeed(ObsidianApp, app)),
-  );
 }

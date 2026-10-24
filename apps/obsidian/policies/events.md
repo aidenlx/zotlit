@@ -3,5 +3,16 @@
 A service's events are Effect-native: Streams and state. The `zotlit-services` lint rules (`scripts/oxlint-plugin-services.ts`) cover the mechanical part. The reviewer checks:
 
 - **State or event.** What consumers watch is a `SubscriptionRef`, exposed with `changesUntil` from `src/lib/effect-stream.ts`. A discrete occurrence is a `PubSub` Stream. A condition a late subscriber must still see (stopped, failed, backfilled) is state.
-- **Obsidian events.** A layer takes Obsidian events, one-shots such as `onLayoutReady` included, through `obsidianEvents` from `src/lib/effect-obsidian-events.ts`, consumed on the layer's Scope.
+- **Obsidian events.** A layer reads an Obsidian source that has a capability tag (`MetadataCache`, `src/lib/obsidian-metadata-cache.ts`) from the tag: it narrows the tag's `changes` with `filterTag` and handles it with `forkEach` (`src/lib/effect-stream.ts`) on its Scope. It registers no listener on that source itself. A layer takes Obsidian events from a source with no tag yet, one-shots such as `onLayoutReady` included, through `obsidianEvents` from `src/lib/effect-obsidian-events.ts`, consumed on the layer's Scope.
+- **Joining sources.** A layer that keeps one ordered intake across sources forwards the tag's events into that intake with `forkEach(tag.changes, intake.callback("<name>"))`. `forkEach` hands an event to an idle consumer inside Obsidian's callback, so the event enters the intake before Obsidian's next callback, and the order across sources stays.
+
+## Capability tags
+
+A capability tag holds the members of one Obsidian object that ZotLit uses (`MetadataCache`; later `FileManager`, `Vault`, `Workspace`). `src/lib/obsidian-metadata-cache.ts` is the model:
+
+- **Layer shape.** `make<Tag>(source)` builds the service over the Obsidian object on the layer's Scope. `layer<Tag>` reads `ObsidianApp` once and passes the object in. `layer<Tag>From(source)` takes any object of the same shape.
+- **Events.** The tag registers its Obsidian events through `obsidianEventSource` (`src/lib/obsidian-event-source.ts`): one listener per Obsidian event name, registered at build and removed when the layer closes. Every listener publishes into one PubSub for the source, as a tagged union whose tags are the Obsidian event names, so the order across names stays. The tag exposes it as `changes`.
+- **Reads.** A sync Obsidian read is `Effect.sync`. Obsidian values such as `TFile` and `CachedMetadata` stay plain data.
+- **One-shots.** A one-shot member (`whenResolved`; later `layoutReady`) is an `Effect` that completes once the state is reached. It completes at once when the state is already reached, as Obsidian's own one-shots call back at once.
+- **Test layer.** `src/lib/__fixtures__/obsidian-<tag>.ts` holds an in-memory object of the source shape that the test drives (`MemoryMetadataCache`). The test runs the tag's own layer over it with `layer<Tag>From`. `layerHostApp(app)` in `src/lib/__fixtures__/obsidian-host-app.ts` gives `ObsidianApp` and every tag over the members of a test host's `app`; each new tag adds its layer there.
 - **Subscribing from plain code.** A view, a command, or a legacy service subscribes through `subscribe(runtime, stream, callback)` from `src/lib/effect-stream.ts`, never a hand-written `runFork(Stream.runForEach(…))`. An Effect consumer reads the Stream from the service's tag inside its layer scope.

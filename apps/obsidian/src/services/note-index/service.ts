@@ -1,17 +1,15 @@
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, TAbstractFile } from "obsidian";
 
-import {
-  FIELD_LITERATURE_NOTE_PROFILE,
-  NON_VAULT_PROPERTY_KEYS,
-} from "@/lib/constants";
+import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
 import { Context, Deferred, Effect, Layer, PubSub, Stream } from "@/lib/effect";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
-import { DEFAULT_PROFILE, parseProfileStamp } from "@/lib/profile-stamp";
+import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
+import { DEFAULT_PROFILE, profileStampOf } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 
 import {
@@ -125,14 +123,12 @@ const makeNoteIndex = Effect.gen(function* () {
   const pendingRenames = new Set<Deferred.Deferred<void>>();
   const pendingBarriers = new Set<Deferred.Deferred<void>>();
   const events = yield* obsidianEvents<{
-    changed: [TFile, string, CachedMetadata];
-    deleted: [TFile];
+    metadata: [MetadataEvent];
     delete: [TAbstractFile];
     rename: [TAbstractFile, string];
     "rename-settled": [TFile, Deferred.Deferred<void>];
     layout: [];
     clean: [];
-    resolved: [];
     barrier: [Deferred.Deferred<void>];
   }>();
   const notesByItemKey = new Map<string, Set<TFile>>();
@@ -142,8 +138,6 @@ const makeNoteIndex = Effect.gen(function* () {
   const frontmatterByFile = new Map<TFile, string>();
   const warnedDuplicatePaths = new Map<string, string>();
   let disposed = false;
-  /** A build without `onCleanCache` waits for the next `resolved`. */
-  let awaitingResolved = false;
 
   const publish = (change: NoteIndexChange) => PubSub.publish(changes, change);
 
@@ -183,11 +177,7 @@ const makeNoteIndex = Effect.gen(function* () {
         const literatureNotes: TFile[] = [];
         const importedNotes: TFile[] = [];
         for (const [file, contribution] of contribByFile) {
-          const stamp = parseProfileStamp(
-            (yield* metadata.fileCache(file))?.frontmatter?.[
-              FIELD_LITERATURE_NOTE_PROFILE
-            ],
-          );
+          const stamp = profileStampOf(yield* metadata.fileCache(file));
           const profile = stamp === undefined ? DEFAULT_PROFILE : stamp.id;
           if (profile !== selector) continue;
           if (contribution.noteKey !== null) importedNotes.push(file);
@@ -241,20 +231,9 @@ const makeNoteIndex = Effect.gen(function* () {
   const listen = Effect.fn("NoteIndex.listen")(function* () {
     const { vault } = app;
 
-    // The metadata cache's events join the vault's in one ordered intake.
-    yield* forkEach(metadata.changes, (event) => {
-      switch (event._tag) {
-        case "changed":
-          events.callback("changed")(event.file, event.data, event.cache);
-          break;
-        case "deleted":
-          events.callback("deleted")(event.file);
-          break;
-        case "resolved":
-          if (awaitingResolved) events.callback("resolved")();
-          break;
-      }
-    });
+    // The metadata cache's events join the vault's in one ordered intake:
+    // forkEach hands each over inside Obsidian's callback.
+    yield* forkEach(metadata.changes, events.callback("metadata"));
     yield* events.on("delete", vault, "delete");
     yield* events.on("rename", vault, "rename");
     app.workspace.onLayoutReady(events.callback("layout"));
@@ -284,17 +263,8 @@ const makeNoteIndex = Effect.gen(function* () {
 
   /**
    * Runs the Full Scan exactly once, when the metadata cache covers every file.
-   *
-   * Obsidian's public API carries no "cache complete" signal. `resolved` is
-   * documented as firing "each time files get modified after the initial
-   * load", and it fires only when the link-resolver queue drains after
-   * running, so a vault with no indexable files never emits it. The
-   * undocumented `metadataCache.initialized` flips when the initial scan is
-   * dispatched, while parse tasks are still pending. The undocumented
-   * `onCleanCache(cb)` is Obsidian's own one-shot (it uses it before rewriting
-   * links on rename): it calls back at once when no parse task is in progress
-   * and the resolver queue is idle, else after the next `finished`/`resolved`
-   * (Obsidian 1.13.7). Layout-ready is the guard, since at plugin load during
+   * Obsidian's public API carries no "cache complete" signal; `whenResolved`
+   * waits for it. Layout-ready is the guard, since at plugin load during
    * startup the vault is not loaded yet and the empty cache reads as clean;
    * layout-ready runs strictly after the cache initializes, and synchronously
    * when the plugin is enabled at runtime.
@@ -302,20 +272,15 @@ const makeNoteIndex = Effect.gen(function* () {
   const scanWhenCacheClean = Effect.fn("NoteIndex.scanWhenCacheClean")(
     function* () {
       if (disposed) return;
-      const { metadataCache } = app;
-      if (typeof metadataCache.onCleanCache === "function") {
-        metadataCache.onCleanCache(events.callback("clean"));
-        yield* Effect.logDebug(
-          "Note index requested a clean metadata cache",
-        ).pipe(withLogCategory("note-index"));
-        return;
-      }
-      // A build without the hook: the documented signal, once. This misses an
-      // empty vault, where `resolved` never fires.
-      yield* Effect.logWarning(
-        "Metadata cache has no onCleanCache hook; scanning on resolved",
+      yield* Effect.logDebug(
+        "Note index requested a clean metadata cache",
       ).pipe(withLogCategory("note-index"));
-      awaitingResolved = true;
+      // Started immediately: a clean cache calls back at once, so the Full
+      // Scan is queued before this event's handler returns.
+      yield* metadata.whenResolved.pipe(
+        Effect.andThen(Effect.sync(() => events.callback("clean")())),
+        Effect.forkScoped({ startImmediately: true }),
+      );
     },
   );
 
@@ -324,14 +289,14 @@ const makeNoteIndex = Effect.gen(function* () {
   ) {
     if (disposed) return;
     switch (event.type) {
-      case "changed": {
-        const [file, , cache] = event.args;
-        if (isMarkdownFile(file)) yield* apply(file, readCache(cache));
+      case "metadata": {
+        const [change] = event.args;
+        if (change._tag === "changed") {
+          if (isMarkdownFile(change.file))
+            yield* apply(change.file, readCache(change.cache));
+        } else if (change._tag === "deleted") yield* apply(change.file, NONE);
         break;
       }
-      case "deleted":
-        yield* apply(event.args[0], NONE);
-        break;
       case "delete": {
         const [file] = event.args;
         if (isMarkdownFile(file)) yield* apply(file, NONE);
@@ -368,11 +333,6 @@ const makeNoteIndex = Effect.gen(function* () {
       }
       case "layout":
         yield* scanWhenCacheClean();
-        break;
-      case "resolved":
-        if (!awaitingResolved) break;
-        awaitingResolved = false;
-        yield* fullScan();
         break;
       case "clean":
         yield* fullScan();

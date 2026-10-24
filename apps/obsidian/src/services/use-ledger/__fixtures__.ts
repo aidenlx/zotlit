@@ -1,10 +1,8 @@
 // A Use Ledger built from its layer over a fake App.
 import type { App } from "obsidian";
 
-import {
-  layerHostApp,
-  MemoryMetadataCache,
-} from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { Context, Effect, Layer, Stream } from "@/lib/effect";
 import type { Scope } from "@/lib/effect";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -18,13 +16,14 @@ export function fakeApp(storage: {
   load: () => unknown;
   save?: (key: string, value: unknown) => void;
   offref?: () => void;
+  metadataCache?: MemoryMetadataCache;
 }): App {
   const ref = () => ({ e: { offref: storage.offref ?? (() => {}) } });
   return {
     loadLocalStorage: storage.load,
     saveLocalStorage: storage.save ?? (() => {}),
     workspace: { onLayoutReady: () => {}, on: ref },
-    metadataCache: new MemoryMetadataCache(),
+    metadataCache: storage.metadataCache ?? new MemoryMetadataCache(),
   } as unknown as App;
 }
 

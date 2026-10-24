@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
-import type { HoverParent, TFile } from "obsidian";
+import type { HoverParent } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { Effect } from "@/lib/effect";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -56,7 +55,6 @@ function harness() {
     "invalidated",
   ]);
 
-  const metadata = new MemoryMetadataCache();
   const render = vi.fn<() => Promise<BibliographyRenderOutcome>>(async () => ({
     kind: "unavailable",
     reason: "engine-absent",
@@ -71,7 +69,6 @@ function harness() {
   const popover = citationPopoverFixture({
     app: {
       vault: { getFileByPath: (path: string) => ({ path }) },
-      metadataCache: metadata,
     },
     db,
     citationLookup: {
@@ -129,7 +126,6 @@ function harness() {
     readBibliography,
     open,
     events,
-    metadata,
     textReads,
     async show(
       work: string | WorkHoverRequest["work"],
@@ -276,9 +272,6 @@ describe("Citation Popover visits", () => {
     });
     await run.show("beta", run.second);
     await vi.advanceTimersByTimeAsync(300);
-    // The previous document's deletion no longer reaches the popover.
-    run.metadata.trigger("deleted", { path: "Draft.md" } as TFile, null);
-    await vi.advanceTimersByTimeAsync(0);
     expect(run.parent.hoverPopover!.hoverEl.textContent).toBe(
       m.references_citekey_unresolved({ citekey: "beta" }),
     );
