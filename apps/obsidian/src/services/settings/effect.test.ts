@@ -16,11 +16,7 @@ import {
 } from "@/lib/effect";
 import { it } from "@/lib/effect-vitest";
 
-import {
-  settingsOf,
-  settingsRuntimeBridgeOf,
-  settingsRuntimeOf,
-} from "./__fixtures__";
+import { settingsOf, settingsRuntimeOf } from "./__fixtures__";
 import { layerPluginSettings, PluginSettings } from "./service";
 
 // A pending edit must reach disk before the settings scope finishes closing.
@@ -129,7 +125,7 @@ it.effect(
   "the bridge supplies snapshots, Promises, and an idempotent unsubscribe",
   () =>
     Effect.gen(function* () {
-      const { settings, bridge } = yield* settingsRuntimeBridgeOf({
+      const { settings, bridge } = yield* settingsRuntimeOf({
         plugin: {
           loadData: async () => ({
             __VERSION__: 11,
@@ -150,6 +146,13 @@ it.effect(
       expect(bridge.runSync(settings.current)?.["server.hostname"]).toBe(
         "/edited",
       );
+      // `loaded` takes its snapshot when it runs, so a run after the edit
+      // answers the edited value.
+      expect(
+        (yield* Effect.promise(() => bridge.runPromise(settings.loaded)))[
+          "server.hostname"
+        ],
+      ).toBe("/edited");
       yield* Effect.promise(() => changed.promise);
       stop();
       stop();
@@ -323,7 +326,7 @@ it.effect("#1705 migration failures log the original error and stage", () =>
 
 it.effect("#1705 a throwing subscriber receives both immediate edits", () =>
   Effect.gen(function* () {
-    const { settings, bridge } = yield* settingsRuntimeBridgeOf({
+    const { settings, bridge } = yield* settingsRuntimeOf({
       plugin: { loadData: async () => null, saveData: async () => {} },
     });
     const seen: string[] = [];
@@ -400,6 +403,8 @@ it.effect("#1705 a failed write leaves flush safe after runtime disposal", () =>
       ),
     );
     yield* Effect.promise(close);
-    yield* Effect.promise(() => bridge.runPromise(settings.flush()));
+    yield* Effect.promise(() =>
+      expect(bridge.runPromise(settings.flush())).resolves.toBeUndefined(),
+    );
   }),
 );

@@ -125,7 +125,6 @@ function makeSettings(value: {
 async function makeService(): Promise<AttachmentImportService> {
   const runtime = testRuntime();
   const service = new AttachmentImportService({
-    runtime,
     bridge: effectBridge(runtime),
     app: makeApp(vaultDir),
     settings: makeSettings({

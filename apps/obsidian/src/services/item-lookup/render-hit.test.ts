@@ -11,15 +11,15 @@ import type { ItemFields } from "@zotlit/zotero-types";
 import { Effect } from "@/lib/effect";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { Settings } from "@/services/settings/schema";
+import { defaults } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
 
 import { renderSuggestion } from "./render-hit";
 import type { SearchHit } from "./service";
 
 const settings = {
-  current: Effect.succeed({} as Settings),
-} as unknown as Pick<PluginSettings["Service"], "current">;
+  current: Effect.succeed(defaults),
+} satisfies Pick<PluginSettings["Service"], "current">;
 const bridge = { runSync: Effect.runSync };
 
 describe("renderSuggestion library label", () => {

@@ -213,7 +213,6 @@ function makeAttachmentImport() {
 function makeBlockingAttachmentImport(): AttachmentImportService {
   const runtime = testRuntime();
   return new AttachmentImportService({
-    runtime,
     bridge: effectBridge(runtime),
     app: {
       loadLocalStorage: () => null,

@@ -277,7 +277,6 @@ export async function buildServices(
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({
-          runtime,
           bridge,
           app: plugin.app,
           settings,

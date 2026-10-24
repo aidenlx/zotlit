@@ -5,7 +5,7 @@ import { subscribe } from "@/lib/effect-stream";
 import { it } from "@/lib/effect-vitest";
 import { highlightEmoji } from "@/lib/highlight-mapping";
 
-import { settingsRuntimeBridgeOf } from "./__fixtures__";
+import { settingsRuntimeOf } from "./__fixtures__";
 import type { SettingsFixtureOptions } from "./__fixtures__";
 import {
   migrateLegacyV0,
@@ -60,7 +60,7 @@ const makeService = Effect.fnUntraced(function* (
   overrides: MakeServiceOptions = {},
 ) {
   const plugin = overrides.plugin ?? new PluginStub();
-  const { settings, bridge, runtime } = yield* settingsRuntimeBridgeOf({
+  const { settings, bridge, runtime } = yield* settingsRuntimeOf({
     plugin,
     migrateLegacy: noopMigrate,
     migrateV1: noopMigrateV1,

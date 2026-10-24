@@ -9,7 +9,7 @@ import { effectBridge } from "@/lib/effect-bridge";
 import { it } from "@/lib/effect-vitest";
 import type { LocalServer } from "@/services/local-server/service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
-import { settingsRuntimeBridgeOf } from "@/services/settings/__fixtures__";
+import { settingsRuntimeOf } from "@/services/settings/__fixtures__";
 
 import { ZotLitSettingTab } from "./index";
 import type { ZotLitSettingTabOptions } from "./index";
@@ -19,7 +19,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       let disk: unknown;
-      const { settings, bridge } = yield* settingsRuntimeBridgeOf({
+      const { settings, bridge } = yield* settingsRuntimeOf({
         plugin: {
           loadData: async () => null,
           saveData: async (value) => {

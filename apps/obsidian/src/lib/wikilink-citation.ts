@@ -283,10 +283,11 @@ export class WikilinkDisplaySettings {
    * Follows the settings, and asks for a redraw whenever they change what a
    * link displays or who answers its hover.
    *
-   * `PluginSettings.subscribe` invokes its listener immediately, so the first
-   * snapshot only seeds the values: everything drawn so far already read them,
-   * and a startup redraw would show nothing new. A first snapshot of null seeds
-   * the defaults, and the settings that arrive after it redraw like any change.
+   * `changes` replays the current value when a subscriber attaches, so the
+   * listener is called at once. That first snapshot only seeds the values:
+   * everything drawn so far already read them, and a startup redraw would show
+   * nothing new. A first snapshot of null seeds the defaults, and the settings
+   * that arrive after it redraw like any change.
    *
    * @returns the unsubscribe.
    */
