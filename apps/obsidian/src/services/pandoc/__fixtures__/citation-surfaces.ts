@@ -1,6 +1,7 @@
 import { Stream } from "@/lib/effect";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
 // Document Citation Text, the References Sidebar, the Citation Popover, the
@@ -619,7 +620,7 @@ function exportAdapter({
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
-    citationParse: inProcessParseClient,
+    citationParse: plainTestParseClient(inProcessParseClient),
     profile: profileReader(profileSettings, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,

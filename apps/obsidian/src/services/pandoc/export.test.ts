@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -128,7 +129,7 @@ function ports(fixture: Fixture): ExportPorts & {
     return Promise.resolve({ source: "local-api" as const, items });
   });
   return {
-    citationParse: inProcessParseClient,
+    citationParse: plainTestParseClient(inProcessParseClient),
     prepareDocument,
     renderPrepared,
     fetchBibliography,

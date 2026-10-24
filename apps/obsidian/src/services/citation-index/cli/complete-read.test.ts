@@ -3,6 +3,7 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { Effect, Fiber } from "@/lib/effect";
 import { acquireAsyncDisposable } from "@/lib/effect-scope";
 import { it } from "@/lib/effect-vitest";
@@ -48,13 +49,15 @@ it.effect.each(["annotation-uses", "cited-by"])(
           {
             zoteroRows: annotationRows,
             parseClient: {
-              async parse(request, signal) {
+              parse: effectTestParse(async (request, signal) => {
                 if (held) {
                   entered.resolve();
                   await release.promise;
                 }
-                return inProcessParseClient.parse(request, signal);
-              },
+                return Effect.runPromise(inProcessParseClient.parse(request), {
+                  signal,
+                });
+              }),
             },
           },
         ),
@@ -163,13 +166,15 @@ it.effect(
           { "draft.md": "@doe2024" },
           {
             parseClient: {
-              async parse(request, signal) {
+              parse: effectTestParse(async (request, signal) => {
                 if (held) {
                   entered.resolve();
                   await release.promise;
                 }
-                return inProcessParseClient.parse(request, signal);
-              },
+                return Effect.runPromise(inProcessParseClient.parse(request), {
+                  signal,
+                });
+              }),
             },
           },
         ),

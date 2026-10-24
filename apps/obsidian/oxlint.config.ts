@@ -266,6 +266,7 @@ export default defineConfig({
     {
       files: [
         "src/lib/effect.ts",
+        "src/lib/effect-worker.ts",
         "src/lib/effect-runtime.ts",
         "src/lib/effect-layer.ts",
         "src/lib/effect-log.ts",

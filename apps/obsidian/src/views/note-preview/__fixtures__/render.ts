@@ -1,6 +1,7 @@
 import { Stream } from "@/lib/effect";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
@@ -115,7 +116,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
   await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
   const deps: NativeRenderDeps = { runtime: settings.runtime,
-    citationParse: inProcessParseClient,
+    citationParse: plainTestParseClient(inProcessParseClient),
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
     zoteroReads,
